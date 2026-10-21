@@ -1832,6 +1832,14 @@ impl Net {
         };
         if let Some(relay) = &self.relay {
             edge.cloud = relay.cloud_options(&self.udp[name]);
+            // The relay tells a host the address it sees its packets come
+            // from, which a peer punches to: behind a router that must be
+            // the router's public port, not the gate's own socket.
+            if host.router.is_some()
+                && let Some(quic) = &mut edge.cloud.relay_quic
+            {
+                quic.addr = relay.quic();
+            }
         }
         if let Some(hook) = &self.edge_hook {
             hook(name, &mut edge);

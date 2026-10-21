@@ -1278,3 +1278,211 @@ async fn token_lapse_within_hour_is_noticed_at_the_hourly_refresh() {
     );
     net.shutdown().await.unwrap();
 }
+
+/// Two hosts on one paid account, each behind its own imitated router of
+/// `kind`, signed in to the relay with nothing else between them: their
+/// link comes up through the relay's forwarding, and each learns where
+/// the relay sees the other.
+async fn behind_routers(kind: testnet::RouterKind, said: &str) -> Net {
+    let topology = Topology::new()
+        .relay(&["ada"])
+        .host_decl(on_the_relay("desk"))
+        .host_decl(on_the_relay("laptop"))
+        .agent(worker_saying(said));
+    let mut net = Net::start_with(topology, relay_tcp_unreachable(&["desk", "laptop"]))
+        .await
+        .unwrap();
+    // A router is in place from the start of a run, so each host reaches
+    // the relay from its router's public port alone.
+    for host in ["desk", "laptop"] {
+        net.set_router(host, kind).unwrap();
+        net.stop_daemon(host).await.unwrap();
+        net.restart_daemon(host).await.unwrap();
+    }
+    net.trust("desk", "laptop").await.unwrap();
+    net.trust("laptop", "desk").await.unwrap();
+    until_via(&net, "laptop", "desk", LiveRoute::Relay).await;
+    carried_by(&net, "laptop", "desk", PathKind::RelayUdp).await;
+    carried_by(&net, "desk", "laptop", PathKind::RelayUdp).await;
+    println!("behind {kind:?} routers: the link comes up through the relay");
+    net
+}
+
+/// Behind ordinary routers, which keep one public port for everything a
+/// host sends and let in what comes from wherever it sent: each host
+/// probes the address the relay saw the other at, both routers open, and
+/// the link moves off the relay onto the punched path with the session
+/// still streaming.
+#[tokio::test(flavor = "multi_thread")]
+async fn punch_ordinary_routers_move_the_link_onto_a_punched_path() {
+    let said = "said over the punched path";
+    let net = behind_routers(testnet::RouterKind::Ordinary, said).await;
+    carried_by(&net, "laptop", "desk", PathKind::Punched).await;
+    carried_by(&net, "desk", "laptop", PathKind::Punched).await;
+    streams_live(&net, &["laptop"], "worker", said).await;
+    assert_eq!(
+        net.carrying_path("laptop", "desk").unwrap(),
+        Some(PathKind::Punched),
+        "the session streamed over the punched path"
+    );
+    net.shutdown().await.unwrap();
+}
+
+/// Behind strict routers, which open a public port per destination and let
+/// in only what comes back from it: the address the relay saw a host at is
+/// a port the host's router opened toward the relay alone, so each host's
+/// probes to the other are dropped and the link stays on the relay, still
+/// streaming.
+#[tokio::test(flavor = "multi_thread")]
+async fn punch_strict_routers_keep_the_link_on_the_relay() {
+    let said = "said through the relay behind strict routers";
+    let net = behind_routers(testnet::RouterKind::Strict, said).await;
+    for (host, peer) in [("laptop", "desk"), ("desk", "laptop")] {
+        until(
+            &format!("{host} to learn where the relay saw {peer}"),
+            || async {
+                let observed = observed_addresses(&net, host, peer);
+                (!observed.is_empty())
+                    .then_some(())
+                    .ok_or_else(|| "nothing observed yet".to_owned())
+            },
+        )
+        .await
+        .unwrap();
+        println!(
+            "{host} probes {peer} at the address the relay saw it: {:?}",
+            observed_addresses(&net, host, peer)
+        );
+    }
+    // Long enough for every punch to time out the times that drop it.
+    tokio::time::sleep(punch_given_up()).await;
+    for (host, peer) in [("laptop", "desk"), ("desk", "laptop")] {
+        assert_eq!(
+            net.carrying_path(host, peer).unwrap(),
+            Some(PathKind::RelayUdp),
+            "{host}'s link to {peer} stays on the relay"
+        );
+        assert!(
+            !ever_carried_by(&net, host, peer, PathKind::Punched),
+            "{host}'s link to {peer} was never punched"
+        );
+        println!("{host}'s link to {peer} stayed on relay_udp");
+    }
+    streams_live(&net, &["laptop"], "worker", said).await;
+    net.shutdown().await.unwrap();
+}
+
+/// Two hosts on one free account on the same network: their link is on the
+/// LAN, and neither ever learns where the relay sees the other, so neither
+/// has anything to punch to and the link stays where it is.
+#[tokio::test(flavor = "multi_thread")]
+async fn punch_free_never_probes_and_the_link_stays_on_the_lan() {
+    let said = "said over the LAN on a free account";
+    let on_the_lan = |name: &str| HostDecl {
+        account: Some("ada".to_owned()),
+        ..lan_host(name, "home")
+    };
+    let topology = Topology::new()
+        .relay(&["ada"])
+        .host_decl(on_the_lan("desk"))
+        .host_decl(on_the_lan("laptop"))
+        .agent(worker_saying(said));
+    let mut net = Net::start(topology).await.unwrap();
+    net.set_tier("ada", testnet::TierDecl::Free).await.unwrap();
+    pair(&net, "laptop", "desk").await;
+    until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
+    carried_by(&net, "laptop", "desk", PathKind::Lan).await;
+    carried_by(&net, "desk", "laptop", PathKind::Lan).await;
+    streams_live(&net, &["laptop"], "worker", said).await;
+
+    tokio::time::sleep(punch_given_up()).await;
+    for (host, peer) in [("laptop", "desk"), ("desk", "laptop")] {
+        assert_eq!(
+            observed_addresses(&net, host, peer),
+            Vec::<String>::new(),
+            "{host} never learns where the relay sees {peer}: nothing to punch to"
+        );
+        assert_eq!(
+            net.carrying_path(host, peer).unwrap(),
+            Some(PathKind::Lan),
+            "{host}'s link to {peer} stays on the LAN"
+        );
+        assert!(
+            !ever_carried_by(&net, host, peer, PathKind::Punched),
+            "{host}'s link to {peer} was never punched"
+        );
+        println!("{host}: no observed address for {peer}, link on lan throughout");
+    }
+    net.shutdown().await.unwrap();
+}
+
+/// A lapse takes the punched path away: once the account is free the link
+/// leaves the path it was punched onto, and with no free path between two
+/// routers it goes down rather than moving back to the relay, which no
+/// longer forwards for the account.
+#[tokio::test(flavor = "multi_thread")]
+async fn punch_lapse_drops_the_punched_path() {
+    let said = "said before the lapse";
+    let mut net = behind_routers(testnet::RouterKind::Ordinary, said).await;
+    carried_by(&net, "laptop", "desk", PathKind::Punched).await;
+    carried_by(&net, "desk", "laptop", PathKind::Punched).await;
+    net.set_tier("ada", testnet::TierDecl::Free).await.unwrap();
+    for (host, peer) in [("laptop", "desk"), ("desk", "laptop")] {
+        until(
+            &format!("{host}'s link to {peer} to leave the punched path"),
+            || async {
+                match net.carrying_path(host, peer) {
+                    Ok(Some(PathKind::Punched)) => Err("still punched".to_owned()),
+                    other => Ok(println!(
+                        "{host}'s link to {peer} after the lapse: {other:?}"
+                    )),
+                }
+            },
+        )
+        .await
+        .unwrap();
+    }
+    tokio::time::sleep(punch_given_up()).await;
+    for (host, peer) in [("laptop", "desk"), ("desk", "laptop")] {
+        assert_ne!(
+            net.carrying_path(host, peer).unwrap(),
+            Some(PathKind::Punched),
+            "{host} punches {peer} no more while free"
+        );
+    }
+    net.shutdown().await.unwrap();
+}
+
+/// Long enough for the relay to tell each host where it sees it (it looks
+/// every 2 s), for that to reach the peer, and for every probe on a path
+/// that drops them to time out the three times that give it up (2 s each).
+fn punch_given_up() -> std::time::Duration {
+    std::time::Duration::from_secs(10)
+}
+
+/// Whether `host`'s link log ever named `path` carrying its link to `peer`.
+fn ever_carried_by(net: &Net, host: &str, peer: &str, path: PathKind) -> bool {
+    let peer = host_id(net, peer);
+    net.link_log(host)
+        .unwrap()
+        .iter()
+        .any(|line| line.peer == peer && line.path == path && line.event != LinkTransition::Down)
+}
+
+/// The addresses `host` keeps for `peer` that the relay saw `peer` at, as
+/// its trust file lists them.
+fn observed_addresses(net: &Net, host: &str, peer: &str) -> Vec<String> {
+    let info = net.host(host).unwrap();
+    let trust = node::profile_dir(&info.data_dir, info.profile).join("trust.json");
+    let trust: serde_json::Value = std::fs::read(trust)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default();
+    trust[host_id(net, peer).to_string()]["listed"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|address| address["source"] == "observed")
+        .filter_map(|address| address["addr"].as_str().map(str::to_owned))
+        .collect()
+}

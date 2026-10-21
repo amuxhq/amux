@@ -875,6 +875,59 @@ mod tests {
         relay.serving.close();
     }
 
+    /// A relaunched host presents the token the relay gave its previous
+    /// process, kept in its profile, and is answered at once.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_relaunched_host_presents_the_relays_validation_token_from_disk() {
+        let relay = relay().await;
+        let udp_addr = relay.serving.udp_addr().unwrap();
+        let profile = tempfile::tempdir().unwrap();
+        let process = || {
+            LinkEndpoint::bind("127.0.0.1:0".parse().unwrap(), None)
+                .unwrap()
+                .keeping(profile.path())
+        };
+        let first = process()
+            .connect_to(
+                relay.client.clone(),
+                udp_addr,
+                crate::link::validation::Server::Relay(NAME.to_owned()),
+                NAME,
+            )
+            .unwrap()
+            .await
+            .unwrap();
+        assert_eq!(relay.server.retries_sent(), 1, "a first dial is retried");
+        patience::until("the relay's tokens to arrive", || {
+            let received = first.stats().frame_rx.new_token;
+            async move {
+                (received >= 1)
+                    .then_some(())
+                    .ok_or_else(|| format!("{received} tokens"))
+            }
+        })
+        .await
+        .unwrap();
+        first.close(0_u32.into(), b"done");
+
+        let relaunched = process();
+        let carrier = QuicCarrier::connect_relay_with_config(
+            &relaunched,
+            udp_addr,
+            NAME,
+            relay.client.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            relay.server.retries_sent(),
+            1,
+            "the relaunched host presented the token its last process kept"
+        );
+        carrier.close(wire::pb::LinkCloseReason::UserShutdown);
+        relay.serving.close();
+    }
+
     /// A host whose NAT gives it a new port comes back from there with
     /// the token it was given at the old one and is answered at once: the
     /// relay's QUIC sees senders from one IP at one stand-in IP, which is

@@ -902,6 +902,12 @@ async fn resume_accepted_sends_the_relaunchs_calls_as_early_data() {
         u128::from(ms) >= round_trip,
         "a round trip at least: {ms} ms"
     );
+    // The laptop presents the address-validation token the desk gave its
+    // last process, so no Retry costs a second round trip.
+    assert!(
+        u128::from(ms) < 2 * round_trip,
+        "within one round trip of the first packet: {ms} ms"
+    );
     streams_live(&net, &["laptop"], "worker", "said after the launch").await;
     net.shutdown().await.unwrap();
 }
@@ -922,6 +928,14 @@ async fn resume_rejected_resends_the_early_calls_after_the_handshake() {
     )
     .unwrap();
     net.restart_daemon("desk").await.unwrap();
+    // The laptop comes back on another port, so the desk, redialling it
+    // since its own launch, cannot bring a link up before the laptop's
+    // first flight does.
+    let laptop = net.host("laptop").unwrap().clone();
+    std::fs::remove_file(
+        node::profile_dir(&laptop.data_dir, laptop.profile).join(node::LAN_PORT_FILE),
+    )
+    .unwrap();
     let mark = net.link_log("laptop").unwrap().len();
     net.restart_daemon("laptop").await.unwrap();
 

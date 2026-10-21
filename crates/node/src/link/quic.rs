@@ -19,7 +19,7 @@ use super::early::{Early, EarlyRecv, EarlySend};
 use super::framed::{FramedKind, StreamEndpoint};
 use super::link_log::{EarlyData, PathKind};
 use super::socket::{Datagrams, LinkSocket};
-use super::validation::ServerTokens;
+use super::validation::{Server, ServerTokens};
 use crate::HostId;
 use crate::identity::{DeviceIdentity, IdentityError};
 use crate::trust::SharedTrustStore;
@@ -112,10 +112,17 @@ impl LinkEndpoint {
         self.resumption.relay_config(server_name, roots)
     }
 
-    /// Keeps the tickets peers give this endpoint's dials in `dir`, one
-    /// directory per peer and pinned key, so a relaunched process resumes.
-    pub(crate) fn keeping_tickets(mut self, dir: std::path::PathBuf) -> Self {
-        self.resumption = Arc::new(super::resumption::PeerResumption::keeping(dir));
+    /// Keeps the tickets and address-validation tokens peers and the
+    /// relay give this endpoint's dials in the profile directory
+    /// `profile`, so a relaunched process resumes its links and skips
+    /// their Retry.
+    pub(crate) fn keeping(mut self, profile: &std::path::Path) -> Self {
+        self.resumption = Arc::new(super::resumption::PeerResumption::keeping(
+            profile.join(super::client_tickets::CLIENT_TICKETS_DIR),
+        ));
+        self.tokens = Arc::new(ServerTokens::keeping(
+            profile.join(super::validation::CLIENT_TOKENS_DIR),
+        ));
         self
     }
 
@@ -129,13 +136,27 @@ impl LinkEndpoint {
         )
     }
 
+    /// Dials whoever answers at `addr`, keeping the tokens it gives for
+    /// this process.
     pub(crate) fn connect_with(
         &self,
-        mut config: quinn::ClientConfig,
+        config: quinn::ClientConfig,
         addr: SocketAddr,
         server_name: &str,
     ) -> Result<quinn::Connecting, quinn::ConnectError> {
-        config.token_store(self.tokens.for_server(addr));
+        self.connect_to(config, addr, Server::Address(addr), server_name)
+    }
+
+    /// Dials `server` at `addr`, presenting a token it gave this profile
+    /// before.
+    pub(crate) fn connect_to(
+        &self,
+        mut config: quinn::ClientConfig,
+        addr: SocketAddr,
+        server: Server,
+        server_name: &str,
+    ) -> Result<quinn::Connecting, quinn::ConnectError> {
+        config.token_store(self.tokens.for_server(server));
         self.endpoint
             .connect_with(config, self.socket.stand_in_at(addr), server_name)
     }
@@ -168,7 +189,7 @@ impl LinkEndpoint {
             self.socket
                 .set_carrying(peer, super::socket::Path::Forwarded(through));
         }
-        config.token_store(self.tokens.for_server(stand_in));
+        config.token_store(self.tokens.for_server(Server::Host(peer)));
         self.endpoint.connect_with(config, stand_in, server_name)
     }
 
@@ -188,7 +209,7 @@ impl LinkEndpoint {
         if self.socket.path_of(stand_in).is_none() {
             self.socket.send_on_all(peer, paths, through_relay);
         }
-        config.token_store(self.tokens.for_server(stand_in));
+        config.token_store(self.tokens.for_server(Server::Host(peer)));
         self.endpoint.connect_with(config, stand_in, server_name)
     }
 
@@ -361,7 +382,7 @@ impl QuicCarrier {
         }
         let dialled = std::time::Instant::now();
         let connection = endpoint
-            .connect_with(config, addr, DEVICE_SERVER_NAME)?
+            .connect_to(config, addr, Server::Host(peer), DEVICE_SERVER_NAME)?
             .await?;
         let stats = connection.stats();
         tracing::debug!(
@@ -390,7 +411,8 @@ impl QuicCarrier {
         peer: HostId,
     ) -> Result<Self, ConnectError> {
         let config = endpoint.client_config(identity, &trust_store, peer)?;
-        let connecting = endpoint.connect_with(config, addr, DEVICE_SERVER_NAME)?;
+        let connecting =
+            endpoint.connect_to(config, addr, Server::Host(peer), DEVICE_SERVER_NAME)?;
         let (connection, early) = handshake(connecting, RESUMED_HANDSHAKE_TIMEOUT).await?;
         let control = open_control(&connection, early.as_ref()).await?;
         Ok(Self::new(connection, CarrierKind::Quic, Some(control))
@@ -493,7 +515,12 @@ impl QuicCarrier {
         server_name: &str,
         config: quinn::ClientConfig,
     ) -> Result<Self, ConnectError> {
-        let connecting = endpoint.connect_with(config, addr, server_name)?;
+        let connecting = endpoint.connect_to(
+            config,
+            addr,
+            Server::Relay(server_name.to_owned()),
+            server_name,
+        )?;
         let (connection, early) = handshake(connecting, RELAY_QUIC_HANDSHAKE_TIMEOUT).await?;
         let control = open_control(&connection, early.as_ref()).await?;
         Ok(Self::new(connection, CarrierKind::RelayQuic, Some(control)).with_early(early))
@@ -1703,7 +1730,7 @@ mod tests {
         let client = || TicketClient {
             endpoint: LinkEndpoint::bind(ANY_PORT.parse().unwrap(), None)
                 .unwrap()
-                .keeping_tickets(tickets_dir.clone()),
+                .keeping(profile.path()),
             identity: identity.clone(),
             trust: trust_for(&server_identity),
             peer: server_identity.host_id,
@@ -2061,7 +2088,7 @@ mod tests {
         let link = || async {
             let client = LinkEndpoint::bind(ANY_PORT.parse().unwrap(), None)
                 .unwrap()
-                .keeping_tickets(tickets_dir.clone());
+                .keeping(profile.path());
             let config = client.relay_config("relay.test", roots.clone()).unwrap();
             let dial = async {
                 let carrier = QuicCarrier::connect_relay_candidates_with_config(

@@ -474,7 +474,7 @@ fn private_file(path: &Path) -> io::Result<fs::File> {
 
 /// `name` as one path component: itself where it is a plain host name,
 /// hex otherwise.
-fn file_name(name: &str) -> String {
+pub(crate) fn file_name(name: &str) -> String {
     let plain = !name.is_empty()
         && !name.starts_with('.')
         && name

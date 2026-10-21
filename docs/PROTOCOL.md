@@ -475,7 +475,8 @@ A forwarded arrival needs neither a Retry nor a place under the per-source
 handshake limit at the host answering it: the forwarder names the sender and
 carries only hosts it admitted. Arrivals with an address of their own get
 both, and a returning host's address-validation token skips the Retry but
-still counts against the limit. While a host has a link of its own on a path
+still counts against the limit. A host keeps the tokens hosts and the relay
+give it in its profile, so a relaunch presents them too. While a host has a link of its own on a path
 of its own to a peer, that link carries the peer's calls ahead of one a
 forwarder carries.
 

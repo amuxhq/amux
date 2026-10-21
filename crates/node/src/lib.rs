@@ -148,6 +148,7 @@ pub use auth::oauth::{OAuthError, run_device_flow};
 pub use auth::{AccessToken, AuthError};
 pub use link::client_tickets::CLIENT_TICKETS_DIR;
 pub use link::resumption::{RELAY_TICKETS, SessionTickets, TICKETS_DIR};
+pub use link::validation::CLIENT_TOKENS_DIR;
 /// This binary's version, as stamped: the one it writes into every spec.
 pub use release::version;
 pub use transport::{TransportError, create_tls_acceptor, relay_quic_server_config};

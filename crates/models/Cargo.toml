@@ -11,6 +11,7 @@ agent-core = { workspace = true }
 daemon-core = { workspace = true }
 interpret = { workspace = true, features = ["testkind"] }
 journal = { workspace = true }
+path-core = { workspace = true }
 prost = { workspace = true }
 provider-fakes = { workspace = true }
 release = { workspace = true }

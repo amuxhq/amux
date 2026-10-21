@@ -202,6 +202,27 @@ text. The properties are in `src/client.rs`. Seeded walks of this model
 are also the traces the phone's chat model replays: `just client-traces`
 records them (`crates/app-runtime/src/traces.rs`).
 
+## The path machine
+
+`PathModel` runs the real `path_core::Paths` for one link to a peer the
+world can reach three ways: at its address on the local network, which
+works while this host is on that network; at the address the relay saw it
+at, by punching, which works until this host's network changes; and through
+the relay, which forwards while its link is up and the plan is paid. A
+fourth address, one that worked on a network this host has left, never
+answers. The machine learns the addresses late and one at a time; each probe
+it sends is answered by a path that works or is lost, and a probe with no
+answer times out as the clock reaches it; this host's network changes; the
+relay link goes down and comes back; the plan lapses or is bought again, and
+the relay refuses the lapsed plan's packets once it sees them; the link
+comes up once the first flight reaches the peer on a path that works and
+idles out when none does; and the clock moves to whatever wake the machine
+asked for. Router mappings expiring play out as lost probes on the punched
+path. At any point the world may stop changing; the clock still moves a
+bounded number of times so the machine settles, and its liveness is judged
+there. The properties read the world's own record of what the machine asked
+for against what the world knows of each path, and are in `src/path.rs`.
+
 ## The composed net
 
 `ComposedNet` takes a topology (hosts, the links between them and the
@@ -296,10 +317,12 @@ under `just test`.
 | Agent lifecycle, one-shot child and parentless agent | 3 daemon connections, 3 inputs, 2 messages, 2 asks, 1 unasked provider exit, 2 stops or kills | 1,296,718 and 71,250 | 9 s | 18 s | 45, 28, 44, 29 and 41 s for both | 120 s each | 4 connections, 3 messages, 2 unasked exits | 81 s |
 | Supervisor update, both platforms' swaps | 2 releases, 2 supervisor crashes, 2 daemon crashes, 1 failed start, 5 timers firing, 1 `amux update` | 5,819,060 and 4,850,638 | 7 s | 8 s | 17, 27, 25, 27 and 27 s for both | 60 s each | 3 releases, 2 failed starts, 6 timers firing | 124 s |
 | One open chat | 2 writes, 1 lag, 1 reset, 2 pages over a three-item opening, a tail of 2, pages of 1 | 1,217,819 | 10 s | 24 s | 51, 109, 116, 105 and 105 s | 240 s | 3 writes | 343 s |
+| Path machine | 2 of the 3 addresses learned, 1 lost probe, 1 network change, 1 plan change, 2 ticks, 1 relay link drop | 2,347,628 | 4 s | 7 s | none yet | 120 s | all 3 addresses, 2 plan changes, 3 ticks | 73 s |
 | Composed net: a reset while presence flips, lost messages, a person's calls through a crash | 1 sever and 1 unclean reboot; 1 reordering, 1 lost message and 1 advance; 1 kill, 1 prompt and 1 stop | 33,025, 9,559 and 216,320 | 27 s | 51 s | 151, 105, 204, 207 and 139 s for all three | 420 s for all three | every fault but a kill, with 1 reordering; the calls through a crash with 1 lost message | 184 s |
 
 Measured on 2026-10-18 and 2026-10-19 on the enrolled Mac (Mac14,6, 12
-cores), the family model's on 2026-10-20, with the development profile,
+cores), the family model's on 2026-10-20 and the path machine's on
+2026-10-21 (with the Mac busy, load about 35), with the development profile,
 which optimises SQLite, the store and the models; `MODELS_THREADS=4` gives
 the four-thread figure. The checker runs on every core the machine has; the
 verdict and the state count do not depend on the number of threads (the

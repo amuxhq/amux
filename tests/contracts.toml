@@ -1202,6 +1202,66 @@ tests = [
 ]
 
 [[contract]]
+id = "path-carries-only-answered"
+source = "model"
+property = { crate = "models", machine = "path machine", sentence = "a path carries the link only after a probe on it was answered, the first flight's copies aside" }
+checker = "models/path::every_path_machine_promise_holds_at_ci_bounds"
+tests = [
+  "path-core/lib::tests::the_first_flight_goes_on_every_candidate_until_a_probe_answers",
+  "path-core/lib::tests::a_packet_alone_never_makes_a_path_carry_the_link",
+]
+
+[[contract]]
+id = "path-no-cross-network-after-lapse"
+source = "model"
+property = { crate = "models", machine = "path machine", sentence = "after a lapse no packet goes on a path across networks" }
+checker = "models/path::every_path_machine_promise_holds_at_ci_bounds"
+tests = [
+  "path-core/lib::tests::an_observed_address_is_never_probed_while_the_account_is_free",
+  "path-core/lib::tests::a_lapse_drops_the_punched_path_and_the_link_falls_back",
+  "path-core/lib::tests::a_payment_refusal_drops_the_relay_and_every_punched_path",
+]
+
+[[contract]]
+id = "path-a-working-path-is-used"
+source = "model"
+property = { crate = "models", machine = "path machine", sentence = "if any path works the link eventually uses one" }
+checker = "models/path::every_path_machine_promise_holds_at_ci_bounds"
+tests = [
+  "path-core/lib::tests::a_network_change_reprobes_every_path_and_carries_on_the_first_answer",
+  "path-core/lib::tests::a_link_going_down_sends_on_every_candidate_again",
+]
+
+[[contract]]
+id = "path-direct-eventually-chosen"
+source = "model"
+property = { crate = "models", machine = "path machine", sentence = "a direct path that keeps answering is eventually chosen" }
+checker = "models/path::every_path_machine_promise_holds_at_ci_bounds"
+tests = [
+  "path-core/lib::tests::a_direct_path_that_keeps_answering_takes_the_link_from_the_relay_after_the_hold_down",
+]
+
+[[contract]]
+id = "path-no-swing"
+source = "model"
+property = { crate = "models", machine = "path machine", sentence = "the link never leaves a working path for another within the hold-down" }
+checker = "models/path::every_path_machine_promise_holds_at_ci_bounds"
+tests = [
+  "path-core/lib::tests::the_link_never_leaves_a_working_path_for_one_of_the_same_kind",
+  "path-core/lib::tests::a_path_that_stops_answering_is_left_at_once_hold_down_or_not",
+]
+
+[[contract]]
+id = "path-relay-ready-while-direct"
+source = "model"
+property = { crate = "models", machine = "path machine", sentence = "the relay path stays ready while the link is direct" }
+checker = "models/path::every_path_machine_promise_holds_at_ci_bounds"
+tests = [
+  "path-core/lib::tests::the_relay_path_is_probed_again_while_the_link_is_direct",
+  "path-core/lib::tests::a_relay_that_stops_answering_is_still_probed_every_interval",
+]
+
+[[contract]]
 id = "lifecycle-exits-at-turn-end"
 source = "model"
 property = { crate = "models", machine = "agent lifecycle", sentence = "an agent exits only at a turn end or a drain deadline: the lifecycle decides to end an incarnation only as a turn ends, while no turn runs, or as its drain deadline passes" }

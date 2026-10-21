@@ -160,7 +160,7 @@ SUPPORT_ALLOWED_LOCAL = {
     # The protocol's properties, explored over the real code: the store, the
     # journal and the message types, each state-machine core, and the
     # clients' session state.
-    "models": {"agent-core", "daemon-core", "interpret", "journal", "provider-fakes", "release", "store", "supervisor-core", "ui-state", "wire"},
+    "models": {"agent-core", "daemon-core", "interpret", "journal", "path-core", "provider-fakes", "release", "store", "supervisor-core", "ui-state", "wire"},
 }
 
 def local_edges(package: dict[str, object]) -> set[str]:

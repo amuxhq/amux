@@ -209,7 +209,7 @@ impl From<Path> for Key {
 }
 
 /// What the machine knows of one path.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 struct PathState {
     /// When a probe on it was last answered, or a packet last arrived on
     /// it after one had been.
@@ -235,7 +235,7 @@ impl PathState {
 }
 
 /// The path carrying the link, since when.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 struct Carrying {
     key: Key,
     path: Path,
@@ -243,7 +243,7 @@ struct Carrying {
 }
 
 /// The link moving off a path this step, kept for the invariant check.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 struct Switch {
     from: Key,
     from_working: bool,
@@ -252,7 +252,8 @@ struct Switch {
 
 /// The machine: pure, cloneable, serialisable, stepped by the driver;
 /// invariants checked after every step as the daemon and relay cores do.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// Hashed and compared whole, so a checker can hold it as its state.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Paths {
     now_ms: u64,
     paid: bool,

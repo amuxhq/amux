@@ -19,6 +19,7 @@ pub mod family;
 mod held;
 pub mod lifecycle;
 pub mod net;
+pub mod path;
 pub mod presence;
 pub mod replication;
 pub mod single_daemon;
@@ -27,6 +28,7 @@ pub use client::ClientModel;
 pub use family::FamilyDeliveries;
 pub use lifecycle::AgentLifecycle;
 pub use net::ComposedNet;
+pub use path::PathModel;
 pub use presence::PresenceRouting;
 pub use replication::Replication;
 pub use single_daemon::SingleDaemon;
@@ -45,6 +47,9 @@ pub enum Fault {
     Delay(MsgIndex),
     /// Two messages in flight swap places.
     Reorder(MsgIndex, MsgIndex),
+    /// The message at this place in flight is delivered twice, as a
+    /// replayed packet or a retransmission arriving after its original.
+    Duplicate(MsgIndex),
     /// The host's process dies at this step; what it had written stays.
     Crash(Host),
     /// The host's process dies without its clean shutdown, and comes back
@@ -101,6 +106,7 @@ pub fn properties() -> Vec<Listed> {
     listed.extend(of("agent lifecycle", &AgentLifecycle::ci()));
     listed.extend(of("supervisor update", &SupervisorUpdate::ci()));
     listed.extend(of("client", &ClientModel::ci()));
+    listed.extend(of("path machine", &PathModel::ci()));
     for (_, model) in ComposedNet::ci() {
         for property in of("composed net", &model) {
             if !listed.contains(&property) {

@@ -25,7 +25,8 @@
 //!   reached by punching, which is paid: it is never probed or carried
 //!   while the account is free, and a lapse drops it.
 //! - A network change makes every path stale; each is probed again at once,
-//!   and the link carries on whichever answers first.
+//!   and the link carries on whichever answers first. So does the link
+//!   going: the next one carries only on a path that answered for it.
 //!
 //! The clock is an input like any other: nothing inside a step reads it,
 //! locks, spawns or awaits. Every step ends by checking the invariants, and
@@ -325,9 +326,16 @@ impl Paths {
                     }
                 }
             }
+            // What answered for the link that went says nothing of the
+            // next one, which may come from a peer that restarted or moved:
+            // its paths are probed afresh.
             Input::LinkDown => {
                 self.link_up = false;
                 self.carrying = None;
+                for state in self.paths.values_mut() {
+                    state.stale = true;
+                    state.probe_deadline_ms = None;
+                }
             }
             Input::Tick { now_ms } => self.now_ms = self.now_ms.max(now_ms),
         }
@@ -1327,9 +1335,12 @@ mod tests {
         let out = step(&mut paths, Input::LinkUp);
         assert_eq!(
             carry(&out),
-            Some(Path::Direct(lan())),
-            "the path still answers"
+            None,
+            "what answered for the last link proves nothing for this one"
         );
+        assert_eq!(probes(&out), vec![Path::Direct(lan()), relayed()]);
+        let out = answer(&mut paths, Path::Direct(lan()), 4);
+        assert_eq!(carry(&out), Some(Path::Direct(lan())));
     }
 
     #[test]

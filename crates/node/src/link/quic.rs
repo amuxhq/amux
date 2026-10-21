@@ -196,7 +196,8 @@ impl LinkEndpoint {
     /// Dials `peer` on every one of `paths` at once, and through the
     /// relay when `through_relay`, until a packet from the peer arrives on
     /// one: a launch's first flight to a host, before anything says which
-    /// path works. A peer some path already carries is dialled on it.
+    /// path works. A peer some path already carries, with a link up since
+    /// its last went, is dialled on it.
     pub(crate) fn connect_on_all(
         &self,
         mut config: quinn::ClientConfig,
@@ -206,7 +207,7 @@ impl LinkEndpoint {
         server_name: &str,
     ) -> Result<quinn::Connecting, quinn::ConnectError> {
         let stand_in = self.socket.stand_in(peer);
-        if self.socket.path_of(stand_in).is_none() {
+        if self.socket.trusted_route(peer).is_none() {
             self.socket.send_on_all(peer, paths, through_relay);
         }
         config.token_store(self.tokens.for_server(Server::Host(peer)));

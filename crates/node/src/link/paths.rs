@@ -113,10 +113,17 @@ impl PathDriver {
     /// A link to `peer` came up on its connection at `stand_in`, on a path
     /// of `kind`.
     fn link_up_at(&self, link: LinkId, peer: HostId, stand_in: SocketAddr, kind: PathKind) {
-        if self.socket.peer_of(stand_in) != Some(peer) {
-            // A link this host dialled by address, a pairing's or a
-            // discovered host's, stays at the stand-in of whoever answered
-            // there, so no path of the peer's carries it. The peer still
+        // A link this host dialled by address, a pairing's, a discovered
+        // host's or a remembered address's, is still at the stand-in of
+        // whoever answered there: the handshake proved that is `peer`, so
+        // the stand-in becomes its, and quinn keeps the address it dialled.
+        let dialled = || {
+            self.socket.peer_of(stand_in).is_none()
+                && matches!(self.socket.path_of(stand_in), Some(Path::Direct(_)))
+                && self.socket.name(stand_in, peer)
+        };
+        if self.socket.peer_of(stand_in) != Some(peer) && !dialled() {
+            // Carried some other way than this connection: the peer still
             // has its machine, which a network change tells.
             let now_ms = self.now_ms();
             self.lock().machine(peer, now_ms);
@@ -125,6 +132,7 @@ impl PathDriver {
         let path = self.socket.path_of(stand_in);
         let mut state = self.lock();
         let now_ms = self.now_ms();
+        self.socket.reclaim(peer);
         let machine = state.machine(peer, now_ms);
         let first = machine.links.is_empty();
         machine.links.insert(link);
@@ -160,6 +168,7 @@ impl PathDriver {
         machine.links.remove(&link);
         if machine.links.is_empty() {
             machine.kind = None;
+            self.socket.release(peer);
             self.step(&mut state, peer, vec![Input::LinkDown]);
         }
     }
@@ -835,7 +844,24 @@ mod tests {
     /// to the same stand-in all along, and the stream never notices.
     #[tokio::test(flavor = "multi_thread")]
     async fn path_moves_a_link_from_lan_to_relay_and_back_with_its_stream_open() {
-        let linked = linked(true).await;
+        moves_from_lan_to_relay_and_back(linked(true).await).await;
+    }
+
+    /// A link the laptop dialled at the desk's address, as a pairing or a
+    /// discovered host's is, is named for the desk once its handshake
+    /// proves it, and moves as one the desk dialled does.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn path_moves_a_link_dialled_by_address_as_any_other() {
+        let linked = linked_dialling(true, true).await;
+        assert_eq!(
+            linked.laptop_paths.socket.peer_of(linked.client.remote_address()),
+            Some(linked.desk),
+            "the dial's stand-in is the desk's"
+        );
+        moves_from_lan_to_relay_and_back(linked).await;
+    }
+
+    async fn moves_from_lan_to_relay_and_back(linked: Linked) {
         let server = linked.server.clone();
         tokio::spawn(async move {
             let (mut send, mut recv) = server.accept_bi().await.unwrap();

@@ -388,6 +388,9 @@ struct PeerState {
     /// What went out while the route sends on every candidate, for a
     /// path that joins it late.
     flight: Option<Flight>,
+    /// The host's last link went: its route still sends what its closing
+    /// connection has left, but no dial trusts it.
+    released: bool,
 }
 
 /// A link's first flight, while no one path carries it yet.
@@ -518,6 +521,7 @@ impl State {
                     heard: now,
                     expiry,
                     flight: None,
+                    released: false,
                 },
             );
         }
@@ -621,11 +625,15 @@ impl State {
     /// path machine probes a path before it carries the link there, and a
     /// packet it sends on a path to another of this host's addresses may
     /// leave from another of its own, which this host must know it by
-    /// before the link's packets follow.
+    /// before the link's packets follow. An address a connection is still
+    /// unnamed at, a dial this host made there, keeps its packets until
+    /// that connection's handshake names it: quinn would drop its answers
+    /// arriving as the host's.
     fn probed_from(&mut self, host: HostId, arrival: Arrival) {
         if let Arrival::Udp(addr) = arrival
             && self.peers.contains_key(&Peer::Host(host))
             && self.by_addr.get(&addr) != Some(&host)
+            && !self.peers.contains_key(&Peer::Unnamed(Path::Direct(addr)))
         {
             self.learn(host, Path::Direct(addr));
         }
@@ -675,24 +683,32 @@ impl State {
             peer.flight = None;
         }
         peer.route = route;
+        peer.released = false;
     }
 
-    /// A packet from `peer` arrived on `path`: if its first flight went
-    /// out on that path among others, that path carries it from now on.
+    /// A packet from `peer` arrived on `path` while its first flight goes
+    /// out on every candidate: that path carries it from now on, whether
+    /// or not the flight named it, since it is where the peer answers (a
+    /// host known at another address, or dialling this host itself while
+    /// its dial found no candidate).
     fn carried_by(&mut self, peer: Peer, path: Path) {
         let Some(held) = self.peers.get_mut(&peer) else {
             return;
         };
         let carrying = match &held.route {
-            Route::All(paths) => paths
-                .iter()
-                .copied()
-                .find(|candidate| match (candidate, path) {
-                    (Path::Direct(a) | Path::Punched(a), Path::Direct(b) | Path::Punched(b)) => {
-                        *a == b
-                    }
-                    (candidate, path) => *candidate == path,
-                }),
+            Route::All(paths) => Some(
+                paths
+                    .iter()
+                    .copied()
+                    .find(|candidate| match (candidate, path) {
+                        (
+                            Path::Direct(a) | Path::Punched(a),
+                            Path::Direct(b) | Path::Punched(b),
+                        ) => *a == b,
+                        (candidate, path) => *candidate == path,
+                    })
+                    .unwrap_or(path),
+            ),
             _ => None,
         };
         if let Some(carrying) = carrying {
@@ -930,7 +946,9 @@ impl LinkSocket {
         if let Some(known) = state.peers.get(&Peer::Host(host)) {
             let readdressed = match &known.route {
                 Route::Unset => true,
-                Route::Carrying(carrying) => addressed(*carrying) && addressed(path),
+                Route::Carrying(carrying) => {
+                    known.released || (addressed(*carrying) && addressed(path))
+                }
                 Route::All(_) => false,
             };
             if !readdressed {
@@ -955,6 +973,36 @@ impl LinkSocket {
         }
         state.set_route(host, Route::Carrying(path));
         true
+    }
+
+    /// `peer`'s last link went. Its route stays, so what the closing
+    /// connection still sends goes out, but no dial trusts it: the next
+    /// dial's first flight goes out on every candidate rather than only on
+    /// the path the old link last used, which may be dead, and a connection
+    /// from the peer on any path names it afresh. Its next link, or any
+    /// route set, takes the release back.
+    pub fn release(&self, peer: HostId) {
+        if let Some(held) = self.lock().peers.get_mut(&Peer::Host(peer)) {
+            held.released = true;
+        }
+    }
+
+    /// `peer` has a link again: its route is trusted once more.
+    pub fn reclaim(&self, peer: HostId) {
+        if let Some(held) = self.lock().peers.get_mut(&Peer::Host(peer)) {
+            held.released = false;
+        }
+    }
+
+    /// Whether `peer`'s route is one a dial should trust: something
+    /// carries it on one path and its last link has not gone since.
+    pub fn trusted_route(&self, peer: HostId) -> Option<Path> {
+        let state = self.lock();
+        let held = state.peers.get(&Peer::Host(peer))?;
+        match held.route {
+            Route::Carrying(path) if !held.released => Some(path),
+            _ => None,
+        }
     }
 
     /// Carries `peer`'s packets on one path.
@@ -1928,6 +1976,61 @@ mod tests {
         assert_eq!(socket.peer_of(socket.stand_in_at(third)), None);
     }
 
+    /// A known host probing from an address this host is still dialling
+    /// unnamed leaves that address to the dial: quinn's client would drop
+    /// the handshake's answers arriving at the host's stand-in instead.
+    #[test]
+    fn socket_leaves_an_address_a_dial_is_unnamed_at_to_the_dial() {
+        let (fake, socket, _own) = fake_socket();
+        let peer = HostId::new_v4();
+        let (known, dialled): (SocketAddr, SocketAddr) = (
+            "127.0.0.1:7000".parse().unwrap(),
+            "192.168.1.9:7000".parse().unwrap(),
+        );
+        socket.set_carrying(peer, Path::Direct(known));
+        let dial = socket.stand_in_at(dialled);
+
+        fake.push(dialled, &encode_probe(peer, 7));
+        assert_eq!(receive(&socket), None);
+        fake.push(dialled, QUIC);
+        assert_eq!(
+            receive(&socket).map(|(at, _)| at),
+            Some(dial),
+            "the answer reaches the dial"
+        );
+        assert!(socket.name(dial, peer), "and its handshake names it");
+    }
+
+    /// A first flight's route collapses to the path the peer answers on,
+    /// even one the flight did not name: a host known at another address,
+    /// or a flight that found no candidate at all.
+    #[test]
+    fn socket_carries_a_first_flight_where_the_peer_answers() {
+        let (fake, socket, _own) = fake_socket();
+        let peer = HostId::new_v4();
+        let (named, elsewhere): (SocketAddr, SocketAddr) = (
+            "192.168.1.9:7000".parse().unwrap(),
+            "192.168.1.10:7000".parse().unwrap(),
+        );
+        socket.set_carrying(peer, Path::Direct(elsewhere));
+        socket.send_on_all(peer, vec![Path::Direct(named)], false);
+        fake.push(elsewhere, QUIC);
+        assert_eq!(
+            receive(&socket).map(|(at, _)| at),
+            Some(socket.stand_in(peer))
+        );
+        assert_eq!(socket.carrying(peer), Some(Path::Direct(elsewhere)));
+
+        socket.send_on_all(peer, Vec::new(), false);
+        fake.push(elsewhere, QUIC);
+        receive(&socket);
+        assert_eq!(socket.carrying(peer), Some(Path::Direct(elsewhere)));
+        socket
+            .try_send(&transmit(socket.stand_in(peer), QUIC))
+            .unwrap();
+        assert_eq!(fake.take_sent(), vec![(elsewhere, QUIC.to_vec())]);
+    }
+
     #[test]
     fn socket_largest_datagram_fits_ipv6_behind_the_header() {
         let (_fake, socket, _own) = fake_socket();
@@ -2309,6 +2412,36 @@ mod tests {
             socket.path_of(socket.stand_in(desk)),
             Some(Path::Forwarded(LinkId(5)))
         );
+    }
+
+    /// A host whose last link went keeps its route for what its closing
+    /// connection still sends, but no dial trusts it, and a connection
+    /// from it elsewhere names it there; its next link takes that back.
+    #[test]
+    fn socket_releases_a_host_whose_last_link_went() {
+        let (fake, socket, _own) = fake_socket();
+        let (old, new): (SocketAddr, SocketAddr) = (
+            "192.0.2.50:5000".parse().unwrap(),
+            "192.0.2.51:5000".parse().unwrap(),
+        );
+        let desk = HostId::new_v4();
+        let dialled = socket.stand_in_at(old);
+        assert!(socket.name(dialled, desk));
+        assert_eq!(socket.trusted_route(desk), Some(Path::Direct(old)));
+        socket.release(desk);
+        assert_eq!(socket.trusted_route(desk), None, "no dial trusts it");
+        socket.try_send(&transmit(dialled, QUIC)).unwrap();
+        assert_eq!(fake.take_sent(), vec![(old, QUIC.to_vec())]);
+        socket.reclaim(desk);
+        assert_eq!(socket.trusted_route(desk), Some(Path::Direct(old)));
+
+        socket.release(desk);
+        socket.set_carrying(desk, Path::Forwarded(LinkId(5)));
+        socket.release(desk);
+        fake.push(new, QUIC);
+        let (moved, _) = receive(&socket).unwrap();
+        assert!(socket.name(moved, desk), "named afresh where it came from");
+        assert_eq!(socket.trusted_route(desk), Some(Path::Direct(new)));
     }
 
     /// A sender whose handshake is done but that the socket cannot name,

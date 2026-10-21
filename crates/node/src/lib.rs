@@ -70,8 +70,8 @@ pub use dump::{
 pub use edge::{
     ACCOUNT_FILE, CloudLinkServer, CloudOptions, DUAL_STACK_ANY, DiscoveryFactory, Edge, EdgeError,
     EdgeOptions, FREE_TIER_REFRESH_INTERVAL, JwtCloudLinkAuthenticator, LAN_PORT_FILE, LINK_SOCKET,
-    LanOptions, LoopbackLink, Observed, RelayCarrier, RelayIdentity, RelayQuic, RelayServing,
-    UDP_BLOCKED_MEMORY, mdns_discovery,
+    LanOptions, LoopbackLink, Observed, RELAY_TOKEN_FILE, RelayCarrier, RelayIdentity, RelayQuic,
+    RelayServing, UDP_BLOCKED_MEMORY, mdns_discovery,
 };
 pub use forward::{ForwardError, HostNameError, Owner};
 pub use front_door::FrontDoor;

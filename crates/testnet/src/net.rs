@@ -1938,7 +1938,8 @@ impl Net {
     /// it learn that at once, as the host where a purchase or a
     /// cancellation happened does: an in-process host asks for its
     /// entitlement over its relay link. A process host's daemon offers no
-    /// socket that asks it to, so its profile is paused and resumed, which
+    /// socket that asks it to, so its profile is paused, the relay token it
+    /// keeps between launches forgotten, and the profile resumed, which
     /// dials the relay afresh for a credential of the new tier; its relay
     /// link drops for that moment.
     pub async fn set_tier(&mut self, account: &str, tier: TierDecl) -> Result<Ack, NetError> {
@@ -1998,6 +1999,14 @@ impl Net {
                 door.pause_profile(request.clone())
                     .await
                     .map_err(|status| NetError::Refused(Box::new(status)))?;
+                let kept = node::profile_dir(&self.host(&host)?.data_dir, profile)
+                    .join(node::RELAY_TOKEN_FILE);
+                match std::fs::remove_file(&kept) {
+                    Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                        return Err(NetError::Io(error));
+                    }
+                    _ => {}
+                }
                 door.resume_profile(request)
                     .await
                     .map_err(|status| NetError::Refused(Box::new(status)))?;

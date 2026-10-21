@@ -392,9 +392,8 @@ public struct AgentsHome: View {
             HStack(spacing: Space.s) {
                 chip(String(localized: "All"), nil, id: "all")
                 chip(
-                    model.needYou > 0
-                        ? String(localized: "Needs you \(model.needYou)") : String(localized: "Needs you"),
-                    .needsYou, id: "needsYou")
+                    String(localized: "Needs you"), .needsYou, id: "needsYou", count: model.needYou,
+                    spoken: String(localized: "Needs you \(model.needYou)"))
                 chip(String(localized: "Working"), .working, id: "working")
                 // Counted from the machines rather than the rows, so a list
                 // narrowed to one machine still offers the others.
@@ -409,21 +408,31 @@ public struct AgentsHome: View {
         .scrollIndicators(.hidden)
     }
 
-    private func chip(_ title: String, _ narrowing: FleetOnly?, id: String) -> some View {
+    /// A count rides after the name in a fainter ink, as a mail folder's
+    /// does, so the name still reads first.
+    private func chip(_ title: String, _ narrowing: FleetOnly?, id: String, count: Int = 0, spoken: String? = nil
+    ) -> some View {
         let on = only == narrowing
         return Button { only = narrowing } label: {
-            Text(title)
-                .designFont(.caption, design)
-                .fontWeight(.medium)
-                .foregroundStyle(on ? design.ground.color : design.ink.color)
-                .padding(.horizontal, Space.m)
-                .frame(height: 32)
-                .background(Capsule().fill(on ? design.ink.color : design.sunken.color))
-                .contentShape(Capsule())
+            HStack(spacing: Space.s) {
+                Text(title)
+                    .foregroundStyle(on ? design.ground.color : design.ink.color)
+                if count > 0 {
+                    Text(count, format: .number)
+                        .monospacedDigit()
+                        .foregroundStyle(on ? design.ground.color.opacity(0.6) : design.inkMuted.color)
+                }
+            }
+            .designFont(.caption, design)
+            .fontWeight(.medium)
+            .padding(.horizontal, Space.m)
+            .frame(height: 32)
+            .background(Capsule().fill(on ? design.ink.color : design.sunken.color))
+            .contentShape(Capsule())
         }
         .buttonStyle(.amuxControl)
         .accessibilityAddTraits(on ? .isSelected : [])
-        .identified("home.chip.\(id)", label: title, value: on ? "on" : "off")
+        .identified("home.chip.\(id)", label: count > 0 ? spoken ?? title : title, value: on ? "on" : "off")
     }
 
     /// A hairline under a row, starting where its text does, as a system

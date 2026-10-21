@@ -369,3 +369,63 @@ async fn first_flight_on_every_path_reaches_the_host_once() {
     laptop_daemon.shutdown().await.unwrap();
     desk_daemon.shutdown().await.unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_first_flight_with_no_ticket_to_an_address_that_never_answers_gives_up_in_time() {
+    let desk = Install::new();
+    let mut options = desk.options("boot-1", quiet_launch());
+    options.edge = lan(None);
+    let desk_daemon = node::start(options, None).await.unwrap();
+    let desk_edge = runtime(&desk_daemon, &desk).edge().unwrap();
+    let laptop = Install::new();
+    let mut options = laptop.options("boot-1", quiet_launch());
+    options.edge = lan(None);
+    let laptop_daemon = node::start(options, None).await.unwrap();
+    let laptop_edge = runtime(&laptop_daemon, &laptop).edge().unwrap();
+    let desk_id = desk_edge.host_id();
+    desk_edge.trust(&laptop_edge).await.unwrap();
+    laptop_edge.trust(&desk_edge).await.unwrap();
+    drop(laptop_edge);
+    laptop_daemon.shutdown().await.unwrap();
+
+    // The laptop remembers the desk at an address that takes packets and
+    // answers none, and has never linked to the desk, so holds no ticket
+    // for it: its dial there goes through a whole handshake.
+    let silent = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    let trust_file = laptop.profile_dir().join("trust.json");
+    let mut trust: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&trust_file).unwrap()).unwrap();
+    trust[desk_id.to_string()]["reachabilities"] = serde_json::json!([{
+        "type": "direct",
+        "addrs": [silent.local_addr().unwrap().to_string()],
+    }]);
+    std::fs::write(&trust_file, serde_json::to_vec_pretty(&trust).unwrap()).unwrap();
+    let mut options = laptop.options("boot-1", quiet_launch());
+    options.edge = lan(None);
+    let laptop_daemon = node::start(options, None).await.unwrap();
+    let laptop_runtime = runtime(&laptop_daemon, &laptop);
+    let laptop_edge = laptop_runtime.edge().unwrap();
+
+    // Well inside the QUIC idle timeout the dial would otherwise wait out.
+    let started = std::time::Instant::now();
+    let failed = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        laptop_edge.open_resumed(desk_id, vec![EarlyCall::SubscribeInventory]),
+    )
+    .await
+    .expect("the dial gives up within its handshake deadline");
+    assert!(failed.is_err(), "nothing answers at the remembered address");
+    assert!(started.elapsed() >= std::time::Duration::from_secs(1));
+
+    // The host's dial is free again: a dial to where the desk is goes
+    // ahead.
+    laptop_edge.dial(desk_id, desk_edge.lan_addr().unwrap());
+    assert!(
+        laptop_edge.wait_for_route(desk_id, PATIENCE).await,
+        "the laptop links to the desk at its real address"
+    );
+    drop((laptop_edge, laptop_runtime, desk_edge));
+    laptop_daemon.shutdown().await.unwrap();
+    desk_daemon.shutdown().await.unwrap();
+    drop(silent);
+}

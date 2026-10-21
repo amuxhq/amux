@@ -1198,7 +1198,10 @@ async fn read_proto<M: prost::Message + Default>(
 /// Takes `connecting` as far as it must go before the link can carry
 /// data: where the peer gave this endpoint a ticket, no further, and what
 /// is written next goes out as early data, watched until the handshake
-/// finishes within `deadline`; otherwise through the whole handshake.
+/// finishes within `deadline`; otherwise through the whole handshake,
+/// given up at `deadline` too. A dial to an address that never answers
+/// would otherwise hold the host's dial until the idle timeout, tens of
+/// seconds, and the dial to where the host really is would wait on it.
 async fn handshake(
     connecting: quinn::Connecting,
     deadline: std::time::Duration,
@@ -1208,7 +1211,11 @@ async fn handshake(
             let early = Early::start(connection.clone(), accepted, deadline);
             Ok((connection, Some(early)))
         }
-        Err(connecting) => Ok((connecting.await?, None)),
+        // Dropping the unfinished handshake closes its connection.
+        Err(connecting) => match tokio::time::timeout(deadline, connecting).await {
+            Ok(connection) => Ok((connection?, None)),
+            Err(_) => Err(ConnectError::Handshake(quinn::ConnectionError::TimedOut)),
+        },
     }
 }
 

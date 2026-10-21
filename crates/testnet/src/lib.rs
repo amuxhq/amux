@@ -98,6 +98,7 @@ mod probes;
 mod process;
 mod providers;
 mod relay;
+mod router;
 pub mod sim;
 mod topology;
 mod world;
@@ -114,6 +115,7 @@ pub use observe::{
     InventoryObserver, Observer, ObserverOf, PATIENCE, Stuck, holds_for, until, until_within,
 };
 pub use relay::{CREDENTIAL_TTL, RELAY_HOST, Relay};
+pub use router::{Router, RouterKind};
 pub use sim::{SimNet, SimOptions};
 pub use topology::{
     AccountDecl, AgentDecl, FakeKind, HostDecl, LinkDecl, Provider, RelayDecl, TierDecl, Topology,

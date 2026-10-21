@@ -256,6 +256,25 @@ them directly.
 | `pair_gate(from, to)` | The gate `from` dials to reach `to`'s LAN listener: give it to a pairing in place of `to`'s address. |
 | `block_udp(host, blocked)` | Drop every datagram on the host's way to the relay, so it falls back to TCP. |
 
+### Routers
+
+`Router` imitates the home router in front of a host, for the stories that decide whether two hosts can punch
+through to each other. It is the substrate under the host's link socket: the host's own address is a private one
+(`10.n.0.2`) nobody can reach, what it sends leaves from a public loopback port the router's table hands out, and
+what arrives passes only through a mapping the router's filter allows. A mapping nothing has used for the router's
+idle time expires, and the next packet out gets a new port. `public_addr_for(inner, dst)` says which public address
+packets to `dst` leave from now, which is what the relay sees.
+
+| `RouterKind` | Mapping | Inbound filter |
+| --- | --- | --- |
+| `Open` | none: the host's own address is public | anyone |
+| `Ordinary` | one public port for every destination | from any address and port the host sent to through it |
+| `Strict` | a public port per destination | only from the exact address and port that port was opened toward |
+
+A punch works behind `Ordinary`: the port the relay saw is the port the host punches from, so the peer's answer to
+the address the relay told it gets in. Behind `Strict` the punch leaves from a different port, and the answer to the
+relay's address is dropped.
+
 ## Growing a net while it runs
 
 A net may start with no hosts and grow, and every growth verb is on the door:

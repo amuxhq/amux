@@ -1,18 +1,114 @@
 use std::collections::{HashMap, VecDeque};
 use std::hash::Hash;
+use std::net::{IpAddr, SocketAddr};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::Instant;
 
-pub(crate) const EXTERNAL_QUIC_TLS_HANDSHAKE_RATE_LIMIT: usize = 10;
-pub(crate) const EXTERNAL_QUIC_TLS_HANDSHAKE_RATE_WINDOW: Duration = Duration::from_secs(60);
-pub(crate) const EXTERNAL_QUIC_TLS_HANDSHAKE_CONCURRENCY: usize = 128;
+pub(crate) const QUIC_HANDSHAKE_RATE_LIMIT: usize = 10;
+const QUIC_HANDSHAKE_RATE_WINDOW: Duration = Duration::from_secs(60);
+pub(crate) const QUIC_HANDSHAKE_CONCURRENCY: usize = 128;
 /// How soon one connection attempt may be sent a Retry again. A client that
 /// lost its Retry sends its Initial again only after a probe timeout, about
 /// a second at the start of a connection; anything sooner is a closing
 /// connection, which answers every packet, a Retry included, with another
 /// close.
-pub(crate) const QUIC_RETRY_REPEAT_INTERVAL: Duration = Duration::from_millis(500);
+const QUIC_RETRY_REPEAT_INTERVAL: Duration = Duration::from_millis(500);
+
+/// Which QUIC handshakes a listener takes on, before quinn allocates any
+/// connection or TLS state for them: the daemon's listener and the relay's
+/// decide alike. A sender whose address is unproven is answered with a
+/// Retry; each source may start `QUIC_HANDSHAKE_RATE_LIMIT` attempts a
+/// window, a token from an earlier connection skipping the Retry but not
+/// the limit; and at most `QUIC_HANDSHAKE_CONCURRENCY` handshakes run at
+/// once. A sender whose address needs no proof (one carried by a forwarder
+/// that admitted it, or over a byte stream it opened) skips the Retry and
+/// the per-source limit, not the concurrency.
+#[derive(Debug)]
+pub(crate) struct HandshakeAdmission {
+    retries: Mutex<RetryAdmission<IpAddr, quinn::ConnectionId>>,
+    slots: Arc<Semaphore>,
+    retries_sent: AtomicU64,
+}
+
+impl Default for HandshakeAdmission {
+    fn default() -> Self {
+        Self::with_limits(QUIC_HANDSHAKE_RATE_LIMIT, QUIC_HANDSHAKE_CONCURRENCY)
+    }
+}
+
+impl HandshakeAdmission {
+    pub(crate) fn with_limits(rate: usize, concurrency: usize) -> Self {
+        Self {
+            retries: Mutex::new(RetryAdmission::new(
+                rate,
+                QUIC_HANDSHAKE_RATE_WINDOW,
+                QUIC_RETRY_REPEAT_INTERVAL,
+            )),
+            slots: Arc::new(Semaphore::new(concurrency)),
+            retries_sent: AtomicU64::new(0),
+        }
+    }
+
+    /// Answers or drops `incoming` from `source` as these limits say, or
+    /// hands it back to be accepted, holding a handshake slot until the
+    /// permit is dropped. `proven` when the sender's address needs no
+    /// validation.
+    pub(crate) fn admit(
+        &self,
+        incoming: quinn::Incoming,
+        source: SocketAddr,
+        proven: bool,
+    ) -> Option<(quinn::Incoming, OwnedSemaphorePermit)> {
+        if !proven {
+            let attempt = incoming.orig_dst_cid();
+            let mut retries = self.retries.lock().unwrap_or_else(|e| e.into_inner());
+            if !incoming.remote_address_validated() {
+                match retries.admit(source.ip(), attempt) {
+                    Admission::Retry => {}
+                    Admission::Repeat => {
+                        incoming.ignore();
+                        return None;
+                    }
+                    Admission::Refused => {
+                        tracing::warn!(peer = %source, "QUIC handshake rate limit exceeded");
+                        incoming.ignore();
+                        return None;
+                    }
+                }
+                drop(retries);
+                tracing::debug!(peer = %source, "answering an unvalidated QUIC Initial with a Retry");
+                self.retries_sent.fetch_add(1, Ordering::Relaxed);
+                if let Err(error) = incoming.retry() {
+                    tracing::debug!(peer = %source, error = %error, "QUIC address was already validated");
+                    error.into_incoming().ignore();
+                }
+                return None;
+            }
+            if !retries.admit_validated(source.ip(), attempt) {
+                tracing::warn!(peer = %source, "QUIC handshake rate limit exceeded");
+                incoming.ignore();
+                return None;
+            }
+        }
+        match self.slots.clone().try_acquire_owned() {
+            Ok(permit) => Some((incoming, permit)),
+            Err(_) => {
+                tracing::warn!(peer = %source, "QUIC handshake concurrency limit exceeded");
+                incoming.refuse();
+                None
+            }
+        }
+    }
+
+    /// How many Retries unvalidated Initials were answered with.
+    pub(crate) fn retries_sent(&self) -> u64 {
+        self.retries_sent.load(Ordering::Relaxed)
+    }
+}
 
 /// Which unvalidated QUIC Initials a listener answers with a Retry. Each
 /// source may start `limit` connection attempts per window. An attempt is
@@ -23,7 +119,7 @@ pub(crate) const QUIC_RETRY_REPEAT_INTERVAL: Duration = Duration::from_millis(50
 /// in milliseconds and every host behind the address loses QUIC for the
 /// window.
 #[derive(Debug)]
-pub(crate) struct RetryAdmission<K, A> {
+struct RetryAdmission<K, A> {
     limit: usize,
     window: Duration,
     repeat: Duration,
@@ -38,7 +134,7 @@ struct Attempt<A> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Admission {
+enum Admission {
     /// Answer with a Retry.
     Retry,
     /// An attempt already answered moments ago: drop it quietly.
@@ -52,7 +148,7 @@ where
     K: Eq + Hash,
     A: Eq,
 {
-    pub(crate) fn new(limit: usize, window: Duration, repeat: Duration) -> Self {
+    fn new(limit: usize, window: Duration, repeat: Duration) -> Self {
         Self {
             limit,
             window,
@@ -61,7 +157,7 @@ where
         }
     }
 
-    pub(crate) fn admit(&mut self, source: K, attempt: A) -> Admission {
+    fn admit(&mut self, source: K, attempt: A) -> Admission {
         self.admit_at(source, attempt, Instant::now())
     }
 
@@ -91,7 +187,7 @@ where
     /// against its source's limit as a new attempt, so a token skips the
     /// round trip but never the limit; an attempt that answered a Retry
     /// was counted when the Retry went out.
-    pub(crate) fn admit_validated(&mut self, source: K, attempt: A) -> bool {
+    fn admit_validated(&mut self, source: K, attempt: A) -> bool {
         self.admit_validated_at(source, attempt, Instant::now())
     }
 

@@ -1,19 +1,15 @@
-use std::net::IpAddr;
 use std::time::Duration;
 
 use rustls::pki_types::CertificateDer;
 use thiserror::Error;
-use tokio::sync::{Mutex, Semaphore, mpsc, watch};
+use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
 use crate::driver::pairing::PairWindow as PairMode;
 use crate::identity::{self, IdentityError};
 use crate::link::link_log::PathKind;
 use crate::link::{InboundStream, LinkCtx, QuicCarrier, accepted_quic_bidi_stream, run_link};
-use crate::resource_limits::{
-    Admission, EXTERNAL_QUIC_TLS_HANDSHAKE_CONCURRENCY, EXTERNAL_QUIC_TLS_HANDSHAKE_RATE_LIMIT,
-    EXTERNAL_QUIC_TLS_HANDSHAKE_RATE_WINDOW, QUIC_RETRY_REPEAT_INTERVAL, RetryAdmission,
-};
+use crate::resource_limits::HandshakeAdmission;
 use crate::transport::{
     BoxedGrpcIo, Compressed, PreTrustPairingReachability, TrustedPeerConnections,
 };
@@ -61,8 +57,7 @@ pub(crate) struct TunnelDispatcher {
     trusted_tx: mpsc::Sender<BoxedGrpcIo>,
     pairing_tx: mpsc::Sender<BoxedGrpcIo>,
     handshake_timeout: Duration,
-    external_quic_retries: std::sync::Arc<Mutex<RetryAdmission<IpAddr, quinn::ConnectionId>>>,
-    external_quic_handshake_slots: std::sync::Arc<Semaphore>,
+    admission: std::sync::Arc<HandshakeAdmission>,
     link_ctx: Option<LinkCtx>,
 }
 
@@ -95,14 +90,7 @@ impl TunnelDispatcher {
             trusted_tx,
             pairing_tx,
             handshake_timeout,
-            external_quic_retries: std::sync::Arc::new(Mutex::new(RetryAdmission::new(
-                EXTERNAL_QUIC_TLS_HANDSHAKE_RATE_LIMIT,
-                EXTERNAL_QUIC_TLS_HANDSHAKE_RATE_WINDOW,
-                QUIC_RETRY_REPEAT_INTERVAL,
-            ))),
-            external_quic_handshake_slots: std::sync::Arc::new(Semaphore::new(
-                EXTERNAL_QUIC_TLS_HANDSHAKE_CONCURRENCY,
-            )),
+            admission: std::sync::Arc::default(),
             link_ctx: None,
         }
     }
@@ -145,58 +133,17 @@ impl TunnelDispatcher {
                 let path = forwarded.map_or_else(|| PathKind::of_addr(addr), |(_, kind)| kind);
                 let through = forwarded.map(|(through, _)| through);
 
-                // Stateless address validation and per-source admission both
-                // happen before accepting the Incoming, so quinn has not yet
-                // allocated connection or TLS handshake state. A host dialled
-                // through a forwarder needs neither: the forwarder names the
-                // sender, and carries only hosts it admitted.
-                if forwarded.is_none() && !incoming.remote_address_validated() {
-                    match dispatcher
-                        .admit_external_quic_handshake(addr.ip(), incoming.orig_dst_cid())
-                        .await
-                    {
-                        Admission::Retry => {}
-                        Admission::Repeat => {
-                            incoming.ignore();
-                            continue;
-                        }
-                        Admission::Refused => {
-                            tracing::warn!(peer = %addr, "external QUIC handshake rate limit exceeded");
-                            incoming.ignore();
-                            continue;
-                        }
-                    }
-                    tracing::debug!(peer = %addr, "answering an unvalidated QUIC Initial with a Retry");
-                    if let Err(error) = incoming.retry() {
-                        tracing::debug!(peer = %addr, error = %error, "QUIC address was already validated");
-                        error.into_incoming().ignore();
-                    }
+                // Admission happens before accepting the Incoming, so quinn
+                // has not yet allocated connection or TLS handshake state. A
+                // host dialled through a forwarder needs no Retry and counts
+                // against no source's limit: the forwarder names the sender,
+                // and carries only hosts it admitted.
+                let Some((incoming, permit)) =
+                    dispatcher
+                        .admission
+                        .admit(incoming, addr, forwarded.is_some())
+                else {
                     continue;
-                }
-                // A token from an earlier connection skips the Retry, not
-                // the limit.
-                if forwarded.is_none()
-                    && !dispatcher
-                        .external_quic_retries
-                        .lock()
-                        .await
-                        .admit_validated(addr.ip(), incoming.orig_dst_cid())
-                {
-                    tracing::warn!(peer = %addr, "external QUIC handshake rate limit exceeded");
-                    incoming.ignore();
-                    continue;
-                }
-                let permit = match dispatcher
-                    .external_quic_handshake_slots
-                    .clone()
-                    .try_acquire_owned()
-                {
-                    Ok(permit) => permit,
-                    Err(_) => {
-                        tracing::warn!(peer = %addr, "external QUIC handshake concurrency limit exceeded");
-                        incoming.refuse();
-                        continue;
-                    }
                 };
                 let dispatcher = dispatcher.clone();
                 let connection_shutdown = shutdown_rx.clone();
@@ -279,17 +226,6 @@ impl TunnelDispatcher {
             )
             .await
             .map_err(|_| DispatchError::ChannelClosed)
-    }
-
-    async fn admit_external_quic_handshake(
-        &self,
-        source: IpAddr,
-        attempt: quinn::ConnectionId,
-    ) -> Admission {
-        self.external_quic_retries
-            .lock()
-            .await
-            .admit(source, attempt)
     }
 
     async fn dispatch_quic(

@@ -6,7 +6,6 @@
 //! the two hosts is their own QUIC connection, pinned at pairing.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -24,10 +23,7 @@ use crate::link::quic::{stream_carrier_kind, stream_path};
 use crate::link::relaying::Relaying;
 use crate::link::socket::{LinkSocket, Path, PathId};
 use crate::link::{CarrierKind, ChannelPool, LinkEndpoint, QuicCarrier, run_link};
-use crate::resource_limits::{
-    Admission, EXTERNAL_QUIC_TLS_HANDSHAKE_CONCURRENCY, EXTERNAL_QUIC_TLS_HANDSHAKE_RATE_LIMIT,
-    EXTERNAL_QUIC_TLS_HANDSHAKE_RATE_WINDOW, QUIC_RETRY_REPEAT_INTERVAL, RetryAdmission,
-};
+use crate::resource_limits::HandshakeAdmission;
 use crate::routing::{
     AuthenticatedLinkContextProvider, AuthenticatedLinkUser, Capabilities, LinkCtx, LinkRegistry,
     LinkTokenAuthenticator, LiveLocalHost, local_host,
@@ -111,7 +107,7 @@ struct CloudLinkServerInner {
     /// The one core every account's links are paired by: accounts are
     /// kept apart by its adjacency, not by a core each.
     relaying: Arc<Relaying>,
-    retries: AtomicU64,
+    admission: HandshakeAdmission,
 }
 
 /// One account's side of the relay: the links its hosts hold here and the
@@ -176,7 +172,7 @@ impl CloudLinkServer {
                 identity,
                 local_host,
                 users: RwLock::new(HashMap::new()),
-                retries: AtomicU64::new(0),
+                admission: HandshakeAdmission::default(),
             }),
         }
     }
@@ -275,12 +271,6 @@ impl CloudLinkServer {
     ) -> JoinHandle<()> {
         let service = self.clone();
         let endpoint = endpoint.clone();
-        let slots = Arc::new(Semaphore::new(EXTERNAL_QUIC_TLS_HANDSHAKE_CONCURRENCY));
-        let mut admission = RetryAdmission::new(
-            EXTERNAL_QUIC_TLS_HANDSHAKE_RATE_LIMIT,
-            EXTERNAL_QUIC_TLS_HANDSHAKE_RATE_WINDOW,
-            QUIC_RETRY_REPEAT_INTERVAL,
-        );
         tokio::spawn(async move {
             let mut connection_tasks = tokio::task::JoinSet::new();
             loop {
@@ -311,33 +301,13 @@ impl CloudLinkServer {
                     _ => None,
                 };
                 let addr = endpoint.address_of(stand_in);
-                if stream.is_none() && !incoming.remote_address_validated() {
-                    match admission.admit(addr.ip(), incoming.orig_dst_cid()) {
-                        Admission::Retry => {}
-                        Admission::Repeat => {
-                            incoming.ignore();
-                            continue;
-                        }
-                        Admission::Refused => {
-                            tracing::warn!(peer = %addr, "cloud QUIC handshake rate limit exceeded");
-                            incoming.ignore();
-                            continue;
-                        }
-                    }
-                    service.inner.retries.fetch_add(1, Ordering::Relaxed);
-                    if let Err(error) = incoming.retry() {
-                        tracing::debug!(peer = %addr, error = %error, "cloud QUIC address was already validated");
-                        error.into_incoming().ignore();
-                    }
+                let Some((incoming, permit)) =
+                    service
+                        .inner
+                        .admission
+                        .admit(incoming, addr, stream.is_some())
+                else {
                     continue;
-                }
-                let permit = match slots.clone().try_acquire_owned() {
-                    Ok(permit) => permit,
-                    Err(_) => {
-                        tracing::warn!(peer = %addr, "cloud QUIC handshake concurrency limit exceeded");
-                        incoming.refuse();
-                        continue;
-                    }
                 };
                 let service = service.clone();
                 connection_tasks.spawn(async move {
@@ -386,10 +356,22 @@ impl CloudLinkServer {
         })
     }
 
+    /// The relay with a lower per-source handshake limit, before it serves.
+    #[cfg(test)]
+    fn with_handshake_rate_limit(mut self, rate: usize) -> Self {
+        Arc::get_mut(&mut self.inner)
+            .expect("set before the relay serves")
+            .admission = HandshakeAdmission::with_limits(
+            rate,
+            crate::resource_limits::QUIC_HANDSHAKE_CONCURRENCY,
+        );
+        self
+    }
+
     /// How many Retries the relay has answered unvalidated Initials with.
     #[doc(hidden)]
     pub fn retries_sent(&self) -> u64 {
-        self.inner.retries.load(Ordering::Relaxed)
+        self.inner.admission.retries_sent()
     }
 
     async fn link_ctx_for_user(&self, user_id: Uuid) -> LinkCtx {
@@ -658,6 +640,11 @@ mod tests {
     }
 
     async fn relay() -> Running {
+        relay_limited(crate::resource_limits::QUIC_HANDSHAKE_RATE_LIMIT).await
+    }
+
+    /// A relay taking `rate` handshakes a window from each source.
+    async fn relay_limited(rate: usize) -> Running {
         let rcgen::CertifiedKey { cert, signing_key } =
             rcgen::generate_simple_self_signed(vec![NAME.to_owned()]).unwrap();
         let der = rustls::pki_types::CertificateDer::from(cert.der().to_vec());
@@ -679,7 +666,8 @@ mod tests {
                 clock: Arc::new(SystemClock),
             },
             None,
-        );
+        )
+        .with_handshake_rate_limit(rate);
         let udp = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let tcp = listener.local_addr().unwrap();
@@ -873,6 +861,55 @@ mod tests {
             "the returning host presented its token instead"
         );
         second.close(0_u32.into(), b"done");
+        relay.serving.close();
+    }
+
+    /// A host presenting a token skips the Retry but not the relay's
+    /// per-source limit: its handshake counts as an attempt, so a source
+    /// that spent its attempts is not taken on again however it proves its
+    /// address.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn relay_admission_counts_a_validated_handshake_against_the_limit() {
+        let relay = relay_limited(2).await;
+        let udp_addr = relay.serving.udp_addr().unwrap();
+        let endpoint = LinkEndpoint::bind("127.0.0.1:0".parse().unwrap(), None).unwrap();
+        let first = endpoint
+            .connect_with(relay.client.clone(), udp_addr, NAME)
+            .unwrap()
+            .await
+            .unwrap();
+        patience::until("the relay's tokens to arrive", || {
+            let received = first.stats().frame_rx.new_token;
+            async move {
+                (received >= 2)
+                    .then_some(())
+                    .ok_or_else(|| format!("{received} tokens"))
+            }
+        })
+        .await
+        .unwrap();
+        first.close(0_u32.into(), b"done");
+        // The retried attempt was the first; a token is the second.
+        let second = endpoint
+            .connect_with(relay.client.clone(), udp_addr, NAME)
+            .unwrap()
+            .await
+            .unwrap();
+        second.close(0_u32.into(), b"done");
+        let third = endpoint
+            .connect_with(relay.client.clone(), udp_addr, NAME)
+            .unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_secs(1), third)
+                .await
+                .is_err(),
+            "a third attempt from the source is not taken on"
+        );
+        assert_eq!(
+            relay.server.retries_sent(),
+            1,
+            "both later dials had tokens"
+        );
         relay.serving.close();
     }
 }

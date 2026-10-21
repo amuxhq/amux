@@ -1519,7 +1519,10 @@ mod tests {
         assert_eq!(socket.peer_of(stand_in), Some(host));
         fake.push(dialler, QUIC);
         assert_eq!(receive(&socket).unwrap().0, stand_in);
-        assert!(socket.name(stand_in, host), "naming it again changes nothing");
+        assert!(
+            socket.name(stand_in, host),
+            "naming it again changes nothing"
+        );
         assert_eq!(socket.peer_of(stand_in), Some(host));
     }
 

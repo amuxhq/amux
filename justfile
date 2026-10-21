@@ -232,9 +232,11 @@ parked-check:
 
 # Check the protocol models at their nightly bounds: each model's ignored
 # test, one test binary after another, every core each. Names of test
-# targets (`just models-nightly family`) narrow it to those models. The whole
-# run takes about 50 minutes on a quiet twelve-core Mac; the bound leaves room
-# for a machine busy with other work, which slows every model by a third.
+# targets (`just models-nightly family`) narrow it to those models. On a
+# twelve-core Mac the models that finish take 3,362 s together (the README's
+# table) and the single daemon's peer runs past 4,000 s, so the whole run
+# takes over two hours: replication and the single daemon push it past the
+# bound, which leaves room for the rest on a machine busy with other work.
 models-nightly *TARGETS:
     if [ "${1-}" = -- ]; then shift; fi; targets=--tests; [ $# -eq 0 ] || targets=$(printf -- '--test %s ' "$@"); {{bounded}} 4800 cargo test --locked -p models $targets -- --ignored --nocapture
 

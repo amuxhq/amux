@@ -368,6 +368,13 @@ impl CloudLinkServer {
         self
     }
 
+    /// What the relay's forwarder has done with the packets hosts sent it
+    /// to forward, once it serves UDP.
+    #[doc(hidden)]
+    pub fn forward_counts(&self) -> Option<crate::link::forwarder::Counts> {
+        self.inner.relaying.forward_counts()
+    }
+
     /// How many Retries the relay has answered unvalidated Initials with.
     #[doc(hidden)]
     pub fn retries_sent(&self) -> u64 {

@@ -595,6 +595,24 @@ fn relay_tcp_unreachable(hosts: &'static [&'static str]) -> testnet::NetOptions 
     }
 }
 
+/// Net options under which `hosts` reach the relay over UDP alone, as
+/// [`relay_tcp_unreachable`] has it, and each launch sends a first flight
+/// to every host the profile remembers, as a daemon and the phone always
+/// do: the net otherwise has only hosts with a listener dial.
+fn launching_through_the_relay(hosts: &'static [&'static str]) -> testnet::NetOptions {
+    let unreachable = relay_tcp_unreachable(hosts);
+    let closed = unreachable.edge.expect("the relay's TCP closed");
+    testnet::NetOptions {
+        edge: Some(std::sync::Arc::new(move |host, edge| {
+            closed(host, edge);
+            if hosts.contains(&host) {
+                edge.dial = true;
+            }
+        })),
+        ..unreachable
+    }
+}
+
 /// A host on the relay alone, signed in to the account `ada`: no listener,
 /// no discovery.
 fn on_the_relay(name: &str) -> HostDecl {
@@ -710,4 +728,537 @@ fn says(events: &[wire::SessionEvent], said: &str) -> bool {
     events.iter().any(
         |event| matches!(&event.of, Some(wire::session_event::Of::Item(item)) if item.text == said),
     )
+}
+
+/// How long the gate in front of the laptop holds each datagram, each way:
+/// one round trip between the laptop and the desk is twice this.
+const ONE_WAY: std::time::Duration = std::time::Duration::from_millis(150);
+
+/// A desk and a laptop on one network whose every datagram between them
+/// crosses a gate holding it [`ONE_WAY`], paired at the gate's address and
+/// linked there, which the laptop now remembers as where the desk last
+/// answered.
+async fn linked_through_a_slow_network() -> Net {
+    let mut net = Net::start_with(
+        Topology::new()
+            .host_decl(undiscovered("desk"))
+            .host_decl(undiscovered("laptop"))
+            .agent(worker_saying("said after the launch")),
+        testnet::NetOptions {
+            gated_lan: true,
+            ..testnet::NetOptions::default()
+        },
+    )
+    .await
+    .unwrap();
+    net.set_net_faults(
+        "laptop",
+        testnet::Faults {
+            delay: ONE_WAY,
+            ..testnet::Faults::default()
+        },
+    )
+    .unwrap();
+    let started = start_pairing(&net, "desk", pin_window()).await.unwrap();
+    let gate = net.pair_gate("laptop", "desk").unwrap();
+    let pending = begin_pair(
+        &net,
+        "laptop",
+        Some(host_id(&net, "desk")),
+        begin_pair_request::Secret::Pin(pin_of(&started)),
+        vec![gate.to_string()],
+    )
+    .await
+    .expect("the laptop pairs with the desk through the gate");
+    confirm_pair(&net, "laptop", pending.token).await.unwrap();
+    until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
+    remembers_where_the_desk_answered(&net).await;
+    net
+}
+
+/// A host with a listener on the network `home` that discovery does not
+/// announce: its peers reach it only where they remember it answering.
+fn undiscovered(name: &str) -> HostDecl {
+    HostDecl {
+        discovery: false,
+        ..lan_host(name, "home")
+    }
+}
+
+/// Waits until the laptop has written down an address the desk answered
+/// at, which its next launch's first flight goes to.
+async fn remembers_where_the_desk_answered(net: &Net) {
+    let desk = wire::HostRef {
+        of: Some(wire::host_ref::Of::HostId(
+            host_id(net, "desk").as_bytes().to_vec(),
+        )),
+    };
+    until("the laptop to remember where the desk answered", || {
+        let remembered = edge(net, "laptop")
+            .peer_entry(desk.clone())
+            .map(|entry| entry.reachabilities.len());
+        async move {
+            match remembered {
+                Ok(0) => Err("nowhere yet".to_owned()),
+                Ok(_) => Ok(()),
+                Err(status) => Err(status.to_string()),
+            }
+        }
+    })
+    .await
+    .unwrap();
+}
+
+/// Stops `host`'s daemon and starts it again, as quitting and opening the
+/// app does, and returns how long `host`'s link log was before the launch.
+async fn relaunch(net: &mut Net, host: &str) -> usize {
+    net.stop_daemon(host).await.unwrap();
+    let mark = net.link_log(host).unwrap().len();
+    net.restart_daemon(host).await.unwrap();
+    mark
+}
+
+/// Waits for the line in `host`'s link log, past `mark`, saying its link
+/// to `peer` went through `event`, and returns it.
+async fn logged(
+    net: &Net,
+    host: &str,
+    peer: &str,
+    event: LinkTransition,
+    mark: usize,
+) -> node::link_log::LinkEvent {
+    let peer_id = host_id(net, peer);
+    let line = until(
+        &format!("{host}'s link log to say {event:?} for {peer}"),
+        || async {
+            let log = net.link_log(host).unwrap();
+            log.iter()
+                .skip(mark)
+                .find(|line| line.peer == peer_id && line.event == event)
+                .copied()
+                .ok_or_else(|| format!("{:?}", &log[mark.min(log.len())..]))
+        },
+    )
+    .await
+    .unwrap();
+    println!("{host}'s link log: {line:?}");
+    line
+}
+
+/// The first launch after two hosts come to trust each other has no ticket
+/// to resume with: a full handshake, no early data, and the catch-up at
+/// least two round trips after the first packet.
+#[tokio::test(flavor = "multi_thread")]
+async fn first_launch_full_handshake_costs_two_round_trips() {
+    let mut net = linked_through_a_slow_network().await;
+    // The laptop forgets every ticket the desk gave it, as on a first
+    // launch ever.
+    net.stop_daemon("laptop").await.unwrap();
+    let info = net.host("laptop").unwrap().clone();
+    std::fs::remove_dir_all(
+        node::profile_dir(&info.data_dir, info.profile).join(node::CLIENT_TICKETS_DIR),
+    )
+    .unwrap();
+    let mark = net.link_log("laptop").unwrap().len();
+    net.restart_daemon("laptop").await.unwrap();
+
+    let up = logged(&net, "laptop", "desk", LinkTransition::Up, mark).await;
+    assert!(!up.resumed, "nothing to resume: {up:?}");
+    assert_eq!(up.early_data, node::link_log::EarlyData::None);
+    let caught_up = logged(&net, "laptop", "desk", LinkTransition::CaughtUp, mark).await;
+    let ms = caught_up
+        .first_packet_to_catch_up_ms
+        .expect("the catch-up timed");
+    println!(
+        "full handshake: caught up {ms} ms after the first packet, one round trip {} ms",
+        2 * ONE_WAY.as_millis()
+    );
+    assert!(
+        u128::from(ms) >= 4 * ONE_WAY.as_millis(),
+        "two round trips at least: {ms} ms"
+    );
+    streams_live(&net, &["laptop"], "worker", "said after the launch").await;
+    net.shutdown().await.unwrap();
+}
+
+/// A relaunch resumes the link with the ticket the desk gave the laptop:
+/// its Hello and catch-up calls go as 0-RTT data the desk accepts, and the
+/// link log times the catch-up from the link's first packet.
+#[tokio::test(flavor = "multi_thread")]
+async fn resume_accepted_sends_the_relaunchs_calls_as_early_data() {
+    let mut net = linked_through_a_slow_network().await;
+    let mark = relaunch(&mut net, "laptop").await;
+
+    let up = logged(&net, "laptop", "desk", LinkTransition::Up, mark).await;
+    assert!(up.resumed, "{up:?}");
+    assert_eq!(up.early_data, node::link_log::EarlyData::Accepted);
+    let caught_up = logged(&net, "laptop", "desk", LinkTransition::CaughtUp, mark).await;
+    let ms = caught_up
+        .first_packet_to_catch_up_ms
+        .expect("the catch-up timed");
+    let round_trip = 2 * ONE_WAY.as_millis();
+    println!("resumed: caught up {ms} ms after the first packet, one round trip {round_trip} ms");
+    assert!(
+        u128::from(ms) >= round_trip,
+        "a round trip at least: {ms} ms"
+    );
+    streams_live(&net, &["laptop"], "worker", "said after the launch").await;
+    net.shutdown().await.unwrap();
+}
+
+/// The desk loses the tickets it issued while it is down, as a host whose
+/// store was wiped does: the laptop's relaunch offers its ticket and its
+/// calls as 0-RTT data, the desk can resume nothing and refuses the early
+/// data, and the laptop sends the same calls again once the handshake
+/// completes. The session is reached as on any launch.
+#[tokio::test(flavor = "multi_thread")]
+async fn resume_rejected_resends_the_early_calls_after_the_handshake() {
+    let mut net = linked_through_a_slow_network().await;
+    net.stop_daemon("laptop").await.unwrap();
+    net.stop_daemon("desk").await.unwrap();
+    let desk = net.host("desk").unwrap().clone();
+    std::fs::remove_dir_all(
+        node::profile_dir(&desk.data_dir, desk.profile).join(node::TICKETS_DIR),
+    )
+    .unwrap();
+    net.restart_daemon("desk").await.unwrap();
+    let mark = net.link_log("laptop").unwrap().len();
+    net.restart_daemon("laptop").await.unwrap();
+
+    let up = logged(&net, "laptop", "desk", LinkTransition::Up, mark).await;
+    assert!(!up.resumed, "the desk holds no ticket to resume: {up:?}");
+    assert_eq!(up.early_data, node::link_log::EarlyData::Rejected);
+    let caught_up = logged(&net, "laptop", "desk", LinkTransition::CaughtUp, mark).await;
+    assert_eq!(caught_up.early_data, node::link_log::EarlyData::Rejected);
+    let ms = caught_up
+        .first_packet_to_catch_up_ms
+        .expect("the catch-up timed");
+    println!(
+        "rejected: the calls went again after the handshake, caught up {ms} ms after the first packet"
+    );
+    streams_live(&net, &["laptop"], "worker", "said after the launch").await;
+    net.shutdown().await.unwrap();
+}
+
+/// The desk restarts while the laptop is away, keeping the tickets it
+/// issued: the laptop's next launch still resumes with 0-RTT accepted.
+#[tokio::test(flavor = "multi_thread")]
+async fn resume_after_host_restart_still_resumes() {
+    let mut net = linked_through_a_slow_network().await;
+    net.stop_daemon("laptop").await.unwrap();
+    net.stop_daemon("desk").await.unwrap();
+    net.restart_daemon("desk").await.unwrap();
+    let mark = net.link_log("laptop").unwrap().len();
+    net.restart_daemon("laptop").await.unwrap();
+
+    let up = logged(&net, "laptop", "desk", LinkTransition::Up, mark).await;
+    assert!(up.resumed, "{up:?}");
+    assert_eq!(up.early_data, node::link_log::EarlyData::Accepted);
+    let caught_up = logged(&net, "laptop", "desk", LinkTransition::CaughtUp, mark).await;
+    println!(
+        "the desk restarted; the laptop's launch resumed and caught up {:?} ms after the first packet",
+        caught_up.first_packet_to_catch_up_ms
+    );
+    streams_live(&net, &["laptop"], "worker", "said after the launch").await;
+    net.shutdown().await.unwrap();
+}
+
+/// The desk revokes the laptop while the laptop is away. The laptop still
+/// holds a ticket the desk gave it, and its next launch resumes with it:
+/// the desk refuses the resumed link with the revocation before serving
+/// anything it sent early, and the laptop reads the desk as no longer
+/// trusting it. Neither link log holds a link between the two.
+#[tokio::test(flavor = "multi_thread")]
+async fn revoked_ticket_refused_with_the_revocation() {
+    let mut net = linked_through_a_slow_network().await;
+    let worker = net.agent("worker").unwrap().id;
+    let desk = host_id(&net, "desk");
+    net.stop_daemon("laptop").await.unwrap();
+    let laptop = net.host("laptop").unwrap().clone();
+    let tickets =
+        node::profile_dir(&laptop.data_dir, laptop.profile).join(node::CLIENT_TICKETS_DIR);
+    assert!(
+        std::fs::read_dir(&tickets).unwrap().next().is_some(),
+        "the laptop keeps a ticket from the desk"
+    );
+    net.untrust("desk", "laptop").await.unwrap();
+    let (laptop_mark, desk_mark) = (
+        net.link_log("laptop").unwrap().len(),
+        net.link_log("desk").unwrap().len(),
+    );
+    net.restart_daemon("laptop").await.unwrap();
+
+    let mut fleet = net.observe_inventory("laptop").await.unwrap();
+    row_until(
+        &mut fleet,
+        desk,
+        "the laptop to read the desk as no longer trusting it",
+        |row| row.revoked == Some(true),
+    )
+    .await;
+    let refused = open_session(&edge(&net, "laptop"), desk, worker)
+        .await
+        .expect_err("a revoked host opens nothing");
+    for (host, peer, mark) in [
+        ("laptop", "desk", laptop_mark),
+        ("desk", "laptop", desk_mark),
+    ] {
+        let id = host_id(&net, peer);
+        let log = net.link_log(host).unwrap();
+        assert!(
+            log[mark..].iter().all(|line| line.peer != id),
+            "{host}'s link log holds no link to {peer}: {:?}",
+            &log[mark..]
+        );
+    }
+    println!(
+        "revoked: the laptop's resumed launch was refused with the revocation; it reads the desk \
+         as revoked and opens nothing there ({})",
+        refused.message()
+    );
+    net.shutdown().await.unwrap();
+}
+
+/// A desk and a laptop on the paid account `ada` with no way to each other
+/// but the relay, over UDP, linked through it; the laptop remembers the
+/// desk as reached through the relay. On the driven clock, signed in once
+/// `ttl` is the credentials' lifetime.
+async fn linked_through_the_relay(ttl: std::time::Duration) -> Net {
+    let net = Net::start_with(
+        Topology::new()
+            .relay(&["ada"])
+            .host_decl(off_the_relay("desk"))
+            .host_decl(off_the_relay("laptop"))
+            .agent(worker_saying("said through the relay")),
+        testnet::NetOptions {
+            clock: testnet::ClockMode::Driven,
+            ..launching_through_the_relay(&["desk", "laptop"])
+        },
+    )
+    .await
+    .unwrap();
+    net.relay().unwrap().set_credential_ttl(ttl);
+    net.sign_in("desk", "ada").await.unwrap();
+    net.sign_in("laptop", "ada").await.unwrap();
+    pair_through_the_relay(&net).await;
+    carried_by(&net, "laptop", "desk", PathKind::RelayUdp).await;
+    carried_by(&net, "desk", "laptop", PathKind::RelayUdp).await;
+    net
+}
+
+/// The laptop pairs with the desk through the relay, and so remembers the
+/// desk as reached there, and the two link through it.
+async fn pair_through_the_relay(net: &Net) {
+    let started = start_pairing(net, "desk", pin_window()).await.unwrap();
+    let pending = begin_pair(
+        net,
+        "laptop",
+        Some(host_id(net, "desk")),
+        begin_pair_request::Secret::Pin(pin_of(&started)),
+        Vec::new(),
+    )
+    .await
+    .expect("the laptop pairs with the desk through the relay");
+    confirm_pair(net, "laptop", pending.token).await.unwrap();
+    until_via(net, "laptop", "desk", LiveRoute::Relay).await;
+}
+
+/// A host with no listener and no discovery, signed in to nothing yet.
+fn off_the_relay(name: &str) -> HostDecl {
+    HostDecl {
+        name: name.to_owned(),
+        ..HostDecl::default()
+    }
+}
+
+/// A week, as the account service issues relay credentials.
+const WEEK: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 3600);
+/// How often a connected host refreshes its relay credential.
+const HOUR: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// A relaunch's first flight leaves through the relay before the relay has
+/// admitted the laptop's own link to it: the relay holds those packets and
+/// lets them through once it admits the laptop, and the link to the desk
+/// resumes through the relay.
+#[tokio::test(flavor = "multi_thread")]
+async fn hold_buffer_released_on_admission_carries_the_first_flight() {
+    let mut net = linked_through_the_relay(WEEK).await;
+    let before = net.relay().unwrap().forward_counts();
+    let mark = relaunch(&mut net, "laptop").await;
+
+    let up = logged(&net, "laptop", "desk", LinkTransition::Up, mark).await;
+    assert_eq!(up.path, PathKind::RelayUdp);
+    assert!(up.resumed, "{up:?}");
+    let after = net.relay().unwrap().forward_counts();
+    println!("the relay's forwarder before the relaunch {before:?}, after {after:?}");
+    assert!(after.held > before.held, "the first flight was held");
+    assert!(
+        after.released > before.released,
+        "and let through on admission"
+    );
+    streams_live(&net, &["laptop"], "worker", "said through the relay").await;
+    net.shutdown().await.unwrap();
+}
+
+/// The laptop relaunches holding a credential the relay no longer takes,
+/// and the account service refuses it a fresh one: the relay never admits
+/// its link, so the first flight it held for the desk is dropped, nothing
+/// is sent for it to the desk or back to the laptop, and no link between
+/// the two comes up.
+#[tokio::test(flavor = "multi_thread")]
+async fn hold_buffer_bad_token_drops_the_held_packets_unanswered() {
+    let mut net = Net::start_with(
+        Topology::new()
+            .relay(&["ada"])
+            .host_decl(on_the_relay("desk"))
+            .host_decl(off_the_relay("laptop"))
+            .agent(worker_saying("never said")),
+        testnet::NetOptions {
+            clock: testnet::ClockMode::Driven,
+            ..launching_through_the_relay(&["desk", "laptop"])
+        },
+    )
+    .await
+    .unwrap();
+    let relay = net.relay().unwrap();
+    // The relay's clock runs nine minutes ahead while the laptop signs in:
+    // the credential it keeps lapses at the relay a minute later, while the
+    // laptop still reads nine minutes left on it.
+    relay.run_ahead(std::time::Duration::from_secs(9 * 60));
+    net.sign_in("laptop", "ada").await.unwrap();
+    net.relay().unwrap().run_ahead(std::time::Duration::ZERO);
+    pair_through_the_relay(&net).await;
+
+    net.stop_daemon("laptop").await.unwrap();
+    net.advance(std::time::Duration::from_secs(2 * 60)).unwrap();
+    net.relay().unwrap().revoke("ada");
+    let before = net.relay().unwrap().forward_counts();
+    let (laptop_mark, desk_mark) = (
+        net.link_log("laptop").unwrap().len(),
+        net.link_log("desk").unwrap().len(),
+    );
+    net.restart_daemon("laptop").await.unwrap();
+
+    let relay = net.relay().unwrap();
+    let after = until("the held first flight to be dropped", || async {
+        let now = relay.forward_counts();
+        (now.held > before.held && now.dropped - before.dropped == now.held - before.held)
+            .then_some(now)
+            .ok_or_else(|| format!("before {before:?}, now {now:?}"))
+    })
+    .await
+    .unwrap();
+    println!("the relay's forwarder before the relaunch {before:?}, after {after:?}");
+    assert_eq!(
+        after.released, before.released,
+        "nothing held was let through"
+    );
+    assert_eq!(
+        after.forwarded, before.forwarded,
+        "nothing went to the desk for it"
+    );
+    // Long enough for a link the relay let through after all to show.
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    assert_eq!(relay.forward_counts().forwarded, before.forwarded);
+    for (host, peer, mark) in [
+        ("laptop", "desk", laptop_mark),
+        ("desk", "laptop", desk_mark),
+    ] {
+        let id = host_id(&net, peer);
+        let log = net.link_log(host).unwrap();
+        assert!(
+            log[mark..].iter().all(|line| line.peer != id),
+            "{host}'s link log holds no link to {peer}: {:?}",
+            &log[mark..]
+        );
+    }
+    println!(
+        "the relay refused the laptop's credential ({:?} presented): its first flight was held and dropped, the link never up",
+        relay.presented()
+    );
+    net.shutdown().await.unwrap();
+}
+
+/// A relaunch presents the relay credential the laptop kept and makes no
+/// call to the account service, and its link to the desk comes up through
+/// the relay as before.
+#[tokio::test(flavor = "multi_thread")]
+async fn token_relaunch_no_connect_reuses_the_kept_credential() {
+    let mut net = linked_through_the_relay(WEEK).await;
+    let connects = net.relay().unwrap().connects();
+    println!("signed in: the account service was called {connects:?}");
+    let mark = relaunch(&mut net, "laptop").await;
+
+    let up = logged(&net, "laptop", "desk", LinkTransition::Up, mark).await;
+    assert_eq!(up.path, PathKind::RelayUdp);
+    assert_eq!(
+        net.relay().unwrap().connects(),
+        connects,
+        "the relaunch made no call to the account service"
+    );
+    println!(
+        "relaunched: presented {:?}, the account service's connects unchanged",
+        net.relay().unwrap().presented()
+    );
+    streams_live(&net, &["laptop"], "worker", "said through the relay").await;
+    net.shutdown().await.unwrap();
+}
+
+/// The account lapses at the account service while its hosts' week-long
+/// credentials still say paid: the relay keeps forwarding until the hourly
+/// refresh brings it credentials saying free, then stops and tells both
+/// ends, and each link log says the link went down. The lapse is noticed
+/// within the hour.
+#[tokio::test(flavor = "multi_thread")]
+async fn token_lapse_within_hour_is_noticed_at_the_hourly_refresh() {
+    let net = linked_through_the_relay(WEEK).await;
+    let (desk, laptop) = (host_id(&net, "desk"), host_id(&net, "laptop"));
+    let mut told = [
+        ("desk", laptop, edge(&net, "desk").forward_refusals()),
+        ("laptop", desk, edge(&net, "laptop").forward_refusals()),
+    ];
+    let refresh_at = net.now_ms() + HOUR.as_millis() as i64;
+    tokio::time::timeout(PATIENCE, net.clock().unwrap().armed(refresh_at))
+        .await
+        .expect("the hourly refresh is armed");
+
+    net.relay()
+        .unwrap()
+        .set_tier("ada", node::harness::Tier::Free);
+    streams_live(&net, &["laptop"], "worker", "said through the relay").await;
+    for (host, _, refusals) in &mut told {
+        assert!(
+            refusals.try_recv().is_err(),
+            "{host} is told nothing before the refresh"
+        );
+    }
+    println!("lapsed at the account service: the relay still forwards on the credentials it holds");
+
+    net.advance(HOUR).unwrap();
+    for (host, peer, refusals) in &mut told {
+        let refusal = tokio::time::timeout(PATIENCE, refusals.recv())
+            .await
+            .unwrap_or_else(|_| panic!("{host} is told at the refresh"))
+            .unwrap();
+        assert_eq!(refusal, (*peer, wire::pb::ForwardRefusal::PaymentRequired));
+    }
+    for (host, peer) in [("desk", "laptop"), ("laptop", "desk")] {
+        let id = host_id(&net, peer);
+        until(&format!("{host}'s link to {peer} to go down"), || async {
+            let log = net.link_log(host).unwrap();
+            log.iter()
+                .rev()
+                .find(|line| line.peer == id)
+                .is_some_and(|line| line.event == LinkTransition::Down)
+                .then_some(())
+                .ok_or_else(|| format!("{:?}", log.last()))
+        })
+        .await
+        .unwrap();
+    }
+    println!(
+        "an hour on, the refresh presented {:?}: the relay stopped forwarding and both links went down",
+        net.relay().unwrap().presented()
+    );
+    net.shutdown().await.unwrap();
 }

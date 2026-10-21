@@ -121,6 +121,14 @@ impl Relaying {
         let _ = self.forwarding.set(Forwarding { forwarder, links });
     }
 
+    /// What the forwarder has done with the packets it was given, once
+    /// this forwards.
+    pub(crate) fn forward_counts(&self) -> Option<super::forwarder::Counts> {
+        self.forwarding
+            .get()
+            .map(|forwarding| forwarding.forwarder.counts())
+    }
+
     /// The core this relays with, for a test that must make it ask for a
     /// dump.
     #[cfg(test)]

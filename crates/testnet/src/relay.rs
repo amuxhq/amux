@@ -289,6 +289,13 @@ impl Relay {
         self.cloud.state.lock().unwrap().presented.clone()
     }
 
+    /// What the relay's forwarder has done with the packets hosts sent it
+    /// to forward: forwarded, held from senders not yet admitted, and of
+    /// those released or dropped.
+    pub fn forward_counts(&self) -> node::forwarder::Counts {
+        self.server.forward_counts().unwrap_or_default()
+    }
+
     /// Which hosts `account` holds relay links from, and how many each.
     pub async fn links(&self, account: &str) -> Vec<(Uuid, usize)> {
         match self.user(account) {
@@ -351,6 +358,12 @@ impl LinkTokenAuthenticator for Presented {
             .get(token)
             .cloned()
             .ok_or_else(|| tonic::Status::unauthenticated("unknown credential"))?;
+        // The account service's tokens carry their expiry, which the relay
+        // checks as it reads one: a lapsed credential is refused at Hello,
+        // never admitted until a timer finds it out.
+        if minted.expires_ms <= self.0.clock.now_ms() {
+            return Err(tonic::Status::unauthenticated("expired credential"));
+        }
         Ok(AuthenticatedLinkUser {
             user_id: minted.user,
             client_id: "cli".to_owned(),

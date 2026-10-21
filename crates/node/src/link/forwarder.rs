@@ -138,6 +138,22 @@ struct Hold {
     senders: HashMap<SocketAddr, SenderHold>,
     order: VecDeque<(u64, SocketAddr)>,
     bytes: usize,
+    counts: Counts,
+}
+
+/// What a forwarder has done with the packets it was given, since it
+/// started.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Counts {
+    /// Put on a link to their destination.
+    pub forwarded: u64,
+    /// Held from a sender not yet admitted.
+    pub held: u64,
+    /// Held, then let through the table on the sender's admission.
+    pub released: u64,
+    /// Held, then dropped unanswered: too old, crowded out, or the sender
+    /// was not admitted.
+    pub dropped: u64,
 }
 
 impl Hold {
@@ -158,6 +174,7 @@ impl Hold {
         if hold.packets.is_empty() {
             self.senders.remove(&sender);
         }
+        self.counts.dropped += 1;
         true
     }
 
@@ -415,6 +432,7 @@ impl Forwarder {
         });
         hold.bytes += payload.len();
         hold.order.push_back((seq, sender));
+        hold.counts.held += 1;
         Forwarded::Held
     }
 
@@ -424,7 +442,9 @@ impl Forwarder {
         let held = {
             let mut state = self.lock();
             state.hold.expire(self.now_ms(), self.hold_limits.for_ms);
-            state.hold.take(sender)
+            let held = state.hold.take(sender);
+            state.hold.counts.released += held.len() as u64;
+            held
         };
         for packet in held {
             self.on_packet(link, packet.dst, &packet.payload);
@@ -434,7 +454,17 @@ impl Forwarder {
     /// The link from `sender` was not admitted: its held packets are
     /// dropped unanswered.
     pub fn on_admission_failed(&self, sender: SocketAddr) {
-        self.lock().hold.take(sender);
+        let mut state = self.lock();
+        let dropped = state.hold.take(sender).len() as u64;
+        state.hold.counts.dropped += dropped;
+    }
+
+    /// What this forwarder has done with the packets it was given, counting
+    /// what it has held past its time as dropped.
+    pub fn counts(&self) -> Counts {
+        let mut state = self.lock();
+        state.hold.expire(self.now_ms(), self.hold_limits.for_ms);
+        state.hold.counts
     }
 
     fn lock(&self) -> MutexGuard<'_, State> {
@@ -448,7 +478,10 @@ impl Forwarder {
             .links
             .send(pair.to, &encode_delivered(pair.source, payload))
         {
-            Ok(()) => Forwarded::Sent,
+            Ok(()) => {
+                self.lock().hold.counts.forwarded += 1;
+                Forwarded::Sent
+            }
             Err(_) => Forwarded::Dropped(ForwardRefusal::NoRoute),
         }
     }
@@ -1027,6 +1060,15 @@ mod tests {
         // Released once.
         rig.forwarder.on_admitted(LinkId(1), sender);
         assert_eq!(rig.links.take(), vec![]);
+        assert_eq!(
+            rig.forwarder.counts(),
+            Counts {
+                forwarded: 2,
+                held: 2,
+                released: 2,
+                dropped: 0
+            }
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -1067,6 +1109,15 @@ mod tests {
             rig.links.take(),
             vec![sent(2, DESK, b"late")],
             "held one second, no longer"
+        );
+        assert_eq!(
+            rig.forwarder.counts(),
+            Counts {
+                forwarded: 1,
+                held: 3,
+                released: 1,
+                dropped: 2
+            }
         );
     }
 

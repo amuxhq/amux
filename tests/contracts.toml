@@ -645,6 +645,47 @@ tests = [
 ]
 
 [[contract]]
+id = "links-launch-resumes"
+source = "testing page"
+section = "Boundaries"
+claim = "Many daemons: a host's launch sends its first flight to every host it remembers; the first launch with no ticket for a host is a full handshake with no early data, a relaunch resumes with the ticket and its Hello and catch-up calls are accepted as 0-RTT data, a host that lost its tickets refuses the early data and the same calls go again after the handshake, and a host that restarted keeping its tickets is still resumed; each launch's link log says whether the link resumed, how its early data fared and how long the catch-up took from the first packet."
+tests = [
+  "testnet/spec_links::first_launch_full_handshake_costs_two_round_trips",
+  "testnet/spec_links::resume_accepted_sends_the_relaunchs_calls_as_early_data",
+  "testnet/spec_links::resume_rejected_resends_the_early_calls_after_the_handshake",
+  "testnet/spec_links::resume_after_host_restart_still_resumes",
+]
+
+[[contract]]
+id = "links-revoked-ticket"
+source = "testing page"
+section = "Boundaries"
+claim = "Many daemons: a host revoked while away that resumes with a ticket the revoking host gave it is refused with the revocation before anything it sent early is served, reads that host as revoked, and neither link log holds a link between the two."
+tests = [
+  "testnet/spec_links::revoked_ticket_refused_with_the_revocation",
+]
+
+[[contract]]
+id = "links-hold-buffer"
+source = "testing page"
+section = "Boundaries"
+claim = "Many daemons: a launch's first flight through the relay leaves before the relay admits the host's own link; the relay holds those packets and lets them through on admission, and the link resumes through the relay; when the relay refuses the host's credential the held packets are dropped, nothing is sent for them to the destination or back, and no link comes up."
+tests = [
+  "testnet/spec_links::hold_buffer_released_on_admission_carries_the_first_flight",
+  "testnet/spec_links::hold_buffer_bad_token_drops_the_held_packets_unanswered",
+]
+
+[[contract]]
+id = "links-relay-tokens"
+source = "testing page"
+section = "Boundaries"
+claim = "Many daemons: a relaunch presents the relay credential it kept and makes no call to the account service; a lapse at the account service is noticed at the next hourly refresh, when the relay stops forwarding, tells both ends, and each link log says the link went down."
+tests = [
+  "testnet/spec_links::token_relaunch_no_connect_reuses_the_kept_credential",
+  "testnet/spec_links::token_lapse_within_hour_is_noticed_at_the_hourly_refresh",
+]
+
+[[contract]]
 id = "boundary-client-model"
 source = "testing page"
 section = "Boundaries"
@@ -1319,6 +1360,7 @@ property = { crate = "models", machine = "relay forwarding", sentence = "nothing
 checker = "models/relay::every_relay_forwarding_promise_holds_at_ci_bounds"
 tests = [
   "relay-core/lib::tests::a_sender_not_yet_admitted_is_neither_forwarded_for_nor_told",
+  "testnet/spec_links::hold_buffer_bad_token_drops_the_held_packets_unanswered",
 ]
 
 [[contract]]
@@ -1330,6 +1372,7 @@ tests = [
   "relay-core/lib::tests::a_lapse_to_free_ends_every_pair_through_the_link_and_tells_both_ends",
   "relay-core/lib::tests::an_expired_token_ends_every_pair_through_the_link_until_a_fresh_one_comes",
   "testnet/spec_links::entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once",
+  "testnet/spec_links::token_lapse_within_hour_is_noticed_at_the_hourly_refresh",
 ]
 
 [[contract]]
@@ -1628,6 +1671,7 @@ checker = "models/single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
 tests = [
   "daemon-core/lib::links::tests::a_resumed_link_naming_the_key_pinned_for_its_peer_comes_up",
   "daemon-core/lib::links::tests::a_resumed_link_naming_a_key_not_pinned_is_refused_before_anything_rides_it",
+  "testnet/spec_links::resume_accepted_sends_the_relaunchs_calls_as_early_data",
 ]
 
 [[contract]]
@@ -1637,6 +1681,7 @@ property = { crate = "models", machine = "single daemon", sentence = "a host who
 checker = "models/single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
 tests = [
   "daemon-core/lib::links::tests::a_resumed_link_naming_a_key_not_pinned_is_refused_before_anything_rides_it",
+  "testnet/spec_links::revoked_ticket_refused_with_the_revocation",
 ]
 
 [[contract]]

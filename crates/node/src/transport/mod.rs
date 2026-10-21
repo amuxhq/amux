@@ -30,7 +30,7 @@ pub(crate) use tcp::configure_relay_tcp_keepalive;
 pub(crate) use tcp::tcp_incoming;
 use thiserror::Error;
 pub use tls::relay_quic_client_config_with_roots;
-pub(crate) use tls::{relay_quic_client_config, tls_connect_stream};
+pub(crate) use tls::{cloud_root_store, relay_quic_client_config_keeping, tls_connect_stream};
 use tonic::transport::{Endpoint, Server};
 
 pub(crate) type Result<T> = std::result::Result<T, TransportError>;

@@ -102,6 +102,16 @@ impl LinkEndpoint {
         self.resumption.client_config(identity, trust_store, peer)
     }
 
+    /// The configuration to dial the relay named `server_name` with,
+    /// trusting `roots`, offering the ticket the relay's last link left.
+    pub(crate) fn relay_config(
+        &self,
+        server_name: &str,
+        roots: rustls::RootCertStore,
+    ) -> Result<quinn::ClientConfig, crate::transport::TransportError> {
+        self.resumption.relay_config(server_name, roots)
+    }
+
     /// Keeps the tickets peers give this endpoint's dials in `dir`, one
     /// directory per peer and pinned key, so a relaunched process resumes.
     pub(crate) fn keeping_tickets(mut self, dir: std::path::PathBuf) -> Self {
@@ -411,11 +421,11 @@ impl QuicCarrier {
             .with_early(early))
     }
 
-    #[allow(dead_code)]
     pub(crate) async fn connect_relay(
         endpoint: &LinkEndpoint,
         host: &str,
         port: u16,
+        config: quinn::ClientConfig,
     ) -> Result<Self, ConnectError> {
         let addrs = tokio::net::lookup_host((host, port))
             .await
@@ -424,8 +434,6 @@ impl QuicCarrier {
                 port,
                 source,
             })?;
-        let config = crate::transport::relay_quic_client_config()
-            .map_err(|error| IdentityError::TlsConfig(error.to_string()))?;
         Self::connect_relay_candidates_with_config(endpoint, addrs, host, port, config).await
     }
 
@@ -2037,9 +2045,97 @@ mod tests {
         }
     }
 
-    /// A relay's configuration and a client's that trusts it, the client's
-    /// built once as a process builds the relay's.
-    fn relay_server_and_client() -> (quinn::ServerConfig, quinn::ClientConfig) {
+    #[tokio::test]
+    async fn a_relay_ticket_kept_on_disk_resumes_after_the_client_restarts() {
+        use crate::link::client_tickets::saved;
+
+        let tickets = SessionTickets::in_memory(16);
+        let (server_config, roots) = relay_server_issuing(&tickets);
+        let server = LinkEndpoint::bind(ANY_PORT.parse().unwrap(), Some(server_config)).unwrap();
+        let addr = server.local_addr().unwrap();
+        let profile = tempfile::tempdir().unwrap();
+        let tickets_dir = profile.path().join("client-tickets");
+        let relay_dir = tickets_dir.join("relay").join("relay.test");
+        // Each process dials from an endpoint of its own, its relay
+        // configuration built afresh.
+        let link = || async {
+            let client = LinkEndpoint::bind(ANY_PORT.parse().unwrap(), None)
+                .unwrap()
+                .keeping_tickets(tickets_dir.clone());
+            let config = client.relay_config("relay.test", roots.clone()).unwrap();
+            let dial = async {
+                let carrier = QuicCarrier::connect_relay_candidates_with_config(
+                    &client,
+                    [addr],
+                    "relay.test",
+                    addr.port(),
+                    config,
+                )
+                .await
+                .expect("the relay dial");
+                let (mut control, _source) = carrier.control();
+                super::super::carrier::write_message(&mut control, &hello_frame())
+                    .await
+                    .unwrap();
+                // The relay's answer comes after the ticket it gives.
+                let mut answer = carrier.accept_stream().await.expect("the relay's answer");
+                let mut byte = [0];
+                answer.read_exact(&mut byte).await.unwrap();
+                let early = carrier.handshake().await.unwrap();
+                carrier.close(pb::LinkCloseReason::UserShutdown);
+                early
+            };
+            let relay = async {
+                let (connection, handshaken) = server
+                    .endpoint
+                    .accept()
+                    .await
+                    .expect("the relay is open")
+                    .accept()
+                    .expect("the relay takes the connection")
+                    .into_0rtt()
+                    .unwrap_or_else(|_| panic!("a server's connection is usable at once"));
+                let (send, recv) = connection.accept_bi().await.unwrap();
+                read_proto::<pb::Message>(&mut EarlyRecv::plain(recv), wire::MESSAGE_SIZE_LIMIT)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                // The ticket goes once the handshake is done; answering
+                // after it, the client has the ticket when it closes.
+                handshaken.await;
+                let (mut reply, _) = connection.open_bi().await.unwrap();
+                reply.write_all(b"!").await.unwrap();
+                let _ = connection.closed().await;
+                drop(send);
+            };
+            tokio::join!(dial, relay).0
+        };
+
+        assert_eq!(link().await, EarlyData::None);
+        assert_eq!(saved(&relay_dir), 1, "the relay's ticket is on disk");
+
+        assert_eq!(
+            link().await,
+            EarlyData::Accepted,
+            "the relaunched process's Hello goes as early data"
+        );
+        assert_eq!(
+            tickets.redeemed(),
+            1,
+            "the relaunched process resumes with the ticket the last one saved"
+        );
+        assert_eq!(
+            saved(&relay_dir),
+            1,
+            "the ticket offered left the disk; the resumed link's took its place"
+        );
+    }
+
+    /// A relay's configuration, issuing tickets from `tickets`, and the
+    /// roots that trust it.
+    fn relay_server_issuing(
+        tickets: &Arc<SessionTickets>,
+    ) -> (quinn::ServerConfig, rustls::RootCertStore) {
         const NAME: &str = "relay.test";
         let rcgen::CertifiedKey { cert, signing_key } =
             rcgen::generate_simple_self_signed(vec![NAME.to_owned()]).expect("a certificate");
@@ -2049,11 +2145,18 @@ mod tests {
             rustls::pki_types::PrivateKeyDer::Pkcs8(rustls::pki_types::PrivatePkcs8KeyDer::from(
                 signing_key.serialize_der(),
             )),
-            &SessionTickets::in_memory(16),
+            tickets,
         )
         .expect("a server configuration");
         let mut roots = rustls::RootCertStore::empty();
         roots.add(der).expect("the certificate as a root");
+        (server, roots)
+    }
+
+    /// A relay's configuration and a client's that trusts it, the client's
+    /// built once as a process builds the relay's.
+    fn relay_server_and_client() -> (quinn::ServerConfig, quinn::ClientConfig) {
+        let (server, roots) = relay_server_issuing(&SessionTickets::in_memory(16));
         let client = crate::transport::relay_quic_client_config_with_roots(roots)
             .expect("a client configuration");
         (server, client)

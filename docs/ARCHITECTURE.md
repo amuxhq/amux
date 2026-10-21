@@ -668,8 +668,9 @@ moves the pin and the lockfile on a `rustls-bump/<version>` branch, opens a
 pull request to `main` and starts CI on the branch.
 
 Only `node::link::client_tickets` uses the patched API: it saves each ticket
-under `profiles/<id>/client-tickets/<peer>/<pinned key>/` as it is given,
-loads a peer's tickets when the peer's client configuration is first built
+under `profiles/<id>/client-tickets/<peer>/<pinned key>/` (the relay's
+under `client-tickets/relay/<relay name>/`) as it is given, loads a peer's
+tickets when the peer's client configuration is first built
 in a process, and deletes a ticket's file before handing it to a handshake,
 so each is offered once. Dropping the patch is removing the `Cargo.toml`
 line and having that module keep tickets in memory only: links still

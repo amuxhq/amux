@@ -23,8 +23,7 @@ use hyper::body::Incoming;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use node::harness::{
-    AuthenticatedLinkUser, LinkTokenAuthenticator, Tier, relay_quic_client_config_with_roots,
-    relay_quic_server_config_from_der,
+    AuthenticatedLinkUser, LinkTokenAuthenticator, Tier, relay_quic_server_config_from_der,
 };
 use node::{CloudLinkServer, CloudOptions, RelayIdentity, RelayQuic};
 use tokio::task::JoinHandle;
@@ -88,7 +87,7 @@ pub struct Relay {
     url: String,
     tcp: SocketAddr,
     quic: SocketAddr,
-    quic_client: quinn::ClientConfig,
+    quic_roots: rustls::RootCertStore,
     /// The relay's self-signed certificate, DER, for a client outside the
     /// net to trust its QUIC carrier by.
     quic_root: Vec<u8>,
@@ -103,7 +102,7 @@ impl Relay {
     /// Starts the relay and the cloud for `decl`'s accounts, their
     /// credentials timed by `clock`.
     pub async fn start(decl: &RelayDecl, clock: Arc<dyn Clock>) -> std::io::Result<Self> {
-        let (quic_server, quic_client, quic_root, quic_root_pem) = quic_configs();
+        let (quic_server, quic_roots, quic_root, quic_root_pem) = quic_configs();
         let udp = std::net::UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))?;
         let quic = udp.local_addr()?;
         let mut state = CloudState::default();
@@ -146,7 +145,7 @@ impl Relay {
             url,
             tcp,
             quic,
-            quic_client,
+            quic_roots,
             quic_root,
             quic_root_pem,
             serving,
@@ -311,7 +310,7 @@ impl Relay {
             relay_tcp: Some(self.tcp),
             relay_quic: Some(RelayQuic {
                 addr: gate.addr(),
-                client: self.quic_client.clone(),
+                roots: self.quic_roots.clone(),
             }),
             ..CloudOptions::default()
         }
@@ -533,7 +532,7 @@ fn status(code: u16, body: serde_json::Value) -> hyper::Response<Full<Bytes>> {
 /// A self-signed certificate for the relay's QUIC carrier, a client
 /// configuration that trusts only it, and the certificate itself, as DER
 /// and as PEM.
-fn quic_configs() -> (quinn::ServerConfig, quinn::ClientConfig, Vec<u8>, String) {
+fn quic_configs() -> (quinn::ServerConfig, rustls::RootCertStore, Vec<u8>, String) {
     let rcgen::CertifiedKey { cert, signing_key } =
         rcgen::generate_simple_self_signed(vec![RELAY_HOST.to_owned()])
             .expect("a relay certificate");
@@ -548,7 +547,5 @@ fn quic_configs() -> (quinn::ServerConfig, quinn::ClientConfig, Vec<u8>, String)
     .expect("the relay's QUIC server configuration");
     let mut roots = rustls::RootCertStore::empty();
     roots.add(der).expect("the relay certificate as a root");
-    let client =
-        relay_quic_client_config_with_roots(roots).expect("the relay's QUIC client configuration");
-    (server, client, cert.der().as_ref().to_vec(), cert.pem())
+    (server, roots, cert.der().as_ref().to_vec(), cert.pem())
 }

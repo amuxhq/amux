@@ -31,6 +31,7 @@ use std::time::{Duration, SystemTime};
 
 use ring::aead::{Aad, CHACHA20_POLY1305, LessSafeKey, NONCE_LEN, Nonce, UnboundKey};
 use ring::rand::{SecureRandom as _, SystemRandom};
+use rustls::pki_types::{ServerName, TrustAnchor};
 
 use super::client_tickets::ClientTickets;
 use crate::HostId;
@@ -39,6 +40,9 @@ use crate::trust::SharedTrustStore;
 
 /// The directory a profile keeps its ticket store in.
 pub const TICKETS_DIR: &str = "tickets";
+/// Beneath a profile's client tickets, the directory the relay's are kept
+/// in, one directory per relay name.
+const RELAY_TICKETS_DIR: &str = "relay";
 /// The file in the store holding the sealing keys and the token secret.
 const KEYS_FILE: &str = "keys";
 /// How long a ticket is honoured after it is issued.
@@ -468,6 +472,21 @@ fn private_file(path: &Path) -> io::Result<fs::File> {
     options.open(path)
 }
 
+/// `name` as one path component: itself where it is a plain host name,
+/// hex otherwise.
+fn file_name(name: &str) -> String {
+    let plain = !name.is_empty()
+        && !name.starts_with('.')
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'.' || byte == b'-');
+    if plain {
+        name.to_owned()
+    } else {
+        hex(name.as_bytes())
+    }
+}
+
 pub(crate) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
@@ -488,13 +507,16 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// The client configurations a profile dials its peers with, one per peer
-/// and pinned key, each holding the tickets that peer gave it. A peer
-/// paired again under a new key gets a new configuration: a ticket from
-/// the old key's holder resumes no link to the new one.
+/// The client configurations a profile dials its peers and the relay
+/// with, one per peer and pinned key, each holding the tickets that peer
+/// gave it. A peer paired again under a new key gets a new configuration:
+/// a ticket from the old key's holder resumes no link to the new one.
 #[derive(Default)]
 pub(crate) struct PeerResumption {
     configs: Mutex<HashMap<HostId, (Vec<u8>, quinn::ClientConfig)>>,
+    /// The relay's configurations by server name, each with the roots it
+    /// trusts.
+    relays: Mutex<HashMap<String, (Vec<TrustAnchor<'static>>, quinn::ClientConfig)>>,
     /// Where each peer's tickets are kept across processes; in memory
     /// when none.
     dir: Option<PathBuf>,
@@ -514,8 +536,46 @@ impl PeerResumption {
     pub(crate) fn keeping(dir: PathBuf) -> Self {
         Self {
             configs: Mutex::default(),
+            relays: Mutex::default(),
             dir: Some(dir),
         }
+    }
+
+    /// The configuration to dial the relay named `server_name` with,
+    /// trusting `roots`: the one the last dial used while the roots are
+    /// unchanged, so the relay's ticket is offered, and kept beneath
+    /// [`RELAY_TICKETS_DIR`] so a relaunched process's first relay link
+    /// resumes too.
+    pub(crate) fn relay_config(
+        &self,
+        server_name: &str,
+        roots: rustls::RootCertStore,
+    ) -> Result<quinn::ClientConfig, crate::transport::TransportError> {
+        let mut relays = lock(&self.relays);
+        if let Some((trusted, config)) = relays.get(server_name)
+            && *trusted == roots.roots
+        {
+            return Ok(config.clone());
+        }
+        let anchors = roots.roots.clone();
+        let tickets = match (&self.dir, ServerName::try_from(server_name.to_owned())) {
+            (Some(dir), Ok(server)) => Some((
+                Arc::new(ClientTickets::new(
+                    Some(dir.join(RELAY_TICKETS_DIR).join(file_name(server_name))),
+                    CLIENT_TICKETS,
+                )),
+                server,
+            )),
+            _ => None,
+        };
+        let config = crate::transport::relay_quic_client_config_keeping(
+            roots,
+            tickets
+                .as_ref()
+                .map(|(tickets, server)| (tickets.clone(), server)),
+        )?;
+        relays.insert(server_name.to_owned(), (anchors, config.clone()));
+        Ok(config)
     }
 
     /// The configuration to dial `peer` with: the one the last dial used

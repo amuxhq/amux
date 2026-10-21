@@ -38,7 +38,7 @@ pub(crate) async fn tls_connect_stream(
     Ok(tls_stream)
 }
 
-fn cloud_root_store() -> Result<rustls::RootCertStore> {
+pub(crate) fn cloud_root_store() -> Result<rustls::RootCertStore> {
     let mut root_store =
         rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     add_debug_cloud_root(&mut root_store)?;
@@ -80,20 +80,21 @@ fn add_debug_cloud_root(_root_store: &mut rustls::RootCertStore) -> Result<()> {
     Ok(())
 }
 
-/// The WebPKI client configuration for the cloud relay's QUIC front,
-/// built once per process: rustls offers a session ticket only under the
-/// configuration it was issued to.
-pub(crate) fn relay_quic_client_config() -> Result<quinn::ClientConfig> {
-    static CONFIG: std::sync::OnceLock<quinn::ClientConfig> = std::sync::OnceLock::new();
-    if let Some(config) = CONFIG.get() {
-        return Ok(config.clone());
-    }
-    let config = relay_quic_client_config_with_roots(cloud_root_store()?)?;
-    Ok(CONFIG.get_or_init(|| config).clone())
-}
-
 pub fn relay_quic_client_config_with_roots(
     roots: rustls::RootCertStore,
+) -> Result<quinn::ClientConfig> {
+    relay_quic_client_config_keeping(roots, None)
+}
+
+/// The configuration to dial the relay with, trusting `roots`, keeping
+/// the tickets the relay named `server` gives it in `tickets` (loaded into
+/// it now) when given, in memory otherwise.
+pub(crate) fn relay_quic_client_config_keeping(
+    roots: rustls::RootCertStore,
+    tickets: Option<(
+        Arc<crate::link::client_tickets::ClientTickets>,
+        &ServerName<'static>,
+    )>,
 ) -> Result<quinn::ClientConfig> {
     let mut tls = rustls::ClientConfig::builder_with_protocol_versions(&[&version::TLS13])
         .with_root_certificates(roots)
@@ -102,6 +103,13 @@ pub fn relay_quic_client_config_with_roots(
     // A relay link resuming with its ticket writes its Hello, the relay
     // token in it, as early data.
     tls.enable_early_data = true;
+    tls.resumption = match &tickets {
+        Some((tickets, _)) => rustls::client::Resumption::store(tickets.clone()),
+        None => crate::link::resumption::client_resumption(),
+    };
+    if let Some((tickets, server)) = tickets {
+        tickets.load(&tls, server);
+    }
     let crypto = quinn::crypto::rustls::QuicClientConfig::try_from(tls)
         .map_err(|error| TransportError::Config(error.to_string()))?;
     let mut config = quinn::ClientConfig::new(Arc::new(crypto));

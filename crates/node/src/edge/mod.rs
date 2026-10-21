@@ -181,12 +181,12 @@ pub struct CloudOptions {
     pub credentials: Option<Arc<dyn CredentialProvider>>,
 }
 
-/// Where a test's relay answers QUIC, and the client configuration that
-/// trusts its certificate.
+/// Where a test's relay answers QUIC, and the roots that trust its
+/// certificate.
 #[derive(Clone)]
 pub struct RelayQuic {
     pub addr: SocketAddr,
-    pub client: quinn::ClientConfig,
+    pub roots: rustls::RootCertStore,
 }
 
 impl RelayQuic {
@@ -196,9 +196,7 @@ impl RelayQuic {
         roots
             .add(rustls::pki_types::CertificateDer::from(der))
             .map_err(|error| error.to_string())?;
-        let client = crate::transport::relay_quic_client_config_with_roots(roots)
-            .map_err(|error| error.to_string())?;
-        Ok(Self { addr, client })
+        Ok(Self { addr, roots })
     }
 }
 

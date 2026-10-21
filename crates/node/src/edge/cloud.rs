@@ -550,10 +550,28 @@ async fn run_cloud_connection_with_details(
     stop_rx: watch::Receiver<bool>,
 ) -> std::result::Result<(), CloudConnectionError> {
     tracing::info!(host = %details.host, port = details.port, kept = details.kept, "connecting to cloud routing");
+    // One configuration for both carriers, kept by the profile's endpoint
+    // so the ticket the relay's last link left (in this process or the
+    // last) is offered and the Hello goes as early data.
+    let quic_override = ctx.transport.quic_override.clone();
+    let roots = match &quic_override {
+        Some(relay) => Ok(relay.roots.clone()),
+        None => crate::transport::cloud_root_store(),
+    };
+    let client = roots
+        .and_then(|roots| {
+            ctx.transport
+                .quic_endpoint
+                .relay_config(&details.host, roots)
+        })
+        .map_err(|error| CloudConnectionError::Retriable {
+            msg: format!("Connection failed: {error}"),
+            reset_backoff: false,
+        })?;
     let quic_endpoint = ctx.transport.quic_endpoint.clone();
     let quic_host = details.host.clone();
     let quic_port = details.port;
-    let quic_override = ctx.transport.quic_override.clone();
+    let quic_client = client.clone();
     let quic = async move {
         #[cfg(debug_assertions)]
         if std::env::var_os("AMUX_TEST_RELAY_UDP_BLOCKED").is_some() {
@@ -566,11 +584,13 @@ async fn run_cloud_connection_with_details(
                     [relay.addr],
                     &quic_host,
                     quic_port,
-                    relay.client,
+                    quic_client,
                 )
                 .await
             }
-            None => QuicCarrier::connect_relay(&quic_endpoint, &quic_host, quic_port).await,
+            None => {
+                QuicCarrier::connect_relay(&quic_endpoint, &quic_host, quic_port, quic_client).await
+            }
         }
         .map(|carrier| Arc::new(carrier) as Arc<dyn LinkCarrier>)
         .map_err(|error| error.to_string())
@@ -578,22 +598,11 @@ async fn run_cloud_connection_with_details(
     let tcp_host = details.host.clone();
     let tcp_port = details.port;
     let fixture_transport = ctx.transport.tcp_override;
-    let tcp_client = ctx
-        .transport
-        .quic_override
-        .as_ref()
-        .map(|relay| relay.client.clone());
     let tcp_endpoint = ctx.transport.quic_endpoint.clone();
     let tcp = async move {
         let stream = cloud_routing_stream(&tcp_host, tcp_port, fixture_transport)
             .await
             .map_err(|error| error.to_string())?;
-        let client = match tcp_client {
-            Some(client) => client,
-            None => {
-                crate::transport::relay_quic_client_config().map_err(|error| error.to_string())?
-            }
-        };
         QuicCarrier::connect_framed(
             &tcp_endpoint,
             stream,

@@ -116,12 +116,13 @@ impl PresenceRouting {
         }
     }
 
-    /// The larger bounds a nightly run explores: more failures, and the
-    /// relay's retry refused for the plan a second time in a row.
+    /// The larger bounds a nightly run explores: more failures, among them
+    /// the relay refusing for no route, and the relay's retry refused for
+    /// the plan a second time in a row. A fourth link up and a third down
+    /// multiply the states sevenfold, past what the nightly job can wait
+    /// for, so these keep the CI bounds' ups and downs.
     pub const fn nightly() -> Self {
         Self {
-            ups: 4,
-            downs: 3,
             faults: 3,
             payments: 2,
             no_route: true,

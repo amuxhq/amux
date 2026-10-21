@@ -19,6 +19,7 @@ use daemon_core::payload::ForwardRefusal;
 use relay_core::{Input, Output, Relay};
 use wire::pb;
 
+use super::carrier::LinkCarrier;
 use super::forwarder::{ForwardLinks, Forwarder, HoldLimits, LinkLimits};
 use super::link_log::PathKind;
 use super::socket::{ForwardSink, LinkSocket};
@@ -176,9 +177,12 @@ impl Relaying {
         out
     }
 
-    /// A link the core holds as up came from `stand_in` on the relay's
-    /// socket: its packets are forwarded from now on, those held for it
-    /// first, and refusals are written to `tx`.
+    /// A link to `host` the core holds as up runs on `carrier`, a
+    /// connection on the profile's socket: its packets are forwarded from
+    /// now on, those held for it first, and refusals are written to `tx`.
+    /// A link the far end dialled names its sender's stand-in by `host`, so
+    /// the host's packets are known by it whichever address they come from
+    /// next.
     ///
     /// `through` says the link reaches a forwarder this host sends through:
     /// the relay, or a paired daemon. Its forwarded packets are this host's
@@ -187,18 +191,31 @@ impl Relaying {
         &self,
         link: daemon_core::LinkId,
         tx: LinkOutputTx,
-        stand_in: Option<SocketAddr>,
+        host: HostId,
+        carrier: Arc<dyn LinkCarrier>,
         through: Option<PathKind>,
     ) {
-        let (Some(forwarding), Some(stand_in)) = (self.forwarding.get(), stand_in) else {
+        let (Some(forwarding), Some(stand_in)) = (self.forwarding.get(), carrier.remote_address())
+        else {
             return;
         };
-        if let Some(kind) = through
-            && let Some(socket) = forwarding.links.socket.upgrade()
-        {
-            socket.add_forwarding(link, stand_in, kind);
+        if let Some(socket) = forwarding.links.socket.upgrade() {
+            if carrier.accepted() {
+                socket.name(stand_in, host);
+            }
+            if let Some(kind) = through {
+                socket.add_forwarding(link, stand_in, kind);
+            }
         }
-        forwarding.links.admit(link, tx, stand_in);
+        forwarding.links.admit(
+            link,
+            Entry {
+                tx,
+                host,
+                carrier: Arc::downgrade(&carrier),
+                at: stand_in,
+            },
+        );
         forwarding.forwarder.on_admitted(link, stand_in);
     }
 
@@ -265,8 +282,9 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// The relay's links as the forwarder sends on them: each admitted link's
-/// stand-in on the socket and its control writer.
+/// The links the forwarder sends on, by link: each one's connection,
+/// whose remote stand-in says where its packets go now, and its control
+/// writer.
 struct RelayLinks {
     /// Weak: the socket holds these links as its forward sink, and a
     /// profile that stops must let its socket go.
@@ -277,26 +295,47 @@ struct RelayLinks {
 
 #[derive(Default)]
 struct Admitted {
-    links: HashMap<daemon_core::LinkId, (LinkOutputTx, SocketAddr)>,
+    links: HashMap<daemon_core::LinkId, Entry>,
+    /// The link each stand-in's forwarded packets arrive on: a cache of
+    /// where each link's connection was last seen.
     senders: HashMap<SocketAddr, daemon_core::LinkId>,
 }
 
+struct Entry {
+    tx: LinkOutputTx,
+    host: HostId,
+    /// Weak: the connection holds its endpoint and so the socket, whose
+    /// forward sink holds these links. The link registry holds it while
+    /// the link lives.
+    carrier: Weak<dyn LinkCarrier>,
+    /// The stand-in the connection was last seen at.
+    at: SocketAddr,
+}
+
 impl RelayLinks {
-    fn admit(&self, link: daemon_core::LinkId, tx: LinkOutputTx, stand_in: SocketAddr) {
+    fn admit(&self, link: daemon_core::LinkId, entry: Entry) {
         let mut admitted = lock(&self.admitted);
-        admitted.links.insert(link, (tx, stand_in));
-        admitted.senders.insert(stand_in, link);
+        admitted.senders.insert(entry.at, link);
+        admitted.links.insert(link, entry);
     }
 
+    /// The link is gone. Where it was the last link at its stand-in, the
+    /// address its host was reached at is let go, so a host turning up
+    /// there later is not taken for this one.
     fn forget(&self, link: daemon_core::LinkId) {
-        if let Some(socket) = self.socket.upgrade() {
+        let socket = self.socket.upgrade();
+        if let Some(socket) = &socket {
             socket.remove_forwarding(link);
         }
         let mut admitted = lock(&self.admitted);
-        if let Some((_, stand_in)) = admitted.links.remove(&link)
-            && admitted.senders.get(&stand_in) == Some(&link)
-        {
-            admitted.senders.remove(&stand_in);
+        let Some(entry) = admitted.links.remove(&link) else {
+            return;
+        };
+        admitted.senders.retain(|_, sender| *sender != link);
+        let shared = admitted.links.values().any(|other| other.at == entry.at);
+        drop(admitted);
+        if !shared && let Some(socket) = socket {
+            socket.unroute(entry.at);
         }
     }
 
@@ -304,20 +343,86 @@ impl RelayLinks {
         lock(&self.admitted).senders.contains_key(&stand_in)
     }
 
-    fn sender(&self, stand_in: SocketAddr) -> Option<daemon_core::LinkId> {
-        lock(&self.admitted).senders.get(&stand_in).copied()
+    /// The link whose forwarded packets arrive from `stand_in`: one seen
+    /// there, or one whose connection quinn has moved there since, after
+    /// its sender's NAT rebound or its network changed. True in the second
+    /// place: the link was found where it moved to.
+    fn sender(&self, stand_in: SocketAddr) -> Option<(daemon_core::LinkId, bool)> {
+        if let Some(link) = lock(&self.admitted).senders.get(&stand_in).copied() {
+            return Some((link, false));
+        }
+        let moved = lock(&self.admitted)
+            .links
+            .iter()
+            .map(|(link, entry)| (*link, entry.carrier.clone()))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .find(|(_, carrier)| {
+                carrier
+                    .upgrade()
+                    .is_some_and(|carrier| carrier.remote_address() == Some(stand_in))
+            })?
+            .0;
+        self.moved(moved, stand_in);
+        Some((moved, true))
+    }
+
+    /// Where `link`'s packets go now: its connection's stand-in at this
+    /// moment, which quinn moves when the far end's address changes.
+    fn current(&self, link: daemon_core::LinkId) -> Option<SocketAddr> {
+        let (carrier, at) = {
+            let admitted = lock(&self.admitted);
+            let entry = admitted.links.get(&link)?;
+            (entry.carrier.clone(), entry.at)
+        };
+        let now = carrier.upgrade()?.remote_address()?;
+        if now != at {
+            self.moved(link, now);
+            self.release_held(link, now);
+        }
+        Some(now)
+    }
+
+    /// `link`'s connection is at `stand_in` now: its host is known by the
+    /// address behind it from here on, and packets from it arrive on the
+    /// link.
+    fn moved(&self, link: daemon_core::LinkId, stand_in: SocketAddr) {
+        let mut admitted = lock(&self.admitted);
+        let Some(entry) = admitted.links.get_mut(&link) else {
+            return;
+        };
+        let accepted = entry
+            .carrier
+            .upgrade()
+            .is_some_and(|carrier| carrier.accepted());
+        let (old, host) = (entry.at, entry.host);
+        entry.at = stand_in;
+        if admitted.senders.get(&old) == Some(&link) {
+            admitted.senders.remove(&old);
+        }
+        admitted.senders.insert(stand_in, link);
+        drop(admitted);
+        if accepted && let Some(socket) = self.socket.upgrade() {
+            socket.name(stand_in, host);
+        }
+    }
+
+    /// What was held from `stand_in` before `link` was found there goes
+    /// through the table now.
+    fn release_held(&self, link: daemon_core::LinkId, stand_in: SocketAddr) {
+        if let Some(relaying) = self.relaying.upgrade()
+            && let Some(forwarding) = relaying.forwarding.get()
+        {
+            forwarding.forwarder.on_admitted(link, stand_in);
+        }
     }
 }
 
 impl ForwardLinks for RelayLinks {
     fn send(&self, link: daemon_core::LinkId, datagram: &[u8]) -> std::io::Result<()> {
-        let stand_in = lock(&self.admitted)
-            .links
-            .get(&link)
-            .map(|(_, stand_in)| *stand_in)
-            .ok_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::NotConnected, "the link is gone")
-            })?;
+        let stand_in = self.current(link).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotConnected, "the link is gone")
+        })?;
         self.socket
             .upgrade()
             .ok_or_else(|| {
@@ -330,7 +435,7 @@ impl ForwardLinks for RelayLinks {
         let Some(tx) = lock(&self.admitted)
             .links
             .get(&link)
-            .map(|(tx, _)| tx.clone())
+            .map(|entry| entry.tx.clone())
         else {
             return;
         };
@@ -361,7 +466,14 @@ struct Arrivals {
 impl ForwardSink for Arrivals {
     fn arrived(&self, sender: SocketAddr, dst: HostId, payload: &[u8]) {
         match self.links.sender(sender) {
-            Some(link) => self.forwarder.on_packet(link, dst, payload),
+            Some((link, moved)) => {
+                // Packets from the new address that came before quinn moved
+                // the connection there were held; they go first.
+                if moved {
+                    self.forwarder.on_admitted(link, sender);
+                }
+                self.forwarder.on_packet(link, dst, payload)
+            }
             None => self.forwarder.hold(sender, dst, payload),
         };
     }
@@ -369,7 +481,413 @@ impl ForwardSink for Arrivals {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
+    use std::io::IoSliceMut;
+    use std::task::{Context, Poll};
+    use std::time::Duration;
+
+    use futures_util::future::BoxFuture;
+    use quinn::AsyncUdpSocket;
+    use quinn::udp::RecvMeta;
+    use tokio::sync::mpsc;
+
     use super::*;
+    use crate::identity::DeviceIdentity;
+    use crate::link::carrier::{CarrierKind, ControlSink, ControlSource, OpenError};
+    use crate::link::quic::{DEVICE_SERVER_NAME, LinkEndpoint, QuicCarrier};
+    use crate::link::socket::{Datagrams, LinkId, Path, encode_delivered, encode_forwarded};
+    use crate::trust::{SharedTrustStore, TrustStore};
+
+    /// A short-header QUIC packet: the fixed bit set.
+    const QUIC: &[u8] = &[0x40, 1, 2, 3, 4];
+
+    /// An in-memory substrate: what was sent, and what to receive next.
+    #[derive(Default)]
+    struct Net {
+        sent: Mutex<Vec<(SocketAddr, Vec<u8>)>>,
+        incoming: Mutex<VecDeque<(SocketAddr, Vec<u8>)>>,
+    }
+
+    impl Net {
+        fn take_sent(&self) -> Vec<(SocketAddr, Vec<u8>)> {
+            std::mem::take(&mut lock(&self.sent))
+        }
+    }
+
+    impl Datagrams for Net {
+        fn send_to(&self, buf: &[u8], to: SocketAddr) -> std::io::Result<()> {
+            lock(&self.sent).push((to, buf.to_vec()));
+            Ok(())
+        }
+
+        fn poll_recv(
+            &self,
+            _cx: &mut Context<'_>,
+            buf: &mut [u8],
+        ) -> Poll<std::io::Result<(usize, SocketAddr)>> {
+            match lock(&self.incoming).pop_front() {
+                Some((from, datagram)) => {
+                    buf[..datagram.len()].copy_from_slice(&datagram);
+                    Poll::Ready(Ok((datagram.len(), from)))
+                }
+                None => Poll::Pending,
+            }
+        }
+
+        fn local_addr(&self) -> std::io::Result<SocketAddr> {
+            Ok("198.51.100.1:443".parse().unwrap())
+        }
+    }
+
+    /// One datagram from `from` reaches the socket: the stand-in quinn
+    /// would hear it at, or nothing where the socket kept it (a packet to
+    /// forward goes to the forwarder).
+    fn arrive(
+        net: &Net,
+        socket: &LinkSocket,
+        from: SocketAddr,
+        datagram: &[u8],
+    ) -> Option<SocketAddr> {
+        lock(&net.incoming).push_back((from, datagram.to_vec()));
+        let mut storage = [0u8; 2048];
+        let mut bufs = [IoSliceMut::new(&mut storage)];
+        let mut meta = [RecvMeta::default()];
+        let waker = futures_util::task::noop_waker();
+        let mut cx = Context::from_waker(&waker);
+        match socket.poll_recv(&mut cx, &mut bufs, &mut meta) {
+            Poll::Ready(Ok(1)) => Some(meta[0].addr),
+            Poll::Pending => None,
+            other => panic!("unexpected receive: {other:?}"),
+        }
+    }
+
+    /// A connection the far end dialled, at whichever stand-in quinn has
+    /// it at.
+    struct Dialled(Mutex<SocketAddr>);
+
+    impl Dialled {
+        fn at(stand_in: SocketAddr) -> Arc<Self> {
+            Arc::new(Self(Mutex::new(stand_in)))
+        }
+
+        /// quinn moved the connection: its packets came from elsewhere.
+        fn moved_to(&self, stand_in: SocketAddr) {
+            *lock(&self.0) = stand_in;
+        }
+    }
+
+    impl LinkCarrier for Dialled {
+        fn kind(&self) -> CarrierKind {
+            CarrierKind::RelayQuic
+        }
+
+        fn control(&self) -> (ControlSink, ControlSource) {
+            let (tx, _) = mpsc::channel(1);
+            let (_, rx) = mpsc::channel(1);
+            (ControlSink { tx }, ControlSource { rx })
+        }
+
+        fn open_stream(&self) -> BoxFuture<'_, Result<crate::link::ByteStream, OpenError>> {
+            Box::pin(async { Err(OpenError::LinkClosed) })
+        }
+
+        fn accept_stream(&self) -> BoxFuture<'_, Option<crate::link::ByteStream>> {
+            Box::pin(async { None })
+        }
+
+        fn close(&self, _reason: pb::LinkCloseReason) {}
+
+        fn closed(&self) -> BoxFuture<'_, pb::LinkCloseReason> {
+            Box::pin(std::future::pending())
+        }
+
+        fn remote_address(&self) -> Option<SocketAddr> {
+            Some(*lock(&self.0))
+        }
+
+        fn accepted(&self) -> bool {
+            true
+        }
+    }
+
+    fn core(host: HostId) -> daemon_core::HostId {
+        daemon_core::HostId(host.into_bytes())
+    }
+
+    /// Two hosts of one paid account hold links to a relay.
+    fn link_up(relaying: &Relaying, link: u64, host: HostId, user: relay_core::UserId) {
+        relaying.step([Input::LinkUp {
+            link: daemon_core::LinkId(link),
+            user,
+            host: core(host),
+            tier: Some(relay_core::Tier::Pro),
+            direct: None,
+            advertised: Vec::new(),
+        }]);
+    }
+
+    /// The relay keys a sender by its link, not the address it was first
+    /// seen at: the desk's network changes while it forwards to the phone,
+    /// and what it sent from the new address before quinn moved its
+    /// connection there was held, then goes on as soon as the link is
+    /// found there; the phone moving is followed at the next send; and the
+    /// desk's address is let go when its link goes.
+    #[test]
+    fn relaying_follows_a_sender_whose_connection_moved() {
+        let relay = HostId::new_v4();
+        let net = Arc::new(Net::default());
+        let socket = LinkSocket::bind(net.clone(), relay).unwrap();
+        let relaying = Relaying::new(relay);
+        relaying.forward_on(socket.clone());
+        let user = relay_core::UserId([7; 16]);
+        let (desk, phone) = (HostId::new_v4(), HostId::new_v4());
+        let (desk_lan, phone_lan): (SocketAddr, SocketAddr) = (
+            "203.0.113.10:6000".parse().unwrap(),
+            "203.0.113.20:6000".parse().unwrap(),
+        );
+        let desk_at = arrive(&net, &socket, desk_lan, QUIC).unwrap();
+        let phone_at = arrive(&net, &socket, phone_lan, QUIC).unwrap();
+        let (desk_link, phone_link) = (Dialled::at(desk_at), Dialled::at(phone_at));
+        for (link, host, carrier) in [(1, desk, desk_link.clone()), (2, phone, phone_link.clone())]
+        {
+            link_up(&relaying, link, host, user);
+            let (tx, _rx) = mpsc::channel(8);
+            relaying.admitted(daemon_core::LinkId(link), tx, host, carrier, None);
+        }
+        assert_eq!(
+            socket.peer_of(desk_at),
+            Some(desk),
+            "the admission named it"
+        );
+        assert_eq!(socket.peer_of(phone_at), Some(phone));
+
+        assert_eq!(
+            arrive(
+                &net,
+                &socket,
+                desk_lan,
+                &encode_forwarded(phone, b"\x40one")
+            ),
+            None
+        );
+        assert_eq!(
+            net.take_sent(),
+            vec![(phone_lan, encode_delivered(desk, b"\x40one"))]
+        );
+
+        // The desk's network changes. Its next packet to forward comes
+        // before quinn has moved its connection: held.
+        let desk_cell: SocketAddr = "192.0.2.99:41000".parse().unwrap();
+        assert_eq!(
+            arrive(
+                &net,
+                &socket,
+                desk_cell,
+                &encode_forwarded(phone, b"\x40two")
+            ),
+            None
+        );
+        assert!(net.take_sent().is_empty(), "held until the sender is known");
+        let moved = arrive(&net, &socket, desk_cell, QUIC).expect("for quinn");
+        desk_link.moved_to(moved);
+        assert_eq!(
+            arrive(
+                &net,
+                &socket,
+                desk_cell,
+                &encode_forwarded(phone, b"\x40three")
+            ),
+            None
+        );
+        assert_eq!(
+            net.take_sent(),
+            vec![
+                (phone_lan, encode_delivered(desk, b"\x40two")),
+                (phone_lan, encode_delivered(desk, b"\x40three")),
+            ],
+            "what was held went first"
+        );
+        assert_eq!(socket.peer_of(moved), Some(desk));
+        assert_eq!(socket.address_of(desk_at), Some(desk_cell));
+        assert_ne!(
+            socket.stand_in_at(desk_lan),
+            desk_at,
+            "the old address is let go"
+        );
+
+        // The phone moves: the next packet for it goes where quinn has it.
+        let phone_cell: SocketAddr = "192.0.2.77:52000".parse().unwrap();
+        phone_link.moved_to(arrive(&net, &socket, phone_cell, QUIC).unwrap());
+        assert_eq!(
+            arrive(
+                &net,
+                &socket,
+                desk_cell,
+                &encode_forwarded(phone, b"\x40four")
+            ),
+            None
+        );
+        assert_eq!(
+            net.take_sent(),
+            vec![(phone_cell, encode_delivered(desk, b"\x40four"))]
+        );
+        assert_eq!(socket.address_of(phone_at), Some(phone_cell));
+
+        // The desk's link goes: its address leads to no one.
+        relaying.step([Input::LinkDown {
+            link: daemon_core::LinkId(1),
+        }]);
+        assert_eq!(socket.path_of(moved), None);
+        let stranger = arrive(&net, &socket, desk_cell, QUIC).unwrap();
+        assert_eq!(socket.peer_of(stranger), None);
+    }
+
+    fn trusting(peers: &[&DeviceIdentity]) -> SharedTrustStore {
+        let mut trust = TrustStore::default();
+        for peer in peers {
+            trust
+                .upsert_paired_peer(
+                    peer.host_id,
+                    peer.public_key().to_vec(),
+                    "peer".to_string(),
+                    None,
+                    chrono::Utc::now(),
+                )
+                .unwrap();
+        }
+        Arc::new(std::sync::RwLock::new(trust))
+    }
+
+    fn loopback_endpoint(own: HostId, server: Option<quinn::ServerConfig>) -> LinkEndpoint {
+        LinkEndpoint::new(
+            LinkSocket::bind_dual_stack("127.0.0.1:0".parse().unwrap(), None).unwrap(),
+            own,
+            server,
+        )
+        .unwrap()
+    }
+
+    /// Probes `to` through the relay until an answer comes back, or the
+    /// time runs out.
+    async fn answered(
+        from: &LinkEndpoint,
+        answers: &mut mpsc::UnboundedReceiver<crate::link::socket::ProbeAnswered>,
+        to: HostId,
+        within: Duration,
+    ) -> bool {
+        let deadline = tokio::time::Instant::now() + within;
+        let mut nonce = 0;
+        while tokio::time::Instant::now() < deadline {
+            nonce += 1;
+            from.socket
+                .probe(to, Path::Forwarded(LinkId(1)), nonce)
+                .unwrap();
+            if let Ok(Some(answer)) =
+                tokio::time::timeout(Duration::from_millis(50), answers.recv()).await
+                && answer.from == to
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Over real QUIC on loopback: each host's network changes in turn
+    /// while it and the other probe each other through the relay, and the
+    /// probes are answered again well inside the hold's second, with no
+    /// link closing.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn relaying_carries_forwarded_traffic_across_a_sender_rebinding() {
+        let relay = DeviceIdentity::for_test(HostId::new_v4());
+        let hosts = [
+            DeviceIdentity::for_test(HostId::new_v4()),
+            DeviceIdentity::for_test(HostId::new_v4()),
+        ];
+        let relay_endpoint = loopback_endpoint(
+            relay.host_id,
+            Some(
+                relay
+                    .quic_server_config(trusting(&[&hosts[0], &hosts[1]]))
+                    .unwrap(),
+            ),
+        );
+        let relay_addr = relay_endpoint.local_addr().unwrap();
+        let relaying = Relaying::new(relay.host_id);
+        relaying.forward_on(relay_endpoint.socket.clone());
+        let user = relay_core::UserId([9; 16]);
+        let mut ends = Vec::new();
+        let mut carriers = Vec::new();
+        for (index, host) in hosts.iter().enumerate() {
+            let endpoint = loopback_endpoint(host.host_id, None);
+            let config = host
+                .quic_client_config_for_peer(trusting(&[&relay]), relay.host_id)
+                .unwrap();
+            let (dialled, accepted) = tokio::time::timeout(Duration::from_secs(10), async {
+                tokio::join!(
+                    async {
+                        endpoint
+                            .connect_with(config, relay_addr, DEVICE_SERVER_NAME)
+                            .unwrap()
+                            .await
+                            .unwrap()
+                    },
+                    async {
+                        relay_endpoint
+                            .endpoint
+                            .accept()
+                            .await
+                            .unwrap()
+                            .await
+                            .unwrap()
+                    }
+                )
+            })
+            .await
+            .expect("handshake completes");
+            let carrier: Arc<dyn LinkCarrier> = Arc::new(QuicCarrier::from_accepted_with_kind(
+                accepted,
+                CarrierKind::RelayQuic,
+            ));
+            let link = index as u64 + 1;
+            link_up(&relaying, link, host.host_id, user);
+            let (tx, rx) = mpsc::channel(8);
+            relaying.admitted(
+                daemon_core::LinkId(link),
+                tx,
+                host.host_id,
+                carrier.clone(),
+                None,
+            );
+            let via = endpoint.socket.stand_in_at(relay_addr);
+            endpoint
+                .socket
+                .add_forwarding(LinkId(1), via, PathKind::RelayUdp);
+            let answers = endpoint.socket.probe_answers();
+            carriers.push((carrier, rx));
+            ends.push((endpoint, answers, dialled));
+        }
+        let ids = [hosts[0].host_id, hosts[1].host_id];
+        for (from, to) in [(0, 1), (1, 0)] {
+            let (endpoint, answers, _) = &mut ends[from];
+            assert!(answered(endpoint, answers, ids[to], Duration::from_secs(5)).await);
+        }
+
+        for moving in [0, 1] {
+            let substrate =
+                LinkSocket::bind_dual_stack("127.0.0.1:0".parse().unwrap(), None).unwrap();
+            ends[moving].0.rebind(substrate).unwrap();
+            for (from, to) in [(moving, 1 - moving), (1 - moving, moving)] {
+                let (endpoint, answers, _) = &mut ends[from];
+                assert!(
+                    answered(endpoint, answers, ids[to], Duration::from_millis(900)).await,
+                    "host {from} reaches host {to} after host {moving} moved"
+                );
+            }
+        }
+        for (_, _, dialled) in &ends {
+            assert_eq!(dialled.close_reason(), None);
+        }
+    }
 
     /// A dump the relay core asks for leaves a file in the reports
     /// directory: the reason, the core's state when the window began,

@@ -634,6 +634,10 @@ impl LinkCarrier for QuicCarrier {
         (!self.alone).then(|| self.connection.remote_address())
     }
 
+    fn accepted(&self) -> bool {
+        self.connection.side().is_server()
+    }
+
     fn path_kind(&self) -> PathKind {
         self.path
     }

@@ -356,13 +356,6 @@ impl LinkRegistry {
                 displaced.push((id, writer));
             }
         }
-        // Packets are forwarded through a link on the profile's own socket:
-        // the host's link to the relay, over UDP or TCP, and a pinned link
-        // to a paired daemon. A link over a byte stream of its own has no
-        // stand-in there.
-        let on_socket = native_carrier
-            .as_ref()
-            .and_then(|carrier| carrier.remote_address());
         // A link admitted by a token is a relay's link to a host, which
         // forwards for the host rather than through it.
         let through = match (role, admission) {
@@ -374,12 +367,19 @@ impl LinkRegistry {
             (LinkRole::Peer, LinkAdmission::PinnedKey) => Some(PathKind::ViaDaemon),
             (_, LinkAdmission::CloudToken { .. }) => None,
         };
-        self.relaying.admitted(
-            link.core(),
-            outgoing_tx.clone(),
-            on_socket,
-            through.filter(|_| on_socket.is_some()),
-        );
+        // Packets are forwarded through a link on the profile's own socket:
+        // the host's link to the relay, over UDP or TCP, and a pinned link
+        // to a paired daemon. A link over a byte stream of its own has no
+        // stand-in there, and is passed over.
+        if let Some(carrier) = &native_carrier {
+            self.relaying.admitted(
+                link.core(),
+                outgoing_tx.clone(),
+                host.id,
+                carrier.clone(),
+                through,
+            );
+        }
         let new = NewLink {
             link: link.core(),
             host: &host,

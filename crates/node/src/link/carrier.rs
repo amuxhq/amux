@@ -75,6 +75,11 @@ pub trait LinkCarrier: Send + Sync + 'static {
     fn remote_address(&self) -> Option<std::net::SocketAddr> {
         None
     }
+    /// Whether the far end dialled this link. Its address is then the one
+    /// the far end sends from, and moves when the far end's network does.
+    fn accepted(&self) -> bool {
+        false
+    }
 
     fn path_stats(&self) -> String {
         String::new()

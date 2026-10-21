@@ -2974,3 +2974,86 @@ async fn an_attachment_at_the_stated_limit_stores_and_one_over_it_is_refused_nam
         "the refusal does not name the limit: {refusal:?}"
     );
 }
+
+/// The host behind the relay, not the one that opened the session, moves
+/// to another network mid-stream. Its socket rebinds; the relay finds its
+/// link at the new address, by the connection quinn moved there, and goes
+/// on forwarding both ways. The session carries on over the same link:
+/// neither end's link log has it going down, and the relay holds one link
+/// per host.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_host_behind_the_relay_rebinds_mid_stream_and_its_session_carries_on() {
+    use node::link_log::LinkTransition;
+    use provider_fakes::script::Step;
+
+    let say = |text: &str| Step::Text {
+        chunks: vec![text.to_owned()],
+    };
+    let wait = |gate: &str| Step::WaitFor { path: gate.into() };
+    let topology = Topology::new()
+        .relay(&["ada"])
+        .host_decl(relay_host("desk", "ada"))
+        .host_decl(relay_host("laptop", "ada"))
+        .agent(
+            testnet::AgentDecl::new("worker", "desk")
+                .prompt("Keep me posted.")
+                .steps(vec![
+                    wait("one"),
+                    say("before the move"),
+                    wait("two"),
+                    say("after the move"),
+                    Step::TurnEnd,
+                ]),
+        );
+    // Both hosts reach the relay over UDP, the path a network change moves.
+    let closed = std::net::TcpListener::bind("127.0.0.1:0")
+        .and_then(|listener| listener.local_addr())
+        .unwrap();
+    let options = testnet::NetOptions {
+        edge: Some(std::sync::Arc::new(move |_, edge| {
+            edge.cloud.relay_tcp = Some(closed);
+        })),
+        ..testnet::NetOptions::default()
+    };
+    let mut net = Net::start_with(topology, options).await.unwrap();
+    net.trust("desk", "laptop").await.unwrap();
+    net.trust("laptop", "desk").await.unwrap();
+    let (desk, laptop) = (host_id(&net, "desk"), host_id(&net, "laptop"));
+    let worker = net.agent("worker").unwrap().id;
+    assert_eq!(carrier(&net, "desk"), Some(RelayCarrier::Quic));
+    until_via(&net, "laptop", "desk", LiveRoute::Relay).await;
+    let mut session = open_session(&edge(&net, "laptop"), desk, worker)
+        .await
+        .unwrap();
+    net.open_gate("one").unwrap();
+    until_item(&mut session, "before the move").await;
+    let downs = |host: &str, peer: uuid::Uuid| {
+        net.link_log(host)
+            .unwrap()
+            .into_iter()
+            .filter(|line| line.peer == peer && line.event == LinkTransition::Down)
+            .count()
+    };
+    let before = (downs("laptop", desk), downs("desk", laptop));
+
+    println!("{:?}", net.change_network("desk").unwrap());
+    net.open_gate("two").unwrap();
+    until_item(&mut session, "after the move").await;
+    peer_inventory_hosts(&edge(&net, "laptop"), desk)
+        .await
+        .expect("the laptop's calls reach the desk at its new address");
+    assert_eq!(
+        (downs("laptop", desk), downs("desk", laptop)),
+        before,
+        "the link between them never went down"
+    );
+    let mut links = net.relay().unwrap().links("ada").await;
+    links.sort();
+    let mut expected = vec![(desk, 1), (laptop, 1)];
+    expected.sort();
+    assert_eq!(links, expected, "one relay link per host");
+    assert_eq!(edge(&net, "laptop").via(desk).await, LiveRoute::Relay);
+    println!("the desk moved under an open session; the relay carried it on");
+
+    net.shutdown().await.unwrap();
+}

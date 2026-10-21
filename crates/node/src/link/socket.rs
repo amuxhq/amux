@@ -257,7 +257,7 @@ enum Peer {
     Unnamed(Path),
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 enum Route {
     /// Nowhere to send yet: quinn's packets are dropped, as a lost packet
     /// would be, and quinn sends them again.
@@ -269,7 +269,35 @@ enum Route {
     All(Vec<Path>),
 }
 
+impl Route {
+    fn paths(&self) -> &[Path] {
+        match self {
+            Route::Unset => &[],
+            Route::Carrying(path) => std::slice::from_ref(path),
+            Route::All(paths) => paths,
+        }
+    }
+
+    /// The route no longer takes `path`.
+    fn drop_path(&mut self, path: Path) {
+        match self {
+            Route::Carrying(carrying) if *carrying == path => *self = Route::Unset,
+            Route::All(paths) => paths.retain(|candidate| *candidate != path),
+            _ => {}
+        }
+    }
+}
+
+/// A path that is a network address of the peer's own, rather than a
+/// forwarder or a byte stream.
+fn addressed(path: Path) -> bool {
+    matches!(path, Path::Direct(_) | Path::Punched(_))
+}
+
 struct PeerState {
+    /// Where quinn hears the peer now. A host's earlier stand-ins (an
+    /// unnamed sender's it was later known by) stay mapped to it, so a
+    /// connection quinn still holds on one keeps reaching it.
     stand_in: SocketAddr,
     route: Route,
 }
@@ -287,13 +315,16 @@ struct State {
     peers: HashMap<Peer, PeerState>,
     by_stand_in: HashMap<SocketAddr, Peer>,
     /// The host each direct or punched address leads to, learned from the
-    /// routes this host chose.
+    /// routes this host chose and the senders it named. An address is one
+    /// host's at a time, and a host lets go of its addresses when it is
+    /// named at a new one or its route is removed, so an address a host
+    /// left and another took (a reused LAN address, a NAT's port given to
+    /// someone else) never maps to the host that left.
     by_addr: HashMap<SocketAddr, HostId>,
     by_framed: HashMap<PathId, HostId>,
-    /// Each forwarding link's forwarder, by the forwarder's stand-in, and
-    /// what kind of path a link carried through it is.
+    /// Each forwarding link's forwarder, by a stand-in of the forwarder's,
+    /// and what kind of path a link carried through it is.
     forwarding: HashMap<LinkId, (SocketAddr, PathKind)>,
-    forwarders: HashMap<SocketAddr, LinkId>,
     framed: HashMap<PathId, Arc<dyn FramedIo>>,
     next_path: u64,
     inbound: VecDeque<(PathId, Vec<u8>)>,
@@ -318,38 +349,51 @@ impl State {
         stand_in
     }
 
+    /// Arrivals on `path` are `host`'s from now on. Whoever the address
+    /// led to before loses it from its route: one address, one host.
     fn learn(&mut self, host: HostId, path: Path) {
-        match path {
-            Path::Direct(addr) | Path::Punched(addr) => {
-                self.by_addr.insert(addr, host);
-            }
-            Path::Framed(id) => {
-                self.by_framed.insert(id, host);
-            }
-            Path::Forwarded(_) => {}
+        let previous = match path {
+            Path::Direct(addr) | Path::Punched(addr) => self.by_addr.insert(addr, host),
+            Path::Framed(id) => self.by_framed.insert(id, host),
+            Path::Forwarded(_) => None,
+        };
+        if let Some(previous) = previous.filter(|previous| *previous != host)
+            && let Some(peer) = self.peers.get_mut(&Peer::Host(previous))
+        {
+            peer.route.drop_path(path);
         }
     }
 
+    /// No address leads to `host` any more: it left them all.
+    fn unlearn_addresses(&mut self, host: HostId) {
+        self.by_addr.retain(|_, owner| *owner != host);
+    }
+
+    /// Carries `host` on `route`. Addresses its earlier routes took still
+    /// lead to it, so packets still in flight on a path it switched from
+    /// arrive as its own.
     fn set_route(&mut self, host: HostId, route: Route) {
-        let paths: Vec<Path> = match &route {
-            Route::Unset => Vec::new(),
-            Route::Carrying(path) => vec![*path],
-            Route::All(paths) => paths.clone(),
-        };
-        for path in paths {
-            self.learn(host, path);
-        }
         self.stand_in(Peer::Host(host));
+        for path in route.paths() {
+            self.learn(host, *path);
+        }
         self.peers
             .get_mut(&Peer::Host(host))
             .expect("stand-in just made")
             .route = route;
     }
 
+    /// The forwarding link whose forwarder is `peer`, if one is.
+    fn forwarding_of(&self, peer: Peer) -> Option<LinkId> {
+        self.forwarding
+            .iter()
+            .find(|(_, (via, _))| self.by_stand_in.get(via) == Some(&peer))
+            .map(|(link, _)| *link)
+    }
+
     /// The forwarding link whose forwarder sent this arrival, if one did.
     fn forwarder_of(&self, arrival: Arrival) -> Option<LinkId> {
-        let stand_in = self.peers.get(&self.sender(arrival))?.stand_in;
-        self.forwarders.get(&stand_in).copied()
+        self.forwarding_of(self.sender(arrival))
     }
 
     /// The peer a QUIC packet came from: the host that path leads to, or an
@@ -447,8 +491,9 @@ impl LinkSocket {
             .clone()
     }
 
-    /// The address quinn dials and hears `peer` at, the same for as long as
-    /// the socket lives.
+    /// The address quinn dials and hears `peer` at. It changes only when
+    /// the peer is named afresh at a stand-in it was first heard at
+    /// unnamed; the earlier one keeps reaching it.
     pub fn stand_in(&self, peer: HostId) -> SocketAddr {
         self.lock().stand_in(Peer::Host(peer))
     }
@@ -499,24 +544,65 @@ impl LinkSocket {
     }
 
     /// Gives an unnamed sender's stand-in its host once the handshake says
-    /// who it is; quinn keeps the same address. False when the stand-in is
-    /// not an unnamed sender's, or the host already has a stand-in.
+    /// who it is; quinn keeps the same address, and the host's packets on
+    /// that path arrive from it.
+    ///
+    /// A host already known is named afresh when the path is an address
+    /// and the host's route is unset or another address: a host that
+    /// connected again from elsewhere, or whose connection quinn moved to
+    /// the address its packets now come from after its NAT rebound or its
+    /// network changed. Its earlier stand-in goes on reaching it at the new
+    /// address. A host carried some other way (through a forwarder, over a
+    /// byte stream) keeps that route, and this sender stays unnamed.
+    ///
+    /// True when the stand-in is the host's.
     pub fn name(&self, stand_in: SocketAddr, host: HostId) -> bool {
         let mut state = self.lock();
-        let Some(Peer::Unnamed(path)) = state.by_stand_in.get(&stand_in).copied() else {
-            return false;
+        let path = match state.by_stand_in.get(&stand_in).copied() {
+            Some(Peer::Unnamed(path)) => path,
+            Some(Peer::Host(named)) => return named == host,
+            None => return false,
         };
-        if state.peers.contains_key(&Peer::Host(host)) {
-            return false;
+        if let Some(known) = state.peers.get(&Peer::Host(host)) {
+            let readdressed = match &known.route {
+                Route::Unset => true,
+                Route::Carrying(carrying) => addressed(*carrying) && addressed(path),
+                Route::All(_) => false,
+            };
+            if !readdressed {
+                return false;
+            }
         }
-        let peer = state
+        state.peers.remove(&Peer::Unnamed(path));
+        state
             .peers
-            .remove(&Peer::Unnamed(path))
-            .expect("every stand-in has a peer");
-        state.peers.insert(Peer::Host(host), peer);
+            .entry(Peer::Host(host))
+            .or_insert(PeerState {
+                stand_in,
+                route: Route::Unset,
+            })
+            .stand_in = stand_in;
         state.by_stand_in.insert(stand_in, Peer::Host(host));
-        state.learn(host, path);
+        if addressed(path) {
+            state.unlearn_addresses(host);
+        }
+        state.set_route(host, Route::Carrying(path));
         true
+    }
+
+    /// The link quinn held on `stand_in` is gone: a host it is the current
+    /// stand-in of loses its route through an address, so the address
+    /// leads nowhere until someone is heard or named there.
+    pub fn unroute(&self, stand_in: SocketAddr) {
+        let mut state = self.lock();
+        let Some(Peer::Host(host)) = state.by_stand_in.get(&stand_in).copied() else {
+            return;
+        };
+        let peer = &state.peers[&Peer::Host(host)];
+        if peer.stand_in == stand_in && peer.route.paths().iter().all(|path| addressed(*path)) {
+            state.set_route(host, Route::Unset);
+            state.unlearn_addresses(host);
+        }
     }
 
     /// Carries `peer`'s packets on one path.
@@ -569,9 +655,7 @@ impl LinkSocket {
     /// go behind the header on whatever path carries the forwarder, UDP or
     /// a byte stream, and packets it delivers are answered through it.
     pub fn add_forwarding(&self, link: LinkId, via: SocketAddr, kind: PathKind) {
-        let mut state = self.lock();
-        state.forwarding.insert(link, (via, kind));
-        state.forwarders.insert(via, link);
+        self.lock().forwarding.insert(link, (via, kind));
     }
 
     /// Forgets a forwarding link, and with it the path through it of every
@@ -579,9 +663,7 @@ impl LinkSocket {
     /// whichever forwarding link reaches the forwarder then.
     pub fn remove_forwarding(&self, link: LinkId) {
         let mut state = self.lock();
-        if let Some((via, _)) = state.forwarding.remove(&link) {
-            state.forwarders.remove(&via);
-        }
+        state.forwarding.remove(&link);
         let through = Path::Forwarded(link);
         for peer in state.peers.values_mut() {
             match &mut peer.route {
@@ -594,7 +676,8 @@ impl LinkSocket {
 
     /// The forwarding link whose forwarder stands behind `stand_in`.
     pub fn forwarding_link(&self, stand_in: SocketAddr) -> Option<LinkId> {
-        self.lock().forwarders.get(&stand_in).copied()
+        let state = self.lock();
+        state.forwarding_of(*state.by_stand_in.get(&stand_in)?)
     }
 
     /// What kind of path a link carried through `link` is: through the
@@ -1423,6 +1506,102 @@ mod tests {
         assert!(!socket.name(stand_in, HostId::new_v4()), "named once");
     }
 
+    /// An address is one host's at a time: a host that takes an address
+    /// another was carried on takes it from that host's route, and an
+    /// address a host's route lets go leads nowhere, so a sender turning up
+    /// at a reused address is heard as no one until it is named.
+    #[test]
+    fn socket_reused_address_never_maps_to_the_host_that_left_it() {
+        let (fake, socket, _own) = fake_socket();
+        let lan: SocketAddr = "192.0.2.40:5000".parse().unwrap();
+        let (laptop, desk) = (HostId::new_v4(), HostId::new_v4());
+        fake.push(lan, QUIC);
+        let (laptop_at, _) = receive(&socket).unwrap();
+        assert!(socket.name(laptop_at, laptop));
+
+        // The laptop's link goes: the address leads nowhere.
+        socket.unroute(laptop_at);
+        assert_eq!(socket.path_of(laptop_at), None);
+        fake.push(lan, QUIC);
+        let (stranger, _) = receive(&socket).unwrap();
+        assert_ne!(stranger, laptop_at);
+        assert_eq!(socket.peer_of(stranger), None);
+        socket.try_send(&transmit(stranger, QUIC)).unwrap();
+        assert_eq!(fake.take_sent(), vec![(lan, QUIC.to_vec())]);
+        socket.try_send(&transmit(laptop_at, QUIC)).unwrap();
+        assert!(
+            fake.take_sent().is_empty(),
+            "nothing for the laptop goes there"
+        );
+
+        // The desk is named there; the laptop comes back elsewhere.
+        assert!(socket.name(stranger, desk));
+        assert_eq!(socket.address_of(stranger), Some(lan));
+        let elsewhere: SocketAddr = "192.0.2.41:5000".parse().unwrap();
+        socket.set_carrying(laptop, Path::Direct(elsewhere));
+        fake.push(lan, QUIC);
+        assert_eq!(receive(&socket).unwrap().0, stranger);
+
+        // The laptop is given the desk's address: the desk loses it.
+        socket.set_carrying(laptop, Path::Direct(lan));
+        assert_eq!(socket.path_of(stranger), None);
+        fake.push(lan, QUIC);
+        assert_eq!(receive(&socket).unwrap().0, socket.stand_in(laptop));
+        // The path it switched from still leads to it, for the packets
+        // still in flight there.
+        fake.push(elsewhere, QUIC);
+        assert_eq!(receive(&socket).unwrap().0, socket.stand_in(laptop));
+    }
+
+    /// A host heard again at a new address (its connection moved there,
+    /// or it connected again from there) is named afresh: its packets map
+    /// to the new stand-in, its earlier stand-in reaches it at the new
+    /// address, and the old address is let go. A host carried through a
+    /// forwarder keeps that route.
+    #[test]
+    fn socket_names_a_host_afresh_at_a_new_address() {
+        let (fake, socket, _own) = fake_socket();
+        let (old, new): (SocketAddr, SocketAddr) = (
+            "192.0.2.50:5000".parse().unwrap(),
+            "203.0.113.7:6100".parse().unwrap(),
+        );
+        let phone = HostId::new_v4();
+        fake.push(old, QUIC);
+        let (first, _) = receive(&socket).unwrap();
+        assert!(socket.name(first, phone));
+        fake.push(new, QUIC);
+        let (moved, _) = receive(&socket).unwrap();
+        assert_ne!(moved, first);
+        assert!(socket.name(moved, phone));
+        assert_eq!(socket.stand_in(phone), moved);
+        assert_eq!(socket.peer_of(first), Some(phone));
+        for stand_in in [first, moved] {
+            assert_eq!(socket.address_of(stand_in), Some(new));
+            socket.try_send(&transmit(stand_in, QUIC)).unwrap();
+        }
+        assert_eq!(
+            fake.take_sent(),
+            vec![(new, QUIC.to_vec()), (new, QUIC.to_vec())]
+        );
+        fake.push(new, QUIC);
+        assert_eq!(receive(&socket).unwrap().0, moved);
+        fake.push(old, QUIC);
+        assert_eq!(socket.peer_of(receive(&socket).unwrap().0), None);
+
+        let relay: SocketAddr = "198.51.100.1:443".parse().unwrap();
+        let via = socket.stand_in_at(relay);
+        socket.add_forwarding(LinkId(5), via, PathKind::RelayUdp);
+        let desk = HostId::new_v4();
+        socket.set_carrying(desk, Path::Forwarded(LinkId(5)));
+        fake.push("192.0.2.60:5000".parse().unwrap(), QUIC);
+        let (direct, _) = receive(&socket).unwrap();
+        assert!(!socket.name(direct, desk));
+        assert_eq!(
+            socket.path_of(socket.stand_in(desk)),
+            Some(Path::Forwarded(LinkId(5)))
+        );
+    }
+
     #[test]
     fn socket_forwarded_dial_is_answered_through_its_forwarder() {
         let (fake, socket, _own) = fake_socket();
@@ -1835,7 +2014,8 @@ mod tests {
         server_socket: Arc<LinkSocket>,
         client: quinn::Connection,
         server: quinn::Connection,
-        _endpoints: (quinn::Endpoint, quinn::Endpoint),
+        client_endpoint: quinn::Endpoint,
+        _server_endpoint: quinn::Endpoint,
     }
 
     async fn loopback(transport: Arc<quinn::TransportConfig>) -> Loopback {
@@ -1877,7 +2057,8 @@ mod tests {
             server_socket,
             client,
             server,
-            _endpoints: (client_endpoint, server_endpoint),
+            client_endpoint,
+            _server_endpoint: server_endpoint,
         }
     }
 
@@ -1925,6 +2106,37 @@ mod tests {
             .expect("the idle timeout ends the link");
         assert_eq!(reason, quinn::ConnectionError::TimedOut);
         assert!(refused.elapsed() >= IDLE);
+    }
+
+    /// The dialler's network changes under a link it holds: quinn moves
+    /// the accepting side's connection to the stand-in the dialler's new
+    /// address maps to, packets go on both ways, and naming the dialler
+    /// there carries it at the new address under either stand-in.
+    #[tokio::test]
+    async fn socket_accepting_side_keeps_a_peer_that_rebinds() {
+        let link = loopback(crate::identity::quic_transport_config()).await;
+        let dialler = link.client_socket.own();
+        let first = link.server.remote_address();
+        assert!(link.server_socket.name(first, dialler));
+        assert_eq!(round_trip(&link, b"before").await, b"before");
+
+        let elsewhere = Flaky::loopback();
+        let new_addr = elsewhere.local_addr().unwrap();
+        link.client_socket.rebind(elsewhere);
+        link.client_endpoint
+            .rebind_abstract(link.client_socket.clone())
+            .unwrap();
+        assert_eq!(round_trip(&link, b"after").await, b"after");
+        let moved = link.server.remote_address();
+        assert_ne!(moved, first, "quinn moved the connection");
+        assert_eq!(link.server_socket.address_of(moved), Some(new_addr));
+
+        assert!(link.server_socket.name(moved, dialler));
+        assert_eq!(link.server_socket.stand_in(dialler), moved);
+        assert_eq!(link.server_socket.address_of(first), Some(new_addr));
+        assert_eq!(round_trip(&link, b"named again").await, b"named again");
+        assert_eq!(link.server.remote_address(), moved);
+        assert_eq!(link.server.close_reason(), None);
     }
 
     /// A receive error is skipped: the endpoint goes on driving its links.

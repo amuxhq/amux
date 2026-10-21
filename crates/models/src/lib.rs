@@ -21,6 +21,7 @@ pub mod lifecycle;
 pub mod net;
 pub mod path;
 pub mod presence;
+pub mod relay;
 pub mod replication;
 pub mod single_daemon;
 pub mod supervisor;
@@ -30,6 +31,7 @@ pub use lifecycle::AgentLifecycle;
 pub use net::ComposedNet;
 pub use path::PathModel;
 pub use presence::PresenceRouting;
+pub use relay::RelayModel;
 pub use replication::Replication;
 pub use single_daemon::SingleDaemon;
 pub use supervisor::SupervisorUpdate;
@@ -107,6 +109,7 @@ pub fn properties() -> Vec<Listed> {
     listed.extend(of("supervisor update", &SupervisorUpdate::ci()));
     listed.extend(of("client", &ClientModel::ci()));
     listed.extend(of("path machine", &PathModel::ci()));
+    listed.extend(of("relay forwarding", &RelayModel::ci()));
     for (_, model) in ComposedNet::ci() {
         for property in of("composed net", &model) {
             if !listed.contains(&property) {

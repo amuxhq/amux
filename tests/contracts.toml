@@ -1262,6 +1262,46 @@ tests = [
 ]
 
 [[contract]]
+id = "relay-forwards-only-paid-pairs"
+source = "model"
+property = { crate = "models", machine = "relay forwarding", sentence = "packets flow between two links only while both are up, on one account and paid, or both pinned" }
+checker = "models/relay::every_relay_forwarding_promise_holds_at_ci_bounds"
+tests = [
+  "relay-core/lib::tests::a_packet_between_two_paid_hosts_of_one_account_installs_their_pair",
+  "relay-core/lib::tests::a_paid_link_and_a_pinned_link_are_never_paired",
+  "relay-core/lib::tests::a_daemon_forwards_between_its_pinned_links_whose_keys_neither_lapse_nor_expire",
+]
+
+[[contract]]
+id = "relay-nothing-before-admission"
+source = "model"
+property = { crate = "models", machine = "relay forwarding", sentence = "nothing is forwarded for a link not yet admitted, held packets included" }
+checker = "models/relay::every_relay_forwarding_promise_holds_at_ci_bounds"
+tests = [
+  "relay-core/lib::tests::a_sender_not_yet_admitted_is_neither_forwarded_for_nor_told",
+]
+
+[[contract]]
+id = "relay-lapse-tells-both"
+source = "model"
+property = { crate = "models", machine = "relay forwarding", sentence = "a lapse or expiry removes every pair through the link and tells both ends" }
+checker = "models/relay::every_relay_forwarding_promise_holds_at_ci_bounds"
+tests = [
+  "relay-core/lib::tests::a_lapse_to_free_ends_every_pair_through_the_link_and_tells_both_ends",
+  "relay-core/lib::tests::an_expired_token_ends_every_pair_through_the_link_until_a_fresh_one_comes",
+]
+
+[[contract]]
+id = "relay-told-only-own-account"
+source = "model"
+property = { crate = "models", machine = "relay forwarding", sentence = "a link is only told of other hosts on its own account, and only once admitted" }
+checker = "models/relay::every_relay_forwarding_promise_holds_at_ci_bounds"
+tests = [
+  "relay-core/lib::tests::a_new_link_is_told_the_difference_between_its_handshake_and_the_neighbors_there_are",
+  "relay-core/lib::tests::a_sender_not_yet_admitted_is_neither_forwarded_for_nor_told",
+]
+
+[[contract]]
 id = "lifecycle-exits-at-turn-end"
 source = "model"
 property = { crate = "models", machine = "agent lifecycle", sentence = "an agent exits only at a turn end or a drain deadline: the lifecycle decides to end an incarnation only as a turn ends, while no turn runs, or as its drain deadline passes" }

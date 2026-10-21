@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [client, composed, family, lifecycle, path, presence, replication, single_daemon, supervisor]
+        target: [client, composed, family, lifecycle, path, presence, relay, replication, single_daemon, supervisor]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.98.0

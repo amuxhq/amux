@@ -31,6 +31,7 @@
 #![forbid(unsafe_code)]
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::hash::{Hash, Hasher};
 use std::time::Instant;
 
 use daemon_core::payload::{ForwardRefusal, StreamPreface, StreamRefusal};
@@ -204,7 +205,7 @@ pub const LAPSE_TELLS_BOTH: &str =
     "a lapse or expiry removes every pair through the link and tells both ends";
 
 /// One link that is up.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct RelayLink {
     user: UserId,
     host: HostId,
@@ -229,7 +230,7 @@ impl RelayLink {
 }
 
 /// What the core holds of a stream until the driver reports it ended.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum Held {
     Refused,
     Spliced { from: LinkId, to: LinkId },
@@ -237,7 +238,7 @@ enum Held {
 
 /// Which links each account's streams may be spliced between: per
 /// account, per host, the links that host holds here.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Adjacency {
     hosts: BTreeMap<UserId, BTreeMap<HostId, BTreeSet<LinkId>>>,
 }
@@ -368,6 +369,38 @@ pub struct Relay {
     now_ms: u64,
     touched: Touched,
     budget: StepBudget,
+}
+
+/// Two relays are equal when they hold the same links, pairs, streams and
+/// refusals at the same time: what the last step touched and the step
+/// budget are not the relay's state, so a model exploring the core sees one
+/// state where the same decisions were reached by different steps.
+impl PartialEq for Relay {
+    fn eq(&self, other: &Self) -> bool {
+        self.own == other.own
+            && self.links == other.links
+            && self.adjacency == other.adjacency
+            && self.streams == other.streams
+            && self.through == other.through
+            && self.pairs == other.pairs
+            && self.refused == other.refused
+            && self.now_ms == other.now_ms
+    }
+}
+
+impl Eq for Relay {}
+
+impl Hash for Relay {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.own.hash(state);
+        self.links.hash(state);
+        self.adjacency.hash(state);
+        self.streams.hash(state);
+        self.through.hash(state);
+        self.pairs.hash(state);
+        self.refused.hash(state);
+        self.now_ms.hash(state);
+    }
 }
 
 impl Relay {

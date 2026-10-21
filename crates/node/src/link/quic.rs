@@ -26,6 +26,12 @@ use crate::trust::SharedTrustStore;
 
 const CONTROL_QUEUE_CAPACITY: usize = 32;
 pub(crate) const DEVICE_SERVER_NAME: &str = "amux-device.local";
+
+/// The name every link to a host is dialled under, as rustls keys its
+/// tickets.
+pub(crate) fn device_server_name() -> rustls::pki_types::ServerName<'static> {
+    rustls::pki_types::ServerName::try_from(DEVICE_SERVER_NAME).expect("a valid DNS name")
+}
 // Quinn's first Initial PTO is about one second with its default initial RTT.
 // Two seconds lets one lost handshake packet retransmit without allowing one
 // black-holed DNS candidate to consume the cloud connection's whole dial.
@@ -94,6 +100,13 @@ impl LinkEndpoint {
         peer: HostId,
     ) -> Result<quinn::ClientConfig, IdentityError> {
         self.resumption.client_config(identity, trust_store, peer)
+    }
+
+    /// Keeps the tickets peers give this endpoint's dials in `dir`, one
+    /// directory per peer and pinned key, so a relaunched process resumes.
+    pub(crate) fn keeping_tickets(mut self, dir: std::path::PathBuf) -> Self {
+        self.resumption = Arc::new(super::resumption::PeerResumption::keeping(dir));
+        self
     }
 
     /// An endpoint on a dual-stack socket of its own at `bind`.
@@ -1624,6 +1637,60 @@ mod tests {
             validated,
             "the restarted host honours the address-validation token it issued before"
         );
+    }
+
+    #[tokio::test]
+    async fn a_ticket_kept_on_disk_resumes_after_the_client_restarts() {
+        use crate::link::client_tickets::saved;
+
+        let server_identity = DeviceIdentity::for_test(HostId::new_v4());
+        let profile = tempfile::tempdir().unwrap();
+        let tickets_dir = profile.path().join("client-tickets");
+        let identity = DeviceIdentity::for_test(HostId::new_v4());
+        let client = || TicketClient {
+            endpoint: LinkEndpoint::bind(ANY_PORT.parse().unwrap(), None)
+                .unwrap()
+                .keeping_tickets(tickets_dir.clone()),
+            identity: identity.clone(),
+            trust: trust_for(&server_identity),
+            peer: server_identity.host_id,
+        };
+        let tickets = SessionTickets::in_memory(HOST_TICKETS);
+        let server = ticket_server(
+            &server_identity,
+            &identity,
+            &tickets,
+            ANY_PORT.parse().unwrap(),
+        )
+        .await;
+        let peer_dir = tickets_dir
+            .join(server_identity.host_id.to_string())
+            .join(super::super::resumption::hex(server_identity.public_key()));
+
+        client().link(&server).await.unwrap();
+        assert_eq!(
+            saved(&peer_dir),
+            1,
+            "the ticket the link was given is on disk"
+        );
+
+        // A new process: a new endpoint, its configurations built afresh.
+        let restarted = client();
+        restarted.link(&server).await.unwrap();
+        assert_eq!(tickets.redeemed(), 1, "the restarted client resumes");
+        assert_eq!(
+            saved(&peer_dir),
+            1,
+            "the ticket offered left the disk; the one the new link was given took its place"
+        );
+
+        // A ticket is offered once: with its file gone and no new one kept,
+        // the next process does a full handshake.
+        for entry in std::fs::read_dir(&peer_dir).unwrap() {
+            std::fs::remove_file(entry.unwrap().path()).unwrap();
+        }
+        client().link(&server).await.unwrap();
+        assert_eq!(tickets.redeemed(), 1);
     }
 
     #[tokio::test]

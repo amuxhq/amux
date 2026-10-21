@@ -611,6 +611,9 @@ workspace crates, and ignores dev-dependencies. Its rules:
    the dependency graph cannot say: no core, and not the ring they record
    into, has tokio anywhere in its graph on any target, and none of their
    sources holds a lock, spawns a task or awaits.
+5. **Every dependency comes from crates.io, but rustls.** The check reads
+   `Cargo.lock`: rustls alone may come from git, and only from the fork
+   that carries the patch below, at whatever commit the lockfile pins.
 
 The allowed sets encode the layering above:
 
@@ -642,6 +645,35 @@ The allowed sets encode the layering above:
 The phone bridge (`app-embedded`, `app-ffi`) links `node` on purpose: it
 hosts the runtime in process. `just embedded-check` and `just mobile-check`
 build that provider-free graph for the host and for iOS.
+
+### The rustls patch
+
+rustls 0.23 cannot save a client's TLS 1.3 session ticket, so a process
+that starts again (the phone above all, which the system ends between
+launches) would begin every link with a full handshake and send nothing
+early. The workspace takes rustls from a fork,
+[`jordanwebster/rustls`](https://github.com/jordanwebster/rustls), through
+one `[patch.crates-io]` line in `Cargo.toml`. The maintained diff is the
+branch `amux/<version>`: the rustls release named in its `.amux-base` file
+plus one commit, the save-and-load half of upstream's serializable client
+session (`Tls13ClientSessionValue::encode` and `from_slice`, the loaded
+value bound to the configuration it will resume under, since 0.23 ties a
+session to its configuration's verifier rather than to the peer).
+
+Two scheduled jobs keep it current. The fork's `follow.yml` replays the
+patch onto each newer `v/0.23.*` release, runs rustls's tests and pushes
+`amux/<version>`, or opens an issue in the fork when it cannot. This
+repository's `rustls-bump.yml` notices a newer `amux/*` branch than the pin,
+moves the pin and the lockfile on a `rustls-bump/<version>` branch, opens a
+pull request to `main` and starts CI on the branch.
+
+Only `node::link::client_tickets` uses the patched API: it saves each ticket
+under `profiles/<id>/client-tickets/<peer>/<pinned key>/` as it is given,
+loads a peer's tickets when the peer's client configuration is first built
+in a process, and deletes a ticket's file before handing it to a handshake,
+so each is offered once. Dropping the patch is removing the `Cargo.toml`
+line and having that module keep tickets in memory only: links still
+resume within a process, and a relaunch does a full handshake.
 
 ## Where to go next
 

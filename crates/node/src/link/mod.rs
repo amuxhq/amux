@@ -1,5 +1,6 @@
 pub mod carrier;
 pub(crate) mod channels;
+pub mod client_tickets;
 mod early;
 pub mod forwarder;
 pub mod framed;

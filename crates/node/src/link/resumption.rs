@@ -16,9 +16,10 @@
 //! its address-validation tokens from, so a restarted host does not make
 //! every returning client prove its address again.
 //!
-//! A client keeps the tickets it is given in memory, per peer: rustls
-//! offers a ticket only under the client configuration it was issued to,
-//! so each peer's configuration is built once and reused.
+//! A client keeps the tickets it is given per peer, on disk in the profile
+//! ([`super::client_tickets`]): rustls offers a ticket only under the
+//! client configuration it was issued to, so each peer's configuration is
+//! built once per process, taking in the tickets saved before.
 
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
@@ -31,6 +32,7 @@ use std::time::{Duration, SystemTime};
 use ring::aead::{Aad, CHACHA20_POLY1305, LessSafeKey, NONCE_LEN, Nonce, UnboundKey};
 use ring::rand::{SecureRandom as _, SystemRandom};
 
+use super::client_tickets::ClientTickets;
 use crate::HostId;
 use crate::identity::{DeviceIdentity, IdentityError};
 use crate::trust::SharedTrustStore;
@@ -466,7 +468,7 @@ fn private_file(path: &Path) -> io::Result<fs::File> {
     options.open(path)
 }
 
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
@@ -493,6 +495,9 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 #[derive(Default)]
 pub(crate) struct PeerResumption {
     configs: Mutex<HashMap<HostId, (Vec<u8>, quinn::ClientConfig)>>,
+    /// Where each peer's tickets are kept across processes; in memory
+    /// when none.
+    dir: Option<PathBuf>,
 }
 
 impl std::fmt::Debug for PeerResumption {
@@ -504,6 +509,15 @@ impl std::fmt::Debug for PeerResumption {
 }
 
 impl PeerResumption {
+    /// Keeps each peer's tickets beneath `dir`, so the first dial of a
+    /// process offers the ticket the last process was given.
+    pub(crate) fn keeping(dir: PathBuf) -> Self {
+        Self {
+            configs: Mutex::default(),
+            dir: Some(dir),
+        }
+    }
+
     /// The configuration to dial `peer` with: the one the last dial used
     /// while the peer's pinned key is unchanged, so its ticket is offered.
     pub(crate) fn client_config(
@@ -527,7 +541,21 @@ impl PeerResumption {
         {
             return Ok(config.clone());
         }
-        let config = identity.quic_client_config_for_peer(trust.clone(), peer)?;
+        let tickets = self.dir.as_ref().map(|dir| {
+            // A peer paired again under a new key keeps none of the old
+            // key holder's tickets: resuming skips the certificate check.
+            let peer_dir = dir.join(peer.to_string());
+            let key_dir = peer_dir.join(hex(&pinned));
+            if let Ok(entries) = fs::read_dir(&peer_dir) {
+                for entry in entries.filter_map(Result::ok) {
+                    if entry.path() != key_dir {
+                        let _ = fs::remove_dir_all(entry.path());
+                    }
+                }
+            }
+            Arc::new(ClientTickets::new(Some(key_dir), CLIENT_TICKETS))
+        });
+        let config = identity.quic_client_config_keeping(trust.clone(), peer, tickets)?;
         configs.insert(peer, (pinned, config.clone()));
         Ok(config)
     }

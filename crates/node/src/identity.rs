@@ -183,13 +183,31 @@ impl DeviceIdentity {
         trust_store: SharedTrustStore,
         peer: HostId,
     ) -> Result<quinn::ClientConfig, IdentityError> {
+        self.quic_client_config_keeping(trust_store, peer, None)
+    }
+
+    /// The configuration to dial `peer` with, keeping the tickets the peer
+    /// gives it in `tickets` (loaded into it now) when given, in memory
+    /// otherwise.
+    pub(crate) fn quic_client_config_keeping(
+        &self,
+        trust_store: SharedTrustStore,
+        peer: HostId,
+        tickets: Option<std::sync::Arc<crate::link::client_tickets::ClientTickets>>,
+    ) -> Result<quinn::ClientConfig, IdentityError> {
         let mut tls = self.client_tls_config_for_peer(trust_store, peer)?;
         tls.alpn_protocols = vec![QUIC_ALPN.to_vec()];
-        tls.resumption = crate::link::resumption::client_resumption();
+        tls.resumption = match &tickets {
+            Some(tickets) => rustls::client::Resumption::store(tickets.clone()),
+            None => crate::link::resumption::client_resumption(),
+        };
         // Only a dial that resumes with `QuicCarrier::resume_direct` or
         // `resume_through` writes early data; the others wait for the
         // handshake as before.
         tls.enable_early_data = true;
+        if let Some(tickets) = tickets {
+            tickets.load(&tls, &crate::link::quic::device_server_name());
+        }
 
         let crypto = quinn::crypto::rustls::QuicClientConfig::try_from(tls)
             .map_err(|error| IdentityError::TlsConfig(error.to_string()))?;

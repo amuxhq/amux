@@ -4018,9 +4018,8 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.45"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+version = "0.23.46"
+source = "git+https://github.com/jordanwebster/rustls?rev=222873dc0a3753af770548d595524ed3f6f8febe#222873dc0a3753af770548d595524ed3f6f8febe"
 dependencies = [
  "once_cell",
  "ring",
@@ -4633,7 +4632,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",

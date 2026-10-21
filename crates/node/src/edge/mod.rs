@@ -46,6 +46,7 @@ use crate::discovery::{Advertisement, Discovery, FoundHosts, local_pairing_addrs
 use crate::dispatcher::TunnelDispatcher;
 use crate::driver::CoreLinks;
 use crate::identity::{DeviceIdentity, IdentityError};
+use crate::link::client_tickets::CLIENT_TICKETS_DIR;
 use crate::link::framed::{FramedKind, StreamEndpoint};
 use crate::link::quic::DEVICE_SERVER_NAME;
 use crate::link::resumption::{HOST_TICKETS, SessionTickets, TICKETS_DIR};
@@ -347,7 +348,8 @@ impl Edge {
                     identity.host_id,
                     quic_server,
                 )
-                .map_err(EdgeError::Lan)?;
+                .map_err(EdgeError::Lan)?
+                .keeping_tickets(dir.join(CLIENT_TICKETS_DIR));
                 let addr = endpoint.local_addr().map_err(EdgeError::Lan)?;
                 let _ = crate::install::write_durably(
                     &dir.join(LAN_PORT_FILE),
@@ -363,6 +365,7 @@ impl Edge {
                     .and_then(|substrate| {
                         LinkEndpoint::new(substrate, identity.host_id, quic_server)
                     })
+                    .map(|endpoint| endpoint.keeping_tickets(dir.join(CLIENT_TICKETS_DIR)))
                     .map_err(EdgeError::Dialing)?,
                 None,
             ),

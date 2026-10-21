@@ -1833,6 +1833,154 @@ def push_wake(journey: PhoneJourney) -> list[str]:
     ]
 
 
+# The resume story: three launches of one installation, each read back from
+# the link log the phone's runtime writes.
+
+RESUME_HOSTS = ("desk", "laptop")
+# Where each launch's link log is kept, named by the launch.
+LINK_LOGS = ROOT / "target/ios/journey/resume"
+LINK_LINE = re.compile(r"amux::link: link (.*)$")
+
+
+def runtime_log(journey: PhoneJourney) -> Path:
+    """The log the phone's runtime writes, in the installation's directory."""
+    return app_data(journey) / "Library/Application Support/amux/installation/runtime.log"
+
+
+def logged_since(journey: PhoneJourney, offset: int) -> list[str]:
+    """The link log's lines written since `offset`, the log's length before
+    the launch. A log cut to its newest part since then is read whole."""
+    log = runtime_log(journey)
+    if not log.exists():
+        return []
+    data = log.read_bytes()
+    if len(data) < offset:
+        offset = 0
+    lines = data[offset:].decode(errors="replace").splitlines()
+    return [line for line in lines if LINK_LINE.search(line)]
+
+
+def link_fields(line: str) -> dict[str, str]:
+    return dict(field.split("=", 1) for field in LINK_LINE.search(line).group(1).split() if "=" in field)
+
+
+def machine_lines(journey: PhoneJourney, lines: list[str], event: str) -> list[tuple[str, dict[str, str]]]:
+    """The lines for links to the machines that say `event`, by machine name
+    in the order written: the relay's own link is not a machine's."""
+    names = {journey.host_id(host): host for host in RESUME_HOSTS}
+    found = []
+    for line in lines:
+        fields = link_fields(line)
+        name = names.get(fields.get("peer", ""))
+        if name is not None and fields.get("event") == event:
+            found.append((name, fields))
+    return found
+
+
+def first_ups(journey: PhoneJourney, lines: list[str]) -> dict[str, dict[str, str]]:
+    """The first link to come up to each machine, by machine name, with the
+    milliseconds its catch-up took from the first packet where it carried one."""
+    ups: dict[str, dict[str, str]] = {}
+    for name, fields in machine_lines(journey, lines, "up"):
+        ups.setdefault(name, dict(fields))
+    for name, fields in machine_lines(journey, lines, "caught_up"):
+        if name in ups:
+            ups[name]["first_packet_to_catch_up_ms"] = fields["first_packet_to_catch_up_ms"]
+    return ups
+
+
+def log_length(journey: PhoneJourney) -> int:
+    log = runtime_log(journey)
+    return log.stat().st_size if log.exists() else 0
+
+
+def reconciled_launch(journey: PhoneJourney, launch: str, offset: int) -> dict[str, dict[str, str]]:
+    """Waits for the launch to reconcile with every machine and for its link
+    log to name a link to each, then keeps that log as `<launch>.log`."""
+    journey.app({"kind": "awaitReconciled", "seconds": 60}, timeout=70)
+    deadline = time.monotonic() + 60
+    while "reconciled" not in [mark["signpost"] for mark in journey.app({"kind": "signposts"})["marks"]]:
+        if time.monotonic() > deadline:
+            raise RuntimeError(f"the {launch} launch never read every machine current")
+        time.sleep(0.2)
+    journey.actions.append(f"the {launch} launch read every machine current")
+    deadline = time.monotonic() + 30
+    while True:
+        lines = logged_since(journey, offset)
+        ups = first_ups(journey, lines)
+        if len(ups) == len(RESUME_HOSTS):
+            break
+        if time.monotonic() > deadline:
+            raise RuntimeError(f"the {launch} launch logged links to {sorted(ups)} only: {lines!r}")
+        time.sleep(0.2)
+    (LINK_LOGS / f"{launch}.log").write_text("\n".join(lines) + "\n")
+    journey.observations[f"{launch}-links"] = ups
+    return ups
+
+
+def restart(journey: PhoneJourney, host: str) -> None:
+    """The machine restarted, as a person restarts amux on it: its daemon
+    killed and started again on the same disk."""
+    journey.request({"RestartDaemon": {"host": host}})
+    journey.wait_inventory(host, lambda agents: bool(agents), f"{host}-back")
+
+
+def resume(journey: PhoneJourney) -> list[str]:
+    shutil.rmtree(LINK_LOGS, ignore_errors=True)
+    LINK_LOGS.mkdir(parents=True)
+
+    # The first launch ever: nothing kept, so every link is a full handshake.
+    journey.launch()
+    journey.app({
+        "kind": "connect", "relay": journey.ready["cloud_url"], "token": "refresh-ada", "user": "ada",
+    })
+    journey.actions.append("signed in as ada")
+    for host in RESUME_HOSTS:
+        pair_by_code(journey, host)
+    first = reconciled_launch(journey, "first", 0)
+    for host, fields in machine_lines(journey, logged_since(journey, 0), "up"):
+        if fields["resumed"] != "false" or fields["early_data"] != "none":
+            raise RuntimeError(f"the first launch ever reached {host} on a resumed session: {fields!r}")
+
+    # Closed and opened again: every machine resumed, its early data taken.
+    journey.quit()
+    offset = log_length(journey)
+    journey.relaunch()
+    relaunch = reconciled_launch(journey, "relaunch", offset)
+    for host, fields in relaunch.items():
+        if fields["resumed"] != "true" or fields["early_data"] != "accepted":
+            raise RuntimeError(f"the relaunch did not resume {host} with its early data accepted: {fields!r}")
+
+    # One machine restarted while the phone is closed: its session tickets
+    # are kept on its disk, so the next launch still resumes it.
+    journey.quit()
+    restart(journey, "desk")
+    offset = log_length(journey)
+    journey.relaunch()
+    after = reconciled_launch(journey, "after-host-restart", offset)
+    for host, fields in after.items():
+        if fields["resumed"] != "true":
+            raise RuntimeError(f"after the desk restarted the launch did not resume {host}: {fields!r}")
+
+    def spelled(launch: dict[str, dict[str, str]]) -> str:
+        def caught_up(fields: dict[str, str]) -> str:
+            ms = fields["first_packet_to_catch_up_ms"]
+            return "" if ms == "none" else f", caught up {ms} ms after its first packet"
+
+        return ", ".join(
+            f"{host} over {fields['path']} (resumed={fields['resumed']}, early data {fields['early_data']}"
+            f"{caught_up(fields)})"
+            for host, fields in sorted(launch.items())
+        )
+
+    return [
+        f"the first launch ever reached both machines by full handshakes on every link: {spelled(first)}",
+        f"the relaunch resumed both with their early data accepted: {spelled(relaunch)}",
+        f"with the desk restarted while the phone was closed, the next launch still resumed both: {spelled(after)}",
+        f"each launch's link log is kept in {LINK_LOGS.relative_to(ROOT)}",
+    ]
+
+
 STORIES = {
     "reach-host": reach_host,
     "conversation-decision-claude-pty": lambda j: conversation_decision(j, "decision-pty", False),
@@ -1856,6 +2004,7 @@ STORIES = {
     "accessibility": accessibility,
     "local-network": local_network,
     "push-wake": push_wake,
+    "resume": resume,
 }
 
 

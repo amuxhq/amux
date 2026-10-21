@@ -76,7 +76,7 @@ if [ "$*" = "ios simulator golden" ]; then
 fi
 [ "$*" != "$FAIL_RECIPE" ] || exit 1
 if [ "$*" = "ios journey" ]; then
-    for id in reach-host conversation-decision-claude-pty conversation-decision-claude-sdk conversation-decision-codex leave-and-recover decide-plan-claude-sdk decide-plan-claude-pty decide-plan-codex answer-questions tool-server-asks queue-and-steer send-while-away composer-limits manage-agent attachment-or-review keep-authority account-sign-in purchase-restore report accessibility local-network push-wake; do
+    for id in reach-host conversation-decision-claude-pty conversation-decision-claude-sdk conversation-decision-codex leave-and-recover decide-plan-claude-sdk decide-plan-claude-pty decide-plan-codex answer-questions tool-server-asks queue-and-steer send-while-away composer-limits manage-agent attachment-or-review keep-authority account-sign-in purchase-restore report accessibility local-network push-wake resume; do
         [ "$id" = "$SKIP_JOURNEY" ] || echo "$id: passed"
     done
 fi

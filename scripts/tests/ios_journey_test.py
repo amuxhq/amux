@@ -184,7 +184,7 @@ class ReadingWhatIsSeen(unittest.TestCase):
 
 
 class Selecting(unittest.TestCase):
-    NATIVE = ["account-sign-in", "purchase-restore", "report", "accessibility", "local-network", "push-wake"]
+    NATIVE = ["account-sign-in", "purchase-restore", "report", "accessibility", "local-network", "push-wake", "resume"]
 
     def test_native_runs_exactly_the_stories_declared_for_the_phone_alone(self):
         self.assertEqual(stories.selected(["--native"]), self.NATIVE)

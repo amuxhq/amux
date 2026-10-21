@@ -24,7 +24,8 @@ use tokio::time::Instant;
 
 /// How the router maps and filters: the two axes that decide whether a
 /// punched packet gets through.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RouterKind {
     /// No translation: the host's own address is reachable by anyone.
     Open,

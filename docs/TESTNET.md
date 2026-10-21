@@ -276,6 +276,37 @@ A punch works behind `Ordinary`: the port the relay saw is the port the host pun
 the address the relay told it gets in. Behind `Strict` the punch leaves from a different port, and the answer to the
 relay's address is dropped.
 
+A story puts a router in front of an in-process host and moves it between networks with these verbs; each is also
+on `World`, and a simulated net, which has no sockets, refuses them:
+
+| Verb | Effect |
+| --- | --- |
+| `set_router(host, kind)` | Put a router of that kind in front of the host's link socket, now if it runs and on every start after. Its links migrate onto the router's public port; a mapping idle for 30 seconds expires. |
+| `change_network(host)` | Move a running host onto another network, as a phone leaving Wi-Fi does: its link socket rebinds to a fresh port, or behind a fresh router of the same kind with new public ports, and its links migrate without going down. |
+| `bind_ipv6_only(host)` | Bind the host's socket to IPv6 loopback alone from its next start. |
+
+### Which path carries a link
+
+Every daemon writes the link log: one line at INFO each time one of its links comes up, goes down or changes path,
+naming the peer and the path (`lan`, `direct`, `punched`, `relay_udp`, `relay_tcp`, `ssh`, `via_daemon`). The net
+reads an in-process host's lines from its own trace and a process host's from its daemon log, so a story says which
+path carried a link the way a person reading the log would:
+
+| Verb | Effect |
+| --- | --- |
+| `link_log(host)` | Every line the host has written, oldest first, across restarts. |
+| `carrying_path(host, peer)` | The path the host's last line for that peer names, or none once that line says the link went down. |
+
+### SSH
+
+A host reaches a peer over SSH by running `ssh <target> amux relay --profile <id>` and carrying the link over that
+process's stdio into the far daemon's link socket (`link.sock` in its profile directory), where the pinned QUIC
+handshake admits only a paired key. Every in-process host serves its link socket. The net puts a stand-in `ssh`
+(`crates/testnet/stand-in/ssh`) first on its process's PATH, which process hosts inherit; no real SSH runs. A target
+is a host's directory, which `ssh_target(host)` answers: the stand-in runs the far host's own `amux` against its own
+installation there, so `amux relay` joins the far daemon's link socket. Give the target to a peer as an SSH pairing
+does, with the far host's profile id.
+
 ## Growing a net while it runs
 
 A net may start with no hosts and grow, and every growth verb is on the door:
@@ -463,6 +494,11 @@ verb without fields is a bare string (`"Shutdown"`).
 | `{"RelayGate": {}}`, `{"RelayFaults": {…}}` | A gate in front of the relay's QUIC carrier: `{"addr": "…"}`; its faults. |
 | `{"PairGate": {"from", "to"}}` | The gate `from` dials to reach `to`'s LAN listener: `{"addr": "…"}`. |
 | `{"BlockUdp": {"host", "blocked"}}` | Drop every datagram on the host's way to the relay, or stop. |
+| `{"SetRouter": {"host", "kind"}}` | Put a router (`open`, `ordinary` or `strict`) in front of the host's link socket, now and on every start after. |
+| `{"ChangeNetwork": {"host"}}` | Move a running host onto another network: its link socket rebinds and its links migrate. |
+| `{"BindIpv6Only": {"host"}}` | Bind the host's socket to IPv6 loopback alone from its next start. |
+| `{"CarryingPath": {"host", "peer"}}` | The path carrying the host's link to the peer, by its link log: `{"path": "lan"}`, or `{"path": null}` while the link is down. |
+| `{"LinkLog": {"host"}}` | Every line the host has written to the link log, oldest first: `[{"peer", "event", "path", "resumed", "early_data", "first_packet_to_catch_up_ms"}]`. |
 | `{"Flap": {"a", "b", "down_ms", "up_ms"}}`, `{"FlapStop": {}}` | Sever and restore a link on a period, until stopped; stop every flap, leaving each link restored. |
 | `{"Release": {"version", "channel", "rollout", "broken"}}` | Publish the build under test on the release feed (channel `stable` by default) and have supervised hosts check now. |
 | `{"Status": {}}` | The readiness record as it stands now, with `topology`: the declaration that would start this net again, run-time additions included. |

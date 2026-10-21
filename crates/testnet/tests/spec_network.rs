@@ -2528,7 +2528,9 @@ async fn a_direct_link_keeps_its_session_through_a_rebind_a_held_transfer_and_a_
     // connection migrates with it, and the open session carries on.
     let moved = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
     let moved_to = moved.local_addr().unwrap();
-    edge(&net, "laptop").rebind_lan(moved).unwrap();
+    edge(&net, "laptop")
+        .rebind(node::socket::LinkSocket::on_udp(moved).unwrap())
+        .unwrap();
     net.open_gate("one").unwrap();
     until_item(&mut session, "after the rebind").await;
     assert_eq!(edge(&net, "laptop").via(desk).await, LiveRoute::Direct);

@@ -64,6 +64,11 @@
 //! | `RelayFaults` | `Net::set_relay_faults` |
 //! | `NetFaults` | `Net::set_net_faults` |
 //! | `BlockUdp` | `Net::block_udp` |
+//! | `SetRouter` | `Net::set_router` |
+//! | `ChangeNetwork` | `Net::change_network` |
+//! | `BindIpv6Only` | `Net::bind_ipv6_only` |
+//! | `CarryingPath` | `Net::carrying_path` |
+//! | `LinkLog` | `Net::link_log` |
 //! | `Flap` | `Net::sever_link + Net::restore_link on a period` |
 //! | `FlapStop` | `Net::restore_link for each flapping link` |
 //! | `PairGate` | `Net::pair_gate` |
@@ -101,6 +106,7 @@ mod providers;
 mod relay;
 mod router;
 pub mod sim;
+mod ssh;
 mod topology;
 mod world;
 

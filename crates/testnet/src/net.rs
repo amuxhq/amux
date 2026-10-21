@@ -46,6 +46,7 @@ use crate::probes;
 use crate::process::ProcessHost;
 use crate::providers::{self, Commands, RealTools, SMALL_CLAUDE, SMALL_CODEX};
 use crate::relay::Relay;
+use crate::router::{Router, RouterKind};
 use crate::topology::{
     AccountDecl, AgentDecl, FakeKind, HostDecl, LinkDecl, Provider, RelayDecl, TierDecl, Topology,
     TopologyError, link_key,
@@ -56,6 +57,10 @@ use crate::topology::{
 const INPUT_LOG: &str = "input";
 /// The relay's certificate in the net's root, for process hosts to trust.
 const RELAY_CA: &str = "relay-ca.pem";
+/// How long an imitated router keeps a mapping nothing uses: longer than a
+/// link's keep-alive, so a quiet link keeps its port, as a home router's
+/// half-minute or more does.
+const ROUTER_IDLE: Duration = Duration::from_secs(30);
 
 /// The version a supervised host starts on: older than anything a test
 /// publishes.
@@ -263,6 +268,9 @@ struct Host {
     running: bool,
     /// The host's `claude` and `codex` commands.
     commands: Commands,
+    /// The router in front of an in-process host's link socket, if a
+    /// story put one there; it stays across restarts.
+    router: Option<RouterKind>,
 }
 
 struct Link {
@@ -382,6 +390,7 @@ impl Net {
     pub async fn start_with(topology: Topology, options: NetOptions) -> Result<Self, NetError> {
         topology.check()?;
         crate::link_log::install();
+        crate::ssh::install();
         let driven = match options.clock {
             ClockMode::Driven => Some(options.driven.unwrap_or_default()),
             ClockMode::Wall => None,
@@ -1664,9 +1673,16 @@ impl Net {
                     claude: PathBuf::new(),
                     codex: PathBuf::new(),
                 },
+                router: None,
             },
         );
         let made = (|| {
+            let host = &self.hosts[&decl.name];
+            let amux = host
+                .process
+                .as_ref()
+                .map_or_else(|| self.binaries.amux(), |process| process.amux.clone());
+            crate::ssh::write_login(&host.dir, &amux, &host.info.config)?;
             if decl.provider == Provider::Real {
                 self.ensure_real(&decl.name)?;
             } else {
@@ -1808,7 +1824,7 @@ impl Net {
                 .clone()
                 .unwrap_or_else(|| self.topology.scope.clone()),
             dial: decl.lan,
-            link_socket: false,
+            link_socket: true,
             cloud: node::CloudOptions::default(),
         };
         if let Some(relay) = &self.relay {
@@ -1845,6 +1861,9 @@ impl Net {
         host.runtime = Arc::downgrade(&runtime);
         host.daemon = Some(std::sync::Mutex::new(daemon));
         host.lan_handed = handed;
+        if let Some(kind) = host.router {
+            self.put_behind_router(name, kind)?;
+        }
         Ok(())
     }
 
@@ -2041,6 +2060,72 @@ impl Net {
             .decl
             .ipv6_only = true;
         Ok(self.ack(format!("{host} binds IPv6 only from its next start")))
+    }
+
+    /// The SSH target that reaches `host`: give it to a peer as its way
+    /// there. The stand-in on the PATH runs the far host's `amux` for it.
+    pub fn ssh_target(&self, host: &str) -> Result<String, NetError> {
+        Ok(self.host(host)?.dir.to_string_lossy().into_owned())
+    }
+
+    /// Puts an imitated router of `kind` in front of `host`'s link socket,
+    /// now if it runs and on every start after; its links migrate onto the
+    /// router's public port. In-process hosts only.
+    pub fn set_router(&mut self, host: &str, kind: RouterKind) -> Result<Ack, NetError> {
+        self.in_process(host, "a router in front of the link socket")?;
+        self.hosts
+            .get_mut(host)
+            .ok_or_else(|| NetError::NoHost(host.to_owned()))?
+            .router = Some(kind);
+        if self.is_up(host) {
+            self.put_behind_router(host, kind)?;
+        }
+        Ok(self.ack(format!("{host} behind a {kind:?} router")))
+    }
+
+    fn put_behind_router(&self, host: &str, kind: RouterKind) -> Result<(), NetError> {
+        let router = Router::new(kind, ROUTER_IDLE)?;
+        self.edge(host)?.rebind(router)?;
+        Ok(())
+    }
+
+    /// Moves `host` onto another network, as a phone leaving Wi-Fi does: its
+    /// link socket is rebound to a fresh port, or behind a fresh router of
+    /// the same kind with new public ports, and its links migrate. In-process
+    /// hosts that run only.
+    pub fn change_network(&self, host: &str) -> Result<Ack, NetError> {
+        self.in_process(host, "changing the network under the link socket")?;
+        let edge = self.edge(host)?;
+        let own = &self.hosts[host];
+        let substrate: Arc<dyn node::socket::Datagrams> = match own.router {
+            Some(kind) => Router::new(kind, ROUTER_IDLE)?,
+            None => node::socket::LinkSocket::bind_dual_stack(
+                SocketAddr::new(loopback(&own.decl), 0),
+                None,
+            )?,
+        };
+        let to = substrate.local_addr()?;
+        edge.rebind(substrate)?;
+        Ok(self.ack(format!("{host} moved to another network, now at {to}")))
+    }
+
+    /// The path carrying `host`'s link to `peer` now, by `host`'s link log:
+    /// the path its last line for the peer names, or none once that line
+    /// says the link went down.
+    pub fn carrying_path(
+        &self,
+        host: &str,
+        peer: &str,
+    ) -> Result<Option<node::link_log::PathKind>, NetError> {
+        let peer = self.host(peer)?.host_id;
+        Ok(self
+            .link_log(host)?
+            .iter()
+            .rev()
+            .find(|event| event.peer == peer)
+            .and_then(|event| {
+                (event.event != node::link_log::LinkTransition::Down).then_some(event.path)
+            }))
     }
 
     /// What the gate in front of `host`'s LAN listener does to each

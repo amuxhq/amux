@@ -159,15 +159,6 @@ impl ReachabilityLinkConnector {
         *inner.context.quic_endpoint.lock().unwrap() = Some(quic_endpoint);
     }
 
-    pub fn rebind_quic(&self, socket: std::net::UdpSocket) -> std::io::Result<()> {
-        let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
-            return Ok(());
-        };
-        let endpoint = inner.context.quic_endpoint.lock().unwrap();
-        let endpoint = endpoint.as_ref().expect("QUIC endpoint is configured");
-        endpoint.rebind(crate::link::socket::LinkSocket::on_udp(socket)?)
-    }
-
     pub(crate) fn spawn_startup_links(&self) -> Vec<JoinHandle<()>> {
         let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
             return Vec::new();

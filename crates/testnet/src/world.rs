@@ -13,8 +13,11 @@ use std::fmt::Display;
 use std::future::Future;
 use std::time::Duration;
 
+use node::link_log::{LinkEvent, PathKind};
+
 use crate::net::{Ack, Net, NetAgent, NetError};
 use crate::observe::{self, InventoryObserver, Observer};
+use crate::router::RouterKind;
 use crate::topology::AgentDecl;
 
 /// A net a story drives.
@@ -44,6 +47,20 @@ pub trait World {
     async fn link_up(&self, a: &str, b: &str) -> bool;
     /// Waits until the link is up at both ends, or down at both.
     async fn wait_link(&self, a: &str, b: &str, up: bool) -> Result<(), NetError>;
+
+    /// Puts an imitated router of `kind` in front of the host's link
+    /// socket, now and on every start after.
+    fn set_router(&mut self, host: &str, kind: RouterKind) -> Result<Ack, NetError>;
+    /// Moves the host onto another network: its link socket is rebound and
+    /// its links migrate.
+    fn change_network(&self, host: &str) -> Result<Ack, NetError>;
+    /// Binds the host's socket to IPv6 loopback alone from its next start.
+    fn bind_ipv6_only(&mut self, host: &str) -> Result<Ack, NetError>;
+    /// The path carrying the host's link to `peer` now, by its link log;
+    /// none while the link is down.
+    fn carrying_path(&self, host: &str, peer: &str) -> Result<Option<PathKind>, NetError>;
+    /// What the host has written to the link log, oldest first.
+    fn link_log(&self, host: &str) -> Result<Vec<LinkEvent>, NetError>;
 
     /// Crashes the host's daemon; its agents run on.
     async fn kill_daemon(&mut self, host: &str) -> Result<Ack, NetError>;
@@ -193,6 +210,26 @@ impl World for Net {
 
     async fn wait_link(&self, a: &str, b: &str, up: bool) -> Result<(), NetError> {
         Net::wait_link(self, a, b, up).await
+    }
+
+    fn set_router(&mut self, host: &str, kind: RouterKind) -> Result<Ack, NetError> {
+        Net::set_router(self, host, kind)
+    }
+
+    fn change_network(&self, host: &str) -> Result<Ack, NetError> {
+        Net::change_network(self, host)
+    }
+
+    fn bind_ipv6_only(&mut self, host: &str) -> Result<Ack, NetError> {
+        Net::bind_ipv6_only(self, host)
+    }
+
+    fn carrying_path(&self, host: &str, peer: &str) -> Result<Option<PathKind>, NetError> {
+        Net::carrying_path(self, host, peer)
+    }
+
+    fn link_log(&self, host: &str) -> Result<Vec<LinkEvent>, NetError> {
+        Net::link_log(self, host)
     }
 
     async fn kill_daemon(&mut self, host: &str) -> Result<Ack, NetError> {

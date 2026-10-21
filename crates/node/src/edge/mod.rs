@@ -625,11 +625,11 @@ impl Edge {
         self.connections.stored_reachability_error(host).await
     }
 
-    /// Moves the LAN listener onto a new socket, for a device whose network
-    /// changed under it: links migrate with the QUIC connection.
-    pub fn rebind_lan(&self, socket: std::net::UdpSocket) -> std::io::Result<()> {
-        socket.set_nonblocking(true)?;
-        self.reachability.rebind_quic(socket)
+    /// Moves the profile's link socket onto a new substrate, for a device
+    /// whose network changed under it: links migrate with their QUIC
+    /// connections, and peers see them arrive from the new address.
+    pub fn rebind(&self, substrate: Arc<dyn Datagrams>) -> std::io::Result<()> {
+        self.quic_endpoint.rebind(substrate)
     }
 
     /// Whether this profile remembers that UDP to `relay` was eaten, and so

@@ -340,7 +340,7 @@ impl Edge {
                 (endpoint, Some(addr))
             }
             None => (
-                quinn::Endpoint::client(SocketAddr::from(([0, 0, 0, 0], 0)))
+                crate::identity::quic_endpoint(None, SocketAddr::from(([0, 0, 0, 0], 0)))
                     .map_err(EdgeError::Dialing)?,
                 None,
             ),
@@ -990,7 +990,7 @@ fn bind_lan(
         let runtime = quinn::default_runtime()
             .ok_or_else(|| std::io::Error::other("no async runtime for the LAN listener"))?;
         return quinn::Endpoint::new(
-            quinn::EndpointConfig::default(),
+            crate::identity::quic_endpoint_config(),
             Some(server),
             socket,
             runtime,
@@ -1002,11 +1002,11 @@ fn bind_lan(
             .ok()
             .and_then(|text| text.trim().parse::<u16>().ok())
         && let Ok(endpoint) =
-            quinn::Endpoint::server(server.clone(), SocketAddr::new(bind.ip(), port))
+            crate::identity::quic_endpoint(Some(server.clone()), SocketAddr::new(bind.ip(), port))
     {
         return Ok(endpoint);
     }
-    quinn::Endpoint::server(server, bind)
+    crate::identity::quic_endpoint(Some(server), bind)
 }
 
 /// Serves PairingService to callers that presented no trusted key.

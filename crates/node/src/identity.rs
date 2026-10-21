@@ -252,6 +252,26 @@ pub(crate) fn quic_transport_config() -> std::sync::Arc<quinn::TransportConfig> 
     std::sync::Arc::new(transport)
 }
 
+/// Every QUIC endpoint's config. None offers to grease the fixed bit: the
+/// link socket tells its own datagrams from QUIC by that bit, and a peer
+/// clears it only when offered.
+pub fn quic_endpoint_config() -> quinn::EndpointConfig {
+    let mut config = quinn::EndpointConfig::default();
+    config.grease_quic_bit(false);
+    config
+}
+
+/// A QUIC endpoint on a UDP socket of its own at `bind`.
+pub fn quic_endpoint(
+    server: Option<quinn::ServerConfig>,
+    bind: std::net::SocketAddr,
+) -> std::io::Result<quinn::Endpoint> {
+    let socket = std::net::UdpSocket::bind(bind)?;
+    let runtime = quinn::default_runtime()
+        .ok_or_else(|| std::io::Error::other("no async runtime for a QUIC endpoint"))?;
+    quinn::Endpoint::new(quic_endpoint_config(), server, socket, runtime)
+}
+
 pub(crate) fn host_id_for_certificate(
     trust_store: &TrustStore,
     cert: &CertificateDer<'_>,

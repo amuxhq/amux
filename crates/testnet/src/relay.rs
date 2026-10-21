@@ -104,7 +104,7 @@ impl Relay {
     pub async fn start(decl: &RelayDecl, clock: Arc<dyn Clock>) -> std::io::Result<Self> {
         let (quic_server, quic_client, quic_root, quic_root_pem) = quic_configs();
         let quic_endpoint =
-            quinn::Endpoint::server(quic_server, SocketAddr::from(([127, 0, 0, 1], 0)))?;
+            node::quic_endpoint(Some(quic_server), SocketAddr::from(([127, 0, 0, 1], 0)))?;
         let quic = quic_endpoint.local_addr()?;
         let mut state = CloudState::default();
         for account in &decl.accounts {

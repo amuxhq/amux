@@ -19,7 +19,7 @@ use crate::trust::SharedTrustStore;
 
 const STREAM_ACCEPTED: u8 = 0;
 const CONTROL_QUEUE_CAPACITY: usize = 32;
-const DEVICE_SERVER_NAME: &str = "amux-device.local";
+pub(crate) const DEVICE_SERVER_NAME: &str = "amux-device.local";
 // Quinn's first Initial PTO is about one second with its default initial RTT.
 // Two seconds lets one lost handshake packet retransmit without allowing one
 // black-holed DNS candidate to consume the cloud connection's whole dial.
@@ -763,8 +763,10 @@ mod tests {
         let server_trust = trust_for(&client_identity);
         let server_config = server_identity.quic_server_config(server_trust).unwrap();
         let server_endpoint =
-            quinn::Endpoint::server(server_config, "127.0.0.1:0".parse().unwrap()).unwrap();
-        let client_endpoint = quinn::Endpoint::client("127.0.0.1:0".parse().unwrap()).unwrap();
+            crate::identity::quic_endpoint(Some(server_config), "127.0.0.1:0".parse().unwrap())
+                .unwrap();
+        let client_endpoint =
+            crate::identity::quic_endpoint(None, "127.0.0.1:0".parse().unwrap()).unwrap();
         let server_addr = server_endpoint.local_addr().unwrap();
 
         let accept = async {
@@ -834,9 +836,11 @@ mod tests {
     async fn relay_dial_skips_an_ipv6_result_for_an_ipv4_endpoint() {
         let (server_config, client_config) = relay_test_configs();
         let server_endpoint =
-            quinn::Endpoint::server(server_config, "127.0.0.1:0".parse().unwrap()).unwrap();
+            crate::identity::quic_endpoint(Some(server_config), "127.0.0.1:0".parse().unwrap())
+                .unwrap();
         let server_addr = server_endpoint.local_addr().unwrap();
-        let client_endpoint = quinn::Endpoint::client("0.0.0.0:0".parse().unwrap()).unwrap();
+        let client_endpoint =
+            crate::identity::quic_endpoint(None, "0.0.0.0:0".parse().unwrap()).unwrap();
         let ipv6_first = SocketAddr::new("::1".parse().unwrap(), server_addr.port());
 
         let accept = async {
@@ -866,9 +870,11 @@ mod tests {
     async fn relay_dial_falls_through_a_bound_unresponsive_candidate() {
         let (server_config, client_config) = relay_test_configs();
         let server_endpoint =
-            quinn::Endpoint::server(server_config, "127.0.0.1:0".parse().unwrap()).unwrap();
+            crate::identity::quic_endpoint(Some(server_config), "127.0.0.1:0".parse().unwrap())
+                .unwrap();
         let server_addr = server_endpoint.local_addr().unwrap();
-        let client_endpoint = quinn::Endpoint::client("0.0.0.0:0".parse().unwrap()).unwrap();
+        let client_endpoint =
+            crate::identity::quic_endpoint(None, "0.0.0.0:0".parse().unwrap()).unwrap();
         let blackhole = UdpSocket::bind("127.0.0.1:0").unwrap();
         let blackhole_addr = blackhole.local_addr().unwrap();
         let started = Instant::now();
@@ -1012,8 +1018,11 @@ mod tests {
         ticket_server_config.transport_config(quic_transport_config());
         ticket_server_config.migration(true);
 
-        let server_endpoint =
-            quinn::Endpoint::server(ticket_server_config, "127.0.0.1:0".parse().unwrap()).unwrap();
+        let server_endpoint = crate::identity::quic_endpoint(
+            Some(ticket_server_config),
+            "127.0.0.1:0".parse().unwrap(),
+        )
+        .unwrap();
         let server_addr = server_endpoint.local_addr().unwrap();
 
         let full_handshakes = Arc::new(AtomicUsize::new(0));
@@ -1042,7 +1051,8 @@ mod tests {
         let client_crypto = quinn::crypto::rustls::QuicClientConfig::try_from(client_tls).unwrap();
         let mut client_config = quinn::ClientConfig::new(Arc::new(client_crypto));
         client_config.transport_config(quic_transport_config());
-        let mut client_endpoint = quinn::Endpoint::client("127.0.0.1:0".parse().unwrap()).unwrap();
+        let mut client_endpoint =
+            crate::identity::quic_endpoint(None, "127.0.0.1:0".parse().unwrap()).unwrap();
         client_endpoint.set_default_client_config(client_config);
 
         let (first_server, first_client) =

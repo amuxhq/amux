@@ -2584,6 +2584,7 @@ dependencies = [
  "libc",
  "mdns-sd",
  "oauth2",
+ "path-core",
  "patience",
  "prost",
  "provider-fakes",

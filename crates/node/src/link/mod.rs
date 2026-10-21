@@ -5,6 +5,7 @@ pub(crate) mod piper;
 pub(crate) mod quic;
 pub(crate) mod relay_host;
 pub(crate) mod run;
+pub mod socket;
 
 pub use carrier::{
     ByteStream, CarrierKind, ControlSink, ControlSource, LinkCarrier, OpenError, read_message,

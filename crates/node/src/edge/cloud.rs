@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 use std::future::Future;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -17,6 +18,7 @@ use tracing::Instrument;
 use uuid::Uuid;
 
 use super::status::{Observed, RelayCarrier, RuntimeStatus};
+use super::token::{StoredToken, forget_token, load_token, store_token};
 use crate::auth::CredentialProvider;
 use crate::auth::cloud::{
     CloudError, CloudRoutingConnectionDetails, fetch_routing_connection_details,
@@ -187,6 +189,9 @@ impl Refresher {
 struct CloudConnectionContext {
     cloud_url: String,
     credentials: Arc<dyn CredentialProvider>,
+    /// Where the relay token is kept between launches.
+    profile: PathBuf,
+    clock: Arc<dyn Clock>,
     connector: LinkConnectorCtx,
     status: RuntimeStatus,
     refresh_rx: LinkConnectorRefreshReceiver,
@@ -223,6 +228,8 @@ impl CloudLink {
 pub(crate) fn establish_cloud_link(
     cloud_url: String,
     credentials: Arc<dyn CredentialProvider>,
+    profile: PathBuf,
+    clock: Arc<dyn Clock>,
     connector_ctx: LinkConnectorCtx,
     status: RuntimeStatus,
     transport: CloudTransport,
@@ -235,6 +242,8 @@ pub(crate) fn establish_cloud_link(
     let connection = CloudConnectionContext {
         cloud_url,
         credentials,
+        profile,
+        clock,
         connector: connector_ctx,
         status: task_status,
         refresh_rx,
@@ -260,6 +269,12 @@ pub(crate) fn establish_cloud_link(
                     Err(CloudConnectionError::NonRetriable(msg)) => {
                         tracing::error!(error = %msg, "cloud non-retriable error, stopping");
                         return;
+                    }
+                    // The kept token is forgotten; the next attempt fetches
+                    // a fresh one at once, and only its refusal is final.
+                    Err(CloudConnectionError::KeptTokenRefused) => {
+                        tracing::info!("the relay refused the kept token; fetching a fresh one");
+                        continue;
                     }
                     Err(CloudConnectionError::Retriable { msg, reset_backoff }) => {
                         if reset_backoff {
@@ -301,6 +316,8 @@ enum CloudConnectionError {
     Retriable { msg: String, reset_backoff: bool },
     /// Error that should stop reconnection attempts.
     NonRetriable(String),
+    /// The relay refused a token kept from an earlier fetch.
+    KeptTokenRefused,
 }
 
 fn cloud_connection_error_from_fetch(
@@ -334,33 +351,95 @@ async fn run_cloud_connection(
     let prepared = tokio::select! {
         biased;
         _ = wait_for_stop(&mut stop_rx) => return Ok(()),
-        prepared = prepare_cloud_connection(&ctx.cloud_url, &ctx.credentials, &ctx.status) => prepared,
+        prepared = prepare_cloud_connection(ctx) => prepared,
     };
-    let (credentials, details) = prepared?;
+    let prepared = prepared?;
 
-    run_cloud_connection_with_details(ctx, credentials, details, stop_rx).await
+    run_cloud_connection_with_details(ctx, prepared, stop_rx).await
 }
 
-async fn prepare_cloud_connection(
-    cloud_url: &str,
-    credentials: &Arc<dyn CredentialProvider>,
-    status: &RuntimeStatus,
-) -> std::result::Result<
-    (Arc<dyn CredentialProvider>, CloudRoutingConnectionDetails),
-    CloudConnectionError,
-> {
-    let credentials = credentials.clone();
-    let details = match fetch_routing_connection_details(cloud_url, credentials.as_ref()).await {
-        Ok(details) => details,
-        Err(error) => {
-            if matches!(error, CloudError::NotAuthenticated | CloudError::Auth(_)) {
-                audit::auth_jwt_failure("cloud routing credentials were rejected");
-            }
-            return Err(cloud_connection_error_from_fetch(error, status));
-        }
-    };
+/// The relay to dial and the token to present there.
+struct Prepared {
+    token: LinkConnectorToken,
+    host: String,
+    port: u16,
+    /// Kept from an earlier fetch rather than fetched for this connection.
+    kept: bool,
+}
 
-    Ok((credentials, details))
+fn now(clock: &dyn Clock) -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_millis(clock.now_ms().max(0) as u64)
+}
+
+/// The kept token while it is valid, so a launch dials the relay without
+/// waiting on the account service; otherwise a fresh one, kept for the
+/// next launch.
+async fn prepare_cloud_connection(
+    ctx: &CloudConnectionContext,
+) -> std::result::Result<Prepared, CloudConnectionError> {
+    match load_token(&ctx.profile) {
+        Ok(Some(kept)) if kept.usable_at(now(ctx.clock.as_ref())) => {
+            tracing::info!("presenting the kept relay token");
+            return Ok(Prepared {
+                token: kept.connector_token(),
+                host: kept.host,
+                port: kept.port,
+                kept: true,
+            });
+        }
+        Ok(_) => {}
+        Err(error) => tracing::warn!(%error, "the kept relay token could not be read"),
+    }
+    let token = fetch_and_keep(
+        ctx.cloud_url.as_str(),
+        ctx.credentials.as_ref(),
+        &ctx.profile,
+        ctx.clock.as_ref(),
+    )
+    .await
+    .map_err(|error| {
+        if matches!(error, CloudError::NotAuthenticated | CloudError::Auth(_)) {
+            audit::auth_jwt_failure("cloud routing credentials were rejected");
+        }
+        cloud_connection_error_from_fetch(error, &ctx.status)
+    })?;
+    Ok(Prepared {
+        token: token.connector_token(),
+        host: token.host,
+        port: token.port,
+        kept: false,
+    })
+}
+
+/// Asks the account service for a relay token and keeps it for the next
+/// launch. A token that cannot be kept is still used.
+async fn fetch_and_keep(
+    cloud_url: &str,
+    credentials: &dyn CredentialProvider,
+    profile: &std::path::Path,
+    clock: &dyn Clock,
+) -> std::result::Result<StoredToken, CloudError> {
+    let details: CloudRoutingConnectionDetails =
+        fetch_routing_connection_details(cloud_url, credentials).await?;
+    let token = StoredToken {
+        token: details.token,
+        expires_at: SystemTime::from(details.expires_at),
+        fetched_at: now(clock),
+        tier: details.tier,
+        host: details.host,
+        port: details.port,
+    };
+    if let Err(error) = store_token(profile, &token) {
+        tracing::warn!(%error, "the relay token could not be kept for the next launch");
+    }
+    Ok(token)
+}
+
+/// The relay refused the token: whatever is kept is not presented again.
+fn forget_kept(ctx: &CloudConnectionContext) {
+    if let Err(error) = forget_token(&ctx.profile) {
+        tracing::warn!(%error, "the refused relay token could not be forgotten");
+    }
 }
 
 pub(crate) type CloudDialResult = Result<Arc<dyn LinkCarrier>, String>;
@@ -467,11 +546,10 @@ fn close_ready_loser(result: Option<CloudDialResult>) {
 
 async fn run_cloud_connection_with_details(
     ctx: &CloudConnectionContext,
-    credentials: Arc<dyn CredentialProvider>,
-    details: CloudRoutingConnectionDetails,
+    details: Prepared,
     stop_rx: watch::Receiver<bool>,
 ) -> std::result::Result<(), CloudConnectionError> {
-    tracing::info!(host = %details.host, port = details.port, "connecting to cloud routing");
+    tracing::info!(host = %details.host, port = details.port, kept = details.kept, "connecting to cloud routing");
     let quic_endpoint = ctx.transport.quic_endpoint.clone();
     let quic_host = details.host.clone();
     let quic_port = details.port;
@@ -547,17 +625,16 @@ async fn run_cloud_connection_with_details(
         reset_backoff: false,
     })?;
     let connected_at = std::time::Instant::now();
-    let tier = details.tier;
+    let tier = details.token.tier;
+    let kept = details.kept;
     let refresh_status = ctx.status.clone();
     let connector_auth = LinkConnectorAuth::with_free_refresh_interval(
-        LinkConnectorToken {
-            token: details.token,
-            expires_at: SystemTime::from(details.expires_at),
-            tier,
-        },
+        details.token,
         Arc::new(CloudLinkTokenRefresher {
             cloud_url: ctx.cloud_url.clone(),
-            credentials,
+            credentials: ctx.credentials.clone(),
+            profile: ctx.profile.clone(),
+            clock: ctx.clock.clone(),
             current_host: details.host,
             current_port: details.port,
         }),
@@ -581,15 +658,20 @@ async fn run_cloud_connection_with_details(
         Some(ctx.refresh_rx.clone()),
     );
     let _abort_connector_on_drop = AbortTaskOnDrop(connector_task.abort_handle());
-    await_cloud_establishment(
+    let established = await_cloud_establishment(
         &ctx.status,
         established_rx,
         connected_at,
         CLOUD_ROUTING_ESTABLISHMENT_TIMEOUT,
         tier,
         relay_carrier,
+        kept,
     )
-    .await?;
+    .await;
+    if matches!(established, Err(CloudConnectionError::KeptTokenRefused)) {
+        forget_kept(ctx);
+    }
+    established?;
 
     let result = connector_task
         .await
@@ -606,6 +688,7 @@ async fn run_cloud_connection_with_details(
         // connection fetches fresh ones; credentials that are really gone
         // fail there and ask for a sign-in.
         Err(error) if error.code() == tonic::Code::Unauthenticated => {
+            forget_kept(ctx);
             Err(CloudConnectionError::Retriable {
                 msg: error.to_string(),
                 reset_backoff: should_reset_backoff_after_connection(connected_at.elapsed()),
@@ -656,11 +739,15 @@ async fn await_cloud_establishment(
     timeout: Duration,
     tier: crate::Tier,
     carrier: RelayCarrier,
+    kept: bool,
 ) -> std::result::Result<(), CloudConnectionError> {
     match tokio::time::timeout(timeout, established_rx).await {
         Ok(Ok(Ok(_))) => {
             observed.report(Observed::Connected { tier, carrier });
             Ok(())
+        }
+        Ok(Ok(Err(status))) if kept && status.code() == tonic::Code::Unauthenticated => {
+            Err(CloudConnectionError::KeptTokenRefused)
         }
         Ok(Ok(Err(status))) => {
             Err(cloud_connection_error_from_status(observed, status, connected_at.elapsed()).await)
@@ -728,6 +815,8 @@ impl Drop for AbortTaskOnDrop {
 struct CloudLinkTokenRefresher {
     cloud_url: String,
     credentials: Arc<dyn CredentialProvider>,
+    profile: PathBuf,
+    clock: Arc<dyn Clock>,
     current_host: String,
     current_port: u16,
 }
@@ -753,21 +842,24 @@ fn cloud_error_from_refresh_status(status: tonic::Status) -> CloudError {
 #[tonic::async_trait]
 impl LinkConnectorTokenRefresher for CloudLinkTokenRefresher {
     async fn refresh_routing_token(&self) -> Result<LinkConnectorToken, tonic::Status> {
-        let details = fetch_routing_connection_details(&self.cloud_url, self.credentials.as_ref())
-            .await
-            .map_err(cloud_token_refresh_status)?;
+        // Kept before the endpoint is compared: a relay that moved is the
+        // one the next connection dials.
+        let token = fetch_and_keep(
+            &self.cloud_url,
+            self.credentials.as_ref(),
+            &self.profile,
+            self.clock.as_ref(),
+        )
+        .await
+        .map_err(cloud_token_refresh_status)?;
 
-        if details.host != self.current_host || details.port != self.current_port {
+        if token.host != self.current_host || token.port != self.current_port {
             return Err(tonic::Status::unavailable(
                 "cloud routing endpoint changed during reauth",
             ));
         }
 
-        Ok(LinkConnectorToken {
-            token: details.token,
-            expires_at: SystemTime::from(details.expires_at),
-            tier: details.tier,
-        })
+        Ok(token.connector_token())
     }
 }
 

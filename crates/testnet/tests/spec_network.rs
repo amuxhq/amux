@@ -2100,22 +2100,13 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
         "bob@example.com"
     );
 
-    // Bob's account is revoked. The work profile has to sign in again; the
-    // main profile's link to the relay does not notice.
+    // Bob's account is revoked. The relay credential the work profile holds
+    // stays valid, so nothing changes until its refresh, five minutes before
+    // it expires on this net: the account service refuses that, and the
+    // work profile has to sign in again. The main profile's link to the
+    // relay refreshes at the same moment and does not notice.
     net.relay().unwrap().revoke("bob");
-    door(&net, "desk")
-        .await
-        .pause_profile(wire::ProfileRequest {
-            profile_id: work.clone(),
-        })
-        .await
-        .unwrap();
-    door(&net, "desk")
-        .await
-        .resume_profile(wire::ProfileRequest {
-            profile_id: work.clone(),
-        })
-        .await
+    net.advance(testnet::CREDENTIAL_TTL - Duration::from_secs(5 * 60))
         .unwrap();
     until("the work profile to need a sign-in", || async {
         let observed = profile_info(&net, "desk", &work).await.observed;

@@ -701,6 +701,7 @@ mod tests {
             LinkConnectorToken {
                 token: token.to_owned(),
                 expires_at: SystemTime::now() + Duration::from_secs(3600),
+                fetched_at: SystemTime::now(),
                 tier: Tier::Pro,
             },
             Arc::new(NoRefresh),

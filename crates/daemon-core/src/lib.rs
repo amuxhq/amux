@@ -282,8 +282,9 @@ impl Daemon {
             Input::Credential {
                 link,
                 expires_at_ms,
+                fetched_at_ms,
                 free_every_ms,
-            } => self.credential(link, expires_at_ms, free_every_ms, out),
+            } => self.credential(link, expires_at_ms, fetched_at_ms, free_every_ms, out),
             Input::Timer {
                 id: TimerId::Refresh(link),
             } => self.refresh_due(link, out),

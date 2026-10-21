@@ -18,6 +18,7 @@ mod cloud;
 mod peer;
 mod relay_server;
 mod status;
+pub mod token;
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -749,6 +750,8 @@ impl Edge {
         *cloud = Some(establish_cloud_link(
             cloud_url,
             credentials,
+            self.dir.clone(),
+            self.clock.clone(),
             connector,
             self.status.clone(),
             CloudTransport::new(

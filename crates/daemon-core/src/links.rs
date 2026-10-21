@@ -34,6 +34,12 @@ use crate::presence::Route;
 /// How long before the relay credential expires its refresh comes.
 pub const REFRESH_BEFORE_EXPIRY_MS: u64 = 5 * 60 * 1000;
 
+/// How old a relay credential grows before it is refreshed. Credentials
+/// last a week so a launch can reuse one, but the plan they carry is only
+/// as fresh as their fetch: refreshing hourly bounds how long a lapse or a
+/// purchase goes unnoticed.
+pub const REFRESH_AFTER_MS: u64 = 60 * 60 * 1000;
+
 /// Every link that is up, by id, with its peer and the hosts the peer
 /// claims to reach, and the channels opened over them. The relay keeps one
 /// too.
@@ -221,19 +227,24 @@ impl Daemon {
         }
     }
 
-    /// The relay link presented a fresh credential: its refresh is armed.
-    /// On the free plan it comes on an interval, so a purchase reaches the
-    /// link promptly; otherwise shortly before the credential expires.
+    /// The relay link presented a credential: its refresh is armed. On the
+    /// free plan it comes on an interval, so a purchase reaches the link
+    /// promptly; otherwise once the credential is an hour old, or shortly
+    /// before it expires if that is sooner. A credential kept from an
+    /// earlier launch may already be due, and is refreshed at once.
     pub(crate) fn credential(
         &mut self,
         link: LinkId,
         expires_at_ms: u64,
+        fetched_at_ms: u64,
         free_every_ms: Option<u64>,
         out: &mut Vec<Output>,
     ) {
         let at_ms = match free_every_ms {
             Some(every) => self.timers.now_ms.saturating_add(every),
-            None => expires_at_ms.saturating_sub(REFRESH_BEFORE_EXPIRY_MS),
+            None => fetched_at_ms
+                .saturating_add(REFRESH_AFTER_MS)
+                .min(expires_at_ms.saturating_sub(REFRESH_BEFORE_EXPIRY_MS)),
         };
         self.arm(TimerId::Refresh(link), at_ms, out);
     }
@@ -940,18 +951,20 @@ mod tests {
     }
 
     #[test]
-    fn the_relay_credential_is_refreshed_on_the_free_interval_or_before_it_expires() {
+    fn the_relay_credential_is_refreshed_on_the_free_interval_hourly_or_before_it_expires() {
         let mut daemon = daemon();
         up(&mut daemon);
         step(&mut daemon, Input::Tick { now_ms: 1_000 });
-        let credential = |free_every_ms| Input::Credential {
+        let credential = |expires_at_ms, fetched_at_ms, free_every_ms| Input::Credential {
             link: LINK,
-            expires_at_ms: 3_600_000,
+            expires_at_ms,
+            fetched_at_ms,
             free_every_ms,
         };
         let refresh = TimerId::Refresh(LINK);
+        let week = 7 * 24 * REFRESH_AFTER_MS;
         assert_eq!(
-            step(&mut daemon, credential(Some(60_000))),
+            step(&mut daemon, credential(week, 1_000, Some(60_000))),
             vec![Output::ArmTimer {
                 id: refresh,
                 at_ms: 61_000
@@ -959,13 +972,30 @@ mod tests {
             "the free plan's interval, from now"
         );
         assert_eq!(
-            step(&mut daemon, credential(None)),
+            step(&mut daemon, credential(week, 1_000, None)),
             vec![Output::ArmTimer {
                 id: refresh,
-                at_ms: 3_600_000 - REFRESH_BEFORE_EXPIRY_MS
+                at_ms: 1_000 + REFRESH_AFTER_MS
             }],
-            "a fresh credential moves the refresh to before it expires"
+            "a week-long credential is refreshed once it is an hour old"
         );
+        assert_eq!(
+            step(&mut daemon, credential(600_000, 1_000, None)),
+            vec![Output::ArmTimer {
+                id: refresh,
+                at_ms: 600_000 - REFRESH_BEFORE_EXPIRY_MS
+            }],
+            "a short credential is refreshed before it expires"
+        );
+        assert_eq!(
+            step(&mut daemon, credential(week, 0, None)),
+            vec![Output::ArmTimer {
+                id: refresh,
+                at_ms: REFRESH_AFTER_MS
+            }],
+            "a credential kept from an earlier launch counts its age from its fetch"
+        );
+        step(&mut daemon, credential(3_600_000, 0, None));
         let out = step(&mut daemon, Input::Timer { id: refresh });
         assert!(
             matches!(
@@ -979,7 +1009,7 @@ mod tests {
         );
 
         // A link that went takes its refresh with it.
-        step(&mut daemon, credential(None));
+        step(&mut daemon, credential(week, 1_000, None));
         let out = step(
             &mut daemon,
             Input::LinkDown {

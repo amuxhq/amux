@@ -36,7 +36,8 @@ use crate::topology::{RelayDecl, TierDecl};
 /// The name the relay's certificate is issued to, and the host the cloud
 /// names for it.
 pub const RELAY_HOST: &str = "localhost";
-/// How long a relay credential lives on the policy clock.
+/// How long a relay credential lives on the policy clock unless a story
+/// sets another lifetime with [`Relay::set_credential_ttl`].
 pub const CREDENTIAL_TTL: Duration = Duration::from_secs(600);
 
 /// One account the cloud knows.
@@ -71,6 +72,8 @@ struct CloudState {
     refreshed_as: Vec<String>,
     /// How far the relay's clock runs ahead of the hosts'.
     ahead: Duration,
+    /// How long credentials minted from now on live, when not the default.
+    ttl: Option<Duration>,
 }
 
 struct Cloud {
@@ -264,7 +267,14 @@ impl Relay {
         self.cloud.state.lock().unwrap().ahead = ahead;
     }
 
-    /// Every connect call so far, by account.
+    /// Mints credentials that live `ttl` from now on, as an account service
+    /// issuing week-long tokens does.
+    pub fn set_credential_ttl(&self, ttl: Duration) {
+        self.cloud.state.lock().unwrap().ttl = Some(ttl);
+    }
+
+    /// Every connect call so far, by account: each one is a credential the
+    /// account service issued.
     pub fn connects(&self) -> Vec<String> {
         self.cloud.state.lock().unwrap().connects.clone()
     }
@@ -469,7 +479,8 @@ impl Cloud {
         state.connects.push(account.to_owned());
         let known = state.accounts[account].clone();
         let token = format!("relay-{account}-{}", state.connects.len());
-        let expires_ms = self.clock.now_ms() + CREDENTIAL_TTL.as_millis() as i64;
+        let ttl = state.ttl.unwrap_or(CREDENTIAL_TTL);
+        let expires_ms = self.clock.now_ms() + ttl.as_millis() as i64;
         let lapses_ms = expires_ms - state.ahead.as_millis() as i64;
         state.minted.insert(
             token.clone(),

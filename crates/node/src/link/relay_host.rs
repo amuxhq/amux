@@ -67,6 +67,7 @@ impl RelayHost {
             LinkConnectorToken {
                 token,
                 expires_at,
+                fetched_at: SystemTime::now(),
                 tier: Tier::Pro,
             },
             Arc::new(NoRefresh),

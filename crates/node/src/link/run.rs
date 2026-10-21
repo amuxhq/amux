@@ -124,6 +124,8 @@ impl LinkAuthSession {
 pub struct LinkConnectorToken {
     pub token: String,
     pub expires_at: SystemTime,
+    /// When the account service issued it, on the link's clock.
+    pub fetched_at: SystemTime,
     pub tier: crate::Tier,
 }
 
@@ -181,6 +183,7 @@ impl LinkConnectorAuth {
         daemon_core::Input::Credential {
             link: link.core(),
             expires_at_ms: system_time_ms(self.token.expires_at).max(0) as u64,
+            fetched_at_ms: system_time_ms(self.token.fetched_at).max(0) as u64,
             free_every_ms: free_every.map(|every| every.as_millis() as u64),
         }
     }

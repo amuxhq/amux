@@ -55,6 +55,9 @@ pub enum Input {
         link: LinkId,
         /// When the relay stops honouring it, on the core's clock.
         expires_at_ms: u64,
+        /// When the account service issued it, on the core's clock: a
+        /// credential kept across launches may be hours old.
+        fetched_at_ms: u64,
         /// The free plan's refresh interval, when the account is on it and
         /// one is set: a purchase then reaches the link within it.
         free_every_ms: Option<u64>,
@@ -819,6 +822,7 @@ mod tests {
             Input::Credential {
                 link: LinkId(1),
                 expires_at_ms: 900_000,
+                fetched_at_ms: 300_000,
                 free_every_ms: Some(60_000),
             },
             Input::PlanChanged,

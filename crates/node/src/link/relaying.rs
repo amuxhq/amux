@@ -836,7 +836,10 @@ mod tests {
             relay.host_id,
             Some(
                 relay
-                    .quic_server_config(trusting(&[&hosts[0], &hosts[1]]))
+                    .quic_server_config(
+                        trusting(&[&hosts[0], &hosts[1]]),
+                        &crate::link::resumption::SessionTickets::in_memory(16),
+                    )
                     .unwrap(),
             ),
         );

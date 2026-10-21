@@ -7,6 +7,7 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::version;
 use tokio_rustls::TlsAcceptor;
 
+use crate::link::resumption::SessionTickets;
 use crate::transport::{Result, TransportError};
 
 /// Create a TLS acceptor for cloud server mode.
@@ -23,32 +24,27 @@ pub fn create_tls_acceptor(cert_pem: &[u8], key_pem: &[u8]) -> Result<TlsAccepto
 }
 
 /// Builds the relay's QUIC server configuration from the same WebPKI
-/// certificate and key used by its TCP/TLS listener.
-pub fn relay_quic_server_config(cert_pem: &[u8], key_pem: &[u8]) -> Result<quinn::ServerConfig> {
+/// certificate and key used by its TCP/TLS listener, issuing session
+/// tickets from `tickets`.
+pub fn relay_quic_server_config(
+    cert_pem: &[u8],
+    key_pem: &[u8],
+    tickets: &Arc<SessionTickets>,
+) -> Result<quinn::ServerConfig> {
     let (certs, key) = parse_server_identity(cert_pem, key_pem)?;
-    relay_quic_server_config_from_der(certs, key)
+    relay_quic_server_config_from_der(certs, key, tickets)
 }
 
 pub fn relay_quic_server_config_from_der(
     certs: Vec<CertificateDer<'static>>,
     key: PrivateKeyDer<'static>,
+    tickets: &Arc<SessionTickets>,
 ) -> Result<quinn::ServerConfig> {
-    let mut tls = rustls::ServerConfig::builder_with_protocol_versions(&[&version::TLS13])
+    let tls = rustls::ServerConfig::builder_with_protocol_versions(&[&version::TLS13])
         .with_no_client_auth()
         .with_single_cert(certs, key)
         .map_err(|error| TransportError::Config(format!("TLS config error: {error}")))?;
-    tls.alpn_protocols = vec![crate::identity::QUIC_ALPN.to_vec()];
-    tls.session_storage = Arc::new(rustls::server::NoServerSessionStorage {});
-    tls.send_tls13_tickets = 0;
-    tls.max_early_data_size = 0;
-
-    let crypto = quinn::crypto::rustls::QuicServerConfig::try_from(tls)
-        .map_err(|error| TransportError::Config(error.to_string()))?;
-    let mut config = quinn::ServerConfig::with_crypto(Arc::new(crypto));
-    config.transport_config(crate::identity::quic_transport_config());
-    config.migration(true);
-    crate::link::validation::issue_tokens(&mut config);
-    Ok(config)
+    crate::identity::quic_server_config_issuing(tls, tickets).map_err(TransportError::Config)
 }
 
 fn parse_server_identity(

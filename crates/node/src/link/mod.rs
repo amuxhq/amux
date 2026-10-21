@@ -6,6 +6,7 @@ pub mod link_log;
 pub(crate) mod quic;
 pub(crate) mod relay_host;
 pub(crate) mod relaying;
+pub mod resumption;
 pub(crate) mod run;
 pub mod socket;
 pub(crate) mod validation;

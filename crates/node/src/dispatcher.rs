@@ -71,7 +71,10 @@ pub(crate) enum DispatchTarget {
     Trusted(HostId),
     Pairing,
     NoPairingWindow,
-    Close,
+    /// A certificate this host does not pin. A full handshake refuses it
+    /// in the verifier; a link resuming with a session ticket skips the
+    /// verifier and is refused here, as revoked, once it is up.
+    Revoked,
 }
 
 impl TunnelDispatcher {
@@ -278,8 +281,11 @@ impl TunnelDispatcher {
                 connection.close(0_u32.into(), NO_PAIRING_WINDOW);
                 Ok(())
             }
-            DispatchTarget::Close => {
-                connection.close(0_u32.into(), b"connection is not admitted");
+            DispatchTarget::Revoked => {
+                connection.close(
+                    (wire::pb::LinkCloseReason::UserRevoked as u32).into(),
+                    b"this host no longer trusts the connecting one",
+                );
                 Ok(())
             }
         }
@@ -320,7 +326,7 @@ impl TunnelDispatcher {
                         audit::auth_mtls_handshake_failure(
                             "trusted client certificate no longer maps to a trusted host",
                         );
-                        DispatchTarget::Close
+                        DispatchTarget::Revoked
                     }
                 },
             );

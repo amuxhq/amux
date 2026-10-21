@@ -48,6 +48,7 @@ use crate::driver::CoreLinks;
 use crate::identity::{DeviceIdentity, IdentityError};
 use crate::link::framed::{FramedKind, StreamEndpoint};
 use crate::link::quic::DEVICE_SERVER_NAME;
+use crate::link::resumption::{HOST_TICKETS, SessionTickets, TICKETS_DIR};
 use crate::link::socket::{Datagrams, LinkSocket};
 use crate::link::{
     ChannelPool, LinkCarrier, LinkEndpoint, QuicCarrier, run_link, serve_inbound_streams,
@@ -214,6 +215,8 @@ pub enum EdgeError {
     Discovery(String),
     #[error("the link socket: {0}")]
     LinkSocket(std::io::Error),
+    #[error("the session ticket store: {0}")]
+    Tickets(std::io::Error),
 }
 
 /// One profile's network edge.
@@ -222,6 +225,8 @@ pub struct Edge {
     host_name: String,
     identity: DeviceIdentity,
     trust: SharedTrustStore,
+    /// The session tickets this profile issues, kept across restarts.
+    tickets: Arc<SessionTickets>,
     runtime: Weak<ProfileRuntime>,
     local_host: LiveLocalHost,
     channels: Arc<ChannelPool>,
@@ -332,7 +337,9 @@ impl Edge {
         // Every profile answers on its one socket: hosts on its network
         // dial it there, and hosts anywhere reach it through the relay or a
         // paired daemon, whose forwarded packets arrive on the same socket.
-        let quic_server = Some(identity.quic_server_config(trust.clone())?);
+        let tickets = SessionTickets::open(&dir.join(TICKETS_DIR), HOST_TICKETS)
+            .map_err(EdgeError::Tickets)?;
+        let quic_server = Some(identity.quic_server_config(trust.clone(), &tickets)?);
         let (quic_endpoint, lan_addr) = match &options.lan {
             Some(lan) => {
                 let endpoint = LinkEndpoint::new(
@@ -422,7 +429,7 @@ impl Edge {
             tasks.push(serve_link_socket(
                 dir,
                 link_ctx,
-                identity.quic_server_config(trust.clone())?,
+                identity.quic_server_config(trust.clone(), &tickets)?,
                 trust.clone(),
                 shutdown.subscribe(),
             )?);
@@ -433,6 +440,7 @@ impl Edge {
             host_name: options.host_name.clone(),
             identity,
             trust,
+            tickets,
             runtime: runtime.clone(),
             local_host,
             channels,
@@ -807,12 +815,12 @@ impl Edge {
             carried: carried.clone(),
         };
         let client = self
-            .identity
-            .quic_client_config_for_peer(self.trust.clone(), other.host_id())
+            .quic_endpoint
+            .client_config(&self.identity, &self.trust, other.host_id())
             .map_err(|error| error.to_string())?;
         let server = other
             .identity
-            .quic_server_config(other.trust.clone())
+            .quic_server_config(other.trust.clone(), &other.tickets)
             .map_err(|error| error.to_string())?;
         let connecting = StreamEndpoint::new(near, FramedKind::InProcess, None)
             .map_err(|error| error.to_string())?;
@@ -1142,9 +1150,11 @@ fn serve_link_socket(
                         };
                         // Only a paired host's key opens a link here; the
                         // far end of SSH is no more trusted than the LAN.
+                        // A key it does not pin is refused as revoked, as
+                        // the verifier refuses one in a full handshake.
                         let Some(peer) = carrier.pinned_peer(&trust) else {
                             tracing::warn!("an SSH link presented no trusted key");
-                            carrier.close(wire::LinkCloseReason::Unspecified);
+                            carrier.close(wire::LinkCloseReason::UserRevoked);
                             return;
                         };
                         let ctx = ctx.with_authenticated_peer(peer);

@@ -1426,7 +1426,14 @@ mod tests {
         let listener = DeviceIdentity::for_test(HostId::new_v4());
         let server = LinkEndpoint::bind(
             "127.0.0.1:0".parse().unwrap(),
-            Some(listener.quic_server_config(trust_for(&dialler)).unwrap()),
+            Some(
+                listener
+                    .quic_server_config(
+                        trust_for(&dialler),
+                        &crate::link::resumption::SessionTickets::in_memory(16),
+                    )
+                    .unwrap(),
+            ),
         )
         .unwrap();
         let client = LinkEndpoint::bind("127.0.0.1:0".parse().unwrap(), None).unwrap();

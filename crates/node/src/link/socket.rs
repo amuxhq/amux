@@ -2282,7 +2282,10 @@ mod tests {
             server_socket.clone(),
             Some(
                 server_identity
-                    .quic_server_config(trust_for(&client_identity))
+                    .quic_server_config(
+                        trust_for(&client_identity),
+                        &crate::link::resumption::SessionTickets::in_memory(16),
+                    )
                     .unwrap(),
             ),
         );
@@ -2416,7 +2419,10 @@ mod tests {
         let server_socket = LinkSocket::bind(server_net.clone(), server_identity.host_id).unwrap();
         let client_socket = LinkSocket::bind(client_net.clone(), client_identity.host_id).unwrap();
         let mut server_config = server_identity
-            .quic_server_config(trust_for(&client_identity))
+            .quic_server_config(
+                trust_for(&client_identity),
+                &crate::link::resumption::SessionTickets::in_memory(16),
+            )
             .unwrap();
         server_config.transport_config(transport.clone());
         let server_endpoint = endpoint(server_socket.clone(), Some(server_config));

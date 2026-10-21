@@ -530,6 +530,7 @@ fn quic_configs() -> (quinn::ServerConfig, quinn::ClientConfig, Vec<u8>, String)
         rustls::pki_types::PrivateKeyDer::Pkcs8(rustls::pki_types::PrivatePkcs8KeyDer::from(
             signing_key.serialize_der(),
         )),
+        &node::SessionTickets::in_memory(node::RELAY_TICKETS),
     )
     .expect("the relay's QUIC server configuration");
     let mut roots = rustls::RootCertStore::empty();

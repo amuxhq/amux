@@ -80,9 +80,16 @@ fn add_debug_cloud_root(_root_store: &mut rustls::RootCertStore) -> Result<()> {
     Ok(())
 }
 
-/// Builds a WebPKI client configuration for the cloud relay's QUIC front.
+/// The WebPKI client configuration for the cloud relay's QUIC front,
+/// built once per process: rustls offers a session ticket only under the
+/// configuration it was issued to.
 pub(crate) fn relay_quic_client_config() -> Result<quinn::ClientConfig> {
-    relay_quic_client_config_with_roots(cloud_root_store()?)
+    static CONFIG: std::sync::OnceLock<quinn::ClientConfig> = std::sync::OnceLock::new();
+    if let Some(config) = CONFIG.get() {
+        return Ok(config.clone());
+    }
+    let config = relay_quic_client_config_with_roots(cloud_root_store()?)?;
+    Ok(CONFIG.get_or_init(|| config).clone())
 }
 
 pub fn relay_quic_client_config_with_roots(
@@ -92,7 +99,6 @@ pub fn relay_quic_client_config_with_roots(
         .with_root_certificates(roots)
         .with_no_client_auth();
     tls.alpn_protocols = vec![crate::identity::QUIC_ALPN.to_vec()];
-    tls.resumption = rustls::client::Resumption::disabled();
     tls.enable_early_data = false;
     let crypto = quinn::crypto::rustls::QuicClientConfig::try_from(tls)
         .map_err(|error| TransportError::Config(error.to_string()))?;

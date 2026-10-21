@@ -534,6 +534,7 @@ impl Relay {
         let quic = node::relay_quic_server_config(
             cert.pem().as_bytes(),
             signing_key.serialize_pem().as_bytes(),
+            &node::SessionTickets::in_memory(node::RELAY_TICKETS),
         )
         .context("the relay's QUIC configuration")?;
         let mut roots = rustls::RootCertStore::empty();

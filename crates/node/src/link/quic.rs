@@ -50,6 +50,9 @@ pub(crate) struct LinkEndpoint {
     /// The address-validation tokens the servers this endpoint dials gave
     /// it, so dialling one again skips its Retry.
     tokens: Arc<ServerTokens>,
+    /// The client configuration each peer is dialled with, holding the
+    /// session ticket the peer gave the last link.
+    resumption: Arc<super::resumption::PeerResumption>,
 }
 
 impl LinkEndpoint {
@@ -71,7 +74,19 @@ impl LinkEndpoint {
             endpoint,
             socket,
             tokens: Arc::default(),
+            resumption: Arc::default(),
         })
+    }
+
+    /// The configuration to dial `peer` with, offering the ticket the
+    /// peer's last link left.
+    pub(crate) fn client_config(
+        &self,
+        identity: &DeviceIdentity,
+        trust_store: &SharedTrustStore,
+        peer: HostId,
+    ) -> Result<quinn::ClientConfig, IdentityError> {
+        self.resumption.client_config(identity, trust_store, peer)
     }
 
     /// An endpoint on a dual-stack socket of its own at `bind`.
@@ -283,7 +298,7 @@ impl QuicCarrier {
         peer: HostId,
         transport: Option<std::sync::Arc<quinn::TransportConfig>>,
     ) -> Result<Self, ConnectError> {
-        let mut config = identity.quic_client_config_for_peer(trust_store, peer)?;
+        let mut config = endpoint.client_config(identity, &trust_store, peer)?;
         if let Some(transport) = transport {
             config.transport_config(transport);
         }
@@ -393,7 +408,7 @@ impl QuicCarrier {
         trust_store: SharedTrustStore,
         peer: HostId,
     ) -> Result<Self, ConnectError> {
-        let config = identity.quic_client_config_for_peer(trust_store, peer)?;
+        let config = endpoint.client_config(identity, &trust_store, peer)?;
         let connection = endpoint
             .connect_through(config, peer, through, DEVICE_SERVER_NAME)?
             .await?;
@@ -722,6 +737,7 @@ pub(crate) async fn stream_pair(
         rustls::pki_types::PrivateKeyDer::Pkcs8(rustls::pki_types::PrivatePkcs8KeyDer::from(
             signing_key.serialize_der(),
         )),
+        &super::resumption::SessionTickets::in_memory(16),
     )
     .expect("a server configuration");
     let mut roots = rustls::RootCertStore::empty();
@@ -974,26 +990,13 @@ impl AsyncStream for QuicByteStream {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::{Duration, Instant};
 
     use chrono::Utc;
-    use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-    use rustls::client::{
-        ClientSessionMemoryCache, ClientSessionStore, Resumption, Tls12ClientSessionValue,
-        Tls13ClientSessionValue,
-    };
-    use rustls::crypto::{
-        WebPkiSupportedAlgorithms, verify_tls12_signature, verify_tls13_signature,
-    };
-    use rustls::pki_types::{
-        CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName, UnixTime,
-    };
-    use rustls::{CertificateError, DigitallySignedStruct, NamedGroup, SignatureScheme};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use super::*;
-    use crate::identity::{QUIC_ALPN, ed25519_public_key_from_certificate, quic_transport_config};
+    use crate::link::resumption::{HOST_TICKETS, SessionTickets};
     use crate::trust::{TrustStore, TrustStorePairingUpdate};
 
     struct LoopbackPair {
@@ -1008,7 +1011,12 @@ mod tests {
         let server_identity = DeviceIdentity::for_test(HostId::new_v4());
         let client_trust = trust_for(&server_identity);
         let server_trust = trust_for(&client_identity);
-        let server_config = server_identity.quic_server_config(server_trust).unwrap();
+        let server_config = server_identity
+            .quic_server_config(
+                server_trust,
+                &crate::link::resumption::SessionTickets::in_memory(16),
+            )
+            .unwrap();
         let server_endpoint =
             crate::identity::quic_endpoint(Some(server_config), "127.0.0.1:0".parse().unwrap())
                 .unwrap();
@@ -1070,7 +1078,10 @@ mod tests {
         let client_identity = DeviceIdentity::for_test(HostId::new_v4());
         let server_identity = DeviceIdentity::for_test(HostId::new_v4());
         let server_config = server_identity
-            .quic_server_config(trust_for(&client_identity))
+            .quic_server_config(
+                trust_for(&client_identity),
+                &crate::link::resumption::SessionTickets::in_memory(16),
+            )
             .unwrap();
         let client_config = client_identity
             .quic_client_config_for_peer(trust_for(&server_identity), server_identity.host_id)
@@ -1085,7 +1096,10 @@ mod tests {
         let client_identity = DeviceIdentity::for_test(HostId::new_v4());
         let server_identity = DeviceIdentity::for_test(HostId::new_v4());
         let server_config = server_identity
-            .quic_server_config(trust_for(&client_identity))
+            .quic_server_config(
+                trust_for(&client_identity),
+                &crate::link::resumption::SessionTickets::in_memory(16),
+            )
             .unwrap();
         let server = LinkEndpoint::bind("[::]:0".parse().unwrap(), Some(server_config)).unwrap();
         let port = server.local_addr().unwrap().port();
@@ -1267,237 +1281,189 @@ mod tests {
         assert!(blocked_writer.await.unwrap().is_err());
     }
 
-    #[tokio::test]
-    async fn a_client_offered_session_ticket_is_not_honoured() {
-        let client_identity = DeviceIdentity::for_test(HostId::new_v4());
-        let server_identity = DeviceIdentity::for_test(HostId::new_v4());
-        let server_trust = trust_for(&client_identity);
-
-        let mut ticket_server_tls = server_identity
-            .server_tls_config(server_trust.clone())
+    /// A host answering on its own endpoint at `bind`, issuing tickets
+    /// from `tickets` and trusting `client`. A restarted host's old
+    /// endpoint lets go of the port only once its driver next runs.
+    async fn ticket_server(
+        identity: &DeviceIdentity,
+        client: &DeviceIdentity,
+        tickets: &Arc<SessionTickets>,
+        bind: SocketAddr,
+    ) -> LinkEndpoint {
+        let config = identity
+            .quic_server_config(trust_for(client), tickets)
             .unwrap();
-        ticket_server_tls.alpn_protocols = vec![QUIC_ALPN.to_vec()];
-        ticket_server_tls.session_storage = rustls::server::ServerSessionMemoryCache::new(32);
-        ticket_server_tls.send_tls13_tickets = 2;
-        ticket_server_tls.max_early_data_size = 0;
-        let ticket_crypto =
-            quinn::crypto::rustls::QuicServerConfig::try_from(ticket_server_tls).unwrap();
-        let mut ticket_server_config = quinn::ServerConfig::with_crypto(Arc::new(ticket_crypto));
-        ticket_server_config.transport_config(quic_transport_config());
-        ticket_server_config.migration(true);
-
-        let server_endpoint = crate::identity::quic_endpoint(
-            Some(ticket_server_config),
-            "127.0.0.1:0".parse().unwrap(),
-        )
-        .unwrap();
-        let server_addr = server_endpoint.local_addr().unwrap();
-
-        let full_handshakes = Arc::new(AtomicUsize::new(0));
-        let verifier = Arc::new(CountingPinnedVerifier::new(
-            server_identity.public_key().to_vec(),
-            full_handshakes.clone(),
-        ));
-        let sessions = Arc::new(TrackingSessionStore::default());
-        let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
-            client_identity.private_key_pkcs8().to_vec(),
-        ));
-        let mut client_tls =
-            rustls::ClientConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
-                .dangerous()
-                .with_custom_certificate_verifier(verifier)
-                .with_client_auth_cert(
-                    vec![CertificateDer::from(
-                        client_identity.certificate_der().unwrap(),
-                    )],
-                    key,
-                )
-                .unwrap();
-        client_tls.alpn_protocols = vec![QUIC_ALPN.to_vec()];
-        client_tls.resumption = Resumption::store(sessions.clone());
-        client_tls.enable_early_data = false;
-        let client_crypto = quinn::crypto::rustls::QuicClientConfig::try_from(client_tls).unwrap();
-        let mut client_config = quinn::ClientConfig::new(Arc::new(client_crypto));
-        client_config.transport_config(quic_transport_config());
-        let mut client_endpoint =
-            crate::identity::quic_endpoint(None, "127.0.0.1:0".parse().unwrap()).unwrap();
-        client_endpoint.set_default_client_config(client_config);
-
-        let (first_server, first_client) =
-            connect_raw(&server_endpoint, &client_endpoint, server_addr).await;
-        tokio::time::timeout(Duration::from_secs(1), async {
-            while sessions.inserted.load(Ordering::SeqCst) == 0 {
-                tokio::task::yield_now().await;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                match LinkEndpoint::bind(bind, Some(config.clone())) {
+                    Ok(server) => break server,
+                    Err(error) if error.kind() == io::ErrorKind::AddrInUse => {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                    Err(error) => panic!("binding the host: {error}"),
+                }
             }
         })
         .await
-        .expect("ticket-issuing server did not provide a session ticket");
-        first_client.close(0_u32.into(), b"test complete");
-        first_server.close(0_u32.into(), b"test complete");
+        .expect("the port comes free")
+    }
 
-        server_endpoint.set_server_config(Some(
-            server_identity.quic_server_config(server_trust).unwrap(),
-        ));
-        let (second_server, second_client) =
-            connect_raw(&server_endpoint, &client_endpoint, server_addr).await;
+    /// A host dialling one peer through the configuration its endpoint
+    /// keeps for the peer.
+    struct TicketClient {
+        endpoint: LinkEndpoint,
+        identity: DeviceIdentity,
+        trust: SharedTrustStore,
+        peer: HostId,
+    }
 
-        assert!(
-            sessions.taken.load(Ordering::SeqCst) > 0,
-            "the client must actually offer its cached ticket"
-        );
+    impl TicketClient {
+        fn new(peer: &DeviceIdentity) -> Self {
+            Self {
+                endpoint: LinkEndpoint::bind("127.0.0.1:0".parse().unwrap(), None).unwrap(),
+                identity: DeviceIdentity::for_test(HostId::new_v4()),
+                trust: trust_for(peer),
+                peer: peer.host_id,
+            }
+        }
+
+        /// One link to `server`, with a round trip on it so the ticket
+        /// the server sent has reached the client. Whether the server
+        /// took the client's address as validated.
+        async fn link(&self, server: &LinkEndpoint) -> Result<bool, ConnectError> {
+            let addr = server.local_addr().unwrap();
+            let config = self
+                .endpoint
+                .client_config(&self.identity, &self.trust, self.peer)?;
+            let accept = async {
+                let incoming = server.endpoint.accept().await.expect("the server is open");
+                let validated = incoming.remote_address_validated();
+                let connection = incoming.await?;
+                let (mut send, mut recv) = connection.accept_bi().await?;
+                let mut byte = [0];
+                recv.read_exact(&mut byte).await.unwrap();
+                send.write_all(&byte).await.unwrap();
+                send.finish().unwrap();
+                connection.closed().await;
+                Ok::<_, quinn::ConnectionError>(validated)
+            };
+            let connect = async {
+                let connection = self
+                    .endpoint
+                    .connect_with(config, addr, DEVICE_SERVER_NAME)?
+                    .await?;
+                let (mut send, mut recv) = connection.open_bi().await?;
+                send.write_all(b"t").await.unwrap();
+                let mut byte = [0];
+                recv.read_exact(&mut byte).await.unwrap();
+                connection.close(0_u32.into(), b"done");
+                Ok::<_, ConnectError>(())
+            };
+            let (validated, connected) = tokio::join!(accept, connect);
+            connected?;
+            Ok(validated.unwrap_or(false))
+        }
+    }
+
+    const ANY_PORT: &str = "127.0.0.1:0";
+
+    #[tokio::test]
+    async fn a_ticket_resumes_after_the_issuing_host_restarts() {
+        let dir = tempfile::tempdir().unwrap();
+        let server_identity = DeviceIdentity::for_test(HostId::new_v4());
+        let client = TicketClient::new(&server_identity);
+
+        let tickets = SessionTickets::open(dir.path(), HOST_TICKETS).unwrap();
+        let server = ticket_server(
+            &server_identity,
+            &client.identity,
+            &tickets,
+            ANY_PORT.parse().unwrap(),
+        )
+        .await;
+        let addr = server.local_addr().unwrap();
+        client.link(&server).await.unwrap();
+        assert_eq!(tickets.redeemed(), 0, "the first link has no ticket");
+        assert_eq!(tickets.kept(), 1, "the first link was issued one ticket");
+        server.close(0_u32.into(), b"restart");
+        server.endpoint.wait_idle().await;
+        drop((server, tickets));
+
+        let tickets = SessionTickets::open(dir.path(), HOST_TICKETS).unwrap();
+        let server = ticket_server(&server_identity, &client.identity, &tickets, addr).await;
+        let validated = client.link(&server).await.unwrap();
         assert_eq!(
-            full_handshakes.load(Ordering::SeqCst),
-            2,
-            "the ticket-disabled server must force a full certificate handshake"
+            tickets.redeemed(),
+            1,
+            "the restarted host honours the ticket it issued before"
         );
-        second_client.close(0_u32.into(), b"test complete");
-        second_server.close(0_u32.into(), b"test complete");
+        assert!(
+            validated,
+            "the restarted host honours the address-validation token it issued before"
+        );
     }
 
-    async fn connect_raw(
-        server: &quinn::Endpoint,
-        client: &quinn::Endpoint,
-        addr: SocketAddr,
-    ) -> (quinn::Connection, quinn::Connection) {
-        let accept = async {
-            server
-                .accept()
-                .await
-                .expect("server endpoint closed")
-                .await
-                .expect("server handshake failed")
-        };
-        let connect = async {
-            client
-                .connect(addr, DEVICE_SERVER_NAME)
-                .unwrap()
-                .await
-                .expect("client handshake failed")
-        };
-        tokio::join!(accept, connect)
+    #[tokio::test]
+    async fn a_ticket_issued_eight_days_ago_gets_a_full_handshake() {
+        let dir = tempfile::tempdir().unwrap();
+        let clock = crate::link::resumption::TestClock::new();
+        let server_identity = DeviceIdentity::for_test(HostId::new_v4());
+        let client = TicketClient::new(&server_identity);
+        let tickets = SessionTickets::with_clock(Some(dir.path()), HOST_TICKETS, clock.reader());
+        let server = ticket_server(
+            &server_identity,
+            &client.identity,
+            &tickets,
+            ANY_PORT.parse().unwrap(),
+        )
+        .await;
+
+        client.link(&server).await.unwrap();
+        clock.advance(Duration::from_secs(24 * 60 * 60));
+        client.link(&server).await.unwrap();
+        assert_eq!(tickets.redeemed(), 1, "a day-old ticket resumes");
+
+        clock.advance(Duration::from_secs(8 * 24 * 60 * 60));
+        client
+            .link(&server)
+            .await
+            .expect("an expired ticket costs a full handshake, not the link");
+        assert_eq!(tickets.redeemed(), 1, "an eight-day-old ticket does not");
     }
 
-    #[derive(Debug)]
-    struct CountingPinnedVerifier {
-        expected_pubkey: Vec<u8>,
-        full_handshakes: Arc<AtomicUsize>,
-        supported_algs: WebPkiSupportedAlgorithms,
-    }
+    #[tokio::test]
+    async fn a_ticket_from_a_peers_old_key_resumes_no_link() {
+        let server_identity = DeviceIdentity::for_test(HostId::new_v4());
+        let client = TicketClient::new(&server_identity);
+        let tickets = SessionTickets::in_memory(HOST_TICKETS);
+        let server = ticket_server(
+            &server_identity,
+            &client.identity,
+            &tickets,
+            ANY_PORT.parse().unwrap(),
+        )
+        .await;
+        client.link(&server).await.unwrap();
 
-    impl CountingPinnedVerifier {
-        fn new(expected_pubkey: Vec<u8>, full_handshakes: Arc<AtomicUsize>) -> Self {
-            Self {
-                expected_pubkey,
-                full_handshakes,
-                supported_algs: rustls::crypto::ring::default_provider()
-                    .signature_verification_algorithms,
-            }
-        }
-    }
-
-    impl ServerCertVerifier for CountingPinnedVerifier {
-        fn verify_server_cert(
-            &self,
-            end_entity: &CertificateDer<'_>,
-            _intermediates: &[CertificateDer<'_>],
-            _server_name: &ServerName<'_>,
-            _ocsp_response: &[u8],
-            _now: UnixTime,
-        ) -> Result<ServerCertVerified, rustls::Error> {
-            let pubkey = ed25519_public_key_from_certificate(end_entity)
-                .map_err(|_| rustls::Error::InvalidCertificate(CertificateError::BadEncoding))?;
-            if pubkey.as_slice() != self.expected_pubkey.as_slice() {
-                return Err(rustls::Error::InvalidCertificate(
-                    CertificateError::BadSignature,
-                ));
-            }
-            self.full_handshakes.fetch_add(1, Ordering::SeqCst);
-            Ok(ServerCertVerified::assertion())
-        }
-
-        fn verify_tls12_signature(
-            &self,
-            message: &[u8],
-            cert: &CertificateDer<'_>,
-            dss: &DigitallySignedStruct,
-        ) -> Result<HandshakeSignatureValid, rustls::Error> {
-            verify_tls12_signature(message, cert, dss, &self.supported_algs)
-        }
-
-        fn verify_tls13_signature(
-            &self,
-            message: &[u8],
-            cert: &CertificateDer<'_>,
-            dss: &DigitallySignedStruct,
-        ) -> Result<HandshakeSignatureValid, rustls::Error> {
-            verify_tls13_signature(message, cert, dss, &self.supported_algs)
-        }
-
-        fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-            self.supported_algs.supported_schemes()
-        }
-    }
-
-    #[derive(Debug)]
-    struct TrackingSessionStore {
-        inner: ClientSessionMemoryCache,
-        inserted: AtomicUsize,
-        taken: AtomicUsize,
-    }
-
-    impl Default for TrackingSessionStore {
-        fn default() -> Self {
-            Self {
-                inner: ClientSessionMemoryCache::new(32),
-                inserted: AtomicUsize::new(0),
-                taken: AtomicUsize::new(0),
-            }
-        }
-    }
-
-    impl ClientSessionStore for TrackingSessionStore {
-        fn set_kx_hint(&self, server_name: ServerName<'static>, group: NamedGroup) {
-            self.inner.set_kx_hint(server_name, group);
-        }
-
-        fn kx_hint(&self, server_name: &ServerName<'_>) -> Option<NamedGroup> {
-            self.inner.kx_hint(server_name)
-        }
-
-        fn set_tls12_session(
-            &self,
-            server_name: ServerName<'static>,
-            value: Tls12ClientSessionValue,
-        ) {
-            self.inner.set_tls12_session(server_name, value);
-        }
-
-        fn tls12_session(&self, server_name: &ServerName<'_>) -> Option<Tls12ClientSessionValue> {
-            self.inner.tls12_session(server_name)
-        }
-
-        fn remove_tls12_session(&self, server_name: &ServerName<'static>) {
-            self.inner.remove_tls12_session(server_name);
-        }
-
-        fn insert_tls13_ticket(
-            &self,
-            server_name: ServerName<'static>,
-            value: Tls13ClientSessionValue,
-        ) {
-            self.inserted.fetch_add(1, Ordering::SeqCst);
-            self.inner.insert_tls13_ticket(server_name, value);
-        }
-
-        fn take_tls13_ticket(
-            &self,
-            server_name: &ServerName<'static>,
-        ) -> Option<Tls13ClientSessionValue> {
-            let ticket = self.inner.take_tls13_ticket(server_name);
-            if ticket.is_some() {
-                self.taken.fetch_add(1, Ordering::SeqCst);
-            }
-            ticket
-        }
+        // The peer is paired again under a new key; the old key's holder
+        // still has the session behind the client's ticket.
+        let replacement = DeviceIdentity::for_test(server_identity.host_id);
+        client
+            .trust
+            .write()
+            .unwrap()
+            .upsert_paired_peer(
+                replacement.host_id,
+                replacement.public_key().to_vec(),
+                "peer".to_string(),
+                None,
+                Utc::now(),
+            )
+            .unwrap();
+        assert!(
+            client.link(&server).await.is_err(),
+            "the old key's holder is refused"
+        );
+        assert_eq!(tickets.redeemed(), 0);
     }
 }

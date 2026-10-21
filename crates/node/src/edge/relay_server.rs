@@ -653,6 +653,9 @@ mod tests {
             rustls::pki_types::PrivateKeyDer::Pkcs8(rustls::pki_types::PrivatePkcs8KeyDer::from(
                 signing_key.serialize_der(),
             )),
+            &crate::link::resumption::SessionTickets::in_memory(
+                crate::link::resumption::RELAY_TICKETS,
+            ),
         )
         .unwrap();
         let mut roots = rustls::RootCertStore::empty();

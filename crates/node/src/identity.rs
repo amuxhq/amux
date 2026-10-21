@@ -12,7 +12,6 @@ use rcgen::{
 };
 use ring::rand::{SecureRandom as _, SystemRandom};
 use ring::signature::{Ed25519KeyPair, KeyPair as _};
-use rustls::client::Resumption;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::{WebPkiSupportedAlgorithms, verify_tls12_signature, verify_tls13_signature};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName, UnixTime};
@@ -23,6 +22,7 @@ use rustls::{
     DistinguishedName as TlsDistinguishedName, Error as TlsError, ServerConfig, SignatureScheme,
 };
 
+use crate::link::resumption::SessionTickets;
 use crate::trust::{SharedTrustStore, TrustStore};
 use crate::{HostId, audit};
 
@@ -167,23 +167,15 @@ impl DeviceIdentity {
         Ok(config)
     }
 
+    /// The configuration this host answers links with, issuing session
+    /// tickets from `tickets`.
     pub fn quic_server_config(
         &self,
         trust_store: SharedTrustStore,
+        tickets: &std::sync::Arc<SessionTickets>,
     ) -> Result<quinn::ServerConfig, IdentityError> {
-        let mut tls = self.server_tls_config(trust_store)?;
-        tls.alpn_protocols = vec![QUIC_ALPN.to_vec()];
-        tls.session_storage = std::sync::Arc::new(rustls::server::NoServerSessionStorage {});
-        tls.send_tls13_tickets = 0;
-        tls.max_early_data_size = 0;
-
-        let crypto = quinn::crypto::rustls::QuicServerConfig::try_from(tls)
-            .map_err(|error| IdentityError::TlsConfig(error.to_string()))?;
-        let mut config = quinn::ServerConfig::with_crypto(std::sync::Arc::new(crypto));
-        config.transport_config(quic_transport_config());
-        config.migration(true);
-        crate::link::validation::issue_tokens(&mut config);
-        Ok(config)
+        let tls = self.server_tls_config(trust_store)?;
+        quic_server_config_issuing(tls, tickets).map_err(IdentityError::TlsConfig)
     }
 
     pub(crate) fn quic_client_config_for_peer(
@@ -193,7 +185,7 @@ impl DeviceIdentity {
     ) -> Result<quinn::ClientConfig, IdentityError> {
         let mut tls = self.client_tls_config_for_peer(trust_store, peer)?;
         tls.alpn_protocols = vec![QUIC_ALPN.to_vec()];
-        tls.resumption = Resumption::disabled();
+        tls.resumption = crate::link::resumption::client_resumption();
         tls.enable_early_data = false;
 
         let crypto = quinn::crypto::rustls::QuicClientConfig::try_from(tls)
@@ -202,6 +194,32 @@ impl DeviceIdentity {
         config.transport_config(quic_transport_config());
         Ok(config)
     }
+}
+
+/// A QUIC server configuration from `tls` that issues one session ticket
+/// per link from `tickets` and accepts early data on it. rustls allows
+/// 0-RTT only while no stateless ticketer is set, so the store keeps
+/// every ticket's session; quinn's address-validation tokens come from
+/// the store's secret, so a restarted server still honours them.
+pub(crate) fn quic_server_config_issuing(
+    mut tls: ServerConfig,
+    tickets: &std::sync::Arc<SessionTickets>,
+) -> Result<quinn::ServerConfig, String> {
+    tls.alpn_protocols = vec![QUIC_ALPN.to_vec()];
+    tls.session_storage = tickets.clone();
+    // One ticket per link: the client offers one on its next link, and
+    // every ticket issued is an entry the store keeps for a week.
+    tls.send_tls13_tickets = 1;
+    // QUIC allows nothing between none and unbounded.
+    tls.max_early_data_size = u32::MAX;
+
+    let crypto = quinn::crypto::rustls::QuicServerConfig::try_from(tls)
+        .map_err(|error| error.to_string())?;
+    let mut config = quinn::ServerConfig::new(std::sync::Arc::new(crypto), tickets.token_key());
+    config.transport_config(quic_transport_config());
+    config.migration(true);
+    crate::link::validation::issue_tokens(&mut config);
+    Ok(config)
 }
 
 pub(crate) fn quic_transport_config() -> std::sync::Arc<quinn::TransportConfig> {

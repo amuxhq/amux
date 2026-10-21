@@ -1,5 +1,6 @@
 pub mod carrier;
 pub(crate) mod channels;
+pub mod framed;
 pub(crate) mod mux;
 pub(crate) mod piper;
 pub(crate) mod quic;

@@ -27,6 +27,7 @@ use quinn::udp::{RecvMeta, Transmit};
 use quinn::{AsyncUdpSocket, UdpPoller};
 use tokio::sync::mpsc;
 
+use super::framed::FramedKind;
 use crate::HostId;
 
 /// What the socket layer sits on: the OS socket in production, the
@@ -162,6 +163,7 @@ fn encode_probe_kind(kind: u8, from: HostId, nonce: u64) -> [u8; PROBE_LEN] {
 /// reader hands each arriving packet to [`LinkSocket::deliver_framed`].
 pub trait FramedIo: Send + Sync + 'static {
     fn send(&self, packet: &[u8]) -> io::Result<()>;
+    fn kind(&self) -> FramedKind;
 }
 
 /// A probe's answer arrived; the nonce names the path it was sent on.
@@ -408,6 +410,11 @@ impl LinkSocket {
         state.next_path += 1;
         state.framed.insert(id, io);
         id
+    }
+
+    /// What a byte-stream path runs over, while it is registered.
+    pub fn framed_kind(&self, path: PathId) -> Option<FramedKind> {
+        Some(self.lock().framed.get(&path)?.kind())
     }
 
     pub fn remove_framed(&self, path: PathId) {
@@ -1123,6 +1130,10 @@ mod tests {
         fn send(&self, packet: &[u8]) -> io::Result<()> {
             self.sent.lock().unwrap().push(packet.to_vec());
             Ok(())
+        }
+
+        fn kind(&self) -> FramedKind {
+            FramedKind::InProcess
         }
     }
 

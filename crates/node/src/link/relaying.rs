@@ -325,23 +325,16 @@ impl RelayLinks {
         admitted.links.insert(link, entry);
     }
 
-    /// The link is gone. Where it was the last link at its stand-in, the
-    /// address its host was reached at is let go, so a host turning up
-    /// there later is not taken for this one.
+    /// The link is gone. The address its host was reached at stays the
+    /// host's: a link to it may still be on its way up there, and a host
+    /// proving itself there later takes it.
     fn forget(&self, link: daemon_core::LinkId) {
-        let socket = self.socket.upgrade();
-        if let Some(socket) = &socket {
+        if let Some(socket) = self.socket.upgrade() {
             socket.remove_forwarding(link);
         }
         let mut admitted = lock(&self.admitted);
-        let Some(entry) = admitted.links.remove(&link) else {
-            return;
-        };
-        admitted.senders.retain(|_, sender| *sender != link);
-        let shared = admitted.links.values().any(|other| other.at == entry.at);
-        drop(admitted);
-        if !shared && let Some(socket) = socket {
-            socket.unroute(entry.at);
+        if admitted.links.remove(&link).is_some() {
+            admitted.senders.retain(|_, sender| *sender != link);
         }
     }
 
@@ -642,8 +635,9 @@ mod tests {
     /// seen at: the desk's network changes while it forwards to the phone,
     /// and what it sent from the new address before quinn moved its
     /// connection there was held, then goes on as soon as the link is
-    /// found there; the phone moving is followed at the next send; and the
-    /// desk's address is let go when its link goes.
+    /// found there; the phone moving is followed at the next send; and a
+    /// host turning up at the desk's address once its link is gone is
+    /// named there and reached there.
     #[test]
     fn relaying_follows_a_sender_whose_connection_moved() {
         let relay = HostId::new_v4();
@@ -745,13 +739,37 @@ mod tests {
         );
         assert_eq!(socket.address_of(phone_at), Some(phone_cell));
 
-        // The desk's link goes: its address leads to no one.
+        // The desk's link goes and a tablet turns up at its address: named
+        // there once admitted, it is what is forwarded there reaches.
         relaying.step([Input::LinkDown {
             link: daemon_core::LinkId(1),
         }]);
-        assert_eq!(socket.path_of(moved), None);
-        let stranger = arrive(&net, &socket, desk_cell, QUIC).unwrap();
-        assert_eq!(socket.peer_of(stranger), None);
+        let tablet = HostId::new_v4();
+        let tablet_at = arrive(&net, &socket, desk_cell, QUIC).unwrap();
+        link_up(&relaying, 3, tablet, user);
+        let (tx, _rx) = mpsc::channel(8);
+        let tablet_link = Dialled::at(tablet_at);
+        relaying.admitted(
+            daemon_core::LinkId(3),
+            tx,
+            tablet,
+            tablet_link.clone(),
+            None,
+        );
+        assert_eq!(socket.peer_of(tablet_at), Some(tablet));
+        assert_eq!(
+            arrive(
+                &net,
+                &socket,
+                phone_cell,
+                &encode_forwarded(tablet, b"\x40five")
+            ),
+            None
+        );
+        assert_eq!(
+            net.take_sent(),
+            vec![(desk_cell, encode_delivered(phone, b"\x40five"))]
+        );
     }
 
     fn trusting(peers: &[&DeviceIdentity]) -> SharedTrustStore {

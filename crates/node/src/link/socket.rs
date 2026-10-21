@@ -369,6 +369,18 @@ impl State {
         self.by_addr.retain(|_, owner| *owner != host);
     }
 
+    /// Forgets `host`: its stand-ins, its addresses and the forwarding
+    /// links it was the forwarder of.
+    fn forget(&mut self, host: HostId) {
+        let peer = Peer::Host(host);
+        let by_stand_in = &self.by_stand_in;
+        self.forwarding
+            .retain(|_, (via, _)| by_stand_in.get(via) != Some(&peer));
+        self.by_stand_in.retain(|_, held| *held != peer);
+        self.peers.remove(&peer);
+        self.unlearn_addresses(host);
+    }
+
     /// Carries `host` on `route`. Addresses its earlier routes took still
     /// lead to it, so packets still in flight on a path it switched from
     /// arrive as its own.
@@ -555,12 +567,26 @@ impl LinkSocket {
     /// address. A host carried some other way (through a forwarder, over a
     /// byte stream) keeps that route, and this sender stays unnamed.
     ///
+    /// A stand-in another host was last heard at, at an address, is taken
+    /// from it: the address was reused (a LAN address given out again, a
+    /// NAT's port given to someone else), and the host that left is
+    /// forgotten until it is heard again.
+    ///
     /// True when the stand-in is the host's.
     pub fn name(&self, stand_in: SocketAddr, host: HostId) -> bool {
         let mut state = self.lock();
-        let path = match state.by_stand_in.get(&stand_in).copied() {
-            Some(Peer::Unnamed(path)) => path,
-            Some(Peer::Host(named)) => return named == host,
+        let (path, left) = match state.by_stand_in.get(&stand_in).copied() {
+            Some(Peer::Unnamed(path)) => (path, None),
+            Some(Peer::Host(named)) if named == host => return true,
+            Some(Peer::Host(left)) => {
+                let held = &state.peers[&Peer::Host(left)];
+                match held.route {
+                    Route::Carrying(path) if addressed(path) && held.stand_in == stand_in => {
+                        (path, Some(left))
+                    }
+                    _ => return false,
+                }
+            }
             None => return false,
         };
         if let Some(known) = state.peers.get(&Peer::Host(host)) {
@@ -573,7 +599,12 @@ impl LinkSocket {
                 return false;
             }
         }
-        state.peers.remove(&Peer::Unnamed(path));
+        match left {
+            Some(left) => state.forget(left),
+            None => {
+                state.peers.remove(&Peer::Unnamed(path));
+            }
+        }
         state
             .peers
             .entry(Peer::Host(host))
@@ -588,21 +619,6 @@ impl LinkSocket {
         }
         state.set_route(host, Route::Carrying(path));
         true
-    }
-
-    /// The link quinn held on `stand_in` is gone: a host it is the current
-    /// stand-in of loses its route through an address, so the address
-    /// leads nowhere until someone is heard or named there.
-    pub fn unroute(&self, stand_in: SocketAddr) {
-        let mut state = self.lock();
-        let Some(Peer::Host(host)) = state.by_stand_in.get(&stand_in).copied() else {
-            return;
-        };
-        let peer = &state.peers[&Peer::Host(host)];
-        if peer.stand_in == stand_in && peer.route.paths().iter().all(|path| addressed(*path)) {
-            state.set_route(host, Route::Unset);
-            state.unlearn_addresses(host);
-        }
     }
 
     /// Carries `peer`'s packets on one path.
@@ -1503,53 +1519,46 @@ mod tests {
         assert_eq!(socket.peer_of(stand_in), Some(host));
         fake.push(dialler, QUIC);
         assert_eq!(receive(&socket).unwrap().0, stand_in);
-        assert!(!socket.name(stand_in, HostId::new_v4()), "named once");
+        assert!(socket.name(stand_in, host), "naming it again changes nothing");
+        assert_eq!(socket.peer_of(stand_in), Some(host));
     }
 
-    /// An address is one host's at a time: a host that takes an address
-    /// another was carried on takes it from that host's route, and an
-    /// address a host's route lets go leads nowhere, so a sender turning up
-    /// at a reused address is heard as no one until it is named.
+    /// An address is one host's at a time. A host proving itself at the
+    /// stand-in another was last heard at (a reused LAN address) takes it
+    /// and the host that left is forgotten; a host given an address
+    /// another was carried on takes it from that host's route.
     #[test]
     fn socket_reused_address_never_maps_to_the_host_that_left_it() {
         let (fake, socket, _own) = fake_socket();
         let lan: SocketAddr = "192.0.2.40:5000".parse().unwrap();
         let (laptop, desk) = (HostId::new_v4(), HostId::new_v4());
         fake.push(lan, QUIC);
-        let (laptop_at, _) = receive(&socket).unwrap();
-        assert!(socket.name(laptop_at, laptop));
+        let (at_lan, _) = receive(&socket).unwrap();
+        assert!(socket.name(at_lan, laptop));
 
-        // The laptop's link goes: the address leads nowhere.
-        socket.unroute(laptop_at);
-        assert_eq!(socket.path_of(laptop_at), None);
+        // The laptop left; the desk is given its address and connects
+        // from it. Its packets come in at the laptop's stand-in until its
+        // handshake names it there.
         fake.push(lan, QUIC);
-        let (stranger, _) = receive(&socket).unwrap();
-        assert_ne!(stranger, laptop_at);
-        assert_eq!(socket.peer_of(stranger), None);
-        socket.try_send(&transmit(stranger, QUIC)).unwrap();
-        assert_eq!(fake.take_sent(), vec![(lan, QUIC.to_vec())]);
-        socket.try_send(&transmit(laptop_at, QUIC)).unwrap();
-        assert!(
-            fake.take_sent().is_empty(),
-            "nothing for the laptop goes there"
-        );
+        assert_eq!(receive(&socket).unwrap().0, at_lan);
+        assert!(socket.name(at_lan, desk));
+        assert_eq!(socket.peer_of(at_lan), Some(desk));
+        assert_ne!(socket.stand_in(laptop), at_lan, "the laptop is forgotten");
+        assert_eq!(socket.path_of(socket.stand_in(laptop)), None);
+        fake.push(lan, QUIC);
+        assert_eq!(receive(&socket).unwrap().0, at_lan);
 
-        // The desk is named there; the laptop comes back elsewhere.
-        assert!(socket.name(stranger, desk));
-        assert_eq!(socket.address_of(stranger), Some(lan));
+        // The laptop is carried at the address: the desk loses it.
+        socket.set_carrying(laptop, Path::Direct(lan));
+        assert_eq!(socket.path_of(at_lan), None);
+        fake.push(lan, QUIC);
+        assert_eq!(receive(&socket).unwrap().0, socket.stand_in(laptop));
+
+        // A path the laptop switches from still leads to it, for the
+        // packets still in flight there.
         let elsewhere: SocketAddr = "192.0.2.41:5000".parse().unwrap();
         socket.set_carrying(laptop, Path::Direct(elsewhere));
         fake.push(lan, QUIC);
-        assert_eq!(receive(&socket).unwrap().0, stranger);
-
-        // The laptop is given the desk's address: the desk loses it.
-        socket.set_carrying(laptop, Path::Direct(lan));
-        assert_eq!(socket.path_of(stranger), None);
-        fake.push(lan, QUIC);
-        assert_eq!(receive(&socket).unwrap().0, socket.stand_in(laptop));
-        // The path it switched from still leads to it, for the packets
-        // still in flight there.
-        fake.push(elsewhere, QUIC);
         assert_eq!(receive(&socket).unwrap().0, socket.stand_in(laptop));
     }
 

@@ -692,14 +692,14 @@ cargo = [
 
 [[suite]]
 name = "link-stories"
-contract = "Hosts link over one QUIC connection per pair from a socket of both address families: two hosts bound to IPv6 alone link and stream a session."
-paths = ["crates/testnet/tests/spec_links.rs"]
+contract = "Hosts link over one QUIC connection per pair, whatever path carries it, from a socket of both address families: on the same network, over SSH into the far host's link socket, whose pinned handshake refuses a key it does not trust, and between two hosts bound to IPv6 alone, a host reaches another's agent, streams its session live and reads the carrying path from its link log."
+paths = ["crates/testnet/tests/spec_links.rs", "crates/testnet/stand-in"]
 recipe = "just test -- --test spec_links"
 modes = ["real"]
 boundary = "Many daemons"
-oracle = "Listener addresses, the route each host reports and session events, at bounded deadlines."
-real = ["daemon runtimes", "agent processes", "loopback QUIC over IPv6", "TLS", "files"]
-substituted = ["providers by the scripted fakes", "multicast discovery by a scripted bus"]
+oracle = "Listener addresses, the route each host reports, the path each host's link log names and session events, at bounded deadlines."
+real = ["daemon runtimes", "agent processes", "loopback QUIC over IPv4 and IPv6", "TLS", "amux relay processes", "Unix sockets", "files"]
+substituted = ["providers by the scripted fakes", "multicast discovery by a scripted bus", "ssh by the net's stand-in, which runs the far host's amux without a network"]
 time = "driven"
 capabilities = ["loopback network", "desktop", "Unix"]
 lane = "fast"

@@ -610,6 +610,17 @@ tests = [
 ]
 
 [[contract]]
+id = "links-one-kind-every-route"
+source = "testing page"
+section = "Boundaries"
+claim = "Many daemons: every host reaches every host it trusts over one end-to-end QUIC link pinned at pairing, whatever path carries it; one agent's session is reached and streamed live on the same network, over SSH into the far host's link socket (whose pinned handshake refuses a key it does not trust) and between hosts bound to IPv6 alone, and each host's link log names the path."
+tests = [
+  "testnet/spec_links::route_lan_reaches_a_session_on_the_same_network",
+  "testnet/spec_links::route_ssh_reaches_a_session_through_the_far_hosts_link_socket",
+  "testnet/spec_links::ipv6_only_hosts_link_and_stream_a_session",
+]
+
+[[contract]]
 id = "boundary-client-model"
 source = "testing page"
 section = "Boundaries"

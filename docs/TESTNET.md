@@ -634,9 +634,11 @@ for a [QA](QA.md) run and need its `AMUX_QA_RUN`. Inside such a run agents are r
 ```sh
 just test -- --test harness                  # topology validation, clock, waits, faults, growth, process hosts, the door
 just test -- --test ctl                      # testnet ctl end to end: up, hosts, a link, a fake agent, a shot, a capture, down
-just test -- --test spec_edge --test spec_families --test spec_inventory --test spec_network --test spec_replication
+just test -- --test spec_edge --test spec_families --test spec_inventory --test spec_links --test spec_network --test spec_replication
 ```
 
 The `spec_*` targets are the many-daemon specifications: pairing, trust, discovery, routing, relay carriers,
 credential refresh, revocation, account isolation, the inventory, replication and agent families across hosts.
+`spec_links` holds one story per route a link takes (the same network, SSH, IPv6 alone), each reaching an agent's
+session, streaming it live and naming the carrying path from the link log.
 Each reads top to bottom as a description of one behaviour, with its assertions in the test body.

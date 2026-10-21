@@ -15,6 +15,7 @@ pub(crate) mod account;
 mod admin;
 mod binding;
 mod cloud;
+mod first_flight;
 mod peer;
 mod relay_server;
 mod status;
@@ -250,6 +251,7 @@ pub struct Edge {
     shutdown: watch::Sender<bool>,
     tasks: Mutex<Vec<JoinHandle<()>>>,
     analytics: analytics::Analytics,
+    first_flights: first_flight::FirstFlights,
 }
 
 impl Edge {
@@ -466,7 +468,14 @@ impl Edge {
             shutdown,
             tasks: Mutex::new(tasks),
             analytics,
+            first_flights: first_flight::FirstFlights::default(),
         });
+        if options.dial {
+            edge.tasks
+                .lock()
+                .unwrap()
+                .push(tokio::spawn(first_flight::launch(Arc::downgrade(&edge))));
+        }
         edge.tasks
             .lock()
             .unwrap()
@@ -590,6 +599,12 @@ impl Edge {
         early: Vec<crate::EarlyCall>,
     ) -> Result<crate::ResumedLink, crate::link::ChannelError> {
         self.channels.open_resumed(host, early).await
+    }
+
+    /// The answers launch's first flights brought, for the calls the core
+    /// makes once each host's link is up.
+    pub(crate) fn first_flights(&self) -> &first_flight::FirstFlights {
+        &self.first_flights
     }
 
     /// A call to `host` found no channel within its patience, or the one it

@@ -1031,16 +1031,7 @@ impl Daemon {
         out: &mut Vec<Output>,
     ) -> Option<(CallId, bool)> {
         let row = self.store.agent(agent).ok().flatten()?;
-        let k = self.settings.tail_rows;
-        let from = if row.complete_from_order.is_some() {
-            peer_subscribe_request::From::After(wire::After {
-                revision: row.source_cursor,
-                cap: k,
-                generation: row.source_generation,
-            })
-        } else {
-            peer_subscribe_request::From::Tail(k)
-        };
+        let from = self.source_from(&row);
         let tail = matches!(from, peer_subscribe_request::From::Tail(_));
         let call = self.pending.peers.mint();
         self.pending.peers.waiting.insert(
@@ -1059,6 +1050,53 @@ impl Daemon {
             absorbed: true,
         });
         Some((call, tail))
+    }
+
+    /// Where a replica's Subscribe starts: a tail of K with no block,
+    /// otherwise after its cursor.
+    fn source_from(&self, row: &AgentRow) -> peer_subscribe_request::From {
+        let k = self.settings.tail_rows;
+        if row.complete_from_order.is_some() {
+            peer_subscribe_request::From::After(wire::After {
+                revision: row.source_cursor,
+                cap: k,
+                generation: row.source_generation,
+            })
+        } else {
+            peer_subscribe_request::From::Tail(k)
+        }
+    }
+
+    /// The calls this host makes of each trusted host as it begins
+    /// following it, as they stand now: the host's inventory and, under the
+    /// `Listed` policy, a Subscribe from its cursor for every agent of the
+    /// host's the store holds and no source feeds yet. A launch sends them
+    /// with the host's link before it is up, so the calls the core makes
+    /// once it is up find their answers already arriving.
+    pub fn first_flight(&self) -> Vec<(HostId, Vec<PeerRequest>)> {
+        let rows = self.store.agents().unwrap_or_default();
+        self.sources
+            .trusted
+            .iter()
+            .map(|host| {
+                let mut calls = vec![PeerRequest::SubscribeInventory];
+                if self.sources.policy == SourcePolicy::Listed {
+                    for row in rows.iter().filter(|row| row.agent.host == host.0) {
+                        let key = Key::from(&row.agent);
+                        if self.sources.open.contains_key(&key)
+                            || self.sources.settled.contains(&key)
+                        {
+                            continue;
+                        }
+                        calls.push(PeerRequest::Subscribe(PeerSubscribeRequest {
+                            agent_id: row.agent.agent.clone(),
+                            from: Some(self.source_from(row)),
+                        }));
+                    }
+                }
+                (*host, calls)
+            })
+            .collect()
     }
 
     /// Lets the agent's source go, whatever it was doing.
@@ -2266,6 +2304,59 @@ mod tests {
         );
         assert!(daemon.store.get(&key(), "c").unwrap().is_none());
         assert_eq!(floor(&daemon), Some(5));
+    }
+
+    #[test]
+    fn a_first_flight_carries_the_calls_following_the_host_makes() {
+        let mut daemon = daemon();
+        daemon
+            .store
+            .put_agent(&from_wire(&listed(wire::Lifecycle::Live)))
+            .unwrap();
+        step(
+            &mut daemon,
+            Input::TrustRead {
+                store: crate::trust::TrustStore::of_hosts(vec![HostId(PEER)]),
+            },
+        );
+        let flight = daemon.first_flight();
+        step(
+            &mut daemon,
+            Input::LinkUp {
+                link: LinkId(1),
+                peer: HostId(PEER),
+                kind: CarrierKind::Direct,
+                resumed: None,
+            },
+        );
+        let due = step(
+            &mut daemon,
+            Input::Timer {
+                id: TimerId::Follow(HostId(PEER)),
+            },
+        );
+        let mut followed: Vec<PeerRequest> = calls(&due)
+            .into_iter()
+            .map(|(_, request)| request)
+            .collect();
+        let mut flown = match flight.as_slice() {
+            [(HostId(PEER), requests)] => requests.clone(),
+            other => panic!("one flight, to the trusted host: {other:?}"),
+        };
+        let order = |request: &PeerRequest| format!("{request:?}");
+        followed.sort_by_key(order);
+        flown.sort_by_key(order);
+        assert_eq!(flown, followed);
+        assert_eq!(
+            flown.len(),
+            2,
+            "the inventory and the remembered agent: {flown:?}"
+        );
+        assert_eq!(
+            daemon.first_flight(),
+            vec![(HostId(PEER), vec![PeerRequest::SubscribeInventory])],
+            "an agent a source feeds is not asked for again"
+        );
     }
 
     #[test]

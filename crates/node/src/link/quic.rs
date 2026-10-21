@@ -162,6 +162,26 @@ impl LinkEndpoint {
         self.endpoint.connect_with(config, stand_in, server_name)
     }
 
+    /// Dials `peer` on every one of `paths` at once, and through the
+    /// relay when `through_relay`, until a packet from the peer arrives on
+    /// one: a launch's first flight to a host, before anything says which
+    /// path works. A peer some path already carries is dialled on it.
+    pub(crate) fn connect_on_all(
+        &self,
+        mut config: quinn::ClientConfig,
+        peer: HostId,
+        paths: Vec<super::socket::Path>,
+        through_relay: bool,
+        server_name: &str,
+    ) -> Result<quinn::Connecting, quinn::ConnectError> {
+        let stand_in = self.socket.stand_in(peer);
+        if self.socket.path_of(stand_in).is_none() {
+            self.socket.send_on_all(peer, paths, through_relay);
+        }
+        config.token_store(self.tokens.for_server(stand_in));
+        self.endpoint.connect_with(config, stand_in, server_name)
+    }
+
     /// The kind of path a link through the forwarding link `through` runs
     /// on.
     pub(crate) fn forwarded_kind(&self, through: super::socket::LinkId) -> PathKind {
@@ -293,6 +313,10 @@ pub struct QuicCarrier {
     /// The data sent before the handshake finished, on a dial that resumed
     /// with the peer's ticket.
     early: Option<Arc<Early>>,
+    /// The socket whose route for the peer says which path carries the
+    /// link, on a link dialled on every candidate at once: the path is
+    /// the one the peer answered on, not one the dial chose.
+    follows: Option<Arc<LinkSocket>>,
     inbound: tokio::sync::Mutex<mpsc::UnboundedReceiver<ByteStream>>,
     control: Mutex<Option<(ControlSink, ControlSource)>>,
     /// Asks the control writer to finish its stream, answering once the
@@ -347,6 +371,7 @@ impl QuicCarrier {
     /// left: the link carries data at once, and what is written before the
     /// handshake finishes goes out as early data. With no ticket this is
     /// an ordinary dial.
+    #[cfg(test)]
     pub(crate) async fn resume_direct(
         endpoint: &LinkEndpoint,
         addr: SocketAddr,
@@ -363,22 +388,26 @@ impl QuicCarrier {
             .with_early(early))
     }
 
-    /// Dials `peer` through the forwarder at the far end of `through` as
-    /// [`Self::resume_direct`] dials an address.
-    pub(crate) async fn resume_through(
+    /// Dials `peer` resuming with its ticket on every one of `paths` at
+    /// once, and through the relay when `through_relay`, as a
+    /// resumed dial to one address does: the link's first flight
+    /// goes out on all of them, and the first path the peer answers on
+    /// carries it.
+    pub(crate) async fn first_flight(
         endpoint: &LinkEndpoint,
-        through: super::socket::LinkId,
+        paths: Vec<super::socket::Path>,
+        through_relay: bool,
         identity: &DeviceIdentity,
         trust_store: SharedTrustStore,
         peer: HostId,
     ) -> Result<Self, ConnectError> {
         let config = endpoint.client_config(identity, &trust_store, peer)?;
-        let connecting = endpoint.connect_through(config, peer, through, DEVICE_SERVER_NAME)?;
+        let connecting =
+            endpoint.connect_on_all(config, peer, paths, through_relay, DEVICE_SERVER_NAME)?;
         let (connection, early) = handshake(connecting, RESUMED_HANDSHAKE_TIMEOUT).await?;
         let control = open_control(&connection, early.as_ref()).await?;
         Ok(Self::new(connection, CarrierKind::Quic, Some(control))
-            .with_path(endpoint.forwarded_kind(through))
-            .carried_through(Some(through))
+            .following(endpoint.socket.clone())
             .with_early(early))
     }
 
@@ -600,6 +629,12 @@ impl QuicCarrier {
         self
     }
 
+    /// Reads the link's path from `socket`'s route for the peer.
+    fn following(mut self, socket: Arc<LinkSocket>) -> Self {
+        self.follows = Some(socket);
+        self
+    }
+
     /// Names the path the link runs on, where its kind alone does not say:
     /// a direct link's address, known to whoever dialled or answered it.
     pub(crate) fn with_path(mut self, path: PathKind) -> Self {
@@ -663,6 +698,7 @@ impl QuicCarrier {
             alone: false,
             through: None,
             early: None,
+            follows: None,
             inbound: tokio::sync::Mutex::new(inbound),
             control: Mutex::new(Some((
                 ControlSink {
@@ -765,11 +801,20 @@ impl LinkCarrier for QuicCarrier {
     }
 
     fn path_kind(&self) -> PathKind {
-        self.path
+        self.follows
+            .as_ref()
+            .and_then(|socket| socket.kind_of(socket.path_of(self.connection.remote_address())?))
+            .unwrap_or(self.path)
     }
 
     fn forwarded_through(&self) -> Option<super::socket::LinkId> {
-        self.through
+        match &self.follows {
+            Some(socket) => match socket.path_of(self.connection.remote_address())? {
+                super::socket::Path::Forwarded(through) => Some(through),
+                _ => None,
+            },
+            None => self.through,
+        }
     }
 
     fn early_data(&self) -> EarlyData {

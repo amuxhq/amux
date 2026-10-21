@@ -625,6 +625,16 @@ async fn run_cloud_connection_with_details(
         reset_backoff: false,
     })?;
     let connected_at = std::time::Instant::now();
+    // The connection carries data before the relay admits it, so links'
+    // first flights go through it at once: the relay holds what they send
+    // until it has. Once admitted, the link is named afresh.
+    let socket = ctx.transport.quic_endpoint.socket.clone();
+    let forwarding = carrier.remote_address().map(|via| {
+        let link = crate::routing::LinkId::new(crate::HostId::nil()).core();
+        socket.add_forwarding(link, via, carrier.path_kind());
+        link
+    });
+    let _forwarding = Unforward(socket, forwarding);
     let tier = details.token.tier;
     let kept = details.kept;
     let refresh_status = ctx.status.clone();
@@ -699,6 +709,22 @@ async fn run_cloud_connection_with_details(
                 cloud_connection_error_from_status(&ctx.status, error, connected_at.elapsed())
                     .await,
             )
+        }
+    }
+}
+
+/// Forgets the forwarding link a relay connection was before the relay
+/// admitted it, when the connection ends; one named afresh on admission
+/// is not this one any more.
+struct Unforward(
+    Arc<crate::link::socket::LinkSocket>,
+    Option<crate::link::socket::LinkId>,
+);
+
+impl Drop for Unforward {
+    fn drop(&mut self) {
+        if let Some(link) = self.1 {
+            self.0.remove_forwarding(link);
         }
     }
 }

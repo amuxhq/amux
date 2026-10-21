@@ -17,6 +17,7 @@ use crate::identity::DeviceIdentity;
 use crate::link::channels::{ForwardedDial, ResumedDial, Resuming, says_revoked};
 use crate::link::framed::{FramedKind, StreamEndpoint};
 use crate::link::quic::DEVICE_SERVER_NAME;
+use crate::link::socket::Path;
 use crate::link::{ChannelError, ChannelPool, LinkCarrier as NativeLinkCarrier, QuicCarrier};
 use crate::routing::{Host, LinkCarrier, LinkConnectorCtx, LinkId, LiveLocalHost, Route};
 use crate::transport::spawn_ssh_relay;
@@ -307,6 +308,18 @@ impl ReachabilityLinkConnector {
         self.retain_task(task);
     }
 
+    /// Dials `peer` at the addresses discovery found and the profile
+    /// remembers for it, where there are any, redialling while it is
+    /// away: what a host the first flight did not reach is left to.
+    pub(crate) fn dial_direct(&self, peer: HostId) {
+        let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
+            return;
+        };
+        if !direct_candidates(&inner.context, peer).is_empty() {
+            self.dial_found(peer);
+        }
+    }
+
     pub(crate) fn requery(&self) {
         let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
             return;
@@ -462,19 +475,15 @@ fn snapshot_attempts(
     let store = context.trust_store.read().map_err(|_| ())?;
     let mut attempts = Vec::new();
     for (peer, entry) in store.entries() {
+        // A launch's first flight takes the relay and every address at
+        // once; only SSH is dialled here.
         for (ordinal, reachability) in entry
             .reachabilities
             .iter()
-            .filter(|reachability| !matches!(reachability, Reachability::Cloud))
+            .filter(|reachability| matches!(reachability, Reachability::Ssh { .. }))
             .cloned()
             .enumerate()
         {
-            let reachability = match reachability {
-                Reachability::Direct { .. } => Reachability::Direct {
-                    addrs: direct_candidates(context, peer),
-                },
-                other => other,
-            };
             attempts.push(ReachabilityLinkAttempt {
                 peer,
                 reachability,
@@ -645,58 +654,69 @@ async fn refused_or<T>(
 }
 
 impl ForwardedDialer {
-    /// Dials `peer` resuming with its ticket: through the forwarder a route
-    /// to it names, else at the address it was last found at.
+    /// Dials `peer` resuming with its ticket on every path it may be
+    /// reached by at once: the addresses discovery found and the profile
+    /// remembers for it (the last that worked among them), the forwarders
+    /// a route to it names and, for a host on the account, the relay, even
+    /// before the relay has said the host is there. The first path the
+    /// host answers on carries the link. Other dials to the host wait for
+    /// this one.
     async fn resume(&self, peer: HostId) -> Result<Resuming, ChannelError> {
         let (inner, endpoint) = self.endpoint()?;
         let context = &inner.context;
         let registry = context.channels.link_registry();
-        let mut through = None;
+        let one_at_a_time = self
+            .dialing
+            .lock()
+            .unwrap()
+            .entry(peer)
+            .or_default()
+            .clone();
+        let dialing = one_at_a_time.lock_owned().await;
+        // A direct dial discovery asks for meanwhile waits for this one.
+        let direct = DirectDial::claim(&inner.dialing, peer);
+        if registry.native_carrier_to_peer(peer).await.is_some() {
+            return Err(ChannelError::Handshake(
+                "a link to the host is already up".to_owned(),
+            ));
+        }
+        let mut paths: Vec<Path> = direct_candidates(context, peer)
+            .into_iter()
+            .map(Path::Direct)
+            .collect();
         for route in context.connections.routes_to(peer).await {
             if let Route::Via(forwarder) = route
                 && let Some((link, _)) = registry.native_carrier_to_peer(forwarder).await
             {
-                through = Some(link);
-                break;
+                paths.push(Path::Forwarded(link.core()));
             }
         }
-        let (dialled, carrier_tag) = match through {
-            Some(through) => (
-                QuicCarrier::resume_through(
-                    &endpoint,
-                    through.core(),
-                    &context.identity,
-                    context.trust_store.clone(),
-                    peer,
-                )
-                .await,
-                LinkCarrier::Forwarded,
-            ),
-            None => {
-                let addr = direct_candidates(context, peer)
-                    .into_iter()
-                    .next()
-                    .ok_or(ChannelError::NoRoute { host_id: peer })?;
-                (
-                    QuicCarrier::resume_direct(
-                        &endpoint,
-                        addr,
-                        &context.identity,
-                        context.trust_store.clone(),
-                        peer,
-                    )
-                    .await,
-                    LinkCarrier::Direct,
-                )
-            }
-        };
-        let carrier = Arc::new(dialled.map_err(|error| dial_failed(context, peer, error))?);
+        let through_relay = on_the_account(&context.trust_store, peer);
+        if paths.is_empty() && !through_relay {
+            return Err(ChannelError::NoRoute { host_id: peer });
+        }
+        tracing::debug!(%peer, ?paths, through_relay, "sending a first flight");
+        let carrier = Arc::new(
+            QuicCarrier::first_flight(
+                &endpoint,
+                paths,
+                through_relay,
+                &context.identity,
+                context.trust_store.clone(),
+                peer,
+            )
+            .await
+            .map_err(|error| dial_failed(context, peer, error))?,
+        );
+        // The carrier names the path its link came up on: the connector
+        // reads it there.
         let connector_ctx =
             LinkConnectorCtx::new_live(context.local_host.clone(), registry.clone())
                 .with_expected_peer(peer)
-                .with_carrier(carrier_tag)
+                .with_carrier(LinkCarrier::Direct)
                 .with_incoming_streams(context.incoming_streams_tx.clone());
         let shutdown = inner.direct_shutdown.lock().unwrap().subscribe();
+        let pause_shutdown = shutdown.clone();
         let (connector_task, established) =
             crate::routing::spawn_connector_with_establishment_and_shutdown(
                 connector_ctx,
@@ -704,9 +724,12 @@ impl ForwardedDialer {
                 shutdown,
             );
         let abort_on_failure = AbortTaskOnDrop(connector_task.abort_handle());
+        let connector = self.inner.clone();
         let context = context.clone();
         let handshake = carrier.clone();
+        let link_carrier = carrier.clone();
         let established = Box::pin(async move {
+            let _dialing = (dialing, direct);
             if let Err(error) = handshake.handshake().await {
                 return Err(ChannelError::from(dial_failed(&context, peer, error)));
             }
@@ -727,7 +750,25 @@ impl ForwardedDialer {
                 .native_carrier_to_peer(peer)
                 .await
                 .ok_or(ChannelError::LinkUnavailable { host_id: peer })?;
-            tokio::spawn(await_connector(connector_task, abort_on_failure));
+            if let Some(addr) = link_carrier
+                .remote_address()
+                .and_then(|stand_in| endpoint.socket.path_of(stand_in))
+                .and_then(|path| match path {
+                    Path::Direct(addr) => Some(addr),
+                    _ => None,
+                })
+            {
+                persist_working_addr(&context, peer, addr);
+            }
+            context.connections.clear_reachability_error(peer).await;
+            tokio::spawn(redial_after(
+                connector,
+                context,
+                peer,
+                connector_task,
+                abort_on_failure,
+                pause_shutdown,
+            ));
             Ok(link)
         });
         Ok(Resuming {
@@ -735,6 +776,65 @@ impl ForwardedDialer {
             established,
         })
     }
+}
+
+/// A host marked as being dialled directly until this is dropped, unless
+/// a dial already had it.
+struct DirectDial(Option<(Arc<Mutex<HashSet<HostId>>>, HostId)>);
+
+impl DirectDial {
+    fn claim(dialing: &Arc<Mutex<HashSet<HostId>>>, peer: HostId) -> Self {
+        Self(
+            dialing
+                .lock()
+                .unwrap()
+                .insert(peer)
+                .then(|| (dialing.clone(), peer)),
+        )
+    }
+}
+
+impl Drop for DirectDial {
+    fn drop(&mut self) {
+        if let Some((dialing, peer)) = self.0.take() {
+            dialing.lock().unwrap().remove(&peer);
+        }
+    }
+}
+
+/// Waits for a link to `peer` to close, then dials it again as one that
+/// came up at its address would be.
+async fn redial_after(
+    connector: std::sync::Weak<ReachabilityLinkConnectorInner>,
+    context: ReachabilityLinkContext,
+    peer: HostId,
+    connector_task: JoinHandle<Result<(), tonic::Status>>,
+    abort_on_drop: AbortTaskOnDrop,
+    shutdown_rx: watch::Receiver<bool>,
+) {
+    let established = tokio::time::Instant::now();
+    await_connector(connector_task, abort_on_drop).await;
+    if *shutdown_rx.borrow() {
+        return;
+    }
+    pause_after_short_link(established, shutdown_rx.clone()).await;
+    if let Some(runtime) = context.runtime.lock().unwrap().clone() {
+        runtime.discovery.requery();
+    }
+    redial_while_away(connector, context, peer, 0, shutdown_rx).await;
+}
+
+/// Whether `peer` is a host on the account, which the relay reaches.
+fn on_the_account(trust_store: &SharedTrustStore, peer: HostId) -> bool {
+    trust_store.read().is_ok_and(|store| {
+        store.entries().any(|(id, entry)| {
+            id == peer
+                && entry
+                    .reachabilities
+                    .iter()
+                    .any(|reachability| matches!(reachability, Reachability::Cloud))
+        })
+    })
 }
 
 impl ResumedDial for ForwardedDialer {

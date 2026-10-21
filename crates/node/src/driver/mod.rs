@@ -948,11 +948,27 @@ impl CoreThread {
                 call,
                 request: runtime.client_request(self.daemon.store(), ask),
             }),
-            Some(Arriving::Peer(from, call, request)) => Some(Input::PeerCall {
-                from,
-                call,
-                request: runtime.peer_request(*request),
-            }),
+            Some(Arriving::Peer(from, call, request)) => {
+                let request = runtime.peer_request(*request);
+                let stream = match &request {
+                    PeerRequest::SubscribeInventory => Some("inventory"),
+                    PeerRequest::Subscribe(_) => Some("session"),
+                    _ => None,
+                };
+                if let Some(stream) = stream {
+                    tracing::debug!(
+                        host = %runtime.host(),
+                        peer = %crate::routing::host_from_core(from),
+                        stream,
+                        "a peer opened a stream"
+                    );
+                }
+                Some(Input::PeerCall {
+                    from,
+                    call,
+                    request,
+                })
+            }
             // Judged as it is stepped: a step before it may have cancelled
             // or replaced its arm.
             None => input.or_else(|| fired.and_then(|fired| self.fired(fired))),

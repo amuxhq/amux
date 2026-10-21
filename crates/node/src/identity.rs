@@ -201,9 +201,8 @@ impl DeviceIdentity {
             Some(tickets) => rustls::client::Resumption::store(tickets.clone()),
             None => crate::link::resumption::client_resumption(),
         };
-        // Only a dial that resumes with `QuicCarrier::resume_direct` or
-        // `resume_through` writes early data; the others wait for the
-        // handshake as before.
+        // Only a launch's first flight (`QuicCarrier::first_flight`) writes
+        // early data; other dials wait for the handshake as before.
         tls.enable_early_data = true;
         if let Some(tickets) = tickets {
             tickets.load(&tls, &crate::link::quic::device_server_name());

@@ -16,7 +16,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use uuid::Uuid;
 use wire::{self, PROTOCOL_VERSION};
 
-use super::link_log::{LinkEvent, LinkTransition, PathKind};
+use super::link_log::{EarlyData, LinkEvent, LinkTransition, PathKind};
 use super::{LinkCarrier as Carrier, read_message, write_message};
 use crate::net_error::{self, status as protocol_status};
 use crate::routing::{
@@ -679,7 +679,8 @@ async fn run_established(
         peer: peer_host.id,
         event: LinkTransition::Up,
         path: carrier.path_kind(),
-        resumed: ctx.resumed.is_some(),
+        // The dialling end knows it resumed by its early data being taken.
+        resumed: ctx.resumed.is_some() || carrier.early_data() == EarlyData::Accepted,
         early_data: carrier.early_data(),
         first_packet_to_catch_up_ms: None,
     };

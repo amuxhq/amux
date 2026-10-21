@@ -22,6 +22,9 @@ pub enum LinkTransition {
     Up,
     Down,
     PathChanged,
+    /// The peer's catch-up arrived: on a launch's link, the inventory's
+    /// answer to the call its first flight carried.
+    CaughtUp,
 }
 
 /// The path a link's packets take, as the log names it.
@@ -179,7 +182,12 @@ macro_rules! spelled {
     };
 }
 
-spelled!(LinkTransition { Up => "up", Down => "down", PathChanged => "path_changed" });
+spelled!(LinkTransition {
+    Up => "up",
+    Down => "down",
+    PathChanged => "path_changed",
+    CaughtUp => "caught_up",
+});
 spelled!(PathKind {
     Lan => "lan",
     Direct => "direct",

@@ -197,6 +197,13 @@ const UNCLAIMED_PEER_TIMEOUT: Duration = Duration::from_secs(60);
 /// How often arrivals look for peers past [`UNCLAIMED_PEER_TIMEOUT`].
 const UNCLAIMED_PEER_SWEEP: Duration = Duration::from_secs(5);
 
+/// How much of a link's first flight the socket keeps to send again on a
+/// path that joins it late, as the relay joins once its own connection
+/// exists: the opening packets with the Hello and the first calls, and
+/// no more than a relay holds for one sender.
+const FIRST_FLIGHT_PACKETS: usize = 32;
+const FIRST_FLIGHT_BYTES: usize = 64 * 1024;
+
 /// What the socket dropped rather than hand quinn an error, which would
 /// end a connection (a send) or the endpoint (a receive).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -299,8 +306,9 @@ enum Route {
     #[default]
     Unset,
     Carrying(Path),
-    /// Every candidate at once, until one carries the link. The peer drops
-    /// the copies as duplicate packets.
+    /// Every candidate at once, until a packet from the peer arrives on
+    /// one, which carries the link from then on. The peer drops the copies
+    /// as duplicate packets.
     All(Vec<Path>),
 }
 
@@ -338,6 +346,36 @@ struct PeerState {
     /// When a packet last came from the peer, or it was last dialled.
     heard: Instant,
     expiry: Expiry,
+    /// What went out while the route sends on every candidate, for a
+    /// path that joins it late.
+    flight: Option<Flight>,
+}
+
+/// A link's first flight, while no one path carries it yet.
+#[derive(Default)]
+struct Flight {
+    /// The relay's forwarding links join the candidates as they come.
+    through_relay: bool,
+    sent: VecDeque<Vec<u8>>,
+    bytes: usize,
+}
+
+impl Flight {
+    fn keep(&mut self, packet: &[u8]) {
+        self.sent.push_back(packet.to_vec());
+        self.bytes += packet.len();
+        while self.sent.len() > FIRST_FLIGHT_PACKETS || self.bytes > FIRST_FLIGHT_BYTES {
+            let Some(oldest) = self.sent.pop_front() else {
+                break;
+            };
+            self.bytes -= oldest.len();
+        }
+    }
+}
+
+/// Whether a forwarding link of this kind reaches the relay.
+fn relayed(kind: PathKind) -> bool {
+    matches!(kind, PathKind::RelayUdp | PathKind::RelayTcp)
 }
 
 /// When the socket lets a peer go by itself. A sender anyone can make the
@@ -437,6 +475,7 @@ impl State {
                     route,
                     heard: now,
                     expiry,
+                    flight: None,
                 },
             );
         }
@@ -542,10 +581,38 @@ impl State {
         for path in route.paths() {
             self.learn(host, *path);
         }
-        self.peers
+        let peer = self
+            .peers
             .get_mut(&Peer::Host(host))
-            .expect("stand-in just made")
-            .route = route;
+            .expect("stand-in just made");
+        if !matches!(route, Route::All(_)) {
+            peer.flight = None;
+        }
+        peer.route = route;
+    }
+
+    /// A packet from `peer` arrived on `path`: if its first flight went
+    /// out on that path among others, that path carries it from now on.
+    fn carried_by(&mut self, peer: Peer, path: Path) {
+        let Some(held) = self.peers.get_mut(&peer) else {
+            return;
+        };
+        let carrying = match &held.route {
+            Route::All(paths) => paths
+                .iter()
+                .copied()
+                .find(|candidate| match (candidate, path) {
+                    (Path::Direct(a) | Path::Punched(a), Path::Direct(b) | Path::Punched(b)) => {
+                        *a == b
+                    }
+                    (candidate, path) => *candidate == path,
+                }),
+            _ => None,
+        };
+        if let Some(carrying) = carrying {
+            held.route = Route::Carrying(carrying);
+            held.flight = None;
+        }
     }
 
     /// No route takes `gone` any more. A host carried only on it is left
@@ -801,10 +868,39 @@ impl LinkSocket {
         self.lock().set_route(peer, Route::Carrying(path));
     }
 
-    /// Sends each of `peer`'s packets on every one of `paths` until one
-    /// carries the link.
-    pub fn send_on_all(&self, peer: HostId, paths: Vec<Path>) {
-        self.lock().set_route(peer, Route::All(paths));
+    /// Sends each of `peer`'s packets on every one of `paths` until a
+    /// packet from the peer arrives on one, which carries the link from
+    /// then on: a link's first flight, before anything says which path
+    /// works. With `through_relay`, every forwarding link to the relay is
+    /// a candidate too, one that comes up later as well; a path that joins
+    /// late is sent the first flight's packets that went out before it.
+    pub fn send_on_all(&self, peer: HostId, paths: Vec<Path>, through_relay: bool) {
+        let mut paths: Vec<Path> = paths
+            .into_iter()
+            .map(|path| match path {
+                Path::Direct(addr) => Path::Direct(plain(addr)),
+                Path::Punched(addr) => Path::Punched(plain(addr)),
+                path => path,
+            })
+            .collect();
+        let mut state = self.lock();
+        if through_relay {
+            for (link, (_, kind)) in &state.forwarding {
+                let path = Path::Forwarded(*link);
+                if relayed(*kind) && !paths.contains(&path) {
+                    paths.push(path);
+                }
+            }
+        }
+        state.set_route(peer, Route::All(paths));
+        state
+            .peers
+            .get_mut(&Peer::Host(peer))
+            .expect("route just set")
+            .flight = Some(Flight {
+            through_relay,
+            ..Flight::default()
+        });
     }
 
     /// Registers a byte-stream path; its packets arrive through
@@ -850,8 +946,68 @@ impl LinkSocket {
     /// this socket: packets for a peer carried on `Path::Forwarded(link)`
     /// go behind the header on whatever path carries the forwarder, UDP or
     /// a byte stream, and packets it delivers are answered through it.
+    ///
+    /// A link to the relay at a stand-in another link to the relay holds
+    /// is that link named afresh: a connection to the relay is a
+    /// forwarding link as soon as it carries data, so that links' first
+    /// flights go through it at once, and is named again once the relay
+    /// admits it. Routes through the old name follow.
+    ///
+    /// A link to the relay joins the first flight of every peer sending
+    /// on all its candidates through the relay, and is sent what that
+    /// flight sent before it.
     pub fn add_forwarding(&self, link: LinkId, via: SocketAddr, kind: PathKind) {
-        self.lock().forwarding.insert(link, (via, kind));
+        let late = {
+            let mut state = self.lock();
+            let renamed: Vec<LinkId> = state
+                .forwarding
+                .iter()
+                .filter(|(old, (at, was))| {
+                    **old != link && *at == via && relayed(*was) && relayed(kind)
+                })
+                .map(|(old, _)| *old)
+                .collect();
+            for old in renamed {
+                state.forwarding.remove(&old);
+                for held in state.peers.values_mut() {
+                    match &mut held.route {
+                        Route::Carrying(path) if *path == Path::Forwarded(old) => {
+                            *path = Path::Forwarded(link);
+                        }
+                        Route::All(paths) => {
+                            for path in paths.iter_mut() {
+                                if *path == Path::Forwarded(old) {
+                                    *path = Path::Forwarded(link);
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            state.forwarding.insert(link, (via, kind));
+            let mut late = Vec::new();
+            if relayed(kind) {
+                let path = Path::Forwarded(link);
+                for (peer, held) in &mut state.peers {
+                    if let (Route::All(paths), Some(flight)) = (&mut held.route, &held.flight)
+                        && flight.through_relay
+                        && !paths.contains(&path)
+                    {
+                        paths.push(path);
+                        late.push((*peer, flight.sent.iter().cloned().collect::<Vec<_>>()));
+                    }
+                }
+            }
+            late
+        };
+        for (peer, sent) in late {
+            for packet in sent {
+                if let Err(error) = self.send_on(peer, Path::Forwarded(link), &packet) {
+                    self.dropped_send(via, &error);
+                }
+            }
+        }
     }
 
     /// Forgets a forwarding link, and with it the path through it of every
@@ -893,6 +1049,17 @@ impl LinkSocket {
                 Route::Carrying(path) => Some(*path),
                 Route::Unset | Route::All(_) => None,
             },
+        }
+    }
+
+    /// What kind of path `path` is, as the link log names it, while the
+    /// socket knows it.
+    pub fn kind_of(&self, path: Path) -> Option<PathKind> {
+        match path {
+            Path::Direct(addr) => Some(PathKind::of_addr(addr)),
+            Path::Punched(_) => Some(PathKind::Punched),
+            Path::Forwarded(link) => self.forwarded_kind(link),
+            Path::Framed(id) => Some(super::quic::stream_path(self.framed_kind(id)?)),
         }
     }
 
@@ -1030,7 +1197,17 @@ impl LinkSocket {
     /// in `datagram` are returned.
     fn arrive(&self, arrival: Arrival, datagram: &[u8]) -> Option<(SocketAddr, usize)> {
         match parse(datagram).ok()? {
-            PacketKind::Quic(_) => Some((self.lock().heard_from(arrival, Instant::now()), 0)),
+            PacketKind::Quic(_) => {
+                let mut state = self.lock();
+                let stand_in = state.heard_from(arrival, Instant::now());
+                let peer = state.sender(arrival);
+                let path = match arrival {
+                    Arrival::Udp(addr) => Path::Direct(addr),
+                    Arrival::Framed(id) => Path::Framed(id),
+                };
+                state.carried_by(peer, path);
+                Some((stand_in, 0))
+            }
             PacketKind::Probe { nonce, .. } => {
                 self.reply(arrival, &encode_probe_answer(self.own, nonce));
                 None
@@ -1057,6 +1234,7 @@ impl LinkSocket {
                     // A link someone dialled to us through a forwarder is
                     // answered the way it came until a route is chosen.
                     if let Some(link) = state.forwarder_of(arrival) {
+                        state.carried_by(Peer::Host(host), Path::Forwarded(link));
                         let peer = state.peers.get_mut(&Peer::Host(host)).expect("stand-in");
                         if matches!(peer.route, Route::Unset) {
                             peer.route = Route::Carrying(Path::Forwarded(link));
@@ -1094,7 +1272,7 @@ impl AsyncUdpSocket for LinkSocket {
         // marks are not carried by every path.
         debug_assert!(transmit.segment_size.is_none(), "one datagram per transmit");
         let (peer, route) = {
-            let state = self.lock();
+            let mut state = self.lock();
             let Some(peer) = state.by_stand_in.get(&transmit.destination).copied() else {
                 drop(state);
                 self.dropped_send(
@@ -1103,7 +1281,11 @@ impl AsyncUdpSocket for LinkSocket {
                 );
                 return Ok(());
             };
-            (peer, state.peers[&peer].route.clone())
+            let held = state.peers.get_mut(&peer).expect("a stand-in's peer");
+            if let Some(flight) = &mut held.flight {
+                flight.keep(transmit.contents);
+            }
+            (peer, held.route.clone())
         };
         match route {
             Route::Unset => Ok(()),
@@ -2074,6 +2256,7 @@ mod tests {
                 Path::Punched(public),
                 Path::Forwarded(LinkId(1)),
             ],
+            false,
         );
         socket.try_send(&transmit(stand_in, QUIC)).unwrap();
         assert_eq!(
@@ -2084,11 +2267,6 @@ mod tests {
                 (relay, encode_forwarded(peer, QUIC)),
             ]
         );
-        // Answers on any of them reach the one stand-in.
-        for from in [lan, public] {
-            fake.push(from, QUIC);
-            assert_eq!(receive(&socket).unwrap().0, stand_in);
-        }
 
         // One full path is a lost copy; every path full holds quinn back.
         fake.blocked.lock().unwrap().push(lan);
@@ -2099,10 +2277,82 @@ mod tests {
         assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
         fake.blocked.lock().unwrap().clear();
 
-        // Once one carries, only it does.
-        socket.set_carrying(peer, Path::Punched(public));
+        // The first answer reaches the one stand-in, and the path it came
+        // on carries the link from then on; answers on the others still
+        // reach the stand-in.
+        fake.push(public, QUIC);
+        assert_eq!(receive(&socket).unwrap().0, stand_in);
         socket.try_send(&transmit(stand_in, QUIC)).unwrap();
         assert_eq!(fake.take_sent(), vec![(public, QUIC.to_vec())]);
+        fake.push(lan, QUIC);
+        assert_eq!(receive(&socket).unwrap().0, stand_in);
+        socket.try_send(&transmit(stand_in, QUIC)).unwrap();
+        assert_eq!(fake.take_sent(), vec![(public, QUIC.to_vec())]);
+
+        // A path chosen by hand carries it the same way.
+        socket.set_carrying(peer, Path::Direct(lan));
+        socket.try_send(&transmit(stand_in, QUIC)).unwrap();
+        assert_eq!(fake.take_sent(), vec![(lan, QUIC.to_vec())]);
+    }
+
+    #[test]
+    fn socket_sends_a_first_flight_through_a_relay_that_joins_late() {
+        let (fake, socket, _own) = fake_socket();
+        let peer = HostId::new_v4();
+        let lan: SocketAddr = "192.0.2.10:5000".parse().unwrap();
+        let relay: SocketAddr = "198.51.100.1:443".parse().unwrap();
+        let stand_in = socket.stand_in(peer);
+        socket.send_on_all(peer, vec![Path::Direct(lan)], true);
+        socket.try_send(&transmit(stand_in, b"\x40first")).unwrap();
+        socket.try_send(&transmit(stand_in, b"\x40second")).unwrap();
+        assert_eq!(fake.take_sent().len(), 2);
+
+        // The relay's connection carries data before the relay admits it:
+        // the first flight goes through it at once, what went out before
+        // first.
+        let via = socket.stand_in_at(relay);
+        socket.add_forwarding(LinkId(7), via, PathKind::RelayUdp);
+        assert_eq!(
+            fake.take_sent(),
+            vec![
+                (relay, encode_forwarded(peer, b"\x40first")),
+                (relay, encode_forwarded(peer, b"\x40second")),
+            ]
+        );
+        socket.try_send(&transmit(stand_in, QUIC)).unwrap();
+        assert_eq!(
+            fake.take_sent(),
+            vec![(lan, QUIC.to_vec()), (relay, encode_forwarded(peer, QUIC))]
+        );
+
+        // Admitted, the relay's link is named afresh; the route follows.
+        socket.add_forwarding(LinkId(8), via, PathKind::RelayUdp);
+        assert_eq!(socket.forwarded_kind(LinkId(7)), None);
+        socket.try_send(&transmit(stand_in, QUIC)).unwrap();
+        assert_eq!(
+            fake.take_sent(),
+            vec![(lan, QUIC.to_vec()), (relay, encode_forwarded(peer, QUIC))]
+        );
+
+        // The host answers through the relay first: the relay carries it.
+        fake.push(relay, &encode_delivered(peer, QUIC));
+        assert_eq!(receive(&socket).unwrap().0, stand_in);
+        assert_eq!(socket.path_of(stand_in), Some(Path::Forwarded(LinkId(8))));
+        socket.try_send(&transmit(stand_in, QUIC)).unwrap();
+        assert_eq!(
+            fake.take_sent(),
+            vec![(relay, encode_forwarded(peer, QUIC))]
+        );
+
+        // A flight that does not go through the relay is not joined.
+        let other = HostId::new_v4();
+        socket.send_on_all(other, vec![Path::Direct(lan)], false);
+        socket.add_forwarding(
+            LinkId(9),
+            socket.stand_in_at("198.51.100.2:443".parse().unwrap()),
+            PathKind::RelayUdp,
+        );
+        assert!(fake.take_sent().is_empty());
     }
 
     #[test]
@@ -2296,6 +2546,7 @@ mod tests {
         client_socket.send_on_all(
             server_identity.host_id,
             vec![Path::Direct(dead_addr), Path::Direct(server_addr)],
+            false,
         );
         let config = client_identity
             .quic_client_config_for_peer(trust_for(&server_identity), server_identity.host_id)

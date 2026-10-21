@@ -235,6 +235,8 @@ pub struct ResumedLink {
     pub link: LinkId,
     pub early_data: super::link_log::EarlyData,
     pub replies: Vec<EarlyReply>,
+    /// What carries the link, which names the path it came up on.
+    pub(crate) carrier: Arc<dyn LinkCarrier>,
 }
 
 /// A link a resumed dial has started: its carrier already carries data,
@@ -526,6 +528,7 @@ impl ChannelPool {
             link,
             early_data: carrier.early_data(),
             replies,
+            carrier,
         })
     }
 

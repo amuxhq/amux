@@ -779,9 +779,8 @@ mod tests {
         let mut nonce = 0;
         while tokio::time::Instant::now() < deadline {
             nonce += 1;
-            from.socket
-                .probe(to, Path::Forwarded(LinkId(1)), nonce)
-                .unwrap();
+            // A full socket buffer loses the probe, as the network would.
+            let _ = from.socket.probe(to, Path::Forwarded(LinkId(1)), nonce);
             if let Ok(Some(answer)) =
                 tokio::time::timeout(Duration::from_millis(50), answers.recv()).await
                 && answer.from == to

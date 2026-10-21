@@ -47,7 +47,10 @@ use crate::driver::CoreLinks;
 use crate::identity::{DeviceIdentity, IdentityError};
 use crate::link::framed::{FramedKind, StreamEndpoint};
 use crate::link::quic::DEVICE_SERVER_NAME;
-use crate::link::{ChannelPool, LinkCarrier, QuicCarrier, run_link, serve_inbound_streams};
+use crate::link::socket::{Datagrams, LinkSocket};
+use crate::link::{
+    ChannelPool, LinkCarrier, LinkEndpoint, QuicCarrier, run_link, serve_inbound_streams,
+};
 use crate::routing::{
     Capabilities, ConnectRole, LinkConnectorCtx, LinkCtx, LinkRegistry, LiveLocalHost, LiveRoute,
     local_host,
@@ -151,7 +154,7 @@ pub struct LanOptions {
 impl Default for LanOptions {
     fn default() -> Self {
         Self {
-            bind: SocketAddr::from(([0, 0, 0, 0], 0)),
+            bind: DUAL_STACK_ANY,
             socket: None,
         }
     }
@@ -229,7 +232,7 @@ pub struct Edge {
     found: Arc<FoundHosts>,
     scope: String,
     lan_addr: Option<SocketAddr>,
-    quic_endpoint: quinn::Endpoint,
+    quic_endpoint: LinkEndpoint,
     account: Arc<Account>,
     credentials_override: Option<Arc<dyn CredentialProvider>>,
     cloud_options: CloudOptions,
@@ -333,7 +336,12 @@ impl Edge {
         let quic_server = identity.quic_server_config(trust.clone())?;
         let (quic_endpoint, lan_addr) = match &options.lan {
             Some(lan) => {
-                let endpoint = bind_lan(dir, lan, quic_server).map_err(EdgeError::Lan)?;
+                let endpoint = LinkEndpoint::new(
+                    bind_lan(dir, lan).map_err(EdgeError::Lan)?,
+                    identity.host_id,
+                    Some(quic_server),
+                )
+                .map_err(EdgeError::Lan)?;
                 let addr = endpoint.local_addr().map_err(EdgeError::Lan)?;
                 let _ = crate::install::write_durably(
                     &dir.join(LAN_PORT_FILE),
@@ -343,8 +351,11 @@ impl Edge {
                 tracing::info!(%addr, host = %identity.host_id, "listening for direct links");
                 (endpoint, Some(addr))
             }
+            // Listening for nothing, the profile still dials from one
+            // socket of both families.
             None => (
-                crate::identity::quic_endpoint(None, SocketAddr::from(([0, 0, 0, 0], 0)))
+                LinkSocket::bind_dual_stack(DUAL_STACK_ANY, None)
+                    .and_then(|substrate| LinkEndpoint::new(substrate, identity.host_id, None))
                     .map_err(EdgeError::Dialing)?,
                 None,
             ),
@@ -1022,35 +1033,20 @@ fn follow_plan(status: &RuntimeStatus, connections: &Arc<ConnectionManager>) -> 
     })
 }
 
-/// Binds the LAN listener, preferring the profile's last port.
-fn bind_lan(
-    dir: &Path,
-    lan: &LanOptions,
-    server: quinn::ServerConfig,
-) -> std::io::Result<quinn::Endpoint> {
+/// Every address of both families, port chosen by the OS: where a
+/// profile's socket binds unless told otherwise.
+pub const DUAL_STACK_ANY: SocketAddr =
+    SocketAddr::new(std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED), 0);
+
+/// Binds the LAN listener's socket, preferring the profile's last port.
+fn bind_lan(dir: &Path, lan: &LanOptions) -> std::io::Result<Arc<dyn Datagrams>> {
     if let Some(socket) = &lan.socket {
-        let socket = socket.try_clone()?;
-        socket.set_nonblocking(true)?;
-        let runtime = quinn::default_runtime()
-            .ok_or_else(|| std::io::Error::other("no async runtime for the LAN listener"))?;
-        return quinn::Endpoint::new(
-            crate::identity::quic_endpoint_config(),
-            Some(server),
-            socket,
-            runtime,
-        );
+        return LinkSocket::on_udp(socket.try_clone()?);
     }
-    let bind = lan.bind;
-    if bind.port() == 0
-        && let Some(port) = std::fs::read_to_string(dir.join(LAN_PORT_FILE))
-            .ok()
-            .and_then(|text| text.trim().parse::<u16>().ok())
-        && let Ok(endpoint) =
-            crate::identity::quic_endpoint(Some(server.clone()), SocketAddr::new(bind.ip(), port))
-    {
-        return Ok(endpoint);
-    }
-    crate::identity::quic_endpoint(Some(server), bind)
+    let remembered = std::fs::read_to_string(dir.join(LAN_PORT_FILE))
+        .ok()
+        .and_then(|text| text.trim().parse::<u16>().ok());
+    LinkSocket::bind_dual_stack(lan.bind, remembered)
 }
 
 /// Serves PairingService to callers that presented no trusted key.

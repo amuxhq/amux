@@ -56,7 +56,8 @@ pub struct EdgeOverrides {
     /// Local-network discovery; the phone's system browses and hands its
     /// results over, so there is none by default.
     pub discovery: Option<DiscoveryFactory>,
-    /// Where direct links listen: every interface by default.
+    /// Where direct links listen: every interface of both families by
+    /// default.
     pub lan_bind: SocketAddr,
     /// Whether this is the app as published, which sends product
     /// analytics; tests and driving builds are not, and send none unless
@@ -71,7 +72,7 @@ impl Default for EdgeOverrides {
         EdgeOverrides {
             cloud: CloudOptions::default(),
             discovery: None,
-            lan_bind: SocketAddr::from(([0, 0, 0, 0], 0)),
+            lan_bind: node::DUAL_STACK_ANY,
             published: false,
             recording: None,
         }

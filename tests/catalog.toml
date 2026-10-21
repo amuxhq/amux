@@ -691,6 +691,23 @@ cargo = [
 ]
 
 [[suite]]
+name = "link-stories"
+contract = "Hosts link over one QUIC connection per pair from a socket of both address families: two hosts bound to IPv6 alone link and stream a session."
+paths = ["crates/testnet/tests/spec_links.rs"]
+recipe = "just test -- --test spec_links"
+modes = ["real"]
+boundary = "Many daemons"
+oracle = "Listener addresses, the route each host reports and session events, at bounded deadlines."
+real = ["daemon runtimes", "agent processes", "loopback QUIC over IPv6", "TLS", "files"]
+substituted = ["providers by the scripted fakes", "multicast discovery by a scripted bus"]
+time = "driven"
+capabilities = ["loopback network", "desktop", "Unix"]
+lane = "fast"
+evidence = ""
+update = ""
+cargo = [{ package = "testnet", targets = ["spec_links"], features = [] }]
+
+[[suite]]
 name = "testnet-stories"
 contract = "The harness's stories that hold on either net, a stuck observation failing at its deadline, a fence holding a host to its own cursors, a severed link going down and coming back, and a killed daemon's agents running on while its restart reads what they wrote, pass on the real net and under every seed on the simulated one, and a failing seed is reported with the command that reruns it."
 paths = ["crates/testnet/src/modes.rs", "crates/testnet/src/world.rs", "crates/testnet/src/probes.rs", "crates/testnet/tests/harness_stories.rs", "crates/testnet/tests/stories", "scripts/sim.py"]

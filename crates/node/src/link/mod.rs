@@ -18,5 +18,5 @@ pub use channels::{
 pub(crate) use channels::{ChannelKey, InboundStream, peer_client, serve_inbound_streams};
 pub(crate) use piper::Piper;
 pub use quic::QuicCarrier;
-pub(crate) use quic::accepted_quic_bidi_stream;
+pub(crate) use quic::{LinkEndpoint, accepted_quic_bidi_stream};
 pub use run::{LinkCtx, LinkError, run_link};

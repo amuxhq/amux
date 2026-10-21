@@ -19,7 +19,7 @@ use std::fmt;
 use std::io::{self, IoSliceMut};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::task::{Context, Poll, Waker};
 
 pub use path_core::{LinkId, Path, PathId};
@@ -309,7 +309,8 @@ impl State {
 /// path, or on every candidate while the route sends on all, and maps
 /// arrivals back to the stand-in whichever path brought them.
 pub struct LinkSocket {
-    substrate: Arc<dyn Datagrams>,
+    /// Swapped whole when the network under the profile changes.
+    substrate: RwLock<Arc<dyn Datagrams>>,
     own: HostId,
     state: Mutex<State>,
 }
@@ -318,7 +319,7 @@ impl fmt::Debug for LinkSocket {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("LinkSocket")
             .field("own", &self.own)
-            .field("local_addr", &self.substrate.local_addr().ok())
+            .field("local_addr", &self.substrate().local_addr().ok())
             .finish_non_exhaustive()
     }
 }
@@ -327,7 +328,7 @@ impl LinkSocket {
     pub fn bind(substrate: Arc<dyn Datagrams>, own: HostId) -> io::Result<Arc<Self>> {
         substrate.local_addr()?;
         Ok(Arc::new(Self {
-            substrate,
+            substrate: RwLock::new(substrate),
             own,
             state: Mutex::new(State::default()),
         }))
@@ -341,7 +342,11 @@ impl LinkSocket {
         bind: SocketAddr,
         remembered_port: Option<u16>,
     ) -> io::Result<Arc<dyn Datagrams>> {
-        let socket = bind_udp(bind, remembered_port)?;
+        Self::on_udp(bind_udp(bind, remembered_port)?)
+    }
+
+    /// The substrate over a UDP socket the caller already bound.
+    pub fn on_udp(socket: std::net::UdpSocket) -> io::Result<Arc<dyn Datagrams>> {
         socket.set_nonblocking(true)?;
         Ok(Arc::new(Udp::new(tokio::net::UdpSocket::from_std(
             socket,
@@ -353,7 +358,27 @@ impl LinkSocket {
     }
 
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
-        self.substrate.local_addr()
+        self.substrate().local_addr()
+    }
+
+    /// Moves the socket onto a new substrate, for a host whose network
+    /// changed under it. Stand-ins and routes stay; quinn must be told with
+    /// `Endpoint::rebind_abstract` so it polls the new substrate.
+    pub fn rebind(&self, substrate: Arc<dyn Datagrams>) {
+        *self
+            .substrate
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = substrate;
+        if let Some(waker) = self.lock().recv_waker.take() {
+            waker.wake();
+        }
+    }
+
+    fn substrate(&self) -> Arc<dyn Datagrams> {
+        self.substrate
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 
     /// The address quinn dials and hears `peer` at, the same for as long as
@@ -367,6 +392,35 @@ impl LinkSocket {
         match self.lock().by_stand_in.get(&stand_in)? {
             Peer::Host(host) => Some(*host),
             Peer::Unnamed(_) => None,
+        }
+    }
+
+    /// The address quinn dials to reach whoever answers at `addr`, before
+    /// the handshake says who that is: the stand-in arrivals from `addr`
+    /// map to, so the dial and its answers meet on one address.
+    pub fn stand_in_at(&self, addr: SocketAddr) -> SocketAddr {
+        let addr = plain(addr);
+        let mut state = self.lock();
+        let peer = state.sender(Arrival::Udp(addr));
+        state.stand_in(peer)
+    }
+
+    /// The network address behind a stand-in, where it is one: an unnamed
+    /// sender's address, or the address carrying a host's link. None for a
+    /// byte stream or a forwarder.
+    pub fn address_of(&self, stand_in: SocketAddr) -> Option<SocketAddr> {
+        let state = self.lock();
+        let peer = state.by_stand_in.get(&stand_in)?;
+        let path = match peer {
+            Peer::Unnamed(path) => *path,
+            Peer::Host(_) => match &state.peers.get(peer)?.route {
+                Route::Carrying(path) => *path,
+                Route::Unset | Route::All(_) => return None,
+            },
+        };
+        match path {
+            Path::Direct(addr) | Path::Punched(addr) => Some(addr),
+            Path::Forwarded(_) | Path::Framed(_) => None,
         }
     }
 
@@ -474,7 +528,7 @@ impl LinkSocket {
 
     fn send_on(&self, peer: Peer, path: Path, packet: &[u8]) -> io::Result<()> {
         match path {
-            Path::Direct(addr) | Path::Punched(addr) => self.substrate.send_to(packet, addr),
+            Path::Direct(addr) | Path::Punched(addr) => self.substrate().send_to(packet, addr),
             Path::Forwarded(link) => {
                 let Peer::Host(host) = peer else {
                     return Err(io::Error::new(
@@ -485,7 +539,8 @@ impl LinkSocket {
                 let via = self.lock().forwarding.get(&link).copied().ok_or_else(|| {
                     io::Error::new(io::ErrorKind::NotConnected, "no such forwarding link")
                 })?;
-                self.substrate.send_to(&encode_forwarded(host, packet), via)
+                self.substrate()
+                    .send_to(&encode_forwarded(host, packet), via)
             }
             Path::Framed(id) => {
                 let io = self.lock().framed.get(&id).cloned().ok_or_else(|| {
@@ -498,7 +553,7 @@ impl LinkSocket {
 
     fn reply(&self, arrival: Arrival, packet: &[u8]) {
         let _ = match arrival {
-            Arrival::Udp(addr) => self.substrate.send_to(packet, addr),
+            Arrival::Udp(addr) => self.substrate().send_to(packet, addr),
             Arrival::Framed(id) => match self.lock().framed.get(&id).cloned() {
                 Some(io) => io.send(packet),
                 None => Ok(()),
@@ -629,7 +684,7 @@ impl AsyncUdpSocket for LinkSocket {
                     buf[..packet.len()].copy_from_slice(&packet);
                     (packet.len(), Arrival::Framed(path))
                 }
-                None => match self.substrate.poll_recv(cx, buf) {
+                None => match self.substrate().poll_recv(cx, buf) {
                     Poll::Ready(Ok((len, from))) => (len, Arrival::Udp(from)),
                     Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
                     Poll::Pending => return Poll::Pending,
@@ -653,7 +708,7 @@ impl AsyncUdpSocket for LinkSocket {
     fn local_addr(&self) -> io::Result<SocketAddr> {
         // quinn refuses IPv6 destinations from an IPv4 socket, and every
         // stand-in is IPv6.
-        let addr = self.substrate.local_addr()?;
+        let addr = self.substrate().local_addr()?;
         Ok(match addr.ip() {
             IpAddr::V4(ip) => SocketAddr::new(IpAddr::V6(ip.to_ipv6_mapped()), addr.port()),
             IpAddr::V6(_) => addr,
@@ -671,7 +726,19 @@ impl fmt::Debug for Writable {
 
 impl UdpPoller for Writable {
     fn poll_writable(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        self.0.substrate.poll_send_ready(cx)
+        self.0.substrate().poll_send_ready(cx)
+    }
+}
+
+/// An address in its plain family: an IPv4-mapped IPv6 address as IPv4,
+/// the form the OS socket reports arrivals in.
+fn plain(addr: SocketAddr) -> SocketAddr {
+    match addr {
+        SocketAddr::V6(v6) => match v6.ip().to_ipv4_mapped() {
+            Some(ip) => SocketAddr::new(ip.into(), v6.port()),
+            None => addr,
+        },
+        SocketAddr::V4(_) => addr,
     }
 }
 
@@ -750,8 +817,9 @@ impl Datagrams for Udp {
             let mut read = tokio::io::ReadBuf::new(buf);
             match self.socket.poll_recv_from(cx, &mut read) {
                 Poll::Ready(Ok(from)) => {
-                    let from = SocketAddr::new(from.ip().to_canonical(), from.port());
-                    return Poll::Ready(Ok((read.filled().len(), from)));
+                    // plain keeps a link-local sender's scope, which the
+                    // answer needs to find its interface.
+                    return Poll::Ready(Ok((read.filled().len(), plain(from))));
                 }
                 // Windows reports an earlier send's ICMP unreachable on the
                 // next receive; it says nothing about this one.

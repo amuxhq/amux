@@ -1753,7 +1753,7 @@ impl Net {
             host_name: decl.name.clone(),
             kinds: node::local_kinds(),
             lan: decl.lan.then(|| LanOptions {
-                bind: std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
+                bind: SocketAddr::new(loopback(decl), 0),
                 socket: None,
             }),
             discovery: if decl.bonjour && !self.gated_lan {
@@ -2010,9 +2010,22 @@ impl Net {
             host: host.to_owned(),
             error: "has no LAN listener to gate".to_owned(),
         })?;
-        Ok(self
-            .lan
-            .front(host, Some(SocketAddr::from(([127, 0, 0, 1], port))))?)
+        Ok(self.lan.front(
+            host,
+            Some(SocketAddr::new(loopback(&self.hosts[host].decl), port)),
+        )?)
+    }
+
+    /// Binds `host`'s socket to IPv6 loopback alone from its next start,
+    /// so it reaches and is reached over IPv6 only. In-process hosts only.
+    pub fn bind_ipv6_only(&mut self, host: &str) -> Result<Ack, NetError> {
+        self.in_process(host, "binding IPv6 only")?;
+        self.hosts
+            .get_mut(host)
+            .ok_or_else(|| NetError::NoHost(host.to_owned()))?
+            .decl
+            .ipv6_only = true;
+        Ok(self.ack(format!("{host} binds IPv6 only from its next start")))
     }
 
     /// What the gate in front of `host`'s LAN listener does to each
@@ -2437,7 +2450,7 @@ impl Net {
                 &format!("{name}'s LAN port to be free"),
                 LAN_PORT_PATIENCE,
                 || {
-                    let bound = std::net::UdpSocket::bind(("127.0.0.1", port));
+                    let bound = std::net::UdpSocket::bind((loopback(&host.decl), port));
                     async move { bound.map(|_| ()).map_err(|error| error.to_string()) }
                 },
             )
@@ -3557,4 +3570,14 @@ fn work_dir(work: &Path, cwd: Option<&str>) -> Result<String, NetError> {
 /// An input id as a failure message shows it.
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// The loopback address a host's socket binds to: IPv6's for a host bound
+/// IPv6 only, IPv4's otherwise.
+fn loopback(decl: &HostDecl) -> std::net::IpAddr {
+    if decl.ipv6_only {
+        std::net::Ipv6Addr::LOCALHOST.into()
+    } else {
+        std::net::Ipv4Addr::LOCALHOST.into()
+    }
 }

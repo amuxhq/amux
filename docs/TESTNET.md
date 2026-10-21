@@ -112,6 +112,7 @@ The same network as JSON, as `testnet serve` reads it:
 | `hosts[].provider` | `fake` (the default) or `real`: what every agent created on this host runs, whichever client creates it. See [real providers](#real-providers). |
 | `hosts[].process` | Run the host as a real `amux` daemon process with its own installation config. |
 | `hosts[].supervised` | Run it under `amux supervise`, taking releases from the net's feed; implies `process`. |
+| `hosts[].ipv6_only` | Bind the host's socket to IPv6 loopback alone, so every link it has runs over IPv6; `Net::bind_ipv6_only` sets it from the host's next start. In-process hosts only. |
 | `links[]` | `{"a", "b"}`: two hosts that trust each other and are linked at start. |
 | `relay.accounts[]` | `{"name", "tier"}`, tier `pro` (the default: relayed tunnels) or `free` (hosts are listed; the relay opens no tunnels). |
 | `settle` | Start each declared agent only once the one before it has settled (see `settle(name)` below), so agents that come to rest in the same standing are listed in declaration order, the last declared as most recently active. Every declared agent must come to rest. Without it the agents start together and which first turn ends last is a race. |

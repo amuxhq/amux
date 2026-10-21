@@ -154,8 +154,14 @@ impl UdpGate {
     /// A gate in front of `upstream`, or of nothing yet: datagrams that
     /// arrive before [`UdpGate::set_upstream`] names a listener are
     /// dropped. Binds at once, so it needs no await, only a runtime.
+    /// The gate binds loopback in the upstream's family, so a host bound
+    /// IPv6 only is gated over IPv6.
     pub fn bind(upstream: Option<SocketAddr>) -> std::io::Result<Self> {
-        let front = std::net::UdpSocket::bind("127.0.0.1:0")?;
+        let loopback = match upstream {
+            Some(SocketAddr::V6(_)) => SocketAddr::from((std::net::Ipv6Addr::LOCALHOST, 0)),
+            _ => SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, 0)),
+        };
+        let front = std::net::UdpSocket::bind(loopback)?;
         front.set_nonblocking(true)?;
         let front = Arc::new(UdpSocket::from_std(front)?);
         let addr = front.local_addr()?;
@@ -188,7 +194,7 @@ impl UdpGate {
                     let sender = match senders.get(&from) {
                         Some(sender) => sender,
                         None => {
-                            let Ok(back) = UdpSocket::bind("127.0.0.1:0").await else {
+                            let Ok(back) = UdpSocket::bind(loopback).await else {
                                 continue;
                             };
                             if back.connect(upstream).await.is_err() {

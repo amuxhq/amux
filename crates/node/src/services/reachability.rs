@@ -87,7 +87,7 @@ struct ReachabilityLinkContext {
     connections: Arc<ConnectionManager>,
     incoming_streams_tx: tokio::sync::mpsc::Sender<crate::link::InboundStream>,
     runtime: Arc<Mutex<Option<ReachabilityRuntime>>>,
-    quic_endpoint: Arc<Mutex<Option<quinn::Endpoint>>>,
+    quic_endpoint: Arc<Mutex<Option<crate::link::LinkEndpoint>>>,
     quic_transport: Arc<Mutex<Option<Arc<quinn::TransportConfig>>>>,
 }
 
@@ -145,7 +145,7 @@ impl ReachabilityLinkConnector {
         &self,
         discovery: Arc<dyn Discovery>,
         found_hosts: Arc<FoundHosts>,
-        quic_endpoint: quinn::Endpoint,
+        quic_endpoint: crate::link::LinkEndpoint,
         scope: String,
     ) {
         let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
@@ -165,7 +165,7 @@ impl ReachabilityLinkConnector {
         };
         let endpoint = inner.context.quic_endpoint.lock().unwrap();
         let endpoint = endpoint.as_ref().expect("QUIC endpoint is configured");
-        QuicCarrier::rebind(endpoint, socket)
+        endpoint.rebind(crate::link::socket::LinkSocket::on_udp(socket)?)
     }
 
     pub(crate) fn spawn_startup_links(&self) -> Vec<JoinHandle<()>> {

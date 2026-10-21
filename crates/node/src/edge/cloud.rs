@@ -50,7 +50,7 @@ pub struct UdpBlockedMemory {
 }
 
 pub struct CloudTransport {
-    quic_endpoint: quinn::Endpoint,
+    quic_endpoint: crate::link::LinkEndpoint,
     udp_blocked: Arc<UdpBlockedMemory>,
     tcp_override: Option<std::net::SocketAddr>,
     quic_override: Option<super::RelayQuic>,
@@ -58,8 +58,8 @@ pub struct CloudTransport {
 }
 
 impl CloudTransport {
-    pub fn new(
-        quic_endpoint: quinn::Endpoint,
+    pub(crate) fn new(
+        quic_endpoint: crate::link::LinkEndpoint,
         udp_blocked: Arc<UdpBlockedMemory>,
         tcp_override: Option<std::net::SocketAddr>,
         quic_override: Option<super::RelayQuic>,

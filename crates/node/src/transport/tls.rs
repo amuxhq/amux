@@ -126,7 +126,7 @@ fn pairing_dial_error(error: quinn::ConnectionError) -> TransportError {
 }
 
 pub(crate) async fn pairing_quic_channel(
-    endpoint: &quinn::Endpoint,
+    endpoint: &crate::link::LinkEndpoint,
     addr: SocketAddr,
 ) -> Result<PairingQuic> {
     let connection = endpoint

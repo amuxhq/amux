@@ -1,6 +1,6 @@
-use std::net::{SocketAddr, UdpSocket};
+use std::net::SocketAddr;
 use std::pin::Pin;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, ready};
 use std::{future, io};
 
@@ -14,6 +14,7 @@ use super::carrier::{
     LinkCarrier, OpenError,
 };
 use super::framed::{FramedKind, StreamEndpoint};
+use super::socket::{Datagrams, LinkSocket};
 use crate::HostId;
 use crate::identity::{DeviceIdentity, IdentityError};
 use crate::trust::SharedTrustStore;
@@ -30,6 +31,83 @@ pub(crate) const DEVICE_SERVER_NAME: &str = "amux-device.local";
 const CLOSE_LINGER: std::time::Duration = std::time::Duration::from_secs(1);
 pub(crate) const RELAY_QUIC_HANDSHAKE_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(2);
+/// How long a relay dial waits on one address before starting on the
+/// next, of the other family where there is one: the connection attempt
+/// delay RFC 8305 recommends, so an address family that black-holes costs
+/// a quarter second rather than a whole handshake timeout.
+pub(crate) const RELAY_CANDIDATE_STAGGER: std::time::Duration =
+    std::time::Duration::from_millis(250);
+
+/// A profile's one QUIC endpoint and the link socket under it: every
+/// connection the profile dials or answers over UDP is on it, IPv4 and
+/// IPv6 alike. A dial names a real address; quinn is handed the stand-in
+/// that arrivals from that address map to.
+#[derive(Clone, Debug)]
+pub(crate) struct LinkEndpoint {
+    pub(crate) endpoint: quinn::Endpoint,
+    pub(crate) socket: Arc<LinkSocket>,
+}
+
+impl LinkEndpoint {
+    pub(crate) fn new(
+        substrate: Arc<dyn Datagrams>,
+        own: HostId,
+        server: Option<quinn::ServerConfig>,
+    ) -> io::Result<Self> {
+        let socket = LinkSocket::bind(substrate, own)?;
+        let runtime = quinn::default_runtime()
+            .ok_or_else(|| io::Error::other("no async runtime for a QUIC endpoint"))?;
+        let endpoint = quinn::Endpoint::new_with_abstract_socket(
+            crate::identity::quic_endpoint_config(),
+            server,
+            socket.clone(),
+            runtime,
+        )?;
+        Ok(Self { endpoint, socket })
+    }
+
+    /// An endpoint on a dual-stack socket of its own at `bind`.
+    #[cfg(test)]
+    pub(crate) fn bind(bind: SocketAddr, server: Option<quinn::ServerConfig>) -> io::Result<Self> {
+        Self::new(
+            LinkSocket::bind_dual_stack(bind, None)?,
+            HostId::new_v4(),
+            server,
+        )
+    }
+
+    pub(crate) fn connect_with(
+        &self,
+        config: quinn::ClientConfig,
+        addr: SocketAddr,
+        server_name: &str,
+    ) -> Result<quinn::Connecting, quinn::ConnectError> {
+        self.endpoint
+            .connect_with(config, self.socket.stand_in_at(addr), server_name)
+    }
+
+    /// The network address a connection's remote stand-in stands for, or
+    /// the stand-in itself where no one address carries it.
+    pub(crate) fn address_of(&self, remote: SocketAddr) -> SocketAddr {
+        self.socket.address_of(remote).unwrap_or(remote)
+    }
+
+    /// Where the socket is bound, in the family it was bound in.
+    pub(crate) fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.socket.local_addr()
+    }
+
+    /// Moves the endpoint onto a new substrate: connections carry on, and
+    /// their peers see them arrive from the new address.
+    pub(crate) fn rebind(&self, substrate: Arc<dyn Datagrams>) -> io::Result<()> {
+        self.socket.rebind(substrate);
+        self.endpoint.rebind_abstract(self.socket.clone())
+    }
+
+    pub(crate) fn close(&self, code: quinn::VarInt, reason: &[u8]) {
+        self.endpoint.close(code, reason);
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConnectError {
@@ -43,11 +121,8 @@ pub enum ConnectError {
         #[source]
         source: io::Error,
     },
-    #[error("{host}:{port} resolved to no addresses usable by this QUIC endpoint")]
-    #[allow(dead_code)]
+    #[error("{host}:{port} resolved to no addresses")]
     NoAddress { host: String, port: u16 },
-    #[error("could not inspect the QUIC endpoint's local address: {0}")]
-    EndpointAddress(#[source] io::Error),
     #[error("QUIC connection to {host}:{port} failed for every usable address: {failures}")]
     Candidates {
         host: String,
@@ -60,6 +135,28 @@ pub enum ConnectError {
     Setup(#[from] quinn::ConnectError),
     #[error("QUIC handshake failed: {0}")]
     Handshake(#[from] quinn::ConnectionError),
+}
+
+/// Addresses in the order a dial tries them: as given, but the two
+/// families taking turns, so one family failing never holds up the other.
+fn alternate_families(addrs: impl IntoIterator<Item = SocketAddr>) -> Vec<SocketAddr> {
+    let addrs: Vec<SocketAddr> = addrs.into_iter().collect();
+    let mut take_v6 = addrs.first().is_some_and(SocketAddr::is_ipv6);
+    let (v6, v4): (Vec<_>, Vec<_>) = addrs.iter().partition(|addr| addr.is_ipv6());
+    let (mut v6, mut v4) = (v6.into_iter(), v4.into_iter());
+    let mut ordered = Vec::with_capacity(addrs.len());
+    loop {
+        let next = if take_v6 {
+            v6.next().or_else(|| v4.next())
+        } else {
+            v4.next().or_else(|| v6.next())
+        };
+        let Some(addr) = next else {
+            return ordered;
+        };
+        ordered.push(addr);
+        take_v6 = !take_v6;
+    }
 }
 
 pub struct QuicCarrier {
@@ -75,8 +172,8 @@ pub struct QuicCarrier {
 
 impl QuicCarrier {
     #[cfg(test)]
-    pub async fn connect_direct(
-        endpoint: &quinn::Endpoint,
+    pub(crate) async fn connect_direct(
+        endpoint: &LinkEndpoint,
         addr: SocketAddr,
         identity: &DeviceIdentity,
         trust_store: SharedTrustStore,
@@ -86,7 +183,7 @@ impl QuicCarrier {
     }
 
     pub(crate) async fn connect_direct_with_transport(
-        endpoint: &quinn::Endpoint,
+        endpoint: &LinkEndpoint,
         addr: SocketAddr,
         identity: &DeviceIdentity,
         trust_store: SharedTrustStore,
@@ -116,7 +213,7 @@ impl QuicCarrier {
 
     #[allow(dead_code)]
     pub(crate) async fn connect_relay(
-        endpoint: &quinn::Endpoint,
+        endpoint: &LinkEndpoint,
         host: &str,
         port: u16,
     ) -> Result<Self, ConnectError> {
@@ -132,41 +229,48 @@ impl QuicCarrier {
         Self::connect_relay_candidates_with_config(endpoint, addrs, host, port, config).await
     }
 
+    /// Dials the relay at each of its addresses, both families, starting
+    /// one more every [`RELAY_CANDIDATE_STAGGER`] with the families taking
+    /// turns, and keeps the first to finish its handshake.
     pub(crate) async fn connect_relay_candidates_with_config(
-        endpoint: &quinn::Endpoint,
+        endpoint: &LinkEndpoint,
         addrs: impl IntoIterator<Item = SocketAddr>,
         server_name: &str,
         port: u16,
         config: quinn::ClientConfig,
     ) -> Result<Self, ConnectError> {
-        let local_addr = endpoint
-            .local_addr()
-            .map_err(ConnectError::EndpointAddress)?;
-        let mut failures = Vec::new();
-        let mut usable = false;
+        use futures_util::StreamExt as _;
 
-        for addr in addrs
-            .into_iter()
-            .filter(|addr| addr.is_ipv4() == local_addr.is_ipv4())
-        {
-            usable = true;
-            match tokio::time::timeout(
-                RELAY_QUIC_HANDSHAKE_TIMEOUT,
-                Self::connect_relay_with_config(endpoint, addr, server_name, config.clone()),
-            )
-            .await
-            {
-                Ok(Ok(carrier)) => return Ok(carrier),
-                Ok(Err(error)) => failures.push(format!("{addr}: {error}")),
-                Err(_) => failures.push(format!("{addr}: handshake timed out")),
-            }
-        }
-
-        if !usable {
+        let candidates = alternate_families(addrs);
+        if candidates.is_empty() {
             return Err(ConnectError::NoAddress {
                 host: server_name.to_string(),
                 port,
             });
+        }
+        let mut attempts = candidates
+            .into_iter()
+            .enumerate()
+            .map(|(turn, addr)| {
+                let config = config.clone();
+                async move {
+                    tokio::time::sleep(RELAY_CANDIDATE_STAGGER * turn as u32).await;
+                    let attempt = tokio::time::timeout(
+                        RELAY_QUIC_HANDSHAKE_TIMEOUT,
+                        Self::connect_relay_with_config(endpoint, addr, server_name, config),
+                    )
+                    .await;
+                    (addr, attempt)
+                }
+            })
+            .collect::<futures_util::stream::FuturesUnordered<_>>();
+        let mut failures = Vec::new();
+        while let Some((addr, attempt)) = attempts.next().await {
+            match attempt {
+                Ok(Ok(carrier)) => return Ok(carrier),
+                Ok(Err(error)) => failures.push(format!("{addr}: {error}")),
+                Err(_) => failures.push(format!("{addr}: handshake timed out")),
+            }
         }
         Err(ConnectError::Candidates {
             host: server_name.to_string(),
@@ -176,7 +280,7 @@ impl QuicCarrier {
     }
 
     pub(crate) async fn connect_relay_with_config(
-        endpoint: &quinn::Endpoint,
+        endpoint: &LinkEndpoint,
         addr: SocketAddr,
         server_name: &str,
         config: quinn::ClientConfig,
@@ -235,10 +339,6 @@ impl QuicCarrier {
         kind: CarrierKind,
     ) -> Self {
         Self::new(connection, kind, None)
-    }
-
-    pub(crate) fn rebind(endpoint: &quinn::Endpoint, socket: UdpSocket) -> io::Result<()> {
-        endpoint.rebind(socket)
     }
 
     fn new(
@@ -903,7 +1003,7 @@ mod tests {
     use crate::trust::{TrustStore, TrustStorePairingUpdate};
 
     struct LoopbackPair {
-        _client_endpoint: quinn::Endpoint,
+        _client_endpoint: LinkEndpoint,
         _server_endpoint: quinn::Endpoint,
         client: Arc<QuicCarrier>,
         server: Arc<QuicCarrier>,
@@ -918,8 +1018,7 @@ mod tests {
         let server_endpoint =
             crate::identity::quic_endpoint(Some(server_config), "127.0.0.1:0".parse().unwrap())
                 .unwrap();
-        let client_endpoint =
-            crate::identity::quic_endpoint(None, "127.0.0.1:0".parse().unwrap()).unwrap();
+        let client_endpoint = LinkEndpoint::bind("127.0.0.1:0".parse().unwrap(), None).unwrap();
         let server_addr = server_endpoint.local_addr().unwrap();
 
         let accept = async {
@@ -985,16 +1084,87 @@ mod tests {
         (server_config, client_config)
     }
 
+    /// One dual-stack listener answers dials of both families, and names
+    /// each dialler by its real address behind the stand-in quinn sees.
     #[tokio::test]
-    async fn relay_dial_skips_an_ipv6_result_for_an_ipv4_endpoint() {
+    async fn a_dual_stack_endpoint_answers_both_families_and_names_their_addresses() {
+        let client_identity = DeviceIdentity::for_test(HostId::new_v4());
+        let server_identity = DeviceIdentity::for_test(HostId::new_v4());
+        let server_config = server_identity
+            .quic_server_config(trust_for(&client_identity))
+            .unwrap();
+        let server = LinkEndpoint::bind("[::]:0".parse().unwrap(), Some(server_config)).unwrap();
+        let port = server.local_addr().unwrap().port();
+        for (client_bind, server_addr) in [
+            ("127.0.0.1:0", SocketAddr::from(([127, 0, 0, 1], port))),
+            ("[::1]:0", SocketAddr::new("::1".parse().unwrap(), port)),
+        ] {
+            let client = LinkEndpoint::bind(client_bind.parse().unwrap(), None).unwrap();
+            let accept = async {
+                server
+                    .endpoint
+                    .accept()
+                    .await
+                    .expect("server endpoint closed")
+                    .await
+                    .expect("server handshake failed")
+            };
+            let connect = QuicCarrier::connect_direct(
+                &client,
+                server_addr,
+                &client_identity,
+                trust_for(&server_identity),
+                server_identity.host_id,
+            );
+            let (accepted, dialled) = tokio::join!(accept, connect);
+            let dialled = dialled.expect("the dial over {server_addr} connects");
+            assert_eq!(
+                server.address_of(accepted.remote_address()),
+                client.local_addr().unwrap(),
+                "the listener names the dialler by its address"
+            );
+            assert_eq!(
+                client.address_of(dialled.connection.remote_address()),
+                server_addr
+            );
+            dialled.close(pb::LinkCloseReason::UserShutdown);
+            accepted.close(0_u32.into(), b"test complete");
+        }
+    }
+
+    #[test]
+    fn dial_candidates_alternate_families_from_the_first_given() {
+        let addr = |text: &str| text.parse::<SocketAddr>().unwrap();
+        let ordered = alternate_families([
+            addr("[2001:db8::1]:443"),
+            addr("[2001:db8::2]:443"),
+            addr("[2001:db8::3]:443"),
+            addr("192.0.2.1:443"),
+        ]);
+        assert_eq!(
+            ordered,
+            [
+                addr("[2001:db8::1]:443"),
+                addr("192.0.2.1:443"),
+                addr("[2001:db8::2]:443"),
+                addr("[2001:db8::3]:443"),
+            ]
+        );
+        let ordered = alternate_families([addr("192.0.2.1:443"), addr("[2001:db8::1]:443")]);
+        assert_eq!(ordered, [addr("192.0.2.1:443"), addr("[2001:db8::1]:443")]);
+    }
+
+    #[tokio::test]
+    async fn relay_dial_reaches_a_relay_listening_on_ipv6_only_from_the_dual_stack_socket() {
         let (server_config, client_config) = relay_test_configs();
         let server_endpoint =
-            crate::identity::quic_endpoint(Some(server_config), "127.0.0.1:0".parse().unwrap())
+            crate::identity::quic_endpoint(Some(server_config), "[::1]:0".parse().unwrap())
                 .unwrap();
         let server_addr = server_endpoint.local_addr().unwrap();
-        let client_endpoint =
-            crate::identity::quic_endpoint(None, "0.0.0.0:0".parse().unwrap()).unwrap();
-        let ipv6_first = SocketAddr::new("::1".parse().unwrap(), server_addr.port());
+        let client_endpoint = LinkEndpoint::bind("[::]:0".parse().unwrap(), None).unwrap();
+        // Nothing answers on IPv4 at the relay's port.
+        let ipv4_first = SocketAddr::new("127.0.0.1".parse().unwrap(), server_addr.port());
+        let started = Instant::now();
 
         let accept = async {
             server_endpoint
@@ -1006,7 +1176,7 @@ mod tests {
         };
         let connect = QuicCarrier::connect_relay_candidates_with_config(
             &client_endpoint,
-            [ipv6_first, server_addr],
+            [ipv4_first, server_addr],
             DEVICE_SERVER_NAME,
             server_addr.port(),
             client_config,
@@ -1014,21 +1184,24 @@ mod tests {
         let (server_connection, client) = tokio::join!(accept, connect);
 
         client
-            .expect("IPv4 relay candidate was not tried")
+            .expect("the IPv6 relay candidate was not tried")
             .close(pb::LinkCloseReason::UserShutdown);
+        assert!(
+            started.elapsed() < RELAY_QUIC_HANDSHAKE_TIMEOUT,
+            "the IPv6 candidate started before the IPv4 one timed out"
+        );
         server_connection.close(0_u32.into(), b"test complete");
     }
 
     #[tokio::test]
-    async fn relay_dial_falls_through_a_bound_unresponsive_candidate() {
+    async fn relay_dial_starts_the_next_candidate_while_an_unresponsive_one_waits() {
         let (server_config, client_config) = relay_test_configs();
         let server_endpoint =
             crate::identity::quic_endpoint(Some(server_config), "127.0.0.1:0".parse().unwrap())
                 .unwrap();
         let server_addr = server_endpoint.local_addr().unwrap();
-        let client_endpoint =
-            crate::identity::quic_endpoint(None, "0.0.0.0:0".parse().unwrap()).unwrap();
-        let blackhole = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let client_endpoint = LinkEndpoint::bind("[::]:0".parse().unwrap(), None).unwrap();
+        let blackhole = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
         let blackhole_addr = blackhole.local_addr().unwrap();
         let started = Instant::now();
 
@@ -1055,7 +1228,11 @@ mod tests {
         let client = client
             .expect("relay candidates exceeded their bounded dial budget")
             .expect("working relay candidate was not tried");
-        assert!(started.elapsed() >= RELAY_QUIC_HANDSHAKE_TIMEOUT);
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed >= RELAY_CANDIDATE_STAGGER && elapsed < RELAY_QUIC_HANDSHAKE_TIMEOUT,
+            "the second candidate started one stagger in, not after the first timed out: {elapsed:?}"
+        );
         client.close(pb::LinkCloseReason::UserShutdown);
         server_connection.close(0_u32.into(), b"test complete");
         drop(blackhole);

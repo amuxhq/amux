@@ -68,9 +68,9 @@ pub use dump::{
     DUMP_SEGMENTS, DumpError, MANIFEST, pack,
 };
 pub use edge::{
-    ACCOUNT_FILE, CloudLinkServer, CloudOptions, DiscoveryFactory, Edge, EdgeError, EdgeOptions,
-    FREE_TIER_REFRESH_INTERVAL, JwtCloudLinkAuthenticator, LAN_PORT_FILE, LINK_SOCKET, LanOptions,
-    LoopbackLink, Observed, RelayCarrier, RelayIdentity, RelayQuic, UDP_BLOCKED_MEMORY,
+    ACCOUNT_FILE, CloudLinkServer, CloudOptions, DUAL_STACK_ANY, DiscoveryFactory, Edge, EdgeError,
+    EdgeOptions, FREE_TIER_REFRESH_INTERVAL, JwtCloudLinkAuthenticator, LAN_PORT_FILE, LINK_SOCKET,
+    LanOptions, LoopbackLink, Observed, RelayCarrier, RelayIdentity, RelayQuic, UDP_BLOCKED_MEMORY,
     mdns_discovery,
 };
 pub use forward::{ForwardError, HostNameError, Owner};

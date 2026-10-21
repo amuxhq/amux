@@ -166,7 +166,7 @@ impl TunnelDispatcher {
 
     pub(crate) fn serve_quic_endpoint(
         &self,
-        endpoint: quinn::Endpoint,
+        endpoint: crate::link::LinkEndpoint,
         mut shutdown_rx: watch::Receiver<bool>,
     ) -> JoinHandle<()> {
         let dispatcher = self.clone();
@@ -174,7 +174,7 @@ impl TunnelDispatcher {
             let mut connection_tasks = tokio::task::JoinSet::new();
             loop {
                 let incoming = tokio::select! {
-                    incoming = endpoint.accept() => incoming,
+                    incoming = endpoint.endpoint.accept() => incoming,
                     completed = connection_tasks.join_next(), if !connection_tasks.is_empty() => {
                         if let Some(Err(error)) = completed
                             && !error.is_cancelled()
@@ -189,7 +189,9 @@ impl TunnelDispatcher {
                     }
                 };
                 let Some(incoming) = incoming else { break };
-                let addr = incoming.remote_address();
+                // Admission counts by the sender's real address, not the
+                // stand-in the link socket shows quinn.
+                let addr = endpoint.address_of(incoming.remote_address());
 
                 // Stateless address validation and per-source admission both
                 // happen before accepting the Incoming, so quinn has not yet
@@ -262,7 +264,7 @@ impl TunnelDispatcher {
                         }
                     };
                     drop(_permit);
-                    match dispatcher.dispatch_quic(connection, connection_shutdown).await {
+                    match dispatcher.dispatch_quic(connection, addr, connection_shutdown).await {
                         Ok(()) => {}
                         Err(DispatchError::LinkEnded(reason)) => {
                             tracing::debug!(peer = %addr, %reason, "link from this peer ended");
@@ -331,6 +333,7 @@ impl TunnelDispatcher {
     async fn dispatch_quic(
         &self,
         connection: quinn::Connection,
+        addr: std::net::SocketAddr,
         shutdown_rx: watch::Receiver<bool>,
     ) -> Result<(), DispatchError> {
         match self.classify_quic(&connection)? {
@@ -355,7 +358,7 @@ impl TunnelDispatcher {
                 self.pairing_tx
                     .send(BoxedGrpcIo::pre_trust_pairing(
                         accepted_quic_bidi_stream(send, recv),
-                        PreTrustPairingReachability::Direct(connection.remote_address()),
+                        PreTrustPairingReachability::Direct(addr),
                     ))
                     .await
                     .map_err(|_| DispatchError::ChannelClosed)

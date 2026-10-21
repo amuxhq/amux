@@ -113,6 +113,10 @@ pub struct HostDecl {
     /// product's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tail_rows: Option<u32>,
+    /// Bind the host's socket to IPv6 loopback alone, so every link it
+    /// has runs over IPv6. In-process hosts only.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ipv6_only: bool,
 }
 
 /// What an agent's provider is.

@@ -474,17 +474,31 @@ impl LinkRegistry {
             .await
     }
 
-    /// Closes every link to `host` through a forwarder, which refused to
-    /// carry it, and waits until they are gone; whoever dials one now is
-    /// told.
-    pub(crate) async fn close_forwarded(&self, host: HostId, reason: pb::ForwardRefusal) {
+    /// Closes every link to `host` carried through `through`, whose
+    /// forwarder refused to carry it, and waits until they are gone;
+    /// whoever dials one now is told. A link to the host through another
+    /// forwarder stays: the relay refusing for the plan says nothing of a
+    /// paired daemon.
+    pub(crate) async fn close_forwarded(
+        &self,
+        host: HostId,
+        through: daemon_core::LinkId,
+        reason: pb::ForwardRefusal,
+    ) {
         self.last_refusals
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .insert(host, reason);
         let _ = self.refusals.send((host, reason));
         self.close_where(
-            |writer| writer.host.id == host && writer.carrier == LinkCarrier::Forwarded,
+            |writer| {
+                writer.host.id == host
+                    && writer
+                        .native_carrier
+                        .as_ref()
+                        .and_then(|carrier| carrier.forwarded_through())
+                        == Some(through)
+            },
             LinkCloseRequest::Superseded,
         )
         .await;
@@ -819,6 +833,73 @@ mod tests {
             runtime_instance,
             direct_order: Some(order),
         }
+    }
+
+    /// A link to a host carried through a forwarder: one end of a QUIC
+    /// pair, marked as carried through `through`.
+    async fn carried_through(through: LinkId) -> Arc<dyn NativeLinkCarrier> {
+        let (near, _far) =
+            crate::link::quic::stream_pair(crate::link::framed::FramedKind::InProcess).await;
+        let near = Arc::try_unwrap(near).unwrap_or_else(|_| panic!("one holder"));
+        Arc::new(near.carried_through(Some(through.core())))
+    }
+
+    /// The relay refusing to carry a host (its plan lapsed) closes the link
+    /// to the host the relay carried, and leaves the one through a paired
+    /// daemon up: only the forwarder that refused stopped carrying it.
+    #[tokio::test]
+    async fn link_registry_relay_refusal_leaves_a_via_daemon_link_up() {
+        let registry = Arc::new(LinkRegistry::new(HostId::nil()));
+        let phone = host(3);
+        let (relay, laptop) = (link(1, 1), link(2, 1));
+        let forwarded = || LinkProperties {
+            role: LinkRole::Peer,
+            admission: LinkAdmission::PinnedKey,
+            carrier: LinkCarrier::Forwarded,
+            runtime_instance: RuntimeInstance::random(),
+            direct_order: None,
+        };
+        let mut closes = Vec::new();
+        for (instance, through) in [(1, relay), (2, laptop)] {
+            let (tx, _) = mpsc::channel(8);
+            closes.push(
+                registry
+                    .register_with_details(
+                        link(3, instance),
+                        phone.clone(),
+                        tx,
+                        forwarded(),
+                        &[],
+                        Some(carried_through(through).await),
+                    )
+                    .await
+                    .expect("a forwarded link is usable"),
+            );
+        }
+        let mut via_daemon = closes.pop().unwrap();
+        let mut via_relay = closes.pop().unwrap();
+        // The link's run loop leaves the registry when asked to close.
+        let closer = tokio::spawn({
+            let registry = registry.clone();
+            async move {
+                let request = via_relay.recv().await;
+                registry.remove(&link(3, 1)).await;
+                request
+            }
+        });
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            registry.close_forwarded(phone.id, relay.core(), pb::ForwardRefusal::PaymentRequired),
+        )
+        .await
+        .expect("the link through the relay closes");
+        assert_eq!(closer.await.unwrap(), Some(LinkCloseRequest::Superseded));
+        assert!(
+            via_daemon.try_recv().is_err(),
+            "the via-daemon link was not asked to close"
+        );
+        assert_eq!(registry.links_per_peer().await, vec![(phone.id, 1)]);
+        assert!(registry.native_carrier(&link(3, 2)).await.is_some());
     }
 
     #[tokio::test]

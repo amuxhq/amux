@@ -88,6 +88,11 @@ pub trait ForwardLinks: Send + Sync + 'static {
     fn refuse(&self, link: LinkId, dst: HostId, reason: ForwardRefusal);
     /// The core asked for a dump while deciding a packet.
     fn dump(&self, reason: DumpReason);
+    /// `input` is about to be stepped on `core`, under the core's lock:
+    /// the driver's record of the core's recent inputs, for a dump.
+    fn record(&self, core: &Relay, input: &Input) {
+        let _ = (core, input);
+    }
 }
 
 /// What became of one arriving packet.
@@ -260,8 +265,15 @@ enum Action {
         dst: HostId,
         reason: ForwardRefusal,
     },
-    LinkDown(LinkId),
     Dump(DumpReason),
+}
+
+/// What a step leaves to do once the locks are released: the refusals to
+/// write on links and the dumps to report.
+#[derive(Default)]
+struct Tell {
+    refusals: Vec<(LinkId, HostId, ForwardRefusal)>,
+    dumps: Vec<DumpReason>,
 }
 
 /// The forwarder a relay and a daemon run: pairs from the core, the header
@@ -303,23 +315,13 @@ impl Forwarder {
     /// forwarding outputs. Every output is returned; the forwarding ones are
     /// already done. A driver steps its core only through here.
     pub fn step(&self, input: Input) -> Vec<Output> {
-        let down = match input {
-            Input::LinkDown { link } => Some(link),
-            _ => None,
-        };
-        // A plan changing may turn a refusal into a pair: the core is asked
-        // afresh about every destination, not only after the repeat window.
-        if matches!(input, Input::TierChanged { .. }) {
-            self.lock().refused.clear();
-        }
-        let (out, mut actions) = self.ask([
+        let (out, tell) = self.ask([
             Input::Tick {
                 now_ms: self.now_ms(),
             },
             input,
         ]);
-        actions.extend(down.map(Action::LinkDown));
-        self.act(actions);
+        self.tell(tell);
         out
     }
 
@@ -351,14 +353,14 @@ impl Forwarder {
                 None => None,
             }
         };
-        let (_, actions) = self.ask([
+        let (_, tell) = self.ask([
             Input::Tick { now_ms },
             Input::Packet {
                 from,
                 dst: core_host(dst),
             },
         ]);
-        self.act(actions);
+        self.tell(tell);
         let state = self.lock();
         if let Some(pair) = state.pairs.get(&(from, dst)).copied() {
             drop(state);
@@ -451,19 +453,24 @@ impl Forwarder {
         }
     }
 
-    /// Steps the core and reads, under its lock, the hosts each forwarding
-    /// output needs.
-    fn ask(&self, inputs: impl IntoIterator<Item = Input>) -> (Vec<Output>, Vec<Action>) {
+    /// Steps the core and changes the table as it says, under the core's
+    /// lock: two steps racing apply their outputs in the order the core
+    /// produced them, so a pair a later step removed is never put back by
+    /// an earlier one. What is written to links waits for the locks to go.
+    fn ask(&self, inputs: impl IntoIterator<Item = Input>) -> (Vec<Output>, Tell) {
         let mut core = self
             .core
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut out = Vec::new();
+        let mut learned = Vec::new();
         for input in inputs {
+            self.links.record(&core, &input);
+            learned.push(Learned::of(&input));
             core.step(input, &mut out);
         }
         let host_of = |link: LinkId| core.host_of(link).map(node_host);
-        let actions = out
+        let actions: Vec<Action> = out
             .iter()
             .filter_map(|output| match *output {
                 Output::Forward { a, b } => Some(Action::Forward {
@@ -494,87 +501,132 @@ impl Forwarder {
                 _ => None,
             })
             .collect();
-        (out, actions)
+        let tell = self.act(learned, actions);
+        drop(core);
+        (out, tell)
     }
 
-    /// Does what the core asked, after its lock is released: the table
-    /// changes first and the links are written to last.
-    fn act(&self, actions: Vec<Action>) {
+    /// Changes the table as the core said, with the core's lock held.
+    fn act(&self, learned: Vec<Learned>, actions: Vec<Action>) -> Tell {
         let now_ms = self.now_ms();
-        let mut refusals = Vec::new();
-        let mut dumps = Vec::new();
-        {
-            let mut state = self.lock();
-            for action in actions {
-                match action {
-                    Action::Forward {
-                        a,
-                        a_host,
-                        b,
-                        b_host,
-                    } => {
-                        state.pairs.insert(
-                            (a, b_host),
-                            Pair {
-                                to: b,
-                                source: a_host,
-                            },
-                        );
-                        state.pairs.insert(
-                            (b, a_host),
-                            Pair {
-                                to: a,
-                                source: b_host,
-                            },
-                        );
-                        state.refused.remove(&(a, b_host));
-                        state.refused.remove(&(b, a_host));
-                    }
-                    Action::Unforward {
-                        a,
-                        a_up,
-                        b,
-                        b_up,
-                        reason,
-                        tell,
-                    } => {
-                        let mut ends = Vec::new();
-                        state.pairs.retain(|(from, dst), pair| {
-                            let through =
-                                (*from == a && pair.to == b) || (*from == b && pair.to == a);
-                            if through {
-                                ends.push((*from, *dst));
-                            }
-                            !through
-                        });
-                        if !tell {
-                            continue;
-                        }
-                        for (end, dst) in ends {
-                            let up = if end == a { a_up } else { b_up };
-                            if up {
-                                state.refused.insert((end, dst), (reason, now_ms));
-                                refusals.push((end, dst, reason));
-                            }
-                        }
-                    }
-                    Action::Refuse { link, dst, reason } => {
-                        state.refused.insert((link, dst), (reason, now_ms));
-                        refusals.push((link, dst, reason));
-                    }
-                    Action::LinkDown(link) => {
-                        state.allowances.remove(&link);
-                        state.refused.retain(|(from, _), _| *from != link);
-                    }
-                    Action::Dump(reason) => dumps.push(reason),
+        let mut tell = Tell::default();
+        let mut state = self.lock();
+        // What the core learned may turn a refusal into a pair: the core is
+        // asked afresh, and the repeat window only spares the sender being
+        // told again.
+        for learned in learned {
+            match learned {
+                Learned::Nothing => {}
+                Learned::Host(host) => state.refused.retain(|(_, dst), _| *dst != host),
+                Learned::Plan => state.refused.clear(),
+                Learned::LinkDown(link) => {
+                    state.allowances.remove(&link);
+                    state.refused.retain(|(from, _), _| *from != link);
                 }
             }
         }
-        for (link, dst, reason) in refusals {
+        for action in actions {
+            match action {
+                Action::Forward {
+                    a,
+                    a_host,
+                    b,
+                    b_host,
+                } => {
+                    state.pairs.insert(
+                        (a, b_host),
+                        Pair {
+                            to: b,
+                            source: a_host,
+                        },
+                    );
+                    state.pairs.insert(
+                        (b, a_host),
+                        Pair {
+                            to: a,
+                            source: b_host,
+                        },
+                    );
+                    state.refused.remove(&(a, b_host));
+                    state.refused.remove(&(b, a_host));
+                }
+                Action::Unforward {
+                    a,
+                    a_up,
+                    b,
+                    b_up,
+                    reason,
+                    tell: told,
+                } => {
+                    let mut ends = Vec::new();
+                    state.pairs.retain(|(from, dst), pair| {
+                        let through = (*from == a && pair.to == b) || (*from == b && pair.to == a);
+                        if through {
+                            ends.push((*from, *dst));
+                        }
+                        !through
+                    });
+                    if !told {
+                        continue;
+                    }
+                    for (end, dst) in ends {
+                        let up = if end == a { a_up } else { b_up };
+                        if up {
+                            state.refused.insert((end, dst), (reason, now_ms));
+                            tell.refusals.push((end, dst, reason));
+                        }
+                    }
+                }
+                Action::Refuse { link, dst, reason } => {
+                    state.refused.insert((link, dst), (reason, now_ms));
+                    tell.refusals.push((link, dst, reason));
+                }
+                Action::Dump(reason) => tell.dumps.push(reason),
+            }
+        }
+        tell
+    }
+
+    /// Writes what a step left to tell, with no lock held.
+    fn tell(&self, tell: Tell) {
+        for (link, dst, reason) in tell.refusals {
             self.links.refuse(link, dst, reason);
         }
-        for reason in dumps {
+        for reason in tell.dumps {
             self.links.dump(reason);
+        }
+    }
+
+    /// The pairs the table holds, as `(from, to)`.
+    #[cfg(test)]
+    fn table(&self) -> Vec<(LinkId, LinkId)> {
+        self.lock()
+            .pairs
+            .iter()
+            .map(|((from, _), pair)| (*from, pair.to))
+            .collect()
+    }
+}
+
+/// What an input tells the forwarder beyond the core's outputs.
+enum Learned {
+    Nothing,
+    /// A link of this host came up: a destination refused before may be
+    /// reachable now.
+    Host(HostId),
+    /// A plan changed: any refusal may be a pair now.
+    Plan,
+    /// The link is gone: its allowance and refusals with it.
+    LinkDown(LinkId),
+}
+
+impl Learned {
+    fn of(input: &Input) -> Self {
+        match *input {
+            Input::LinkUp { host, .. } => Self::Host(node_host(host)),
+            Input::TierChanged { .. } => Self::Plan,
+            Input::LinkDown { link } => Self::LinkDown(link),
+            _ => Self::Nothing,
         }
     }
 }
@@ -613,6 +665,7 @@ mod tests {
     struct Links {
         wrote: Mutex<Vec<Wrote>>,
         dumps: Mutex<Vec<DumpReason>>,
+        recorded: Mutex<Vec<Input>>,
     }
 
     impl Links {
@@ -639,6 +692,10 @@ mod tests {
 
         fn dump(&self, reason: DumpReason) {
             self.dumps.lock().unwrap().push(reason);
+        }
+
+        fn record(&self, _core: &Relay, input: &Input) {
+            self.recorded.lock().unwrap().push(input.clone());
         }
     }
 
@@ -715,6 +772,80 @@ mod tests {
                 sent(2, DESK, b"again"),
             ]
         );
+    }
+
+    /// A lapse stepped while a packet on the same pair asks the core: the
+    /// table changes in the order the core decided, so whichever came
+    /// first, the lapsed pair is not left forwarding.
+    #[test]
+    fn forwarder_lapse_racing_a_packet_never_leaves_the_pair_in_the_table() {
+        for _ in 0..2_000 {
+            let rig = rig();
+            rig.up(1, ALICE, DESK, Some(Tier::Pro));
+            rig.up(2, ALICE, LAPTOP, Some(Tier::Pro));
+            let start = std::sync::Barrier::new(2);
+            std::thread::scope(|scope| {
+                scope.spawn(|| {
+                    start.wait();
+                    rig.packet(1, LAPTOP, QUIC);
+                });
+                scope.spawn(|| {
+                    start.wait();
+                    rig.forwarder.step(Input::TierChanged {
+                        link: LinkId(2),
+                        tier: Tier::Free,
+                    });
+                });
+            });
+            assert!(rig.pairs().is_empty(), "the core holds no pair");
+            assert_eq!(rig.forwarder.table(), vec![], "nor does the table");
+            assert_eq!(
+                rig.packet(1, LAPTOP, QUIC),
+                Forwarded::Dropped(ForwardRefusal::PaymentRequired)
+            );
+        }
+    }
+
+    /// A destination refused because it had no link here is reachable as
+    /// soon as it connects: its link coming up clears the refusal, and the
+    /// repeat window spares only the telling.
+    #[tokio::test(start_paused = true)]
+    async fn forwarder_reaches_a_host_connecting_inside_the_refusal_window() {
+        let rig = rig();
+        rig.up(1, ALICE, DESK, Some(Tier::Pro));
+        assert_eq!(
+            rig.packet(1, LAPTOP, QUIC),
+            Forwarded::Dropped(ForwardRefusal::NoRoute)
+        );
+        assert_eq!(
+            rig.links.take(),
+            vec![refused(1, LAPTOP, ForwardRefusal::NoRoute)]
+        );
+        tokio::time::advance(Duration::from_millis(10)).await;
+        rig.up(2, ALICE, LAPTOP, Some(Tier::Pro));
+        assert_eq!(rig.packet(1, LAPTOP, QUIC), Forwarded::Sent);
+        assert_eq!(rig.links.take(), vec![sent(2, DESK, QUIC)]);
+    }
+
+    /// Every input the core is stepped with is recorded for a dump, the
+    /// ticks and the packets that ask it included.
+    #[tokio::test(start_paused = true)]
+    async fn forwarder_records_every_input_it_steps() {
+        let rig = rig();
+        rig.up(1, ALICE, DESK, Some(Tier::Pro));
+        rig.up(2, ALICE, LAPTOP, Some(Tier::Pro));
+        assert_eq!(rig.packet(1, LAPTOP, QUIC), Forwarded::Sent);
+        let recorded = rig.links.recorded.lock().unwrap().clone();
+        let kinds: Vec<&str> = recorded
+            .iter()
+            .map(|input| match input {
+                Input::Tick { .. } => "tick",
+                Input::LinkUp { .. } => "up",
+                Input::Packet { .. } => "packet",
+                _ => "other",
+            })
+            .collect();
+        assert_eq!(kinds, ["tick", "up", "tick", "up", "tick", "packet"]);
     }
 
     #[tokio::test(start_paused = true)]

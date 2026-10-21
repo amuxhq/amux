@@ -136,16 +136,13 @@ impl Relaying {
     pub(crate) fn step(&self, inputs: impl IntoIterator<Item = Input>) -> Vec<Output> {
         let mut out = Vec::new();
         for input in inputs {
-            {
-                let core = lock(&self.core);
-                lock(&self.history).window.record(&core, &input);
-            }
             let gone = match input {
                 Input::LinkDown { link } => Some(link),
                 _ => None,
             };
             match self.forwarding.get() {
-                // The forwarder has reported the dumps among these.
+                // The forwarder has recorded the input with the tick it
+                // steps first, and reported the dumps among the outputs.
                 Some(forwarding) => out.extend(
                     forwarding
                         .forwarder
@@ -155,7 +152,11 @@ impl Relaying {
                 ),
                 None => {
                     let mut stepped = Vec::new();
-                    lock(&self.core).step(input, &mut stepped);
+                    {
+                        let mut core = lock(&self.core);
+                        self.record(&core, &input);
+                        core.step(input, &mut stepped);
+                    }
                     for output in stepped {
                         match output {
                             Output::Dump { reason } => self.report(&reason),
@@ -227,6 +228,11 @@ impl Relaying {
         {
             forwarding.forwarder.on_admission_failed(stand_in);
         }
+    }
+
+    /// Keeps `input` for a dump, as it is stepped on `core`.
+    fn record(&self, core: &Relay, input: &Input) {
+        lock(&self.history).window.record(core, input);
     }
 
     /// Writes one dump the core asked for, unless one like it was written
@@ -452,6 +458,12 @@ impl ForwardLinks for RelayLinks {
     fn dump(&self, reason: DumpReason) {
         if let Some(relaying) = self.relaying.upgrade() {
             relaying.report(&reason);
+        }
+    }
+
+    fn record(&self, core: &Relay, input: &Input) {
+        if let Some(relaying) = self.relaying.upgrade() {
+            relaying.record(core, input);
         }
     }
 }

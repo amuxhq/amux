@@ -941,7 +941,7 @@ async fn handle_control_body(
             if let Ok(host) = HostId::from_slice(&refused.dst) {
                 let reason = wire::pb::ForwardRefusal::try_from(refused.reason)
                     .unwrap_or(wire::pb::ForwardRefusal::Unspecified);
-                ctx.links.close_forwarded(host, reason).await;
+                ctx.links.close_forwarded(host, link.core(), reason).await;
             }
             ctx.report_frame(link, wire::pb::message::Body::ForwardRefused(refused));
             ControlAction::Continue

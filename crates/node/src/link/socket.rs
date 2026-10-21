@@ -504,6 +504,28 @@ impl State {
             .route = route;
     }
 
+    /// No route takes `gone` any more. A host carried only on it is left
+    /// unrouted, and forgotten if this host never named, routed or dialled
+    /// it.
+    fn unroute(&mut self, gone: Path) {
+        let mut left = Vec::new();
+        for (peer, held) in &mut self.peers {
+            match &mut held.route {
+                Route::Carrying(path) if *path == gone => {
+                    held.route = Route::Unset;
+                    if held.expiry != Expiry::Kept {
+                        left.push(*peer);
+                    }
+                }
+                Route::All(paths) => paths.retain(|path| *path != gone),
+                _ => {}
+            }
+        }
+        for peer in left {
+            self.forget(peer);
+        }
+    }
+
     /// The forwarding link whose forwarder is `peer`, if one is.
     fn forwarding_of(&self, peer: Peer) -> Option<LinkId> {
         self.forwarding
@@ -674,7 +696,9 @@ impl LinkSocket {
     /// the address its packets now come from after its NAT rebound or its
     /// network changed. Its earlier stand-in goes on reaching it at the new
     /// address. A host carried some other way (through a forwarder, over a
-    /// byte stream) keeps that route, and this sender stays unnamed.
+    /// byte stream, or on every candidate) keeps that route, and this
+    /// sender stays unnamed; its handshake is done, so it is let go only
+    /// once it goes silent, not for going unnamed.
     ///
     /// A stand-in another host was last heard at, at an address, is taken
     /// from it: the address was reused (a LAN address given out again, a
@@ -705,6 +729,9 @@ impl LinkSocket {
                 Route::All(_) => false,
             };
             if !readdressed {
+                if let Some(sender) = state.peers.get_mut(&Peer::Unnamed(path)) {
+                    sender.expiry = Expiry::Silent;
+                }
                 return false;
             }
         }
@@ -751,13 +778,15 @@ impl LinkSocket {
         Some(self.lock().framed.get(&path)?.kind())
     }
 
-    /// Forgets a byte-stream path, and the sender on it if it was never
-    /// named.
+    /// Forgets a byte-stream path, the sender on it if it was never named,
+    /// and the path of every host it carried: a host that comes back some
+    /// other way is named where it comes back.
     pub fn remove_framed(&self, path: PathId) {
         let mut state = self.lock();
         state.framed.remove(&path);
         state.by_framed.remove(&path);
         state.forget(Peer::Unnamed(Path::Framed(path)));
+        state.unroute(Path::Framed(path));
     }
 
     /// One packet arrived on a byte-stream path.
@@ -790,23 +819,7 @@ impl LinkSocket {
     pub fn remove_forwarding(&self, link: LinkId) {
         let mut state = self.lock();
         state.forwarding.remove(&link);
-        let through = Path::Forwarded(link);
-        let mut left = Vec::new();
-        for (peer, held) in &mut state.peers {
-            match &mut held.route {
-                Route::Carrying(path) if *path == through => {
-                    held.route = Route::Unset;
-                    if held.expiry != Expiry::Kept {
-                        left.push(*peer);
-                    }
-                }
-                Route::All(paths) => paths.retain(|path| *path != through),
-                _ => {}
-            }
-        }
-        for peer in left {
-            state.forget(peer);
-        }
+        state.unroute(Path::Forwarded(link));
     }
 
     /// The forwarding link whose forwarder stands behind `stand_in`.
@@ -1834,6 +1847,66 @@ mod tests {
             socket.path_of(socket.stand_in(desk)),
             Some(Path::Forwarded(LinkId(5)))
         );
+    }
+
+    /// A sender whose handshake is done but that the socket cannot name,
+    /// because its host is carried another way, is kept while it sends:
+    /// a crossed direct link next to a relayed one stays where it is.
+    #[tokio::test(start_paused = true)]
+    async fn socket_keeps_a_sender_it_cannot_name_while_it_sends() {
+        let (fake, socket, _own) = fake_socket();
+        let relay: SocketAddr = "198.51.100.1:443".parse().unwrap();
+        let via = socket.stand_in_at(relay);
+        socket.add_forwarding(LinkId(5), via, PathKind::RelayUdp);
+        let desk = HostId::new_v4();
+        socket.set_carrying(desk, Path::Forwarded(LinkId(5)));
+        let lan: SocketAddr = "192.0.2.60:5000".parse().unwrap();
+        fake.push(lan, QUIC);
+        let (direct, _) = receive(&socket).unwrap();
+        assert!(!socket.name(direct, desk));
+
+        for _ in 0..12 {
+            tokio::time::advance(Duration::from_secs(10)).await;
+            fake.push(lan, QUIC);
+            assert_eq!(receive(&socket).unwrap().0, direct);
+        }
+        assert_eq!(socket.stand_in_at(lan), direct);
+        assert_eq!(socket.address_of(direct), Some(lan));
+        socket.try_send(&transmit(direct, QUIC)).unwrap();
+        assert_eq!(fake.take_sent(), vec![(lan, QUIC.to_vec())]);
+
+        // Once it stops, it is let go like any silent sender.
+        tokio::time::advance(UNCLAIMED_PEER_TIMEOUT).await;
+        fake.push("192.0.2.61:5000".parse().unwrap(), QUIC);
+        receive(&socket).unwrap();
+        assert_eq!(socket.path_of(direct), None);
+    }
+
+    /// A host whose byte-stream link ended is named where it comes back
+    /// over UDP.
+    #[test]
+    fn socket_names_a_host_back_over_udp_once_its_byte_stream_goes() {
+        let (fake, socket, _own) = fake_socket();
+        let stream = Arc::new(Recorded::default());
+        let path = socket.add_framed(stream.clone());
+        socket.deliver_framed(path, QUIC.to_vec());
+        let (on_stream, _) = receive(&socket).unwrap();
+        let host = HostId::new_v4();
+        assert!(socket.name(on_stream, host));
+        assert_eq!(socket.path_of(on_stream), Some(Path::Framed(path)));
+
+        socket.remove_framed(path);
+        assert_eq!(socket.path_of(on_stream), None);
+        let back: SocketAddr = "203.0.113.7:6100".parse().unwrap();
+        fake.push(back, QUIC);
+        let (over_udp, _) = receive(&socket).unwrap();
+        assert!(socket.name(over_udp, host));
+        assert_eq!(socket.stand_in(host), over_udp);
+        assert_eq!(socket.address_of(over_udp), Some(back));
+        socket.try_send(&transmit(on_stream, QUIC)).unwrap();
+        assert_eq!(fake.take_sent(), vec![(back, QUIC.to_vec())]);
+        fake.push(back, QUIC);
+        assert_eq!(receive(&socket).unwrap().0, over_udp);
     }
 
     #[test]

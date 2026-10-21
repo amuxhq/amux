@@ -19,8 +19,8 @@ chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
 chat.more | More |  | 342,66,36,36
 chat.back | Back |  | 20,66,56,36
-chat.header | desk · this phone is signed out | detached | 96,66,213,36
-chat.title | guarded | guarded | 96,66,213,36
+chat.header | desk · this phone is signed out | detached | 96,66,215,36
+chat.title | guarded | guarded | 96,66,215,36
  | Clock |  | 30,691,14,14
  | Still there? |  | 58,679,78,20
  | held · sends when desk is back |  | 58,701,178,16
@@ -37,5 +37,5 @@ chat.title | guarded | guarded | 96,66,213,36
  | Only this account reaches me. |  | 16,319,370,20
  | Worked <t> · $0.00 |  | 16,347,116,16
  | Back |  | 20,66,56,36
- | guarded, desk · this phone is signed out |  | 96,66,213,36
+ | guarded, desk · this phone is signed out |  | 96,66,215,36
  | More |  | 342,66,36,36

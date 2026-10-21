@@ -239,7 +239,8 @@ public struct ChatScreen: View {
     /// The place line is a path unless it states why the chat cannot be reached; a path keeps
     /// its ends and a sentence keeps its opening words.
     private var placeIsPath: Bool {
-        if detached, subject.reachable { return false }
+        if !subject.reachable { return false }
+        if detached { return false }
         if case .exited? = model.frame?.phase { return false }
         return true
     }

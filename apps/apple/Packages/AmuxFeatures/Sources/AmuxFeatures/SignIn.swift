@@ -44,7 +44,7 @@ public struct SignIn: View {
                 heading
                 Spacer(minLength: 22)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(.horizontal, design.metrics.gutter)
             foot
         }

@@ -64,8 +64,15 @@ public struct BarButton: View {
 /// 6 pt gap under the title, which is the price of a title that stays whole.
 struct LargeSubtitle: View {
     @Environment(\.design) private var design
+    @Environment(\.dynamicTypeSize) private var typeSize
     let text: String
     let identifier: String
+
+    /// The breath below the title. The bar holds its items' text at
+    /// xxLarge while the title above keeps growing, and past that the
+    /// title's taller line reaches 4 points down, so at the bar's cap the
+    /// line steps further away.
+    private var gap: CGFloat { typeSize >= .xxLarge ? Space.m : Space.xs }
 
     var body: some View {
         if text.isEmpty {
@@ -74,7 +81,7 @@ struct LargeSubtitle: View {
             Text(text)
                 .designFont(.detail, design)
                 .foregroundStyle(design.inkMuted.color)
-                .padding(.top, Space.xs)
+                .padding(.top, gap)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .identified(identifier, value: text)
         }

@@ -246,6 +246,7 @@ public struct ReportScreen: View {
                     .accessibilityLabel(sendTitle)
                     .identified("report.send", label: sendTitle, enabled: sendable)
             }
+            .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
         }
     }
 

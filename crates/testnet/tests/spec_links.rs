@@ -138,9 +138,9 @@ async fn route_ssh_reaches_a_session_through_the_far_hosts_link_socket() {
 }
 
 /// Two hosts on one paid account with no network between them but the
-/// relay: each links to the relay over UDP, and their own link, pinned at
-/// pairing, runs end to end through the relay's forwarding. The laptop
-/// streams the desk's session live over it.
+/// relay, reached over UDP alone: each links to the relay over UDP, and
+/// their own link, pinned at pairing, runs end to end through the relay's
+/// forwarding. The laptop streams the desk's session live over it.
 #[tokio::test(flavor = "multi_thread")]
 async fn route_relay_udp_reaches_a_session_through_the_relays_forwarding() {
     let said = "said through the relay over UDP";
@@ -149,7 +149,9 @@ async fn route_relay_udp_reaches_a_session_through_the_relays_forwarding() {
         .host_decl(on_the_relay("desk"))
         .host_decl(on_the_relay("laptop"))
         .agent(worker_saying(said));
-    let mut net = Net::start(topology).await.unwrap();
+    let mut net = Net::start_with(topology, relay_tcp_unreachable(&["desk", "laptop"]))
+        .await
+        .unwrap();
     assert_eq!(carrier(&net, "desk"), Some(RelayCarrier::Quic));
     assert_eq!(carrier(&net, "laptop"), Some(RelayCarrier::Quic));
     net.trust("desk", "laptop").await.unwrap();
@@ -165,9 +167,10 @@ async fn route_relay_udp_reaches_a_session_through_the_relays_forwarding() {
 }
 
 /// The same through the relay where the laptop's network eats UDP: its
-/// link to the relay is TLS on TCP, the desk's is UDP, and the relay
-/// forwards the laptop's link to the desk from one to the other. Each end
-/// reads the link as carried on its own way to the relay.
+/// link to the relay is TLS on TCP, the desk's (reaching the relay over
+/// UDP alone) is UDP, and the relay forwards the laptop's link to the desk
+/// from one to the other. Each end reads the link as carried on its own
+/// way to the relay.
 #[tokio::test(flavor = "multi_thread")]
 async fn route_relay_tcp_reaches_a_session_from_a_network_that_blocks_udp() {
     let said = "said through the relay over TCP";
@@ -176,7 +179,9 @@ async fn route_relay_tcp_reaches_a_session_from_a_network_that_blocks_udp() {
         .host("desk")
         .host("laptop")
         .agent(worker_saying(said));
-    let mut net = Net::start(topology).await.unwrap();
+    let mut net = Net::start_with(topology, relay_tcp_unreachable(&["desk"]))
+        .await
+        .unwrap();
     net.block_udp("laptop", true).unwrap();
     net.sign_in("desk", "ada").await.unwrap();
     net.sign_in("laptop", "ada").await.unwrap();
@@ -322,7 +327,9 @@ async fn entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once()
         .host_decl(on_the_relay("desk"))
         .host_decl(on_the_relay("laptop"))
         .agent(worker_saying(said));
-    let mut net = Net::start(topology).await.unwrap();
+    let mut net = Net::start_with(topology, relay_tcp_unreachable(&["desk", "laptop"]))
+        .await
+        .unwrap();
     let (desk, laptop) = (host_id(&net, "desk"), host_id(&net, "laptop"));
     net.trust("laptop", "desk").await.unwrap();
     net.trust("desk", "laptop").await.unwrap();
@@ -418,7 +425,9 @@ async fn pairing_relay_paid_pairs_through_the_relay_and_reaches_a_session() {
         .host_decl(on_the_relay("desk"))
         .host_decl(on_the_relay("tablet"))
         .agent(worker_saying(said));
-    let net = Net::start(topology).await.unwrap();
+    let net = Net::start_with(topology, relay_tcp_unreachable(&["desk", "tablet"]))
+        .await
+        .unwrap();
     let desk = host_id(&net, "desk");
     let started = start_pairing(&net, "desk", pin_window()).await.unwrap();
     let pending = begin_pair(
@@ -495,6 +504,23 @@ async fn pairing_relay_free_refused_leaves_the_window_open() {
         refused.message()
     );
     net.shutdown().await.unwrap();
+}
+
+/// Net options under which `hosts` cannot reach the relay over TCP, so
+/// their links to it are UDP: a host tries TCP a moment after UDP, and on
+/// a busy machine TCP can win the race.
+fn relay_tcp_unreachable(hosts: &'static [&'static str]) -> testnet::NetOptions {
+    let closed = std::net::TcpListener::bind("127.0.0.1:0")
+        .and_then(|listener| listener.local_addr())
+        .unwrap();
+    testnet::NetOptions {
+        edge: Some(std::sync::Arc::new(move |host, edge| {
+            if hosts.contains(&host) {
+                edge.cloud.relay_tcp = Some(closed);
+            }
+        })),
+        ..testnet::NetOptions::default()
+    }
 }
 
 /// A host on the relay alone, signed in to the account `ada`: no listener,

@@ -1073,10 +1073,15 @@ pub struct Hello {
     /// a process that no longer exists, however healthy it still looks.
     #[prost(bytes = "vec", tag = "5")]
     pub runtime_instance_id: ::prost::alloc::vec::Vec<u8>,
-    /// Every address the sender can be reached at, as host:port; never
-    /// loopback or link-local.
+    /// Every interface address the sender can be reached at, with its
+    /// listener's port, as host:port; never loopback or link-local.
     #[prost(string, repeated, tag = "6")]
     pub addrs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The address the relay last told the sender its packets come from, as
+    /// host:port. Only a paid host is told one: it is the candidate hole
+    /// punching works from, so a receiver keeps it apart from `addrs`.
+    #[prost(string, optional, tag = "7")]
+    pub public_addr: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for Hello {
     const NAME: &'static str = "Hello";
@@ -1132,6 +1137,9 @@ pub struct HelloAccepted {
     /// hole punching works from.
     #[prost(string, optional, tag = "6")]
     pub observed_addr: ::core::option::Option<::prost::alloc::string::String>,
+    /// The acceptor's; see `Hello.public_addr`.
+    #[prost(string, optional, tag = "7")]
+    pub public_addr: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for HelloAccepted {
     const NAME: &'static str = "HelloAccepted";
@@ -1200,6 +1208,8 @@ impl ::prost::Name for NeighborDown {
 pub struct Addresses {
     #[prost(string, repeated, tag = "1")]
     pub addrs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "2")]
+    pub public_addr: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for Addresses {
     const NAME: &'static str = "Addresses";

@@ -138,6 +138,10 @@ fn the_trust_file_round_trips_and_names_its_reachabilities() {
             }],
             signed_in: Some(false),
             platform: Some("Linux".into()),
+            listed: vec![crate::payload::PeerAddress {
+                addr: "192.0.2.7:7000".parse().unwrap(),
+                source: crate::payload::Source::Listed,
+            }],
         },
     );
 
@@ -185,6 +189,7 @@ fn trust_store_rejects_wrong_length_pubkey_on_load_and_save() {
             reachabilities: vec![Reachability::Cloud],
             signed_in: None,
             platform: None,
+            listed: Vec::new(),
         },
     );
     assert_eq!(store.to_file(), Err(TrustError::BadPubkey { actual: 3 }));

@@ -780,6 +780,7 @@ mod tests {
                 reachabilities: vec![Reachability::Cloud],
                 signed_in: None,
                 platform: None,
+                listed: Vec::new(),
             },
         );
         store

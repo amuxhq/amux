@@ -94,6 +94,32 @@ pub enum ChannelClass {
     Bulk,
 }
 
+/// Where a candidate address for a peer came from, which decides whether a
+/// free account may probe it: a candidate learned only through the relay's
+/// observation is paid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Source {
+    /// Local discovery found the peer at it.
+    Discovery,
+    /// The peer listed it in its `Hello` or `Addresses` over a direct link.
+    Listed,
+    /// It carried an earlier link to the peer.
+    LastWorked,
+    /// The relay saw the peer's packets come from it: the public address
+    /// the peer passed on as the relay told it.
+    Observed,
+    /// The peer listed it over a forwarded link.
+    Forwarding,
+}
+
+/// An address a peer can be reached at, and where it came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PeerAddress {
+    pub addr: std::net::SocketAddr,
+    pub source: Source,
+}
+
 /// Why a channel closed or could not open.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ChannelError {

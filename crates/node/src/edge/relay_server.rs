@@ -310,6 +310,7 @@ impl CloudLinkServer {
                     continue;
                 };
                 let service = service.clone();
+                let socket = endpoint.socket.clone();
                 connection_tasks.spawn(async move {
                     let accepted = tokio::time::timeout(handshake_timeout, incoming).await;
                     drop(permit);
@@ -339,7 +340,10 @@ impl CloudLinkServer {
                             QuicCarrier::from_accepted_with_kind(connection, CarrierKind::RelayQuic)
                         }
                     };
-                    let ctx = service.accepting_link_ctx().await;
+                    let ctx = service
+                        .accepting_link_ctx()
+                        .await
+                        .observing(socket);
                     if let Err(error) = run_link(
                         ctx,
                         Arc::new(carrier),
@@ -1019,5 +1023,141 @@ mod tests {
             "both later dials had tokens"
         );
         relay.serving.close();
+    }
+
+    /// What the relay tells a host of where it sees it, read off the
+    /// host's own control stream.
+    mod addresses {
+        use super::*;
+        use crate::link::{read_message, write_message};
+
+        /// A host's raw link to the relay, as `token`: the relay's answer
+        /// to its Hello and the control stream after it.
+        async fn hello(
+            relay: &Running,
+            endpoint: &LinkEndpoint,
+            token: &str,
+        ) -> (
+            Arc<QuicCarrier>,
+            wire::pb::HelloAccepted,
+            crate::link::ControlSink,
+            crate::link::ControlSource,
+        ) {
+            let carrier = Arc::new(
+                QuicCarrier::connect_relay_with_config(
+                    endpoint,
+                    relay.serving.udp_addr().unwrap(),
+                    NAME,
+                    relay.client.clone(),
+                )
+                .await
+                .unwrap(),
+            );
+            let (mut sink, mut source) = carrier.control();
+            let host = local_host(HostId::new_v4(), "test-host", Capabilities::default(), true);
+            write_message(
+                &mut sink,
+                &wire::pb::Message {
+                    body: Some(wire::pb::message::Body::Hello(wire::pb::Hello {
+                        supported_protocol_versions: vec![crate::PROTOCOL_VERSION],
+                        host: Some(crate::routing::host_to_wire(&host)),
+                        auth_token: Some(token.to_owned()),
+                        runtime_instance_id: crate::routing::RuntimeInstance::random().to_wire(),
+                        ..Default::default()
+                    })),
+                },
+            )
+            .await
+            .unwrap();
+            let Some(wire::pb::message::Body::HelloAck(wire::pb::HelloAck {
+                outcome: Some(wire::pb::hello_ack::Outcome::Accepted(accepted)),
+            })) = read_message(&mut source).await.unwrap().unwrap().body
+            else {
+                panic!("the relay accepts the host");
+            };
+            (carrier, accepted, sink, source)
+        }
+
+        /// The next ObservedAddress the relay sends within `patience`.
+        async fn observed(
+            source: &mut crate::link::ControlSource,
+            patience: Duration,
+        ) -> Option<String> {
+            tokio::time::timeout(patience, async {
+                loop {
+                    match read_message(source).await.unwrap()?.body {
+                        Some(wire::pb::message::Body::ObservedAddress(observed)) => {
+                            return Some(observed.addr);
+                        }
+                        _ => continue,
+                    }
+                }
+            })
+            .await
+            .ok()
+            .flatten()
+        }
+
+        /// The host moves to a new port, and says so by sending from it.
+        async fn move_host(endpoint: &LinkEndpoint, sink: &mut crate::link::ControlSink) {
+            endpoint
+                .rebind(
+                    LinkSocket::on_udp(std::net::UdpSocket::bind("127.0.0.1:0").unwrap()).unwrap(),
+                )
+                .unwrap();
+            write_message(
+                sink,
+                &wire::pb::Message {
+                    body: Some(wire::pb::message::Body::Addresses(
+                        wire::pb::Addresses::default(),
+                    )),
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_paid_host_is_told_where_the_relay_sees_it_and_told_again_when_that_moves() {
+            let relay = relay().await;
+            let endpoint = LinkEndpoint::bind("127.0.0.1:0".parse().unwrap(), None).unwrap();
+            let (_carrier, accepted, mut sink, mut source) =
+                hello(&relay, &endpoint, &format!("{}/pro", Uuid::new_v4())).await;
+            let first = endpoint.local_addr().unwrap().to_string();
+            assert_eq!(accepted.observed_addr.as_deref(), Some(first.as_str()));
+            assert!(
+                accepted.addrs.is_empty(),
+                "the relay lists nothing of its own"
+            );
+            assert_eq!(
+                observed(&mut source, OBSERVED_PATIENCE).await,
+                None,
+                "nothing moved"
+            );
+
+            move_host(&endpoint, &mut sink).await;
+            let moved = endpoint.local_addr().unwrap().to_string();
+            assert_ne!(moved, first);
+            assert_eq!(
+                observed(&mut source, OBSERVED_PATIENCE).await.as_deref(),
+                Some(moved.as_str())
+            );
+            relay.serving.close();
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_free_host_is_never_told_where_the_relay_sees_it() {
+            let relay = relay().await;
+            let endpoint = LinkEndpoint::bind("127.0.0.1:0".parse().unwrap(), None).unwrap();
+            let (_carrier, accepted, mut sink, mut source) =
+                hello(&relay, &endpoint, &format!("{}/free", Uuid::new_v4())).await;
+            assert_eq!(accepted.observed_addr, None);
+            move_host(&endpoint, &mut sink).await;
+            assert_eq!(observed(&mut source, OBSERVED_PATIENCE).await, None);
+            relay.serving.close();
+        }
+
+        /// Past the relay's next look at where its hosts are.
+        const OBSERVED_PATIENCE: Duration = Duration::from_millis(4_500);
     }
 }

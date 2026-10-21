@@ -226,6 +226,7 @@ mod tests {
             auth_token: None,
             runtime_instance_id: Vec::new(),
             addrs: Vec::new(),
+            public_addr: None,
         }))
     }
 
@@ -238,6 +239,7 @@ mod tests {
                 runtime_instance_id: Vec::new(),
                 addrs: Vec::new(),
                 observed_addr: None,
+                public_addr: None,
             })),
         }))
     }
@@ -287,6 +289,7 @@ mod tests {
                 auth_token: None,
                 runtime_instance_id: Vec::new(),
                 addrs: Vec::new(),
+                public_addr: None,
             })
         );
         assert!(!handshake.is_established());

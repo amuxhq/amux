@@ -698,8 +698,10 @@ pub struct RoutingState {
     catalogue: catalogue::Catalogue,
     /// Each attempt under way, by host and route, counted.
     attempts: std::collections::BTreeMap<(HostId, Route), u32>,
-    /// The addresses each trusted host last listed for itself.
-    addresses: std::collections::BTreeMap<HostId, Vec<std::net::SocketAddr>>,
+    /// The addresses each trusted host last listed for itself, each with
+    /// where it came from: the trust file's, until the host says them
+    /// again.
+    addresses: std::collections::BTreeMap<HostId, Vec<payload::PeerAddress>>,
     /// The address the relay last saw this host's packets come from.
     observed: Option<std::net::SocketAddr>,
 }

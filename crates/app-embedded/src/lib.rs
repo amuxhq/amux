@@ -194,6 +194,7 @@ impl EmbeddedRuntime {
             dial: config.lan,
             link_socket: false,
             cloud: overrides.cloud,
+            interfaces: None,
         };
         let telemetry = Arc::new(AtomicBool::new(config.telemetry));
         let analytics = match overrides.recording {

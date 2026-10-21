@@ -390,10 +390,11 @@ pub enum Output {
         link: LinkId,
     },
     /// The addresses a trusted host last listed for itself changed: every
-    /// one it can be reached at, in its order.
+    /// one it can be reached at, in its order, each with where it came
+    /// from.
     PeerAddresses {
         host: HostId,
-        addrs: Vec<SocketAddr>,
+        addrs: Vec<crate::payload::PeerAddress>,
     },
     /// The relay saw this host's packets come from a new address, which
     /// this host lists for itself from now on.

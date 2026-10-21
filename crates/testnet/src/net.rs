@@ -1826,6 +1826,9 @@ impl Net {
             dial: decl.lan,
             link_socket: true,
             cloud: node::CloudOptions::default(),
+            // An in-process host is reached on loopback alone, which it
+            // never lists.
+            interfaces: None,
         };
         if let Some(relay) = &self.relay {
             edge.cloud = relay.cloud_options(&self.udp[name]);

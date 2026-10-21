@@ -14,7 +14,8 @@ mod wire;
 
 pub use host::local_kinds;
 pub(crate) use host::{
-    LiveLocalHost, RuntimeInstance, local_host, local_platform, validate_remote_host,
+    LiveLocalHost, OwnAddresses, RuntimeInstance, listed_addrs, local_host, local_platform,
+    validate_remote_host,
 };
 pub use link::ConnectRole;
 pub(crate) use link::{

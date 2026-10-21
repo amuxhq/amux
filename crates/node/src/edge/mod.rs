@@ -101,6 +101,9 @@ pub struct EdgeOptions {
     pub link_socket: bool,
     /// Where the cloud link dials, when a test stands in for the cloud.
     pub cloud: CloudOptions,
+    /// The machine's interface addresses, when a test stands in for them;
+    /// unset, the system's are read.
+    pub interfaces: Option<Vec<std::net::IpAddr>>,
 }
 
 pub type DiscoveryFactory = Arc<dyn Fn() -> Result<Arc<dyn Discovery>, String> + Send + Sync>;
@@ -139,6 +142,7 @@ impl Default for EdgeOptions {
             dial: false,
             link_socket: false,
             cloud: CloudOptions::default(),
+            interfaces: None,
         }
     }
 }
@@ -162,6 +166,27 @@ impl Default for LanOptions {
             socket: None,
         }
     }
+}
+
+/// Where this host tells its peers it can be reached: the LAN listener's
+/// port on each of the machine's interfaces it answers on, or on
+/// `interfaces` where a test stands in for them. A host with no listener
+/// lists nothing.
+fn own_listed(lan: Option<SocketAddr>, interfaces: Option<&[std::net::IpAddr]>) -> Vec<SocketAddr> {
+    let Some(lan) = lan else {
+        return Vec::new();
+    };
+    let ips: Vec<std::net::IpAddr> = match interfaces {
+        Some(ips) => ips.to_vec(),
+        None if lan.ip().is_unspecified() => local_pairing_addrs(lan.port())
+            .into_iter()
+            .map(|addr| addr.ip())
+            .collect(),
+        None => vec![lan.ip()],
+    };
+    // A socket bound to IPv4 alone answers on no IPv6 address.
+    let ips = ips.into_iter().filter(|ip| lan.is_ipv6() || ip.is_ipv4());
+    crate::routing::listed_addrs(ips, lan.port())
 }
 
 /// Overrides for the cloud link, for tests that stand in for the cloud.
@@ -370,6 +395,7 @@ impl Edge {
                 None,
             ),
         };
+        local_host.set_listed(own_listed(lan_addr, options.interfaces.as_deref()));
         tasks.push(dispatcher.serve_quic_endpoint(quic_endpoint.clone(), shutdown.subscribe()));
         // The daemon forwards packets between its paired hosts on the same
         // socket, and sends its own through the relay and its peers.
@@ -503,6 +529,12 @@ impl Edge {
 
     pub fn dir(&self) -> &Path {
         &self.dir
+    }
+
+    /// The relay sees this host's packets come from `addr`: every link
+    /// tells its peer, the public address punching starts from.
+    pub(crate) fn seen_at(&self, addr: SocketAddr) {
+        self.local_host.set_public(addr);
     }
 
     /// Where the LAN listener answers, when there is one.

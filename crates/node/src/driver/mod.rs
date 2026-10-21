@@ -1399,9 +1399,15 @@ impl CoreThread {
                 peer,
             } => self.pairings.pending(session, token, peer),
             Output::PairEnded { session, failure } => self.pairings.end(session, failure),
-            // Links carry no address lists yet: nothing reads what a peer
-            // listed until paths do.
-            Output::PeerAddresses { .. } | Output::ObservedAddress { .. } => {}
+            // The core keeps what a peer listed with its trust; nothing
+            // reads it here until paths do.
+            Output::PeerAddresses { .. } => {}
+            // Every link tells its peer where the relay sees this host.
+            Output::ObservedAddress { addr } => {
+                if let Some(edge) = runtime.edge() {
+                    edge.seen_at(addr);
+                }
+            }
             // The link holding the early streams resets them, saying the
             // peer is revoked.
             Output::RefuseResumed { .. } => {

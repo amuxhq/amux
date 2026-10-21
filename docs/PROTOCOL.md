@@ -307,26 +307,33 @@ message is protobuf encoded after a big-endian `u32` byte length and is bounded
 by `MESSAGE_SIZE_LIMIT` (16 MiB). The complete control vocabulary is:
 
 - `Hello`: supported protocol versions, this host, the current neighbor
-  snapshot, the sender's runtime instance id, every address the sender can be
-  reached at (`addrs`, as `host:port`, never loopback or link-local), and an
-  authentication token only for a cloud link.
+  snapshot, the sender's runtime instance id, every interface address the
+  sender can be reached at with its listener's port (`addrs`, as `host:port`,
+  never loopback or link-local), the address the relay last told it its
+  packets come from (`public_addr`, only a paid host has one), and an
+  authentication token only for a cloud link. A host lists no addresses on its
+  link to the relay.
 - `HelloAck`: either the accepted version plus the acceptor's host, neighbor
   snapshot, runtime instance id and addresses, or an error. A relay accepting
   a paid host also fills `observed_addr`, the address it saw that host's
   packets come from.
 - `NeighborUp` and `NeighborDown`: adjacency deltas after the handshake.
-- `Addresses`: the sender's whole new address list, replacing the one its
-  `Hello` or an earlier `Addresses` carried.
+- `Addresses`: the sender's whole new address list and public address,
+  replacing the ones its `Hello` or an earlier `Addresses` carried; sent
+  whenever either changes.
 - `ObservedAddress`: a relay telling a paid host that the address its packets
-  come from has changed.
+  come from has changed. The relay looks every two seconds; a free host and a
+  host linked over TCP are never told one.
 - `ForwardRefused`: a forwarder could not deliver packets naming `dst`, with
   one `ForwardRefusal` reason: `NO_ROUTE`, `PAYMENT_REQUIRED`,
   `RATE_LIMITED` or `SHUTTING_DOWN`. The packets themselves are dropped.
 - `Reauth`: a fire-and-forget replacement token for a cloud link.
 - `LinkClose`: an immediate close with a reason and optional error.
 
-Hosts do not send address lists, observed addresses or forward refusals yet,
-and a receiver ignores them.
+A host keeps what each trusted peer listed, tagged by where it came from:
+listed over a direct link, over a forwarded one, or the peer's public address,
+which only the relay's observation gave. The profile's trust file keeps the
+list beside the address the peer last answered at.
 
 A runtime instance id is 16 random bytes a host's runtime draws when it
 starts and keeps until it stops; it is not an agent's incarnation, which

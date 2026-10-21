@@ -30,6 +30,12 @@ use crate::{Clock, HostId, audit};
 
 const LINK_CONNECT_HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// How often a relay looks again at where a paid host's packets come from,
+/// to tell it when that moved. quinn says nothing when a connection's
+/// address changes, so the relay reads it; a host it moved for learns
+/// within this long.
+const OBSERVE_EVERY: Duration = Duration::from_secs(2);
+
 #[derive(Debug, thiserror::Error)]
 pub enum LinkError {
     #[error("link control I/O failed: {0}")]
@@ -237,6 +243,9 @@ pub struct LinkCtx {
     established_tx: Option<Arc<StdRwLock<Option<EstablishmentSender>>>>,
     shutdown_rx: Option<watch::Receiver<bool>>,
     refresh_rx: Option<LinkConnectorRefreshReceiver>,
+    /// On a relay: the socket whose senders' addresses a paid host is told
+    /// it is seen at.
+    observes: Option<Arc<super::socket::LinkSocket>>,
 }
 
 pub(crate) type LinkConnectorCtx = LinkCtx;
@@ -268,6 +277,7 @@ impl LinkCtx {
             established_tx: None,
             shutdown_rx: None,
             refresh_rx: None,
+            observes: None,
         }
     }
 
@@ -323,6 +333,28 @@ impl LinkCtx {
         self
     }
 
+    /// Tells each paid host linked on `socket` the address its packets
+    /// come from: what a relay does, so its hosts can punch.
+    pub(crate) fn observing(mut self, socket: Arc<super::socket::LinkSocket>) -> Self {
+        self.observes = Some(socket);
+        self
+    }
+
+    /// The address a host linked over `carrier` is told its packets come
+    /// from: only on a relay, only for a paid host, and only where one
+    /// address carries it, which a byte stream's packets do not.
+    fn observed(
+        &self,
+        carrier: &dyn Carrier,
+        session: Option<&LinkAuthSession>,
+    ) -> Option<std::net::SocketAddr> {
+        let socket = self.observes.as_ref()?;
+        if session?.tier() != crate::Tier::Pro {
+            return None;
+        }
+        socket.address_of(carrier.remote_address()?)
+    }
+
     pub(crate) fn with_shutdown(mut self, shutdown_rx: watch::Receiver<bool>) -> Self {
         self.shutdown_rx = Some(shutdown_rx);
         self
@@ -365,13 +397,24 @@ pub async fn run_link(
 ) -> Result<(), LinkError> {
     let (mut sink, mut source) = carrier.control();
     let mut handshake = ConnectHandshake::new(role);
+    // A host lists where it can be reached to its peers, and to the relay
+    // nothing: punching needs only what the relay sees.
+    let mut addresses = ctx
+        .connector_auth
+        .is_none()
+        .then(|| ctx.local_host.addresses());
+    let own = addresses
+        .as_mut()
+        .map(|addresses| addresses.borrow_and_update().clone())
+        .unwrap_or_default();
+    let mut observed = None;
     // The peer's hello or its answer to ours, as the core is told it.
     let peer_frame;
     let mut held_ack = None;
     let ((peer_host, peer_instance), peer_neighbors, snapshot) = match role {
         crate::routing::ConnectRole::Connector => {
             let snapshot = neighbor_snapshot(&ctx, carrier.as_ref()).await;
-            write_message(&mut sink, &connector_hello(&ctx, &snapshot)).await?;
+            write_message(&mut sink, &connector_hello(&ctx, &snapshot, &own)).await?;
             tracing::debug!(path = %carrier.path_stats(), "sent Hello");
             let first = read_first(&mut source, "HelloAck").await?;
             tracing::debug!(path = %carrier.path_stats(), "received the first message after Hello");
@@ -457,7 +500,9 @@ pub async fn run_link(
             {
                 let user = authenticated.user();
                 let authenticator = authenticated.authenticator.clone();
+                let observes = ctx.observes.take();
                 ctx = provider.context_for(&user).await;
+                ctx.observes = observes;
                 session = Some(LinkAuthSession::new(user, authenticator));
             }
             let snapshot = neighbor_snapshot(&ctx, carrier.as_ref()).await;
@@ -474,7 +519,8 @@ pub async fn run_link(
                 runtime_instance = ?peer.2,
                 "accepted a link from a peer"
             );
-            let ack = accepted_hello_ack(&ctx, &snapshot, peer.0.id);
+            observed = ctx.observed(carrier.as_ref(), session.as_ref());
+            let ack = accepted_hello_ack(&ctx, &snapshot, peer.0.id, &own, observed);
             // A resumed link's answer waits for the core to take the
             // identity its ticket names.
             if ctx.resumed.is_some() {
@@ -497,9 +543,47 @@ pub async fn run_link(
         source,
         (handshake, held_ack),
         (peer_host, peer_instance, peer_neighbors, role, peer_frame),
-        snapshot.into_iter().map(|host| host.id).collect(),
+        Told {
+            neighbors: snapshot.into_iter().map(|host| host.id).collect(),
+            addresses,
+            observed,
+        },
     )
     .await
+}
+
+/// What this end told its peer in the handshake, so it tells it again
+/// only of a change.
+struct Told {
+    /// The neighbor snapshot.
+    neighbors: Vec<HostId>,
+    /// Where this host can be reached, watched while the link lists it.
+    addresses: Option<watch::Receiver<crate::routing::OwnAddresses>>,
+    /// On a relay, the address the peer was told its packets come from.
+    observed: Option<std::net::SocketAddr>,
+}
+
+/// Where this host can be reached, once that changes from what the link
+/// last told its peer; never, on a link that lists nothing.
+async fn addresses_changed(
+    addresses: &mut Option<watch::Receiver<crate::routing::OwnAddresses>>,
+) -> crate::routing::OwnAddresses {
+    let Some(addresses) = addresses else {
+        return future::pending().await;
+    };
+    if addresses.changed().await.is_err() {
+        return future::pending().await;
+    }
+    addresses.borrow_and_update().clone()
+}
+
+fn addresses_message(own: &crate::routing::OwnAddresses) -> wire::pb::Message {
+    wire::pb::Message {
+        body: Some(wire::pb::message::Body::Addresses(wire::pb::Addresses {
+            addrs: own.listed.iter().map(ToString::to_string).collect(),
+            public_addr: own.public.map(|addr| addr.to_string()),
+        })),
+    }
 }
 
 /// Whether `carrier` is two hosts' own link whose packets a forwarder
@@ -560,7 +644,7 @@ async fn run_established(
         crate::routing::ConnectRole,
         Option<wire::pb::message::Body>,
     ),
-    sent_snapshot: Vec<HostId>,
+    mut told: Told,
 ) -> Result<(), LinkError> {
     debug_assert!(held_ack.is_some() || handshake.is_established());
     let (peer_host, peer_instance, _neighbors, connect_role, peer_frame) = peer;
@@ -614,7 +698,7 @@ async fn run_established(
                         )
                     }),
             },
-            &sent_snapshot,
+            &told.neighbors,
             Some(carrier.clone()),
         )
         .await;
@@ -699,6 +783,9 @@ async fn run_established(
     let mut shutdown_rx = ctx.shutdown_rx.clone();
     let mut close_reason = wire::pb::LinkCloseReason::Unspecified;
     let mut close_status = None;
+    let observing = ctx.observes.is_some();
+    let mut observe = tokio::time::interval(OBSERVE_EVERY);
+    observe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     loop {
         let auth_expiry = acceptor_auth.as_ref().map(|auth| {
@@ -738,6 +825,32 @@ async fn run_established(
                         close_reason = wire::pb::LinkCloseReason::ProtocolError;
                         break;
                     }
+                }
+            }
+            own = addresses_changed(&mut told.addresses) => {
+                if let Err(error) = write_message(&mut sink, &addresses_message(&own)).await {
+                    close_status = Some(tonic::Status::unavailable(error.to_string()));
+                    break;
+                }
+            }
+            _ = observe.tick(), if observing => {
+                match ctx.observed(carrier.as_ref(), acceptor_auth.as_ref()) {
+                    Some(seen) if told.observed != Some(seen) => {
+                        let message = wire::pb::Message {
+                            body: Some(wire::pb::message::Body::ObservedAddress(
+                                wire::pb::ObservedAddress { addr: seen.to_string() },
+                            )),
+                        };
+                        if let Err(error) = write_message(&mut sink, &message).await {
+                            close_status = Some(tonic::Status::unavailable(error.to_string()));
+                            break;
+                        }
+                        told.observed = Some(seen);
+                    }
+                    Some(_) => {}
+                    // A host that went free is told nothing, and is told
+                    // afresh once it pays again.
+                    None => told.observed = None,
                 }
             }
             outbound = out_rx.recv() => {
@@ -1001,8 +1114,10 @@ async fn handle_control_body(
             ctx.report_frame(link, wire::pb::message::Body::ForwardRefused(refused));
             ControlAction::Continue
         }
-        // Nothing on this side acts on address lists yet.
-        wire::pb::message::Body::Addresses(_) | wire::pb::message::Body::ObservedAddress(_) => {
+        // The core keeps what a peer lists and what the relay sees.
+        body @ (wire::pb::message::Body::Addresses(_)
+        | wire::pb::message::Body::ObservedAddress(_)) => {
+            ctx.report_frame(link, body);
             ControlAction::Continue
         }
         wire::pb::message::Body::Hello(_) | wire::pb::message::Body::HelloAck(_) => {
@@ -1092,7 +1207,11 @@ fn accept_peer_hello_ack(
     ))
 }
 
-fn connector_hello(ctx: &LinkCtx, snapshot: &[Host]) -> wire::pb::Message {
+fn connector_hello(
+    ctx: &LinkCtx,
+    snapshot: &[Host],
+    own: &crate::routing::OwnAddresses,
+) -> wire::pb::Message {
     wire::pb::Message {
         body: Some(wire::pb::message::Body::Hello(wire::pb::Hello {
             supported_protocol_versions: vec![PROTOCOL_VERSION],
@@ -1103,12 +1222,19 @@ fn connector_hello(ctx: &LinkCtx, snapshot: &[Host]) -> wire::pb::Message {
                 .as_ref()
                 .map(|auth| auth.token.token.clone()),
             runtime_instance_id: ctx.local_host.runtime_instance().to_wire(),
-            addrs: Vec::new(),
+            addrs: own.listed.iter().map(ToString::to_string).collect(),
+            public_addr: own.public.map(|addr| addr.to_string()),
         })),
     }
 }
 
-fn accepted_hello_ack(ctx: &LinkCtx, snapshot: &[Host], peer: HostId) -> wire::pb::Message {
+fn accepted_hello_ack(
+    ctx: &LinkCtx,
+    snapshot: &[Host],
+    peer: HostId,
+    own: &crate::routing::OwnAddresses,
+    observed: Option<std::net::SocketAddr>,
+) -> wire::pb::Message {
     wire::pb::Message {
         body: Some(wire::pb::message::Body::HelloAck(wire::pb::HelloAck {
             outcome: Some(wire::pb::hello_ack::Outcome::Accepted(
@@ -1121,8 +1247,9 @@ fn accepted_hello_ack(ctx: &LinkCtx, snapshot: &[Host], peer: HostId) -> wire::p
                         .map(host_to_wire)
                         .collect(),
                     runtime_instance_id: ctx.local_host.runtime_instance().to_wire(),
-                    addrs: Vec::new(),
-                    observed_addr: None,
+                    addrs: own.listed.iter().map(ToString::to_string).collect(),
+                    observed_addr: observed.map(|addr| addr.to_string()),
+                    public_addr: own.public.map(|addr| addr.to_string()),
                 },
             )),
         })),
@@ -1381,6 +1508,7 @@ mod tests {
                     auth_token: auth_token.map(str::to_string),
                     runtime_instance_id: crate::routing::RuntimeInstance::random().to_wire(),
                     addrs: Vec::new(),
+                    public_addr: None,
                 })),
             },
         )
@@ -1670,6 +1798,7 @@ mod tests {
                     auth_token: None,
                     runtime_instance_id: crate::routing::RuntimeInstance::random().to_wire(),
                     addrs: Vec::new(),
+                    public_addr: None,
                 })),
             },
         )
@@ -1715,5 +1844,69 @@ mod tests {
         );
         task.await.unwrap().unwrap();
         assert!(links.link_to_peer(peer.id).await.is_none());
+    }
+
+    /// What a link tells its peer of where this host can be reached.
+    mod addresses {
+        use super::*;
+
+        #[tokio::test]
+        async fn a_link_tells_its_peer_where_this_host_is_and_again_when_that_changes() {
+            let local = crate::routing::LiveLocalHost::new(host(1));
+            let listed: Vec<std::net::SocketAddr> = vec![
+                "192.0.2.7:4100".parse().unwrap(),
+                "[2001:db8::7]:4100".parse().unwrap(),
+            ];
+            local.set_listed(listed.clone());
+            let peer = host(2);
+            let links = Arc::new(LinkRegistry::new(local.id()));
+            let (connector_carrier, acceptor_carrier) = carrier_pair().await;
+            let ctx = LinkCtx::new_live(local.clone(), links).with_authenticated_peer(peer.id);
+            let task = tokio::spawn(run_link(
+                ctx,
+                acceptor_carrier.clone(),
+                crate::routing::ConnectRole::Acceptor,
+            ));
+            let (mut sink, mut source) = connector_carrier.control();
+            send_hello(&mut sink, &peer, None).await;
+            let Some(wire::pb::message::Body::HelloAck(wire::pb::HelloAck {
+                outcome: Some(wire::pb::hello_ack::Outcome::Accepted(accepted)),
+            })) = read_message(&mut source).await.unwrap().unwrap().body
+            else {
+                panic!("the host accepts its peer");
+            };
+            assert_eq!(accepted.addrs, ["192.0.2.7:4100", "[2001:db8::7]:4100"]);
+            assert_eq!(accepted.public_addr, None, "nothing told it one");
+            assert_eq!(accepted.observed_addr, None, "only a relay observes");
+
+            // The relay told the host where it sees it.
+            let public: std::net::SocketAddr = "203.0.113.9:41000".parse().unwrap();
+            local.set_public(public);
+            let next = tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if let Some(wire::pb::message::Body::Addresses(addresses)) =
+                        read_message(&mut source).await.unwrap().unwrap().body
+                    {
+                        return addresses;
+                    }
+                }
+            })
+            .await
+            .expect("the change is sent");
+            assert_eq!(next.addrs, accepted.addrs);
+            assert_eq!(next.public_addr.as_deref(), Some("203.0.113.9:41000"));
+
+            // The same again changes nothing, so says nothing.
+            local.set_public(public);
+            local.set_listed(listed);
+            assert!(
+                tokio::time::timeout(Duration::from_millis(300), read_message(&mut source))
+                    .await
+                    .is_err(),
+                "nothing more is sent"
+            );
+            connector_carrier.close(wire::pb::LinkCloseReason::UserShutdown);
+            let _ = task.await;
+        }
     }
 }

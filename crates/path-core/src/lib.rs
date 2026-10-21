@@ -38,6 +38,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::net::{IpAddr, SocketAddr};
 use std::time::Instant;
 
+pub use daemon_core::payload::Source;
 pub use daemon_core::{DumpReason, LinkId, StepBudget, Violation};
 use serde::{Deserialize, Serialize};
 
@@ -75,23 +76,6 @@ impl Path {
     pub fn is_forwarded(&self) -> bool {
         matches!(self, Path::Forwarded(_))
     }
-}
-
-/// Where a candidate came from, which decides whether a free account may
-/// probe it: a candidate learned only through the relay's observation is
-/// paid.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum Source {
-    /// Local discovery found the peer at it.
-    Discovery,
-    /// The peer listed it in its `Hello` or `Addresses` over a direct link.
-    Listed,
-    /// It carried an earlier link to the peer.
-    LastWorked,
-    /// The relay saw the peer's packets come from it.
-    Observed,
-    /// The peer listed it over a forwarded link.
-    Forwarding,
 }
 
 /// Why a forwarder would not carry the link's packets.

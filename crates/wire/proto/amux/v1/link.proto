@@ -37,9 +37,13 @@ message Hello {
   // an earlier link from the same host proves that earlier link belongs to
   // a process that no longer exists, however healthy it still looks.
   bytes runtime_instance_id = 5;
-  // Every address the sender can be reached at, as host:port; never
-  // loopback or link-local.
+  // Every interface address the sender can be reached at, with its
+  // listener's port, as host:port; never loopback or link-local.
   repeated string addrs = 6;
+  // The address the relay last told the sender its packets come from, as
+  // host:port. Only a paid host is told one: it is the candidate hole
+  // punching works from, so a receiver keeps it apart from `addrs`.
+  optional string public_addr = 7;
 }
 
 message HelloAck {
@@ -61,6 +65,8 @@ message HelloAccepted {
   // Only a relay sets it, and only for a paid host: it is the candidate
   // hole punching works from.
   optional string observed_addr = 6;
+  // The acceptor's; see `Hello.public_addr`.
+  optional string public_addr = 7;
 }
 
 // The one break-glass error: the peers share no protocol version.
@@ -84,6 +90,7 @@ message NeighborDown {
 // its Hello or an earlier Addresses carried.
 message Addresses {
   repeated string addrs = 1;
+  optional string public_addr = 2;
 }
 
 // The relay's view of where the sender's packets now come from, sent to a

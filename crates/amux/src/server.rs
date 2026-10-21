@@ -166,6 +166,7 @@ fn edge_options(config: &InstallationConfig) -> node::EdgeOptions {
         dial: true,
         link_socket: true,
         cloud: node::CloudOptions::default(),
+        interfaces: None,
     }
 }
 

@@ -9,7 +9,7 @@ home.row.<desk-work>.detail.volatile | <volatile>
 hosts |  | 1 reachable | 0,62,402,778
 hosts.title |  | Hosts | 18,72,69,32
 hosts.subtitle |  | 1 reachable | 18,105,79,16
-hosts.row.<desk> | desk, reachable through the relay | through-the-relay | 18,159,366,64
+hosts.row.<desk> | desk, macOS, reachable through the relay | through-the-relay | 18,159,366,64
 hosts.fact.identity | <volatile>
 hosts.fact.paired-devices | Paired Devices, 1 | 1 | 18,310,366,46
 hosts.caption.devices |  |  | 18,363,320,18
@@ -40,7 +40,7 @@ tab.you | You | not selected | 253,777,99,57
  | Hosts |  | 18,72,69,32
  | 1 reachable |  | 18,105,79,16
  | THROUGH THE RELAY |  | 20,137,119,14
- | desk, reachable through the relay |  | 18,159,366,64
+ | desk, macOS, reachable through the relay |  | 18,159,366,64
  | THIS PHONE |  | 20,241,70,14
  | Identity, amux-iphone-1 · <key> |  | 18,263,366,46
  | Paired Devices, 1 |  | 18,310,366,45

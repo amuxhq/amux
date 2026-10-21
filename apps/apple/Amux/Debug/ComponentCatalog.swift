@@ -1569,12 +1569,16 @@ extension ComponentCatalog {
         },
     ]
 
-    /// The keypad, as the hosts tab pushes it for one machine.
+    /// The code in the system's number pad, as the pairing sheet asks for it
+    /// for one machine. The field takes focus once drawn and the pad rises
+    /// after, so the picture waits for the screen to stop changing.
     private static func code(
         _ id: String, machine: HostView = CatalogFixtures.nearbyLaptop,
         setUp: @escaping @MainActor (PairingStore) -> Void
     ) -> ComponentExample {
-        ComponentExample(id: "pair.code-\(id)", family: .pairing, canvas: CGSize(width: 390, height: 844)) {
+        ComponentExample(
+            id: "pair.code-\(id)", family: .pairing, canvas: CGSize(width: 390, height: 844), settlesLate: true
+        ) {
             let store = PairingStore(clock: { CatalogFixtures.now })
             store.open(machine: machine)
             setUp(store)

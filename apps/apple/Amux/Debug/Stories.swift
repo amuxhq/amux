@@ -50,10 +50,6 @@ extension ComponentCatalog {
             settlesLate: true
         ) { StoryApp(chatOpen: true, chatPhase: .exited(cause: .failed("while the daemon was away"))) },
         ComponentExample(
-            id: "fleet.app", family: .fleet, canvas: CGSize(width: 390, height: 844),
-            settlesLate: true
-        ) { StoryApp() },
-        ComponentExample(
             id: "fleet.settings-open", family: .fleet, canvas: CGSize(width: 390, height: 844),
             settlesLate: true
         ) { StoryApp(settingsOpen: true).settings },

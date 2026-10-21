@@ -857,10 +857,6 @@
       "shows": "The whole app with a chat open on an agent that exited while its daemon was away: the long exit reason truncates in the title pill, and the bar keeps the way back."
     },
     {
-      "id": "fleet.app",
-      "shows": "The whole app on the list: the account disc top left, the + top right, and two tabs."
-    },
-    {
       "id": "fleet.settings-open",
       "shows": "The whole app with the settings sheet raised from the account disc."
     }

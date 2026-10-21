@@ -49,6 +49,7 @@ use crate::dispatcher::TunnelDispatcher;
 use crate::driver::CoreLinks;
 use crate::identity::{DeviceIdentity, IdentityError};
 use crate::link::framed::{FramedKind, StreamEndpoint};
+use crate::link::paths::PathDriver;
 use crate::link::quic::DEVICE_SERVER_NAME;
 use crate::link::resumption::{HOST_TICKETS, SessionTickets, TICKETS_DIR};
 use crate::link::socket::{Datagrams, LinkSocket};
@@ -275,6 +276,19 @@ pub struct Edge {
     tasks: Mutex<Vec<JoinHandle<()>>>,
     analytics: analytics::Analytics,
     first_flights: first_flight::FirstFlights,
+    /// The path machine of every peer, choosing the path its link takes.
+    paths: Arc<PathDriver>,
+    /// The machine's interface addresses, where a test stands in for them.
+    interfaces: Option<Vec<std::net::IpAddr>>,
+}
+
+/// What a network change did: whether the socket was bound afresh, how
+/// many path machines were told, and the interface addresses now.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NetworkChange {
+    pub rebound: bool,
+    pub machines_told: usize,
+    pub addrs: Vec<std::net::IpAddr>,
 }
 
 impl Edge {
@@ -403,6 +417,17 @@ impl Edge {
             .link_registry()
             .relaying()
             .forward_on(quic_endpoint.socket.clone());
+        // Every peer link on the socket is carried on the path its machine
+        // chooses.
+        let (paths, driving) = PathDriver::start(
+            quic_endpoint.socket.clone(),
+            channels.link_registry().core().cloned(),
+        );
+        channels.link_registry().drive_paths(&paths);
+        tasks.push(driving);
+        if let Some(core) = channels.link_registry().core().cloned() {
+            tasks.push(seed_addresses(core, &paths));
+        }
 
         let platform = options
             .discovery
@@ -493,6 +518,8 @@ impl Edge {
             tasks: Mutex::new(tasks),
             analytics,
             first_flights: first_flight::FirstFlights::default(),
+            paths,
+            interfaces: options.interfaces.clone(),
         });
         if options.dial {
             edge.tasks
@@ -504,6 +531,10 @@ impl Edge {
             .lock()
             .unwrap()
             .push(follow_plan(&edge.status, &edge.connections));
+        edge.tasks
+            .lock()
+            .unwrap()
+            .push(plan_paths(&edge.status, &edge.paths));
         if signed_in {
             edge.start_cloud().await;
         }
@@ -712,6 +743,34 @@ impl Edge {
     /// connections, and peers see them arrive from the new address.
     pub fn rebind(&self, substrate: Arc<dyn Datagrams>) -> std::io::Result<()> {
         self.quic_endpoint.rebind(substrate)
+    }
+
+    /// The path machines choosing each peer link's path.
+    pub fn paths(&self) -> &Arc<PathDriver> {
+        &self.paths
+    }
+
+    /// The host's network changed: the profile's socket is bound afresh
+    /// where it is the edge's own, its addresses are listed again to every
+    /// peer, and every path machine probes its paths again.
+    pub fn network_changed(&self) -> std::io::Result<NetworkChange> {
+        let rebound = self.quic_endpoint.rebind_in_place()?;
+        let addrs: Vec<std::net::IpAddr> = match &self.interfaces {
+            Some(addrs) => addrs.clone(),
+            None => interface_addrs(),
+        };
+        let lan = self
+            .quic_endpoint
+            .local_addr()
+            .ok()
+            .filter(|_| self.lan_addr.is_some());
+        self.local_host.set_listed(own_listed(lan, Some(&addrs)));
+        let machines_told = self.paths.network_changed(addrs.clone());
+        Ok(NetworkChange {
+            rebound,
+            machines_told,
+            addrs,
+        })
     }
 
     /// Whether this profile remembers that UDP to `relay` was eaten, and so
@@ -1113,6 +1172,59 @@ fn follow_plan(status: &RuntimeStatus, connections: &Arc<ConnectionManager>) -> 
                 };
                 connections.plan_changed();
             }
+        }
+    })
+}
+
+/// The machine's interface addresses a peer could reach it at: every one
+/// but loopback, unspecified and IPv6 link-local ones, sorted.
+pub fn interface_addrs() -> Vec<std::net::IpAddr> {
+    let mut addrs: Vec<std::net::IpAddr> = local_pairing_addrs(0)
+        .into_iter()
+        .map(|addr| addr.ip())
+        .filter(|ip| !ip.is_loopback())
+        .collect();
+    addrs.dedup();
+    addrs
+}
+
+/// Tells the path machines whether the account pays, whenever the relay
+/// says.
+fn plan_paths(status: &RuntimeStatus, paths: &Arc<PathDriver>) -> JoinHandle<()> {
+    let mut observed = status.subscribe();
+    let paths = Arc::downgrade(paths);
+    tokio::spawn(async move {
+        while observed.changed().await.is_ok() {
+            let Observed::Connected { tier, .. } = *observed.borrow_and_update() else {
+                continue;
+            };
+            let Some(paths) = paths.upgrade() else {
+                return;
+            };
+            paths.plan(tier == crate::Tier::Pro);
+        }
+    })
+}
+
+/// Gives every trusted host a path machine, with what it listed before
+/// this launch, as the core read them from the trust file.
+fn seed_addresses(core: crate::driver::CoreLinks, paths: &Arc<PathDriver>) -> JoinHandle<()> {
+    let paths = Arc::downgrade(paths);
+    tokio::spawn(async move {
+        let looked = core
+            .look(|daemon| {
+                let trusted: Vec<HostId> = daemon.trust().entries().map(|(host, _)| host).collect();
+                (trusted, daemon.peer_addresses().clone())
+            })
+            .await;
+        let (Some((trusted, listed)), Some(paths)) = (looked, paths.upgrade()) else {
+            return;
+        };
+        for host in trusted {
+            paths.addresses(host, &[]);
+        }
+        for (host, addrs) in listed {
+            paths.addresses(uuid::Uuid::from_bytes(host.0), &addrs);
         }
     })
 }

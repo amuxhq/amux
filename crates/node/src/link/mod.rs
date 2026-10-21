@@ -5,6 +5,7 @@ mod early;
 pub mod forwarder;
 pub mod framed;
 pub mod link_log;
+pub mod paths;
 pub(crate) mod quic;
 pub(crate) mod relay_host;
 pub(crate) mod relaying;

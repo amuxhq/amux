@@ -212,6 +212,19 @@ impl Daemon {
         self.routes_moved(before, out);
     }
 
+    /// A link up is carried on a path of another kind now. Its routes stay
+    /// as they are, so no call moves; the host reads by the new kind.
+    pub(crate) fn link_carried(&mut self, link: LinkId, kind: CarrierKind) {
+        let Some(up) = self.routing.links.links.get_mut(&link) else {
+            return;
+        };
+        if up.kind == kind || matches!(up.kind, CarrierKind::Relay) {
+            return;
+        }
+        up.kind = kind;
+        self.touched.host_set = true;
+    }
+
     /// Hosts the local network found. A paired host without a link of its
     /// own is dialed; one already linked directly needs no second link, and
     /// a host not paired is only a hint until it is.

@@ -70,8 +70,8 @@ pub use dump::{
 pub use edge::{
     ACCOUNT_FILE, CloudLinkServer, CloudOptions, DUAL_STACK_ANY, DiscoveryFactory, Edge, EdgeError,
     EdgeOptions, FREE_TIER_REFRESH_INTERVAL, JwtCloudLinkAuthenticator, LAN_PORT_FILE, LINK_SOCKET,
-    LanOptions, LoopbackLink, Observed, RELAY_TOKEN_FILE, RelayCarrier, RelayIdentity, RelayQuic,
-    RelayServing, UDP_BLOCKED_MEMORY, mdns_discovery,
+    LanOptions, LoopbackLink, NetworkChange, Observed, RELAY_TOKEN_FILE, RelayCarrier,
+    RelayIdentity, RelayQuic, RelayServing, UDP_BLOCKED_MEMORY, interface_addrs, mdns_discovery,
 };
 pub use forward::{ForwardError, HostNameError, Owner};
 pub use front_door::FrontDoor;
@@ -84,7 +84,7 @@ pub use install::{
 };
 pub use link::{
     Cursor, EarlyAnswer, EarlyCall, EarlyReply, PeerChannel, PeerClient, ResumedLink,
-    TRUST_REVOKED, forwarder, framed, link_log, socket,
+    TRUST_REVOKED, forwarder, framed, link_log, paths, socket,
 };
 pub use offers::{CatalogueError, HostCatalogue, PROVIDERS, Provider};
 pub use outbox::{DrainReport, HttpSender, NoopSender, Push, PushError, PushFuture, PushSender};

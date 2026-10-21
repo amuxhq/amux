@@ -278,6 +278,7 @@ impl Daemon {
                 resumed,
             } => self.link_up(link, peer, kind, resumed.as_ref(), out),
             Input::LinkDown { link, .. } => self.link_down(link, out),
+            Input::LinkCarried { link, kind } => self.link_carried(link, kind),
             Input::LinkControl { link, frame } => self.link_control(link, frame, out),
             Input::Credential {
                 link,

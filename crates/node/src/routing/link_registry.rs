@@ -20,6 +20,7 @@ use wire::pb;
 use crate::driver::CoreLinks;
 use crate::link::LinkCarrier as NativeLinkCarrier;
 use crate::link::link_log::PathKind;
+use crate::link::paths::PathDriver;
 use crate::link::relaying::Relaying;
 use crate::routing::types::{LinkId, core_host, host_from_core};
 use crate::routing::wire::{neighbor_down_message, neighbor_up_message};
@@ -53,6 +54,31 @@ impl LinkRegistry {
             user,
             refusals: tokio::sync::broadcast::channel(16).0,
             last_refusals: std::sync::Mutex::default(),
+            paths: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// Tells `paths` of every peer link from now on.
+    pub(crate) fn drive_paths(&self, paths: &Arc<PathDriver>) {
+        let _ = self.paths.set(Arc::downgrade(paths));
+    }
+
+    /// The profile's path machines, when this is a profile's registry.
+    pub(crate) fn paths(&self) -> Option<Arc<PathDriver>> {
+        self.paths.get()?.upgrade()
+    }
+
+    /// A peer link came up: its peer's path machine chooses its path from
+    /// now on.
+    fn path_up(
+        &self,
+        link: &LinkId,
+        host: HostId,
+        role: LinkRole,
+        carrier: Option<&Arc<dyn NativeLinkCarrier>>,
+    ) {
+        if let (LinkRole::Peer, Some(carrier), Some(paths)) = (role, carrier, self.paths()) {
+            paths.link_up(link.core(), host, carrier.as_ref());
         }
     }
 
@@ -86,6 +112,9 @@ pub struct LinkRegistry {
     user: relay_core::UserId,
     refusals: tokio::sync::broadcast::Sender<(HostId, pb::ForwardRefusal)>,
     last_refusals: std::sync::Mutex<HashMap<HostId, pb::ForwardRefusal>>,
+    /// The profile's path machines, told of every peer link that comes up
+    /// or goes on the profile's socket.
+    paths: std::sync::OnceLock<std::sync::Weak<PathDriver>>,
 }
 
 pub(crate) fn relay_tier(tier: Tier) -> relay_core::Tier {
@@ -296,6 +325,7 @@ impl LinkRegistry {
         let (close_tx, close_rx) = mpsc::channel(1);
         let closed = Arc::new(Notify::new());
         let mut state = self.state.write().await;
+        let carrier_for_paths = native_carrier.clone();
         if carrier == LinkCarrier::Forwarded {
             self.last_refusals
                 .lock()
@@ -319,6 +349,7 @@ impl LinkRegistry {
                 old.closed.notify_waiters();
                 audit::link_down(old.host.id, &link, "replaced");
             }
+            self.path_up(&link, host.id, role, carrier_for_paths.as_ref());
             audit::link_up(host.id, &link, role);
             return Some(Registration { close_rx });
         }
@@ -413,6 +444,7 @@ impl LinkRegistry {
             old.closed.notify_waiters();
             audit::link_down(old.host.id, &link, "replaced");
         }
+        self.path_up(&link, host.id, role, carrier_for_paths.as_ref());
         audit::link_up(host.id, &link, role);
         Some(Registration { close_rx })
     }
@@ -439,6 +471,9 @@ impl LinkRegistry {
         }
         let peer = writer.host.id;
         drop(state);
+        if let Some(paths) = self.paths() {
+            paths.link_down(link.core());
+        }
         writer.closed.notify_waiters();
         audit::link_down(peer, link, "removed");
     }

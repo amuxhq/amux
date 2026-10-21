@@ -51,6 +51,11 @@ pub trait Datagrams: Send + Sync + 'static {
         buf: &mut [u8],
     ) -> Poll<io::Result<(usize, SocketAddr)>>;
     fn local_addr(&self) -> io::Result<SocketAddr>;
+    /// Binds afresh where it was bound, after the network changed under
+    /// it: true when it did, false when it is not the socket's to bind.
+    fn rebind(&self) -> io::Result<bool> {
+        Ok(false)
+    }
 }
 
 /// QUIC sets this bit in the first byte of every packet, long header or
@@ -197,6 +202,11 @@ const UNCLAIMED_PEER_TIMEOUT: Duration = Duration::from_secs(60);
 /// How often arrivals look for peers past [`UNCLAIMED_PEER_TIMEOUT`].
 const UNCLAIMED_PEER_SWEEP: Duration = Duration::from_secs(5);
 
+/// How often an arrival on one path from one host is reported to the path
+/// machines: often enough to keep a working path from being probed, rare
+/// enough that a busy link costs nothing.
+const ARRIVAL_REPORT_EVERY: Duration = Duration::from_secs(1);
+
 /// How much of a link's first flight the socket keeps to send again on a
 /// path that joins it late, as the relay joins once its own connection
 /// exists: the opening packets with the Hello and the first calls, and
@@ -243,6 +253,26 @@ pub trait ForwardSink: Send + Sync + 'static {
 pub struct ProbeAnswered {
     pub from: HostId,
     pub nonce: u64,
+}
+
+/// What the socket saw that the path machines act on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PathEvent {
+    /// A forwarding link this host sends through came up: through the
+    /// relay, or through a paired daemon.
+    ForwardingUp {
+        link: LinkId,
+        kind: PathKind,
+    },
+    ForwardingDown {
+        link: LinkId,
+    },
+    /// A QUIC packet from `peer` arrived on `path`; reported at most once
+    /// a second per path and peer.
+    Arrived {
+        peer: HostId,
+        path: Path,
+    },
 }
 
 /// Stand-ins live in a unique-local IPv6 prefix (`fd61:6d75:7800::/48`)
@@ -328,6 +358,15 @@ impl Route {
             Route::All(paths) => paths.retain(|candidate| *candidate != path),
             _ => {}
         }
+    }
+}
+
+/// The largest QUIC datagram one path carries. Every path carries
+/// [`MAX_DATAGRAM`]: the forwarding header was left room for under IPv6's
+/// minimum MTU, and byte streams carry whatever they are given.
+fn path_datagram(path: Path) -> usize {
+    match path {
+        Path::Direct(_) | Path::Punched(_) | Path::Forwarded(_) | Path::Framed(_) => MAX_DATAGRAM,
     }
 }
 
@@ -429,6 +468,9 @@ struct State {
     inbound: VecDeque<(PathId, Vec<u8>)>,
     recv_waker: Option<Waker>,
     probe_answers: Option<mpsc::UnboundedSender<ProbeAnswered>>,
+    path_events: Option<mpsc::UnboundedSender<PathEvent>>,
+    /// When an arrival on each path from each host was last reported.
+    reported: HashMap<(HostId, Path), Instant>,
     forward_sink: Option<Arc<dyn ForwardSink>>,
 }
 
@@ -570,7 +612,36 @@ impl State {
         self.peers.remove(&peer);
         if let Peer::Host(host) = peer {
             self.unlearn_addresses(host);
+            self.reported.retain(|(reported, _), _| *reported != host);
         }
+    }
+
+    fn tell(&mut self, event: PathEvent) {
+        if let Some(events) = &self.path_events
+            && events.send(event).is_err()
+        {
+            self.path_events = None;
+        }
+    }
+
+    /// Reports a packet from `peer` on `path`, unless one was this past
+    /// second.
+    fn arrived(&mut self, peer: Peer, path: Path, now: Instant) {
+        let Peer::Host(host) = peer else {
+            return;
+        };
+        if self.path_events.is_none() {
+            return;
+        }
+        if self
+            .reported
+            .get(&(host, path))
+            .is_some_and(|last| now.duration_since(*last) < ARRIVAL_REPORT_EVERY)
+        {
+            return;
+        }
+        self.reported.insert((host, path), now);
+        self.tell(PathEvent::Arrived { peer: host, path });
     }
 
     /// Carries `host` on `route`. Addresses its earlier routes took still
@@ -706,15 +777,13 @@ impl LinkSocket {
         bind: SocketAddr,
         remembered_port: Option<u16>,
     ) -> io::Result<Arc<dyn Datagrams>> {
-        Self::on_udp(bind_udp(bind, remembered_port)?)
+        Ok(Arc::new(Udp::new(bind_udp(bind, remembered_port)?, true)?))
     }
 
-    /// The substrate over a UDP socket the caller already bound.
+    /// The substrate over a UDP socket the caller already bound, which
+    /// stays the caller's: a network change never binds it afresh.
     pub fn on_udp(socket: std::net::UdpSocket) -> io::Result<Arc<dyn Datagrams>> {
-        socket.set_nonblocking(true)?;
-        Ok(Arc::new(Udp::new(tokio::net::UdpSocket::from_std(
-            socket,
-        )?)?))
+        Ok(Arc::new(Udp::new(socket, false)?))
     }
 
     pub fn own(&self) -> HostId {
@@ -736,6 +805,16 @@ impl LinkSocket {
         if let Some(waker) = self.lock().recv_waker.take() {
             waker.wake();
         }
+    }
+
+    /// Binds the substrate afresh on its port, where it is the socket's own
+    /// OS socket; stand-ins and routes stay.
+    pub fn rebind_in_place(&self) -> io::Result<bool> {
+        let rebound = self.substrate().rebind()?;
+        if rebound && let Some(waker) = self.lock().recv_waker.take() {
+            waker.wake();
+        }
+        Ok(rebound)
     }
 
     fn substrate(&self) -> Arc<dyn Datagrams> {
@@ -969,6 +1048,7 @@ impl LinkSocket {
                 .collect();
             for old in renamed {
                 state.forwarding.remove(&old);
+                state.tell(PathEvent::ForwardingDown { link: old });
                 for held in state.peers.values_mut() {
                     match &mut held.route {
                         Route::Carrying(path) if *path == Path::Forwarded(old) => {
@@ -985,7 +1065,9 @@ impl LinkSocket {
                     }
                 }
             }
-            state.forwarding.insert(link, (via, kind));
+            if state.forwarding.insert(link, (via, kind)).is_none() {
+                state.tell(PathEvent::ForwardingUp { link, kind });
+            }
             let mut late = Vec::new();
             if relayed(kind) {
                 let path = Path::Forwarded(link);
@@ -1018,7 +1100,9 @@ impl LinkSocket {
     /// never named, routed or dialled, is forgotten with it.
     pub fn remove_forwarding(&self, link: LinkId) {
         let mut state = self.lock();
-        state.forwarding.remove(&link);
+        if state.forwarding.remove(&link).is_some() {
+            state.tell(PathEvent::ForwardingDown { link });
+        }
         state.unroute(Path::Forwarded(link));
     }
 
@@ -1100,6 +1184,30 @@ impl LinkSocket {
         receiver
     }
 
+    /// What the path machines act on from now on: forwarding links coming
+    /// and going, and packets arriving. A second call takes them from the
+    /// first receiver; the forwarding links up now come first.
+    pub fn path_events(&self) -> mpsc::UnboundedReceiver<PathEvent> {
+        let (sender, receiver) = mpsc::unbounded_channel();
+        let mut state = self.lock();
+        for (link, (_, kind)) in &state.forwarding {
+            let _ = sender.send(PathEvent::ForwardingUp {
+                link: *link,
+                kind: *kind,
+            });
+        }
+        state.path_events = Some(sender);
+        receiver
+    }
+
+    /// The path carrying `peer` now, when one path does.
+    pub fn carrying(&self, peer: HostId) -> Option<Path> {
+        match &self.lock().peers.get(&Peer::Host(peer))?.route {
+            Route::Carrying(path) => Some(*path),
+            Route::Unset | Route::All(_) => None,
+        }
+    }
+
     /// What the socket has dropped so far instead of failing quinn.
     pub fn drops(&self) -> Drops {
         Drops {
@@ -1114,9 +1222,20 @@ impl LinkSocket {
         tracing::debug!(%destination, %error, "link socket dropped a send");
     }
 
-    /// The largest datagram every path of this peer carries.
-    pub fn max_datagram(&self, _peer: HostId) -> usize {
-        MAX_DATAGRAM
+    /// The largest datagram every path of this peer carries: the smallest
+    /// of its paths', so a switch between them never needs a smaller one.
+    pub fn max_datagram(&self, peer: HostId) -> usize {
+        let state = self.lock();
+        let paths = state
+            .peers
+            .get(&Peer::Host(peer))
+            .map(|held| held.route.paths().to_vec())
+            .unwrap_or_default();
+        paths
+            .into_iter()
+            .map(path_datagram)
+            .min()
+            .unwrap_or(MAX_DATAGRAM)
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
@@ -1198,14 +1317,16 @@ impl LinkSocket {
     fn arrive(&self, arrival: Arrival, datagram: &[u8]) -> Option<(SocketAddr, usize)> {
         match parse(datagram).ok()? {
             PacketKind::Quic(_) => {
+                let now = Instant::now();
                 let mut state = self.lock();
-                let stand_in = state.heard_from(arrival, Instant::now());
+                let stand_in = state.heard_from(arrival, now);
                 let peer = state.sender(arrival);
                 let path = match arrival {
                     Arrival::Udp(addr) => Path::Direct(addr),
                     Arrival::Framed(id) => Path::Framed(id),
                 };
                 state.carried_by(peer, path);
+                state.arrived(peer, path, now);
                 Some((stand_in, 0))
             }
             PacketKind::Probe { nonce, .. } => {
@@ -1235,6 +1356,7 @@ impl LinkSocket {
                     // answered the way it came until a route is chosen.
                     if let Some(link) = state.forwarder_of(arrival) {
                         state.carried_by(Peer::Host(host), Path::Forwarded(link));
+                        state.arrived(Peer::Host(host), Path::Forwarded(link), now);
                         let peer = state.peers.get_mut(&Peer::Host(host)).expect("stand-in");
                         if matches!(peer.route, Route::Unset) {
                             peer.route = Route::Carrying(Path::Forwarded(link));
@@ -1467,14 +1589,37 @@ fn dual_stack_socket() -> io::Result<socket2::Socket> {
 /// on the dual-stack socket reads as IPv4, not as an IPv4-mapped IPv6
 /// address, so a path learned in one form matches arrivals in the other.
 struct Udp {
-    socket: tokio::net::UdpSocket,
+    /// None only while it is bound afresh.
+    socket: RwLock<Option<tokio::net::UdpSocket>>,
     v6: bool,
+    /// Whether the socket is this layer's to bind afresh, rather than one
+    /// a caller bound and holds.
+    rebindable: bool,
 }
 
 impl Udp {
-    fn new(socket: tokio::net::UdpSocket) -> io::Result<Self> {
+    fn new(socket: std::net::UdpSocket, rebindable: bool) -> io::Result<Self> {
+        socket.set_nonblocking(true)?;
         let v6 = socket.local_addr()?.is_ipv6();
-        Ok(Self { socket, v6 })
+        Ok(Self {
+            socket: RwLock::new(Some(tokio::net::UdpSocket::from_std(socket)?)),
+            v6,
+            rebindable,
+        })
+    }
+
+    fn with<T>(
+        &self,
+        use_socket: impl FnOnce(&tokio::net::UdpSocket) -> io::Result<T>,
+    ) -> io::Result<T> {
+        match &*self
+            .socket
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        {
+            Some(socket) => use_socket(socket),
+            None => Err(io::ErrorKind::WouldBlock.into()),
+        }
     }
 }
 
@@ -1488,11 +1633,18 @@ impl Datagrams for Udp {
             },
             _ => to,
         };
-        self.socket.try_send_to(buf, to).map(|_| ())
+        self.with(|socket| socket.try_send_to(buf, to).map(|_| ()))
     }
 
     fn poll_send_ready(&self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.socket.poll_send_ready(cx)
+        match &*self
+            .socket
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        {
+            Some(socket) => socket.poll_send_ready(cx),
+            None => Poll::Ready(Ok(())),
+        }
     }
 
     fn poll_recv(
@@ -1500,9 +1652,16 @@ impl Datagrams for Udp {
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<io::Result<(usize, SocketAddr)>> {
+        let guard = self
+            .socket
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(socket) = &*guard else {
+            return Poll::Ready(Err(io::ErrorKind::WouldBlock.into()));
+        };
         loop {
             let mut read = tokio::io::ReadBuf::new(buf);
-            match self.socket.poll_recv_from(cx, &mut read) {
+            match socket.poll_recv_from(cx, &mut read) {
                 Poll::Ready(Ok(from)) => {
                     // plain keeps a link-local sender's scope, which the
                     // answer needs to find its interface.
@@ -1522,7 +1681,34 @@ impl Datagrams for Udp {
     }
 
     fn local_addr(&self) -> io::Result<SocketAddr> {
-        self.socket.local_addr()
+        self.with(tokio::net::UdpSocket::local_addr)
+    }
+
+    /// Closes the socket and binds its address again: the port peers know
+    /// stays, or any port when another took it in between.
+    fn rebind(&self) -> io::Result<bool> {
+        if !self.rebindable {
+            return Ok(false);
+        }
+        let mut held = self
+            .socket
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(old) = held.take() else {
+            return Ok(false);
+        };
+        let at = match old.local_addr() {
+            Ok(at) => at,
+            Err(error) => {
+                *held = Some(old);
+                return Err(error);
+            }
+        };
+        drop(old);
+        let fresh = bind_one(at.ip(), at.port()).or_else(|_| bind_one(at.ip(), 0))?;
+        fresh.set_nonblocking(true)?;
+        *held = Some(tokio::net::UdpSocket::from_std(fresh)?);
+        Ok(true)
     }
 }
 

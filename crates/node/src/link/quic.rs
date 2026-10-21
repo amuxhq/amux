@@ -254,6 +254,17 @@ impl LinkEndpoint {
         self.endpoint.rebind_abstract(self.socket.clone())
     }
 
+    /// Binds the profile's own socket afresh on its port, for a network
+    /// that changed under it; false where the substrate is not the edge's
+    /// to bind (a caller's socket, a router imitation).
+    pub(crate) fn rebind_in_place(&self) -> io::Result<bool> {
+        if !self.socket.rebind_in_place()? {
+            return Ok(false);
+        }
+        self.endpoint.rebind_abstract(self.socket.clone())?;
+        Ok(true)
+    }
+
     pub(crate) fn close(&self, code: quinn::VarInt, reason: &[u8]) {
         self.endpoint.close(code, reason);
     }

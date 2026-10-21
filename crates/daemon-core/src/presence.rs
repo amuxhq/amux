@@ -1470,6 +1470,32 @@ mod tests {
     }
 
     #[test]
+    fn a_host_reads_by_the_path_now_carrying_its_link() {
+        let mut daemon = daemon();
+        up(&mut daemon, 1, DESK, CarrierKind::Direct);
+        concluded(&mut daemon, DESK, Route::Direct(LinkId(1)), Tried::Opened);
+        let carried = |daemon: &mut Daemon, kind| {
+            step(
+                daemon,
+                Input::LinkCarried {
+                    link: LinkId(1),
+                    kind,
+                },
+            )
+        };
+        carried(&mut daemon, CarrierKind::Forwarded);
+        assert_eq!(
+            daemon.reads(DESK),
+            (wire::Presence::Online, wire::RouteKind::Relay)
+        );
+        carried(&mut daemon, CarrierKind::Direct);
+        assert_eq!(
+            daemon.reads(DESK),
+            (wire::Presence::Online, wire::RouteKind::Direct)
+        );
+    }
+
+    #[test]
     fn a_host_read_away_with_no_refusal_recorded_asks_for_a_dump() {
         let mut daemon = daemon();
         up(&mut daemon, 1, DESK, CarrierKind::Direct);

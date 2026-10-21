@@ -249,6 +249,13 @@ pub enum Input {
     /// subscribers. Each kind goes as the write behind it moves into the
     /// core.
     FromShell(FromShell),
+    /// A link up moved onto a path of another kind: its packets now go
+    /// straight to the peer or through a forwarder. Calls take the same
+    /// link; how the host reads says the new path.
+    LinkCarried {
+        link: LinkId,
+        kind: CarrierKind,
+    },
 }
 
 impl Input {
@@ -300,6 +307,7 @@ impl Input {
             Input::Configure(_) => "Configure",
             Input::Drafts { .. } => "Drafts",
             Input::FromShell(_) => "FromShell",
+            Input::LinkCarried { .. } => "LinkCarried",
         }
     }
 }

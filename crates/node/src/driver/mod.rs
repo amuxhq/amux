@@ -1399,9 +1399,13 @@ impl CoreThread {
                 peer,
             } => self.pairings.pending(session, token, peer),
             Output::PairEnded { session, failure } => self.pairings.end(session, failure),
-            // The core keeps what a peer listed with its trust; nothing
-            // reads it here until paths do.
-            Output::PeerAddresses { .. } => {}
+            // The peer's path machine probes what it lists.
+            Output::PeerAddresses { host, addrs } => {
+                if let Some(edge) = runtime.edge() {
+                    edge.paths()
+                        .addresses(uuid::Uuid::from_bytes(host.0), &addrs);
+                }
+            }
             // Every link tells its peer where the relay sees this host.
             Output::ObservedAddress { addr } => {
                 if let Some(edge) = runtime.edge() {

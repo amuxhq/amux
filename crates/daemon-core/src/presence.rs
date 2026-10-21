@@ -262,6 +262,16 @@ impl Daemon {
                 let links = &self.routing.links;
                 known.active = match old {
                     Some(active) if links.rank(active) < links.rank(route) => Some(active),
+                    // Two links of one rank to the host are a crossed dial:
+                    // the one carrying its traffic keeps it, so a channel
+                    // opening on the other drops none already open.
+                    Some(active)
+                        if active.is_direct()
+                            && links.rank(active) == links.rank(route)
+                            && routes.contains(&active) =>
+                    {
+                        Some(active)
+                    }
                     _ => Some(route),
                 };
                 let now_active = known.active;
@@ -928,6 +938,33 @@ mod tests {
         assert_eq!(view(&daemon, DESK).routes, vec![own, later, forwarded]);
         concluded(&mut daemon, DESK, later, Tried::Opened);
         assert_eq!(view(&daemon, DESK).active, Some(own));
+    }
+
+    #[test]
+    fn a_channel_opening_on_a_crossed_link_drops_none_open_on_the_one_carrying_the_host() {
+        let mut daemon = daemon();
+        step(
+            &mut daemon,
+            Input::TrustRead {
+                store: crate::trust::TrustStore::of_hosts(vec![DESK]),
+            },
+        );
+        let (first, crossed) = (Route::Direct(LinkId(1)), Route::Direct(LinkId(2)));
+        up(&mut daemon, 1, DESK, CarrierKind::Forwarded);
+        concluded(&mut daemon, DESK, first, Tried::Opened);
+        up(&mut daemon, 2, DESK, CarrierKind::Forwarded);
+        let out = concluded(&mut daemon, DESK, crossed, Tried::Opened);
+        assert_eq!(view(&daemon, DESK).active, Some(first));
+        assert!(
+            !out.iter()
+                .any(|output| matches!(output, Output::DropRoute { .. })),
+            "{out:?}"
+        );
+
+        // Once it goes, the crossed link carries the host.
+        down(&mut daemon, 1);
+        concluded(&mut daemon, DESK, crossed, Tried::Opened);
+        assert_eq!(view(&daemon, DESK).active, Some(crossed));
     }
 
     #[test]

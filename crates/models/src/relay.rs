@@ -307,7 +307,6 @@ impl RelayModel {
                 }
                 Output::RefuseStream { .. }
                 | Output::Splice { .. }
-                | Output::Cut { .. }
                 | Output::RefuseLink { .. }
                 | Output::Displace { .. } => {
                     if s.dumped.is_none() {

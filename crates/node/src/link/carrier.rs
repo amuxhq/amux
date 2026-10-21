@@ -116,6 +116,12 @@ pub trait LinkCarrier: Send + Sync + 'static {
     }
     /// What the carrier's path has seen so far, for the link's logs: round
     /// trip, losses, packets. Empty where the carrier keeps no such count.
+    /// The address the far end's packets arrive from, as this side's QUIC
+    /// endpoint sees it: on a link socket, the far end's stand-in.
+    fn remote_address(&self) -> Option<std::net::SocketAddr> {
+        None
+    }
+
     fn path_stats(&self) -> String {
         String::new()
     }

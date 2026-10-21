@@ -2,7 +2,7 @@
 //!
 //! The relay accepts every host of an account over QUIC and a TLS-over-TCP
 //! fallback, checks each host's connection token against the cloud's
-//! signing keys, and forwards streams between the account's hosts. It is
+//! signing keys, and forwards packets between the account's paid hosts. It is
 //! not an installation: it has no profiles, no agents, no supervisor and no
 //! updater, and it runs in the foreground under whatever service manager
 //! started it.
@@ -145,24 +145,23 @@ async fn serve(config: RelayConfig, reports: PathBuf, cert: Vec<u8>, key: Vec<u8
         .with_context(|| format!("listening on TCP {tcp_addr}"))?;
     tracing::info!(addr = %tcp_addr, "listening for cloud TLS carriers");
     let udp_addr = SocketAddr::from(([0, 0, 0, 0], config.udp_port.unwrap_or(config.tcp_port)));
-    let endpoint = node::quic_endpoint(Some(quic.clone()), udp_addr)
+    let udp = std::net::UdpSocket::bind(udp_addr)
         .with_context(|| format!("listening on UDP {udp_addr}"))?;
     tracing::info!(addr = %udp_addr, "listening for cloud QUIC carriers");
     println!(
         "amux relay {} listening on TCP {tcp_addr} and UDP {udp_addr}, tokens from {}",
         config.host_name, config.cloud_url
     );
-    let tcp_task = server.serve_on_tls_tcp_listener(listener, tls, quic, HANDSHAKE_TIMEOUT);
-    let quic_task = server.serve_on_quic_endpoint(endpoint.clone(), HANDSHAKE_TIMEOUT);
+    let serving = server
+        .serve_tls(udp, listener, tls, quic, HANDSHAKE_TIMEOUT)
+        .context("serving the relay")?;
     crate::server::terminated().await;
     tracing::info!("relay stopping");
     server
         .send_link_close_to_all(wire::pb::LinkCloseReason::UserShutdown)
         .await;
     tokio::time::sleep(CLOSE_FLUSH).await;
-    endpoint.close(quinn::VarInt::from_u32(0), b"relay shutting down");
-    tcp_task.abort();
-    quic_task.abort();
+    serving.close();
     Ok(())
 }
 

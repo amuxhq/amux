@@ -38,8 +38,6 @@ use crate::topology::{RelayDecl, TierDecl};
 pub const RELAY_HOST: &str = "localhost";
 /// How long a relay credential lives on the policy clock.
 pub const CREDENTIAL_TTL: Duration = Duration::from_secs(600);
-/// How long the relay gives a QUIC handshake.
-const QUIC_HANDSHAKE: Duration = Duration::from_secs(10);
 
 /// One account the cloud knows.
 #[derive(Clone, Debug)]
@@ -93,7 +91,7 @@ pub struct Relay {
     quic_root: Vec<u8>,
     /// The same certificate as PEM, for a daemon process to trust.
     quic_root_pem: String,
-    quic_endpoint: quinn::Endpoint,
+    serving: node::RelayServing,
     cloud: Arc<Cloud>,
     tasks: Vec<JoinHandle<()>>,
 }
@@ -103,11 +101,8 @@ impl Relay {
     /// credentials timed by `clock`.
     pub async fn start(decl: &RelayDecl, clock: Arc<dyn Clock>) -> std::io::Result<Self> {
         let (quic_server, quic_client, quic_root, quic_root_pem) = quic_configs();
-        let quic_endpoint = node::quic_endpoint(
-            Some(quic_server.clone()),
-            SocketAddr::from(([127, 0, 0, 1], 0)),
-        )?;
-        let quic = quic_endpoint.local_addr()?;
+        let udp = std::net::UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))?;
+        let quic = udp.local_addr()?;
         let mut state = CloudState::default();
         for account in &decl.accounts {
             state.accounts.insert(
@@ -140,11 +135,8 @@ impl Relay {
         let tcp = tcp_listener.local_addr()?;
         let http = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let url = format!("http://{}", http.local_addr()?);
-        let tasks = vec![
-            server.serve_on_tcp_listener(tcp_listener, quic_server),
-            server.serve_on_quic_endpoint(quic_endpoint.clone(), QUIC_HANDSHAKE),
-            tokio::spawn(serve_cloud(http, cloud.clone())),
-        ];
+        let serving = server.serve_tcp(udp, tcp_listener, quic_server)?;
+        let tasks = vec![tokio::spawn(serve_cloud(http, cloud.clone()))];
         Ok(Self {
             server,
             host_id,
@@ -154,7 +146,7 @@ impl Relay {
             quic_client,
             quic_root,
             quic_root_pem,
-            quic_endpoint,
+            serving,
             cloud,
             tasks,
         })
@@ -316,8 +308,7 @@ impl Relay {
 
 impl Drop for Relay {
     fn drop(&mut self) {
-        self.quic_endpoint
-            .close(quinn::VarInt::from_u32(0), b"relay stopping");
+        self.serving.close();
         for task in &self.tasks {
             task.abort();
         }

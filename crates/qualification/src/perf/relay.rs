@@ -518,7 +518,7 @@ struct Relay {
     /// The QUIC handshake each host makes inside its TLS stream.
     quic_client: quinn::ClientConfig,
     connector: tokio_rustls::TlsConnector,
-    task: tokio::task::JoinHandle<()>,
+    serving: node::RelayServing,
 }
 
 impl Relay {
@@ -555,13 +555,14 @@ impl Relay {
         );
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;
-        let task = server.serve_on_tls_tcp_listener(listener, acceptor, quic, HANDSHAKE_TIMEOUT);
+        let udp = std::net::UdpSocket::bind("127.0.0.1:0")?;
+        let serving = server.serve_tls(udp, listener, acceptor, quic, HANDSHAKE_TIMEOUT)?;
         Ok(Self {
             server,
             addr,
             quic_client,
             connector: tokio_rustls::TlsConnector::from(Arc::new(client)),
-            task,
+            serving,
         })
     }
 
@@ -629,7 +630,7 @@ impl Relay {
 
 impl Drop for Relay {
     fn drop(&mut self) {
-        self.task.abort();
+        self.serving.close();
     }
 }
 

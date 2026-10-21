@@ -16,8 +16,8 @@
 //! A daemon forwarding between its own paired hosts is a relay with one
 //! account whose links are all pinned, so its driver asks this core too.
 //!
-//! Streams spliced between links are still decided here too, for the
-//! stream relay that carries hosts until packets are forwarded end to end.
+//! Streams spliced between a daemon's pinned links are still decided here
+//! too, until daemons forward packets end to end as the relay does.
 //!
 //! The core also keeps the adjacency discipline every host's links follow:
 //! it says which of two links between the same pair of processes both
@@ -30,7 +30,7 @@
 
 #![forbid(unsafe_code)]
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::time::Instant;
 
@@ -55,11 +55,6 @@ pub enum Tier {
     /// Streams between the account's hosts are carried.
     Pro,
 }
-
-/// How many streams one link may open within [`RATE_WINDOW_MS`].
-pub const RATE_LIMIT: usize = 30;
-/// The sliding window [`RATE_LIMIT`] counts over.
-pub const RATE_WINDOW_MS: u64 = 60_000;
 
 /// How long a refusal to one destination stays unrepeated on a sender's
 /// link: a host keeps sending until it is told, and it is told again after
@@ -134,8 +129,7 @@ pub enum Input {
     /// A token-authenticated link's token expired before a fresh one came:
     /// nothing is forwarded for it until one does.
     Expired { link: LinkId },
-    /// The clock, as an input: the rate window and the refusal repeat are
-    /// measured by it.
+    /// The clock, as an input: the refusal repeat is measured by it.
     Tick { now_ms: u64 },
 }
 
@@ -170,12 +164,6 @@ pub enum Output {
     /// Copy the stream both ways to a new stream on `to_link`, and report
     /// it ended when the copy ends.
     Splice { stream: StreamId, to_link: LinkId },
-    /// Stop a spliced stream now, opened or still opening: the plan of a
-    /// link it runs through no longer carries it. The core has forgotten it.
-    Cut {
-        stream: StreamId,
-        reason: StreamRefusal,
-    },
     /// Do not keep the link that just came up: the same process of its
     /// peer holds a link that wins against it. The core never held it.
     RefuseLink { link: LinkId },
@@ -213,8 +201,6 @@ struct RelayLink {
     direct: Option<Direct>,
     /// Its token expired and no fresh one has come.
     expired: bool,
-    /// When each stream it opened within the rate window was opened.
-    opened_ms: VecDeque<u64>,
 }
 
 impl RelayLink {
@@ -555,7 +541,6 @@ impl Relay {
                 tier,
                 direct,
                 expired: false,
-                opened_ms: VecDeque::new(),
             },
         );
         self.adjacency.add(user, host, link);
@@ -753,10 +738,10 @@ impl Relay {
         self.adjacency.neighbors(user)
     }
 
-    /// Admission, in the order the cheapest refusal is found: a preface
-    /// naming no other host, an origin gone or on the free plan, an origin
-    /// opening too fast, then a destination with no link here or on the
-    /// free plan.
+    /// Admission: a preface naming no other host is not adjacent, and one
+    /// naming a host with no link here on the origin's account has no
+    /// route. Only a daemon splices streams, between its pinned links, so
+    /// no plan or rate is asked after.
     fn stream_opened(
         &mut self,
         stream: StreamId,
@@ -795,32 +780,12 @@ impl Relay {
             Some(destination) if destination != self.own => destination,
             _ => return Err(StreamRefusal::NotAdjacent),
         };
-        let now_ms = self.now_ms;
-        let Some(from) = self.links.get_mut(&origin) else {
+        let Some(from) = self.links.get(&origin) else {
             return Err(StreamRefusal::NoRoute);
         };
-        if from.tier == Some(Tier::Free) {
-            return Err(StreamRefusal::PaymentRequired);
-        }
-        while from
-            .opened_ms
-            .front()
-            .is_some_and(|at| at.saturating_add(RATE_WINDOW_MS) <= now_ms)
-        {
-            from.opened_ms.pop_front();
-        }
-        if from.opened_ms.len() >= RATE_LIMIT {
-            return Err(StreamRefusal::RateLimited);
-        }
-        from.opened_ms.push_back(now_ms);
-        let user = from.user;
-        let Some(to) = self.adjacency.route(user, destination) else {
-            return Err(StreamRefusal::NoRoute);
-        };
-        if self.links.get(&to).and_then(|link| link.tier) == Some(Tier::Free) {
-            return Err(StreamRefusal::PaymentRequired);
-        }
-        Ok(to)
+        self.adjacency
+            .route(from.user, destination)
+            .ok_or(StreamRefusal::NoRoute)
     }
 
     fn stream_ended(&mut self, stream: StreamId) {
@@ -829,9 +794,7 @@ impl Relay {
     }
 
     /// A fresh token: it ends an expiry. A lapse to the free plan ends
-    /// every pair and stops every stream through the link, not only those
-    /// it opens next: what it opened while paid for does not carry on
-    /// unpaid.
+    /// every pair through the link and tells both ends.
     fn tier_changed(&mut self, link: LinkId, tier: Tier, out: &mut Vec<Output>) {
         let Some(changed) = self.links.get_mut(&link) else {
             return;
@@ -846,14 +809,6 @@ impl Relay {
             return;
         }
         self.lapse(link, ForwardRefusal::PaymentRequired, out);
-        for stream in self.through.remove(&link).unwrap_or_default() {
-            self.touched.streams.push(stream);
-            self.forget(stream);
-            out.push(Output::Cut {
-                stream,
-                reason: StreamRefusal::PaymentRequired,
-            });
-        }
     }
 
     /// Drops the stream and its place in the links it runs through.
@@ -1274,96 +1229,6 @@ mod tests {
             },
         );
         assert_eq!(out, refused(2, StreamRefusal::NotAdjacent));
-    }
-
-    #[test]
-    fn the_free_plan_carries_no_stream_from_or_to_its_hosts() {
-        let mut relay = relay();
-        up(&mut relay, 1, ALICE, DESK, Some(Tier::Free));
-        up(&mut relay, 2, ALICE, LAPTOP, Some(Tier::Pro));
-        assert_eq!(
-            open(&mut relay, 1, 1, LAPTOP),
-            refused(1, StreamRefusal::PaymentRequired)
-        );
-        assert_eq!(
-            open(&mut relay, 2, 2, DESK),
-            refused(2, StreamRefusal::PaymentRequired)
-        );
-    }
-
-    #[test]
-    fn a_link_opening_too_fast_is_refused_until_its_window_moves_on() {
-        let mut relay = relay();
-        up(&mut relay, 1, ALICE, DESK, None);
-        for stream in 0..RATE_LIMIT as u64 {
-            assert_eq!(
-                open(&mut relay, stream, 1, LAPTOP),
-                refused(stream, StreamRefusal::NoRoute)
-            );
-        }
-        assert_eq!(
-            open(&mut relay, 100, 1, LAPTOP),
-            refused(100, StreamRefusal::RateLimited)
-        );
-        step(
-            &mut relay,
-            Input::Tick {
-                now_ms: RATE_WINDOW_MS,
-            },
-        );
-        assert_eq!(
-            open(&mut relay, 101, 1, LAPTOP),
-            refused(101, StreamRefusal::NoRoute)
-        );
-    }
-
-    #[test]
-    fn a_lapse_to_free_cuts_every_stream_through_the_link_and_a_renewal_cuts_none() {
-        let mut relay = relay();
-        up(&mut relay, 1, ALICE, DESK, Some(Tier::Pro));
-        up(&mut relay, 2, ALICE, LAPTOP, Some(Tier::Pro));
-        assert_eq!(open(&mut relay, 1, 1, LAPTOP), spliced(1, 2));
-        assert_eq!(open(&mut relay, 2, 2, DESK), spliced(2, 1));
-        assert_eq!(
-            step(
-                &mut relay,
-                Input::TierChanged {
-                    link: LinkId(1),
-                    tier: Tier::Pro,
-                },
-            ),
-            Vec::new()
-        );
-        let out = step(
-            &mut relay,
-            Input::TierChanged {
-                link: LinkId(2),
-                tier: Tier::Free,
-            },
-        );
-        assert_eq!(
-            out,
-            vec![
-                Output::Cut {
-                    stream: StreamId(1),
-                    reason: StreamRefusal::PaymentRequired,
-                },
-                Output::Cut {
-                    stream: StreamId(2),
-                    reason: StreamRefusal::PaymentRequired,
-                },
-            ]
-        );
-        // The copies the driver stops report their end; nothing is held.
-        assert_eq!(
-            step(
-                &mut relay,
-                Input::StreamEnded {
-                    stream: StreamId(1)
-                }
-            ),
-            Vec::new()
-        );
     }
 
     #[test]

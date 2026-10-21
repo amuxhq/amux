@@ -8,6 +8,7 @@ pub(crate) mod quic;
 pub(crate) mod relay_host;
 pub(crate) mod run;
 pub mod socket;
+pub(crate) mod validation;
 
 pub use carrier::{
     ByteStream, CarrierKind, ControlSink, ControlSource, LinkCarrier, OpenError, read_message,

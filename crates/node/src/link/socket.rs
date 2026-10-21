@@ -166,6 +166,13 @@ pub trait FramedIo: Send + Sync + 'static {
     fn kind(&self) -> FramedKind;
 }
 
+/// Where a forwarder's socket hands the packets other hosts send it to
+/// forward: each with the stand-in of the sender, the host its header
+/// names and the packet behind the header.
+pub trait ForwardSink: Send + Sync + 'static {
+    fn arrived(&self, sender: SocketAddr, dst: HostId, payload: &[u8]);
+}
+
 /// A probe's answer arrived; the nonce names the path it was sent on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProbeAnswered {
@@ -242,6 +249,7 @@ struct State {
     inbound: VecDeque<(PathId, Vec<u8>)>,
     recv_waker: Option<Waker>,
     probe_answers: Option<mpsc::UnboundedSender<ProbeAnswered>>,
+    forward_sink: Option<Arc<dyn ForwardSink>>,
 }
 
 impl State {
@@ -501,6 +509,48 @@ impl LinkSocket {
         }
     }
 
+    /// Makes this the socket of a forwarder: a forwarded packet arriving
+    /// from anyone but a forwarder this socket sends through names where it
+    /// is going, and goes to `sink` instead of quinn.
+    pub fn forward_to(&self, sink: Arc<dyn ForwardSink>) {
+        self.lock().forward_sink = Some(sink);
+    }
+
+    /// The path a stand-in's packets go out on, where there is one.
+    pub fn path_of(&self, stand_in: SocketAddr) -> Option<Path> {
+        let state = self.lock();
+        match state.by_stand_in.get(&stand_in)? {
+            Peer::Unnamed(path) => Some(*path),
+            peer @ Peer::Host(_) => match &state.peers.get(peer)?.route {
+                Route::Carrying(path) => Some(*path),
+                Route::Unset | Route::All(_) => None,
+            },
+        }
+    }
+
+    /// Sends a datagram as it is, not through quinn, on the path carrying
+    /// the peer behind `stand_in`: how a forwarder puts a packet it
+    /// forwards on the destination's link.
+    pub fn send_raw(&self, stand_in: SocketAddr, datagram: &[u8]) -> io::Result<()> {
+        let (peer, path) = {
+            let state = self.lock();
+            let peer = *state.by_stand_in.get(&stand_in).ok_or_else(|| {
+                io::Error::new(io::ErrorKind::AddrNotAvailable, "not a stand-in address")
+            })?;
+            let path = match (&peer, &state.peers[&peer].route) {
+                (Peer::Unnamed(path), _) | (Peer::Host(_), Route::Carrying(path)) => *path,
+                _ => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::NotConnected,
+                        "no one path carries this peer",
+                    ));
+                }
+            };
+            (peer, path)
+        };
+        self.send_on(peer, path, datagram)
+    }
+
     /// Sends a probe to `peer` on `path`; its answer comes back on
     /// [`LinkSocket::probe_answers`].
     pub fn probe(&self, peer: HostId, path: Path, nonce: u64) -> io::Result<()> {
@@ -588,6 +638,15 @@ impl LinkSocket {
                 self.answered(ProbeAnswered { from, nonce });
                 None
             }
+            PacketKind::Forwarded { host, payload } if self.forwards(arrival) => {
+                let (sink, sender) = {
+                    let mut state = self.lock();
+                    let peer = state.sender(arrival);
+                    (state.forward_sink.clone()?, state.stand_in(peer))
+                };
+                sink.arrived(sender, host, payload);
+                None
+            }
             PacketKind::Forwarded { host, payload } => match parse(payload).ok()? {
                 PacketKind::Quic(_) => {
                     let mut state = self.lock();
@@ -616,6 +675,20 @@ impl LinkSocket {
                 PacketKind::Forwarded { .. } => None,
             },
         }
+    }
+}
+
+impl LinkSocket {
+    /// Whether a forwarded packet arriving this way is for this socket to
+    /// forward: it is a forwarder's, and the packet did not come from a
+    /// forwarder it sends through, whose packets name their sender.
+    fn forwards(&self, arrival: Arrival) -> bool {
+        let state = self.lock();
+        state.forward_sink.is_some()
+            && match arrival {
+                Arrival::Udp(via) => !state.forwarders.contains_key(&via),
+                Arrival::Framed(_) => true,
+            }
     }
 }
 

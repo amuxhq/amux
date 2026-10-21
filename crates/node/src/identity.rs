@@ -192,6 +192,7 @@ impl DeviceIdentity {
         let mut config = quinn::ServerConfig::with_crypto(std::sync::Arc::new(crypto));
         config.transport_config(quic_transport_config());
         config.migration(true);
+        crate::link::validation::issue_tokens(&mut config);
         Ok(config)
     }
 

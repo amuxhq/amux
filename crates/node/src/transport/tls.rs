@@ -268,6 +268,7 @@ pub fn relay_quic_server_config_from_der(
     let mut config = quinn::ServerConfig::with_crypto(Arc::new(crypto));
     config.transport_config(crate::identity::quic_transport_config());
     config.migration(true);
+    crate::link::validation::issue_tokens(&mut config);
     Ok(config)
 }
 

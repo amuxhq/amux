@@ -21,7 +21,7 @@ pub(crate) use link::{
     ConnectHandshake, ConnectHandshakeEvent, protocol_error_hello_ack, protocol_error_link_close,
 };
 pub(crate) use link_registry::{
-    LinkAdmission, LinkCloseRequest, LinkProperties, Registration, direct_order,
+    LinkAdmission, LinkCloseRequest, LinkOutputTx, LinkProperties, Registration, direct_order,
 };
 pub use link_registry::{LinkCarrier, LinkRegistry, LinkRole};
 pub use types::{Capabilities, Host, LinkId, LiveRoute, Route, host_to_wire};

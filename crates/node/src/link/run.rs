@@ -685,6 +685,9 @@ async fn run_established(
             }
             _ = maybe_policy_sleep(auth_expiry), if acceptor_auth.is_some() => {
                 audit::auth_jwt_failure("link authorization expired");
+                // The pairs through the link end and both ends are told
+                // before the link itself goes.
+                ctx.links.expire(&link).await;
                 let _ = write_message(&mut sink, &auth_expired_link_close()).await;
                 close_reason = wire::pb::LinkCloseReason::AuthExpired;
                 break;

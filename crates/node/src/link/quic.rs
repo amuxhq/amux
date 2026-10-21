@@ -16,6 +16,7 @@ use super::carrier::{
 use super::framed::{FramedKind, StreamEndpoint};
 use super::link_log::PathKind;
 use super::socket::{Datagrams, LinkSocket};
+use super::validation::ServerTokens;
 use crate::HostId;
 use crate::identity::{DeviceIdentity, IdentityError};
 use crate::trust::SharedTrustStore;
@@ -47,6 +48,9 @@ pub(crate) const RELAY_CANDIDATE_STAGGER: std::time::Duration =
 pub(crate) struct LinkEndpoint {
     pub(crate) endpoint: quinn::Endpoint,
     pub(crate) socket: Arc<LinkSocket>,
+    /// The address-validation tokens the servers this endpoint dials gave
+    /// it, so dialling one again skips its Retry.
+    tokens: Arc<ServerTokens>,
 }
 
 impl LinkEndpoint {
@@ -64,7 +68,11 @@ impl LinkEndpoint {
             socket.clone(),
             runtime,
         )?;
-        Ok(Self { endpoint, socket })
+        Ok(Self {
+            endpoint,
+            socket,
+            tokens: Arc::default(),
+        })
     }
 
     /// An endpoint on a dual-stack socket of its own at `bind`.
@@ -79,10 +87,11 @@ impl LinkEndpoint {
 
     pub(crate) fn connect_with(
         &self,
-        config: quinn::ClientConfig,
+        mut config: quinn::ClientConfig,
         addr: SocketAddr,
         server_name: &str,
     ) -> Result<quinn::Connecting, quinn::ConnectError> {
+        config.token_store(self.tokens.for_server(addr));
         self.endpoint
             .connect_with(config, self.socket.stand_in_at(addr), server_name)
     }
@@ -511,6 +520,10 @@ impl LinkCarrier for QuicCarrier {
         }
     }
 
+    fn remote_address(&self) -> Option<SocketAddr> {
+        Some(self.connection.remote_address())
+    }
+
     fn path_kind(&self) -> PathKind {
         self.path
     }
@@ -597,7 +610,7 @@ pub(crate) async fn stream_pair(
 
 /// What a link over a byte stream is to the rest of the host. An
 /// in-process link stands for a direct one.
-fn stream_carrier_kind(kind: FramedKind) -> CarrierKind {
+pub(crate) fn stream_carrier_kind(kind: FramedKind) -> CarrierKind {
     match kind {
         FramedKind::RelayTcp => CarrierKind::RelayTcp,
         FramedKind::Ssh => CarrierKind::Ssh,
@@ -607,7 +620,7 @@ fn stream_carrier_kind(kind: FramedKind) -> CarrierKind {
 
 /// The path a byte stream's link runs on. The testnet's in-process duplex
 /// stands in for two hosts on one network.
-fn stream_path(kind: FramedKind) -> PathKind {
+pub(crate) fn stream_path(kind: FramedKind) -> PathKind {
     match kind {
         FramedKind::RelayTcp => PathKind::RelayTcp,
         FramedKind::Ssh => PathKind::Ssh,

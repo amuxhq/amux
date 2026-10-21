@@ -9,31 +9,37 @@
 //! account; a daemon has one of its own.
 
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, Weak};
 use std::time::Instant;
 
 use core_ring::{DumpKind, DumpLimit};
 use daemon_core::DumpReason;
+use daemon_core::payload::ForwardRefusal;
 use relay_core::{Input, Output, Relay, StreamId};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
-use tokio::task::{AbortHandle, JoinHandle};
+use tokio::task::JoinHandle;
 use wire::pb;
 
+use super::forwarder::{ForwardLinks, Forwarder, HoldLimits, LinkLimits};
+use super::socket::{ForwardSink, LinkSocket};
 use super::{ByteStream, OpenError};
 use crate::HostId;
-use crate::routing::{LinkId, LinkRegistry};
+use crate::routing::{LinkId, LinkOutputTx, LinkRegistry};
 use crate::window::{self, Window};
 
 /// Prefixes the reason the forwarding core asked for a dump.
 pub const RELAY_CORE_DUMP: &str = "the relay core: ";
 
-/// The forwarding core and the copies it started, under one lock: a cut
-/// reaches a copy atomically with the step that decided it.
+/// The forwarding core, and on a relay the forwarder its pairs drive.
 pub(crate) struct Relaying {
-    inner: std::sync::Mutex<Inner>,
-    /// The clock the core's rate window is measured by.
+    core: Arc<Mutex<Relay>>,
+    /// Set on a relay, whose links carry forwarded packets and no streams.
+    forwarding: OnceLock<Forwarding>,
+    history: Mutex<History>,
+    /// The clock the core is ticked by when nothing forwards here.
     epoch: Instant,
     next_stream: AtomicU64,
     /// Where a dump the core asks for is written; unset only in tests that
@@ -41,12 +47,19 @@ pub(crate) struct Relaying {
     reports: OnceLock<PathBuf>,
 }
 
-struct Inner {
-    relay: Relay,
-    pipes: HashMap<StreamId, Pipe>,
-    dumps: Dumps,
-    /// The core's recent history, for a dump.
+/// What a dump is made of: the core's recent inputs, and which dumps were
+/// already reported this interval.
+#[derive(Default)]
+struct History {
     window: Window<Relay, Input>,
+    dumps: Dumps,
+}
+
+/// The forwarder on a relay's link socket and the links it puts packets
+/// on.
+struct Forwarding {
+    forwarder: Arc<Forwarder>,
+    links: Arc<RelayLinks>,
 }
 
 /// The dumps the relay core asked for, reported once per kind in each
@@ -71,25 +84,14 @@ impl Dumps {
     }
 }
 
-/// A spliced stream as the driver holds it.
-enum Pipe {
-    /// Its far end is being opened.
-    Opening,
-    /// The core stopped it while its far end was opening.
-    Cut(pb::StreamRefusal),
-    /// Its bytes are being copied.
-    Running(AbortHandle),
-}
-
 impl Relaying {
     pub(crate) fn new(own: HostId) -> Arc<Self> {
         Arc::new(Self {
-            inner: std::sync::Mutex::new(Inner {
-                relay: Relay::new(daemon_core::HostId(own.into_bytes())),
-                pipes: HashMap::new(),
-                dumps: Dumps::default(),
-                window: Window::default(),
-            }),
+            core: Arc::new(Mutex::new(Relay::new(daemon_core::HostId(
+                own.into_bytes(),
+            )))),
+            forwarding: OnceLock::new(),
+            history: Mutex::default(),
             epoch: Instant::now(),
             next_stream: AtomicU64::new(1),
             reports: OnceLock::new(),
@@ -102,88 +104,134 @@ impl Relaying {
         let _ = self.reports.set(dir);
     }
 
+    /// Forwards the packets hosts send `socket` to forward, between the
+    /// pairs the core installs. From then on the core is stepped through
+    /// the forwarder, and no stream is spliced.
+    pub(crate) fn forward_on(self: &Arc<Self>, socket: Arc<LinkSocket>) {
+        let links = Arc::new(RelayLinks {
+            socket: socket.clone(),
+            relaying: Arc::downgrade(self),
+            admitted: Mutex::default(),
+        });
+        let forwarder = Arc::new(Forwarder::new(
+            self.core.clone(),
+            links.clone(),
+            HoldLimits::DEFAULT,
+            LinkLimits::DEFAULT,
+        ));
+        socket.forward_to(Arc::new(Arrivals {
+            forwarder: forwarder.clone(),
+            links: links.clone(),
+        }));
+        let _ = self.forwarding.set(Forwarding { forwarder, links });
+    }
+
     /// The core this relays with, for a test that must make it ask for a
     /// dump.
     #[cfg(test)]
     fn with_relay(own: HostId, relay: Relay) -> Arc<Self> {
         let relaying = Self::new(own);
-        relaying.inner().relay = relay;
+        *lock(&relaying.core) = relay;
         relaying
     }
 
-    fn inner(&self) -> std::sync::MutexGuard<'_, Inner> {
-        self.inner
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
-    /// Steps each input in turn and does what the core asked that this
-    /// driver does under the lock: a cut stops its copy, a splice is held
-    /// as opening, a dump is reported. Refusals and splices are returned
-    /// for the caller to act on.
+    /// Steps each input in turn, through the forwarder where there is one,
+    /// and reports the dumps the core asks for. Every other output is
+    /// returned for the caller to act on.
     pub(crate) fn step(&self, inputs: impl IntoIterator<Item = Input>) -> Vec<Output> {
-        let now_ms = self.now_ms();
-        let mut guard = self.inner();
-        let inner = &mut *guard;
         let mut out = Vec::new();
         for input in inputs {
-            inner.window.record(&inner.relay, &input);
-            inner.relay.step(input, &mut out);
-        }
-        let mut dumps = Vec::new();
-        out.retain(|output| match output {
-            Output::Cut { stream, reason } => {
-                match inner.pipes.get_mut(stream) {
-                    Some(Pipe::Running(pipe)) => {
-                        pipe.abort();
-                        inner.pipes.remove(stream);
+            {
+                let core = lock(&self.core);
+                lock(&self.history).window.record(&core, &input);
+            }
+            let gone = match input {
+                Input::LinkDown { link } => Some(link),
+                _ => None,
+            };
+            match self.forwarding.get() {
+                // The forwarder has reported the dumps among these.
+                Some(forwarding) => out.extend(
+                    forwarding
+                        .forwarder
+                        .step(input)
+                        .into_iter()
+                        .filter(|output| !matches!(output, Output::Dump { .. })),
+                ),
+                None => {
+                    let mut stepped = Vec::new();
+                    lock(&self.core).step(input, &mut stepped);
+                    for output in stepped {
+                        match output {
+                            Output::Dump { reason } => self.report(&reason),
+                            output => out.push(output),
+                        }
                     }
-                    Some(pipe @ Pipe::Opening) => *pipe = Pipe::Cut(*reason),
-                    Some(Pipe::Cut(_)) | None => {}
                 }
-                false
             }
-            Output::Splice { stream, .. } => {
-                inner.pipes.insert(*stream, Pipe::Opening);
-                true
-            }
-            Output::Dump { reason } => {
-                if let Some(reason) = inner.dumps.reason(reason, now_ms) {
-                    // Copied under the lock, rendered and written after
-                    // it: every admission waits on this lock.
-                    let held = self
-                        .reports
-                        .get()
-                        .map(|_| (inner.window.clone(), inner.relay.clone()));
-                    dumps.push((reason, held));
+            if let Some(forwarding) = self.forwarding.get() {
+                let displaced = out.iter().filter_map(|output| match output {
+                    Output::Displace { link } => Some(*link),
+                    _ => None,
+                });
+                for link in gone.into_iter().chain(displaced) {
+                    forwarding.links.forget(link);
                 }
-                false
             }
-            Output::RefuseStream { .. }
-            | Output::Refuse { .. }
-            | Output::Forward { .. }
-            | Output::Unforward { .. }
-            | Output::RefuseLink { .. }
-            | Output::Displace { .. }
-            | Output::Neighbor { .. } => true,
-        });
-        drop(guard);
-        for (reason, held) in dumps {
-            self.write_dump(&reason, held);
         }
         out
     }
 
-    /// Writes one dump the core asked for: the reason, the core's state when
-    /// the window began, every input stepped since and the state now. The
-    /// relay core sees ids, prefaces and tiers, never a token (tokens are
-    /// checked before a link is admitted), so the file holds no secret.
-    fn write_dump(&self, reason: &str, held: Option<(Window<Relay, Input>, Relay)>) {
-        let (Some(dir), Some((window, relay))) = (self.reports.get(), held) else {
+    /// A link the core holds as up came from `stand_in` on the relay's
+    /// socket: its packets are forwarded from now on, those held for it
+    /// first, and refusals are written to `tx`.
+    pub(crate) fn admitted(
+        &self,
+        link: daemon_core::LinkId,
+        tx: LinkOutputTx,
+        stand_in: Option<SocketAddr>,
+    ) {
+        let (Some(forwarding), Some(stand_in)) = (self.forwarding.get(), stand_in) else {
+            return;
+        };
+        forwarding.links.admit(link, tx, stand_in);
+        forwarding.forwarder.on_admitted(link, stand_in);
+    }
+
+    /// The connection from `stand_in` ended without a link coming up on
+    /// it, or after its link went: what was held for it is dropped.
+    pub(crate) fn not_admitted(&self, stand_in: SocketAddr) {
+        if let Some(forwarding) = self.forwarding.get()
+            && !forwarding.links.is_sender(stand_in)
+        {
+            forwarding.forwarder.on_admission_failed(stand_in);
+        }
+    }
+
+    fn forwards_packets(&self) -> bool {
+        self.forwarding.get().is_some()
+    }
+
+    /// Writes one dump the core asked for, unless one like it was written
+    /// this interval: the reason, the core's state when the window began,
+    /// every input stepped since and the state now. The relay core sees
+    /// ids, prefaces and tiers, never a token (tokens are checked before a
+    /// link is admitted), so the file holds no secret.
+    fn report(&self, reason: &DumpReason) {
+        let now_ms = self.now_ms();
+        let (reason, window) = {
+            let mut history = lock(&self.history);
+            let Some(reason) = history.dumps.reason(reason, now_ms) else {
+                return;
+            };
+            (reason, history.window.clone())
+        };
+        let Some(dir) = self.reports.get() else {
             tracing::error!(%reason, "the relay core asked for a dump, with nowhere to write it");
             return;
         };
-        let text = window.render("the relay core", reason, &relay);
+        let relay = lock(&self.core).clone();
+        let text = window.render("the relay core", &reason, &relay);
         match window::write(dir, "relay", &text) {
             Ok(file) => tracing::error!(
                 %reason,
@@ -200,17 +248,117 @@ impl Relaying {
 
     /// The hosts on `user`'s account holding a link here.
     pub(crate) fn neighbors(&self, user: relay_core::UserId) -> Vec<daemon_core::HostId> {
-        self.inner().relay.neighbors(user)
+        lock(&self.core).neighbors(user)
     }
 
     /// The driver is done with `stream`.
     fn ended(&self, stream: StreamId) {
-        self.inner().pipes.remove(&stream);
         self.step([Input::StreamEnded { stream }]);
     }
 
     fn now_ms(&self) -> u64 {
-        u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX)
+        match self.forwarding.get() {
+            Some(forwarding) => forwarding.forwarder.now_ms(),
+            None => u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX),
+        }
+    }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// The relay's links as the forwarder sends on them: each admitted link's
+/// stand-in on the socket and its control writer.
+struct RelayLinks {
+    socket: Arc<LinkSocket>,
+    relaying: Weak<Relaying>,
+    admitted: Mutex<Admitted>,
+}
+
+#[derive(Default)]
+struct Admitted {
+    links: HashMap<daemon_core::LinkId, (LinkOutputTx, SocketAddr)>,
+    senders: HashMap<SocketAddr, daemon_core::LinkId>,
+}
+
+impl RelayLinks {
+    fn admit(&self, link: daemon_core::LinkId, tx: LinkOutputTx, stand_in: SocketAddr) {
+        let mut admitted = lock(&self.admitted);
+        admitted.links.insert(link, (tx, stand_in));
+        admitted.senders.insert(stand_in, link);
+    }
+
+    fn forget(&self, link: daemon_core::LinkId) {
+        let mut admitted = lock(&self.admitted);
+        if let Some((_, stand_in)) = admitted.links.remove(&link)
+            && admitted.senders.get(&stand_in) == Some(&link)
+        {
+            admitted.senders.remove(&stand_in);
+        }
+    }
+
+    fn is_sender(&self, stand_in: SocketAddr) -> bool {
+        lock(&self.admitted).senders.contains_key(&stand_in)
+    }
+
+    fn sender(&self, stand_in: SocketAddr) -> Option<daemon_core::LinkId> {
+        lock(&self.admitted).senders.get(&stand_in).copied()
+    }
+}
+
+impl ForwardLinks for RelayLinks {
+    fn send(&self, link: daemon_core::LinkId, datagram: &[u8]) -> std::io::Result<()> {
+        let stand_in = lock(&self.admitted)
+            .links
+            .get(&link)
+            .map(|(_, stand_in)| *stand_in)
+            .ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::NotConnected, "the link is gone")
+            })?;
+        self.socket.send_raw(stand_in, datagram)
+    }
+
+    fn refuse(&self, link: daemon_core::LinkId, dst: HostId, reason: ForwardRefusal) {
+        let Some(tx) = lock(&self.admitted)
+            .links
+            .get(&link)
+            .map(|(tx, _)| tx.clone())
+        else {
+            return;
+        };
+        // A link too far behind to take its refusal hears it again when it
+        // next sends there.
+        let _ = tx.try_send(pb::Message {
+            body: Some(pb::message::Body::ForwardRefused(pb::ForwardRefused {
+                dst: dst.as_bytes().to_vec(),
+                reason: reason as i32,
+            })),
+        });
+    }
+
+    fn dump(&self, reason: DumpReason) {
+        if let Some(relaying) = self.relaying.upgrade() {
+            relaying.report(&reason);
+        }
+    }
+}
+
+/// The packets hosts send the relay's socket to forward: from an admitted
+/// link's stand-in through the table, from anyone else into the hold.
+struct Arrivals {
+    forwarder: Arc<Forwarder>,
+    links: Arc<RelayLinks>,
+}
+
+impl ForwardSink for Arrivals {
+    fn arrived(&self, sender: SocketAddr, dst: HostId, payload: &[u8]) {
+        match self.links.sender(sender) {
+            Some(link) => self.forwarder.on_packet(link, dst, payload),
+            None => self.forwarder.hold(sender, dst, payload),
+        };
     }
 }
 
@@ -231,6 +379,12 @@ impl Piper {
         mut incoming: ByteStream,
     ) -> Result<JoinHandle<()>, pb::StreamRefusal> {
         let relaying = self.links.relaying().clone();
+        // A relay forwards its hosts' packets end to end and carries no
+        // stream between them.
+        if relaying.forwards_packets() {
+            let _ = incoming.reset(pb::StreamRefusal::NoRoute).await;
+            return Err(pb::StreamRefusal::NoRoute);
+        }
         let stream = StreamId(relaying.next_stream.fetch_add(1, Ordering::Relaxed));
         let decided = relaying.step([
             Input::Tick {
@@ -289,12 +443,8 @@ impl Piper {
         if incoming.flush().await.is_err() {
             return Err(refuse(pb::StreamRefusal::NoRoute));
         }
-        let (start, started) = tokio::sync::oneshot::channel::<()>();
         let copying = relaying.clone();
-        let pipe = tokio::spawn(async move {
-            if started.await.is_err() {
-                return;
-            }
+        Ok(tokio::spawn(async move {
             let (mut incoming_read, mut incoming_write) = tokio::io::split(incoming);
             let (mut outgoing_read, mut outgoing_write) = tokio::io::split(outgoing);
             // Each direction runs to its own end, whatever becomes of the
@@ -307,30 +457,7 @@ impl Piper {
                 forward(&mut outgoing_read, &mut incoming_write),
             );
             copying.ended(stream);
-        });
-        {
-            // A link that lapsed while the far end was opening had this
-            // stream cut then: it does not start, or it carries on unpaid.
-            let mut inner = relaying.inner();
-            match inner.pipes.remove(&stream) {
-                Some(Pipe::Opening) => {
-                    inner
-                        .pipes
-                        .insert(stream, Pipe::Running(pipe.abort_handle()));
-                }
-                Some(Pipe::Cut(reason)) => {
-                    pipe.abort();
-                    return Err(reason);
-                }
-                // Only this call starts the stream's copy.
-                Some(Pipe::Running(_)) | None => {
-                    pipe.abort();
-                    return Err(pb::StreamRefusal::NoRoute);
-                }
-            }
-        }
-        let _ = start.send(());
-        Ok(pipe)
+        }))
     }
 }
 
@@ -500,53 +627,6 @@ mod tests {
             pb::StreamRefusal::NoRoute,
         )
         .await;
-
-        let free_links = Arc::new(LinkRegistry::new(local));
-        let free_origin = register_link(
-            &free_links,
-            2,
-            LinkAdmission::CloudToken {
-                tier: crate::Tier::Free,
-            },
-            None,
-        )
-        .await;
-        let free_piper = Piper::new(free_links);
-        let free_pair = carriers().await;
-        assert_refusal(
-            &free_piper,
-            free_origin,
-            free_pair.connector.clone(),
-            free_pair.acceptor.clone(),
-            HostId::from_u128(99),
-            pb::StreamRefusal::PaymentRequired,
-        )
-        .await;
-
-        let rate_links = Arc::new(LinkRegistry::new(local));
-        let rate_origin = register_link(&rate_links, 2, LinkAdmission::PinnedKey, None).await;
-        let rate_piper = Piper::new(rate_links);
-        let rate_pair = carriers().await;
-        for _ in 0..relay_core::RATE_LIMIT {
-            assert_refusal(
-                &rate_piper,
-                rate_origin,
-                rate_pair.connector.clone(),
-                rate_pair.acceptor.clone(),
-                HostId::from_u128(99),
-                pb::StreamRefusal::NoRoute,
-            )
-            .await;
-        }
-        assert_refusal(
-            &rate_piper,
-            rate_origin,
-            rate_pair.connector.clone(),
-            rate_pair.acceptor.clone(),
-            HostId::from_u128(99),
-            pb::StreamRefusal::RateLimited,
-        )
-        .await;
     }
 
     /// A stream piped between two pinned-key links: the task copying it,
@@ -626,53 +706,6 @@ mod tests {
         )
     }
 
-    /// A link that lapses to free while a stream through it waits on the
-    /// far end's acceptance closes its pipes before that pipe registers;
-    /// the pipe must not start then, or it carries on unpaid.
-    #[tokio::test]
-    async fn a_link_lapsing_while_its_stream_opens_ends_that_stream_too() {
-        let local = HostId::from_u128(1);
-        let links = Arc::new(LinkRegistry::new(local));
-        let paid = LinkAdmission::CloudToken {
-            tier: crate::Tier::Pro,
-        };
-        let origin_link = register_link(&links, 2, paid, None).await;
-        let destination_pair = carriers().await;
-        register_link(&links, 3, paid, Some(destination_pair.connector.clone())).await;
-        let piper = Piper::new(links.clone());
-        let origin_pair = carriers().await;
-        let (_opening, preface, incoming) = incoming(
-            origin_pair.connector.clone(),
-            origin_pair.acceptor.clone(),
-            HostId::from_u128(3),
-        )
-        .await;
-        let piping = tokio::spawn({
-            let piper = piper.clone();
-            async move { piper.pipe(origin_link, preface, incoming).await }
-        });
-        let (_, mut destination_stream) = tokio::time::timeout(
-            Duration::from_secs(1),
-            destination_pair.acceptor.accept_stream(),
-        )
-        .await
-        .expect("timed out waiting for the destination stream")
-        .unwrap();
-        // The pipe is waiting for this acceptance when the link lapses.
-        links
-            .update_cloud_tier(&origin_link, crate::Tier::Free)
-            .await;
-        destination_stream.flush().await.unwrap();
-        let piped = tokio::time::timeout(Duration::from_secs(1), piping)
-            .await
-            .expect("timed out piping")
-            .unwrap();
-        assert!(
-            matches!(piped, Err(pb::StreamRefusal::PaymentRequired)),
-            "a pipe admitted before its link lapsed does not start"
-        );
-    }
-
     #[tokio::test]
     async fn two_pinned_key_links_pipe_with_no_tier_anywhere() {
         let (copy_task, mut origin_stream, mut destination_stream, _carriers) = piped().await;
@@ -750,33 +783,6 @@ mod tests {
             .expect("the piper copy task must end when both streams end")
             .unwrap()
             .unwrap();
-    }
-
-    /// A link that lapses to free stops carrying the streams it opened
-    /// while it was paid for.
-    #[tokio::test]
-    async fn a_link_lapsing_stops_the_streams_already_running_through_it() {
-        let (copy_task, _origin, mut destination_stream, _carriers, (links, origin_link)) =
-            piped_between(LinkAdmission::CloudToken {
-                tier: crate::Tier::Pro,
-            })
-            .await;
-        links
-            .update_cloud_tier(&origin_link, crate::Tier::Free)
-            .await;
-        let stopped = tokio::time::timeout(Duration::from_secs(1), copy_task)
-            .await
-            .expect("the copy stops when its link lapses")
-            .unwrap();
-        assert!(stopped.is_err_and(|error| error.is_cancelled()));
-        let mut rest = Vec::new();
-        tokio::time::timeout(
-            Duration::from_secs(1),
-            destination_stream.read_to_end(&mut rest),
-        )
-        .await
-        .expect("the far end sees the stream end")
-        .ok();
     }
 
     /// A dump the relay core asks for leaves a file in the reports

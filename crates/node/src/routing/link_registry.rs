@@ -319,6 +319,13 @@ impl LinkRegistry {
                 displaced.push((id, writer));
             }
         }
+        self.relaying.admitted(
+            link.core(),
+            outgoing_tx.clone(),
+            native_carrier
+                .as_ref()
+                .and_then(|carrier| carrier.remote_address()),
+        );
         let new = NewLink {
             link: link.core(),
             host: &host,
@@ -514,6 +521,20 @@ impl LinkRegistry {
                 link: link.core(),
                 tier: relay_tier(tier),
             }]);
+        }
+    }
+
+    /// A token link's token ran out before a fresh one came: nothing is
+    /// forwarded for it from now on.
+    pub(crate) async fn expire(&self, link: &LinkId) {
+        let state = self.state.read().await;
+        if let Some(LinkWriter {
+            admission: LinkAdmission::CloudToken { .. },
+            ..
+        }) = state.writers.get(link)
+        {
+            self.relaying
+                .step([relay_core::Input::Expired { link: link.core() }]);
         }
     }
 

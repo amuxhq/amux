@@ -269,6 +269,10 @@ same millisecond could swap places, and a packet overtaking the handshake it fol
 costing a round trip a household network never does.
 
 `--only cold|reconciliation|streaming|idle` takes one group, for working on it; `--baseline` needs a whole run.
+`--trace <path>.trace` records an Instruments Time Profiler trace through the first streaming sample, for
+finding where the main thread's time goes: a recording of the whole Mac (xctrace cannot attach to a simulator
+process here), with the app's pid in the run's notes to filter by, so `xctrace export` it and read the app's
+process alone.
 `--describe` says which enrolled machine this is and whether its baseline exists without building or launching
 anything. Baselines live beside the desktop's:
 

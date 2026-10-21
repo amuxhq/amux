@@ -290,6 +290,9 @@ class PhoneJourney:
         # the app, masked again wherever a report shows that photograph.
         self.frozen: list[dict] = []
         self.port = 0
+        # The process id the app was launched as on this Mac, for a profile
+        # of the Mac to be filtered by.
+        self.pid = 0
         self.env = {k: v for k, v in os.environ.items() if k not in ("AMUX_LOG", "AMUX_CONFIG")}
         self.env.update({key: str(self.scratch) for key in ("TMPDIR", "TMP", "TEMP")})
         self.env["AMUX_TEST_DISCOVERY_MODE"] = "disabled"
@@ -415,10 +418,12 @@ class PhoneJourney:
         arguments = launch_arguments(self.ready, scope, found, self.port, geometry, relay_quic) + list(extra)
         # The phone's runtime logs under the same filter as the served hosts,
         # so one run's two logs can be read side by side.
-        simctl(
+        launched = simctl(
             "launch", "--terminate-running-process", self.udid, BUNDLE_ID, *arguments,
             env={**os.environ, "SIMCTL_CHILD_RUST_LOG": self.env["RUST_LOG"]},
         )
+        # `simctl launch` prints `<bundle id>: <pid>`.
+        self.pid = int(launched.rsplit(":", 1)[-1].strip() or 0)
         self.actions.append("launch the app")
         # The door answering is the launch; what a capture needs settled it
         # settles itself. Settling here drew the window to an image over and

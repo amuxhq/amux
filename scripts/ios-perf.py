@@ -21,6 +21,14 @@ checked against BUDGETS and MACHINES here by scripts/tests/ios_perf_test.py.
   --flat            draw every surface flat (the reduce-transparency setting) for
                     the whole run: a diagnostic, never a baseline, that says how
                     much of a number is the glass
+  --trace PATH      record an Instruments Time Profiler trace (xctrace) through
+                    the first streaming sample into PATH, a .trace bundle; a
+                    diagnostic that says where the streaming CPU goes. The
+                    recording is of the whole Mac, with the app's pid printed to
+                    filter by: xctrace hangs attaching to a simulator process
+                    through the simulator device, and on the host it refuses
+                    the pid, but a host recording of every process carries the
+                    app with its symbols and thread names
 """
 
 from __future__ import annotations
@@ -135,9 +143,12 @@ def median(values: list[float]) -> float:
 class Run:
     """One measured run: the served network, the phone, and the samples."""
 
-    def __init__(self, journey: PhoneJourney, only: list[str] | None, flat: bool = False):
+    def __init__(
+        self, journey: PhoneJourney, only: list[str] | None, flat: bool = False, trace: Path | None = None
+    ):
         self.journey = journey
         self.only = only
+        self.trace = trace
         # The app is measured as it ships, glass and all, unless a flat run
         # was asked for as a diagnostic.
         self.flat = flat
@@ -341,11 +352,14 @@ class Run:
         the display, the main thread and the footprint watched meanwhile."""
         for attempt in range(SAMPLES):
             before = self.newest_order() or 0
+            profiler = self.start_profiler() if attempt == 0 and self.trace else None
             self.journey.request({"OpenGate": {"name": f"stream-{attempt}"}})
             measured = self.measure(STREAM_SECONDS)
             # The burst outlasts the watch by a little; let it end so the
             # next sample starts from rest, then check the rows arrived.
             time.sleep(2.0)
+            if profiler is not None:
+                self.finish_profiler(profiler)
             arrived = (self.newest_order() or 0) - before
             if arrived < 900:
                 raise RuntimeError(
@@ -361,6 +375,57 @@ class Run:
                 f"footprint {measured['footprintMB']:.1f} MB"
             )
             print(self.notes[-1], flush=True)
+
+    # --- the profiler ------------------------------------------------------
+
+    # The trace outlasts the measured stretch by the settle after it, so the
+    # whole burst is in the recording.
+    TRACE_SECONDS = STREAM_SECONDS + 4.0
+
+    def start_profiler(self) -> subprocess.Popen:
+        """Instruments' Time Profiler over every process on this Mac, the
+        app among them, recording until its time limit; returns once it says
+        it is recording, so the stream it is to watch starts inside the
+        trace."""
+        assert self.trace is not None
+        if self.trace.exists():
+            shutil.rmtree(self.trace)
+        self.trace.parent.mkdir(parents=True, exist_ok=True)
+        started = f"sh.amux.perf.tracing.{os.getpid()}"
+        # Waiting for the notification must begin before xctrace can post it.
+        waiter = subprocess.Popen(["notifyutil", "-1", started], stdout=subprocess.DEVNULL)
+        profiler = subprocess.Popen(
+            [
+                "xcrun", "xctrace", "record", "--template", "Time Profiler", "--no-prompt",
+                "--all-processes",
+                "--time-limit", f"{self.TRACE_SECONDS:.0f}s", "--notify-tracing-started", started,
+                "--output", str(self.trace),
+            ],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        )
+        try:
+            waiter.wait(timeout=60)
+        except subprocess.TimeoutExpired:
+            waiter.kill()
+            profiler.kill()
+            raise RuntimeError(f"xctrace did not start recording within a minute: {profiler.communicate()[0]}")
+        self.notes.append(
+            f"trace: Time Profiler over every process for {self.TRACE_SECONDS:.0f} s; the app is pid {self.journey.pid}"
+        )
+        print(self.notes[-1], flush=True)
+        return profiler
+
+    def finish_profiler(self, profiler: subprocess.Popen) -> None:
+        try:
+            # Saving a whole-Mac trace takes minutes.
+            output, _ = profiler.communicate(timeout=self.TRACE_SECONDS + 600)
+        except subprocess.TimeoutExpired:
+            profiler.kill()
+            raise RuntimeError("xctrace did not finish writing the trace")
+        if profiler.returncode != 0 or not self.trace or not self.trace.exists():
+            raise RuntimeError(f"xctrace failed ({profiler.returncode}): {output}")
+        self.notes.append(f"trace written to {self.trace}")
+        print(self.notes[-1], flush=True)
 
     # --- the whole run -----------------------------------------------------
 
@@ -525,6 +590,7 @@ def main() -> int:
     parser.add_argument("--only", choices=GROUPS, action="append")
     parser.add_argument("--baseline", action="store_true")
     parser.add_argument("--flat", action="store_true")
+    parser.add_argument("--trace", type=Path)
     arguments = parser.parse_args()
     try:
         if arguments.describe:
@@ -534,6 +600,10 @@ def main() -> int:
             raise Refusal("a baseline is a whole run; --baseline takes no --only")
         if arguments.baseline and arguments.flat:
             raise Refusal("a flat run is a diagnostic; --baseline records the app as it ships")
+        if arguments.trace and (arguments.baseline or not (arguments.only is None or "streaming" in arguments.only)):
+            raise Refusal("--trace records the streaming group; it takes no --baseline and needs streaming in --only")
+        if arguments.trace and arguments.trace.suffix != ".trace":
+            raise Refusal("--trace names a .trace bundle")
         model, name = machine()
         if not APP.is_dir():
             raise Refusal(f"{APP} is not built; `scripts/ios-build.py --configuration Measured` builds it")
@@ -557,7 +627,8 @@ def main() -> int:
     began = time.monotonic()
     udid = ios_simulators.ready(SIMULATOR)
     journey = PhoneJourney({"id": "perf"}, topology, udid, output=OUTPUT / "journey", app=APP)
-    run = Run(journey, arguments.only, flat=arguments.flat)
+    trace = arguments.trace.resolve() if arguments.trace else None
+    run = Run(journey, arguments.only, flat=arguments.flat, trace=trace)
     try:
         run.measure_everything()
         journey.finish([])

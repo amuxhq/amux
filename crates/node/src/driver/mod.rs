@@ -140,6 +140,13 @@ pub(crate) enum Fed {
         failed: Input,
         reply: oneshot::Sender<Option<daemon_core::Route>>,
     },
+    /// A link resuming with a ticket came up, and holds what its peer sent
+    /// early until the core says whether it takes the identity the ticket
+    /// names: true when it does.
+    Resumed {
+        up: Input,
+        reply: oneshot::Sender<bool>,
+    },
     /// A look at what the core decided, between steps.
     Look(Box<dyn FnOnce(&Daemon) + Send>),
     /// The core as a dump carries it, between steps: its newest checkpoint
@@ -286,6 +293,7 @@ impl Driver {
             reports: reports.clone(),
             channel_reply: None,
             route_reply: None,
+            resumed_reply: None,
             // The drafts and the trust the profile's files hold, and fresh
             // randomness, are the first things the core is told.
             again: [
@@ -520,6 +528,17 @@ impl Driver {
         word.await.ok().flatten()
     }
 
+    /// Tells the core a link resuming with a ticket came up and waits for
+    /// its word: whether it takes the identity the ticket names. Anything
+    /// reported before is stepped first.
+    pub(crate) async fn resumed(&self, up: Input) -> bool {
+        let (reply, word) = oneshot::channel();
+        if self.inputs.send(Fed::Resumed { up, reply }).await.is_err() {
+            return false;
+        }
+        word.await.unwrap_or(false)
+    }
+
     /// For tests: writes the store beneath the core, between steps.
     pub(crate) async fn beneath<T: Send + 'static>(
         &self,
@@ -628,6 +647,9 @@ pub(crate) struct CoreThread {
     channel_reply: Option<oneshot::Sender<Result<Opened, ChannelError>>>,
     /// Whoever waits for the core to name the route a call tries next.
     route_reply: Option<oneshot::Sender<Option<daemon_core::Route>>>,
+    /// Whoever holds a resumed link's early streams until the core decides
+    /// the step under way: told false if it refuses the link.
+    resumed_reply: Option<oneshot::Sender<bool>>,
     /// Inputs the driver raised itself while carrying out a step, stepped
     /// before anything newer.
     again: VecDeque<Input>,
@@ -816,6 +838,15 @@ impl CoreThread {
                 self.route_reply = None;
                 return true;
             }
+            Fed::Resumed { up, reply } => {
+                self.resumed_reply = Some(reply);
+                self.step(&runtime, up, &mut out);
+                // Not refused: taken up.
+                if let Some(reply) = self.resumed_reply.take() {
+                    let _ = reply.send(true);
+                }
+                return true;
+            }
             Fed::Forward {
                 call,
                 host,
@@ -888,6 +919,7 @@ impl CoreThread {
             | Fed::Stop
             | Fed::Channel { .. }
             | Fed::Route { .. }
+            | Fed::Resumed { .. }
             | Fed::Forward { .. }
             | Fed::Look(_)
             | Fed::Read(_)
@@ -1351,12 +1383,17 @@ impl CoreThread {
                 peer,
             } => self.pairings.pending(session, token, peer),
             Output::PairEnded { session, failure } => self.pairings.end(session, failure),
-            // Links carry no address lists and no resumed handshakes yet:
-            // nothing reads what a peer listed until paths do.
+            // Links carry no address lists yet: nothing reads what a peer
+            // listed until paths do.
             Output::PeerAddresses { .. } | Output::ObservedAddress { .. } => {}
-            output @ (Output::CloseChannel { .. }
-            | Output::LinkControl { .. }
-            | Output::RefuseResumed { .. }) => {
+            // The link holding the early streams resets them, saying the
+            // peer is revoked.
+            Output::RefuseResumed { .. } => {
+                if let Some(reply) = self.resumed_reply.take() {
+                    let _ = reply.send(false);
+                }
+            }
+            output @ (Output::CloseChannel { .. } | Output::LinkControl { .. }) => {
                 tracing::error!(
                     ?output,
                     "the daemon core asked for what this driver does not carry out yet"

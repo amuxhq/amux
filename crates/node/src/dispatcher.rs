@@ -67,13 +67,46 @@ pub(crate) struct TunnelDispatcher {
 /// answer to a pairing attempt.
 pub(crate) const NO_PAIRING_WINDOW: &[u8] = b"no pairing window is open";
 
+/// A connection as far as the dispatcher takes it before serving it.
+enum Arrival {
+    /// Resuming a session whose ticket names this key, its handshake
+    /// still finishing.
+    Resumed(quinn::Connection, Vec<u8>),
+    /// Through a full handshake.
+    Full(quinn::Connection),
+}
+
+/// The key of the certificate a resuming connection's ticket carries, read
+/// before its handshake has finished; none for a full handshake, whose
+/// certificate is proved only at its end.
+fn resumed_key(connection: &quinn::Connection) -> Option<Vec<u8>> {
+    let certificates = connection
+        .peer_identity()?
+        .downcast::<Vec<CertificateDer<'static>>>()
+        .ok()?;
+    identity::ed25519_public_key_from_certificate(certificates.first()?)
+        .ok()
+        .map(Vec::from)
+}
+
+/// Logs how a connection this host served ended.
+fn report_outcome(addr: std::net::SocketAddr, error: DispatchError) {
+    match error {
+        DispatchError::LinkEnded(reason) => {
+            tracing::debug!(peer = %addr, %reason, "link from this peer ended");
+        }
+        error => {
+            tracing::warn!(peer = %addr, error = %error, "dispatcher rejected QUIC connection");
+        }
+    }
+}
+
 pub(crate) enum DispatchTarget {
     Trusted(HostId),
     Pairing,
     NoPairingWindow,
-    /// A certificate this host does not pin. A full handshake refuses it
-    /// in the verifier; a link resuming with a session ticket skips the
-    /// verifier and is refused here, as revoked, once it is up.
+    /// A certificate this host does not pin. The verifier refuses one in
+    /// the handshake; this is one whose pin went as the handshake ended.
     Revoked,
 }
 
@@ -151,47 +184,22 @@ impl TunnelDispatcher {
                 let dispatcher = dispatcher.clone();
                 let connection_shutdown = shutdown_rx.clone();
                 connection_tasks.spawn(async move {
-                    let _permit = permit;
-                    let connection = match tokio::time::timeout(
-                        dispatcher.handshake_timeout,
-                        incoming,
-                    )
-                    .await
-                    {
-                        Ok(Ok(connection)) => {
-                            let stats = connection.stats();
-                            tracing::debug!(
-                                peer = %addr,
-                                rtt_ms = stats.path.rtt.as_millis(),
-                                sent = stats.path.sent_packets,
-                                lost = stats.path.lost_packets,
-                                "QUIC connection accepted"
-                            );
-                            connection
-                        }
-                        Ok(Err(error)) => {
+                    let connecting = match incoming.accept() {
+                        Ok(connecting) => connecting,
+                        Err(error) => {
                             audit::auth_mtls_handshake_failure(&error);
                             tracing::warn!(peer = %addr, error = %error, "QUIC handshake failed");
                             return;
                         }
-                        Err(_) => {
-                            audit::auth_mtls_handshake_failure("QUIC handshake timed out");
-                            tracing::warn!(peer = %addr, "QUIC handshake timed out");
-                            return;
-                        }
                     };
-                    drop(_permit);
-                    match dispatcher
-                        .dispatch_quic(connection, addr, path, through, connection_shutdown)
+                    let Some(arrival) = dispatcher.arrive(connecting, addr, permit).await else {
+                        return;
+                    };
+                    if let Err(error) = dispatcher
+                        .dispatch_quic(arrival, addr, path, through, connection_shutdown)
                         .await
                     {
-                        Ok(()) => {}
-                        Err(DispatchError::LinkEnded(reason)) => {
-                            tracing::debug!(peer = %addr, %reason, "link from this peer ended");
-                        }
-                        Err(error) => {
-                            tracing::warn!(peer = %addr, error = %error, "dispatcher rejected QUIC connection");
-                        }
+                        report_outcome(addr, error);
                     }
                 });
             }
@@ -231,30 +239,127 @@ impl TunnelDispatcher {
             .map_err(|_| DispatchError::ChannelClosed)
     }
 
+    /// Takes `connecting` as far as this host must before reading from it.
+    /// A connection resuming a session is usable at once, the identity its
+    /// ticket names still to be decided, and what it sent early is held
+    /// until then; `permit` stays held until its handshake finishes. Any
+    /// other is taken through its whole handshake, which proves the
+    /// certificate it presents.
+    async fn arrive(
+        &self,
+        connecting: quinn::Connecting,
+        addr: std::net::SocketAddr,
+        permit: impl Send + 'static,
+    ) -> Option<Arrival> {
+        let (connection, handshaken) = match connecting.into_0rtt() {
+            Ok(usable) => usable,
+            Err(connecting) => {
+                let connection = self.finish_handshake(connecting, addr).await;
+                drop(permit);
+                return connection.map(Arrival::Full);
+            }
+        };
+        // rustls restores the client's certificate from the ticket as it
+        // reads the ClientHello; a full handshake proves one only at its end.
+        if let Some(key) = resumed_key(&connection) {
+            let timeout = self.handshake_timeout;
+            let handshaking = connection.clone();
+            tokio::spawn(async move {
+                let _permit = permit;
+                if tokio::time::timeout(timeout, handshaken).await.is_err() {
+                    audit::auth_mtls_handshake_failure("QUIC handshake timed out");
+                    tracing::warn!(peer = %addr, "resumed QUIC handshake timed out");
+                    handshaking.close(0_u32.into(), b"handshake timed out");
+                }
+            });
+            return Some(Arrival::Resumed(connection, key));
+        }
+        let finished = self.finish_handshake(
+            async {
+                handshaken.await;
+                match connection.close_reason() {
+                    None => Ok(connection),
+                    Some(error) => Err(error),
+                }
+            },
+            addr,
+        );
+        let connection = finished.await;
+        drop(permit);
+        connection.map(Arrival::Full)
+    }
+
+    async fn finish_handshake(
+        &self,
+        handshake: impl std::future::IntoFuture<
+            Output = Result<quinn::Connection, quinn::ConnectionError>,
+        >,
+        addr: std::net::SocketAddr,
+    ) -> Option<quinn::Connection> {
+        match tokio::time::timeout(self.handshake_timeout, handshake).await {
+            Ok(Ok(connection)) => {
+                let stats = connection.stats();
+                tracing::debug!(
+                    peer = %addr,
+                    rtt_ms = stats.path.rtt.as_millis(),
+                    sent = stats.path.sent_packets,
+                    lost = stats.path.lost_packets,
+                    "QUIC connection accepted"
+                );
+                Some(connection)
+            }
+            Ok(Err(error)) => {
+                audit::auth_mtls_handshake_failure(&error);
+                tracing::warn!(peer = %addr, error = %error, "QUIC handshake failed");
+                None
+            }
+            Err(_) => {
+                audit::auth_mtls_handshake_failure("QUIC handshake timed out");
+                tracing::warn!(peer = %addr, "QUIC handshake timed out");
+                None
+            }
+        }
+    }
+
     async fn dispatch_quic(
         &self,
-        connection: quinn::Connection,
+        arrival: Arrival,
         addr: std::net::SocketAddr,
         path: PathKind,
         through: Option<daemon_core::LinkId>,
         shutdown_rx: watch::Receiver<bool>,
     ) -> Result<(), DispatchError> {
+        let serve = |ctx: LinkCtx, connection| {
+            run_link(
+                ctx.with_shutdown(shutdown_rx),
+                std::sync::Arc::new(
+                    QuicCarrier::from_accepted(connection)
+                        .with_path(path)
+                        .carried_through(through),
+                ),
+                crate::routing::ConnectRole::Acceptor,
+            )
+        };
+        let link_ctx = || {
+            self.link_ctx
+                .clone()
+                .ok_or_else(|| DispatchError::Link("native link context is not configured".into()))
+        };
+        let connection = match arrival {
+            // The core decides the identity the ticket names, with the
+            // host the Hello names, before anything on the link is served.
+            Arrival::Resumed(connection, key) => {
+                return serve(link_ctx()?.with_resumed(key), connection)
+                    .await
+                    .map_err(link_outcome);
+            }
+            Arrival::Full(connection) => connection,
+        };
         match self.classify_quic(&connection)? {
             DispatchTarget::Trusted(peer) => {
-                let ctx = self.link_ctx.clone().ok_or_else(|| {
-                    DispatchError::Link("native link context is not configured".into())
-                })?;
-                run_link(
-                    ctx.with_authenticated_peer(peer).with_shutdown(shutdown_rx),
-                    std::sync::Arc::new(
-                        QuicCarrier::from_accepted(connection)
-                            .with_path(path)
-                            .carried_through(through),
-                    ),
-                    crate::routing::ConnectRole::Acceptor,
-                )
-                .await
-                .map_err(link_outcome)
+                serve(link_ctx()?.with_authenticated_peer(peer), connection)
+                    .await
+                    .map_err(link_outcome)
             }
             DispatchTarget::Pairing => {
                 let (send, recv) =

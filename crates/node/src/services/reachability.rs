@@ -14,7 +14,7 @@ use crate::HostId;
 use crate::connection::ConnectionManager;
 use crate::discovery::{Discovery, DiscoveryEvent, FoundHosts};
 use crate::identity::DeviceIdentity;
-use crate::link::channels::{ForwardedDial, ResumedDial, Resuming};
+use crate::link::channels::{ForwardedDial, ResumedDial, Resuming, says_revoked};
 use crate::link::framed::{FramedKind, StreamEndpoint};
 use crate::link::quic::DEVICE_SERVER_NAME;
 use crate::link::{ChannelError, ChannelPool, LinkCarrier as NativeLinkCarrier, QuicCarrier};
@@ -712,6 +712,10 @@ impl ForwardedDialer {
             }
             match tokio::time::timeout(DIRECT_LINK_ESTABLISHMENT_TIMEOUT, established).await {
                 Ok(Ok(Ok(_))) => {}
+                // The host refused the identity the ticket named.
+                Ok(Ok(Err(status))) if says_revoked(&status) => {
+                    return Err(ChannelError::from(revoked(&context, peer)));
+                }
                 Ok(Ok(Err(status))) => return Err(ChannelError::Handshake(status.to_string())),
                 Ok(Err(_)) | Err(_) => {
                     return Err(ChannelError::Handshake(
@@ -993,6 +997,8 @@ async fn establish_carrier(
     let failed = match tokio::time::timeout(DIRECT_LINK_ESTABLISHMENT_TIMEOUT, established_rx).await
     {
         Ok(Ok(Ok(host))) => return Ok((host, connector_task, abort_on_failure)),
+        // A dial resuming with a ticket whose key the host no longer pins.
+        Ok(Ok(Err(status))) if says_revoked(&status) => return Err(revoked(context, peer)),
         Ok(Ok(Err(status))) => status.to_string(),
         Ok(Err(_)) => "reachability Link task ended before establishment".to_owned(),
         Err(_) => "reachability Link establishment timed out".to_owned(),

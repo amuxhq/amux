@@ -83,6 +83,12 @@ pub enum ChannelError {
 /// certificate as no longer trusted.
 pub const TRUST_REVOKED: &str = "the host no longer trusts this machine";
 
+/// Whether `status` is a host saying it no longer trusts this one, as
+/// [`ChannelError::status`] writes it.
+pub(crate) fn says_revoked(status: &tonic::Status) -> bool {
+    status.code() == tonic::Code::Unauthenticated && status.message() == TRUST_REVOKED
+}
+
 impl ChannelError {
     /// The status a call that found no channel fails with: one refused as
     /// no longer trusted is `UNAUTHENTICATED`, naming that; any other is

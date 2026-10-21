@@ -224,6 +224,9 @@ pub struct LinkCtx {
     incoming_streams_tx: Option<mpsc::Sender<super::InboundStream>>,
     expected_peer: Option<HostId>,
     authenticated_peer: Option<HostId>,
+    /// The key a resumed handshake's ticket names, which no certificate
+    /// proved this time: the core decides it before the link answers.
+    resumed: Option<Vec<u8>>,
     link_role: LinkRole,
     routing_carrier: RoutingCarrier,
     acceptor_session: Option<LinkAuthSession>,
@@ -254,6 +257,7 @@ impl LinkCtx {
             incoming_streams_tx: None,
             expected_peer: None,
             authenticated_peer: None,
+            resumed: None,
             link_role: LinkRole::Peer,
             routing_carrier: RoutingCarrier::Direct,
             acceptor_session: None,
@@ -290,6 +294,14 @@ impl LinkCtx {
 
     pub fn with_authenticated_peer(mut self, peer: HostId) -> Self {
         self.authenticated_peer = Some(peer);
+        self
+    }
+
+    /// The link resumed a session whose ticket names `key`. Its peer is the
+    /// host its Hello names, and the core decides whether that host's pin
+    /// is `key` before the link answers the Hello or serves a stream.
+    pub(crate) fn with_resumed(mut self, key: Vec<u8>) -> Self {
+        self.resumed = Some(key);
         self
     }
 
@@ -355,6 +367,7 @@ pub async fn run_link(
     let mut handshake = ConnectHandshake::new(role);
     // The peer's hello or its answer to ours, as the core is told it.
     let peer_frame;
+    let mut held_ack = None;
     let ((peer_host, peer_instance), peer_neighbors, snapshot) = match role {
         crate::routing::ConnectRole::Connector => {
             let snapshot = neighbor_snapshot(&ctx, carrier.as_ref()).await;
@@ -364,6 +377,11 @@ pub async fn run_link(
             tracing::debug!(path = %carrier.path_stats(), "received the first message after Hello");
             if let Some(wire::pb::message::Body::LinkClose(close)) = first.body.as_ref() {
                 let status = link_close_status(close).unwrap_or_else(|| {
+                    // The host refused the identity a resumed handshake's
+                    // ticket named: it no longer trusts this one.
+                    if close.reason == wire::pb::LinkCloseReason::UserRevoked as i32 {
+                        return super::ChannelError::Revoked.status();
+                    }
                     tonic::Status::unavailable("link closed during authentication")
                 });
                 return Err(status.into());
@@ -456,10 +474,17 @@ pub async fn run_link(
                 runtime_instance = ?peer.2,
                 "accepted a link from a peer"
             );
-            write_message(&mut sink, &accepted_hello_ack(&ctx, &snapshot, peer.0.id)).await?;
-            handshake
-                .acceptor_ack_sent()
-                .map_err(|error| tonic::Status::invalid_argument(error.to_string()))?;
+            let ack = accepted_hello_ack(&ctx, &snapshot, peer.0.id);
+            // A resumed link's answer waits for the core to take the
+            // identity its ticket names.
+            if ctx.resumed.is_some() {
+                held_ack = Some(ack);
+            } else {
+                write_message(&mut sink, &ack).await?;
+                handshake
+                    .acceptor_ack_sent()
+                    .map_err(|error| tonic::Status::invalid_argument(error.to_string()))?;
+            }
             ctx.acceptor_session = session;
             ((peer.0, peer.2), peer.1, snapshot)
         }
@@ -470,7 +495,7 @@ pub async fn run_link(
         carrier,
         sink,
         source,
-        handshake,
+        (handshake, held_ack),
         (peer_host, peer_instance, peer_neighbors, role, peer_frame),
         snapshot.into_iter().map(|host| host.id).collect(),
     )
@@ -527,7 +552,7 @@ async fn run_established(
     carrier: Arc<dyn Carrier>,
     mut sink: super::ControlSink,
     mut source: super::ControlSource,
-    mut handshake: ConnectHandshake,
+    (mut handshake, held_ack): (ConnectHandshake, Option<wire::pb::Message>),
     peer: (
         Host,
         RuntimeInstance,
@@ -537,7 +562,7 @@ async fn run_established(
     ),
     sent_snapshot: Vec<HostId>,
 ) -> Result<(), LinkError> {
-    debug_assert!(handshake.is_established());
+    debug_assert!(held_ack.is_some() || handshake.is_established());
     let (peer_host, peer_instance, _neighbors, connect_role, peer_frame) = peer;
     if ctx
         .shutdown_rx
@@ -606,7 +631,7 @@ async fn run_established(
     // lists finds the link's carrier, and of the hosts its peer reaches as
     // the peer said them. Nothing picks a link to open a channel on but
     // from the routes the core lists.
-    ctx.report(daemon_core::Input::LinkUp {
+    let up = daemon_core::Input::LinkUp {
         link: link.core(),
         peer: core_host(peer_host.id),
         kind: match (link_role, carrier_tag) {
@@ -617,13 +642,44 @@ async fn run_established(
                 daemon_core::payload::CarrierKind::Forwarded
             }
         },
-        resumed: None,
-    });
+        resumed: ctx.resumed.clone().map(daemon_core::payload::PublicKey),
+    };
+    match held_ack {
+        None => ctx.report(up),
+        // Nothing the peer sent early is read until the core takes the
+        // identity its ticket names: the streams wait in the carrier, and
+        // the Hello's answer with them. One the core refuses is reset with
+        // the revocation, as a full handshake's verifier would refuse it.
+        Some(ack) => {
+            let taken = match ctx.links.core() {
+                Some(core) => core.resumed(up).await,
+                None => false,
+            };
+            if !taken {
+                tracing::info!(
+                    peer = %peer_host.id,
+                    "refused a resumed link: its ticket names a key not pinned for its peer"
+                );
+                let _ = write_message(
+                    &mut sink,
+                    &link_close(wire::pb::LinkCloseReason::UserRevoked),
+                )
+                .await;
+                cleanup_link(&ctx, link, wire::pb::LinkCloseReason::UserRevoked).await;
+                carrier.close(wire::pb::LinkCloseReason::UserRevoked);
+                return Ok(());
+            }
+            write_message(&mut sink, &ack).await?;
+            handshake
+                .acceptor_ack_sent()
+                .map_err(|error| tonic::Status::invalid_argument(error.to_string()))?;
+        }
+    }
     let logged = LinkEvent {
         peer: peer_host.id,
         event: LinkTransition::Up,
         path: carrier.path_kind(),
-        resumed: false,
+        resumed: ctx.resumed.is_some(),
         early_data: carrier.early_data(),
         first_packet_to_catch_up_ms: None,
     };

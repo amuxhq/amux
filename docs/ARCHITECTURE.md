@@ -182,8 +182,13 @@ core queue whenever the library's wake descriptor turns readable, and the
 transport (links, channels, the client streams) runs on one thread of its
 own beside them; nothing in the library calls into the app. Suspending
 checkpoints every core so a kill after it loses nothing; a relaunch starts
-every core from its store and files, as every start does. See
-[embedding](EMBEDDED.md).
+every core from its store and files, as every start does. While the runtime
+runs, the app's network watch
+([`NetworkWatch.swift`](../apps/apple/Packages/AmuxCore/Sources/AmuxCore/NetworkWatch.swift),
+the system's path monitor) tells it of every change to the phone's network;
+the runtime binds each profile's link socket afresh and has every path
+machine try its paths again, as a desktop daemon does when its interface
+addresses change. See [embedding](EMBEDDED.md).
 
 ## Who dials the daemon
 

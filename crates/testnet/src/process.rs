@@ -51,6 +51,9 @@ impl ProcessHost {
                 "AMUX_TEST_DISCOVERY_MODE",
                 if self.bonjour { "mdns" } else { "disabled" },
             )
+            // Listing the machine's own interfaces would hand peers a way
+            // around the network the net imitates.
+            .env("AMUX_TEST_INTERFACES", "")
             .env_remove("AMUX_LOG")
             .env_remove("AMUX_CONFIG")
             .stdin(std::process::Stdio::null())

@@ -600,14 +600,12 @@ impl Daemon {
                 let Some(edge) = runtime.edge() else {
                     continue;
                 };
-                match edge.network_changed() {
-                    Ok(change) => tracing::info!(
+                if let Err(error) = edge.network_changed() {
+                    tracing::warn!(
                         profile = %runtime.host(),
-                        rebound = change.rebound,
-                        machines_told = change.machines_told,
-                        "the network changed"
-                    ),
-                    Err(error) => tracing::warn!(%error, "binding the link socket afresh failed"),
+                        %error,
+                        "binding the link socket afresh failed"
+                    );
                 }
             }
         }

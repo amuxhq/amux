@@ -8,6 +8,7 @@ use std::ffi::{CStr, CString, c_char};
 use std::time::{Duration, Instant};
 
 use app_runtime::values::{ActOutcome, ChatChanges, CommandOutcome, PageOutcome};
+use node::link_log::LinkTransition;
 use provider_fakes::script::{Ask, Question, Step, Tool, ToolClass};
 use serde_json::{Value, json};
 use testnet::{AgentDecl, FakeKind, HostDecl, Net, Topology};
@@ -896,6 +897,56 @@ fn a_suspending_input_checkpoints_every_profile_before_it_returns() {
     assert!(!error.is_null());
     // SAFETY: returned by the library, freed once.
     unsafe { amux_string_free(error) };
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "starts an installation: SQLite's C code, files and sockets, which Miri cannot run"
+)]
+fn network_changed_rebinds_the_link_socket_and_tells_every_path_machine() {
+    let tokio = tokio::runtime::Runtime::new().unwrap();
+    let net = tokio.block_on(Net::start(topology())).unwrap();
+    let phone = Phone::start();
+    pair_desk(&phone, &net, &tokio);
+    let profile: ProfileId = phone.id.to_str().unwrap().parse().unwrap();
+    // SAFETY: the runtime is live until the phone drops.
+    let embedded = unsafe { &*phone.runtime }.embedded();
+    let host = node::HostId::from_slice(&embedded.host_id(profile).unwrap()).unwrap();
+    assert_eq!(testnet::link_log::rebinds(host), vec![]);
+    // The pairing's link to the desk is up at the phone.
+    let desk = net.host("desk").unwrap().host_id;
+    let deadline = Instant::now() + PATIENCE;
+    while !testnet::link_log::captured(host)
+        .iter()
+        .any(|event| event.peer == desk && event.event == LinkTransition::Up)
+    {
+        assert!(
+            Instant::now() < deadline,
+            "the phone's link to the desk never came up"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let mut error = std::ptr::null_mut();
+    // SAFETY: the runtime is live; the strings live for the call.
+    let fed =
+        unsafe { amux_runtime_feed(phone.runtime, c"\"NetworkChanged\"".as_ptr(), &mut error) };
+    assert!(
+        fed,
+        "{:?}",
+        (!error.is_null()).then(|| unsafe { CStr::from_ptr(error) })
+    );
+
+    // The feed returns once every profile was told, and the link log says
+    // what it did: the phone's own socket bound afresh, and the desk's
+    // path machine told.
+    let rebinds = testnet::link_log::rebinds(host);
+    println!("the phone's link log after the change: {rebinds:?}");
+    let [rebind] = rebinds[..] else {
+        panic!("one rebind line, not {rebinds:?}");
+    };
+    assert!(rebind.rebound, "{rebind:?}");
+    assert!(rebind.machines_told >= 1, "{rebind:?}");
 }
 
 #[test]

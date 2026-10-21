@@ -195,7 +195,9 @@ grace, and the next daemon adopts them. The net reaches it as a client does, ove
 socket: the waits that listen inside an in-process runtime (`fence`, `turn_ended`, `input_settled`) use the
 profile's Subscribe stream instead, back-filling with Fetch past the 200 rows a subscription opens with.
 Subscribing on a host that only replicates an agent can start replication there, which the in-process wait does
-not.
+not. It lists no interface addresses to its peers (`AMUX_TEST_INTERFACES` is set empty), as an in-process host on
+loopback lists none: the machine's real interfaces would give a peer's path machine a way around a cut, gated or
+imitated network.
 
 A supervised host runs under `amux supervise`, from a copy of the build under test stamped as version `0.0.1`
 (`SUPERVISED_VERSION`), so any ordinary version is newer. Its supervisor takes releases from the net's

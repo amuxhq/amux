@@ -93,7 +93,8 @@ final class Composition {
         #endif
         let runtime = RuntimeCoordinator(
             registry: accounts, support: AppFiles.support, deviceName: UIDevice.current.name,
-            signedOut: StoreBundle(account: AccountId("signed-out")), options: options)
+            signedOut: StoreBundle(account: AccountId("signed-out")), options: options,
+            networkWatch: SystemNetworkWatch())
         self.runtime = runtime
         // Only the system may look at the network a phone is on, so the
         // browser is the app's and the runtime is handed what it saw.

@@ -1,6 +1,7 @@
 //! The link log: one INFO line for each link a host's links go through,
 //! coming up, going down or moving to another path, naming the peer, the
-//! path, whether the link resumed a session and how its early data fared.
+//! path, whether the link resumed a session and how its early data fared,
+//! and one line each time the host's network changes under all of them.
 //! Daemons and the phone write it to their logs; stories and journeys read
 //! it back with [`LinkEvent::parse`] to say which path carried a link.
 
@@ -13,8 +14,10 @@ use crate::HostId;
 /// The target every line is written under, which a log filter names to
 /// keep only these.
 pub const TARGET: &str = "amux::link";
-/// The message every line carries.
+/// The message every link's line carries.
 const MESSAGE: &str = "link";
+/// The message a network change's line carries.
+const REBIND: &str = "rebind";
 
 /// What happened to the link.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -138,6 +141,54 @@ impl LinkEvent {
     }
 }
 
+/// The line written when the host's network changed: whether its link
+/// socket was bound afresh, and how many path machines were told to probe
+/// their paths again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rebind {
+    pub rebound: bool,
+    pub machines_told: usize,
+}
+
+impl Rebind {
+    /// Writes the line for `host`'s network.
+    pub fn write(&self, host: HostId) {
+        tracing::info!(
+            target: TARGET,
+            %host,
+            rebound = self.rebound,
+            machines_told = self.machines_told,
+            "{REBIND}"
+        );
+    }
+
+    /// Reads a line back as a log holds it: the host whose network
+    /// changed, and what the change did. Anything else reads as None.
+    pub fn parse(line: &str) -> Option<(HostId, Self)> {
+        let (_, fields) = line.split_once(&format!("{TARGET}: {REBIND} "))?;
+        let (mut host, mut rebound, mut machines_told) = (None, None, None);
+        for field in fields.split_whitespace() {
+            let Some((key, value)) = field.split_once('=') else {
+                continue;
+            };
+            let value = value.trim_matches('"');
+            match key {
+                "host" => host = Some(value.parse().ok()?),
+                "rebound" => rebound = Some(value.parse().ok()?),
+                "machines_told" => machines_told = Some(value.parse().ok()?),
+                _ => {}
+            }
+        }
+        Some((
+            host?,
+            Self {
+                rebound: rebound?,
+                machines_told: machines_told?,
+            },
+        ))
+    }
+}
+
 /// The catch-up's milliseconds as the line spells them: a number, or
 /// `none`.
 struct CatchUp(Option<u32>);
@@ -233,6 +284,22 @@ mod tests {
             LinkEvent::parse("INFO node::edge: listening for direct links"),
             None
         );
+    }
+
+    #[test]
+    fn a_network_change_reads_back_as_a_rebind_and_never_as_a_link() {
+        let host = HostId::from_u128(1);
+        let line = format!(
+            "2026-10-21T09:00:00.000000Z  INFO amux::link: rebind host={host} rebound=true \
+             machines_told=3"
+        );
+        let rebind = Rebind {
+            rebound: true,
+            machines_told: 3,
+        };
+        assert_eq!(Rebind::parse(&line), Some((host, rebind)));
+        assert_eq!(LinkEvent::parse(&line), None);
+        assert_eq!(Rebind::parse(&line.replace(" rebound=true", "")), None);
     }
 
     #[test]

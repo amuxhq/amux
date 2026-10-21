@@ -694,6 +694,10 @@ pub enum Lifecycle {
     /// end the app; a relaunch starts from that store, not the checkpoint,
     /// whose links, calls, jobs and timers belong to the process that ended.
     Suspending,
+    /// The phone's network changed: every profile's link socket is bound
+    /// afresh and every path machine probes its paths again, which the
+    /// link log's rebind line records.
+    NetworkChanged,
 }
 
 /// Feeds a `Lifecycle` input as JSON; blocks, stepping the cores, until
@@ -749,6 +753,15 @@ fn feed(runtime: &AmuxRuntime, input: Lifecycle) -> Result<(), String> {
                     embedded.flush_analytics().await;
                     embedded.checkpoint().await
                 })
+                .ok_or("the runtime has stopped")?
+                .map_err(|error| error.to_string())?;
+        }
+        Lifecycle::NetworkChanged => {
+            let embedded = runtime.embedded().clone();
+            runtime
+                .shared
+                .phone
+                .wait(async move { embedded.network_changed().await })
                 .ok_or("the runtime has stopped")?
                 .map_err(|error| error.to_string())?;
         }

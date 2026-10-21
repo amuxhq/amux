@@ -21,6 +21,10 @@ public enum Lifecycle: String, Sendable {
     /// and every profile's store is made whole on the drive, should the
     /// system end the app while it is suspended.
     case suspending = "Suspending"
+    /// The phone's network changed: every profile's link socket is bound
+    /// afresh, so its links move to the new network with their
+    /// connections, and every path to every host is tried again.
+    case networkChanged = "NetworkChanged"
 }
 
 /// The shared Rust runtime: this phone's installation, hosted in the app's

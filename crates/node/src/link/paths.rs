@@ -114,6 +114,12 @@ impl PathDriver {
     /// of `kind`.
     fn link_up_at(&self, link: LinkId, peer: HostId, stand_in: SocketAddr, kind: PathKind) {
         if self.socket.peer_of(stand_in) != Some(peer) {
+            // A link this host dialled by address, a pairing's or a
+            // discovered host's, stays at the stand-in of whoever answered
+            // there, so no path of the peer's carries it. The peer still
+            // has its machine, which a network change tells.
+            let now_ms = self.now_ms();
+            self.lock().machine(peer, now_ms);
             return;
         }
         let path = self.socket.path_of(stand_in);
@@ -658,6 +664,12 @@ mod tests {
     const LINK: LinkId = LinkId(1);
 
     async fn linked(relayed: bool) -> Linked {
+        linked_dialling(relayed, false).await
+    }
+
+    /// As [`linked`], the laptop dialling the desk's address, as a pairing
+    /// does, rather than the desk itself, when `by_address`.
+    async fn linked_dialling(relayed: bool, by_address: bool) -> Linked {
         let desk_identity = DeviceIdentity::for_test(HostId::new_v4());
         let laptop_identity = DeviceIdentity::for_test(HostId::new_v4());
         let (laptop, desk) = (laptop_identity.host_id, desk_identity.host_id);
@@ -683,12 +695,16 @@ mod tests {
         server_config.transport_config(transport.clone());
         let desk_endpoint = endpoint(desk_socket.clone(), Some(server_config));
         let laptop_endpoint = endpoint(laptop_socket.clone(), None);
-        laptop_socket.set_carrying(desk, Path::Direct(lan));
+        let stand_in = if by_address {
+            laptop_socket.stand_in_at(lan)
+        } else {
+            laptop_socket.set_carrying(desk, Path::Direct(lan));
+            laptop_socket.stand_in(desk)
+        };
         let mut config = laptop_identity
             .quic_client_config_for_peer(trust_for(&desk_identity), desk)
             .unwrap();
         config.transport_config(transport);
-        let stand_in = laptop_socket.stand_in(desk);
         let connect = async {
             laptop_endpoint
                 .connect_with(config, stand_in, crate::link::quic::DEVICE_SERVER_NAME)
@@ -817,6 +833,16 @@ mod tests {
             stand_in,
             "quinn saw no move"
         );
+        assert!(linked.client.close_reason().is_none(), "the link stayed up");
+    }
+
+    /// A link the laptop dialled at the desk's address, as a pairing does,
+    /// still gives the desk its machine, and a network change tells it.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn path_gives_the_peer_of_a_link_dialled_by_address_its_machine() {
+        let linked = linked_dialling(false, true).await;
+        assert_eq!(linked.laptop_paths.machines(), 1);
+        assert_eq!(linked.laptop_paths.network_changed(Vec::new()), 1);
         assert!(linked.client.close_reason().is_none(), "the link stayed up");
     }
 

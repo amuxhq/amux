@@ -131,6 +131,24 @@ pub fn mdns_discovery() -> DiscoveryFactory {
     })
 }
 
+/// The interface addresses a host lists, where a debug build is told to
+/// stand in for the machine's with `AMUX_TEST_INTERFACES`, a comma-separated
+/// list that may be empty; unset, the system's are read. A test network's
+/// process hosts list none, as its in-process hosts on loopback do, so no
+/// link finds a way around the network the test imitates.
+pub fn test_interfaces() -> Option<Vec<std::net::IpAddr>> {
+    #[cfg(all(debug_assertions, not(target_os = "ios")))]
+    if let Ok(listed) = std::env::var("AMUX_TEST_INTERFACES") {
+        return Some(
+            listed
+                .split(',')
+                .filter_map(|ip| ip.trim().parse().ok())
+                .collect(),
+        );
+    }
+    None
+}
+
 impl Default for EdgeOptions {
     fn default() -> Self {
         Self {
@@ -752,7 +770,8 @@ impl Edge {
 
     /// The host's network changed: the profile's socket is bound afresh
     /// where it is the edge's own, its addresses are listed again to every
-    /// peer, and every path machine probes its paths again.
+    /// peer, and every path machine probes its paths again. The link log
+    /// says so in a rebind line.
     pub fn network_changed(&self) -> std::io::Result<NetworkChange> {
         let rebound = self.quic_endpoint.rebind_in_place()?;
         let addrs: Vec<std::net::IpAddr> = match &self.interfaces {
@@ -766,6 +785,11 @@ impl Edge {
             .filter(|_| self.lan_addr.is_some());
         self.local_host.set_listed(own_listed(lan, Some(&addrs)));
         let machines_told = self.paths.network_changed(addrs.clone());
+        crate::link_log::Rebind {
+            rebound,
+            machines_told,
+        }
+        .write(self.host_id());
         Ok(NetworkChange {
             rebound,
             machines_told,

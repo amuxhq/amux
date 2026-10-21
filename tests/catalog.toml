@@ -140,7 +140,7 @@ cargo = [{ package = "agent", targets = ["tools"], features = [] }]
 name = "embedded-runtime"
 contract = "The embedded runtime pairs with a desk by the PIN it shows, holds the desk's agents as replica rows a chat reads in process, switches its source policy, and reaches an account's hosts over the relay once signed in."
 paths = ["crates/app-embedded/tests"]
-recipe = "just test -- --test embedded"
+recipe = "just test -- --test embedded --test runtime_log"
 boundary = "Store, effects, bridge"
 oracle = "Replica rows read in process, the desk's record of the prompt, and link observations."
 real = ["embedded profile runtime", "served daemon runtimes", "relay", "SQLite store", "loopback network"]
@@ -152,7 +152,7 @@ evidence = ""
 update = ""
 cargo = [
   { package = "app-embedded", kind = "lib", targets = ["app_embedded"], features = [] },
-  { package = "app-embedded", targets = ["embedded"], features = [] },
+  { package = "app-embedded", targets = ["embedded", "runtime_log"], features = [] },
 ]
 
 [[suite]]

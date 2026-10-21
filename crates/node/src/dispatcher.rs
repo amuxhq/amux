@@ -343,7 +343,10 @@ impl TunnelDispatcher {
                 })?;
                 run_link(
                     ctx.with_authenticated_peer(peer).with_shutdown(shutdown_rx),
-                    std::sync::Arc::new(QuicCarrier::from_accepted(connection)),
+                    std::sync::Arc::new(
+                        QuicCarrier::from_accepted(connection)
+                            .with_path(crate::link::link_log::PathKind::of_addr(addr)),
+                    ),
                     crate::routing::ConnectRole::Acceptor,
                 )
                 .await

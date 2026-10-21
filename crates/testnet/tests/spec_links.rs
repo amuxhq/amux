@@ -9,6 +9,7 @@
 mod support;
 
 use node::harness::LiveRoute;
+use node::link_log::{LinkTransition, PathKind};
 use provider_fakes::script::Step;
 use support::*;
 use testnet::{AgentDecl, HostDecl, Net, PATIENCE, Topology, observe};
@@ -50,7 +51,15 @@ async fn ipv6_only_hosts_link_and_stream_a_session() {
     let peer = pair(&net, "laptop", "desk").await;
     println!("the laptop paired with the desk: {:?}", peer.reachabilities);
     until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
-    println!("desk and laptop linked directly over IPv6");
+    let desk = host_id(&net, "desk");
+    let logged = net.link_log("laptop").unwrap();
+    assert!(
+        logged.iter().any(|line| line.peer == desk
+            && line.event == LinkTransition::Up
+            && line.path == PathKind::Lan),
+        "the laptop's link log names its link to the desk: {logged:?}"
+    );
+    println!("desk and laptop linked directly over IPv6; the laptop's link log: {logged:?}");
 
     net.current("laptop", "worker").await.unwrap();
     let mut chat = net.observe("laptop", "worker", 10).await.unwrap();

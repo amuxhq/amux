@@ -16,6 +16,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use uuid::Uuid;
 use wire::{self, PROTOCOL_VERSION};
 
+use super::link_log::{EarlyData, LinkEvent, LinkTransition};
 use super::{LinkCarrier as Carrier, read_message, write_message};
 use crate::net_error::{self, status as protocol_status};
 use crate::routing::{
@@ -592,6 +593,17 @@ async fn run_established(
         },
         resumed: None,
     });
+    // Nothing resumes a session yet, so every link is a full handshake
+    // with no early data.
+    let logged = LinkEvent {
+        peer: peer_host.id,
+        event: LinkTransition::Up,
+        path: carrier.path_kind(),
+        resumed: false,
+        early_data: EarlyData::None,
+        first_packet_to_catch_up_ms: None,
+    };
+    logged.write(ctx.local_host.id());
     if let Some(frame) = peer_frame {
         ctx.report_frame(link, frame);
     }
@@ -755,6 +767,12 @@ async fn run_established(
     }
     cleanup_link(&ctx, link, close_reason).await;
     carrier.close(close_reason);
+    LinkEvent {
+        event: LinkTransition::Down,
+        first_packet_to_catch_up_ms: None,
+        ..logged
+    }
+    .write(ctx.local_host.id());
     match close_status {
         Some(status) => Err(status.into()),
         None => Ok(()),
@@ -1360,6 +1378,143 @@ mod tests {
             expected
         );
         close
+    }
+
+    /// The link log this test process writes, as the daemon's log would
+    /// hold it. It is the process's one subscriber, not one scoped to a
+    /// test: a scoped one misses events whose callsites another test's
+    /// thread registered first, while none was listening.
+    #[derive(Clone, Default)]
+    struct Traces(Arc<std::sync::Mutex<Vec<u8>>>);
+
+    fn traces() -> &'static Traces {
+        static TRACES: std::sync::OnceLock<Traces> = std::sync::OnceLock::new();
+        TRACES.get_or_init(|| {
+            use tracing_subscriber::Layer as _;
+            use tracing_subscriber::layer::SubscriberExt as _;
+            use tracing_subscriber::util::SubscriberInitExt as _;
+
+            let traces = Traces::default();
+            let writer = traces.clone();
+            tracing_subscriber::registry()
+                .with(
+                    tracing_subscriber::fmt::layer()
+                        .with_ansi(false)
+                        .with_writer(move || writer.clone())
+                        .with_filter(tracing_subscriber::filter::Targets::new().with_target(
+                            crate::link_log::TARGET,
+                            tracing_subscriber::filter::LevelFilter::INFO,
+                        )),
+                )
+                .try_init()
+                .expect("no other subscriber in node's unit tests");
+            traces
+        })
+    }
+
+    impl std::io::Write for Traces {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Traces {
+        /// What `host` wrote to the link log.
+        fn link_log(&self, host: HostId) -> Vec<crate::link_log::LinkEvent> {
+            String::from_utf8_lossy(&self.0.lock().unwrap())
+                .lines()
+                .filter_map(crate::link_log::LinkEvent::parse)
+                .filter(|(writer, _)| *writer == host)
+                .map(|(_, event)| event)
+                .collect()
+        }
+    }
+
+    /// A direct link over UDP writes its link log line when it comes up
+    /// and again when it goes down, and the log reads both back.
+    #[tokio::test]
+    async fn link_log_names_a_direct_link_up_and_down() {
+        use crate::identity::DeviceIdentity;
+        use crate::link::LinkEndpoint;
+        use crate::link_log::{EarlyData, LinkEvent, LinkTransition, PathKind};
+
+        let traces = traces();
+        let dialler = DeviceIdentity::for_test(HostId::new_v4());
+        let listener = DeviceIdentity::for_test(HostId::new_v4());
+        let server = LinkEndpoint::bind(
+            "127.0.0.1:0".parse().unwrap(),
+            Some(listener.quic_server_config(trust_for(&dialler)).unwrap()),
+        )
+        .unwrap();
+        let client = LinkEndpoint::bind("127.0.0.1:0".parse().unwrap(), None).unwrap();
+        let accept = async {
+            let connection = server.endpoint.accept().await.unwrap().await.unwrap();
+            let from = server.address_of(connection.remote_address());
+            QuicCarrier::from_accepted(connection).with_path(PathKind::of_addr(from))
+        };
+        let dial = QuicCarrier::connect_direct(
+            &client,
+            server.local_addr().unwrap(),
+            &dialler,
+            trust_for(&listener),
+            listener.host_id,
+        );
+        let (accepted, dialled) = tokio::join!(accept, dial);
+        let dialled = dialled.unwrap();
+
+        let (local, peer) = (host_for(&listener), host_for(&dialler));
+        let links = Arc::new(LinkRegistry::new(local.id));
+        let ctx = LinkCtx::new(local.clone(), links.clone()).with_authenticated_peer(peer.id);
+        let task = tokio::spawn(run_link(
+            ctx,
+            Arc::new(accepted),
+            crate::routing::ConnectRole::Acceptor,
+        ));
+        let (mut sink, mut source) = dialled.control();
+        send_hello(&mut sink, &peer, None).await;
+        expect_accepted(&mut source).await;
+        dialled.close(wire::pb::LinkCloseReason::UserShutdown);
+        let _ = task.await.unwrap();
+
+        let up = LinkEvent {
+            peer: peer.id,
+            event: LinkTransition::Up,
+            path: PathKind::Lan,
+            resumed: false,
+            early_data: EarlyData::None,
+            first_packet_to_catch_up_ms: None,
+        };
+        let down = LinkEvent {
+            event: LinkTransition::Down,
+            ..up
+        };
+        assert_eq!(traces.link_log(local.id), [up, down]);
+    }
+
+    fn host_for(identity: &crate::identity::DeviceIdentity) -> Host {
+        Host {
+            id: identity.host_id,
+            ..host(0)
+        }
+    }
+
+    fn trust_for(peer: &crate::identity::DeviceIdentity) -> crate::trust::SharedTrustStore {
+        let mut trust = crate::trust::TrustStore::default();
+        trust
+            .upsert_paired_peer(
+                peer.host_id,
+                peer.public_key().to_vec(),
+                "peer".to_string(),
+                None,
+                chrono::Utc::now(),
+            )
+            .unwrap();
+        Arc::new(std::sync::RwLock::new(trust))
     }
 
     #[tokio::test(start_paused = true)]

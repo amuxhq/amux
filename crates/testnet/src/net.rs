@@ -381,6 +381,7 @@ impl Net {
     /// returns the net is ready.
     pub async fn start_with(topology: Topology, options: NetOptions) -> Result<Self, NetError> {
         topology.check()?;
+        crate::link_log::install();
         let driven = match options.clock {
             ClockMode::Driven => Some(options.driven.unwrap_or_default()),
             ClockMode::Wall => None,
@@ -776,6 +777,20 @@ impl Net {
             .get(name)
             .map(|host| &host.info)
             .ok_or_else(|| NetError::NoHost(name.to_owned()))
+    }
+
+    /// What `host` has written to the link log, oldest first: each of its
+    /// links coming up, going down or changing path, across restarts.
+    pub fn link_log(&self, host: &str) -> Result<Vec<node::link_log::LinkEvent>, NetError> {
+        let id = self.host(host)?.host_id;
+        Ok(match self.process(host)? {
+            Some(process) => crate::link_log::read(
+                &std::fs::read_to_string(process.data_dir.join(node::DAEMON_LOG))
+                    .unwrap_or_default(),
+                id,
+            ),
+            None => crate::link_log::captured(id),
+        })
     }
 
     pub fn is_up(&self, name: &str) -> bool {

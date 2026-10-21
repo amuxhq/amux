@@ -1,6 +1,7 @@
 pub mod carrier;
 pub(crate) mod channels;
 pub mod framed;
+pub mod link_log;
 pub(crate) mod piper;
 pub(crate) mod quic;
 pub(crate) mod relay_host;

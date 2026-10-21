@@ -14,6 +14,7 @@ use super::carrier::{
     LinkCarrier, OpenError,
 };
 use super::framed::{FramedKind, StreamEndpoint};
+use super::link_log::PathKind;
 use super::socket::{Datagrams, LinkSocket};
 use crate::HostId;
 use crate::identity::{DeviceIdentity, IdentityError};
@@ -161,6 +162,7 @@ fn alternate_families(addrs: impl IntoIterator<Item = SocketAddr>) -> Vec<Socket
 
 pub struct QuicCarrier {
     kind: CarrierKind,
+    path: PathKind,
     connection: quinn::Connection,
     inbound: tokio::sync::Mutex<mpsc::UnboundedReceiver<(pb::StreamPreface, ByteStream)>>,
     control: Mutex<Option<(ControlSink, ControlSource)>>,
@@ -208,7 +210,8 @@ impl QuicCarrier {
             "QUIC connection established"
         );
         let control = connection.open_bi().await?;
-        Ok(Self::new(connection, CarrierKind::Quic, Some(control)))
+        Ok(Self::new(connection, CarrierKind::Quic, Some(control))
+            .with_path(PathKind::of_addr(addr)))
     }
 
     #[allow(dead_code)]
@@ -302,18 +305,24 @@ impl QuicCarrier {
             .connect_with(config, stream.far, server_name)?
             .await?;
         let control = connection.open_bi().await?;
-        let kind = stream_carrier_kind(stream.kind());
+        let (kind, path) = (
+            stream_carrier_kind(stream.kind()),
+            stream_path(stream.kind()),
+        );
         stream.carry(connection.clone());
-        Ok(Self::new(connection, kind, Some(control)))
+        Ok(Self::new(connection, kind, Some(control)).with_path(path))
     }
 
     /// Answers the connection the far end of a byte stream opens.
     pub(crate) async fn accept_over_stream(stream: StreamEndpoint) -> Result<Self, ConnectError> {
         let incoming = stream.accept().await.ok_or(ConnectError::StreamEnded)?;
         let connection = incoming.await?;
-        let kind = stream_carrier_kind(stream.kind());
+        let (kind, path) = (
+            stream_carrier_kind(stream.kind()),
+            stream_path(stream.kind()),
+        );
         stream.carry(connection.clone());
-        Ok(Self::from_accepted_with_kind(connection, kind))
+        Ok(Self::from_accepted_with_kind(connection, kind).with_path(path))
     }
 
     /// The trusted host whose key the handshake pinned, if the far end
@@ -339,6 +348,13 @@ impl QuicCarrier {
         kind: CarrierKind,
     ) -> Self {
         Self::new(connection, kind, None)
+    }
+
+    /// Names the path the link runs on, where its kind alone does not say:
+    /// a direct link's address, known to whoever dialled or answered it.
+    pub(crate) fn with_path(mut self, path: PathKind) -> Self {
+        self.path = path;
+        self
     }
 
     fn new(
@@ -387,6 +403,7 @@ impl QuicCarrier {
 
         Self {
             kind,
+            path: kind.path(),
             connection,
             inbound: tokio::sync::Mutex::new(inbound),
             control: Mutex::new(Some((
@@ -494,6 +511,10 @@ impl LinkCarrier for QuicCarrier {
         }
     }
 
+    fn path_kind(&self) -> PathKind {
+        self.path
+    }
+
     fn path_stats(&self) -> String {
         let stats = self.connection.stats();
         format!(
@@ -581,6 +602,16 @@ fn stream_carrier_kind(kind: FramedKind) -> CarrierKind {
         FramedKind::RelayTcp => CarrierKind::RelayTcp,
         FramedKind::Ssh => CarrierKind::Ssh,
         FramedKind::InProcess => CarrierKind::Quic,
+    }
+}
+
+/// The path a byte stream's link runs on. The testnet's in-process duplex
+/// stands in for two hosts on one network.
+fn stream_path(kind: FramedKind) -> PathKind {
+    match kind {
+        FramedKind::RelayTcp => PathKind::RelayTcp,
+        FramedKind::Ssh => PathKind::Ssh,
+        FramedKind::InProcess => PathKind::Lan,
     }
 }
 

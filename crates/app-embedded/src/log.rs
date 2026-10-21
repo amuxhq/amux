@@ -38,7 +38,7 @@ pub(crate) fn write_to(path: &Path) -> io::Result<()> {
         let filter = std::env::var("RUST_LOG")
             .ok()
             .and_then(|directives| directives.parse::<Targets>().ok())
-            .unwrap_or_else(|| Targets::new().with_default(LevelFilter::INFO));
+            .unwrap_or_else(default_filter);
         // An app that set its own subscriber keeps it.
         let _ = tracing_subscriber::registry()
             .with(
@@ -50,6 +50,12 @@ pub(crate) fn write_to(path: &Path) -> io::Result<()> {
             .try_init();
     });
     Ok(())
+}
+
+/// What the log keeps unless `RUST_LOG` says otherwise: everything at
+/// INFO and above, the link log among it.
+fn default_filter() -> Targets {
+    Targets::new().with_default(LevelFilter::INFO)
 }
 
 /// One event's writer: formatted events arrive whole, one write each.
@@ -128,6 +134,13 @@ impl Capped {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_default_filter_keeps_the_link_log() {
+        let filter = default_filter();
+        assert!(filter.would_enable(node::link_log::TARGET, &tracing::Level::INFO));
+        assert!(!filter.would_enable(node::link_log::TARGET, &tracing::Level::DEBUG));
+    }
 
     #[test]
     fn a_log_past_its_cap_keeps_its_newest_whole_lines() {

@@ -43,6 +43,18 @@ impl CarrierKind {
     pub fn pins_peer(self) -> bool {
         matches!(self, Self::Quic | Self::Ssh)
     }
+
+    /// The path a carrier of this kind runs on, where nothing more is
+    /// known: a QUIC link's address says whether it is on the same network.
+    pub fn path(self) -> super::link_log::PathKind {
+        use super::link_log::PathKind;
+        match self {
+            Self::Quic => PathKind::Direct,
+            Self::RelayQuic => PathKind::RelayUdp,
+            Self::RelayTcp => PathKind::RelayTcp,
+            Self::Ssh => PathKind::Ssh,
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -97,6 +109,10 @@ pub trait LinkCarrier: Send + Sync + 'static {
     /// whose control stream ended before [`LinkCarrier::closed`] said so.
     fn close_reason(&self) -> Option<pb::LinkCloseReason> {
         None
+    }
+    /// The path the link's packets take, as the link log names it.
+    fn path_kind(&self) -> super::link_log::PathKind {
+        self.kind().path()
     }
     /// What the carrier's path has seen so far, for the link's logs: round
     /// trip, losses, packets. Empty where the carrier keeps no such count.

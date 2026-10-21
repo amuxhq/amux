@@ -2582,6 +2582,7 @@ dependencies = [
  "tonic",
  "tower",
  "tracing",
+ "tracing-subscriber",
  "uuid",
  "version-stamp",
  "webpki-roots",

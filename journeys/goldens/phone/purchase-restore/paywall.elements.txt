@@ -1,23 +1,26 @@
-shell |  | hosts | 0,62,402,778
-pair-confirm |  | needs subscription | 0,62,402,778
-pair-confirm.subscribe | Reach your agents from anywhere | The relay can see this host and cannot carry agents to it on this account. A subscription opens the tunnel. Hosts on this network never need one. | 18,88,366,126
-pair-confirm.subscribe.buy | Subscribe |  | 18,170,366,44
-pair-confirm.notNow | Not Now |  | 18,228,366,44
-paywall |  | yearly | 0,62,402,778
-paywall.back | Back to Hosts |  | 17,57,59,46
-paywall.title |  | Reach your agents anywhere | 18,106,218,64
-paywall.explanation |  | A subscription reaches your hosts from anywhere. Hosts on this network work without one. | 18,175,366,39
-paywall.monthly | Monthly £7.99 | not chosen | 18,237,366,48
-paywall.yearly | Yearly £79.99 | chosen | 18,285,366,67
-paywall.terms |  |  | 18,352,343,48
-paywall.buy | Subscribe · £79.99 a year | yearly | 26,746,350,44
-paywall.restore | Restore Purchases |  | 130,786,143,46
- | Back to Hosts |  | 17,57,59,46
+shell |  | agents | 0,62,402,778
+home |  | unsubscribed | 0,174,402,617
+home.empty.firstRun |  | Pair your first host | 16,204,214,32
+home.empty.explain |  |  | 16,244,368,37
+home.empty.looking |  | Looking on this network… | 16,305,194,18
+home.empty.howToPair |  |  | 16,347,370,153
+home.empty.sendLink | Send Link |  | 52,400,106,44
+home.accounts | Switch account |  | -1,7,30,30
+paywall |  | yearly | 0,116,402,724
+paywall.title |  | Reach your agents anywhere | 16,124,218,64
+paywall.explanation |  | A subscription reaches your hosts from anywhere. Hosts on this network work without one. | 16,194,367,39
+paywall.monthly | Monthly £7.99 | not chosen | 16,255,370,48
+paywall.yearly | Yearly £79.99 | chosen | 16,303,370,68
+paywall.terms |  |  | 16,371,333,51
+paywall.buy | Subscribe · £79.99 a year | yearly | 26,744,350,44
+paywall.restore | Restore Purchases |  | 133,784,136,48
+paywall.back | Back |  | 20,66,56,36
  | Reach your agents
-anywhere |  | 18,106,218,64
- | A subscription reaches your hosts from anywhere. Hosts on this network work without one. |  | 18,175,366,39
- | Monthly, £7.99 |  | 18,237,366,48
- | Yearly, £79.99, 2 months free |  | 18,285,366,67
- | Cancel any time in the App Store. A subscription bought on the web carries over. |  | 18,366,343,34
- | Subscribe · £79.99 a year |  | 26,746,350,44
- | Restore Purchases |  | 130,786,143,46
+anywhere |  | 16,124,218,64
+ | A subscription reaches your hosts from anywhere. Hosts on this network work without one. |  | 16,194,367,39
+ | Monthly, £7.99 |  | 16,255,370,48
+ | Yearly, £79.99, 2 months free |  | 16,303,370,68
+ | Cancel any time in the App Store. A subscription bought on the web carries over. |  | 16,385,333,37
+ | Subscribe · £79.99 a year |  | 26,744,350,44
+ | Restore Purchases |  | 133,784,136,48
+ | Back |  | 20,66,56,36

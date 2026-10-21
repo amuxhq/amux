@@ -499,8 +499,24 @@ class PhoneJourney:
     def wait_for(self, *identifiers: str, timeout: float = 60.0) -> dict[str, dict]:
         return self.wait(lambda drawn: all(name in drawn for name in identifiers), repr(identifiers), timeout)
 
-    def tap(self, identifier: str) -> None:
-        self.app({"kind": "tap", "identifier": identifier})
+    def tap(self, identifier: str, patience: float = 10.0) -> None:
+        """A tap as a person makes one, as `ctl phone tap` does: on a control
+        that is there and enabled, and again while the app has not yet drawn
+        a just-enabled control able to take it."""
+        self.wait(
+            lambda drawn: drawn.get(identifier, {}).get("enabled", False) is not False,
+            f"{identifier} there to tap",
+            timeout=patience,
+        )
+        deadline = time.monotonic() + patience
+        while True:
+            try:
+                self.app({"kind": "tap", "identifier": identifier})
+                break
+            except DoorError as error:
+                if " did not activate" not in str(error) or time.monotonic() > deadline:
+                    raise
+                self.app({"kind": "settle"})
         self.actions.append(f"tap {identifier}")
 
     def geometry(self, on: bool) -> None:
@@ -524,6 +540,20 @@ class PhoneJourney:
         it into view, clears it and types."""
         self.app({"kind": "search", "text": text})
         self.actions.append(f"search {text!r}")
+
+    def tab(self, title: str) -> None:
+        """The tab reading `title` in the system's tab bar, whose tabs carry
+        their titles and no names of their own."""
+        self.choose(title)
+
+    def settings(self) -> None:
+        """Settings, as a person reaches them: the account disc on the agent
+        list, then Settings in its menu. They open as a sheet over the tabs."""
+        self.tab("Agents")
+        self.wait_for("home.accounts")
+        self.tap("home.accounts")
+        self.choose("Settings")
+        self.wait_for("you")
 
     def perform(self, identifier: str, action: str) -> None:
         """An element's named accessibility action, as VoiceOver offers it."""
@@ -656,6 +686,11 @@ class PhoneJourney:
         self._write("PASS\n" + "".join(f"- {item}\n" for item in assertions))
 
     def fail(self, error: BaseException) -> None:
+        # The display as the story stopped, beside what it says it drew.
+        try:
+            simctl("io", self.udid, "screenshot", "--type=png", str(self.output / "failed.png"))
+        except Exception as missed:  # the failure itself matters more
+            self.actions.append(f"no picture of the failure: {missed}")
         self._write(f"FAIL\n- {type(error).__name__}: {error}\n")
 
     def _write(self, result: str) -> None:

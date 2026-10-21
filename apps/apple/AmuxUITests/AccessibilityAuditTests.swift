@@ -38,6 +38,9 @@ final class AccessibilityAuditTests: XCTestCase {
     /// The smallest a control may be, in points, in either direction. Apple's
     /// own number, and the one a thumb actually needs.
     static let smallest: CGFloat = 44
+    /// What placing a rectangle on the display's pixels can take off it:
+    /// a 44-point row comes back a hair under 44.
+    static let pixelSnap: CGFloat = 0.5
 
     /// Controls that are smaller than that on purpose, by identifier prefix,
     /// each with the reason.
@@ -140,12 +143,14 @@ final class AccessibilityAuditTests: XCTestCase {
     /// Buttons and the things that behave like them. An element with no
     /// rectangle is not on screen — a row scrolled out of a list is still in
     /// the tree — and judging one of those on its size would be judging it on
-    /// nothing.
+    /// nothing. Nor is one a sheet covers, which stays in the tree under it:
+    /// it is judged on the page where it is on top.
     private func controls(_ app: XCUIApplication) -> [XCUIElement] {
         let kinds: [XCUIElement.ElementType] = [.button, .switch, .link]
         return kinds.flatMap { kind in
             app.descendants(matching: kind).allElementsBoundByIndex.filter { control in
                 control.exists && control.frame.width > 0 && control.frame.height > 0
+                    && control.isHittable
                     && !Self.notOurs.contains { control.identifier.hasPrefix($0) }
             }
         }
@@ -243,7 +248,8 @@ final class AccessibilityAuditTests: XCTestCase {
         }
         guard judgeSize else { return faults }
         let frame = judged(control, laidOut: laidOut)
-        if frame.width < Self.smallest || frame.height < Self.smallest {
+        let least = Self.smallest - Self.pixelSnap
+        if frame.width < least || frame.height < least {
             faults.append(
                 "\(state): \(named) (\"\(control.label)\") is \(rectangle(frame)), under the "
                 + "\(Int(Self.smallest)) pt a thumb needs")
@@ -251,9 +257,13 @@ final class AccessibilityAuditTests: XCTestCase {
         return faults
     }
 
+    /// Whole points as they are and anything else to a tenth, so a control
+    /// a fraction under the limit does not read as exactly on it.
     private func rectangle(_ frame: CGRect) -> String {
-        String(format: "%.0f×%.0f pt at (%.0f, %.0f)",
-               frame.width, frame.height, frame.minX, frame.minY)
+        func points(_ value: CGFloat) -> String {
+            value == value.rounded() ? String(format: "%.0f", value) : String(format: "%.1f", value)
+        }
+        return "\(points(frame.width))×\(points(frame.height)) pt at (\(points(frame.minX)), \(points(frame.minY)))"
     }
 
     // MARK: - What it leaves behind

@@ -1,34 +1,32 @@
 shell |  | agents | 0,62,402,778
-chat |  | reviewer | 0,62,402,778
-chat.row.boundary | Ended · stopped |  | 18,132,366,34
-chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
-chat.back | Back |  | 16,68,42,46
-chat.title | reviewer | reviewer | 51,72,156,38
-chat.changes | +2 −1 | Uncommitted | 280,73,60,36
-chat.more | More |  | 344,69,44,44
-chat.attachment | Pasted text · 12 lines |  | 28,683,214,26
-chat.attachment.remove | Remove |  | 206,674,44,44
-chat.attachment | Review · 1 comment |  | 28,714,188,26
-chat.attachment.remove | Remove |  | 180,705,44,44
-chat.field | Message reviewer | Please check against | 28,750,318,24
-chat.clear | Clear |  | 342,738,44,44
+chat |  | reviewer | 0,116,402,724
+chat.row.boundary | Ended · stopped |  | 16,124,370,34
+chat.attachment | Pasted text · 12 lines |  | 28,682,172,26
+chat.attachment.remove | Remove |  | 164,673,44,44
+chat.attachment | Review · 1 comment |  | 28,714,173,26
+chat.attachment.remove | Remove |  | 165,705,44,44
+chat.field | Message reviewer | Please check against | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
-chat.model | claude-fake-1 · medium |  | 71,779,139,44
+chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44
- | Back |  | 16,68,42,46
- | reviewer, /t/a/n/d/work · desk |  | 51,72,156,38
- | 1 file, 2 added, 1 removed |  | 279,73,61,36
- | More |  | 344,69,44,44
+chat.changes | +2 −1 | Uncommitted | 295,66,51,36
+chat.more | More |  | 346,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
+chat.title | reviewer | reviewer | 96,66,160,36
  | Plain Text |  | 38,689,10,13
- | Pasted text · 12 lines |  | 57,688,159,16
- | Remove |  | 206,674,44,44
+ | Pasted text · 12 lines |  | 57,687,117,16
+ | Remove |  | 164,673,44,44
  | Comment Lines |  | 38,721,13,13
- | Review · 1 comment |  | 60,719,130,16
- | Remove |  | 180,705,44,44
- | Clear |  | 342,738,44,44
+ | Review · 1 comment |  | 60,719,115,16
+ | Remove |  | 165,705,44,44
  | Attach |  | 23,779,44,44
- | claude-fake-1 |  | 71,779,139,44
+ | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44
- | Ended · stopped |  | 18,132,366,34
+ | Ended · stopped |  | 16,124,370,34
+ | Back |  | 20,66,56,36
+ | reviewer, /t/a/n/d/work · desk |  | 96,66,160,36
+ | 1 file, 2 added, 1 removed |  | 295,66,51,36
+ | More |  | 346,66,36,36

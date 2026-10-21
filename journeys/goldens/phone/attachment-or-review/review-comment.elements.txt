@@ -1,43 +1,39 @@
 shell |  | agents | 0,62,402,778
-chat |  | reviewer | 0,62,402,778
-chat.row.boundary | Ended · stopped |  | -103,132,366,34
-chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
-chat.back | Back |  | 16,68,42,46
-chat.title | reviewer | reviewer | 51,72,156,38
-chat.changes | +2 −1 | Uncommitted | 280,73,60,36
-chat.more | More |  | 344,69,44,44
-chat.attachment | Pasted text · 12 lines |  | 28,714,214,26
-chat.attachment.remove | Remove |  | 206,705,44,44
-chat.field | Message reviewer | Please check against | 28,750,318,24
-chat.clear | Clear |  | 342,738,44,44
+chat |  | reviewer | 0,116,402,724
+chat.row.boundary | Ended · stopped |  | -105,124,370,34
+chat.attachment | Pasted text · 12 lines |  | 28,714,172,26
+chat.attachment.remove | Remove |  | 164,705,44,44
+chat.field | Message reviewer | Please check against | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
-chat.model | claude-fake-1 · medium |  | 71,779,139,44
+chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44
-review |  | 1 | 0,62,402,778
-review.file.0 | deploy.sh | open | 0,153,402,41
-review.files | All Files |  | 299,153,77,40
-review.line.0.0.0 | #!/bin/sh |  | 0,223,402,19
-review.line.0.0.1 | echo deploying |  | 0,242,402,19
-review.line.0.0.2 | rsync build/ prod:/srv |  | 0,261,402,19
-review.line.0.0.3 | rsync --delete build/ prod:/srv |  | 0,280,402,19
-review.comment.thread | Why --delete here? |  | 0,299,402,36
-review.line.0.0.4 | echo done |  | 0,334,402,19
-review.attach | Attach Review · 1 comment |  | 18,782,366,50
-review.back | Back to reviewer |  | 17,51,79,46
-review.count |  | 1 | 112,101,21,20
-review.summary | 1 file, 2 added, 1 removed |  | 18,128,104,17
- | Back to reviewer |  | 17,51,79,46
- | Review |  | 18,90,84,32
- | 1 comment |  | 112,101,21,20
- | 1 file, 2 added, 1 removed |  | 18,128,104,17
- | Attach Review · 1 comment |  | 18,782,366,50
- | deploy.sh | Open | 18,163,279,21
- | All Files |  | 299,153,77,40
- | @@ -1,3 +1,4 @@ |  | 18,200,117,17
- | Line 1, #!/bin/sh |  | 0,223,402,19
- | Line 2, echo deploying |  | 0,242,402,19
- | Removed line 3, rsync build/ prod:/srv |  | 0,261,402,19
- | Added line 3, rsync --delete build/ prod:/srv |  | 0,280,402,19
- | Why --delete here? |  | 0,299,402,36
- | Added line 4, echo done |  | 0,334,402,19
+chat.changes | +2 −1 | Uncommitted | 295,4,51,36
+chat.more | More |  | 346,4,36,36
+chat.back | Back |  | 0,0,56,36
+chat.header | /t/a/n/d/work · desk | live | 4,4,160,36
+chat.title | reviewer | reviewer | 4,4,160,36
+review |  | 1 | 0,116,402,724
+review.line.0.0.0 | #!/bin/sh |  | 0,157,402,19
+review.line.0.0.1 | echo deploying |  | 0,176,402,19
+review.line.0.0.2 | rsync build/ prod:/srv |  | 0,195,402,19
+review.line.0.0.3 | rsync --delete build/ prod:/srv |  | 0,214,402,19
+review.comment.thread | Why --delete here? |  | 0,233,402,36
+review.line.0.0.4 | echo done |  | 0,269,402,19
+review.file.0 | deploy.sh | open | 0,116,402,41
+review.attach | Attach Review · 1 comment |  | 16,782,370,50
+review.files | Files |  | 338,62,44,44
+review.back | Back |  | 20,66,56,36
+review.summary | 1 file, 2 added, 1 removed |  | 96,66,173,36
+review.against | Uncommitted |  | 163,86,84,16
+ | Attach Review · 1 comment |  | 16,782,370,50
+ | deploy.sh | Open | 0,116,402,41
+ | Line 1, #!/bin/sh |  | 0,157,402,19
+ | Line 2, echo deploying |  | 0,176,402,19
+ | Removed line 3, rsync build/ prod:/srv |  | 0,195,402,19
+ | Added line 3, rsync --delete build/ prod:/srv |  | 0,214,402,19
+ | Why --delete here? |  | 0,233,402,36
+ | Added line 4, echo done |  | 0,269,402,19
+ | Back |  | 20,66,56,36
+ | 1 file, 2 added, 1 removed |  | 96,66,173,36
+ | Files |  | 338,62,44,44

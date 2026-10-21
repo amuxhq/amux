@@ -1,12 +1,8 @@
 shell |  | agents | 0,62,402,778
-chat |  | asker | 0,62,402,778
-chat.row.boundary | Started |  | 18,43,366,34
-chat.row.prompt | Add a settings screen. |  | 18,77,366,40
-chat.row.question | Asking, 3 questions |  | 18,128,366,20
-chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
-chat.back | Back |  | 16,68,42,46
-chat.title | asker | asker | 51,72,156,38
-chat.more | More |  | 344,69,44,44
+chat |  | asker | 0,116,402,724
+chat.row.boundary | Started |  | 16,42,370,34
+chat.row.prompt | Add a settings screen. |  | 16,76,370,40
+chat.row.question | Asking, 3 questions |  | 16,128,370,20
 ask | 3 questions | open | 12,162,378,668
 ask.more | More |  | 338,170,44,44
 ask.step.0 |  | answered | 28,218,63,44
@@ -14,7 +10,7 @@ ask.step.1 |  | open | 97,218,55,44
 ask.step.2 |  | open | 158,218,58,44
 ask.step.review |  |  | 222,218,65,44
 ask.question | How should the settings screen be laid out? |  | 28,274,317,20
-ask.preview | Stacked |  | 28,306,346,107
+ask.preview | Stacked |  | 28,306,346,108
 ask.option.0 | Sidebar |  | 28,425,346,80
 ask.option.1 | Stacked | selected | 28,512,346,80
 ask.option.other |  |  | 28,598,346,48
@@ -22,17 +18,18 @@ ask.addNote.0 | Add a note |  | 28,658,94,44
 ask.skip | Skip |  | 28,714,169,44
 ask.next | Next |  | 205,714,169,44
 ask.reply | Reply instead |  | 28,770,114,44
- | Back |  | 16,68,42,46
- | asker, /t/a/n/d/work · desk |  | 51,72,156,38
- | More |  | 344,69,44,44
- | 3 questions |  | 62,183,87,20
+chat.more | More |  | 342,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
+chat.title | asker | asker | 96,66,160,36
+ | 3 questions |  | 62,182,87,20
  | More |  | 338,170,44,44
  | Layout |  | 28,218,63,44
  | Entry |  | 97,218,55,44
  | Order |  | 158,218,58,44
  | Review |  | 222,218,65,44
  | How should the settings screen be laid out? |  | 28,274,317,20
- | Stacked |  | 28,306,51,16
+ | Stacked |  | 28,306,49,16
  | Relay ──────────
   Address  relay.amux.dev
 Theme ──────────
@@ -44,6 +41,9 @@ Theme ──────────
  | Skip |  | 28,714,169,44
  | Next |  | 205,714,169,44
  | Reply instead |  | 28,782,114,20
- | Started |  | 18,43,366,34
- | Add a settings screen. |  | 18,77,366,40
- | Asking, 3 questions |  | 18,128,366,20
+ | Started |  | 16,42,370,34
+ | Add a settings screen. |  | 16,76,370,40
+ | Asking, 3 questions |  | 16,128,370,20
+ | Back |  | 20,66,56,36
+ | asker, /t/a/n/d/work · desk |  | 96,66,160,36
+ | More |  | 342,66,36,36

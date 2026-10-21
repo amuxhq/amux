@@ -1,31 +1,31 @@
 shell |  | agents | 0,62,402,778
-chat |  | planner | 0,62,402,778
-chat.row.boundary | Started |  | 18,132,366,34
-chat.row.prompt | Move the journal. |  | 18,166,366,40
-chat.row.plan | Plan sent back, Check the copy before switching. | folded | 18,205,366,64
-chat.row.plan | Plan approved, Move the journal | folded | 18,255,366,44
-chat.row.prose | Moving the journal as planned. | final | 18,301,366,20
-chat.prose.render |  | rendered | 18,301,366,20
+chat |  | planner | 0,116,402,724
+chat.row.boundary | Started |  | 16,124,370,34
+chat.row.prompt | Move the journal. |  | 16,158,370,40
+chat.row.plan | Plan sent back, Check the copy before switching. | folded | 16,198,370,65
+chat.row.plan | Plan approved, Move the journal | folded | 16,249,370,44
+chat.row.prose | Moving the journal as planned. | final | 16,295,370,20
+chat.prose.render |  | rendered | 16,295,370,20
 chat.row.turn-end | <volatile>
-chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
-chat.back | Back |  | 16,68,42,46
-chat.title | planner | planner | 51,72,156,38
-chat.more | More |  | 344,69,44,44
 chat.field | Message planner |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
-chat.model | claude-fake-1 · medium |  | 71,779,139,44
+chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
- | Back |  | 16,68,42,46
- | planner, /t/a/n/d/work · desk |  | 51,72,156,38
- | More |  | 344,69,44,44
+chat.more | More |  | 342,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
+chat.title | planner | planner | 96,66,160,36
  | Attach |  | 23,779,44,44
- | claude-fake-1 |  | 71,779,139,44
+ | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44 (disabled)
- | Started |  | 18,132,366,34
- | Move the journal. |  | 18,166,366,40
- | Plan sent back, “Check the copy before switching.” |  | 18,205,366,64
- | Plan approved, Move the journal |  | 18,255,366,44
- | Moving the journal as planned. |  | 18,301,366,20
- | Worked <t> · $0.00 |  | 48,329,130,16
+ | Started |  | 16,124,370,34
+ | Move the journal. |  | 16,158,370,40
+ | Plan sent back, “Check the copy before switching.” |  | 16,198,370,65
+ | Plan approved, Move the journal |  | 16,249,370,44
+ | Moving the journal as planned. |  | 16,295,370,20
+ | Worked <t> · $0.00 |  | 16,323,116,16
+ | Back |  | 20,66,56,36
+ | planner, /t/a/n/d/work · desk |  | 96,66,160,36
+ | More |  | 342,66,36,36

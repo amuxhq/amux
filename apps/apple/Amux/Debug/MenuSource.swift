@@ -66,3 +66,48 @@ enum DialogSource {
         return true
     }
 }
+
+/// The system's tab bar, whose tabs reach the process with their titles and
+/// nothing else.
+enum TabSource {
+    /// Each tab on show, by its title, with whether it is the one selected.
+    @MainActor
+    static func tabs(in window: UIWindow) -> [VisibleElement] {
+        bars(in: window).flatMap { bar in
+            (bar.items ?? []).compactMap { item -> VisibleElement? in
+                guard let title = item.title else { return nil }
+                let frame = (item.value(forKey: "view") as? UIView)
+                    .map { $0.convert($0.bounds, to: window) } ?? .zero
+                return VisibleElement(
+                    identifier: "", label: title,
+                    value: bar.selectedItem === item ? "selected" : nil,
+                    frame: VisibleFrame(
+                        x: frame.origin.x, y: frame.origin.y,
+                        width: frame.width, height: frame.height),
+                    enabled: item.isEnabled)
+            }
+        }
+    }
+
+    /// Presses the tab titled `label` on the button the bar drew for it,
+    /// which sends what a tap sends.
+    @MainActor
+    static func press(_ label: String, in window: UIWindow) -> Bool {
+        for bar in bars(in: window) {
+            guard let item = bar.items?.first(where: { $0.title == label }),
+                  let button = item.value(forKey: "view") as? UIControl
+            else { continue }
+            button.sendActions(for: .touchUpInside)
+            return true
+        }
+        return false
+    }
+
+    /// The tab bars on show: one hidden under a pushed page offers nothing.
+    @MainActor
+    private static func bars(in view: UIView) -> [UITabBar] {
+        guard !view.isHidden, view.alpha > 0 else { return [] }
+        if let bar = view as? UITabBar { return [bar] }
+        return view.subviews.flatMap(bars(in:))
+    }
+}

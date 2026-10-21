@@ -1,65 +1,67 @@
 shell |  | agents | 0,62,402,778
-home |  | signed-out | 0,62,402,778
-home.newAgent | New Agent |  | 345,67,44,44
-home.title | Agents, switch account | Agents | 18,105,165,68
-home.subtitle |  | 2 need you · 4 agents | 18,172,186,81
-home.row.<dialog> | dialog, Needs you, Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent., desk, /tmp/amux-phone-journey/net/desk/work, <age> | needs-you | 18,316,366,236
+home |  | signed-out | 0,116,402,675
+home.chip.all | All | on | 16,114,60,44
+home.chip.needsYou | Needs you 2 | off | 84,114,191,44
+home.chip.working | Working | off | 283,114,140,44
+home.row.<dialog> | dialog, Needs you, Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent., desk, /tmp/amux-phone-journey/net/desk/work, <age> | needs-you | 16,160,370,150
 home.row.<dialog>.age.volatile | <volatile>
-home.row.<dialog>.second |  |  | 31,376,325,78
-home.row.<dialog>.detail.volatile | <volatile>
-home.row.<asker> | asker, Needs you, Which changes should the release notes keep?, desk, /tmp/amux-phone-journey/net/desk/work, <age> | needs-you | 18,552,366,236
+home.row.<dialog>.second |  |  | 40,219,343,78
+home.row.<asker> | asker, Needs you, Which changes should the release notes keep?, desk, /tmp/amux-phone-journey/net/desk/work, <age> | needs-you | 16,310,370,150
 home.row.<asker>.age.volatile | <volatile>
-home.row.<asker>.second |  |  | 31,612,340,78
-home.row.<asker>.detail.volatile | <volatile>
-home.row.<keeper> | keeper, Idle, The recovery state is safely stored., desk, /tmp/amux-phone-journey/net/desk/work, <age>, unread | idle | 18,855,366,236
+home.row.<asker>.second |  |  | 40,370,345,78
+home.row.<keeper> | keeper, Idle, The recovery state is safely stored., desk, /tmp/amux-phone-journey/net/desk/work, <age>, unread | idle | 16,460,370,150
 home.row.<keeper>.age.volatile | <volatile>
-home.row.<keeper>.second |  |  | 31,915,308,78
-home.row.<keeper>.detail.volatile | <volatile>
-new-agent |  | /private/tmp/amux-phone-journey/net/desk/work | 0,62,402,778
-new-agent.back | Back to Agents |  | 17,59,133,69
-new-agent.title |  | New Agent | 18,119,181,43
-new-agent.host.<desk> | desk, macOS, direct | chosen | 18,228,366,108
-new-agent.directory | Directory | /private/tmp/amux-phone-journey/net/desk/work | 18,406,366,68
-new-agent.name | Name | work | 18,544,366,44
-new-agent.provider.claude | Claude | chosen | 18,658,178,95
-new-agent.provider.codex | Codex | not chosen | 206,659,178,94
-new-agent.model | Model, Host default | Host default | 18,763,366,114
-new-agent.permission | Permission, Host default | Host default | 18,877,366,114
-new-agent.worktree | New worktree | off | 18,1000,366,221
+home.row.<keeper>.second |  |  | 40,520,308,78
+home.row.<planner> | planner, Idle, The pairing errors all come from one table in the wire crate, so they can share one string., desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,610,370,150
+home.row.<planner>.age.volatile | <volatile>
+home.row.<planner>.second |  |  | 40,670,339,78
+home.newAgent | New Agent |  | 338,62,44,44
+home.accounts | Switch account |  | 21,66,42,36
+home.subtitle |  | 2 need you | 16,82,370,26
+hosts |  | 1 reachable | 0,213,402,578
+hosts.row.<desk> | desk, macOS, reachable on this network | on-this-network | 16,219,370,111
+hosts.subtitle |  | 1 reachable | 16,179,370,26
+new-agent |  | /private/tmp/amux-phone-journey/net/desk/work | 0,132,402,708
+new-agent.host | Host, desk | desk | 16,185,370,114
+new-agent.directory | Directory | /private/tmp/amux-phone-journey/net/desk/work | 16,299,370,232
+new-agent.provider | Agent, Claude | claude | 16,598,370,114
+new-agent.model | Model, Host default | Host default | 16,713,370,114
+new-agent.permission | Permission, Host default | Host default | 16,827,370,114
+new-agent.worktree | New worktree | off | 16,942,370,221
+new-agent.name | Name | work | 137,1188,235,42
 new-agent.start | Start on desk | ready | 26,753,350,65
-hosts |  | 1 reachable | 0,62,402,778
-hosts.title |  | Hosts | 18,72,118,54
-hosts.subtitle |  | 1 reachable | 18,127,205,40
-hosts.row.<desk> | desk, macOS, reachable on this network | on-this-network | 18,230,366,108
-hosts.fact.identity | <volatile>
-hosts.fact.paired-devices | Paired Devices, 1 | 1 | 18,556,366,114
-hosts.caption.devices |  |  | 18,678,347,78
-you |  | none | 0,62,402,778
-you.title |  | You | 18,62,78,62
-you.add | Add Account |  | 18,189,366,69
-you.signIn | Sign In |  | 18,276,366,65
-you.signIn.caption |  |  | 18,349,329,78
-you.appearance |  | system | 18,492,366,234
-you.appearance.light | Light | not chosen | 32,543,113,70
-you.appearance.dark | Dark | not chosen | 32,600,95,70
-you.appearance.system | System | chosen | 32,656,132,70
-you.shareUsage |  | on | 18,727,366,183
-you.identity | <volatile>
-you.support | Contact Support |  | 18,1087,366,69
-you.report | Report a Problem |  | 18,1156,366,69
-you.dump | Export Diagnostics |  | 18,1226,366,112
-you.help.caption |  |  | 18,1345,366,161
- | Back to Agents |  | 17,59,133,69
- | New Agent |  | 18,119,181,43
+new-agent.cancel | Cancel |  | 20,82,56,36
+ | All |  | 16,114,60,44
+ | Needs you, 2 |  | 84,114,191,44
+ | Working |  | 283,114,140,44
+ | dialog, Needs you, Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,160,370,150
+ | asker, Needs you, Which changes should the release notes keep?, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,310,370,150
+ | keeper, Idle, The recovery state is safely stored., desk, /tmp/amux-phone-journey/net/desk/work, <age>, unread |  | 16,460,370,150
+ | planner, Idle, The pairing errors all come from one table in the wire crate, so they can share one string., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,611,370,149
+ | Switch account |  | 21,66,42,36
+ | Agents |  | 167,65,68,25
+ | New Agent |  | 338,62,44,44
+ | 2 need you |  | 171,89,60,14
+ | Search |  | 16,117,370,0
+ | Agents |  | 111,795,94,54
+ | Agents |  | 140,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 229,830,29,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 230,830,29,12
  | Start on desk |  | 26,753,350,65
- | HOST |  | 20,180,74,39
- | desk, macOS, direct |  | 18,228,366,108
- | DIRECTORY |  | 20,358,166,39
- | Directory |  | 18,406,366,68
- | NAME |  | 20,496,74,39
- | AGENT |  | 20,610,92,39
- | Claude |  | 18,658,178,95
- | Codex |  | 206,659,178,94
- | Model, Host default |  | 18,763,366,114
- | Permission, Host default |  | 18,877,366,114
- | New worktree, A worktree of its own, made from the directory’s repository | 0 | 32,1010,338,201
+ | WHERE |  | 18,140,108,36
+ | Host, desk |  | 16,185,370,114
+ | Directory |  | 16,299,370,233
+ | AGENT |  | 18,554,101,36
+ | Agent, Claude |  | 16,598,370,114
+ | Model, Host default |  | 16,713,370,114
+ | Permission, Host default |  | 16,827,370,114
+ | New worktree, A worktree of its own, made from the directory’s repository | 0 | 30,952,342,201
+ | Name |  | 30,1188,97,43
+ | Cancel |  | 20,82,56,36
+ | New Agent |  | 149,88,104,25
+ | Agents | selected | 111,795,94,54
+ | Hosts |  | 197,795,94,54

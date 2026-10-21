@@ -1,19 +1,22 @@
-shell |  | hosts | 0,62,402,778
-pair-confirm |  | needs subscription | 0,62,402,778
-pair-confirm.subscribe | Reach your agents from anywhere | The relay can see this host and cannot carry agents to it on this account. A subscription opens the tunnel. Hosts on this network never need one. | 18,88,366,126
-pair-confirm.subscribe.buy | Subscribe |  | 18,170,366,44
-pair-confirm.notNow | Not Now |  | 18,228,366,44
-paywall |  | unconfirmed unreachable | 0,62,402,778
-paywall.back | Back to Hosts |  | 17,57,59,46
-paywall.title |  | Reach your agents anywhere | 18,106,218,64
-paywall.explanation |  | A subscription reaches your hosts from anywhere. Hosts on this network work without one. | 18,175,366,39
-paywall.unconfirmed | Your purchase is saved, and the app retries confirmation with amux.sh when it next opens. | unreachable | 26,675,350,60
-paywall.buy | Retry | unconfirmed unreachable | 26,746,350,44
-paywall.restore | Restore Purchases |  | 130,786,143,46
- | Back to Hosts |  | 17,57,59,46
+shell |  | agents | 0,62,402,778
+home |  | unsubscribed | 0,174,402,617
+home.empty.firstRun |  | Pair your first host | 16,204,214,32
+home.empty.explain |  |  | 16,244,368,37
+home.empty.looking |  | Looking on this network… | 16,305,194,18
+home.empty.howToPair |  |  | 16,347,370,153
+home.empty.sendLink | Send Link |  | 52,400,106,44
+home.accounts | Switch account |  | -1,7,30,30
+paywall |  | unconfirmed unreachable | 0,116,402,724
+paywall.title |  | Reach your agents anywhere | 17,124,218,64
+paywall.explanation |  | A subscription reaches your hosts from anywhere. Hosts on this network work without one. | 17,194,367,39
+paywall.unconfirmed | Your purchase is saved, and the app retries confirmation with amux.sh when it next opens. | unreachable | 26,674,350,60
+paywall.buy | Retry | unconfirmed unreachable | 26,744,350,44
+paywall.restore | Restore Purchases |  | 133,784,136,48
+paywall.back | Back |  | 20,66,56,36
  | Reach your agents
-anywhere |  | 18,106,218,64
- | A subscription reaches your hosts from anywhere. Hosts on this network work without one. |  | 18,175,366,39
- | Your purchase is not confirmed yet, Your purchase is saved, and the app retries confirmation with amux.sh when it next opens. |  | 26,675,318,60
- | Retry |  | 26,746,350,44
- | Restore Purchases |  | 130,786,143,46
+anywhere |  | 17,124,218,64
+ | A subscription reaches your hosts from anywhere. Hosts on this network work without one. |  | 17,194,367,39
+ | Your purchase is not confirmed yet, Your purchase is saved, and the app retries confirmation with amux.sh when it next opens. |  | 26,674,318,60
+ | Retry |  | 26,744,350,44
+ | Restore Purchases |  | 133,784,136,48
+ | Back |  | 20,66,56,36

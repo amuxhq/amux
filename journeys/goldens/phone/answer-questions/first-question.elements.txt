@@ -1,12 +1,8 @@
 shell |  | agents | 0,62,402,778
-chat |  | asker | 0,62,402,778
-chat.row.boundary | Started |  | 18,60,366,34
-chat.row.prompt | Add a settings screen. |  | 18,93,366,40
-chat.row.question | Asking, 3 questions |  | 18,145,366,20
-chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
-chat.back | Back |  | 16,68,42,46
-chat.title | asker | asker | 51,72,156,38
-chat.more | More |  | 344,69,44,44
+chat |  | asker | 0,116,402,724
+chat.row.boundary | Started |  | 16,59,370,34
+chat.row.prompt | Add a settings screen. |  | 16,93,370,40
+chat.row.question | Asking, 3 questions |  | 16,145,370,20
 ask | 3 questions | open | 12,179,378,651
 ask.more | More |  | 338,187,44,44
 ask.step.0 |  | open | 28,235,63,44
@@ -14,7 +10,7 @@ ask.step.1 |  | open | 97,235,55,44
 ask.step.2 |  | open | 158,235,58,44
 ask.step.review |  |  | 222,235,65,44
 ask.question | How should the settings screen be laid out? |  | 28,291,317,20
-ask.preview | Sidebar |  | 28,323,346,91
+ask.preview | Sidebar |  | 28,322,346,91
 ask.option.0 | Sidebar |  | 28,425,346,80
 ask.option.1 | Stacked |  | 28,512,346,80
 ask.option.other |  |  | 28,598,346,48
@@ -22,9 +18,10 @@ ask.addNote.0 | Add a note |  | 28,658,94,44
 ask.skip | Skip |  | 28,714,169,44
 ask.next | Next |  | 205,714,169,44 (disabled)
 ask.reply | Reply instead |  | 28,770,114,44
- | Back |  | 16,68,42,46
- | asker, /t/a/n/d/work · desk |  | 51,72,156,38
- | More |  | 344,69,44,44
+chat.more | More |  | 342,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
+chat.title | asker | asker | 96,66,160,36
  | 3 questions |  | 62,199,87,20
  | More |  | 338,187,44,44
  | Layout |  | 28,235,63,44
@@ -32,7 +29,7 @@ ask.reply | Reply instead |  | 28,770,114,44
  | Order |  | 158,235,58,44
  | Review |  | 222,235,65,44
  | How should the settings screen be laid out? |  | 28,291,317,20
- | Sidebar |  | 28,323,51,16
+ | Sidebar |  | 28,322,46,16
  | Relay    │ Address  relay.amux.dev
 Theme    │ Keepalive <t>
 Keys     │ |  | 38,352,265,51
@@ -43,6 +40,9 @@ Keys     │ |  | 38,352,265,51
  | Skip |  | 28,714,169,44
  | Next |  | 205,714,169,44 (disabled)
  | Reply instead |  | 28,782,114,20
- | Started |  | 18,60,366,34
- | Add a settings screen. |  | 18,93,366,40
- | Asking, 3 questions |  | 18,145,366,20
+ | Started |  | 16,59,370,34
+ | Add a settings screen. |  | 16,93,370,40
+ | Asking, 3 questions |  | 16,145,370,20
+ | Back |  | 20,66,56,36
+ | asker, /t/a/n/d/work · desk |  | 96,66,160,36
+ | More |  | 342,66,36,36

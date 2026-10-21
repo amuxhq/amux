@@ -1,5 +1,6 @@
 import Foundation
 import QuartzCore
+import SwiftUI
 import UIKit
 
 /// The window a query or a capture is about.
@@ -21,6 +22,17 @@ enum DoorWindow {
         return scenes.flatMap(\.windows)
             .filter { $0 !== key && !$0.isHidden && $0.alpha > 0 }
             .sorted { $0.windowLevel > $1.windowLevel }
+    }
+
+    /// Sets the text size as the phone's own setting reaches the app: as a
+    /// trait of the scene, which every sheet, dialog and menu inherits. The
+    /// root's environment does not reach a sheet, whose hosting reads the
+    /// size from its traits again.
+    @MainActor
+    static func wear(_ size: DynamicTypeSize) {
+        for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+            scene.traitOverrides.preferredContentSizeCategory = UIContentSizeCategory(size)
+        }
     }
 
     /// Whether the system is still moving something on screen: a sheet

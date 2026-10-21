@@ -130,7 +130,7 @@ class Goldens:
         desk's own name and key before anything is trusted."""
         journey = self.journey
         desk = journey.host_id("desk")
-        journey.tap("tab.hosts")
+        journey.tab("Hosts")
         journey.wait_for(f"hosts.pair.{desk}")
         process = journey.amux("desk", "pair")
         pin = printed_pin(process)
@@ -148,19 +148,19 @@ class Goldens:
 
     def hosts(self) -> None:
         desk = self.journey.host_id("desk")
-        self.journey.tap("tab.hosts")
+        self.journey.tab("Hosts")
         self.journey.wait(lambda drawn: labelled(drawn, "desk") and f"hosts.row.{desk}" in drawn, "the hosts")
         self.photograph("hosts")
 
     def fleet(self) -> None:
         rows = [f"home.row.{self.agent(name)}" for name in ("planner", "keeper", "asker", "dialog")]
-        self.journey.tap("tab.agents")
+        self.journey.tab("Agents")
         self.journey.wait(lambda drawn: all(row in drawn for row in rows), "every agent in the fleet")
         self.photograph("fleet")
 
     def open(self, agent: str, ready, description: str) -> dict:
         journey = self.journey
-        journey.tap("tab.agents")
+        journey.tab("Agents")
         journey.wait_for(f"home.row.{self.agent(agent)}")
         # A row redrawn by an update landing as it is tapped (a fleet row
         # takes every change to its agent) drops the tap or refuses it; a
@@ -202,7 +202,7 @@ class Goldens:
         journey = self.journey
         journey.request({"Send": {"agent": "dialog", "text": "File the relay bug."}})
         journey.wait_chat("desk", "dialog", lambda chat: chat["phase"] == "NEEDS_YOU", "dialog-open")
-        self.open("dialog", lambda drawn: "ask" in drawn and labelled(drawn, "github"), "the unanswerable card")
+        self.open("dialog", lambda drawn: "ask" in drawn and "chat.row.unanswerable" in drawn, "the unanswerable card")
         self.photograph("ask-escape")
         self.back()
 
@@ -253,18 +253,20 @@ class Goldens:
         journey.wait(lambda drawn: f"home.row.{self.agent('asker')}" in drawn, "the fleet at a large text size")
         journey.app({"kind": "settle"})
         self.photograph("large-text", "fleet")
-        journey.tap("tab.hosts")
+        journey.tab("Hosts")
         journey.wait(lambda drawn: f"hosts.row.{desk}" in drawn, "the hosts at a large text size")
         journey.app({"kind": "settle"})
         self.photograph("large-text", "hosts")
-        journey.tap("tab.you")
-        journey.wait(lambda drawn: "you.appearance" in drawn, "the You tab at a large text size")
+        journey.settings()
+        journey.wait(lambda drawn: "you.appearance" in drawn, "Settings at a large text size")
         journey.app({"kind": "settle"})
         self.photograph("large-text", "you")
-        journey.tap("tab.agents")
+        journey.tap("you.close")
+        journey.wait(lambda drawn: "you" not in drawn, "Settings put away")
+        journey.tab("Agents")
         journey.tap("home.newAgent")
         journey.wait(
-            lambda drawn: drawn.get(f"new-agent.host.{desk}", {}).get("value") == "chosen"
+            lambda drawn: drawn.get("new-agent.host", {}).get("value") == "desk"
             and drawn.get("new-agent.directory", {}).get("value"),
             "New Agent at a large text size",
         )

@@ -1,30 +1,26 @@
 shell |  | hosts | 0,62,402,778
-home |  | ready | 0,62,402,778
-home.title | Agents, switch account | Agents | 60,65,104,46
-home.subtitle |  | bob · nothing needs you | 60,105,166,16
-home.empty.firstRun |  | No agents yet | 18,161,162,32
-home.empty.explain |  |  | 18,201,291,18
-home.empty.howToPair |  |  | 18,237,360,37
-hosts |  | 0 reachable | 0,62,402,778
-hosts.title |  | Hosts | 18,72,69,32
-hosts.subtitle |  | 0 reachable | 18,105,79,16
-hosts.empty |  | No hosts yet | 18,137,360,113
-hosts.empty.howToPair |  |  | 18,213,360,37
-hosts.fact.identity | <volatile>
-hosts.fact.paired-devices | Paired Devices, 0 | 0 | 18,336,366,46
-hosts.caption.devices |  |  | 18,390,320,18
-tab.agents | Agents | not selected | 50,777,99,57
-tab.hosts | Hosts | selected | 151,777,99,57
-tab.you | You | not selected | 253,777,99,57
- | Agents |  | 50,777,99,57
- | Hosts |  | 151,777,99,57
- | You |  | 253,777,99,57
- | Hosts |  | 18,72,69,32
- | 0 reachable |  | 18,105,79,16
- | No hosts yet |  | 18,137,93,20
- | Run amux on a computer on this network and it appears here. |  | 18,166,325,37
- | Run amux pair on a host on this network, or scan the code from amux pair --qr with the camera. |  | 18,213,360,37
- | THIS PHONE |  | 20,268,70,14
- | Identity, amux-iphone-1 · <key> |  | 18,290,366,46
- | Paired Devices, 0 |  | 18,337,366,45
- | Revoking a device ends its access immediately. |  | 18,390,320,18
+home |  | ready | 0,196,402,595
+home.empty.firstRun |  | Pair your first host | 16,226,214,32
+home.empty.explain |  |  | 16,266,368,37
+home.empty.looking |  | Looking on this network… | 16,327,194,18
+home.empty.howToPair |  |  | 16,369,370,153
+home.empty.sendLink | Send Link |  | 52,422,106,44
+home.accounts | Switch account |  | 19,69,30,30
+home.subtitle |  | bob | 16,166,370,22
+hosts |  |  | 0,174,402,617
+hosts.empty |  | No hosts yet | 21,204,146,32
+hosts.empty.howToPair |  |  | 21,299,360,37
+ | No hosts yet |  | 21,204,146,32
+ | A computer running amux on this network appears here, ready to pair. |  | 21,244,351,37
+ | Run amux pair on a host on this network, or scan the code from amux pair --qr with the camera. |  | 21,299,360,37
+ | Hosts |  | 16,127,93,42
+ | Agents |  | 111,795,94,54
+ | Agents |  | 140,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 229,830,29,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 230,830,29,12
+ | Agents |  | 111,795,94,54
+ | Hosts | selected | 197,795,94,54

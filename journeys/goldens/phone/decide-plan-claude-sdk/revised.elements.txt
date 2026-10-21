@@ -1,28 +1,28 @@
 shell |  | agents | 0,62,402,778
-chat |  | planner | 0,62,402,778
-chat.row.boundary | Started |  | 18,132,366,34
-chat.row.prompt | Move the journal. |  | 18,166,366,40
-chat.row.plan | Plan sent back, Check the copy before switching. | folded | 18,205,366,64
-chat.row.plan | Plan proposed, Move the journal |  | 18,267,366,185
-chat.prose.render |  | rendered | 60,306,312,134
-chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
-chat.back | Back |  | 16,68,42,46
-chat.title | planner | planner | 51,72,156,38
-chat.more | More |  | 344,69,44,44
+chat |  | planner | 0,116,402,724
+chat.row.boundary | Started |  | 16,124,370,34
+chat.row.prompt | Move the journal. |  | 16,158,370,40
+chat.row.plan | Plan sent back, Check the copy before switching. | folded | 16,198,370,65
+chat.row.plan | Plan proposed, Move the journal |  | 16,261,370,185
+chat.prose.render |  | rendered | 58,300,316,134
 ask | Plan ready | open | 12,664,378,166
 ask.more | More |  | 338,672,44,44
 ask.plan.auto |  | off | 28,720,346,38
 ask.approve | Approve |  | 28,770,169,44
 ask.choice.2 | Send back… |  | 205,770,169,44
- | Back |  | 16,68,42,46
- | planner, /t/a/n/d/work · desk |  | 51,72,156,38
- | More |  | 344,69,44,44
+chat.more | More |  | 342,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
+chat.title | planner | planner | 96,66,160,36
  | Plan ready |  | 62,684,79,20
  | More |  | 338,672,44,44
  | Switch to Accept edits, As the work starts | 0 | 28,720,346,38
  | Approve |  | 28,770,169,44
  | Send back… |  | 205,770,169,44
- | Started |  | 18,132,366,34
- | Move the journal. |  | 18,166,366,40
- | Plan sent back, “Check the copy before switching.” |  | 18,205,366,64
- | Plan proposed, Move the journal, Move the journal, 1., Copy the journal to the new store., 2., Check the copy against the original., 3., Point the daemon at it., 4., Keep the old journal for a week. |  | 18,267,366,185
+ | Started |  | 16,124,370,34
+ | Move the journal. |  | 16,158,370,40
+ | Plan sent back, “Check the copy before switching.” |  | 16,198,370,65
+ | Plan proposed, Move the journal, Move the journal, 1., Copy the journal to the new store., 2., Check the copy against the original., 3., Point the daemon at it., 4., Keep the old journal for a week. |  | 16,261,370,185
+ | Back |  | 20,66,56,36
+ | planner, /t/a/n/d/work · desk |  | 96,66,160,36
+ | More |  | 342,66,36,36

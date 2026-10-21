@@ -1,43 +1,41 @@
 shell |  | agents | 0,62,402,778
-chat |  | guarded | 0,62,402,778
-chat.row.boundary | Started |  | 18,132,366,34
-chat.row.prompt | hello |  | 18,166,366,40
-chat.row.prose | Ready. | final | 18,217,366,20
-chat.prose.render |  | rendered | 18,217,366,20
-chat.row.turn-end | Worked <t> · $0.00 |  | 48,245,130,16
-chat.row.prompt | Are you there? |  | 18,275,366,40
-chat.row.prose | Only this account reaches me. | final | 18,326,366,20
-chat.prose.render |  | rendered | 18,326,366,20
-chat.row.turn-end | Worked <t> · $0.00 |  | 48,354,130,16
-chat.header | desk · this phone is signed out | detached | 18,64,303,54
-chat.back | Back |  | 16,68,42,46
-chat.title | guarded | guarded | 51,72,258,38
-chat.more | More |  | 344,69,44,44
+chat |  | guarded | 0,116,402,724
+chat.row.boundary | Started |  | 16,124,370,34
+chat.row.prompt | hello |  | 16,158,370,40
+chat.row.prose | Ready. | final | 16,210,370,20
+chat.prose.render |  | rendered | 16,210,370,20
+chat.row.turn-end | Worked <t> · $0.00 |  | 16,237,116,16
+chat.row.prompt | Are you there? |  | 16,267,370,40
+chat.row.prose | Only this account reaches me. | final | 16,319,370,20
+chat.prose.render |  | rendered | 16,319,370,20
+chat.row.turn-end | Worked <t> · $0.00 |  | 16,347,116,16
 chat.dock |  | folded | 12,668,378,60
 chat.underway.0 | Still there? | held · sends when desk is back | 12,668,378,60
 chat.underway.0.cancel | Cancel |  | 344,676,40,44
 chat.field | This phone is signed out · your draft is kept |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
-chat.model | claude-fake-1 · medium |  | 71,779,139,44
+chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
-account.ada@example.com | ada, Signed out | selected | 32,142,338,58
-account.bob@example.com | bob, bob@example.com | signed in | 32,201,338,58
- | Back |  | 16,68,42,46
- | guarded, desk · this phone is signed out |  | 51,72,258,38
- | More |  | 344,69,44,44
+chat.more | More |  | 342,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | desk · this phone is signed out | detached | 96,66,213,36
+chat.title | guarded | guarded | 96,66,213,36
  | Clock |  | 30,691,14,14
  | Still there? |  | 58,679,78,20
- | held · sends when desk is back |  | 58,701,216,16
+ | held · sends when desk is back |  | 58,701,178,16
  | Cancel |  | 344,676,40,44
  | Attach |  | 23,779,44,44
- | claude-fake-1 |  | 71,779,139,44
+ | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44 (disabled)
- | Started |  | 18,132,366,34
- | hello |  | 18,166,366,40
- | Ready. |  | 18,217,366,20
- | Worked <t> · $0.00 |  | 48,245,130,16
- | Are you there? |  | 18,275,366,40
- | Only this account reaches me. |  | 18,326,366,20
- | Worked <t> · $0.00 |  | 48,354,130,16
+ | Started |  | 16,124,370,34
+ | hello |  | 16,158,370,40
+ | Ready. |  | 16,210,370,20
+ | Worked <t> · $0.00 |  | 16,237,116,16
+ | Are you there? |  | 16,267,370,40
+ | Only this account reaches me. |  | 16,319,370,20
+ | Worked <t> · $0.00 |  | 16,347,116,16
+ | Back |  | 20,66,56,36
+ | guarded, desk · this phone is signed out |  | 96,66,213,36
+ | More |  | 342,66,36,36

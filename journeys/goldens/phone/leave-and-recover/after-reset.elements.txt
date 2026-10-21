@@ -1,43 +1,43 @@
 shell |  | agents | 0,62,402,778
-chat |  | keeper | 0,62,402,778
-chat.row.boundary | Started |  | 18,132,366,34
-chat.row.prompt | Remember this recovery turn. |  | 18,166,366,40
-chat.row.prose | The recovery state is safely stored. | final | 18,217,366,20
-chat.prose.render |  | rendered | 18,217,366,20
+chat |  | keeper | 0,116,402,724
+chat.row.boundary | Started |  | 16,124,370,34
+chat.row.prompt | Remember this recovery turn. |  | 16,158,370,40
+chat.row.prose | The recovery state is safely stored. | final | 16,210,370,20
+chat.prose.render |  | rendered | 16,210,370,20
 chat.row.turn-end | <volatile>
-chat.row.prompt | Carry on. |  | 18,275,366,40
-chat.row.prose | A second turn arrived while you were away. | final | 18,326,366,20
-chat.prose.render |  | rendered | 18,326,366,20
+chat.row.prompt | Carry on. |  | 16,267,370,40
+chat.row.prose | A second turn arrived while you were away. | final | 16,319,370,20
+chat.prose.render |  | rendered | 16,319,370,20
 chat.row.turn-end | <volatile>
-chat.row.prompt | Pick up where we left off. |  | 18,384,366,40
-chat.row.prose | Back after the restart. | final | 18,435,366,20
-chat.prose.render |  | rendered | 18,435,366,20
+chat.row.prompt | Pick up where we left off. |  | 16,377,370,40
+chat.row.prose | Back after the restart. | final | 16,428,370,20
+chat.prose.render |  | rendered | 16,428,370,20
 chat.row.turn-end | <volatile>
-chat.header | Exited · while the daemon was away | live | 18,64,311,54
-chat.back | Back |  | 16,68,42,46
-chat.title | keeper | keeper | 51,72,265,38
-chat.more | More |  | 344,69,44,44
 chat.exited | Exited · while the daemon was away | desk | 28,720,346,20
 chat.field | keeper has exited · a message resumes it |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
-chat.model | claude-fake-1 · medium |  | 71,779,139,44
+chat.model | claude-fake-1 · medium |  | 71,779,117,44
 chat.dictate | Dictate | idle | 228,779,44,44
 chat.resume | Resume |  | 276,779,103,44 (disabled)
- | Back |  | 16,68,42,46
- | keeper, Exited · while the daemon was away |  | 51,72,265,38
- | More |  | 344,69,44,44
+chat.more | More |  | 342,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | Exited · while the daemon was away | live | 96,66,216,36
+chat.title | keeper | keeper | 96,66,216,36
  | Exited · while the daemon was away, desk |  | 29,720,345,20
  | Attach |  | 23,779,44,44
- | claude-fake-1 |  | 71,779,139,44
+ | claude-fake-1 |  | 71,779,117,44
  | Dictate |  | 228,779,44,44
  | Resume |  | 276,779,103,44 (disabled)
- | Started |  | 18,132,366,34
- | Remember this recovery turn. |  | 18,166,366,40
- | The recovery state is safely stored. |  | 18,217,366,20
- | Worked <t> · $0.00 |  | 48,245,130,16
- | Carry on. |  | 18,275,366,40
- | A second turn arrived while you were away. |  | 18,326,366,20
- | Worked <t> · $0.00 |  | 48,354,130,16
- | Pick up where we left off. |  | 18,384,366,40
- | Back after the restart. |  | 18,435,366,20
- | Worked <t> · $0.00 |  | 48,463,130,16
+ | Started |  | 16,124,370,34
+ | Remember this recovery turn. |  | 16,158,370,40
+ | The recovery state is safely stored. |  | 16,210,370,20
+ | Worked <t> · $0.00 |  | 16,237,116,16
+ | Carry on. |  | 16,267,370,40
+ | A second turn arrived while you were away. |  | 16,319,370,20
+ | Worked <t> · $0.00 |  | 16,347,116,16
+ | Pick up where we left off. |  | 16,377,370,40
+ | Back after the restart. |  | 16,428,370,20
+ | Worked <t> · $0.00 |  | 16,456,116,16
+ | Back |  | 20,66,56,36
+ | keeper, Exited · while the daemon was away |  | 96,66,216,36
+ | More |  | 342,66,36,36

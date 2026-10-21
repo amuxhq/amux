@@ -374,7 +374,7 @@ fn tap(folder: &Folder, id: &str) -> Result<Outcome, String> {
     let reply = loop {
         match request(folder, json!({"kind": "tap", "identifier": id})) {
             Ok(reply) => break reply,
-            Err(error) if error.ends_with("did not activate") && Instant::now() < deadline => {
+            Err(error) if error.contains(" did not activate") && Instant::now() < deadline => {
                 request(folder, json!({"kind": "settle"}))?;
             }
             Err(error) => return Err(error),

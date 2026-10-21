@@ -1,27 +1,27 @@
 shell |  | agents | 0,62,402,778
-chat |  | planner-codex | 0,62,402,778
-chat.row.boundary | Started |  | 18,132,366,34
-chat.row.prompt | Move the journal. |  | 18,166,366,40
-chat.row.plan | Plan proposed, Move the journal |  | 18,217,366,160
-chat.prose.render |  | rendered | 60,256,312,109
-chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
-chat.back | Back |  | 16,68,42,46
-chat.title | planner-codex | planner-codex | 51,72,156,38
-chat.more | More |  | 344,69,44,44
+chat |  | planner-codex | 0,116,402,724
+chat.row.boundary | Started |  | 16,124,370,34
+chat.row.prompt | Move the journal. |  | 16,158,370,40
+chat.row.plan | Plan proposed, Move the journal |  | 16,210,370,160
+chat.prose.render |  | rendered | 58,249,316,109
 chat.activity | <volatile>
 chat.field | Queue a message |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
-chat.model | gpt-fake · medium · Custom · Plan |  | 71,779,201,44
+chat.model | gpt-fake · medium · Custom · Plan |  | 71,779,175,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.stop | Interrupt |  | 335,779,44,44
- | Back |  | 16,68,42,46
- | planner-codex, /t/a/n/d/work · desk |  | 51,72,156,38
- | More |  | 344,69,44,44
- | Working · <t> |  | 28,712,346,28
+chat.more | More |  | 342,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
+chat.title | planner-codex | planner-codex | 96,66,160,36
+ | Working · <t> |  | 28,713,346,27
  | Attach |  | 23,779,44,44
- | gpt-fake,  · Custom · Plan |  | 71,779,201,44
+ | gpt-fake · Custom · Plan |  | 71,779,175,44
  | Dictate |  | 287,779,44,44
  | Interrupt |  | 335,779,44,44
- | Started |  | 18,132,366,34
- | Move the journal. |  | 18,166,366,40
- | Plan proposed, Move the journal, Move the journal, 1., Copy the journal to the new store., 2., Point the daemon at it., 3., Delete the old journal. |  | 18,217,366,160
+ | Started |  | 16,124,370,34
+ | Move the journal. |  | 16,158,370,40
+ | Plan proposed, Move the journal, Move the journal, 1., Copy the journal to the new store., 2., Point the daemon at it., 3., Delete the old journal. |  | 16,210,370,160
+ | Back |  | 20,66,56,36
+ | planner-codex, /t/a/n/d/work · desk |  | 96,66,160,36
+ | More |  | 342,66,36,36

@@ -1,46 +1,46 @@
 shell |  | agents | 0,62,402,778
-chat |  | worker | 0,62,402,778
-chat.row.boundary | Started |  | 18,132,366,34
-chat.row.prompt | Run the soak. |  | 18,166,366,40
-chat.row.prose | Starting the long run. | final | 18,217,366,20
-chat.prose.render |  | rendered | 18,217,366,20
-chat.row.command | Running, scripts/soak --for <t> |  | 18,249,366,20
-chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
-chat.back | Back |  | 16,68,42,46
-chat.title | worker | worker | 51,72,156,38
-chat.more | More |  | 344,69,44,44
-chat.dock |  | folded | 12,570,378,120
-chat.queued.0 | Also log the peak. | queued | 12,570,378,60
-chat.queued.0.sendNow | Send now |  | 304,578,40,44
-chat.queued.0.withdraw | Withdraw |  | 344,578,40,44
-chat.queued.1 | And email me. | queued | 12,630,378,60
-chat.queued.1.sendNow | Send now |  | 304,638,40,44
-chat.queued.1.withdraw | Withdraw |  | 344,638,40,44
+chat |  | worker | 0,116,402,724
+chat.row.boundary | Started |  | 16,124,370,34
+chat.row.prompt | Run the soak. |  | 16,158,370,40
+chat.row.prose | Starting the long run. | final | 16,210,370,20
+chat.prose.render |  | rendered | 16,210,370,20
+chat.row.command | Running, scripts/soak --for <t> |  | 16,241,370,20
+chat.dock |  | folded | 12,571,378,120
+chat.queued.0 | Also log the peak. | queued | 12,571,378,60
+chat.queued.0.sendNow | Send now |  | 304,579,40,44
+chat.queued.0.withdraw | Withdraw |  | 344,579,40,44
+chat.queued.1 | And email me. | queued | 12,631,378,60
+chat.queued.1.sendNow | Send now |  | 304,639,40,44
+chat.queued.1.withdraw | Withdraw |  | 344,639,40,44
 chat.activity | <volatile>
 chat.field | Queue a message |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
-chat.model | claude-fake-1 · medium |  | 71,779,139,44
+chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.stop | Interrupt |  | 335,779,44,44
- | Back |  | 16,68,42,46
- | worker, /t/a/n/d/work · desk |  | 51,72,156,38
- | More |  | 344,69,44,44
- | Clock |  | 30,593,14,14
- | Also log the peak. |  | 58,581,129,20
- | queued |  | 58,603,43,16
- | Send now |  | 304,578,40,44
- | Withdraw |  | 344,578,40,44
- | Clock |  | 30,653,14,14
+chat.more | More |  | 342,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
+chat.title | worker | worker | 96,66,160,36
+ | Clock |  | 30,594,14,14
+ | Also log the peak. |  | 58,582,129,20
+ | queued |  | 58,604,46,16
+ | Send now |  | 304,579,40,44
+ | Withdraw |  | 344,579,40,44
+ | Clock |  | 30,654,14,14
  | And email me. |  | 58,642,105,20
- | queued |  | 58,663,43,16
- | Send now |  | 304,638,40,44
- | Withdraw |  | 344,638,40,44
- | Running scripts/soak --for <t> · <t> |  | 28,712,346,28
+ | queued |  | 58,664,46,16
+ | Send now |  | 304,639,40,44
+ | Withdraw |  | 344,639,40,44
+ | Running scripts/soak --for <t> · <t> |  | 28,713,346,27
  | Attach |  | 23,779,44,44
- | claude-fake-1 |  | 71,779,139,44
+ | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
  | Interrupt |  | 335,779,44,44
- | Started |  | 18,132,366,34
- | Run the soak. |  | 18,166,366,40
- | Starting the long run. |  | 18,217,366,20
- | Running, scripts/soak --for <t> |  | 18,249,366,20
+ | Started |  | 16,124,370,34
+ | Run the soak. |  | 16,158,370,40
+ | Starting the long run. |  | 16,210,370,20
+ | Running, scripts/soak --for <t> |  | 16,241,370,20
+ | Back |  | 20,66,56,36
+ | worker, /t/a/n/d/work · desk |  | 96,66,160,36
+ | More |  | 342,66,36,36

@@ -1,30 +1,33 @@
 shell |  | agents | 0,62,402,778
-home |  | ready | 0,62,402,778
-home.title |  | Agents | 18,72,86,32
-home.subtitle |  | Nothing needs you · 0 working | 18,105,209,16
-home.newAgent | New Agent |  | 345,74,44,44
-home.row.<desk-work> | desk-work, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 18,159,366,70
+home |  | ready | 0,174,402,617
+home.chip.all | All | on | 16,172,44,44
+home.chip.needsYou | Needs you | off | 68,172,87,44
+home.chip.working | Working | off | 163,172,76,44
+home.row.<desk-work> | desk-work, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,218,370,64
 home.row.<desk-work>.age.volatile | <volatile>
-home.row.<desk-work>.detail.volatile | <volatile>
-tab.agents | Agents | selected | 50,777,99,57
-tab.hosts | Hosts | not selected | 151,777,99,57
-tab.you | You | not selected | 253,777,99,57
+home.accounts | Switch account |  | 19,69,30,30
+home.newAgent | New Agent |  | 338,62,44,44
 report.screen |  | sent | 0,62,402,778
-report.cancel | Cancel |  | 17,71,68,46
-report.frame |  | 0 marked | 82,130,238,517
-report.note | What went wrong? | The desk's agent is listed twice. | 18,703,366,65
-report.sent | Sent | report-7 | 18,823,366,69
- | Cancel |  | 17,71,68,46
- | Report |  | 186,84,52,20
- | Drag a box around anything wrong. Each box takes a note. |  | 18,659,353,31
- | Includes this screen and the available session and host records. |  | 18,780,366,31
- | Sent |  | 32,837,35,20
- | report-7 |  | 32,861,63,17
- | Agents |  | 50,777,99,57
- | Hosts |  | 151,777,99,57
- | You |  | 253,777,99,57
- | Agents |  | 18,72,86,32
- | Nothing needs you · 0 working |  | 18,105,209,16
- | New Agent |  | 345,74,44,44
- | LIVE |  | 20,137,28,14
- | desk-work, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 18,159,366,70
+report.sent | Report sent | report-7 | 0,116,402,74
+report.cancel | Close |  | 20,66,56,36
+ | Report sent, Quote report-7 if you write to us about it. |  | 16,132,276,58
+ | Close |  | 20,66,56,36
+ | Report a Problem |  | 131,73,140,21
+ | All |  | 16,172,44,44
+ | Needs you |  | 68,172,87,44
+ | Working |  | 163,172,76,44
+ | desk-work, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,218,370,64
+ | Agents |  | 16,127,116,42
+ | Switch account |  | 19,69,30,30
+ | New Agent |  | 338,62,44,44
+ | Search |  | 16,175,370,0
+ | Agents |  | 111,795,94,54
+ | Agents |  | 140,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 229,830,29,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 230,830,29,12
+ | Agents | selected | 111,795,94,54
+ | Hosts |  | 197,795,94,54

@@ -87,12 +87,13 @@ class Audit(GOLDENS.Goldens):
         print(f"audited {page}: {controls} controls", flush=True)
 
     def you(self) -> None:
-        self.journey.tap("tab.you")
-        self.journey.wait_for("you")
+        self.journey.settings()
         self.audit("you")
+        self.journey.tap("you.close")
+        self.journey.wait(lambda drawn: "you" not in drawn, "Settings put away")
 
     def new_agent(self) -> None:
-        self.journey.tap("tab.agents")
+        self.journey.tab("Agents")
         self.journey.wait_for("home.newAgent")
         self.journey.tap("home.newAgent")
         self.journey.wait_for("new-agent")

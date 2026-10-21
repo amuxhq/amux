@@ -299,7 +299,7 @@ class Run:
         agent = self.agent_ids[STREAM_AGENT]
         # Frames only while tapping: the app is measured as it ships.
         self.journey.geometry(True)
-        self.journey.tap("tab.agents")
+        self.journey.tab("Agents")
         self.journey.wait_for(f"home.row.{agent}")
         self.journey.tap(f"home.row.{agent}")
         self.journey.wait_for("chat.field")

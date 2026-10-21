@@ -1,18 +1,18 @@
 shell |  | agents | 0,62,402,778
-chat |  | decision-sdk | 0,62,402,778
-chat.header | /t/a/n/d/work · desk | live | 18,64,262,66
-chat.back | Back |  | 16,74,42,46
-chat.title | decision-sdk | decision-sdk | 51,72,216,50
-chat.more | More |  | 344,75,44,44
-chat.field | Message decision-sdk |  | 28,627,346,47
-chat.model | claude-fake-1 · medium |  | 28,684,325,90
+chat |  | decision-sdk | 0,116,402,724
+chat.field | Message decision-sdk |  | 28,669,346,47
+chat.model | claude-fake-1 · medium |  | 28,726,342,48
 chat.attach | Attach | closed | 23,779,44,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
- | Back |  | 16,74,42,46
- | decision-sdk, /t/a/n/d/work · desk |  | 51,72,216,50
- | More |  | 344,75,44,44
- | claude-fake-1 · medium |  | 28,684,325,90
+chat.more | More |  | 342,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | /t/a/n/d/work · desk | live | 96,66,169,36
+chat.title | decision-sdk | decision-sdk | 96,66,169,36
+ | claude-fake-1 · medium |  | 28,726,342,48
  | Attach |  | 23,779,44,44
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44 (disabled)
+ | Back |  | 20,66,56,36
+ | decision-sdk, /t/a/n/d/work · desk |  | 96,66,169,36
+ | More |  | 342,66,36,36

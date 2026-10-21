@@ -1,45 +1,45 @@
 shell |  | agents | 0,62,402,778
-chat |  | planner-codex | 0,62,402,778
-chat.row.boundary | Started |  | 18,66,366,34
-chat.row.prompt | Move the journal. |  | 18,99,366,40
-chat.row.plan | Plan approved, Move the journal | folded | 18,139,366,44
-chat.row.turn-end | Worked <t> |  | 48,181,72,16
-chat.row.prompt | Implement the plan. |  | 18,211,366,40
-chat.row.prose | Moving the journal as planned. | final | 18,262,366,20
-chat.prose.render |  | rendered | 18,262,366,20
-chat.row.turn-end | Worked <t> |  | 48,290,72,16
-chat.row.prompt | Rotate the logs. |  | 18,320,366,40
-chat.row.plan | Plan sent back, Keep a month of logs, compressed. | folded | 18,359,366,64
-chat.row.turn-end | Worked <t> |  | 48,421,72,16
-chat.row.prompt | Keep a month of logs, compressed. |  | 18,451,366,40
-chat.row.plan | Plan proposed, Rotate the logs |  | 18,503,366,160
-chat.prose.render |  | rendered | 60,542,312,109
-chat.row.turn-end | Worked <t> |  | 48,672,72,16
-chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
-chat.back | Back |  | 16,68,42,46
-chat.title | planner-codex | planner-codex | 51,72,156,38
-chat.more | More |  | 344,69,44,44
+chat |  | planner-codex | 0,116,402,724
+chat.row.boundary | Started |  | 16,63,370,34
+chat.row.prompt | Move the journal. |  | 16,97,370,40
+chat.row.plan | Plan approved, Move the journal | folded | 16,136,370,44
+chat.row.turn-end | Worked <t> |  | 16,178,74,16
+chat.row.prompt | Implement the plan. |  | 16,208,370,40
+chat.row.prose | Moving the journal as planned. | final | 16,260,370,20
+chat.prose.render |  | rendered | 16,260,370,20
+chat.row.turn-end | Worked <t> |  | 16,288,74,16
+chat.row.prompt | Rotate the logs. |  | 16,318,370,40
+chat.row.plan | Plan sent back, Keep a month of logs, compressed. | folded | 16,357,370,65
+chat.row.turn-end | Worked <t> |  | 16,421,74,16
+chat.row.prompt | Keep a month of logs, compressed. |  | 16,451,370,40
+chat.row.plan | Plan proposed, Rotate the logs |  | 16,502,370,160
+chat.prose.render |  | rendered | 58,541,316,109
+chat.row.turn-end | Worked <t> |  | 16,672,74,16
 ask | Plan ready | open | 12,702,378,128
 ask.more | More |  | 338,710,44,44
 ask.approve | Approve |  | 28,770,169,44
 ask.choice.1 | Send back… |  | 205,770,169,44
- | Back |  | 16,68,42,46
- | planner-codex, /t/a/n/d/work · desk |  | 51,72,156,38
- | More |  | 344,69,44,44
+chat.more | More |  | 342,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
+chat.title | planner-codex | planner-codex | 96,66,160,36
  | Plan ready |  | 62,722,79,20
  | More |  | 338,710,44,44
  | Approve |  | 28,770,169,44
  | Send back… |  | 205,770,169,44
- | Move the journal. |  | 18,99,366,40
- | Plan approved, Move the journal |  | 18,139,366,44
- | Worked <t> |  | 48,181,72,16
- | Implement the plan. |  | 18,211,366,40
- | Moving the journal as planned. |  | 18,262,366,20
- | Worked <t> |  | 48,290,72,16
- | Rotate the logs. |  | 18,320,366,40
- | Plan sent back, “Keep a month of logs, compressed.” |  | 18,359,366,64
- | Worked <t> |  | 48,421,72,16
- | Keep a month of logs, compressed. |  | 18,451,366,40
- | Plan proposed, Rotate the logs, Rotate the logs, 1., Rotate the daemon's log every night., 2., Compress rotated logs., 3., Delete logs older than a month. |  | 18,503,366,160
- | Worked <t> |  | 48,672,72,16
- | Started |  | 18,66,366,34
+ | Worked <t> |  | 16,178,74,16
+ | Implement the plan. |  | 16,208,370,40
+ | Moving the journal as planned. |  | 16,260,370,20
+ | Worked <t> |  | 16,288,74,16
+ | Rotate the logs. |  | 16,318,370,40
+ | Plan sent back, “Keep a month of logs, compressed.” |  | 16,357,370,65
+ | Worked <t> |  | 16,421,74,16
+ | Keep a month of logs, compressed. |  | 16,451,370,40
+ | Plan proposed, Rotate the logs, Rotate the logs, 1., Rotate the daemon's log every night., 2., Compress rotated logs., 3., Delete logs older than a month. |  | 16,502,370,160
+ | Worked <t> |  | 16,672,74,16
+ | Started |  | 16,63,370,34
+ | Move the journal. |  | 16,97,370,40
+ | Plan approved, Move the journal |  | 16,136,370,44
+ | Back |  | 20,66,56,36
+ | planner-codex, /t/a/n/d/work · desk |  | 96,66,160,36
+ | More |  | 342,66,36,36

@@ -14,7 +14,7 @@ use crate::HostId;
 use crate::connection::ConnectionManager;
 use crate::discovery::{Discovery, DiscoveryEvent, FoundHosts};
 use crate::identity::DeviceIdentity;
-use crate::link::channels::ForwardedDial;
+use crate::link::channels::{ForwardedDial, ResumedDial, Resuming};
 use crate::link::framed::{FramedKind, StreamEndpoint};
 use crate::link::quic::DEVICE_SERVER_NAME;
 use crate::link::{ChannelError, ChannelPool, LinkCarrier as NativeLinkCarrier, QuicCarrier};
@@ -153,13 +153,12 @@ impl ReachabilityLinkConnector {
         let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
             return;
         };
-        inner
-            .context
-            .channels
-            .dial_forwarded_with(Arc::new(ForwardedDialer {
-                inner: Arc::downgrade(inner),
-                dialing: Mutex::default(),
-            }));
+        let dialer = Arc::new(ForwardedDialer {
+            inner: Arc::downgrade(inner),
+            dialing: Mutex::default(),
+        });
+        inner.context.channels.dial_forwarded_with(dialer.clone());
+        inner.context.channels.dial_resumed_with(dialer);
         *inner.context.runtime.lock().unwrap() = Some(ReachabilityRuntime {
             discovery,
             found_hosts,
@@ -642,6 +641,101 @@ async fn refused_or<T>(
                 None => ChannelError::Handshake("the QUIC handshake timed out".to_owned()),
             })
         }
+    }
+}
+
+impl ForwardedDialer {
+    /// Dials `peer` resuming with its ticket: through the forwarder a route
+    /// to it names, else at the address it was last found at.
+    async fn resume(&self, peer: HostId) -> Result<Resuming, ChannelError> {
+        let (inner, endpoint) = self.endpoint()?;
+        let context = &inner.context;
+        let registry = context.channels.link_registry();
+        let mut through = None;
+        for route in context.connections.routes_to(peer).await {
+            if let Route::Via(forwarder) = route
+                && let Some((link, _)) = registry.native_carrier_to_peer(forwarder).await
+            {
+                through = Some(link);
+                break;
+            }
+        }
+        let (dialled, carrier_tag) = match through {
+            Some(through) => (
+                QuicCarrier::resume_through(
+                    &endpoint,
+                    through.core(),
+                    &context.identity,
+                    context.trust_store.clone(),
+                    peer,
+                )
+                .await,
+                LinkCarrier::Forwarded,
+            ),
+            None => {
+                let addr = direct_candidates(context, peer)
+                    .into_iter()
+                    .next()
+                    .ok_or(ChannelError::NoRoute { host_id: peer })?;
+                (
+                    QuicCarrier::resume_direct(
+                        &endpoint,
+                        addr,
+                        &context.identity,
+                        context.trust_store.clone(),
+                        peer,
+                    )
+                    .await,
+                    LinkCarrier::Direct,
+                )
+            }
+        };
+        let carrier = Arc::new(dialled.map_err(|error| dial_failed(context, peer, error))?);
+        let connector_ctx =
+            LinkConnectorCtx::new_live(context.local_host.clone(), registry.clone())
+                .with_expected_peer(peer)
+                .with_carrier(carrier_tag)
+                .with_incoming_streams(context.incoming_streams_tx.clone());
+        let shutdown = inner.direct_shutdown.lock().unwrap().subscribe();
+        let (connector_task, established) =
+            crate::routing::spawn_connector_with_establishment_and_shutdown(
+                connector_ctx,
+                carrier.clone(),
+                shutdown,
+            );
+        let abort_on_failure = AbortTaskOnDrop(connector_task.abort_handle());
+        let context = context.clone();
+        let handshake = carrier.clone();
+        let established = Box::pin(async move {
+            if let Err(error) = handshake.handshake().await {
+                return Err(ChannelError::from(dial_failed(&context, peer, error)));
+            }
+            match tokio::time::timeout(DIRECT_LINK_ESTABLISHMENT_TIMEOUT, established).await {
+                Ok(Ok(Ok(_))) => {}
+                Ok(Ok(Err(status))) => return Err(ChannelError::Handshake(status.to_string())),
+                Ok(Err(_)) | Err(_) => {
+                    return Err(ChannelError::Handshake(
+                        "the resumed link did not come up".to_owned(),
+                    ));
+                }
+            }
+            let (link, _) = registry
+                .native_carrier_to_peer(peer)
+                .await
+                .ok_or(ChannelError::LinkUnavailable { host_id: peer })?;
+            tokio::spawn(await_connector(connector_task, abort_on_failure));
+            Ok(link)
+        });
+        Ok(Resuming {
+            carrier,
+            established,
+        })
+    }
+}
+
+impl ResumedDial for ForwardedDialer {
+    fn dial_resumed(&self, peer: HostId) -> BoxFuture<'_, Result<Resuming, ChannelError>> {
+        Box::pin(self.resume(peer))
     }
 }
 

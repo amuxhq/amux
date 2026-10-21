@@ -1,5 +1,6 @@
 pub mod carrier;
 pub(crate) mod channels;
+mod early;
 pub mod forwarder;
 pub mod framed;
 pub mod link_log;
@@ -16,8 +17,8 @@ pub use carrier::{
     write_message,
 };
 pub use channels::{
-    BulkResponseHold, ChannelClass, ChannelError, ChannelPool, PeerChannel, PeerClient,
-    TRUST_REVOKED,
+    BulkResponseHold, ChannelClass, ChannelError, ChannelPool, Cursor, EarlyAnswer, EarlyCall,
+    EarlyReply, PeerChannel, PeerClient, ResumedLink, TRUST_REVOKED,
 };
 pub(crate) use channels::{ChannelKey, InboundStream, peer_client, serve_inbound_streams};
 pub use quic::QuicCarrier;

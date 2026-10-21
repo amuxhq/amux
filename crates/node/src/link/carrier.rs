@@ -10,6 +10,11 @@ use wire::{self, pb};
 pub trait AsyncStream: AsyncRead + AsyncWrite + Send + Unpin {
     /// Abandons the stream both ways: the far end's reads and writes fail.
     fn reset(&mut self);
+    /// Whether the far end opened the stream in early data, before the
+    /// link's handshake had finished.
+    fn arrived_early(&self) -> bool {
+        false
+    }
 }
 
 pub type ByteStream = Box<dyn AsyncStream>;
@@ -62,6 +67,11 @@ pub trait LinkCarrier: Send + Sync + 'static {
     /// The path the link's packets take, as the link log names it.
     fn path_kind(&self) -> super::link_log::PathKind {
         self.kind().path()
+    }
+    /// What became of the data the link sent before its handshake
+    /// finished: none was sent unless the dial resumed with a ticket.
+    fn early_data(&self) -> super::link_log::EarlyData {
+        super::link_log::EarlyData::None
     }
     /// The forwarding link a link through a forwarder is carried on: it
     /// has no other path, so it ends when that link does.

@@ -16,7 +16,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use uuid::Uuid;
 use wire::{self, PROTOCOL_VERSION};
 
-use super::link_log::{EarlyData, LinkEvent, LinkTransition, PathKind};
+use super::link_log::{LinkEvent, LinkTransition, PathKind};
 use super::{LinkCarrier as Carrier, read_message, write_message};
 use crate::net_error::{self, status as protocol_status};
 use crate::routing::{
@@ -619,14 +619,12 @@ async fn run_established(
         },
         resumed: None,
     });
-    // Nothing resumes a session yet, so every link is a full handshake
-    // with no early data.
     let logged = LinkEvent {
         peer: peer_host.id,
         event: LinkTransition::Up,
         path: carrier.path_kind(),
         resumed: false,
-        early_data: EarlyData::None,
+        early_data: carrier.early_data(),
         first_packet_to_catch_up_ms: None,
     };
     logged.write(ctx.local_host.id());

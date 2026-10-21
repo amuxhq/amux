@@ -1,3 +1,5 @@
+#[cfg(test)]
+use std::future::Future as _;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -13,8 +15,9 @@ use super::carrier::{
     AsyncStream, ByteStream, CarrierKind, ControlSink, ControlSource, ControlWrite, LinkCarrier,
     OpenError,
 };
+use super::early::{Early, EarlyRecv, EarlySend};
 use super::framed::{FramedKind, StreamEndpoint};
-use super::link_log::PathKind;
+use super::link_log::{EarlyData, PathKind};
 use super::socket::{Datagrams, LinkSocket};
 use super::validation::ServerTokens;
 use crate::HostId;
@@ -32,6 +35,10 @@ pub(crate) const DEVICE_SERVER_NAME: &str = "amux-device.local";
 const CLOSE_LINGER: std::time::Duration = std::time::Duration::from_secs(1);
 pub(crate) const RELAY_QUIC_HANDSHAKE_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(2);
+/// How long a resumed dial to a host waits for its handshake to finish
+/// once it has started sending early data, as a direct dial waits for its
+/// handshake.
+pub(crate) const RESUMED_HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 /// How long a relay dial waits on one address before starting on the
 /// next, of the other family where there is one: the connection attempt
 /// delay RFC 8305 recommends, so an address family that black-holes costs
@@ -270,6 +277,9 @@ pub struct QuicCarrier {
     alone: bool,
     /// The forwarding link a link through a forwarder is carried on.
     through: Option<super::socket::LinkId>,
+    /// The data sent before the handshake finished, on a dial that resumed
+    /// with the peer's ticket.
+    early: Option<Arc<Early>>,
     inbound: tokio::sync::Mutex<mpsc::UnboundedReceiver<ByteStream>>,
     control: Mutex<Option<(ControlSink, ControlSource)>>,
     /// Asks the control writer to finish its stream, answering once the
@@ -315,9 +325,48 @@ impl QuicCarrier {
             lost = stats.path.lost_packets,
             "QUIC connection established"
         );
-        let control = connection.open_bi().await?;
+        let control = open_control(&connection, None).await?;
         Ok(Self::new(connection, CarrierKind::Quic, Some(control))
             .with_path(PathKind::of_addr(addr)))
+    }
+
+    /// Dials `peer` at `addr` resuming with the ticket its last link
+    /// left: the link carries data at once, and what is written before the
+    /// handshake finishes goes out as early data. With no ticket this is
+    /// an ordinary dial.
+    pub(crate) async fn resume_direct(
+        endpoint: &LinkEndpoint,
+        addr: SocketAddr,
+        identity: &DeviceIdentity,
+        trust_store: SharedTrustStore,
+        peer: HostId,
+    ) -> Result<Self, ConnectError> {
+        let config = endpoint.client_config(identity, &trust_store, peer)?;
+        let connecting = endpoint.connect_with(config, addr, DEVICE_SERVER_NAME)?;
+        let (connection, early) = handshake(connecting, RESUMED_HANDSHAKE_TIMEOUT).await?;
+        let control = open_control(&connection, early.as_ref()).await?;
+        Ok(Self::new(connection, CarrierKind::Quic, Some(control))
+            .with_path(PathKind::of_addr(addr))
+            .with_early(early))
+    }
+
+    /// Dials `peer` through the forwarder at the far end of `through` as
+    /// [`Self::resume_direct`] dials an address.
+    pub(crate) async fn resume_through(
+        endpoint: &LinkEndpoint,
+        through: super::socket::LinkId,
+        identity: &DeviceIdentity,
+        trust_store: SharedTrustStore,
+        peer: HostId,
+    ) -> Result<Self, ConnectError> {
+        let config = endpoint.client_config(identity, &trust_store, peer)?;
+        let connecting = endpoint.connect_through(config, peer, through, DEVICE_SERVER_NAME)?;
+        let (connection, early) = handshake(connecting, RESUMED_HANDSHAKE_TIMEOUT).await?;
+        let control = open_control(&connection, early.as_ref()).await?;
+        Ok(Self::new(connection, CarrierKind::Quic, Some(control))
+            .with_path(endpoint.forwarded_kind(through))
+            .carried_through(Some(through))
+            .with_early(early))
     }
 
     #[allow(dead_code)]
@@ -394,9 +443,10 @@ impl QuicCarrier {
         server_name: &str,
         config: quinn::ClientConfig,
     ) -> Result<Self, ConnectError> {
-        let connection = endpoint.connect_with(config, addr, server_name)?.await?;
-        let control = connection.open_bi().await?;
-        Ok(Self::new(connection, CarrierKind::RelayQuic, Some(control)))
+        let connecting = endpoint.connect_with(config, addr, server_name)?;
+        let (connection, early) = handshake(connecting, RELAY_QUIC_HANDSHAKE_TIMEOUT).await?;
+        let control = open_control(&connection, early.as_ref()).await?;
+        Ok(Self::new(connection, CarrierKind::RelayQuic, Some(control)).with_early(early))
     }
 
     /// Dials `peer` through the forwarder at the far end of `through`,
@@ -412,7 +462,7 @@ impl QuicCarrier {
         let connection = endpoint
             .connect_through(config, peer, through, DEVICE_SERVER_NAME)?
             .await?;
-        let control = connection.open_bi().await?;
+        let control = open_control(&connection, None).await?;
         Ok(Self::new(connection, CarrierKind::Quic, Some(control))
             .with_path(endpoint.forwarded_kind(through))
             .carried_through(Some(through)))
@@ -433,17 +483,19 @@ impl QuicCarrier {
         IO: AsyncRead + AsyncWrite + Send + 'static,
     {
         let path = super::framed::FramedPath::attach(&endpoint.socket, io, kind);
-        let connection = tokio::select! {
+        let (connection, early) = tokio::select! {
             connection = async {
-                endpoint.connect_on_framed(config, path.id, server_name)?.await.map_err(ConnectError::from)
+                let connecting = endpoint.connect_on_framed(config, path.id, server_name)?;
+                handshake(connecting, RELAY_QUIC_HANDSHAKE_TIMEOUT).await
             } => connection?,
             () = path.closed() => return Err(ConnectError::StreamEnded),
         };
-        let control = connection.open_bi().await?;
+        let control = open_control(&connection, early.as_ref()).await?;
         tokio::spawn(path.carry(connection.clone()));
         Ok(
             Self::new(connection, stream_carrier_kind(kind), Some(control))
-                .with_path(stream_path(kind)),
+                .with_path(stream_path(kind))
+                .with_early(early),
         )
     }
 
@@ -458,7 +510,7 @@ impl QuicCarrier {
             .endpoint
             .connect_with(config, stream.far, server_name)?
             .await?;
-        let control = connection.open_bi().await?;
+        let control = open_control(&connection, None).await?;
         let (kind, path) = (
             stream_carrier_kind(stream.kind()),
             stream_path(stream.kind()),
@@ -508,6 +560,21 @@ impl QuicCarrier {
         Self::new(connection, kind, None)
     }
 
+    fn with_early(mut self, early: Option<Arc<Early>>) -> Self {
+        self.early = early;
+        self
+    }
+
+    /// Waits for the link's handshake to finish: what became of the data
+    /// sent before it, or why it failed. A link dialled with no ticket has
+    /// finished its handshake already.
+    pub(crate) async fn handshake(&self) -> Result<EarlyData, ConnectError> {
+        match &self.early {
+            Some(early) => early.handshake().await.map_err(ConnectError::from),
+            None => Ok(EarlyData::None),
+        }
+    }
+
     fn alone(mut self) -> Self {
         self.alone = true;
         self
@@ -530,7 +597,7 @@ impl QuicCarrier {
     fn new(
         connection: quinn::Connection,
         kind: CarrierKind,
-        opened_control: Option<(quinn::SendStream, quinn::RecvStream)>,
+        opened_control: Option<(EarlySend, EarlyRecv)>,
     ) -> Self {
         let (inbound_tx, inbound) = mpsc::unbounded_channel();
         let (control_stream_tx, control_stream_rx) = oneshot::channel();
@@ -539,7 +606,10 @@ impl QuicCarrier {
         tokio::spawn(async move {
             let control = match opened_control {
                 Some(control) => Ok(control),
-                None => driver_connection.accept_bi().await,
+                None => driver_connection
+                    .accept_bi()
+                    .await
+                    .map(|(send, recv)| (EarlySend::plain(send), EarlyRecv::plain(recv))),
             };
             if control_stream_tx.send(control).is_err() {
                 return;
@@ -548,7 +618,7 @@ impl QuicCarrier {
             // Every stream after the control stream belongs to the host at
             // the other end: the link's handshake authenticated it.
             while let Ok((send, recv)) = driver_connection.accept_bi().await {
-                let stream = Box::new(QuicByteStream { send, recv }) as ByteStream;
+                let stream = Box::new(QuicByteStream::plain(send, recv)) as ByteStream;
                 if inbound_tx.send(stream).is_err() {
                     return;
                 }
@@ -579,6 +649,7 @@ impl QuicCarrier {
             connection,
             alone: false,
             through: None,
+            early: None,
             inbound: tokio::sync::Mutex::new(inbound),
             control: Mutex::new(Some((
                 ControlSink {
@@ -605,7 +676,7 @@ pub(crate) fn accepted_quic_bidi_stream(
     send: quinn::SendStream,
     recv: quinn::RecvStream,
 ) -> ByteStream {
-    Box::new(QuicByteStream { send, recv })
+    Box::new(QuicByteStream::plain(send, recv))
 }
 
 impl LinkCarrier for QuicCarrier {
@@ -623,11 +694,15 @@ impl LinkCarrier for QuicCarrier {
 
     fn open_stream(&self) -> BoxFuture<'_, Result<ByteStream, OpenError>> {
         Box::pin(async move {
-            let (send, recv) = self
-                .connection
-                .open_bi()
-                .await
-                .map_err(map_connection_open_error)?;
+            let (send, recv) = match &self.early {
+                Some(early) => early.open().await,
+                None => self
+                    .connection
+                    .open_bi()
+                    .await
+                    .map(|(send, recv)| (EarlySend::plain(send), EarlyRecv::plain(recv))),
+            }
+            .map_err(map_connection_open_error)?;
             Ok(Box::new(QuicByteStream { send, recv }) as ByteStream)
         })
     }
@@ -682,6 +757,13 @@ impl LinkCarrier for QuicCarrier {
 
     fn forwarded_through(&self) -> Option<super::socket::LinkId> {
         self.through
+    }
+
+    fn early_data(&self) -> EarlyData {
+        self.early
+            .as_ref()
+            .and_then(|early| early.outcome())
+            .unwrap_or(EarlyData::None)
     }
 
     fn path_stats(&self) -> String {
@@ -765,6 +847,92 @@ pub(crate) async fn stream_pair(
     )
 }
 
+/// An endpoint on loopback whose arrivals each wait `delay` before quinn
+/// sees them, so a dial's handshake takes at least that long: a test that
+/// writes early data writes it while the handshake is surely under way.
+#[cfg(test)]
+pub(crate) fn slow_arrivals_endpoint(delay: std::time::Duration) -> LinkEndpoint {
+    let substrate = super::socket::LinkSocket::bind_dual_stack(
+        "127.0.0.1:0".parse().expect("an address"),
+        None,
+    )
+    .expect("a loopback socket");
+    LinkEndpoint::new(
+        Arc::new(SlowArrivals {
+            inner: substrate,
+            delay,
+            held: Mutex::default(),
+        }),
+        HostId::new_v4(),
+        None,
+    )
+    .expect("an endpoint")
+}
+
+#[cfg(test)]
+struct SlowArrivals {
+    inner: Arc<dyn Datagrams>,
+    delay: std::time::Duration,
+    held: Mutex<SlowQueue>,
+}
+
+#[cfg(test)]
+#[derive(Default)]
+struct SlowQueue {
+    arrived: std::collections::VecDeque<(tokio::time::Instant, Vec<u8>, SocketAddr)>,
+    wake: Option<Pin<Box<tokio::time::Sleep>>>,
+}
+
+#[cfg(test)]
+impl Datagrams for SlowArrivals {
+    fn send_to(&self, buf: &[u8], to: SocketAddr) -> io::Result<()> {
+        self.inner.send_to(buf, to)
+    }
+
+    fn poll_send_ready(&self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.inner.poll_send_ready(cx)
+    }
+
+    fn poll_recv(
+        &self,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<(usize, SocketAddr)>> {
+        let mut held = self.held.lock().expect("the queue");
+        let mut datagram = [0_u8; 2048];
+        loop {
+            match self.inner.poll_recv(cx, &mut datagram) {
+                Poll::Ready(Ok((len, from))) => held.arrived.push_back((
+                    tokio::time::Instant::now() + self.delay,
+                    datagram[..len].to_vec(),
+                    from,
+                )),
+                Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+                Poll::Pending => break,
+            }
+        }
+        let Some(due) = held.arrived.front().map(|(due, ..)| *due) else {
+            return Poll::Pending;
+        };
+        if due > tokio::time::Instant::now() {
+            let wake = held
+                .wake
+                .get_or_insert_with(|| Box::pin(tokio::time::sleep_until(due)));
+            wake.as_mut().reset(due);
+            if wake.as_mut().poll(cx).is_pending() {
+                return Poll::Pending;
+            }
+        }
+        let (_, bytes, from) = held.arrived.pop_front().expect("a held datagram");
+        buf[..bytes.len()].copy_from_slice(&bytes);
+        Poll::Ready(Ok((bytes.len(), from)))
+    }
+
+    fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.inner.local_addr()
+    }
+}
+
 /// What a link over a byte stream is to the rest of the host. An
 /// in-process link stands for a direct one.
 pub(crate) fn stream_carrier_kind(kind: FramedKind) -> CarrierKind {
@@ -803,9 +971,7 @@ fn close_reason_from_connection(error: quinn::ConnectionError) -> pb::LinkCloseR
 }
 
 async fn run_control_stream(
-    stream: oneshot::Receiver<
-        Result<(quinn::SendStream, quinn::RecvStream), quinn::ConnectionError>,
-    >,
+    stream: oneshot::Receiver<Result<(EarlySend, EarlyRecv), quinn::ConnectionError>>,
     writes: mpsc::Receiver<ControlWrite>,
     reads: mpsc::Sender<io::Result<pb::Message>>,
     finish: oneshot::Receiver<oneshot::Sender<()>>,
@@ -823,10 +989,7 @@ async fn run_control_stream(
     }
 }
 
-async fn read_control_messages(
-    mut recv: quinn::RecvStream,
-    sender: mpsc::Sender<io::Result<pb::Message>>,
-) {
+async fn read_control_messages(mut recv: EarlyRecv, sender: mpsc::Sender<io::Result<pb::Message>>) {
     loop {
         match read_proto::<pb::Message>(&mut recv, wire::MESSAGE_SIZE_LIMIT).await {
             Ok(Some(message)) => {
@@ -844,7 +1007,7 @@ async fn read_control_messages(
 }
 
 async fn write_control_messages(
-    mut send: quinn::SendStream,
+    mut send: EarlySend,
     mut receiver: mpsc::Receiver<ControlWrite>,
     mut finish: oneshot::Receiver<oneshot::Sender<()>>,
 ) {
@@ -871,9 +1034,7 @@ async fn write_control_messages(
         else {
             break;
         };
-        let write_result = write_frame(&mut send, &bytes, declared_len)
-            .await
-            .map_err(io::Error::from);
+        let write_result = write_frame(&mut send, &bytes, declared_len).await;
         match write_result {
             Ok(()) => {
                 let _ = result.send(Ok(()));
@@ -891,18 +1052,20 @@ async fn write_control_messages(
             }
         }
     }
-    let _ = send.finish();
+    send.finish();
     if let Some(answer) = finished {
-        let _ = send.stopped().await;
+        send.stopped().await;
         let _ = answer.send(());
     }
 }
 
 async fn write_frame(
-    send: &mut quinn::SendStream,
+    send: &mut EarlySend,
     bytes: &[u8],
     declared_len: Option<u32>,
-) -> Result<(), quinn::WriteError> {
+) -> io::Result<()> {
+    use tokio::io::AsyncWriteExt as _;
+
     let len = declared_len.unwrap_or_else(|| {
         u32::try_from(bytes.len()).expect("control message length was checked before queueing")
     });
@@ -911,14 +1074,19 @@ async fn write_frame(
 }
 
 async fn read_proto<M: prost::Message + Default>(
-    recv: &mut quinn::RecvStream,
+    recv: &mut EarlyRecv,
     limit: usize,
 ) -> io::Result<Option<M>> {
+    use tokio::io::AsyncReadExt as _;
+
     let mut header = [0_u8; 4];
-    match recv.read_exact(&mut header).await {
-        Ok(()) => {}
-        Err(quinn::ReadExactError::FinishedEarly(0)) => return Ok(None),
-        Err(error) => return Err(io::Error::new(io::ErrorKind::UnexpectedEof, error)),
+    let mut filled = 0;
+    while filled < header.len() {
+        match recv.read(&mut header[filled..]).await? {
+            0 if filled == 0 => return Ok(None),
+            0 => return Err(io::ErrorKind::UnexpectedEof.into()),
+            read => filled += read,
+        }
     }
     let len = u32::from_be_bytes(header) as usize;
     if len > limit {
@@ -928,12 +1096,41 @@ async fn read_proto<M: prost::Message + Default>(
         ));
     }
     let mut bytes = vec![0; len];
-    recv.read_exact(&mut bytes)
-        .await
-        .map_err(|error| io::Error::new(io::ErrorKind::UnexpectedEof, error))?;
+    recv.read_exact(&mut bytes).await?;
     M::decode(bytes.as_slice())
         .map(Some)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+}
+
+/// Takes `connecting` as far as it must go before the link can carry
+/// data: where the peer gave this endpoint a ticket, no further, and what
+/// is written next goes out as early data, watched until the handshake
+/// finishes within `deadline`; otherwise through the whole handshake.
+async fn handshake(
+    connecting: quinn::Connecting,
+    deadline: std::time::Duration,
+) -> Result<(quinn::Connection, Option<Arc<Early>>), ConnectError> {
+    match connecting.into_0rtt() {
+        Ok((connection, accepted)) => {
+            let early = Early::start(connection.clone(), accepted, deadline);
+            Ok((connection, Some(early)))
+        }
+        Err(connecting) => Ok((connecting.await?, None)),
+    }
+}
+
+/// Opens the link's control stream, the connection's first.
+async fn open_control(
+    connection: &quinn::Connection,
+    early: Option<&Arc<Early>>,
+) -> Result<(EarlySend, EarlyRecv), quinn::ConnectionError> {
+    match early {
+        Some(early) => early.open().await,
+        None => {
+            let (send, recv) = connection.open_bi().await?;
+            Ok((EarlySend::plain(send), EarlyRecv::plain(recv)))
+        }
+    }
 }
 
 fn map_connection_open_error(error: quinn::ConnectionError) -> OpenError {
@@ -947,8 +1144,17 @@ fn map_connection_open_error(error: quinn::ConnectionError) -> OpenError {
 
 /// One bidirectional stream of a link.
 struct QuicByteStream {
-    send: quinn::SendStream,
-    recv: quinn::RecvStream,
+    send: EarlySend,
+    recv: EarlyRecv,
+}
+
+impl QuicByteStream {
+    fn plain(send: quinn::SendStream, recv: quinn::RecvStream) -> Self {
+        Self {
+            send: EarlySend::plain(send),
+            recv: EarlyRecv::plain(recv),
+        }
+    }
 }
 
 impl AsyncRead for QuicByteStream {
@@ -982,8 +1188,12 @@ impl AsyncWrite for QuicByteStream {
 impl AsyncStream for QuicByteStream {
     fn reset(&mut self) {
         let code = quinn::VarInt::from_u32(0);
-        let _ = self.send.reset(code);
-        let _ = self.recv.stop(code);
+        self.send.reset(code);
+        self.recv.stop(code);
+    }
+
+    fn arrived_early(&self) -> bool {
+        self.recv.is_0rtt()
     }
 }
 
@@ -1319,8 +1529,21 @@ mod tests {
 
     impl TicketClient {
         fn new(peer: &DeviceIdentity) -> Self {
+            Self::on(
+                LinkEndpoint::bind("127.0.0.1:0".parse().unwrap(), None).unwrap(),
+                peer,
+            )
+        }
+
+        /// A client whose handshakes take a fifth of a second, so what it
+        /// writes early is written before they finish.
+        fn slow(peer: &DeviceIdentity) -> Self {
+            Self::on(slow_arrivals_endpoint(Duration::from_millis(200)), peer)
+        }
+
+        fn on(endpoint: LinkEndpoint, peer: &DeviceIdentity) -> Self {
             Self {
-                endpoint: LinkEndpoint::bind("127.0.0.1:0".parse().unwrap(), None).unwrap(),
+                endpoint,
                 identity: DeviceIdentity::for_test(HostId::new_v4()),
                 trust: trust_for(peer),
                 peer: peer.host_id,
@@ -1465,5 +1688,262 @@ mod tests {
             "the old key's holder is refused"
         );
         assert_eq!(tickets.redeemed(), 0);
+    }
+
+    /// What a host read off one link: for each stream the dialler opened,
+    /// in order, whether it arrived as early data and its bytes. The first
+    /// is the control stream, read as one length-prefixed frame; the
+    /// others are read to their end and answered.
+    async fn read_link(server: &LinkEndpoint, streams: usize) -> Vec<(bool, Vec<u8>)> {
+        let connection = answer_early(&server.endpoint).await;
+        let (mut read, mut control) = (Vec::new(), None);
+        for index in 0..streams {
+            let (mut send, mut recv) = connection.accept_bi().await.expect("a stream");
+            let early = recv.is_0rtt();
+            let bytes = if index == 0 {
+                let mut len = [0; 4];
+                recv.read_exact(&mut len).await.unwrap();
+                let mut frame = vec![0; u32::from_be_bytes(len) as usize];
+                recv.read_exact(&mut frame).await.unwrap();
+                control = Some((send, recv));
+                frame
+            } else {
+                let bytes = recv.read_to_end(1 << 20).await.unwrap();
+                send.write_all(b"answered").await.unwrap();
+                send.finish().unwrap();
+                let _ = send.stopped().await;
+                bytes
+            };
+            read.push((early, bytes));
+        }
+        drop(control);
+        read
+    }
+
+    /// The next connection to `endpoint`, taken before its handshake
+    /// finishes, so a stream reads as early data exactly when it arrived as
+    /// early data (quinn marks a stream a server takes after the handshake
+    /// as ordinary, however it arrived).
+    async fn answer_early(endpoint: &quinn::Endpoint) -> quinn::Connection {
+        let connecting = endpoint
+            .accept()
+            .await
+            .expect("the host is open")
+            .accept()
+            .expect("the host takes the connection");
+        let (connection, _) = connecting
+            .into_0rtt()
+            .unwrap_or_else(|_| panic!("a server's connection is usable at once"));
+        connection
+    }
+
+    /// Dials `client`'s peer at `server` resuming where it can, writes a
+    /// control frame and one call before the handshake can have finished,
+    /// and reads the call's answer. What became of the early data.
+    async fn resume_and_call(client: &TicketClient, server: &LinkEndpoint) -> EarlyData {
+        let carrier = QuicCarrier::resume_direct(
+            &client.endpoint,
+            server.local_addr().unwrap(),
+            &client.identity,
+            client.trust.clone(),
+            client.peer,
+        )
+        .await
+        .expect("the dial");
+        let (mut control, _source) = carrier.control();
+        super::super::carrier::write_message(&mut control, &hello_frame())
+            .await
+            .unwrap();
+        let mut call = carrier.open_stream().await.unwrap();
+        call.write_all(b"an early call").await.unwrap();
+        call.shutdown().await.unwrap();
+        let mut answer = Vec::new();
+        call.read_to_end(&mut answer).await.unwrap();
+        assert_eq!(answer, b"answered", "the call's answer arrives either way");
+        let early = carrier.handshake().await.expect("the handshake");
+        assert_eq!(carrier.early_data(), early);
+        carrier.close(pb::LinkCloseReason::UserShutdown);
+        early
+    }
+
+    fn hello_frame() -> pb::Message {
+        pb::Message {
+            body: Some(pb::message::Body::Hello(pb::Hello {
+                auth_token: Some("a token".to_owned()),
+                ..Default::default()
+            })),
+        }
+    }
+
+    fn frame_of(message: &pb::Message) -> Vec<u8> {
+        prost::Message::encode_to_vec(message)
+    }
+
+    #[tokio::test]
+    async fn a_dial_with_no_ticket_sends_no_early_data() {
+        let server_identity = DeviceIdentity::for_test(HostId::new_v4());
+        let client = TicketClient::slow(&server_identity);
+        let tickets = SessionTickets::in_memory(HOST_TICKETS);
+        let server = ticket_server(
+            &server_identity,
+            &client.identity,
+            &tickets,
+            ANY_PORT.parse().unwrap(),
+        )
+        .await;
+
+        let (read, early) = tokio::join!(read_link(&server, 2), resume_and_call(&client, &server));
+        assert_eq!(early, EarlyData::None);
+        assert_eq!(
+            read,
+            [
+                (false, frame_of(&hello_frame())),
+                (false, b"an early call".to_vec())
+            ],
+            "the Hello and the call follow the handshake"
+        );
+    }
+
+    #[tokio::test]
+    async fn early_data_a_host_accepts_carries_the_hello_and_the_calls() {
+        let server_identity = DeviceIdentity::for_test(HostId::new_v4());
+        let client = TicketClient::slow(&server_identity);
+        let tickets = SessionTickets::in_memory(HOST_TICKETS);
+        let server = ticket_server(
+            &server_identity,
+            &client.identity,
+            &tickets,
+            ANY_PORT.parse().unwrap(),
+        )
+        .await;
+        let (_, first) = tokio::join!(read_link(&server, 2), resume_and_call(&client, &server));
+        assert_eq!(first, EarlyData::None, "the first link has no ticket");
+
+        let (read, early) = tokio::join!(read_link(&server, 2), resume_and_call(&client, &server));
+        assert_eq!(early, EarlyData::Accepted);
+        assert_eq!(
+            read,
+            [
+                (true, frame_of(&hello_frame())),
+                (true, b"an early call".to_vec())
+            ],
+            "the Hello and the call arrive as early data"
+        );
+        assert_eq!(tickets.redeemed(), 1);
+    }
+
+    #[tokio::test]
+    async fn early_data_a_host_refuses_is_sent_again_after_the_handshake() {
+        let server_identity = DeviceIdentity::for_test(HostId::new_v4());
+        let client = TicketClient::slow(&server_identity);
+        let tickets = SessionTickets::in_memory(HOST_TICKETS);
+        let server = ticket_server(
+            &server_identity,
+            &client.identity,
+            &tickets,
+            ANY_PORT.parse().unwrap(),
+        )
+        .await;
+        tokio::join!(read_link(&server, 2), resume_and_call(&client, &server));
+
+        // The same host, started again with none of the tickets it issued.
+        let forgotten = SessionTickets::in_memory(HOST_TICKETS);
+        let restarted = ticket_server(
+            &server_identity,
+            &client.identity,
+            &forgotten,
+            ANY_PORT.parse().unwrap(),
+        )
+        .await;
+        let (read, early) = tokio::join!(
+            read_link(&restarted, 2),
+            resume_and_call(&client, &restarted)
+        );
+        assert_eq!(early, EarlyData::Rejected);
+        assert_eq!(
+            read,
+            [
+                (false, frame_of(&hello_frame())),
+                (false, b"an early call".to_vec())
+            ],
+            "the refused Hello and call are sent again, the control stream first"
+        );
+        assert_eq!(forgotten.redeemed(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_relay_link_resuming_writes_its_token_as_early_data() {
+        let (server_config, client_config) = relay_server_and_client();
+        let server = LinkEndpoint::bind(ANY_PORT.parse().unwrap(), Some(server_config)).unwrap();
+        let client = slow_arrivals_endpoint(Duration::from_millis(200));
+        let addr = server.local_addr().unwrap();
+        for expected in [EarlyData::None, EarlyData::Accepted] {
+            let dial = async {
+                let carrier = QuicCarrier::connect_relay_candidates_with_config(
+                    &client,
+                    [addr],
+                    "relay.test",
+                    addr.port(),
+                    client_config.clone(),
+                )
+                .await
+                .expect("the relay dial");
+                let (mut control, _source) = carrier.control();
+                super::super::carrier::write_message(&mut control, &hello_frame())
+                    .await
+                    .unwrap();
+                // The relay answers on a stream of its own once it has
+                // the Hello: the link's first round trip.
+                let mut answer = carrier.accept_stream().await.expect("the relay's answer");
+                let mut byte = [0];
+                answer.read_exact(&mut byte).await.unwrap();
+                let early = carrier.handshake().await.unwrap();
+                carrier.close(pb::LinkCloseReason::UserShutdown);
+                early
+            };
+            let relay = async {
+                let connection = answer_early(&server.endpoint).await;
+                let (send, recv) = connection.accept_bi().await.unwrap();
+                let early = recv.is_0rtt();
+                let message = read_proto::<pb::Message>(
+                    &mut EarlyRecv::plain(recv),
+                    wire::MESSAGE_SIZE_LIMIT,
+                )
+                .await
+                .unwrap()
+                .unwrap();
+                let (mut reply, _) = connection.open_bi().await.unwrap();
+                reply.write_all(b"!").await.unwrap();
+                let _ = connection.closed().await;
+                drop(send);
+                (early, message)
+            };
+            let (early, (arrived_early, hello)) = tokio::join!(dial, relay);
+            assert_eq!(early, expected);
+            assert_eq!(arrived_early, expected == EarlyData::Accepted);
+            assert_eq!(hello, hello_frame(), "the Hello carries the relay token");
+        }
+    }
+
+    /// A relay's configuration and a client's that trusts it, the client's
+    /// built once as a process builds the relay's.
+    fn relay_server_and_client() -> (quinn::ServerConfig, quinn::ClientConfig) {
+        const NAME: &str = "relay.test";
+        let rcgen::CertifiedKey { cert, signing_key } =
+            rcgen::generate_simple_self_signed(vec![NAME.to_owned()]).expect("a certificate");
+        let der = rustls::pki_types::CertificateDer::from(cert.der().to_vec());
+        let server = crate::transport::relay_quic_server_config_from_der(
+            vec![der.clone()],
+            rustls::pki_types::PrivateKeyDer::Pkcs8(rustls::pki_types::PrivatePkcs8KeyDer::from(
+                signing_key.serialize_der(),
+            )),
+            &SessionTickets::in_memory(16),
+        )
+        .expect("a server configuration");
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(der).expect("the certificate as a root");
+        let client = crate::transport::relay_quic_client_config_with_roots(roots)
+            .expect("a client configuration");
+        (server, client)
     }
 }

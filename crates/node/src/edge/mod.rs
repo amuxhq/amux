@@ -578,6 +578,17 @@ impl Edge {
         Ok(crate::link::peer_client(self.channel(host).await?))
     }
 
+    /// Brings up a link to `host` resuming with the ticket its last link
+    /// left, writing `early` before the handshake finishes; see
+    /// [`crate::link::ChannelPool::open_resumed`].
+    pub async fn open_resumed(
+        &self,
+        host: HostId,
+        early: Vec<crate::EarlyCall>,
+    ) -> Result<crate::ResumedLink, crate::link::ChannelError> {
+        self.channels.open_resumed(host, early).await
+    }
+
     /// A call to `host` found no channel within its patience, or the one it
     /// opened failed, for `error`: the core decides what that says of the
     /// host.

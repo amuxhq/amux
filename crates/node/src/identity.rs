@@ -186,7 +186,10 @@ impl DeviceIdentity {
         let mut tls = self.client_tls_config_for_peer(trust_store, peer)?;
         tls.alpn_protocols = vec![QUIC_ALPN.to_vec()];
         tls.resumption = crate::link::resumption::client_resumption();
-        tls.enable_early_data = false;
+        // Only a dial that resumes with `QuicCarrier::resume_direct` or
+        // `resume_through` writes early data; the others wait for the
+        // handshake as before.
+        tls.enable_early_data = true;
 
         let crypto = quinn::crypto::rustls::QuicClientConfig::try_from(tls)
             .map_err(|error| IdentityError::TlsConfig(error.to_string()))?;

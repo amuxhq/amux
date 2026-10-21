@@ -99,7 +99,9 @@ pub fn relay_quic_client_config_with_roots(
         .with_root_certificates(roots)
         .with_no_client_auth();
     tls.alpn_protocols = vec![crate::identity::QUIC_ALPN.to_vec()];
-    tls.enable_early_data = false;
+    // A relay link resuming with its ticket writes its Hello, the relay
+    // token in it, as early data.
+    tls.enable_early_data = true;
     let crypto = quinn::crypto::rustls::QuicClientConfig::try_from(tls)
         .map_err(|error| TransportError::Config(error.to_string()))?;
     let mut config = quinn::ClientConfig::new(Arc::new(crypto));

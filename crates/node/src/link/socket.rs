@@ -22,11 +22,13 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::task::{Context, Poll, Waker};
+use std::time::Duration;
 
 pub use path_core::{LinkId, Path, PathId};
 use quinn::udp::{RecvMeta, Transmit};
 use quinn::{AsyncUdpSocket, UdpPoller};
 use tokio::sync::mpsc;
+use tokio::time::Instant;
 
 use super::framed::FramedKind;
 use super::link_log::PathKind;
@@ -187,6 +189,14 @@ const FRAMED_RECV_QUEUE: usize = 1024;
 /// substrate failing every receive cannot hold the runtime's thread.
 const RECV_ERRORS_PER_POLL: usize = 64;
 
+/// How long a peer the socket learned of only from what arrived is kept
+/// without being named or heard from. Every link's keepalives arrive more
+/// often (twenty seconds at the longest, a phone's) and its idle timeout
+/// is no longer (a phone's sixty), so a peer silent this long has no link.
+const UNCLAIMED_PEER_TIMEOUT: Duration = Duration::from_secs(60);
+/// How often arrivals look for peers past [`UNCLAIMED_PEER_TIMEOUT`].
+const UNCLAIMED_PEER_SWEEP: Duration = Duration::from_secs(5);
+
 /// What the socket dropped rather than hand quinn an error, which would
 /// end a connection (a send) or the endpoint (a receive).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -300,6 +310,28 @@ struct PeerState {
     /// connection quinn still holds on one keeps reaching it.
     stand_in: SocketAddr,
     route: Route,
+    /// When a packet last came from the peer, or it was last dialled.
+    heard: Instant,
+    expiry: Expiry,
+}
+
+/// When the socket lets a peer go by itself. A sender anyone can make the
+/// socket mint a stand-in for, by sending a packet from a new address or
+/// delivering one in a new host's name, is let go once it has nothing
+/// left to say, so a burst of them leaves nothing behind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Expiry {
+    /// Kept until it is forgotten: a host this host named, routed or
+    /// dialled, or a sender on a byte stream, which goes with the stream.
+    Kept,
+    /// Let go after [`UNCLAIMED_PEER_TIMEOUT`] without a packet: an address
+    /// dialled before the handshake says who answers there, and a host
+    /// first heard of in a forwarder's delivery.
+    Silent,
+    /// An unnamed sender that dialled this host: let go when silent, or
+    /// when its handshake has not named it [`UNCLAIMED_PEER_TIMEOUT`] after
+    /// it was `first` heard.
+    Unnamed { first: Instant },
 }
 
 /// Where an arrival came from, before the stand-in mapping.
@@ -312,6 +344,8 @@ enum Arrival {
 #[derive(Default)]
 struct State {
     next_stand_in: u64,
+    /// When arrivals next look for unclaimed peers past their time.
+    next_sweep: Option<Instant>,
     peers: HashMap<Peer, PeerState>,
     by_stand_in: HashMap<SocketAddr, Peer>,
     /// The host each direct or punched address leads to, learned from the
@@ -334,19 +368,93 @@ struct State {
 }
 
 impl State {
+    /// The peer's stand-in, minted if it has none. This host asking for
+    /// it claims a host and a dialled address: a host is kept from then
+    /// on, an address until it goes silent.
     fn stand_in(&mut self, peer: Peer) -> SocketAddr {
-        if let Some(state) = self.peers.get(&peer) {
-            return state.stand_in;
-        }
-        let stand_in = stand_in_addr(self.next_stand_in);
-        self.next_stand_in += 1;
-        let route = match peer {
-            Peer::Host(_) => Route::Unset,
-            Peer::Unnamed(path) => Route::Carrying(path),
+        let now = Instant::now();
+        let claimed = match peer {
+            Peer::Host(_) | Peer::Unnamed(Path::Framed(_)) => Expiry::Kept,
+            Peer::Unnamed(_) => Expiry::Silent,
         };
-        self.peers.insert(peer, PeerState { stand_in, route });
-        self.by_stand_in.insert(stand_in, peer);
-        stand_in
+        let state = self.mint(peer, now, claimed);
+        state.heard = now;
+        if state.expiry != Expiry::Kept {
+            state.expiry = claimed;
+        }
+        state.stand_in
+    }
+
+    /// The stand-in of a peer a packet just came from, minted as `minted`
+    /// if it has none; the packet counts as hearing from it.
+    fn heard(&mut self, peer: Peer, now: Instant, minted: Expiry) -> SocketAddr {
+        let state = self.mint(peer, now, minted);
+        state.heard = now;
+        state.stand_in
+    }
+
+    /// The peer's state, a stand-in minted for it with `expiry` if it has
+    /// none.
+    fn mint(&mut self, peer: Peer, now: Instant, expiry: Expiry) -> &mut PeerState {
+        if !self.peers.contains_key(&peer) {
+            let stand_in = stand_in_addr(self.next_stand_in);
+            self.next_stand_in += 1;
+            let route = match peer {
+                Peer::Host(_) => Route::Unset,
+                Peer::Unnamed(path) => Route::Carrying(path),
+            };
+            self.by_stand_in.insert(stand_in, peer);
+            self.peers.insert(
+                peer,
+                PeerState {
+                    stand_in,
+                    route,
+                    heard: now,
+                    expiry,
+                },
+            );
+        }
+        self.peers.get_mut(&peer).expect("just minted")
+    }
+
+    /// The stand-in of the sender of an arrival, an unnamed one minted to
+    /// wait for its handshake if it has none.
+    fn heard_from(&mut self, arrival: Arrival, now: Instant) -> SocketAddr {
+        self.sweep(now);
+        let peer = self.sender(arrival);
+        let minted = match peer {
+            Peer::Unnamed(Path::Framed(_)) => Expiry::Kept,
+            _ => Expiry::Unnamed { first: now },
+        };
+        self.heard(peer, now, minted)
+    }
+
+    /// Lets go of the peers past their time, at most once a sweep
+    /// interval: a peer is only ever minted by an arrival or by this host,
+    /// so arrivals are when there can be more of them.
+    fn sweep(&mut self, now: Instant) {
+        if self.next_sweep.is_some_and(|next| now < next) {
+            return;
+        }
+        self.next_sweep = Some(now + UNCLAIMED_PEER_SWEEP);
+        let gone: Vec<Peer> = self
+            .peers
+            .iter()
+            .filter(|(_, state)| {
+                let silent = now.duration_since(state.heard) >= UNCLAIMED_PEER_TIMEOUT;
+                match state.expiry {
+                    Expiry::Kept => false,
+                    Expiry::Silent => silent,
+                    Expiry::Unnamed { first } => {
+                        silent || now.duration_since(first) >= UNCLAIMED_PEER_TIMEOUT
+                    }
+                }
+            })
+            .map(|(peer, _)| *peer)
+            .collect();
+        for peer in gone {
+            self.forget(peer);
+        }
     }
 
     /// Arrivals on `path` are `host`'s from now on. Whoever the address
@@ -369,16 +477,17 @@ impl State {
         self.by_addr.retain(|_, owner| *owner != host);
     }
 
-    /// Forgets `host`: its stand-ins, its addresses and the forwarding
-    /// links it was the forwarder of.
-    fn forget(&mut self, host: HostId) {
-        let peer = Peer::Host(host);
+    /// Forgets `peer`: its stand-ins, a host's addresses and the
+    /// forwarding links it was the forwarder of.
+    fn forget(&mut self, peer: Peer) {
         let by_stand_in = &self.by_stand_in;
         self.forwarding
             .retain(|_, (via, _)| by_stand_in.get(via) != Some(&peer));
         self.by_stand_in.retain(|_, held| *held != peer);
         self.peers.remove(&peer);
-        self.unlearn_addresses(host);
+        if let Peer::Host(host) = peer {
+            self.unlearn_addresses(host);
+        }
     }
 
     /// Carries `host` on `route`. Addresses its earlier routes took still
@@ -600,18 +709,13 @@ impl LinkSocket {
             }
         }
         match left {
-            Some(left) => state.forget(left),
+            Some(left) => state.forget(Peer::Host(left)),
             None => {
                 state.peers.remove(&Peer::Unnamed(path));
             }
         }
         state
-            .peers
-            .entry(Peer::Host(host))
-            .or_insert(PeerState {
-                stand_in,
-                route: Route::Unset,
-            })
+            .mint(Peer::Host(host), Instant::now(), Expiry::Kept)
             .stand_in = stand_in;
         state.by_stand_in.insert(stand_in, Peer::Host(host));
         if addressed(path) {
@@ -647,10 +751,13 @@ impl LinkSocket {
         Some(self.lock().framed.get(&path)?.kind())
     }
 
+    /// Forgets a byte-stream path, and the sender on it if it was never
+    /// named.
     pub fn remove_framed(&self, path: PathId) {
         let mut state = self.lock();
         state.framed.remove(&path);
         state.by_framed.remove(&path);
+        state.forget(Peer::Unnamed(Path::Framed(path)));
     }
 
     /// One packet arrived on a byte-stream path.
@@ -677,16 +784,28 @@ impl LinkSocket {
     /// Forgets a forwarding link, and with it the path through it of every
     /// peer it carried: a link dialled to one of them later goes through
     /// whichever forwarding link reaches the forwarder then.
+    ///
+    /// A host known only from the forwarder's deliveries, which this host
+    /// never named, routed or dialled, is forgotten with it.
     pub fn remove_forwarding(&self, link: LinkId) {
         let mut state = self.lock();
         state.forwarding.remove(&link);
         let through = Path::Forwarded(link);
-        for peer in state.peers.values_mut() {
-            match &mut peer.route {
-                Route::Carrying(path) if *path == through => peer.route = Route::Unset,
+        let mut left = Vec::new();
+        for (peer, held) in &mut state.peers {
+            match &mut held.route {
+                Route::Carrying(path) if *path == through => {
+                    held.route = Route::Unset;
+                    if held.expiry != Expiry::Kept {
+                        left.push(*peer);
+                    }
+                }
                 Route::All(paths) => paths.retain(|path| *path != through),
                 _ => {}
             }
+        }
+        for peer in left {
+            state.forget(peer);
         }
     }
 
@@ -854,11 +973,7 @@ impl LinkSocket {
     /// in `datagram` are returned.
     fn arrive(&self, arrival: Arrival, datagram: &[u8]) -> Option<(SocketAddr, usize)> {
         match parse(datagram).ok()? {
-            PacketKind::Quic(_) => {
-                let mut state = self.lock();
-                let peer = state.sender(arrival);
-                Some((state.stand_in(peer), 0))
-            }
+            PacketKind::Quic(_) => Some((self.lock().heard_from(arrival, Instant::now()), 0)),
             PacketKind::Probe { nonce, .. } => {
                 self.reply(arrival, &encode_probe_answer(self.own, nonce));
                 None
@@ -870,16 +985,18 @@ impl LinkSocket {
             PacketKind::Forwarded { host, payload } => {
                 let (sink, sender) = {
                     let mut state = self.lock();
-                    let peer = state.sender(arrival);
-                    (state.forward_sink.clone()?, state.stand_in(peer))
+                    let sink = state.forward_sink.clone()?;
+                    (sink, state.heard_from(arrival, Instant::now()))
                 };
                 sink.arrived(sender, host, payload);
                 None
             }
             PacketKind::Delivered { host, payload } => match parse(payload).ok()? {
                 PacketKind::Quic(_) => {
+                    let now = Instant::now();
                     let mut state = self.lock();
-                    let stand_in = state.stand_in(Peer::Host(host));
+                    state.sweep(now);
+                    let stand_in = state.heard(Peer::Host(host), now, Expiry::Silent);
                     // A link someone dialled to us through a forwarder is
                     // answered the way it came until a route is chosen.
                     if let Some(link) = state.forwarder_of(arrival) {
@@ -1570,6 +1687,111 @@ mod tests {
     /// to the new stand-in, its earlier stand-in reaches it at the new
     /// address, and the old address is let go. A host carried through a
     /// forwarder keeps that route.
+    /// What the socket holds for its peers: their states, stand-ins,
+    /// addresses and forwarding links.
+    fn held(socket: &LinkSocket) -> (usize, usize, usize, usize) {
+        let state = socket.lock();
+        (
+            state.peers.len(),
+            state.by_stand_in.len(),
+            state.by_addr.len(),
+            state.forwarding.len(),
+        )
+    }
+
+    /// A burst of senders that never finish a handshake, and a forwarder
+    /// delivering in the names of hosts no link follows, leave nothing
+    /// behind once a minute passes without them: the socket holds what it
+    /// held before. A sender that goes on sending without its handshake
+    /// naming it is let go too, while a named host and a dialled forwarder
+    /// still heard from stay.
+    #[tokio::test(start_paused = true)]
+    async fn socket_peer_count_returns_to_its_baseline_after_a_burst_of_idle_senders() {
+        let (fake, socket, _own) = fake_socket();
+        let lan: SocketAddr = "192.0.2.40:5000".parse().unwrap();
+        let laptop = HostId::new_v4();
+        fake.push(lan, QUIC);
+        let (laptop_at, _) = receive(&socket).unwrap();
+        assert!(socket.name(laptop_at, laptop));
+        let relay: SocketAddr = "198.51.100.1:443".parse().unwrap();
+        let via = socket.stand_in_at(relay);
+        socket.add_forwarding(LinkId(1), via, PathKind::RelayUdp);
+        let baseline = held(&socket);
+
+        let flood: IpAddr = "203.0.113.9".parse().unwrap();
+        for port in 0..100 {
+            fake.push(SocketAddr::new(flood, 1000 + port), QUIC);
+            receive(&socket).unwrap();
+        }
+        for _ in 0..20 {
+            fake.push(relay, &encode_delivered(HostId::new_v4(), QUIC));
+            receive(&socket).unwrap();
+        }
+        let chatty: SocketAddr = "203.0.113.10:4000".parse().unwrap();
+        fake.push(chatty, QUIC);
+        let (chatty_at, _) = receive(&socket).unwrap();
+        assert_eq!(held(&socket).0, baseline.0 + 121);
+
+        // The relay's link and the unnamed sender go on sending.
+        for _ in 0..6 {
+            tokio::time::advance(Duration::from_secs(10)).await;
+            fake.push(relay, QUIC);
+            assert_eq!(receive(&socket).unwrap().0, via);
+            fake.push(chatty, QUIC);
+            receive(&socket).unwrap();
+        }
+        assert_ne!(
+            socket.stand_in_at(chatty),
+            chatty_at,
+            "a sender never named is let go, and minted afresh"
+        );
+        assert_eq!(socket.path_of(chatty_at), None);
+        let (peers, stand_ins, addresses, forwarding) = held(&socket);
+        assert_eq!(
+            (peers - 1, stand_ins - 1, addresses, forwarding),
+            baseline,
+            "only the chatty sender's fresh stand-in is new"
+        );
+        assert_eq!(socket.peer_of(laptop_at), Some(laptop));
+        assert_eq!(socket.address_of(laptop_at), Some(lan));
+        assert_eq!(socket.forwarding_link(via), Some(LinkId(1)));
+    }
+
+    /// Removing a byte-stream path forgets the sender on it that was never
+    /// named, and removing a forwarding link forgets the hosts known only
+    /// from its deliveries; a host this host dialled through it stays.
+    #[test]
+    fn socket_removing_a_path_forgets_the_senders_known_only_on_it() {
+        let (fake, socket, _own) = fake_socket();
+        let baseline = held(&socket);
+        let path = socket.add_framed(Arc::new(Recorded::default()));
+        socket.deliver_framed(path, QUIC.to_vec());
+        let (on_stream, _) = receive(&socket).unwrap();
+        socket.remove_framed(path);
+        assert_eq!(socket.path_of(on_stream), None);
+        assert_eq!(held(&socket), baseline);
+
+        let relay: SocketAddr = "198.51.100.1:443".parse().unwrap();
+        let via = socket.stand_in_at(relay);
+        socket.add_forwarding(LinkId(1), via, PathKind::RelayUdp);
+        let with_relay = held(&socket);
+        let dialled = HostId::new_v4();
+        socket.set_carrying(dialled, Path::Forwarded(LinkId(1)));
+        let dialled_at = socket.stand_in(dialled);
+        let stranger = HostId::new_v4();
+        fake.push(relay, &encode_delivered(stranger, QUIC));
+        let (stranger_at, _) = receive(&socket).unwrap();
+        assert_eq!(socket.peer_of(stranger_at), Some(stranger));
+        socket.remove_forwarding(LinkId(1));
+        assert_eq!(socket.peer_of(stranger_at), None);
+        assert_eq!(socket.peer_of(dialled_at), Some(dialled));
+        let (peers, stand_ins, addresses, _) = held(&socket);
+        assert_eq!(
+            (peers, stand_ins, addresses),
+            (with_relay.0 + 1, with_relay.1 + 1, with_relay.2)
+        );
+    }
+
     #[test]
     fn socket_names_a_host_afresh_at_a_new_address() {
         let (fake, socket, _own) = fake_socket();

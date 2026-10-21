@@ -854,7 +854,10 @@ mod tests {
     async fn path_moves_a_link_dialled_by_address_as_any_other() {
         let linked = linked_dialling(true, true).await;
         assert_eq!(
-            linked.laptop_paths.socket.peer_of(linked.client.remote_address()),
+            linked
+                .laptop_paths
+                .socket
+                .peer_of(linked.client.remote_address()),
             Some(linked.desk),
             "the dial's stand-in is the desk's"
         );

@@ -4,10 +4,12 @@
 use models::{Bounds, Outcome, Replication, check, walk};
 
 /// How long the exhaustive run may take under `just test`, sized to CI's
-/// four-core runner: twice the slowest of its measured times there (103 s;
-/// the README lists them all), rounded up to a whole minute. A run past it
-/// says the bounds have outgrown their place.
-const BUDGET_SECONDS: f64 = 240.0;
+/// four-core runner. No runner has timed these bounds, with the replica's
+/// opening replayed, so the budget is the four-thread Mac time (49.5 s)
+/// times 4.7, the slowest runner-to-Mac ratio, doubled and rounded up to a
+/// whole minute; the README lists the runner's figures at the bounds before.
+/// A run past it says the bounds have outgrown their place.
+const BUDGET_SECONDS: f64 = 480.0;
 
 #[test]
 fn every_replication_promise_holds_at_ci_bounds() {

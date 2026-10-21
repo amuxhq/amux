@@ -2501,6 +2501,7 @@ dependencies = [
  "supervisor-core",
  "tempfile",
  "ui-state",
+ "uuid",
  "wire",
 ]
 

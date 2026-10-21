@@ -641,6 +641,14 @@ impl Daemon {
         &self.trust.store
     }
 
+    /// Whether the removal of `host` is being written.
+    pub(crate) fn trust_removing(&self, host: Uuid) -> bool {
+        self.trust.changing.as_ref().is_some_and(|changing| {
+            changing.stage == Stage::Writing
+                && changing.queued.change == TrustChange::Remove { host }
+        })
+    }
+
     /// A change asked for by a call, answered once it is on the drive.
     pub(crate) fn change_trust_call(
         &mut self,

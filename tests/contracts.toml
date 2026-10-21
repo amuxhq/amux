@@ -1580,3 +1580,49 @@ tests = [
   "store/conformance::a_delta_joins_above_and_only_live_records_move_the_cursor",
   "ui-runtime/session::lagged_reopens_with_a_tail_at_once_and_dedupes_the_overlap",
 ]
+
+[[contract]]
+id = "single-daemon-early-calls-after-accept"
+source = "model"
+property = { crate = "models", machine = "single daemon", sentence = "early calls are served only after the core accepts the resumed identity" }
+checker = "models/single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
+tests = [
+  "daemon-core/lib::links::tests::a_resumed_link_naming_the_key_pinned_for_its_peer_comes_up",
+  "daemon-core/lib::links::tests::a_resumed_link_naming_a_key_not_pinned_is_refused_before_anything_rides_it",
+]
+
+[[contract]]
+id = "single-daemon-unpinned-never-answered"
+source = "model"
+property = { crate = "models", machine = "single daemon", sentence = "a host whose pin was removed never answers, resumed or not" }
+checker = "models/single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
+tests = [
+  "daemon-core/lib::links::tests::a_resumed_link_naming_a_key_not_pinned_is_refused_before_anything_rides_it",
+]
+
+[[contract]]
+id = "single-daemon-replay-changes-nothing"
+source = "model"
+property = { crate = "models", machine = "single daemon", sentence = "replayed early data changes no state" }
+checker = "models/single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
+tests = [
+  "daemon-core/lib::peers::tests::a_replayed_early_read_changes_nothing_the_store_holds",
+]
+
+[[contract]]
+id = "replication-early-calls-after-accept"
+source = "model"
+property = { crate = "models", machine = "replication", sentence = "early calls are served only after the core accepts the resumed identity" }
+checker = "models/replication::every_replication_promise_holds_at_ci_bounds"
+tests = [
+  "daemon-core/lib::links::tests::a_resumed_link_naming_the_key_pinned_for_its_peer_comes_up",
+]
+
+[[contract]]
+id = "replication-replay-changes-nothing"
+source = "model"
+property = { crate = "models", machine = "replication", sentence = "replayed early data changes no state" }
+checker = "models/replication::every_replication_promise_holds_at_ci_bounds"
+tests = [
+  "daemon-core/lib::peers::tests::a_replayed_early_read_changes_nothing_the_store_holds",
+]

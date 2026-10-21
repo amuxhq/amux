@@ -63,8 +63,12 @@ keys, trims its oldest row and reboots uncleanly, losing its newest commit
 and minting those revisions again under the next generation. Two states
 are one when their stores, the link and the replica's source stand alike;
 the cores' checkpoints ride along, since what else differs between them is
-the numbering of their calls and the length of a backoff. The properties
-are in `src/replication.rs`, each a sentence over the two stores.
+the numbering of their calls and the length of a backoff. The replica's
+link to the origin is resumed, so the opening it asks for after the origin
+reboots rides it as early data, which the origin's driver serves only once
+its core has taken the link; and that opening may be replayed on a
+connection of its own, whose answers go to whoever replayed it. The
+properties are in `src/replication.rs`, each a sentence over the two stores.
 
 ## Single daemon under crash
 
@@ -84,8 +88,15 @@ checkpoint and the journal back to its last writeback.
 Every step is also replayed the way a dump will be: the core restored from
 the newest checkpoint the driver's input ring holds, over the store it was
 taken beside, stepped through every input since against the journal as each
-step found it, must come out as the live core, store and journal. The
-properties are in `src/single_daemon.rs`.
+step found it, must come out as the live core, store and journal.
+
+A paired peer comes back on resumed links, each carrying an early read of
+the agent that the driver serves only once the core has taken the link;
+anyone holding those packets may replay them on a connection of their own;
+and someone may ask this host to remove the peer's pin, which the core
+writes through the driver before the driver closes the peer's link. The
+peer has bounds of its own, small around the journal, explored beside the
+journal's in the same test. The properties are in `src/single_daemon.rs`.
 
 ## Presence and routing
 
@@ -104,7 +115,9 @@ fails because its route went, a call opens a channel of its own on the
 first route (its direct link may go under it, and the call then tries the
 route the core names next), a call finds no channel within its patience
 (the core may close the host's own links for it), the plan is bought and
-lapses, the retry timer fires, and at any point the world may stop
+lapses (the relay enforces the change at once and this daemon hears of it
+later, so the relay may refuse the host's packets while its route still
+carries them), the retry timer fires, and at any point the world may stop
 changing. The relay
 refuses for the plan for as long as the plan lapses; the model bounds how
 many such refusals come in a row so that a path retrying only the relay
@@ -335,10 +348,10 @@ under `just test`.
 
 | Model | CI bounds | States | 12 threads | 4 threads | Four-core runner | Budget | Nightly bounds | Nightly, 12 threads |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Replication | 2 keys, cap 1, revisions up to 4, 2 generations, 2 in flight, 1 loss in a row | 81,268 | 13 s | 25 s | 87, 102, 72, 103 and 50 s | 240 s | 3 keys, cap 2, revisions up to 5, 3 in flight | 493 s |
-| Single daemon | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag | 207,594 | 51 s | 68 s | 81, 161, 161, 77 and 113 s | 360 s | 2 crashes, power losses or reboots, 1 refused commit | 527 s |
+| Replication | 2 keys, cap 1, revisions up to 4, 2 generations, 2 in flight, 1 loss in a row, the opening replayed once | 157,789 | not measured | 50 s | none yet at these bounds (about 233 s projected); at 81,268 states, before the resumed link: 87, 102, 72, 103 and 50 s | 480 s | 3 keys, cap 2, revisions up to 5, 3 in flight | not yet measured at these bounds |
+| Single daemon, and its peer | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag; the peer: 2 frames, 1 checkpoint, 1 crash, power loss or reboot, 1 resumed link, 1 replay, its pin removed | 207,594 and 50,633 | 51 s and 16 s | 74 s and 21 s | 81, 161, 161, 77 and 113 s for the journal; none yet for the peer (about 100 s projected) | 540 s for both | 2 crashes, power losses or reboots, 1 refused commit; the peer around the CI bounds' journal and subscriber | not yet measured at these bounds |
 | Family and deliveries | 1 turn end, 1 link down, 1 crash, 1 wait | 219,380 | 23 s | 47 s | 178 s (about 191 s projected); at 396,826 states with the parent's spontaneous exit: 161, 299, 222, 313, 310 and 155 s (the first at 391,552 states, before the first listing predated the parent) | 420 s | the parent's and the child's spontaneous exits, 2 links down, 2 waits | 757 s |
-| Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts or calls finding no channel, 1 call opening its own channel, 2 plan changes, 1 refusal for the plan, of a channel or of the host's packets, before anything else happens | 1,184,108 | 34 s | 70 s | none yet at these bounds (about 330 s projected); at 1,040,570 states, before the relay refused packets: 289, 288, 120 and 290 s (339.9 s at 1,233,958 states with 2 refusals for the plan in a row) | 600 s | 4 up, 3 down, 3 failures, 2 refusals for the plan in a row, the relay refusing for no route | 431 s before the relay refused packets |
+| Presence and routing | 3 links or claims up, 2 down, 1 refused or timed-out attempt or call finding no channel, 1 call opening its own channel, 2 plan changes, each heard by this daemon after the relay enforces it, 1 refusal for the plan, of a channel or of the host's packets, before anything else happens | 900,130 | not measured | 51 s | none yet at these bounds (about 238 s projected); at 1,040,570 states, before the relay refused packets: 289, 288, 120 and 290 s (339.9 s at 1,233,958 states with 2 refusals for the plan in a row) | 480 s | 4 up, 3 down, 3 failures, 2 refusals for the plan in a row, the relay refusing for no route | not yet measured at these bounds |
 | Agent lifecycle, one-shot child and parentless agent | 3 daemon connections, 3 inputs, 2 messages, 2 asks, 1 unasked provider exit, 2 stops or kills | 1,296,718 and 71,250 | 9 s | 18 s | 45, 28, 44, 29 and 41 s for both | 120 s each | 4 connections, 3 messages, 2 unasked exits | 81 s |
 | Supervisor update, both platforms' swaps | 2 releases, 2 supervisor crashes, 2 daemon crashes, 1 failed start, 5 timers firing, 1 `amux update` | 5,819,060 and 4,850,638 | 7 s | 8 s | 17, 27, 25, 27 and 27 s for both | 60 s each | 3 releases, 2 failed starts, 6 timers firing | 124 s |
 | One open chat | 2 writes, 1 lag, 1 reset, 2 pages over a three-item opening, a tail of 2, pages of 1 | 1,217,819 | 10 s | 24 s | 51, 109, 116, 105 and 105 s | 240 s | 3 writes | 343 s |
@@ -349,7 +362,9 @@ under `just test`.
 Measured on 2026-10-18 and 2026-10-19 on the enrolled Mac (Mac14,6, 12
 cores), the family model's on 2026-10-20 and the path machine's and the
 relay's forwarding on 2026-10-21 (with the Mac busy, load about 35 and 20;
-presence's again that day at load about 15), with the development profile,
+presence's again that day at load about 15, and presence, the single
+daemon's peer and replication again that night at load about 8), with the
+development profile,
 which optimises SQLite, the store and the models; `MODELS_THREADS=4` gives
 the four-thread figure. The checker runs on every core the machine has; the
 verdict and the state count do not depend on the number of threads (the
@@ -382,6 +397,10 @@ scaled by that; the first CI run at the cut bounds, 39459686545, took
 printed the same way for the same state. Presence's earlier figure
 is at bounds that allowed two refusals for the plan in a row: twice it passed
 600 s, so the CI bounds allow one and the second moved to the nightly bounds.
+Once the relay refused the host's packets and the plan reached this daemon
+after the relay, presence at two failures projected past the cap before any
+runner timed it, so the CI bounds allow one failure and the second is the
+nightly bounds' (which allow three).
 Each budget is sized to the slowest of a model's figures at its current
 bounds.
 

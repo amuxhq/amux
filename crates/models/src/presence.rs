@@ -11,7 +11,8 @@
 //! links coming up and going, an adjacent peer and the account's relay
 //! starting and ceasing to claim it, the relay refusing to forward to it, the shell making each attempt the core
 //! asks for and reporting how it went, the account's plan changing, and the
-//! retry timer the core arms firing. Calls open channels of their own on
+//! retry timer the core arms firing. The relay enforces a change of plan
+//! at once, and this host hears of it later. Calls open channels of their own on
 //! the routes the core lists, which conclude as attempts do, and a call may
 //! find no channel within its patience; when the core says to close the
 //! target's own links for it, they close. The relay carries a channel only
@@ -27,8 +28,10 @@
 //! up before any claim of it, whether its packets go on the network or
 //! through the relay forwarding them end to end; every other one of its
 //! links is carried over SSH. The relay refuses the target's packets for
-//! the plan while it lapses, and for no route when it holds no link to the
-//! target any more while its claim has not yet gone.
+//! the plan while it lapses, even while the route through it carries the
+//! target's traffic because this host has not yet heard of the lapse, and
+//! for no route when it holds no link to the target any more while its
+//! claim has not yet gone.
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
@@ -97,14 +100,15 @@ pub struct PresenceRouting {
 impl PresenceRouting {
     /// The bounds `just test` explores exhaustively: three links or claims
     /// up and two down, so a route can carry traffic while another comes
-    /// and goes; two failed attempts or calls; one call opening a channel;
+    /// and goes; one failed attempt or call; one call opening a channel;
     /// the plan bought and lapsed again; one refusal for the plan before
-    /// something else happens, which keeps the run inside its time budget.
+    /// something else happens. One failure and one refusal in a row keep
+    /// the run inside its time budget.
     pub const fn ci() -> Self {
         Self {
             ups: 3,
             downs: 2,
-            faults: 2,
+            faults: 1,
             calls: 1,
             plans: 2,
             payments: 1,
@@ -112,8 +116,8 @@ impl PresenceRouting {
         }
     }
 
-    /// The larger bounds a nightly run explores, the relay's retry refused
-    /// for the plan a second time in a row among them.
+    /// The larger bounds a nightly run explores: more failures, and the
+    /// relay's retry refused for the plan a second time in a row.
     pub const fn nightly() -> Self {
         Self {
             ups: 4,
@@ -190,8 +194,11 @@ pub enum Action {
     Call(Concluded),
     /// A call to the target found no channel within its patience.
     CallsFailed,
-    /// The account's plan changed: bought, or lapsed.
+    /// The account's plan changed: bought, or lapsed. The relay enforces
+    /// it at once; this host hears of it later.
     PlanChanged,
+    /// This host hears that the account's plan changed.
+    PlanHeard,
     /// The target's retry timer fired.
     TimerFired,
     /// The world stops changing: no link or claim comes or goes, the plan
@@ -233,6 +240,8 @@ pub struct State {
     timer: bool,
     /// The account's plan pays for connections between hosts.
     paid: bool,
+    /// The plan changed and this host has not heard of it yet.
+    untold: bool,
     /// The world has stopped changing.
     rested: bool,
     used: Used,
@@ -258,6 +267,16 @@ pub struct State {
 }
 
 impl State {
+    /// The route carrying the target's traffic, as the core last told it.
+    pub fn active(&self) -> Option<Route> {
+        self.view.active
+    }
+
+    /// Whether an attempt the core asked for on `route` is in flight.
+    pub fn attempting(&self, route: Route) -> bool {
+        self.attempts.contains(&route)
+    }
+
     /// Counts what a concluded attempt or channel used of the bounds.
     fn count(&mut self, route: Route, concluded: Concluded) {
         self.hear(route, concluded);
@@ -350,6 +369,7 @@ impl Machine for PresenceRouting {
             attempts: BTreeSet::new(),
             timer: false,
             paid: false,
+            untold: false,
             rested: false,
             used: Used::default(),
             refused_for_plan: false,
@@ -419,8 +439,11 @@ impl Machine for PresenceRouting {
                 out.push(Action::ForwardRefused(Via::Relay, false));
             }
         }
-        if world && s.used.plans < self.plans {
+        if world && s.used.plans < self.plans && !s.untold {
             out.push(Action::PlanChanged);
+        }
+        if s.untold {
+            out.push(Action::PlanHeard);
         }
         if s.timer {
             out.push(Action::TimerFired);
@@ -587,6 +610,11 @@ impl Machine for PresenceRouting {
             Action::PlanChanged => {
                 next.used.plans += 1;
                 next.paid = !next.paid;
+                next.untold = true;
+                return Some(next);
+            }
+            Action::PlanHeard => {
+                next.untold = false;
                 Input::PlanChanged
             }
             Action::TimerFired => {
@@ -940,6 +968,7 @@ impl fmt::Debug for State {
             .field("claims", &self.claims)
             .field("timer", &self.timer)
             .field("paid", &self.paid)
+            .field("untold", &self.untold)
             .field("rested", &self.rested)
             .field("refused_for_plan", &self.refused_for_plan);
         for (name, value) in [

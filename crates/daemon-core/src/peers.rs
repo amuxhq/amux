@@ -442,4 +442,48 @@ mod tests {
             "a host linked directly needs no second link: {out:?}"
         );
     }
+    #[test]
+    fn a_replayed_early_read_changes_nothing_the_store_holds() {
+        let mut daemon = daemon();
+        let before = daemon.store().dump().expect("the store dumps");
+        let read = || {
+            PeerRequest::Fetch(wire::FetchRequest {
+                agent_id: MINE.to_vec(),
+                before_order: None,
+                limit: 8,
+            })
+        };
+        for (link, call) in [(1, minted(1)), (2, minted(2))] {
+            step(
+                &mut daemon,
+                Input::LinkUp {
+                    link: LinkId(link),
+                    peer: HostId(PEER),
+                    kind: CarrierKind::Direct,
+                    resumed: None,
+                },
+            );
+            let out = step(
+                &mut daemon,
+                Input::PeerCall {
+                    from: HostId(PEER),
+                    call,
+                    request: read(),
+                },
+            );
+            assert!(
+                out.iter()
+                    .any(|output| matches!(output, Output::Answer { call: to, .. } if *to == call)),
+                "{out:?}"
+            );
+        }
+        step(
+            &mut daemon,
+            Input::LinkDown {
+                link: LinkId(2),
+                reason: wire::LinkCloseReason::UserShutdown,
+            },
+        );
+        assert_eq!(daemon.store().dump().expect("the store dumps"), before);
+    }
 }

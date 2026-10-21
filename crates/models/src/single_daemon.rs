@@ -23,6 +23,16 @@
 //! does. A step's only durable effects are one store transaction and the
 //! deletion of whole journal segments, oldest first, so a crash inside a
 //! step leaves a state a crash between two steps also reaches.
+//!
+//! One paired peer comes back on resumed links, each carrying a read of
+//! the agent as early data, which the driver holds until the core has
+//! decided the identity the link's ticket names; anyone holding those
+//! packets may replay them on a connection of its own; and this host may
+//! remove the peer's pin, which the driver reads from the drive at every
+//! start; the removal is the core's trust change, written by the driver,
+//! after which the driver closes the peer's link. A fresh handshake from a peer
+//! whose pin was removed fails its pin check before the core hears of it,
+//! so after the removal only a resumed link can reach the core.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -31,15 +41,18 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 use daemon_core::generation::{LastRun, at_start};
-use daemon_core::payload::{ClientRequest, JobResult, Response};
+use daemon_core::payload::{
+    CarrierKind, ClientRequest, JobResult, PeerRequest, PublicKey, Response,
+};
+use daemon_core::trust::{TrustChange, TrustStore};
 use daemon_core::{
-    AgentId, CallId, Checkpoint, Daemon, DumpReason, Input, Job, JobId, Output, StartOptions,
-    StepBudget, TimerId,
+    AgentId, CallId, Checkpoint, Daemon, DumpReason, HostId, Input, Job, JobId, LinkId, Output,
+    Route, StartOptions, StepBudget, TimerId,
 };
 use store::{AgentKey, AgentRow, Dump, Sqlite};
 use wire::{Item, Step, session_event};
 
-use crate::{Fault, Host, Machine, Property};
+use crate::{Fault, Host, Machine, MsgIndex, Property};
 
 const OWN: &[u8; 16] = b"own-host-0000000";
 const AGENT: AgentId = AgentId(*b"agent-0000000000");
@@ -55,6 +68,43 @@ const SEGMENT_BYTES: u64 = 1;
 /// Enough to hold every row the agent writes at any of the bounds.
 const TAIL: u32 = 64;
 const REFUSAL: &str = "the drive is full";
+/// The paired peer.
+const PEER: HostId = HostId(*b"peer-host-000000");
+/// The peer's resumed link, and the connection a replay of its early data
+/// arrives on.
+const PEER_LINK: LinkId = LinkId(1);
+const REPLAY_LINK: LinkId = LinkId(2);
+/// The calls the driver numbers the peer's early reads with, apart from
+/// the client's.
+const EARLY_CALL: CallId = CallId(1 << 32);
+const REPLAYED_CALL: CallId = CallId((1 << 32) + 1);
+
+/// The trust store as the drive holds it: the peer pinned, or not.
+fn trust(pinned: bool) -> TrustStore {
+    if pinned {
+        TrustStore::of_hosts([PEER])
+    } else {
+        TrustStore::default()
+    }
+}
+
+/// The key the peer's tickets name: the one this host pinned for it.
+fn peer_key() -> PublicKey {
+    let store = trust(true);
+    let key = store
+        .pubkey_for_host(uuid::Uuid::from_bytes(PEER.0))
+        .expect("the peer is pinned");
+    PublicKey(key.to_vec())
+}
+
+/// The peer's early read: a page of the agent's rows.
+fn early_read() -> PeerRequest {
+    PeerRequest::Fetch(wire::FetchRequest {
+        agent_id: AGENT.0.to_vec(),
+        before_order: None,
+        limit: TAIL,
+    })
+}
 
 fn agent() -> AgentKey {
     AgentKey::new(OWN.to_vec(), AGENT.0.to_vec())
@@ -75,13 +125,20 @@ pub struct SingleDaemon {
     pub lags: u8,
     /// Commits the drive refuses, all told.
     pub refusals: u8,
+    /// Resumed links the peer comes back on, all told.
+    pub resumes: u8,
+    /// Replays of the peer's early data, all told.
+    pub replays: u8,
+    /// Whether this host may remove the peer's pin.
+    pub unpin: bool,
 }
 
 impl SingleDaemon {
     /// The bounds `just test` explores exhaustively: enough frames that a
     /// checkpoint reclaims a segment past the ones kept for dumps, and one
     /// crash, power loss or reboot. A refused commit is left to the nightly
-    /// bounds, which keeps the run inside its CI budget.
+    /// bounds, and the peer to bounds of its own, which keeps the run
+    /// inside its CI budget.
     pub const fn ci() -> Self {
         Self {
             frames: 4,
@@ -90,6 +147,36 @@ impl SingleDaemon {
             opens: 1,
             lags: 1,
             refusals: 0,
+            resumes: 0,
+            replays: 0,
+            unpin: false,
+        }
+    }
+
+    /// The peer's bounds `just test` explores beside [`Self::ci`]: the peer
+    /// resuming once, its early data replayed once and its pin removed,
+    /// around a crash, power loss or reboot, a checkpoint and two frames,
+    /// so an early read meets a checkpoint the ring replays and a restart.
+    pub const fn peer() -> Self {
+        Self {
+            frames: 2,
+            checkpoints: 1,
+            opens: 0,
+            lags: 0,
+            resumes: 1,
+            replays: 1,
+            unpin: true,
+            ..Self::ci()
+        }
+    }
+
+    /// The peer around the CI bounds' journal and subscriber, run nightly.
+    pub const fn peer_nightly() -> Self {
+        Self {
+            resumes: 1,
+            replays: 1,
+            unpin: true,
+            ..Self::ci()
         }
     }
 
@@ -169,6 +256,10 @@ struct Run {
     ingest_armed: bool,
     subscriber: Option<Subscriber>,
     calls: u64,
+    /// The peer's resumed link is up and the core took it.
+    peer_up: bool,
+    /// The driver is writing the trust store for the core.
+    trust_job: Option<JobId>,
 }
 
 /// How much of the bounds a path has used.
@@ -179,6 +270,9 @@ struct Used {
     opens: u8,
     lags: u8,
     refusals: u8,
+    resumes: u8,
+    replays: u8,
+    unpins: u8,
 }
 
 /// The newest checkpoint the driver's input ring holds, with what it was
@@ -223,6 +317,16 @@ pub struct State {
     dumped: Option<String>,
     /// The ring's replay came out other than the live daemon.
     diverged: Option<String>,
+    /// The drive's trust store pins the peer.
+    pinned: bool,
+    /// The core answered an early read of the peer's.
+    early_answered: bool,
+    /// The driver served an early call on a link the core did not list.
+    early_unaccepted: Option<String>,
+    /// The core answered the peer after its pin was removed.
+    answered_unpinned: Option<String>,
+    /// A replay of early data changed what the store holds.
+    replay_changed: Option<String>,
     /// Carried along the path that first reached this state, and not part
     /// of the state's identity: two paths to one daemon are one state, and
     /// the replay checks the path the checker found first.
@@ -241,6 +345,13 @@ type Identity<'a> = (
     ),
     (
         &'a Used,
+        bool,
+        &'a Option<String>,
+        &'a Option<String>,
+        &'a Option<String>,
+    ),
+    (
+        bool,
         bool,
         &'a Option<String>,
         &'a Option<String>,
@@ -272,6 +383,13 @@ impl State {
                 &self.broadcast_uncommitted,
                 &self.dumped,
                 &self.diverged,
+            ),
+            (
+                self.pinned,
+                self.early_answered,
+                &self.early_unaccepted,
+                &self.answered_unpinned,
+                &self.replay_changed,
             ),
         )
     }
@@ -327,9 +445,18 @@ pub enum Action {
     /// The machine reboots cleanly: a running daemon shuts down first,
     /// flushing its store, and marks the record clean last.
     Reboot,
+    /// The peer comes back on a resumed link carrying its early read; the
+    /// driver serves the read once the core has taken the link.
+    PeerResumes,
+    /// Someone asks this host to remove the peer's pin.
+    Unpin,
+    /// The driver's write of the trust store without the peer is on the
+    /// drive; the driver closes the peer's link as revoked.
+    TrustWritten,
     /// The world's doing: the daemon's process dies at a step; the machine
     /// loses power, taking the store and the journal back to what the drive
-    /// has; or the drive refuses the commit of the next nudge.
+    /// has; the drive refuses the commit of the next nudge; or the peer's
+    /// early data arrives again, replayed on a connection of its own.
     Fault(Fault),
 }
 
@@ -364,6 +491,11 @@ impl Machine for SingleDaemon {
             broadcast_uncommitted: None,
             dumped: None,
             diverged: None,
+            pinned: true,
+            early_answered: false,
+            early_unaccepted: None,
+            answered_unpinned: None,
+            replay_changed: None,
             ring: Ring::default(),
         }
     }
@@ -415,6 +547,21 @@ impl Machine for SingleDaemon {
             }
             _ if s.used.opens < self.opens => out.push(Action::SubscriberOpen),
             _ => {}
+        }
+        if !run.peer_up && s.used.resumes < self.resumes {
+            out.push(Action::PeerResumes);
+        }
+        // Only early data the peer sent can be replayed. It is replayed
+        // while the core holds no input back, so what the store shows after
+        // it is the replay's doing alone.
+        if s.used.resumes > 0 && s.used.replays < self.replays && run.held == 0 {
+            out.push(Action::Fault(Fault::Duplicate(MsgIndex(0))));
+        }
+        if self.unpin && s.used.unpins == 0 {
+            out.push(Action::Unpin);
+        }
+        if run.trust_job.is_some() {
+            out.push(Action::TrustWritten);
         }
         if s.used.downs < self.downs {
             out.push(Action::Fault(Fault::Crash(DAEMON)));
@@ -523,7 +670,59 @@ impl Machine for SingleDaemon {
                     .call;
                 self.step(&mut next, Input::AnswerLagged { call }, false);
             }
-            Action::Start => start(&mut next),
+            Action::Start => {
+                start(&mut next);
+                // The driver reads the trust store from the drive.
+                let store = trust(next.pinned);
+                self.step(&mut next, Input::TrustRead { store }, false);
+            }
+            Action::PeerResumes => {
+                next.used.resumes += 1;
+                if self.resumed(&mut next, PEER_LINK) {
+                    next.run.as_mut().expect("a running daemon").peer_up = true;
+                    self.serve_early(&mut next, PEER_LINK, EARLY_CALL);
+                }
+            }
+            Action::Fault(Fault::Duplicate(_)) => {
+                next.used.replays += 1;
+                let before = next.store.clone();
+                if self.resumed(&mut next, REPLAY_LINK) {
+                    self.serve_early(&mut next, REPLAY_LINK, REPLAYED_CALL);
+                }
+                // The replayer cannot finish the handshake, and its
+                // connection dies.
+                let reason = wire::LinkCloseReason::UserShutdown;
+                let down = Input::LinkDown {
+                    link: REPLAY_LINK,
+                    reason,
+                };
+                self.step(&mut next, down, false);
+                if next.store != before && next.replay_changed.is_none() {
+                    next.replay_changed = Some("the store changed".into());
+                }
+            }
+            Action::Unpin => {
+                next.used.unpins += 1;
+                let host = uuid::Uuid::from_bytes(PEER.0);
+                let remove = Input::ChangeTrust(TrustChange::Remove { host });
+                self.step(&mut next, remove, false);
+            }
+            Action::TrustWritten => {
+                next.pinned = false;
+                let run = next.run.as_mut().expect("a running daemon");
+                let job = run.trust_job.take().expect("a trust write under way");
+                let result = JobResult::Done;
+                self.step(&mut next, Input::JobDone { job, result }, false);
+                let run = next.run.as_mut().expect("a running daemon");
+                if std::mem::take(&mut run.peer_up) {
+                    let reason = wire::LinkCloseReason::UserRevoked;
+                    let down = Input::LinkDown {
+                        link: PEER_LINK,
+                        reason,
+                    };
+                    self.step(&mut next, down, false);
+                }
+            }
             Action::Fault(Fault::Crash(_)) => {
                 next.used.downs += 1;
                 next.run = None;
@@ -570,7 +769,7 @@ impl Machine for SingleDaemon {
     }
 
     fn properties(&self) -> Vec<Property<Self>> {
-        vec![
+        let mut properties = vec![
             Property::always(COMMIT_BEFORE_BROADCAST, |_, s: &State| {
                 s.broadcast_uncommitted.is_none()
             }),
@@ -600,41 +799,63 @@ impl Machine for SingleDaemon {
                 })
             }),
             Property::always(REPRODUCES, |_, s: &State| s.diverged.is_none()),
-            Property::always(NEVER_DUMPS, |_, s: &State| s.dumped.is_none()),
-            Property::sometimes("a subscriber lags", |_, s: &State| {
-                s.run
-                    .as_ref()
-                    .and_then(|run| run.subscriber.as_ref())
-                    .is_some_and(|subscriber| subscriber.lagged)
+            Property::always(EARLY_AFTER_ACCEPT, |_, s: &State| {
+                s.early_unaccepted.is_none()
             }),
-            Property::sometimes(
-                "a subscriber reads a row committed after its opening",
-                |_, s: &State| {
+            Property::always(UNPINNED_NEVER_ANSWERED, |_, s: &State| {
+                s.answered_unpinned.is_none()
+            }),
+            Property::always(REPLAY_CHANGES_NOTHING, |_, s: &State| {
+                s.replay_changed.is_none()
+            }),
+            Property::always(NEVER_DUMPS, |_, s: &State| s.dumped.is_none()),
+        ];
+        // Each set of bounds judges the sometimes of what it explores: the
+        // peer's bounds hold little journal, the journal's leave the peer
+        // out.
+        if self.resumes > 0 {
+            properties.push(Property::sometimes(
+                "a resumed peer's early read is answered",
+                |_, s: &State| s.early_answered,
+            ));
+        } else {
+            properties.extend([
+                Property::sometimes("a subscriber lags", |_, s: &State| {
                     s.run
                         .as_ref()
                         .and_then(|run| run.subscriber.as_ref())
-                        .is_some_and(|subscriber| {
-                            subscriber.open() && subscriber.received.len() > 1
-                        })
-                },
-            ),
-            Property::sometimes(
-                "a write waits out a checkpoint's WAL job",
-                |_, s: &State| s.run.as_ref().is_some_and(|run| run.held > 0),
-            ),
-            Property::sometimes("a checkpoint reclaims a journal segment", |_, s: &State| {
-                s.journal
-                    .first_key_value()
-                    .is_some_and(|(oldest, _)| *oldest > 0)
-            }),
-            Property::sometimes(
-                "ingest rewinds the cursor to a journal that lost its tail",
-                |_, s: &State| s.rewound,
-            ),
-            Property::sometimes("a start serves the next generation", |_, s: &State| {
-                s.run.as_ref().is_some_and(|run| run.generation > 1)
-            }),
-        ]
+                        .is_some_and(|subscriber| subscriber.lagged)
+                }),
+                Property::sometimes(
+                    "a subscriber reads a row committed after its opening",
+                    |_, s: &State| {
+                        s.run
+                            .as_ref()
+                            .and_then(|run| run.subscriber.as_ref())
+                            .is_some_and(|subscriber| {
+                                subscriber.open() && subscriber.received.len() > 1
+                            })
+                    },
+                ),
+                Property::sometimes(
+                    "a write waits out a checkpoint's WAL job",
+                    |_, s: &State| s.run.as_ref().is_some_and(|run| run.held > 0),
+                ),
+                Property::sometimes("a checkpoint reclaims a journal segment", |_, s: &State| {
+                    s.journal
+                        .first_key_value()
+                        .is_some_and(|(oldest, _)| *oldest > 0)
+                }),
+                Property::sometimes(
+                    "ingest rewinds the cursor to a journal that lost its tail",
+                    |_, s: &State| s.rewound,
+                ),
+                Property::sometimes("a start serves the next generation", |_, s: &State| {
+                    s.run.as_ref().is_some_and(|run| run.generation > 1)
+                }),
+            ]);
+        }
+        properties
     }
 }
 
@@ -643,11 +864,58 @@ impl SingleDaemon {
     /// ring first, then stepped over the store and the journal, then what it
     /// asked for carried out.
     fn step(&self, next: &mut State, input: Input, refuse: bool) {
+        self.step_reading(next, input, refuse);
+    }
+
+    /// The peer's link comes up resumed, its ticket naming the key this
+    /// host pinned for it: whether the core took it.
+    fn resumed(&self, next: &mut State, link: LinkId) -> bool {
+        let input = Input::LinkUp {
+            link,
+            peer: PEER,
+            kind: CarrierKind::Direct,
+            resumed: Some(peer_key()),
+        };
+        let (_, out) = self.step_reading(next, input, false);
+        !out.contains(&Output::RefuseResumed { link })
+    }
+
+    /// The driver serves the peer's early read held on `link`.
+    fn serve_early(&self, next: &mut State, link: LinkId, call: CallId) {
+        let input = Input::PeerCall {
+            from: PEER,
+            call,
+            request: early_read(),
+        };
+        let (listed, out) = self.step_reading(next, input, false);
+        if !listed.contains(&Route::Direct(link)) && next.early_unaccepted.is_none() {
+            next.early_unaccepted = Some(format!("served on {link:?}, the core lists {listed:?}"));
+        }
+        let answered = out
+            .iter()
+            .any(|output| matches!(output, Output::Answer { call: to, .. } if *to == call));
+        if answered {
+            next.early_answered = true;
+            if !next.pinned && next.answered_unpinned.is_none() {
+                next.answered_unpinned = Some(format!("answered on {link:?}"));
+            }
+        }
+    }
+
+    /// Steps the core as [`Self::step`] does, and says which routes it
+    /// listed to the peer before the step and what the step asked for.
+    fn step_reading(
+        &self,
+        next: &mut State,
+        input: Input,
+        refuse: bool,
+    ) -> (Vec<Route>, Vec<Output>) {
         let journal_before = next.journal.clone();
         let cursor_before = next.cursor;
         let run = next.run.as_mut().expect("a step needs a running daemon");
-        let (out, uncommitted, core, store, journal) = with_scratch(&LIVE, |scratch| {
+        let (listed, out, uncommitted, core, store, journal) = with_scratch(&LIVE, |scratch| {
             let mut daemon = scratch.daemon(&run.core, &next.store, &next.journal);
+            let listed = daemon.links().routes_to(PEER);
             let mut out = Vec::new();
             stepped(&mut daemon, input.clone(), refuse, &mut out);
             run.held = daemon.checkpoints().held();
@@ -659,6 +927,7 @@ impl SingleDaemon {
             let dump = store.dump().expect("the store dumps");
             scratch.holds = dump.clone();
             (
+                listed,
                 out,
                 uncommitted,
                 core,
@@ -677,13 +946,13 @@ impl SingleDaemon {
         if next.broadcast_uncommitted.is_none() {
             next.broadcast_uncommitted = uncommitted;
         }
-        for output in out {
+        for output in &out {
             match output {
                 Output::Answer {
                     call,
                     response: Response::Session(event),
                 } => {
-                    let Some(subscriber) = run.subscriber.as_mut().filter(|s| s.call == call)
+                    let Some(subscriber) = run.subscriber.as_mut().filter(|s| s.call == *call)
                     else {
                         continue;
                     };
@@ -696,7 +965,7 @@ impl SingleDaemon {
                     }
                 }
                 Output::EndCall { call, .. } => {
-                    if let Some(subscriber) = run.subscriber.as_mut().filter(|s| s.call == call) {
+                    if let Some(subscriber) = run.subscriber.as_mut().filter(|s| s.call == *call) {
                         subscriber.ended = true;
                     }
                 }
@@ -710,15 +979,22 @@ impl SingleDaemon {
                 Output::Job {
                     id,
                     op: Job::CheckpointWal,
-                } => run.job = Some(CheckpointJob::Copying(id)),
+                } => run.job = Some(CheckpointJob::Copying(*id)),
+                Output::Job {
+                    id,
+                    op: Job::Fsync { .. },
+                } => run.trust_job = Some(*id),
                 Output::Job {
                     id,
                     op: Job::Checkpoint { state },
                 } => {
-                    run.job = Some(CheckpointJob::Writing { id, written: false });
+                    run.job = Some(CheckpointJob::Writing {
+                        id: *id,
+                        written: false,
+                    });
                     // The driver's ring starts again at this checkpoint.
                     next.ring = Ring {
-                        base: Some((state, next.store.clone(), next.journal.clone())),
+                        base: Some((state.clone(), next.store.clone(), next.journal.clone())),
                         inputs: Vec::new(),
                     };
                 }
@@ -731,6 +1007,7 @@ impl SingleDaemon {
         if next.diverged.is_none() {
             next.diverged = replay(next);
         }
+        (listed, out)
     }
 }
 
@@ -809,6 +1086,8 @@ fn start(next: &mut State) {
         ingest_armed: false,
         subscriber: None,
         calls: 0,
+        peer_up: false,
+        trust_job: None,
     });
     next.unfinished = true;
     next.owed = false;
@@ -889,6 +1168,14 @@ pub const REPRODUCES: &str = "a checkpoint plus the inputs since reproduces the 
      from the newest checkpoint and stepped through every input since, against the journal as each found \
      it, is the live core, store and journal";
 pub const NEVER_DUMPS: &str = "the core never asks for a dump";
+
+/// The promises early data keeps on a resumed link; replication judges
+/// them too.
+pub(crate) const EARLY_AFTER_ACCEPT: &str =
+    "early calls are served only after the core accepts the resumed identity";
+pub(crate) const UNPINNED_NEVER_ANSWERED: &str =
+    "a host whose pin was removed never answers, resumed or not";
+pub(crate) const REPLAY_CHANGES_NOTHING: &str = "replayed early data changes no state";
 
 /// A promise one step broke, and what broke it.
 #[derive(Clone, Debug, PartialEq, Eq)]

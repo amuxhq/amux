@@ -154,7 +154,7 @@ impl Daemon {
     }
 
     /// A link came up. A resumed one whose ticket names a key not pinned
-    /// for its peer is refused, and is never taken up: no route lists it,
+    /// for its peer, or a peer whose removal is being written, is refused, and is never taken up: no route lists it,
     /// so nothing the peer sent early is served.
     pub(crate) fn link_up(
         &mut self,
@@ -165,8 +165,11 @@ impl Daemon {
         out: &mut Vec<Output>,
     ) {
         if let Some(key) = resumed {
-            let pinned = self.trust().pubkey_for_host(Uuid::from_bytes(peer.0));
-            if pinned != Some(key.0.as_slice()) {
+            let host = Uuid::from_bytes(peer.0);
+            let pinned = self.trust().pubkey_for_host(host);
+            // A removal being written is as good as written: its end may be
+            // held behind a checkpoint while the drive already says so.
+            if pinned != Some(key.0.as_slice()) || self.trust_removing(host) {
                 out.push(Output::RefuseResumed { link });
                 return;
             }
@@ -725,6 +728,44 @@ mod tests {
         assert_eq!(
             resumed(&mut daemon, PEER, key),
             vec![Output::RefuseResumed { link: LINK }]
+        );
+    }
+
+    #[test]
+    fn a_resumed_link_is_refused_while_its_peers_removal_is_written() {
+        let (mut daemon, key) = trusting();
+        let host = Uuid::from_bytes(PEER.0);
+        let out = step(
+            &mut daemon,
+            Input::ChangeTrust(crate::trust::TrustChange::Remove { host }),
+        );
+        let job = out
+            .iter()
+            .find_map(|output| match output {
+                Output::Job {
+                    id,
+                    op: Job::Fsync { .. },
+                } => Some(*id),
+                _ => None,
+            })
+            .expect("the removal is written");
+        assert_eq!(
+            resumed(&mut daemon, PEER, key.clone()),
+            vec![Output::RefuseResumed { link: LINK }]
+        );
+
+        // A removal that could not be written leaves the peer trusted.
+        step(
+            &mut daemon,
+            Input::JobDone {
+                job,
+                result: crate::payload::JobResult::Failed("the drive is full".into()),
+            },
+        );
+        let out = resumed(&mut daemon, PEER, key);
+        assert!(
+            !out.contains(&Output::RefuseResumed { link: LINK }),
+            "{out:?}"
         );
     }
 

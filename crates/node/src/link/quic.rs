@@ -2116,58 +2116,135 @@ mod tests {
         assert_eq!(forgotten.redeemed(), 0);
     }
 
+    /// Links `client` to the relay at `server` as a host does: writes the
+    /// Hello on the control stream and reads the relay's answer, which
+    /// comes on a stream of the relay's own once it has the Hello, the
+    /// link's first round trip. What became of the early data, whether the
+    /// Hello reached the relay as early data, and the Hello it read.
+    async fn link_to_relay(
+        client: &LinkEndpoint,
+        server: &LinkEndpoint,
+        config: &quinn::ClientConfig,
+    ) -> (EarlyData, bool, pb::Message) {
+        let addr = server.local_addr().unwrap();
+        let dial = async {
+            let carrier = QuicCarrier::connect_relay_candidates_with_config(
+                client,
+                [addr],
+                "relay.test",
+                addr.port(),
+                config.clone(),
+            )
+            .await
+            .expect("the relay dial");
+            let (mut control, _source) = carrier.control();
+            super::super::carrier::write_message(&mut control, &hello_frame())
+                .await
+                .unwrap();
+            let mut answer = carrier.accept_stream().await.expect("the relay's answer");
+            let mut byte = [0];
+            answer.read_exact(&mut byte).await.unwrap();
+            let early = carrier.handshake().await.unwrap();
+            carrier.close(pb::LinkCloseReason::UserShutdown);
+            early
+        };
+        let relay = async {
+            let connection = answer_early(&server.endpoint).await;
+            let (send, recv) = connection.accept_bi().await.unwrap();
+            let early = recv.is_0rtt();
+            let message =
+                read_proto::<pb::Message>(&mut EarlyRecv::plain(recv), wire::MESSAGE_SIZE_LIMIT)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            let (mut reply, _) = connection.open_bi().await.unwrap();
+            reply.write_all(b"!").await.unwrap();
+            let _ = connection.closed().await;
+            drop(send);
+            (early, message)
+        };
+        let (early, (arrived_early, hello)) = tokio::join!(dial, relay);
+        (early, arrived_early, hello)
+    }
+
     #[tokio::test]
     async fn a_relay_link_resuming_writes_its_token_as_early_data() {
         let (server_config, client_config) = relay_server_and_client();
         let server = LinkEndpoint::bind(ANY_PORT.parse().unwrap(), Some(server_config)).unwrap();
         let client = slow_arrivals_endpoint(Duration::from_millis(200));
-        let addr = server.local_addr().unwrap();
         for expected in [EarlyData::None, EarlyData::Accepted] {
-            let dial = async {
-                let carrier = QuicCarrier::connect_relay_candidates_with_config(
-                    &client,
-                    [addr],
-                    "relay.test",
-                    addr.port(),
-                    client_config.clone(),
-                )
-                .await
-                .expect("the relay dial");
-                let (mut control, _source) = carrier.control();
-                super::super::carrier::write_message(&mut control, &hello_frame())
-                    .await
-                    .unwrap();
-                // The relay answers on a stream of its own once it has
-                // the Hello: the link's first round trip.
-                let mut answer = carrier.accept_stream().await.expect("the relay's answer");
-                let mut byte = [0];
-                answer.read_exact(&mut byte).await.unwrap();
-                let early = carrier.handshake().await.unwrap();
-                carrier.close(pb::LinkCloseReason::UserShutdown);
-                early
-            };
-            let relay = async {
-                let connection = answer_early(&server.endpoint).await;
-                let (send, recv) = connection.accept_bi().await.unwrap();
-                let early = recv.is_0rtt();
-                let message = read_proto::<pb::Message>(
-                    &mut EarlyRecv::plain(recv),
-                    wire::MESSAGE_SIZE_LIMIT,
-                )
-                .await
-                .unwrap()
-                .unwrap();
-                let (mut reply, _) = connection.open_bi().await.unwrap();
-                reply.write_all(b"!").await.unwrap();
-                let _ = connection.closed().await;
-                drop(send);
-                (early, message)
-            };
-            let (early, (arrived_early, hello)) = tokio::join!(dial, relay);
+            let (early, arrived_early, hello) =
+                link_to_relay(&client, &server, &client_config).await;
             assert_eq!(early, expected);
             assert_eq!(arrived_early, expected == EarlyData::Accepted);
             assert_eq!(hello, hello_frame(), "the Hello carries the relay token");
         }
+    }
+
+    #[tokio::test]
+    async fn a_relay_link_a_restarted_relay_refuses_early_data_on_comes_up() {
+        // A restarted relay has ticket keys of its own: it cannot read a
+        // ticket the relay before it gave, and so refuses the early data.
+        // Each relay here is the other's restart, so every link after the
+        // first resumes with a ticket the relay it reaches did not give.
+        let (before, after, client_config) = a_relay_and_its_restart();
+        let before = LinkEndpoint::bind(ANY_PORT.parse().unwrap(), Some(before)).unwrap();
+        let after = LinkEndpoint::bind(ANY_PORT.parse().unwrap(), Some(after)).unwrap();
+        let client = slow_arrivals_endpoint(Duration::from_millis(50));
+        for link in 0..8 {
+            let server = if link % 2 == 0 { &before } else { &after };
+            let (early, arrived_early, hello) =
+                link_to_relay(&client, server, &client_config).await;
+            let expected = if link == 0 {
+                EarlyData::None
+            } else {
+                EarlyData::Rejected
+            };
+            assert_eq!(early, expected, "link {link}");
+            assert!(
+                !arrived_early,
+                "link {link}: the Hello is sent again after the handshake"
+            );
+            assert_eq!(hello, hello_frame(), "link {link}: the Hello arrives whole");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_resumed_relay_dial_nothing_answers_fails_as_its_handshake_did() {
+        let (server_config, client_config) = relay_server_and_client();
+        let server = LinkEndpoint::bind(ANY_PORT.parse().unwrap(), Some(server_config)).unwrap();
+        let client = LinkEndpoint::bind(ANY_PORT.parse().unwrap(), None).unwrap();
+        link_to_relay(&client, &server, &client_config).await;
+        // Bound and never read, so the dial hears nothing back at all.
+        let silent = std::net::UdpSocket::bind(ANY_PORT).unwrap();
+        let carrier = QuicCarrier::connect_relay_with_config(
+            &client,
+            silent.local_addr().unwrap(),
+            "relay.test",
+            client_config,
+        )
+        .await
+        .expect("a resumed dial is usable before its handshake");
+        let (mut control, mut source) = carrier.control();
+        super::super::carrier::write_message(&mut control, &hello_frame())
+            .await
+            .expect("the Hello goes out as early data");
+        let error = super::super::carrier::read_message(&mut source)
+            .await
+            .expect_err("nothing answers");
+        assert_eq!(
+            error.kind(),
+            io::ErrorKind::TimedOut,
+            "the control stream fails as the handshake did, not as refused early data: {error}"
+        );
+        let handshake = carrier.handshake().await.expect_err("the handshake fails");
+        assert!(
+            matches!(
+                handshake,
+                ConnectError::Handshake(quinn::ConnectionError::TimedOut)
+            ),
+            "{handshake}"
+        );
     }
 
     #[tokio::test]
@@ -2261,21 +2338,53 @@ mod tests {
     fn relay_server_issuing(
         tickets: &Arc<SessionTickets>,
     ) -> (quinn::ServerConfig, rustls::RootCertStore) {
-        const NAME: &str = "relay.test";
-        let rcgen::CertifiedKey { cert, signing_key } =
-            rcgen::generate_simple_self_signed(vec![NAME.to_owned()]).expect("a certificate");
-        let der = rustls::pki_types::CertificateDer::from(cert.der().to_vec());
-        let server = crate::transport::relay_quic_server_config_from_der(
-            vec![der.clone()],
+        let certified = relay_certificate();
+        let roots = relay_roots(&certified);
+        (relay_server_from(&certified, tickets), roots)
+    }
+
+    /// The configurations of a relay before and after a restart, the same
+    /// certificate with ticket keys of each its own, and a client's that
+    /// trusts it.
+    fn a_relay_and_its_restart() -> (
+        quinn::ServerConfig,
+        quinn::ServerConfig,
+        quinn::ClientConfig,
+    ) {
+        let certified = relay_certificate();
+        let client = crate::transport::relay_quic_client_config_with_roots(relay_roots(&certified))
+            .expect("a client configuration");
+        (
+            relay_server_from(&certified, &SessionTickets::in_memory(16)),
+            relay_server_from(&certified, &SessionTickets::in_memory(16)),
+            client,
+        )
+    }
+
+    fn relay_certificate() -> rcgen::CertifiedKey<rcgen::KeyPair> {
+        rcgen::generate_simple_self_signed(vec!["relay.test".to_owned()]).expect("a certificate")
+    }
+
+    fn relay_server_from(
+        certified: &rcgen::CertifiedKey<rcgen::KeyPair>,
+        tickets: &Arc<SessionTickets>,
+    ) -> quinn::ServerConfig {
+        crate::transport::relay_quic_server_config_from_der(
+            vec![certified.cert.der().clone()],
             rustls::pki_types::PrivateKeyDer::Pkcs8(rustls::pki_types::PrivatePkcs8KeyDer::from(
-                signing_key.serialize_der(),
+                certified.signing_key.serialize_der(),
             )),
             tickets,
         )
-        .expect("a server configuration");
+        .expect("a server configuration")
+    }
+
+    fn relay_roots(certified: &rcgen::CertifiedKey<rcgen::KeyPair>) -> rustls::RootCertStore {
         let mut roots = rustls::RootCertStore::empty();
-        roots.add(der).expect("the certificate as a root");
-        (server, roots)
+        roots
+            .add(certified.cert.der().clone())
+            .expect("the certificate as a root");
+        roots
     }
 
     /// A relay's configuration and a client's that trusts it, the client's

@@ -242,8 +242,22 @@ idles out when none does; and the clock moves to whatever wake the machine
 asked for. Router mappings expiring play out as lost probes on the punched
 path. At any point the world may stop changing; the clock still moves a
 bounded number of times so the machine settles, and its liveness is judged
-there. The properties read the world's own record of what the machine asked
-for against what the world knows of each path, and are in `src/path.rs`.
+there.
+
+Two more worlds add what the peer and the relay say beside the probes,
+each on a smaller world so that it fits its budget. In the first, one of
+the link's packets arrives, on a path the machine sends on or on a byte
+stream it has not heard on, and a paired daemon's forwarding link comes up
+and goes, while the network stays put, the relay link stays up and the
+local address keeps answering. In the second, an answer arrives for a path
+with no probe of it outstanding (late, duplicated, or from before the
+network changed; never on a path whose probe the machine still waits on,
+since the driver passes only the outstanding probe's answer), the relay
+refuses for no route, the rate limit or shutting down, the peer stops
+listing an address, and the peer lists an IPv6 address as near as its IPv4
+one, while the relay link stays up and the local address keeps answering.
+The properties read the world's own record of what the machine asked for
+against what the world knows of each path, and are in `src/path.rs`.
 
 ## The relay's forwarding
 
@@ -260,7 +274,10 @@ handshake lists the neighbors its host was told of, and a host forgets them
 once it holds no link here. At any point the world may stop changing, and
 the lapse's promise is judged there. The same machine with every link
 admitted by a pinned key, all on one account, is a daemon forwarding
-between its paired hosts. The properties read the driver's table of pairs,
+between its paired hosts; its links are the daemon's own network links to
+them, dialled by either end, so both ends may dial at once, and a host's
+process may restart, leaving the links of its earlier life to be found
+dead. The properties read the driver's table of pairs,
 built only from what the core told it, against the world's record of each
 link, and are in `src/relay.rs`.
 
@@ -358,14 +375,15 @@ under `just test`.
 | Agent lifecycle, one-shot child and parentless agent | 3 daemon connections, 3 inputs, 2 messages, 2 asks, 1 unasked provider exit, 2 stops or kills | 1,296,718 and 71,250 | 9 s | 18 s | 45, 28, 44, 29, 41 and 45 s for both | 120 s each | 4 connections, 3 messages, 2 unasked exits | 81 s |
 | Supervisor update, both platforms' swaps | 2 releases, 2 supervisor crashes, 2 daemon crashes, 1 failed start, 5 timers firing, 1 `amux update` | 5,819,060 and 4,850,638 | 7 s | 8 s | 17, 27, 25, 27, 27 and 28 s for both | 60 s each | 3 releases, 2 failed starts, 6 timers firing | 124 s |
 | One open chat | 2 writes, 1 lag, 1 reset, 2 pages over a three-item opening, a tail of 2, pages of 1 | 1,217,819 | 10 s | 24 s | 51, 109, 116, 105, 105 and 107 s | 240 s | 3 writes | 343 s |
-| Path machine | 2 of the 3 addresses learned, 1 lost probe, 1 network change, 1 plan change, 2 ticks, 1 relay link drop, 1 silence of the local address | 10,774,144 | 10 s | 21 s | none yet | 240 s | all 3 addresses, 2 plan changes, 3 ticks | 405 s (90,308,562 states, load about 12) |
-| Relay's forwarding, as the relay and as a daemon | 3 links connecting (4 for the daemon), 3 packets asked about, 1 plan change, 1 expiry | 694,420 and 622,312 | 4 s and 4 s | 4 s and 4 s | none yet | 60 s each | the relay with 4 links | 41 s |
+| Path machine, in three worlds | 2 of the 3 addresses learned, 1 lost probe, 1 network change, 1 plan change, 2 ticks, 1 relay link drop, 1 silence of the local address; the same with no network change, relay link drop or silence, and 1 of the peer's packets arriving, a byte stream and 1 paired daemon's forwarding link; the first with no relay link drop or silence, and 1 answer with no probe outstanding, 1 refusal for another reason than the plan, 1 address forgotten and an IPv6 address | 12,929,251, 11,118,688 and 12,701,530 | 15 s, 14 s and 17 s | 30 s, 28 s and 34 s | none yet | 300 s, 300 s and 360 s | the first with all 3 addresses, 2 plan changes and 3 ticks; the second with a network change; the third with a relay link drop | the first not re-measured since it was 90,308,562 states in 405 s; the second 60,146,859 states in 89 s and the third 59,820,884 in 106 s (load about 13, about 19 GB each) |
+| Relay's forwarding, as the relay and as a daemon | 3 links connecting, 3 packets asked about, 1 plan change, 1 expiry; the daemon's links dialled by either end, and 1 restart of a host's process | 694,420 and 719,032 | 4 s and 4 s | 3 s and 3 s | none yet | 60 s each | the relay with 4 links; the daemon with 4 links | 41 s; the daemon's 18,625,784 states in 43 s (load about 13) |
 | Composed net: a reset while presence flips, lost messages, a person's calls through a crash | 1 sever and 1 unclean reboot; 1 reordering, 1 lost message and 1 advance; 1 kill, 1 prompt and 1 stop | 33,025, 9,559 and 216,320 | 27 s | 51 s | 151, 105, 204, 207, 139 and 180 s for all three | 420 s for all three | every fault but a kill, with 1 reordering; the calls through a crash with 1 lost message | 184 s |
 
 Measured on 2026-10-18 and 2026-10-19 on the enrolled Mac (Mac14,6, 12
 cores), the family model's on 2026-10-20, the relay's forwarding on
-2026-10-21 and the path machine's on 2026-10-22 (the relay's with the Mac
-busy, load about 20, the path machine's at load about 5;
+2026-10-21 and the path machine's and the relay daemon's on 2026-10-22 (the
+relay's first with the Mac busy, load about 20, the path machine's at load
+about 5 to 13;
 presence's again that day at load about 15, and presence, the single
 daemon's peer and replication again that night at load about 8, and the
 nightly bounds of presence, replication and the single daemon the next

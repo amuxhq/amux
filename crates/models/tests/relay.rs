@@ -6,7 +6,7 @@ use models::{Bounds, RelayModel, check, walk};
 
 /// How long each exhaustive run may take under `just test`. No CI runner
 /// figure yet, so it is sized by the README's rule from the slower of the
-/// two four-thread Mac times: 4.0 s, times 4.7, doubled and rounded up to a
+/// two four-thread Mac times: 2.3 s, times 4.7, doubled and rounded up to a
 /// whole minute. A run past it says the bounds have outgrown their place.
 const BUDGET_SECONDS: f64 = 60.0;
 
@@ -61,10 +61,9 @@ fn one_seed_walks_one_relay_schedule() {
 #[test]
 #[ignore = "nightly bounds: minutes on every core"]
 fn every_relay_forwarding_promise_holds_at_nightly_bounds() {
-    let verdict = check(
-        &RelayModel::nightly(),
-        Bounds::exhaustive().threads(models::threads()),
-    );
-    println!("{verdict}");
-    verdict.assert_holds();
+    for model in [RelayModel::nightly(), RelayModel::daemon_nightly()] {
+        let verdict = check(&model, Bounds::exhaustive().threads(models::threads()));
+        println!("{verdict}");
+        verdict.assert_holds();
+    }
 }

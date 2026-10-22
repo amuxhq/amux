@@ -1205,6 +1205,35 @@ mod tests {
     }
 
     #[test]
+    fn of_two_addresses_as_near_the_link_chooses_the_ipv6_one() {
+        let lan6 = addr("[fd00::20]:4433");
+        let mut paths = up(true);
+        for addr in [lan6, public()] {
+            step(
+                &mut paths,
+                Input::Candidate {
+                    addr,
+                    source: Source::Listed,
+                },
+            );
+        }
+        let out = answer(&mut paths, Path::Direct(public()), 30);
+        assert_eq!(carry(&out), Some(Path::Direct(public())));
+        answer(&mut paths, Path::Direct(lan()), 3);
+        answer(&mut paths, Path::Direct(lan6), 3);
+        assert_eq!(
+            paths.carrying(),
+            Some(&Path::Direct(public())),
+            "the carrying path stays among paths of its kind"
+        );
+
+        // The carrying address goes: of the two left, equally near, the
+        // IPv6 one takes the link.
+        let out = step(&mut paths, Input::CandidateGone { addr: public() });
+        assert_eq!(carry(&out), Some(Path::Direct(lan6)), "{out:?}");
+    }
+
+    #[test]
     fn a_payment_refusal_with_no_free_path_leaves_the_link_nothing_to_carry_on() {
         let mut paths = Paths::with_budget(0, true, StepBudget::UNLIMITED);
         step(&mut paths, Input::ForwardingUp { link: RELAY });

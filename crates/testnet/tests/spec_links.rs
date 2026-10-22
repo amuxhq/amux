@@ -494,15 +494,20 @@ async fn entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once()
         );
         println!("{host} was told once: {heard:?}");
     }
-    let reopened = net.observe("laptop", "worker", 10).await;
+    // The laptop's open subscription to the desk's session detaches, and
+    // one opened afresh shows what the laptop's replica holds and detaches
+    // without catching up: the desk's session is reached no more.
+    let detached =
+        |events: &[wire::SessionEvent]| observe::marks(events).contains(&observe::Mark::Detached);
+    chat.observe_until(detached, PATIENCE)
+        .await
+        .expect("the open subscription detaches");
+    let mut reopened = net.observe("laptop", "worker", 10).await.unwrap();
+    let events = reopened.observe_until(detached, PATIENCE).await.unwrap();
     assert!(
-        reopened.is_err() || {
-            let mut chat = reopened.unwrap();
-            chat.observe_until(observe::caught_up, std::time::Duration::from_secs(2))
-                .await
-                .is_err()
-        },
-        "the laptop reaches the desk's session no more"
+        !observe::caught_up(events),
+        "the laptop reaches the desk's session no more: {:?}",
+        observe::marks(events)
     );
     drop(chat);
     net.shutdown().await.unwrap();

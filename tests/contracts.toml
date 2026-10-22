@@ -1364,6 +1364,34 @@ tests = [
 ]
 
 [[contract]]
+id = "path-prefers-ipv6-as-near"
+source = "model"
+property = { crate = "models", machine = "path machine", sentence = "of two addresses as near, the link never chooses the IPv4 one while the IPv6 one works" }
+checker = "models/path::every_path_machine_promise_holds_at_ci_bounds"
+tests = [
+  "path-core/lib::tests::of_two_addresses_as_near_the_link_chooses_the_ipv6_one",
+]
+
+[[contract]]
+id = "relay-one-direct-link-latest-life"
+source = "model"
+property = { crate = "models", machine = "relay forwarding", sentence = "a host holds at most one direct link here, of its process's latest life" }
+checker = "models/relay::every_relay_forwarding_promise_holds_for_a_daemon_forwarding_at_ci_bounds"
+tests = [
+  "relay-core/lib::tests::a_link_from_a_later_life_of_the_peer_replaces_the_earlier_lifes_links",
+  "relay-core/lib::tests::a_displaced_direct_link_hands_its_pairs_to_the_link_replacing_it",
+]
+
+[[contract]]
+id = "relay-crossed-dial-keeps-preferred"
+source = "model"
+property = { crate = "models", machine = "relay forwarding", sentence = "of a crossed dial both ends keep the preferred link" }
+checker = "models/relay::every_relay_forwarding_promise_holds_for_a_daemon_forwarding_at_ci_bounds"
+tests = [
+  "relay-core/lib::tests::of_a_crossed_dial_between_two_processes_both_keep_the_preferred_link",
+]
+
+[[contract]]
 id = "relay-forwards-only-paid-pairs"
 source = "model"
 property = { crate = "models", machine = "relay forwarding", sentence = "packets flow between two links only while both are up, on one account and paid, or both pinned" }

@@ -15,7 +15,10 @@
 //!
 //! The same machine with every tier `None` is a daemon forwarding between
 //! its own paired hosts, all on its one account, whose pinned keys neither
-//! lapse nor expire.
+//! lapse nor expire. Its links are its own network links to those hosts,
+//! each dialled by one end or the other: both ends may dial at once, and a
+//! host's process may restart, leaving the links of its earlier life to
+//! be found dead.
 //!
 //! What the properties read is the driver's own table of pairs, built only
 //! from what the core told it, against the world's record of each link: the
@@ -26,8 +29,8 @@ use std::fmt;
 
 use daemon_core::{HostId, LinkId, StepBudget};
 use relay_core::{
-    FORWARDS_ONLY_PAID_PAIRS, Input, LAPSE_TELLS_BOTH, NOTHING_BEFORE_ADMISSION, Output, Relay,
-    Tier, UserId,
+    DialOrder, Direct, FORWARDS_ONLY_PAID_PAIRS, Input, LAPSE_TELLS_BOTH, NOTHING_BEFORE_ADMISSION,
+    Output, Relay, Tier, UserId,
 };
 
 use crate::{Machine, Property};
@@ -54,8 +57,11 @@ pub struct RelayModel {
     pub plan_changes: u8,
     /// Tokens that expire before a fresh one comes.
     pub expiries: u8,
-    /// Every link is a daemon's paired host, admitted by its pinned key.
+    /// Every link is a daemon's paired host, admitted by its pinned key,
+    /// on the daemon's own network link to it.
     pub pinned: bool,
+    /// Times a paired host's process restarts.
+    pub restarts: u8,
 }
 
 impl RelayModel {
@@ -67,6 +73,7 @@ impl RelayModel {
             plan_changes: 1,
             expiries: 1,
             pinned: false,
+            restarts: 0,
         }
     }
 
@@ -78,17 +85,26 @@ impl RelayModel {
             plan_changes: 1,
             expiries: 1,
             pinned: false,
+            restarts: 0,
         }
     }
 
     /// A daemon forwarding between its paired hosts, at `just test` bounds:
-    /// with no plan to change and no token to expire, it affords a link
-    /// more.
+    /// with no plan to change and no token to expire, its links may cross
+    /// and a host's process may restart.
     pub fn daemon() -> Self {
         Self {
-            links: 4,
             pinned: true,
+            restarts: 1,
             ..Self::ci()
+        }
+    }
+
+    /// The daemon's nightly bounds: a link more.
+    pub fn daemon_nightly() -> Self {
+        Self {
+            links: 4,
+            ..Self::daemon()
         }
     }
 
@@ -103,8 +119,15 @@ impl RelayModel {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
-    /// A new link of the host connects; it is not admitted yet.
-    Connect(HostId),
+    /// A new link of the host connects; it is not admitted yet. A
+    /// daemon's link to a paired host was dialled by the end `order` says.
+    Connect {
+        host: HostId,
+        order: Option<DialOrder>,
+    },
+    /// The host's process restarts: links of its earlier life that are not
+    /// up never will be, and those up are dead.
+    Restart(HostId),
     /// The link's token, or its pinned key, checks out.
     Admit(LinkId),
     /// The link goes, admitted or not.
@@ -132,6 +155,9 @@ struct Link {
     /// The plan its last token carried; `None` for a pinned key.
     tier: Option<Tier>,
     expired: bool,
+    /// How a daemon's own link to the host was dialled, and in which life
+    /// of the host's process.
+    direct: Option<Direct>,
 }
 
 impl Link {
@@ -152,6 +178,7 @@ struct Used {
     packets: u8,
     plan_changes: u8,
     expiries: u8,
+    restarts: u8,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -175,9 +202,18 @@ pub struct State {
     /// The first link told of a host on another account, of its own host, or
     /// told anything while not admitted.
     foreign: Option<String>,
+    /// The current life of each host's process.
+    lives: BTreeMap<HostId, u8>,
+    /// The first time the core kept a fallback link of a host's life over
+    /// a preferred one of the same life.
+    kept_fallback: Option<String>,
     /// The core asked for a dump.
     dumped: Option<String>,
     forwarded: bool,
+    crossed: bool,
+    /// The core refused a direct link, or displaced one.
+    refused: bool,
+    displaced: bool,
 }
 
 impl fmt::Debug for State {
@@ -192,6 +228,8 @@ impl fmt::Debug for State {
             .field("rested", &self.rested)
             .field("early", &self.early)
             .field("foreign", &self.foreign)
+            .field("lives", &self.lives)
+            .field("kept_fallback", &self.kept_fallback)
             .field("dumped", &self.dumped)
             .finish()
     }
@@ -247,6 +285,23 @@ impl State {
 
     fn open_links_of(&self, host: HostId) -> usize {
         self.links.values().filter(|link| link.host == host).count()
+    }
+
+    /// The direct links of one life of `host` the core holds up, besides
+    /// `link`.
+    fn same_life(&self, link: LinkId) -> Vec<(LinkId, Direct)> {
+        let Some(this) = self.links.get(&link) else {
+            return Vec::new();
+        };
+        let Some(direct) = this.direct else {
+            return Vec::new();
+        };
+        self.links
+            .iter()
+            .filter(|(id, other)| **id != link && other.admitted && other.host == this.host)
+            .filter_map(|(id, other)| Some((*id, other.direct?)))
+            .filter(|(_, other)| other.instance == direct.instance)
+            .collect()
     }
 }
 
@@ -305,10 +360,38 @@ impl RelayModel {
                         s.dumped = Some(format!("{reason:?} on {label}"));
                     }
                 }
-                Output::RefuseLink { .. } | Output::Displace { .. } => {
-                    if s.dumped.is_none() {
-                        s.dumped = Some(format!("unexpected {output:?} on {label}"));
+                Output::RefuseLink { link } => {
+                    s.refused = true;
+                    let refused = s.links.get(&link).and_then(|link| link.direct);
+                    let kept = s.same_life(link);
+                    if refused.is_some_and(|refused| refused.order == DialOrder::Preferred)
+                        && !kept.is_empty()
+                        && kept
+                            .iter()
+                            .all(|(_, direct)| direct.order == DialOrder::Fallback)
+                        && s.kept_fallback.is_none()
+                    {
+                        s.kept_fallback = Some(format!("refused link {} on {label}", link.0));
                     }
+                    if let Some(link) = s.links.get_mut(&link) {
+                        link.admitted = false;
+                    }
+                    self.forget(s, link);
+                }
+                Output::Displace { link } => {
+                    s.displaced = true;
+                    let kept = s.same_life(link);
+                    if let Some(displaced) = s.links.get(&link).and_then(|link| link.direct)
+                        && displaced.order == DialOrder::Preferred
+                        && !kept.is_empty()
+                        && kept
+                            .iter()
+                            .all(|(_, direct)| direct.order == DialOrder::Fallback)
+                        && s.kept_fallback.is_none()
+                    {
+                        s.kept_fallback = Some(format!("displaced link {} on {label}", link.0));
+                    }
+                    self.forget(s, link);
                 }
             }
         }
@@ -363,7 +446,12 @@ impl Machine for RelayModel {
             early: None,
             foreign: None,
             dumped: None,
+            lives: BTreeMap::new(),
+            kept_fallback: None,
             forwarded: false,
+            crossed: false,
+            refused: false,
+            displaced: false,
         }
     }
 
@@ -375,7 +463,23 @@ impl Machine for RelayModel {
         if s.used.links < self.links {
             for host in HOSTS {
                 if s.open_links_of(host) < LINKS_PER_HOST {
-                    out.push(Action::Connect(host));
+                    if self.pinned {
+                        for order in [DialOrder::Preferred, DialOrder::Fallback] {
+                            out.push(Action::Connect {
+                                host,
+                                order: Some(order),
+                            });
+                        }
+                    } else {
+                        out.push(Action::Connect { host, order: None });
+                    }
+                }
+            }
+        }
+        if s.used.restarts < self.restarts {
+            for host in HOSTS {
+                if s.open_links_of(host) > 0 {
+                    out.push(Action::Restart(host));
                 }
             }
         }
@@ -415,10 +519,15 @@ impl Machine for RelayModel {
         let mut next = s.clone();
         match action {
             Action::Rest => next.rested = true,
-            Action::Connect(host) => {
+            Action::Connect { host, order } => {
                 next.used.links += 1;
                 let id = LinkId(next.next_link);
                 next.next_link += 1;
+                let life = next.lives.get(host).copied().unwrap_or_default();
+                let direct = order.map(|order| Direct {
+                    order,
+                    instance: [life; 16],
+                });
                 next.links.insert(
                     id,
                     Link {
@@ -427,8 +536,22 @@ impl Machine for RelayModel {
                         held: BTreeSet::new(),
                         tier: None,
                         expired: false,
+                        direct,
                     },
                 );
+            }
+            Action::Restart(host) => {
+                next.used.restarts += 1;
+                *next.lives.entry(*host).or_default() += 1;
+                let unborn: Vec<LinkId> = next
+                    .links
+                    .iter()
+                    .filter(|(_, link)| link.host == *host && !link.admitted)
+                    .map(|(id, _)| *id)
+                    .collect();
+                for id in unborn {
+                    self.forget(&mut next, id);
+                }
             }
             Action::Admit(id) => {
                 let host = next.links.get(id)?.host;
@@ -444,7 +567,15 @@ impl Machine for RelayModel {
                 let link = next.links.get_mut(id)?;
                 link.admitted = true;
                 link.tier = tier;
+                let direct = link.direct;
                 let held = std::mem::take(&mut link.held);
+                if direct.is_some_and(|direct| {
+                    next.same_life(*id)
+                        .iter()
+                        .any(|(_, other)| other.order != direct.order)
+                }) {
+                    next.crossed = true;
+                }
                 self.step(
                     &mut next,
                     Input::LinkUp {
@@ -452,10 +583,14 @@ impl Machine for RelayModel {
                         user,
                         host,
                         tier,
-                        direct: None,
+                        direct,
                         advertised,
                     },
                 );
+                // A link the core refused is closed, and what it held with it.
+                if !next.links.contains_key(id) {
+                    return Some(next);
+                }
                 for dst in held {
                     if !next.carries(*id, dst) {
                         self.step(&mut next, Input::Packet { from: *id, dst });
@@ -527,6 +662,45 @@ impl Machine for RelayModel {
             Property::sometimes("forwarding is sometimes in place", |_, s: &State| {
                 s.forwarded && !s.table.is_empty()
             }),
+            Property::always(
+                "a host holds at most one direct link here, of its process's latest life",
+                |_, s: &State| {
+                    HOSTS.iter().all(|host| {
+                        let up: Vec<Direct> = s
+                            .links
+                            .values()
+                            .filter(|link| link.host == *host && link.admitted)
+                            .filter_map(|link| link.direct)
+                            .collect();
+                        let life = s.lives.get(host).copied().unwrap_or_default();
+                        up.len() <= 1
+                            && up.iter().all(|direct| {
+                                direct.instance == [life; 16]
+                                    || !s.links.values().any(|link| {
+                                        link.host == *host
+                                            && link.admitted
+                                            && link.direct.is_some_and(|d| d.instance == [life; 16])
+                                    })
+                            })
+                    })
+                },
+            ),
+            Property::always(
+                "of a crossed dial both ends keep the preferred link",
+                |_, s: &State| s.kept_fallback.is_none(),
+            ),
+            Property::sometimes(
+                "a daemon's links sometimes cross",
+                |model: &RelayModel, s: &State| !model.pinned || s.crossed,
+            ),
+            Property::sometimes(
+                "a daemon sometimes refuses one link of a crossed dial",
+                |model: &RelayModel, s: &State| !model.pinned || s.refused,
+            ),
+            Property::sometimes(
+                "a daemon sometimes displaces a link of a host's earlier life",
+                |model: &RelayModel, s: &State| !model.pinned || model.restarts == 0 || s.displaced,
+            ),
         ]
     }
 }

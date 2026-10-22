@@ -1013,11 +1013,11 @@ def chips(drawn: dict) -> list[str]:
     ]
 
 
-def on_branch(drawn: dict, agent_id: str, branch: str) -> None:
-    """The fleet's row for the agent names the branch its folder is on."""
-    label = drawn.get(f"home.row.{agent_id}", {}).get("label") or ""
-    if f", on {branch}," not in label:
-        raise RuntimeError(f"the row does not say it is on {branch!r}: {label!r}")
+def on_branch(drawn: dict, branch: str) -> None:
+    """The chat's overview names the branch the agent's folder is on."""
+    said = drawn.get("chat.overview.branch", {}).get("value")
+    if said != branch:
+        raise RuntimeError(f"the overview does not say it is on {branch!r}: {said!r}")
 
 
 def attachment_or_review(journey: PhoneJourney) -> list[str]:
@@ -1101,18 +1101,13 @@ def attachment_or_review(journey: PhoneJourney) -> list[str]:
     reopen(journey, reviewer, lambda drawn: labelled(drawn, "I read the review.") and "chat.row.turn-end" in drawn)
     journey.screen("reopened", volatile=("chat.row.turn-end",))
 
-    # Back on the fleet, the reviewer's row names the branch its folder is
-    # on beside its name, above what it last said.
-    journey.tap("chat.back")
-    back_to_row(journey, reviewer, lambda drawn: "chat" not in drawn)
-    drawn = journey.wait(
-        lambda drawn: ", on main," in (drawn.get(f"home.row.{reviewer}", {}).get("label") or "")
-        and f"home.row.{reviewer}.second" in drawn,
-        "the reviewer's row on its branch",
-    )
-    on_branch(drawn, reviewer, "main")
-    branch_control = negative_control(on_branch, drawn, reviewer, "develop")
-    journey.screen("fleet-branch")
+    # The chat's overview names the branch its folder is on.
+    journey.tap("chat.more")
+    journey.choose("Overview")
+    drawn = journey.wait(lambda drawn: "chat.overview.branch" in drawn, "the overview's branch")
+    on_branch(drawn, "main")
+    branch_control = negative_control(on_branch, drawn, "develop")
+    journey.screen("overview-branch")
     return [
         "the prompt reached the desk as the text, then the paste, then the review, as the composer showed them",
         "the paste arrived as one attachment holding exactly the twelve lines pasted",
@@ -1120,7 +1115,7 @@ def attachment_or_review(journey: PhoneJourney) -> list[str]:
         control,
         "the review names a patch the desk computed; its bytes on the desk hash to that name and hold the edit",
         "the chat opened again shows what was sent and the reply",
-        "the fleet's row for the reviewer names its folder's branch, main, beside its name and above what it said",
+        "the chat's overview names the branch its folder is on, main",
         branch_control,
     ]
 

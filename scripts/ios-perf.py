@@ -81,16 +81,19 @@ LAUNCH_SPACING_SECONDS = 10.0
 # on the main thread (85 of it dyld_sim re-pointing the shared cache at the
 # host, which a device does not do), 100 of UIKit building the scene, then
 # SwiftUI building a navigation stack, a tab bar and a home for the first
-# time; nothing of ours is among the heavy leaves. A device is budgeted
-# apart, once measured.
+# time; nothing of ours is among the heavy leaves. The home's system chrome
+# and its redrawn rows added about 100 ms to that, split in
+# docs/PERFORMANCE.md. A device is budgeted apart, once measured.
 BUDGETS: dict[str, tuple[str, str, float, float | None, int | None]] = {
-    "cold first frame": ("ms", "cold", 650, 700, 15),
+    "cold first frame": ("ms", "cold", 850, 900, 15),
     # The store read is forty rows from SQLite and the node's own start;
-    # the fleet render is SwiftUI building those rows once. Each is a
-    # part of the first frame, and a part's budget cannot be looser than
-    # what a person would feel in the whole.
+    # the fleet render is the main thread's work between it and the first
+    # frame: the home's rows, and the rest of the shell's first frame,
+    # which waits for the same thread. Each is a part of the first frame,
+    # and a part's budget cannot be looser than what a person would feel
+    # in the whole.
     "cold store read": ("ms", "cold", 50, None, 15),
-    "cold fleet render": ("ms", "cold", 100, None, 15),
+    "cold fleet render": ("ms", "cold", 250, None, 15),
     # On the same network the fleet should be current within a few
     # frames of the first one; a second is the slow-network figure.
     "reconciliation at 0 ms": ("ms", "reconciliation", 250, None, 15),
@@ -540,9 +543,13 @@ def main() -> int:
     topology = OUTPUT / "topology.json"
     subprocess.run([str(TOPOLOGY_TOOL), str(topology)], check=True, timeout=60, capture_output=True)
     baseline_file = BASELINES / f"{name}.json"
-    baseline = json.loads(baseline_file.read_text())["medians"] if baseline_file.is_file() else None
+    # A run recording a baseline replaces the old one, so drift from it says
+    # nothing: the new medians are judged on the budgets alone.
+    baseline = (
+        json.loads(baseline_file.read_text())["medians"]
+        if baseline_file.is_file() and not arguments.baseline else None)
     if baseline is None:
-        print(f"no baseline for {name}: judged on budgets alone", flush=True)
+        print(f"no baseline for {name} in use: judged on budgets alone", flush=True)
 
     began = time.monotonic()
     udid = ios_simulators.ready(SIMULATOR)

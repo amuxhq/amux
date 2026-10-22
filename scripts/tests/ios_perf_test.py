@@ -85,7 +85,7 @@ class TheJudge(unittest.TestCase):
         verdict = perf.judge(self.samples(**{"cold first frame": [400, 450, 520, 430, 410]}), None)
         self.assertTrue(verdict["passed"])
         self.assertEqual([result["metric"] for result in verdict["results"]], ["cold first frame"])
-        verdict = perf.judge(self.samples(**{"cold first frame": [400, 610, 520, 530, 800]}), None)
+        verdict = perf.judge(self.samples(**{"cold first frame": [400, 610, 520, 530, 950]}), None)
         self.assertFalse(verdict["passed"])
         self.assertIn("worst", verdict["results"][0]["note"])
 

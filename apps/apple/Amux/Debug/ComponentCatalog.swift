@@ -1004,7 +1004,8 @@ enum CatalogFixtures {
     static func bytes(_ blob: BlobRef) -> Data? { images[blob.hash] }
 
     static let subject = ChatSubject(
-        name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", reach: .online(.direct))
+        name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", branch: "ada/refactor-auth",
+        reach: .online(.direct))
     static let awaySubject = ChatSubject(
         name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", reach: .away)
 

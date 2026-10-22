@@ -47,7 +47,8 @@ public struct ChatOverview: View {
     // MARK: Where it runs
 
     /// The name, and the host, folder and address in full: the title pill
-    /// shortens all three to fit the bar.
+    /// shortens all three to fit the bar. The branch is said only here: a
+    /// fleet row has no room for it beside the name it would crowd.
     private var place: some View {
         VStack(alignment: .leading, spacing: Space.m) {
             Text(subject.name)
@@ -56,21 +57,29 @@ public struct ChatOverview: View {
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: Space.m, verticalSpacing: Space.s) {
                 if !subject.host.isEmpty { fact(String(localized: "Host"), subject.host) }
                 if !subject.directory.isEmpty { fact(String(localized: "Directory"), subject.directory) }
+                if let branch = subject.branch, !branch.isEmpty {
+                    fact(String(localized: "Branch"), branch, identifier: "chat.overview.branch")
+                }
                 fact(String(localized: "Address"), subject.address)
             }
         }
         .identified("chat.place", label: subject.address)
     }
 
-    private func fact(_ label: String, _ value: String) -> some View {
+    private func fact(_ label: String, _ value: String, identifier: String? = nil) -> some View {
         SwiftUI.GridRow {
             Text(label)
                 .designFont(.caption, design)
                 .foregroundStyle(design.inkFaint.color)
-            Text(value)
+            let shown = Text(value)
                 .designFont(.monoSmall, design)
                 .foregroundStyle(design.inkMuted.color)
                 .textSelection(.enabled)
+            if let identifier {
+                shown.identified(identifier, label: label, value: value)
+            } else {
+                shown
+            }
         }
     }
 

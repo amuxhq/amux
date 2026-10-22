@@ -178,9 +178,9 @@ the phone, rather than reporting a number about an idle screen.
 
 | Metric | Group | What is measured | Budget | Worst | Tolerance |
 | --- | --- | --- | --- | --- | --- |
-| `cold first frame` | cold | Kernel process start to the first presented frame carrying the remembered fleet's rows, the app terminated between the five launches, the machines up | 650 ms | 700 ms | 15% |
+| `cold first frame` | cold | Kernel process start to the first presented frame carrying the remembered fleet's rows, the app terminated between the five launches, the machines up | 850 ms | 900 ms | 15% |
 | `cold store read` | cold | Inside each of those launches, the store's own share: the embedded node's start (opening every profile's store, the listener, the identity) plus the profile on screen opening its fleet from the store and catching up with it, before any host is reached; the main thread's wait between the two is not counted | 50 ms | | 15% |
-| `cold fleet render` | cold | From the fleet on screen having caught up with its store to the first presented frame carrying its rows: building the home from what the store held | 100 ms | | 15% |
+| `cold fleet render` | cold | From the fleet on screen having caught up with its store to the first presented frame carrying its rows: building the home from what the store held, and the rest of the shell's first frame around it | 250 ms | | 15% |
 | `reconciliation at 0 ms` | reconciliation | From that point to the first presented frame after every trusted machine's agents were current with the machine, over loopback | 250 ms | | 15% |
 | `reconciliation at 100 ms` | reconciliation | The same, with every gate holding each packet 100 ms | 1,000 ms | | 15% |
 | `reconciliation through the relay at 100 ms` | reconciliation | The same, the phone away from home: signed in to the machines' account at the served relay, every direct dial lost, and the gate in front of the relay holding each packet 100 ms | 1,500 ms | | 15% |
@@ -196,8 +196,9 @@ frame at about 414 ms on the pinned simulator, so the gate is the floor plus roo
 60 Hz and composites through the Mac's display, so hitch time is display-link missed-frame accounting, a proxy for a
 device's hitch metric. The store read was first measured at about 270 ms on the pinned Mac, of which the node's own
 start was 25 ms and the fleet's open one; the rest was the main thread, busy building the shell, taking its time to
-hear that the node was up, which the two intervals now leave out. The fleet-render budget is what building the home
-from the store's rows should take.
+hear that the node was up, which the two intervals now leave out. The fleet-render budget is what the main thread's
+work between the store read and the first frame should take: the home built from the store's rows, and the rest of
+the shell's first frame, which waits for the same thread.
 
 Where a cold launch goes, from the marks (`scripts/ios-perf.py` prints them per launch): about 300 ms before
 `main` is reached, loading the images; about 100 ms of UIKit building the scene before the app's composition is
@@ -209,8 +210,14 @@ about 80. What is left is a navigation stack, a tab bar and a home being built b
 no one item a profile points at. An Instruments profile of the launch on the pinned Mac puts the main thread's
 heavy leaves in the loader (270 ms: symbol comparisons, load-command walks, and 85 ms of dyld_sim re-pointing the
 shared cache's exports at the host, which a device's loader does not do) and in the Swift runtime's conformance and
-metadata work, with no function of ours among them; so the budget on the simulator is 650 ms median and 700 worst,
-set from that profile. A device's budget is written when a device is enrolled and measured.
+metadata work, with no function of ours among them; the budget on the simulator was 650 ms median and 700 worst,
+set from that profile. The home's polish put it under the system's chrome (a tab bar, a navigation bar with a large
+title and buttons, a search field, filter chips and callout cards) and redrew its rows, which took the first frame
+from about 640 ms to between 740 and 785 across runs on the pinned Mac. Taking those four pieces of chrome out
+together brings it back to about 680: roughly 60 ms is the system's chrome, about 30 of it before the fleet opens
+while the main thread builds the tab bar, and 40 is the redrawn list. No one piece is larger than the 40 ms by which
+two runs of the same build differ. The budget is now 850 ms median and 900 worst, and the fleet render's 250: that
+cost, with room for the 40 to 60 ms by which runs of one build move on this Mac. A device's budget is written when a device is enrolled and measured.
 
 Where reconciliation goes, over a gate that holds each packet 100 ms (a 200 ms round trip, printed by the links'
 own logs as `rtt`): two round trips for the QUIC handshake, since a listener answers an address it has not seen with
@@ -223,7 +230,8 @@ its own. The test gate itself passes datagrams in the order they came: held each
 same millisecond could swap places, and a packet overtaking the handshake it followed was dropped and counted lost,
 costing a round trip a household network never does.
 
-`--only cold|reconciliation|streaming|idle` takes one group, for working on it; `--baseline` needs a whole run.
+`--only cold|reconciliation|streaming|idle` takes one group, for working on it; `--baseline` needs a whole run, and
+judges it on the budgets alone, since the baseline it replaces is no reference for its own successor.
 `--describe` says which enrolled machine this is and whether its baseline exists without building or launching
 anything. Baselines live beside the desktop's:
 

@@ -16,7 +16,7 @@ you.help.caption |  |  | 16,678,310,32
 you.close | Close |  | 326,82,56,36
  | Pair your first host |  | 16,204,214,32
  | amux runs agents on your computers. Pair one and its agents appear here. |  | 16,244,368,37
- | Looking on this network… |  | 18,305,192,18
+ | Looking on this network… |  | 36,305,174,18
  | 1 |  | 25,351,5,16
  | On your computer, install amux from amux.sh. |  | 52,348,231,39
  | Send Link |  | 52,400,106,44
@@ -42,7 +42,7 @@ you.close | Close |  | 326,82,56,36
  | Dark |  | 256,259,49,46
  | System |  | 305,259,65,46
  | Share Usage, Counts and choices, never what you type | 1 | 30,316,342,37
- | Name, amux-iphone-2 |  | 16,362,370,46
+ | Name, <device> |  | 16,362,370,46
  | Fingerprint, <key> |  | 30,420,312,58
  | HELP |  | 18,508,34,16
  | Contact Support |  | 16,532,370,46

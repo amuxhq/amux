@@ -27,7 +27,7 @@ sign-in.signed-in |  | ada@example.com | 94,800,215,18
 sign-in.back | Back |  | 20,82,56,36
  | Pair your first host |  | 16,204,214,32
  | amux runs agents on your computers. Pair one and its agents appear here. |  | 16,244,368,37
- | Looking on this network… |  | 16,305,194,18
+ | Looking on this network… |  | 36,305,174,18
  | 1 |  | 25,351,5,16
  | On your computer, install amux from amux.sh. |  | 52,348,231,39
  | Send Link |  | 52,400,106,44

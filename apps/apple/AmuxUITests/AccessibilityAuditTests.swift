@@ -21,14 +21,19 @@ import XCTest
 /// this test audits it and answers `page-N.done`, and `end` says there are no
 /// more.
 ///
-/// One kind of thing is judged on its name and not on its size: a link the
-/// markdown parser made out of a run of an agent's prose. That is not a control
-/// the app draws. The app draws a paragraph; the parser turns a span of a
-/// sentence inside it into something tappable, laid out as part of a line and
-/// split across two of them when the line wraps. There is no rectangle to grow,
-/// and its height is the height of the prose around it. WCAG's target-size rule
-/// carves out inline targets in a sentence for exactly this reason, so the
-/// exception here is the standard's rather than this app's. It is kept narrow:
+/// Two kinds of thing are judged on their names and not on their size. The
+/// first is an item in the system's navigation bar, which the bar lays out
+/// and answers to itself: the slot it gives an item is 36 points tall, the
+/// glass it draws round it 44, and only the slot can be measured from here.
+///
+/// The second is a link the markdown parser made out of a run of an agent's
+/// prose. That is not a control the app draws. The app draws a paragraph; the
+/// parser turns a span of a sentence inside it into something tappable, laid
+/// out as part of a line and split across two of them when the line wraps.
+/// There is no rectangle to grow, and its height is the height of the prose
+/// around it. WCAG's target-size rule carves out inline targets in a sentence
+/// for exactly this reason, so the exception here is the standard's rather
+/// than this app's. It is kept narrow:
 /// only a link with no identifier of its own, sitting inside a block of agent
 /// prose, and only its size is excused — it must still say something VoiceOver
 /// can read out. Each one excused is written into the record with the state it
@@ -83,6 +88,7 @@ final class AccessibilityAuditTests: XCTestCase {
             let door = try DoorLines(address: "127.0.0.1:\(port)")
             _ = try door.ask(["kind": "settle"])
             let laidOut = try laidOut(door)
+            let barItems = Self.barItems(app)
             var found = 0
             for control in controls(app) {
                 found += 1
@@ -95,8 +101,9 @@ final class AccessibilityAuditTests: XCTestCase {
                         "size": rectangle(control.frame),
                     ])
                 }
+                let inBar = !control.identifier.isEmpty && barItems.contains(control.identifier)
                 complaints += fault(
-                    control, on: name, laidOut: laidOut, judgeSize: !inline)
+                    control, on: name, laidOut: laidOut, judgeSize: !inline && !inBar)
             }
             XCTAssertGreaterThan(found, 0, "\(name) has no controls at all")
             audited += found
@@ -211,6 +218,17 @@ final class AccessibilityAuditTests: XCTestCase {
 
     private func area(_ rectangle: CGRect) -> CGFloat {
         rectangle.isNull ? 0 : rectangle.width * rectangle.height
+    }
+
+    /// What the system's navigation bar holds: back, close, a title, a menu.
+    /// They are judged on their names and not on their size. The bar lays
+    /// each one out in a slot 36 points tall, which is what the app can
+    /// measure, and draws and answers to a 44-point circle around it.
+    private static func barItems(_ app: XCUIApplication) -> Set<String> {
+        let kinds: [XCUIElement.ElementType] = [.button, .switch, .link]
+        return Set(kinds.flatMap { kind in
+            app.navigationBars.descendants(matching: kind).allElementsBoundByIndex.map { $0.identifier }
+        })
     }
 
     /// Whether this is a link the markdown parser made inside a run of an

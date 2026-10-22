@@ -59,6 +59,9 @@ UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 # Durations measured on the run's own clock, and countdowns.
 DURATION = re.compile(r"\b\d+m \d+s\b|\b\d+(?:\.\d+)?(?:ms|s|m|h)\b")
 KEY = re.compile(r"\b[0-9a-f]{4}(?: [0-9a-f]{4}){15}\b|\b[0-9a-f]{4}…[0-9a-f]{4}\b")
+# The leased simulator's name, which the phone shows as its own: which of the
+# pool's devices a run is given is not the run's to choose.
+DEVICE = re.compile(r"\bamux-[a-z]+-\d+\b")
 # When a usage limit resets: a time of day on the run's wall clock, or a
 # weekday.
 RESETS = re.compile(r"\bresets (?:\d{1,2}:\d{2}(?:\s?[AP]M)?|[A-Z][a-z]{2})")
@@ -69,6 +72,7 @@ def normalize(text: str) -> str:
     suffixes, masked as the terminal driver masks ages and scratch paths."""
     text = AGE.sub("<age>", text)
     text = KEY.sub("<key>", text)
+    text = DEVICE.sub("<device>", text)
     text = DURATION.sub("<t>", text)
     text = RESETS.sub("resets <time>", text)
     return SCRATCH.sub(lambda match: match.group(1) + "x" * len(match.group(2)), text)
@@ -143,9 +147,10 @@ def on_screen(identifier: str, screen: str | None) -> bool:
     return root is None or screen is None or TAB_ROOTS.get(screen) == root
 
 
-# How far either side of a volatile surface its mask reaches: its words are
-# as wide as they are in this run, and an age that read "18s" when the golden
-# was taken is wider than one reading "17s" now.
+# How far either side of a volatile surface its mask reaches, at least: its
+# words are as wide as they are in this run, and an age that read "39s" when
+# the golden was taken is wider than one reading "1m" now. The reach grows
+# with the line's height, as a character's width does with the text size.
 VOLATILE_SLACK = 8
 
 
@@ -161,9 +166,10 @@ def volatile_masks(
         if not is_volatile(element["identifier"], named) or not on_screen(element["identifier"], screen):
             continue
         frame = element["frame"]
-        x = max(0, int((frame["x"] - VOLATILE_SLACK) * scale))
+        slack = max(VOLATILE_SLACK, frame["height"])
+        x = max(0, int((frame["x"] - slack) * scale))
         y = max(0, int(frame["y"] * scale))
-        width = int((frame["x"] + frame["width"] + VOLATILE_SLACK) * scale + 0.999) - x
+        width = int((frame["x"] + frame["width"] + slack) * scale + 0.999) - x
         height = int((frame["y"] + frame["height"]) * scale + 0.999) - y
         masks.append(f"{x},{y},{width},{height}")
     return masks
@@ -221,6 +227,55 @@ def geometry(elements: list[dict], named: tuple[str, ...] = (), ids: dict[str, s
         state = "" if element.get("enabled", True) else " (disabled)"
         lines.append(named_ids(f"{element['identifier']} | {words} | {where}{state}", ids))
     return "\n".join(lines) + "\n"
+
+
+# Words `normalize` masked, whose drawn width still follows what they said.
+MASKED = re.compile(r"<(?:age|key|device|t|time)>")
+# How far a line with masked words may move sideways or change width: "Worked
+# 9s" is narrower than "Worked 12s", and trailing text moves its left edge.
+MASKED_SLACK = 16
+
+
+def same_line(approved: str, drawn: str) -> bool:
+    if approved == drawn:
+        return True
+    if not MASKED.search(approved):
+        return False
+    approved_words, _, approved_where = approved.rpartition(" | ")
+    drawn_words, _, drawn_where = drawn.rpartition(" | ")
+    approved_frame, _, approved_state = approved_where.partition(" ")
+    drawn_frame, _, drawn_state = drawn_where.partition(" ")
+    if (approved_words, approved_state) != (drawn_words, drawn_state):
+        return False
+    try:
+        x, y, width, height = (int(value) for value in approved_frame.split(","))
+        x2, y2, width2, height2 = (int(value) for value in drawn_frame.split(","))
+    except ValueError:
+        return False
+    return (y, height) == (y2, height2) and abs(x - x2) <= MASKED_SLACK and abs(width - width2) <= MASKED_SLACK
+
+
+def same_geometry(approved: str, drawn: str) -> bool:
+    """Whether two geometry records hold the same lines, in any order.
+
+    Each line carries its own frame, so the order says nothing about where
+    anything is drawn; it is the order SwiftUI reduced the screen's reports
+    in and the system walked its accessibility tree, and both move between
+    runs of one build. An exact line is matched before a near one, so a near
+    match never takes the line another needed exactly."""
+    left = drawn.splitlines()
+    near = []
+    for line in approved.splitlines():
+        if line in left:
+            left.remove(line)
+        else:
+            near.append(line)
+    for line in near:
+        match = next((index for index, candidate in enumerate(left) if same_line(line, candidate)), None)
+        if match is None:
+            return False
+        del left[match]
+    return not left
 
 
 def by_name(elements: list[dict]) -> dict[str, dict]:
@@ -648,7 +703,7 @@ class PhoneJourney:
         if not expected.exists() or not golden_png.exists():
             return f"missing golden {golden_png}; review a rewritten one"
         approved = expected.read_text()
-        if approved != drawn:
+        if not same_geometry(approved, drawn):
             diff = "\n".join(
                 difflib.unified_diff(
                     approved.splitlines(), drawn.splitlines(), str(expected), f"actual/{expected.name}", lineterm=""

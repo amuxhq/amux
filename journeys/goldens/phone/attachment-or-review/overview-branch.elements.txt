@@ -1,0 +1,57 @@
+shell |  | agents | 0,62,402,778
+chat |  | reviewer | 0,116,402,724
+chat.row.boundary | Ended · stopped |  | 16,124,370,34
+chat.row.boundary | Resumed |  | 16,158,370,34
+chat.row.prompt | Please check against[Pasted text · 12 lines][Review · 1 comment] |  | 16,192,370,104
+chat.attachment | Pasted text · 12 lines |  | 216,228,155,26
+chat.attachment | Review · 1 comment |  | 216,260,156,26
+chat.row.prose | I read the review. | final | 16,308,370,20
+chat.prose.render |  | rendered | 16,308,370,20
+chat.row.turn-end | Worked <t> · $0.00 |  | 16,335,116,16
+chat.field | Message reviewer |  | 28,750,346,24
+chat.attach | Attach | closed | 23,779,44,44
+chat.model | claude-fake-1 · medium |  | 71,779,174,44
+chat.dictate | Dictate | idle | 287,779,44,44
+chat.send | Send |  | 335,779,44,44 (disabled)
+chat.changes | +2 −1 | Uncommitted | 295,66,51,36
+chat.more | More |  | 346,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
+chat.title | reviewer | reviewer | 96,66,160,36
+chat.overview |  |  | 8,415,402,436
+chat.place | reviewer/desk |  | 31,438,287,153
+chat.overview.branch | Branch | main | 96,545,31,17
+chat.overview.comparison |  | Uncommitted | 31,631,354,31
+chat.overview.file.deploy.sh | deploy.sh | +2 −1 | 31,670,354,18
+chat.overview.review | Review changes |  | 31,698,121,44
+ | More |  | 346,66,36,36
+ | Attach |  | 23,779,44,44
+ | claude-fake-1 · medium |  | 71,779,174,44
+ | Dictate |  | 287,779,44,44
+ | Send |  | 335,779,44,44 (disabled)
+ | Ended · stopped |  | 16,124,370,34
+ | Resumed |  | 16,158,370,34
+ | Please check against, Pasted text · 12 lines, Review · 1 comment |  | 16,192,370,104
+ | I read the review. |  | 16,308,370,20
+ | Worked <t> · $0.00 |  | 16,335,116,16
+ | Back |  | 20,66,56,36
+ | reviewer, /t/a/n/d/work · desk |  | 96,66,160,36
+ | 1 file, 2 added, 1 removed |  | 295,66,51,36
+ | More |  | 346,66,36,36
+ | reviewer |  | 31,438,98,31
+ | Host |  | 31,481,27,15
+ | desk |  | 96,480,30,16
+ | Directory |  | 31,505,54,15
+ | /tmp/amux-phone-journey/net/desk/work |  | 96,504,210,33
+ | Branch |  | 31,545,41,15
+ | main |  | 96,545,30,16
+ | Address |  | 31,569,47,15
+ | reviewer/desk |  | 96,569,98,16
+ | CHANGES, 1 file |  | 33,606,338,15
+ | Uncommitted |  | 31,631,170,31
+ | Uncommitted |  | 76,639,81,15
+ | vs main |  | 201,631,170,31
+ | vs main |  | 264,639,44,15
+ | deploy.sh, +2, −1 |  | 31,670,340,18
+ | Review changes |  | 31,709,116,19
+ | Sheet Grabber | Half screen | 184,420,35,5

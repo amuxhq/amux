@@ -8,6 +8,8 @@ public struct ChatSubject: Equatable, Sendable {
     public let name: String
     public let host: String
     public let directory: String
+    /// The branch its directory has checked out, when it is in a repository.
+    public let branch: String?
     /// How this phone reaches the agent's host.
     public let reach: Reach
     /// Live agents below this one on every host its host knows of, as its
@@ -21,12 +23,13 @@ public struct ChatSubject: Equatable, Sendable {
     public let stopHeld: Bool
 
     public init(
-        name: String, host: String, directory: String, reach: Reach, descendants: Int = 0,
-        backgroundJobs: Int = 0, stopHeld: Bool = false
+        name: String, host: String, directory: String, branch: String? = nil, reach: Reach,
+        descendants: Int = 0, backgroundJobs: Int = 0, stopHeld: Bool = false
     ) {
         self.name = name
         self.host = host
         self.directory = directory
+        self.branch = branch
         self.reach = reach
         self.descendants = descendants
         self.backgroundJobs = backgroundJobs

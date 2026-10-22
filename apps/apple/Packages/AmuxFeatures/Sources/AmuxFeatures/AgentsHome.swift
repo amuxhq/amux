@@ -299,8 +299,13 @@ public struct AgentsHome: View {
     private var namesHosts: Bool { Set(model.rows.map(\.hostName)).count > 1 }
 
     private var fleet: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+        let live = self.live
+        // Lazy, so only the rows on screen are laid out. The list is read
+        // again several times a second while an agent works, and it stays
+        // in place under an open chat: laying out every row on each read
+        // is enough to drop the chat's frames.
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 chips
                     .padding(.bottom, Space.s)
                 if !callouts.isEmpty {
@@ -521,7 +526,6 @@ public struct AgentsHome: View {
     /// says it: who, what, where, how long, and what it needs.
     private func spoken(_ row: AgentRow, _ state: RowState) -> String {
         var parts = [row.name]
-        if let branch = row.branch { parts.append(String(localized: "on \(branch)")) }
         if let said = state.spoken { parts.append(said) }
         if let second = FleetWords.secondLine(
             row.secondLine, kind: row.card.kind, now: model.orderedAt,
@@ -728,13 +732,16 @@ public struct AgentsHome: View {
     /// open, and a machine that starts advertising appears here by itself.
     private var looking: some View {
         HStack(spacing: 10) {
+            // The words alone are the element: an element's frame follows
+            // what is drawn, and the breathing mark's scale would move its
+            // edge with every breath.
             StateMark(state: .working)
+                .accessibilityHidden(true)
             Text("Looking on this network…")
                 .designFont(.detail, design)
                 .foregroundStyle(design.inkMuted.color)
+                .identified("home.empty.looking", value: "Looking on this network…")
         }
-        .accessibilityElement(children: .combine)
-        .identified("home.empty.looking", value: "Looking on this network…")
     }
 
     /// What to do on the computer, in order. Both steps happen there, so

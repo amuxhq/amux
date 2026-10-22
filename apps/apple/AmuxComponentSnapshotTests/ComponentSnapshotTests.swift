@@ -558,7 +558,13 @@ private struct ReadElement {
             if let view = node as? UIView, view.isHidden || view.alpha == 0 { return }
             var reach = reach
             if let scroller = node as? UIScrollView {
-                let content = CGRect(origin: .zero, size: scroller.contentSize)
+                // A lazy stack reports a content size from the rows it has
+                // laid out, and places the rest at estimates past it, so
+                // whatever lies below the fold of a vertical scroller counts
+                // as within reach.
+                var size = scroller.contentSize
+                if size.height > scroller.bounds.height { size.height = 1_000_000 }
+                let content = CGRect(origin: .zero, size: size)
                     .inset(by: UIEdgeInsets(
                         top: -scroller.adjustedContentInset.top, left: -scroller.adjustedContentInset.left,
                         bottom: -scroller.adjustedContentInset.bottom, right: -scroller.adjustedContentInset.right))

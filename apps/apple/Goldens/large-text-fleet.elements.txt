@@ -25,7 +25,7 @@ hosts |  | 1 reachable | 0,174,402,617
  | dialog, Needs you, Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,160,370,150
  | asker, Needs you, Which changes should the release notes keep?, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,310,370,150
  | keeper, Idle, The recovery state is safely stored., desk, /tmp/amux-phone-journey/net/desk/work, <age>, unread |  | 16,460,370,150
- | planner, Idle, The pairing errors all come from one table in the wire crate, so they can share one string., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,611,370,149
+ | planner, Idle, The pairing errors all come from one table in the wire crate, so they can share one string., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,611,370,150
  | Switch account |  | 21,66,42,36
  | Agents |  | 167,65,68,25
  | New Agent |  | 338,62,44,44

@@ -356,6 +356,25 @@ private struct ChangesPage: View {
     }
 }
 
+/// What the fleet says about a chat's agent: who it is and where, the family
+/// it belongs to, and whether it is listed at all.
+private struct Standing: Equatable {
+    let subject: ChatSubject
+    let family: FamilyHeader?
+    let listed: Bool
+}
+
+/// Reads the fleet for a page and hands on what it read only when that
+/// changed, so the fleet's reads land on this view rather than the page.
+private struct FleetReading: View {
+    let read: () -> Standing
+    let changed: (Standing) -> Void
+
+    var body: some View {
+        Color.clear.onChange(of: read(), initial: true) { _, now in changed(now) }
+    }
+}
+
 /// An agent's chat. The page asks the account's stores for it, which keep
 /// it open until the page leaves the stack; photos and files are picked
 /// here, and everything that reaches the agent's lifecycle or the clipboard
@@ -374,12 +393,15 @@ private struct ChatPage: View {
     /// Whether the fleet has listed this agent since the page opened, so its
     /// leaving the fleet reads as deleted rather than as not yet listed.
     @State private var listed = false
+    /// What the fleet says about this agent, as the page last drew it.
+    @State private var standing: Standing?
 
     var body: some View {
         Group {
             if let model {
+                let now = standing ?? read()
                 ChatScreen(
-                    model: model, subject: subject, family: stores.profile?.family(agent),
+                    model: model, subject: now.subject, family: now.family,
                     actions: act)
             } else {
                 PagePlaceholder(
@@ -405,8 +427,15 @@ private struct ChatPage: View {
             photo = nil
             Task { await attach(photo: item) }
         }
+        // The fleet is read several times a second while any agent works,
+        // and nearly every read changes nothing this page shows. Read in the
+        // page, each one would rebuild the chat and the items it hands the
+        // system bar, enough to drop frames from a streaming turn; read
+        // beside it, the page is drawn again only when what it shows changes.
+        .background { FleetReading(read: read) { standing = $0 } }
         .onAppear(perform: open)
-        .onChange(of: stores.fleet.row(agent) != nil) { _, present in
+        .onChange(of: standing?.listed) { _, present in
+            guard let present else { return }
             if present { listed = true } else if listed { router.pop() }
         }
         .onChange(of: model?.frame?.ended != nil) { _, ended in
@@ -433,21 +462,26 @@ private struct ChatPage: View {
         }
     }
 
-    private var subject: ChatSubject {
+    private var subject: ChatSubject { standing?.subject ?? read().subject }
+
+    /// This agent as the fleet lists it now.
+    private func read() -> Standing {
         let row = stores.fleet.row(agent)
         let host = stores.fleet.host(agent.hostId)
         let name = row?.name ?? model?.frame?.name ?? agent.description
         // The card counts what a stop cuts on hosts this phone cannot see; a
         // folded family's member has one though home lists no row for it.
         let card = row?.card ?? stores.profile?.card(agent)
-        return ChatSubject(
+        let subject = ChatSubject(
             name: name.isEmpty ? agent.description : name,
             host: host?.name ?? row?.hostName ?? "",
             directory: row?.workingDirectory ?? "",
+            branch: row?.branch,
             reach: host?.reach ?? row?.hostReach ?? .offline(.plain),
             descendants: Int(card?.descendants ?? 0),
             backgroundJobs: Int(card?.backgroundJobs ?? 0),
             stopHeld: card?.stopHeld ?? false)
+        return Standing(subject: subject, family: stores.profile?.family(agent), listed: row != nil)
     }
 
     private func act(_ action: ChatAction) {

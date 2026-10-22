@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, BufWriter};
 use tokio::sync::{mpsc, watch};
 
 use super::socket::{Datagrams, FramedIo, LinkSocket, Path, PathId};
@@ -24,6 +24,12 @@ pub const MAX_FRAME: usize = u16::MAX as usize;
 /// How many packets may wait for the stream's writer; more are dropped, as
 /// a full UDP buffer drops them, and QUIC sends them again.
 const SEND_QUEUE: usize = 256;
+
+/// How many bytes of frames a path's writer gathers before it writes them
+/// to the stream, and its reader takes from the stream at once. One write
+/// per packet made a TLS record and a system call of every 1,200-byte
+/// packet; behind them the send queue filled and dropped packets.
+const STREAM_BUFFER: usize = 64 * 1024;
 
 /// What a byte-stream path runs over, for the link log and the route kind.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -175,10 +181,8 @@ async fn write_packet<W: AsyncWrite + Unpin>(io: &mut W, packet: &[u8]) -> io::R
             ),
         ));
     }
-    let mut frame = Vec::with_capacity(2 + packet.len());
-    frame.extend_from_slice(&(packet.len() as u16).to_be_bytes());
-    frame.extend_from_slice(packet);
-    io.write_all(&frame).await
+    io.write_all(&(packet.len() as u16).to_be_bytes()).await?;
+    io.write_all(packet).await
 }
 
 async fn read_packet<R: AsyncRead + Unpin>(io: &mut R, buf: &mut Vec<u8>) -> io::Result<usize> {
@@ -221,7 +225,9 @@ impl FramedPath {
         let id = socket.add_framed(Arc::new(Sender { queue, kind }));
         let (closed_tx, closed) = watch::channel(false);
         let (stop, mut stopped) = tokio::sync::oneshot::channel();
-        let (mut reader, mut writer) = tokio::io::split(io);
+        let (reader, writer) = tokio::io::split(io);
+        let mut reader = BufReader::with_capacity(STREAM_BUFFER, reader);
+        let mut writer = BufWriter::with_capacity(STREAM_BUFFER, writer);
         let socket = Arc::downgrade(socket);
         tokio::spawn(async move {
             let write = async {

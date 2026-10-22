@@ -485,6 +485,7 @@ impl ChannelPool {
                         .open_stream()
                         .await
                         .map_err(|error| map_open_error(error, Route::Via(peer)))?;
+                    tracing::debug!(%peer, ?class, "opened an early link stream");
                     let ended = Arc::new(Ending::default());
                     let lifetime = Arc::new(CancellationToken::new());
                     let channel = self.channel_on(

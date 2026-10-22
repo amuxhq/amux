@@ -665,5 +665,10 @@ just test -- --test spec_edge --test spec_families --test spec_inventory --test 
 The `spec_*` targets are the many-daemon specifications: pairing, trust, discovery, routing, relay carriers,
 credential refresh, revocation, account isolation, the inventory, replication and agent families across hosts.
 `spec_links` holds one story per route a link takes (the same network, SSH, IPv6 alone), each reaching an agent's
-session, streaming it live and naming the carrying path from the link log.
+session, streaming it live and naming the carrying path from the link log. A story on the relay alone puts every
+host on a network of its own behind a `strict` router and ends by asserting, with `still_relayed`, that each end's
+link is still carried through the relay, so it cannot pass by finishing before a punch or a LAN dial moves the link.
+Signing out takes only what the relay does: `route_relay_signing_out_…` closes a link the relay alone carried, while
+`route_lan_signing_out_…` keeps a direct link between two hosts on one network up on `lan`, and the signed-out laptop
+still reaches the desk's session over it.
 Each reads top to bottom as a description of one behaviour, with its assertions in the test body.

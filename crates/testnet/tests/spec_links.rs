@@ -18,6 +18,7 @@ use provider_fakes::script::Step;
 use support::*;
 use testnet::{AgentDecl, HostDecl, Net, PATIENCE, Topology, observe, until};
 use wire::begin_pair_request;
+use wire::client_service_server::ClientService as _;
 
 /// Two hosts bound to IPv6 alone pair, link over IPv6, and one
 /// streams the other's session live.
@@ -163,11 +164,13 @@ async fn route_relay_udp_reaches_a_session_through_the_relays_forwarding() {
     one_relay_link_each(&net, &["desk", "laptop"]).await;
 
     streams_live(&net, &["laptop"], "worker", said).await;
+    still_relayed(&net, "laptop", "desk");
     net.shutdown().await.unwrap();
 }
 
 /// Signing out ends what the relay carries for this machine: the link to a
-/// host the relay alone reaches closes with the relay link, so the laptop
+/// host the relay alone reaches, on a network of its own, closes with the
+/// relay link, so the laptop
 /// reads the desk offline and itself signed out, the two facts a client
 /// words as "this machine is signed out". Signing in again reaches the
 /// desk's session as before.
@@ -235,6 +238,90 @@ async fn route_relay_signing_out_closes_the_links_the_relay_carried_until_signin
         .observe_until(observe::caught_up, PATIENCE)
         .await
         .unwrap();
+    still_relayed(&net, "laptop", "desk");
+    net.shutdown().await.unwrap();
+}
+
+/// Signing out takes away only what the relay does for a machine: two
+/// paid hosts on one network link directly, and once the laptop signs out
+/// their link stays up on the LAN, the desk stays online at the laptop, and
+/// a prompt the laptop sends after signing out reaches the desk's session,
+/// which answers it live.
+#[tokio::test(flavor = "multi_thread")]
+async fn route_lan_signing_out_keeps_the_direct_link_and_the_session() {
+    let said = "said over the LAN after signing out";
+    let topology = Topology::new()
+        .relay(&["ada"])
+        .host_decl(lan_host("desk", "home"))
+        .host_decl(lan_host("laptop", "home"))
+        .agent(worker_saying(said));
+    let net = Net::start(topology).await.unwrap();
+    let (desk, laptop) = (host_id(&net, "desk"), host_id(&net, "laptop"));
+    pair(&net, "laptop", "desk").await;
+    carried_by(&net, "laptop", "desk", PathKind::Lan).await;
+    carried_by(&net, "desk", "laptop", PathKind::Lan).await;
+    // Signed in once linked, so the relay's forwarding is a second path to
+    // the link the LAN already carries rather than a link of its own.
+    net.sign_in("desk", "ada").await.unwrap();
+    net.sign_in("laptop", "ada").await.unwrap();
+    let mut fleet = net.observe_inventory("laptop").await.unwrap();
+
+    door(&net, "laptop")
+        .await
+        .logout_profile(wire::ProfileRequest {
+            profile_id: profile(&net, "laptop"),
+        })
+        .await
+        .unwrap();
+    row_until(
+        &mut fleet,
+        laptop,
+        "the laptop to read itself signed out",
+        |row| row.account_signed_in == Some(false),
+    )
+    .await;
+    let on_the_lan_both_ways = || async {
+        [("laptop", "desk"), ("desk", "laptop")]
+            .into_iter()
+            .all(|(host, peer)| net.carrying_path(host, peer).unwrap() == Some(PathKind::Lan))
+    };
+    testnet::holds_for(
+        "the link on the LAN after signing out",
+        std::time::Duration::from_secs(5),
+        on_the_lan_both_ways,
+    )
+    .await
+    .unwrap();
+    row_until(
+        &mut fleet,
+        desk,
+        "the laptop to read the desk online",
+        |row| row.presence() == wire::Presence::Online,
+    )
+    .await;
+
+    net.current("laptop", "worker").await.unwrap();
+    let mut chat = net.observe("laptop", "worker", 10).await.unwrap();
+    chat.observe_until(observe::caught_up, PATIENCE)
+        .await
+        .unwrap();
+    net.client("laptop")
+        .unwrap()
+        .send_input(tonic::Request::new(wire::SendInputRequest {
+            agent_id: net.agent("worker").unwrap().id.as_bytes().to_vec(),
+            input: Some(testnet::prompt(
+                testnet::FakeKind::ClaudeSdk,
+                uuid::Uuid::new_v4().as_bytes(),
+                "go",
+            )),
+        }))
+        .await
+        .unwrap();
+    chat.observe_until(|events| says(events, said), PATIENCE)
+        .await
+        .unwrap();
+    println!("signed out, the laptop's prompt reached the desk over the LAN: {said:?}");
+    assert!(on_the_lan_both_ways().await, "the link is on the LAN still");
     net.shutdown().await.unwrap();
 }
 
@@ -246,9 +333,11 @@ async fn route_relay_signing_out_closes_the_links_the_relay_carried_until_signin
 #[tokio::test(flavor = "multi_thread")]
 async fn route_relay_tcp_reaches_a_session_from_a_network_that_blocks_udp() {
     let said = "said through the relay over TCP";
+    // The laptop's network is its gate to the relay, which eats UDP; a
+    // router would take the laptop past that gate.
     let topology = Topology::new()
         .relay(&["ada"])
-        .host("desk")
+        .host_decl(off_the_relay("desk"))
         .host("laptop")
         .agent(worker_saying(said));
     let mut net = Net::start_with(topology, relay_tcp_unreachable(&["desk"]))
@@ -269,6 +358,7 @@ async fn route_relay_tcp_reaches_a_session_from_a_network_that_blocks_udp() {
     one_relay_link_each(&net, &["desk", "laptop"]).await;
 
     streams_live(&net, &["laptop"], "worker", said).await;
+    still_relayed(&net, "laptop", "desk");
     net.shutdown().await.unwrap();
 }
 
@@ -547,6 +637,7 @@ async fn pairing_relay_paid_pairs_through_the_relay_and_reaches_a_session() {
     carried_by(&net, "tablet", "desk", PathKind::RelayUdp).await;
     carried_by(&net, "desk", "tablet", PathKind::RelayUdp).await;
     streams_live(&net, &["tablet"], "worker", said).await;
+    still_relayed(&net, "tablet", "desk");
     net.shutdown().await.unwrap();
 }
 
@@ -641,12 +732,13 @@ fn launching_through_the_relay(hosts: &'static [&'static str]) -> testnet::NetOp
     }
 }
 
-/// A host on the relay alone, signed in to the account `ada`: no listener,
-/// no discovery.
+/// A host on the relay alone, signed in to the account `ada`: on a network
+/// of its own behind a strict router, with no listener and no discovery.
 fn on_the_relay(name: &str) -> HostDecl {
     HostDecl {
         name: name.to_owned(),
         account: Some("ada".to_owned()),
+        router: Some(testnet::RouterKind::Strict),
         ..HostDecl::default()
     }
 }
@@ -1239,10 +1331,12 @@ async fn pair_through_the_relay(net: &Net) {
     until_via(net, "laptop", "desk", LiveRoute::Relay).await;
 }
 
-/// A host with no listener and no discovery, signed in to nothing yet.
+/// A host on a network of its own behind a strict router, with no listener
+/// and no discovery, signed in to nothing yet.
 fn off_the_relay(name: &str) -> HostDecl {
     HostDecl {
         name: name.to_owned(),
+        router: Some(testnet::RouterKind::Strict),
         ..HostDecl::default()
     }
 }
@@ -1275,6 +1369,7 @@ async fn hold_buffer_released_on_admission_carries_the_first_flight() {
         "and let through on admission"
     );
     streams_live(&net, &["laptop"], "worker", "said through the relay").await;
+    still_relayed(&net, "laptop", "desk");
     net.shutdown().await.unwrap();
 }
 
@@ -1379,6 +1474,7 @@ async fn token_relaunch_no_connect_reuses_the_kept_credential() {
         net.relay().unwrap().presented()
     );
     streams_live(&net, &["laptop"], "worker", "said through the relay").await;
+    still_relayed(&net, "laptop", "desk");
     net.shutdown().await.unwrap();
 }
 

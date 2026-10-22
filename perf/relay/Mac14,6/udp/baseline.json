@@ -1,0 +1,46 @@
+{
+  "schema": 2,
+  "model": "Mac14,6",
+  "os": "26.5.2",
+  "profile": "release",
+  "carrier": "QUIC over UDP",
+  "reference_state": "one busy core (cluster warmer)",
+  "cpus": 12,
+  "load_before": [
+    2.83642578125,
+    3.28564453125,
+    2.95947265625
+  ],
+  "load_after": [
+    3.97216796875,
+    3.50146484375,
+    3.08056640625
+  ],
+  "rounds": 5,
+  "points": [
+    {
+      "connections": 10,
+      "admissions_per_s": 1853.7254877244445,
+      "throughput_mib_s": 41.50577723670953,
+      "open_p50_ms": 1.629666,
+      "open_p99_ms": 2.431375,
+      "opens": 1000
+    },
+    {
+      "connections": 100,
+      "admissions_per_s": 2643.0059138843126,
+      "throughput_mib_s": 41.41252755476283,
+      "open_p50_ms": 11.023916999999999,
+      "open_p99_ms": 14.138084000000001,
+      "opens": 10000
+    },
+    {
+      "connections": 1000,
+      "admissions_per_s": 3207.340108170047,
+      "throughput_mib_s": 38.80606694661686,
+      "open_p50_ms": 110.798041,
+      "open_p99_ms": 139.455125,
+      "opens": 100000
+    }
+  ]
+}

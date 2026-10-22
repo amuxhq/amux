@@ -176,13 +176,16 @@ on a thousand opens.
 just relay-curve              # measure and print
 just relay-curve --baseline   # record perf/relay/<hw.model>/baseline.json
 just relay-curve --compare    # judge against it; non-zero outside the noise bands
+just relay-curve --udp        # the same over QUIC on UDP; its baseline is perf/relay/<hw.model>/udp/baseline.json
 ```
 
-The hosts link over the relay's TLS-over-TCP listener, the one a deployment runs beside QUIC: the relay admits ten
-new QUIC handshakes a minute from one address, and every host here dials from the same loopback address. The links
-between partners are QUIC whose packets the relay forwards over those TCP legs. The hosts are bare: a link to the
+By default the hosts link over the relay's TLS-over-TCP listener, the one a deployment runs for hosts whose UDP does
+not get through. With `--udp` they link over QUIC on UDP, as a deployment's hosts normally do: each host has a socket
+and relay tickets of its own and answers the relay's Retry, and the relay's limit of ten new QUIC handshakes a minute
+from one address is lifted for the benchmark alone, since every host here dials from the same loopback address. The
+links between partners are QUIC whose packets the relay forwards over those legs. The hosts are bare: a link to the
 relay, a link to the partner and raw streams on it, serving no calls, so the work measured is the relay's forwarding,
-the partners' QUIC and the TLS on the relay's legs, in the same process with the relay on a runtime of its own. The run records the machine model, OS, cores,
+the partners' QUIC and the carrier's, in the same process with the relay on a runtime of its own. The run records the machine model, OS, cores,
 reference state (the flood's busy core) and the load average before and after; the binary refuses a debug build
 and a machine that is not enrolled.
 
@@ -202,6 +205,14 @@ was its own write, a TLS record and a system call on each TCP leg, and the queue
 QUIC's bursts; with each byte-stream path gathering its frames into 64 KiB writes it rose to about 450, 270 and
 275 MiB/s, above the carried baseline at every level, with admissions and opens unchanged. A change to the relay shows
 when it adds round trips, packets or system calls to a link, or serialises work across links.
+
+Over QUIC on UDP the same benchmark, applied to the starting commit as well, read 32, 29 and 21 MiB/s at 10, 100 and
+1,000 connections with the relay carrying streams, admitting 1,491, 1,934 and 2,001 links a second, the median open
+at 2.6, 26 and 280 ms and the 99th percentile at a thousand 1.1 s. Forwarded, it carries 42, 41 and 39 MiB/s, admits
+1,854, 2,643 and 3,207 links a second, and the median open falls to 1.6, 11 and 111 ms, the 99th percentile at a
+thousand to 139 ms. Throughput over UDP stays well under TCP's at every level: each forwarded 1,200-byte datagram
+crosses the relay's one UDP socket in and out with a system call of its own, and macOS offers no segmentation
+offload, where each TCP leg is a stream of its own written in 64 KiB batches.
 
 ## The phone
 

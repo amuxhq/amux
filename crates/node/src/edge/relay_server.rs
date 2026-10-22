@@ -360,9 +360,11 @@ impl CloudLinkServer {
         })
     }
 
-    /// The relay with a lower per-source handshake limit, before it serves.
-    #[cfg(test)]
-    fn with_handshake_rate_limit(mut self, rate: usize) -> Self {
+    /// The relay with another per-source handshake limit, before it
+    /// serves: a test's lower one, or a benchmark's higher one where every
+    /// host dials from the same loopback address.
+    #[doc(hidden)]
+    pub fn with_handshake_rate_limit(mut self, rate: usize) -> Self {
         Arc::get_mut(&mut self.inner)
             .expect("set before the relay serves")
             .admission = HandshakeAdmission::with_limits(

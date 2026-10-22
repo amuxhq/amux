@@ -3,11 +3,16 @@
 //! for the bytes it forwards between them and for how long a new stream on
 //! a link it forwards takes to answer.
 //!
-//! Each level starts a fresh relay serving its TLS-over-TCP carrier, the
-//! listener a deployment runs beside QUIC. QUIC is not used: the relay
-//! admits ten new QUIC handshakes a minute from one address, and every host
-//! here dials from the same loopback address. Hosts come in pairs, one pair
-//! to an account, as a person's laptop and desktop do. Every host:
+//! Each level starts a fresh relay, and every host links to it over one
+//! [`Carrier`]: QUIC inside TLS on TCP, the listener a deployment runs for
+//! hosts whose UDP does not get through and the default here, or QUIC on
+//! UDP, as a deployment's hosts normally link. Over UDP each host has a
+//! socket of its own and answers the relay's Retry as a deployed host
+//! does; the relay's limit of ten new QUIC handshakes a minute from one
+//! address is lifted for the benchmark, since every host here dials from
+//! the same loopback address. A run records its carrier, so a baseline is
+//! only compared with a run over the same one. Hosts come in pairs, one
+//! pair to an account, as a person's laptop and desktop do. Every host:
 //!
 //! - links to the relay, all hosts dialling at once up to
 //!   [`DIAL_CONCURRENCY`]; the level's hosts over the time from the first
@@ -24,10 +29,12 @@
 //!
 //! The hosts are bare: a link to the relay, one to the partner and raw
 //! streams on it, with no handshake inside a stream, so the work measured
-//! is the relay's forwarding, the links' QUIC and the carriers' TLS. They
-//! share the process and its cores with the relay.
+//! is the relay's forwarding and the QUIC of the links and of the
+//! carrier, with the carrier's TLS over TCP. They share the process and
+//! its cores with the relay.
 
 use std::collections::BTreeMap;
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -51,15 +58,15 @@ use super::{DESKTOP_REFERENCE_STATE, Machine};
 pub const LEVELS: [usize; 3] = [10, 100, 1_000];
 /// Where a machine's baseline lives, under the model's directory.
 pub const BASELINE_ROOT: &str = "perf/relay";
-/// The carrier every host links over, recorded so a baseline is only
-/// compared with a run over the same one.
-pub const CARRIER: &str = "TLS over TCP";
 const SCHEMA: u32 = 2;
 const RELAY_NAME: &str = "localhost";
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+/// The relay's new QUIC handshakes a minute from one address over UDP,
+/// where every host dials from loopback: more than any level dials.
+const BENCHMARK_HANDSHAKE_RATE: usize = 1_000_000;
 const PHASE_TIMEOUT: Duration = Duration::from_secs(180);
-/// How many hosts dial at once: the relay finishes 128 TLS handshakes at a
-/// time and refuses none, so this only bounds the dialling side's sockets.
+/// How many hosts dial at once: the relay finishes 128 handshakes at a time
+/// and refuses none, so this only bounds the dialling side's sockets.
 pub const DIAL_CONCURRENCY: usize = 64;
 const CHUNK: usize = 64 * 1024;
 /// How long a round waits after the relay has dropped its last link.
@@ -83,8 +90,26 @@ pub const OPEN_P99_BAND: f64 = 1.00;
 /// 2,255 to 2,422 at a thousand), so its band is the median open's.
 pub const ADMISSIONS_BAND: f64 = 0.25;
 
+/// What every host links to the relay over.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Carrier {
+    TlsOverTcp,
+    QuicOverUdp,
+}
+
+impl Carrier {
+    /// The name a run records.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::TlsOverTcp => "TLS over TCP",
+            Self::QuicOverUdp => "QUIC over UDP",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct CurveOptions {
+    pub carrier: Carrier,
     pub levels: Vec<usize>,
     /// Fresh relays per level. Throughput is the median round's; the open
     /// latencies of every round are pooled, so the 99th percentile at ten
@@ -97,8 +122,9 @@ pub struct CurveOptions {
 }
 
 impl CurveOptions {
-    pub fn full() -> Self {
+    pub fn full(carrier: Carrier) -> Self {
         Self {
+            carrier,
             levels: LEVELS.to_vec(),
             rounds: 5,
             opens_per_host: 20,
@@ -144,10 +170,15 @@ pub struct Curve {
 }
 
 impl Curve {
-    pub fn baseline_path(machine: &Machine) -> PathBuf {
-        Path::new(BASELINE_ROOT)
-            .join(&machine.model)
-            .join("baseline.json")
+    /// Where `machine`'s baseline over `carrier` lives: TCP's beside the
+    /// model's directory, UDP's in its `udp` directory.
+    pub fn baseline_path(machine: &Machine, carrier: Carrier) -> PathBuf {
+        let model = Path::new(BASELINE_ROOT).join(&machine.model);
+        match carrier {
+            Carrier::TlsOverTcp => model,
+            Carrier::QuicOverUdp => model.join("udp"),
+        }
+        .join("baseline.json")
     }
 
     pub fn read(path: &Path) -> Result<Self> {
@@ -364,7 +395,7 @@ pub async fn run(
             "release"
         }
         .to_owned(),
-        carrier: CARRIER.to_owned(),
+        carrier: options.carrier.label().to_owned(),
         reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
         cpus: std::thread::available_parallelism().map_or(0, usize::from),
         load_before,
@@ -383,7 +414,7 @@ async fn measure(
     if !connections.is_multiple_of(2) {
         bail!("hosts come in pairs; {connections} connections is odd");
     }
-    let relay = relay_runtime.spawn(Relay::start()).await??;
+    let relay = relay_runtime.spawn(Relay::start(options.carrier)).await??;
     let accounts = (0..connections / 2)
         .map(|_| Uuid::new_v4())
         .collect::<Vec<_>>();
@@ -546,15 +577,20 @@ async fn answer(mut stream: ByteStream, received: Arc<AtomicU64>) {
 /// credentials: a token is the account it names.
 struct Relay {
     server: CloudLinkServer,
-    addr: std::net::SocketAddr,
+    carrier: Carrier,
+    /// The relay's TCP listener and its UDP socket.
+    tcp: SocketAddr,
+    udp: SocketAddr,
     /// The QUIC handshake each host makes inside its TLS stream.
     quic_client: quinn::ClientConfig,
+    /// The roots each host over UDP trusts the relay by.
+    roots: rustls::RootCertStore,
     connector: tokio_rustls::TlsConnector,
     serving: node::RelayServing,
 }
 
 impl Relay {
-    async fn start() -> Result<Self> {
+    async fn start(carrier: Carrier) -> Result<Self> {
         let rcgen::CertifiedKey { cert, signing_key } =
             rcgen::generate_simple_self_signed(vec![RELAY_NAME.to_owned()])
                 .context("make the relay's certificate")?;
@@ -574,7 +610,7 @@ impl Relay {
         let quic_client = node::harness::relay_quic_client_config_with_roots(roots.clone())
             .context("the relay's QUIC client configuration")?;
         let client = rustls::ClientConfig::builder()
-            .with_root_certificates(roots)
+            .with_root_certificates(roots.clone())
             .with_no_client_auth();
         let server = CloudLinkServer::new(
             RelayIdentity {
@@ -585,15 +621,19 @@ impl Relay {
             },
             // The curve reads no dump the relay's core asks for.
             None,
-        );
+        )
+        .with_handshake_rate_limit(BENCHMARK_HANDSHAKE_RATE);
         let listener = TcpListener::bind("127.0.0.1:0").await?;
-        let addr = listener.local_addr()?;
+        let tcp = listener.local_addr()?;
         let udp = std::net::UdpSocket::bind("127.0.0.1:0")?;
         let serving = server.serve_tls(udp, listener, acceptor, quic, HANDSHAKE_TIMEOUT)?;
         Ok(Self {
             server,
-            addr,
+            carrier,
+            tcp,
+            udp: serving.udp_addr()?,
             quic_client,
+            roots,
             connector: tokio_rustls::TlsConnector::from(Arc::new(client)),
             serving,
         })
@@ -611,25 +651,36 @@ impl Relay {
         {
             let slots = slots.clone();
             let connector = self.connector.clone();
-            let quic_client = self.quic_client.clone();
-            let addr = self.addr;
+            let quic_client = match self.carrier {
+                Carrier::TlsOverTcp => self.quic_client.clone(),
+                // A host keeps the relay's tickets to itself, as a deployed
+                // host does: from one shared store every host after the
+                // first resumes with a ticket another host was given.
+                Carrier::QuicOverUdp => {
+                    node::harness::relay_quic_client_config_with_roots(self.roots.clone())
+                        .context("the relay's QUIC client configuration")?
+                }
+            };
+            let (carrier, tcp, udp) = (self.carrier, self.tcp, self.udp);
             let token = account.to_string();
+            let expires_at = SystemTime::now() + Duration::from_secs(3600);
             dialling.spawn(async move {
                 let _slot = slots.acquire_owned().await?;
-                let tcp = TcpStream::connect(addr).await?;
-                tcp.set_nodelay(true)?;
-                let tls = connector
-                    .connect(RELAY_NAME.try_into()?, tcp)
-                    .await
-                    .context("TLS handshake with the relay")?;
-                let host = RelayHost::connect(
-                    tls,
-                    quic_client,
-                    RELAY_NAME,
-                    token,
-                    SystemTime::now() + Duration::from_secs(3600),
-                )
-                .await
+                let host = match carrier {
+                    Carrier::TlsOverTcp => {
+                        let tcp = TcpStream::connect(tcp).await?;
+                        tcp.set_nodelay(true)?;
+                        let tls = connector
+                            .connect(RELAY_NAME.try_into()?, tcp)
+                            .await
+                            .context("TLS handshake with the relay")?;
+                        RelayHost::connect(tls, quic_client, RELAY_NAME, token, expires_at).await
+                    }
+                    Carrier::QuicOverUdp => {
+                        RelayHost::connect_udp(udp, quic_client, RELAY_NAME, token, expires_at)
+                            .await
+                    }
+                }
                 .context("link to the relay")?;
                 Ok::<_, anyhow::Error>((index, Arc::new(host)))
             });
@@ -736,7 +787,7 @@ mod tests {
             model: "Mac14,6".to_owned(),
             os: "26.0".to_owned(),
             profile: "release".to_owned(),
-            carrier: CARRIER.to_owned(),
+            carrier: Carrier::TlsOverTcp.label().to_owned(),
             reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             cpus: 12,
             load_before: [1.0; 3],
@@ -810,7 +861,7 @@ mod tests {
     fn a_baseline_measured_another_way_is_refused() {
         let baseline = curve(1_000.0, 1.0, 2.0);
         let mut run = curve(1_000.0, 1.0, 2.0);
-        run.carrier = "QUIC".to_owned();
+        run.carrier = Carrier::QuicOverUdp.label().to_owned();
         assert!(compare(&run, &baseline).is_err());
         let mut run = curve(1_000.0, 1.0, 2.0);
         run.points[0].connections = 20;

@@ -124,7 +124,11 @@ class ComparingScreens(unittest.TestCase):
     def test_keys_made_fresh_each_install_are_masked(self):
         whole = " ".join(["d326", "50ce", "ef5c", "7836"] * 4)
         self.assertEqual(phone.normalize(f"Fingerprint | {whole}"), "Fingerprint | <key>")
-        self.assertEqual(phone.normalize("Identity, amux-iphone-1 · 9ab9…c45d"), "Identity, amux-iphone-1 · <key>")
+        self.assertEqual(phone.normalize("Identity, amux-iphone-1 · 9ab9…c45d"), "Identity, <phone> · <key>")
+
+    def test_the_leased_simulators_name_is_masked(self):
+        self.assertEqual(phone.normalize("Identity, amux-iphone-2 · <key>"), "Identity, <phone> · <key>")
+        self.assertEqual(phone.normalize("Identity, amux-iphone-12"), "Identity, <phone>")
 
     def test_durations_and_countdowns_are_masked(self):
         self.assertEqual(phone.normalize("Worked 1ms · $0.00"), "Worked <t> · $0.00")

@@ -33,6 +33,6 @@ tab.you | You | not selected | 253,777,99,57
  | Pair with desk |  | 309,169,61,44
  | Run amux pair on one of these and enter the code it prints. |  | 18,231,343,37
  | THIS PHONE |  | 20,286,70,14
- | Identity, amux-iphone-1 · <key> |  | 18,308,366,46
+ | Identity, <phone> · <key> |  | 18,308,366,46
  | Paired Devices, 0 |  | 18,354,366,46
  | Revoking a device ends its access immediately. |  | 18,408,320,18

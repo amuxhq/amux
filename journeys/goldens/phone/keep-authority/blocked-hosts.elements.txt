@@ -45,6 +45,6 @@ tab.you | You | not selected | 253,777,99,57
  | desk, macOS, offline while this phone is signed out, its agents’ state is unknown |  | 18,159,366,81
  | Agents on an offline host report their state as unknown. |  | 18,248,293,37
  | THIS PHONE |  | 20,303,70,14
- | Identity, amux-iphone-1 · <key> |  | 18,325,366,46
+ | Identity, <phone> · <key> |  | 18,325,366,46
  | Paired Devices, 1 |  | 18,371,366,46
  | Revoking a device ends its access immediately. |  | 18,425,320,18

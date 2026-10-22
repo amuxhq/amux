@@ -25,6 +25,6 @@ tab.you | You | not selected | 253,777,99,57
  | Run amux on a computer on this network and it appears here. |  | 18,166,325,37
  | Run amux pair on a host on this network, or scan the code from amux pair --qr with the camera. |  | 18,213,360,37
  | THIS PHONE |  | 20,268,70,14
- | Identity, amux-iphone-1 · <key> |  | 18,290,366,46
+ | Identity, <phone> · <key> |  | 18,290,366,46
  | Paired Devices, 0 |  | 18,337,366,45
  | Revoking a device ends its access immediately. |  | 18,390,320,18

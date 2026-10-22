@@ -62,13 +62,17 @@ KEY = re.compile(r"\b[0-9a-f]{4}(?: [0-9a-f]{4}){15}\b|\b[0-9a-f]{4}…[0-9a-f]{
 # When a usage limit resets: a time of day on the run's wall clock, or a
 # weekday.
 RESETS = re.compile(r"\bresets (?:\d{1,2}:\d{2}(?:\s?[AP]M)?|[A-Z][a-z]{2})")
+# The phone's own name, which is the leased simulator's: any slot of the pool.
+PHONE = re.compile(r"\bamux-iphone-\d+\b")
 
 
 def normalize(text: str) -> str:
-    """Ages, keys, durations, reset times and the served net's scratch
-    suffixes, masked as the terminal driver masks ages and scratch paths."""
+    """Ages, keys, the phone's own name, durations, reset times and the
+    served net's scratch suffixes, masked as the terminal driver masks ages
+    and scratch paths."""
     text = AGE.sub("<age>", text)
     text = KEY.sub("<key>", text)
+    text = PHONE.sub("<phone>", text)
     text = DURATION.sub("<t>", text)
     text = RESETS.sub("resets <time>", text)
     return SCRATCH.sub(lambda match: match.group(1) + "x" * len(match.group(2)), text)

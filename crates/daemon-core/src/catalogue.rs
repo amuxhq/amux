@@ -29,8 +29,8 @@ use uuid::Uuid;
 
 use crate::Daemon;
 use crate::ids::{ChannelId, HostId, LinkId};
-use crate::payload::CarrierKind;
 use crate::io::Output;
+use crate::payload::CarrierKind;
 use crate::trust::{Reachability, TrustChange};
 
 /// How many hosts this profile does not trust it holds descriptions of.
@@ -358,11 +358,11 @@ impl Daemon {
     /// first flight sends through the relay too, however the host paired.
     fn remember_on_the_account(&mut self, host: HostId, out: &mut Vec<Output>) {
         let uuid = Uuid::from_bytes(host.0);
-        let known = self.trust.store().entry(uuid).is_none_or(|entry| {
-            entry
-                .reachabilities
-                .contains(&Reachability::Cloud)
-        });
+        let known = self
+            .trust
+            .store()
+            .entry(uuid)
+            .is_none_or(|entry| entry.reachabilities.contains(&Reachability::Cloud));
         if !known {
             self.change_trust(TrustChange::OnTheAccount { host: uuid }, None, out);
         }

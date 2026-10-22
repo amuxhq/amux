@@ -31,6 +31,9 @@ struct Linked {
     desk_daemon: Option<Daemon>,
     /// The port a restarted desk listens on, held for as long as it runs.
     desk_socket: Option<Arc<std::net::UdpSocket>>,
+    /// The port the desk listened on before its restart, held so nothing
+    /// answers there.
+    old_port: Option<std::net::UdpSocket>,
     laptop_daemon: Daemon,
     laptop_edge: Arc<Edge>,
     laptop_runtime: Arc<ProfileRuntime>,
@@ -53,6 +56,7 @@ impl Linked {
             _laptop: laptop,
             desk_daemon: Some(desk_daemon),
             desk_socket: None,
+            old_port: None,
             laptop_daemon,
             laptop_edge,
             laptop_runtime,
@@ -106,9 +110,21 @@ impl Linked {
     /// link it lost try the port it last worked at first, so the next link
     /// to the desk is the one the test dials; the desk keeps the tickets it
     /// issued across the restart.
+    ///
+    /// The laptop's first flight also goes to the old port. An endpoint
+    /// still draining its old links there refuses new connections, which
+    /// ends the whole dial, so the port is taken once the old endpoint has
+    /// let it go.
     async fn restart_desk_elsewhere(&mut self) {
         let desk = self.desk_edge().host_id();
+        let old = self.desk_edge().lan_addr().unwrap();
         self.desk_daemon.take().unwrap().shutdown().await.unwrap();
+        let old_port = until("the old desk to let its port go", || async move {
+            std::net::UdpSocket::bind(old).map_err(|error| error.to_string())
+        })
+        .await
+        .unwrap();
+        self.old_port = Some(old_port);
         let socket = Arc::new(std::net::UdpSocket::bind("127.0.0.1:0").unwrap());
         let addr = socket.local_addr().unwrap();
         let mut options = self.desk.options("boot-1", quiet_launch());

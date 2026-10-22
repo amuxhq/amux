@@ -376,6 +376,10 @@ class TerminalJourney:
             if k not in ("AMUX_LOG", "AMUX_CONFIG", "NO_COLOR")
         }
         env.update({key: str(self.scratch) for key in ("TMPDIR", "TMP", "TEMP")})
+        # `just journey terminal` builds amux and the fakes with the
+        # desktop's features; left to itself, testnet rebuilds them without,
+        # which on a cold runner outlasts the wait for readiness.
+        env["TESTNET_BINARIES"] = str(TESTNET.parent)
         self.process = subprocess.Popen(
             [str(TESTNET), "serve", str(topology), "--root-in", str(self.scratch)],
             cwd=ROOT,

@@ -746,10 +746,14 @@ impl ForwardedDialer {
                     ));
                 }
             }
-            let (link, _) = registry
-                .native_carrier_to_peer(peer)
-                .await
-                .ok_or(ChannelError::LinkUnavailable { host_id: peer })?;
+            // The flight's own link, not any link to the peer: one the peer
+            // dialled meanwhile may have won the crossing, and this link
+            // was then refused or displaced. What the flight sent early
+            // rides this link alone, so it is handed to no call then.
+            let flown: Arc<dyn NativeLinkCarrier> = link_carrier.clone();
+            let link = registry.link_carried_by(&flown).await.ok_or_else(|| {
+                ChannelError::Handshake("a link to the host is already up".to_owned())
+            })?;
             if let Some(addr) = link_carrier
                 .remote_address()
                 .and_then(|stand_in| endpoint.socket.path_of(stand_in))

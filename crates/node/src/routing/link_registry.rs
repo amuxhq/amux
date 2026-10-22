@@ -677,6 +677,25 @@ impl LinkRegistry {
             })
     }
 
+    /// The link `carrier` carries, while it is registered.
+    pub(crate) async fn link_carried_by(
+        &self,
+        carrier: &Arc<dyn NativeLinkCarrier>,
+    ) -> Option<LinkId> {
+        self.state
+            .read()
+            .await
+            .writers
+            .iter()
+            .find(|(_, writer)| {
+                writer
+                    .native_carrier
+                    .as_ref()
+                    .is_some_and(|held| Arc::ptr_eq(held, carrier))
+            })
+            .map(|(link, _)| *link)
+    }
+
     pub(crate) async fn update_cloud_tier(&self, link: &LinkId, tier: Tier) {
         let mut state = self.state.write().await;
         let Some(writer) = state.writers.get_mut(link) else {

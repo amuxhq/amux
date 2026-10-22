@@ -966,11 +966,18 @@ async fn resume_after_host_restart_still_resumes() {
     net.stop_daemon("laptop").await.unwrap();
     net.stop_daemon("desk").await.unwrap();
     net.restart_daemon("desk").await.unwrap();
+    // The laptop comes back on another port, so the desk, redialling it
+    // since its own launch, cannot cross the laptop's first flight with a
+    // link of its own: one that won the crossing would leave the flight's
+    // early calls unanswered, and the launch would resume nothing.
+    let laptop = net.host("laptop").unwrap().clone();
+    std::fs::remove_file(
+        node::profile_dir(&laptop.data_dir, laptop.profile).join(node::LAN_PORT_FILE),
+    )
+    .unwrap();
     let mark = net.link_log("laptop").unwrap().len();
     net.restart_daemon("laptop").await.unwrap();
 
-    // The desk redials the laptop as it comes back, so the first link up
-    // may be the desk's; the first flight's own line is its catch-up.
     let caught_up = logged(&net, "laptop", "desk", LinkTransition::CaughtUp, mark).await;
     assert!(caught_up.resumed, "{caught_up:?}");
     assert_eq!(caught_up.early_data, node::link_log::EarlyData::Accepted);

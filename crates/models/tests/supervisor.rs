@@ -5,7 +5,7 @@ use models::{Bounds, SupervisorUpdate, check, walk};
 
 /// How long each exhaustive run may take under `just test`, sized to CI's
 /// four-core runner: twice the slowest of the binary's measured times there
-/// (27 s for both runs; the README lists them all), rounded up to a whole
+/// (28 s for both runs; the README lists them all), rounded up to a whole
 /// minute. A run past it says the bounds have outgrown their place.
 const BUDGET_SECONDS: f64 = 60.0;
 

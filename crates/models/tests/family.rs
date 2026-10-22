@@ -8,8 +8,8 @@ use models::{Bounds, FamilyDeliveries, check, walk};
 /// minute. The runner took up to 313 s at the bounds before the parent's
 /// unasked exit moved to the nightly bounds (396,826 states); on the
 /// enrolled Mac the cut bounds take 0.61 of that time, so about 191 s; the
-/// first runner measurement there took 178 s. A run past it says the bounds
-/// have outgrown their place.
+/// first two runner measurements there took 178 s and 128 s. A run past it
+/// says the bounds have outgrown their place.
 const BUDGET_SECONDS: f64 = 420.0;
 
 #[test]

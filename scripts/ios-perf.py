@@ -94,18 +94,15 @@ BUDGETS: dict[str, tuple[str, str, float, float | None, int | None]] = {
     "cold store read": ("ms", "cold", 50, None, 15),
     "cold fleet render": ("ms", "cold", 100, None, 15),
     # On the same network the fleet should be current within a few
-    # frames of the first one; a second is the slow-network figure.
+    # frames of the first one. A launch resumes every link with its first
+    # calls as early data, so over a gate it should cost one round trip
+    # more than the ungated launch: the budget is the ungated median the
+    # starting product measured (91.8 ms) plus the gated round trip, with
+    # the recipe's 15% over that. Through the relay the round trip crosses
+    # both gated legs, 400 ms; on the same network it is 200 ms.
     "reconciliation at 0 ms": ("ms", "reconciliation", 250, None, 15),
-    "reconciliation at 100 ms": ("ms", "reconciliation", 1000, None, 15),
-    # Away from home a phone reaches its machines through the relay, every
-    # stream handshaking end to end inside. With the phone's way to the
-    # relay and each machine's both held 100 ms, the pinned Mac measured
-    # medians of 1,608 and 1,649 ms; the budget leaves about the quarter of
-    # room the same-network figure has over its 775 ms. A person on mobile
-    # data accepts about a second and a half to see a current fleet, which
-    # fewer round trips through the relay should reach; the budget cannot
-    # ask for it before then.
-    "reconciliation through the relay at 100 ms": ("ms", "reconciliation", 2000, None, 15),
+    "reconciliation at 100 ms": ("ms", "reconciliation", 336, None, 15),
+    "reconciliation through the relay at 100 ms": ("ms", "reconciliation", 566, None, 15),
     "streaming hitch time": ("ms/s", "streaming", 5, None, None),
     "streaming main-thread CPU": ("%", "streaming", 60, None, 15),
     # What keeps the app resident when it is put away, rather than what

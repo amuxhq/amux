@@ -472,6 +472,19 @@ impl TrustStore {
         true
     }
 
+    /// Keeps that `host_id` can be reached through the relay; false when it
+    /// is not trusted or already could.
+    pub fn remember_on_the_account(&mut self, host_id: Uuid) -> bool {
+        let Some(entry) = self.entries.get_mut(&host_id) else {
+            return false;
+        };
+        if entry.reachabilities.contains(&Reachability::Cloud) {
+            return false;
+        }
+        entry.reachabilities.push(Reachability::Cloud);
+        true
+    }
+
     pub fn remember_signed_in(&mut self, host_id: Uuid, signed_in: Option<bool>) -> bool {
         let Some(entry) = self.entries.get_mut(&host_id) else {
             return false;
@@ -565,6 +578,9 @@ pub enum TrustChange {
         host: Uuid,
         entry: Option<TrustEntry>,
     },
+    /// The relay said `host` is on this profile's account, so a launch
+    /// may reach it through the relay.
+    OnTheAccount { host: Uuid },
 }
 
 impl TrustChange {
@@ -575,7 +591,8 @@ impl TrustChange {
             | TrustChange::DirectAddrs { host, .. }
             | TrustChange::Listed { host, .. }
             | TrustChange::Remember { host, .. }
-            | TrustChange::Restore { host, .. } => *host,
+            | TrustChange::Restore { host, .. }
+            | TrustChange::OnTheAccount { host } => *host,
         }
     }
 }
@@ -760,6 +777,11 @@ impl Daemon {
                     TrustChanged::Unchanged
                 })
             }
+            TrustChange::OnTheAccount { host } => Ok(if staged.remember_on_the_account(*host) {
+                TrustChanged::Remembered
+            } else {
+                TrustChanged::Unchanged
+            }),
             TrustChange::Restore { host, entry } => {
                 staged.replacement_pending.remove(host);
                 match entry {

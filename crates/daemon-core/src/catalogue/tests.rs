@@ -267,3 +267,55 @@ fn only_a_channel_begun_after_a_revocation_takes_it_back() {
     assert!(retried_now(&out, DESK, 0), "tried at once: {out:?}");
     assert_eq!(entry(&daemon, DESK).revoked, None);
 }
+
+#[test]
+fn a_trusted_host_the_relay_claims_is_remembered_as_on_the_account() {
+    let mut daemon = daemon(&[DESK]);
+    let reachable = |daemon: &Daemon| {
+        daemon
+            .trust()
+            .entry(Uuid::from_bytes(DESK.0))
+            .expect("the desk is trusted")
+            .reachabilities
+            .clone()
+    };
+    // Paired on the same network: nothing says the relay reaches it.
+    linked(&mut daemon, 1, DESK, CarrierKind::Direct, &[]);
+    assert!(!reachable(&daemon).contains(&Reachability::Cloud));
+
+    // The relay claims it: the next launch may send through the relay.
+    step(
+        &mut daemon,
+        Input::LinkUp {
+            link: LinkId(2),
+            peer: RELAY,
+            kind: CarrierKind::Relay,
+            resumed: None,
+        },
+    );
+    let out = step(
+        &mut daemon,
+        Input::LinkControl {
+            link: LinkId(2),
+            frame: Message {
+                body: Some(Body::NeighborUp(NeighborUp {
+                    host: Some(host(DESK)),
+                })),
+            },
+        },
+    );
+    let write = written(&out);
+    step(
+        &mut daemon,
+        Input::JobDone {
+            job: write,
+            result: JobResult::Done,
+        },
+    );
+    assert!(reachable(&daemon).contains(&Reachability::Cloud));
+
+    // A claim on a link that is not the relay's says nothing of the account.
+    let mut daemon = self::daemon(&[DESK]);
+    linked(&mut daemon, 1, numbered(1), CarrierKind::Direct, &[DESK]);
+    assert!(!reachable(&daemon).contains(&Reachability::Cloud));
+}

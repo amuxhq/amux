@@ -29,8 +29,9 @@ use uuid::Uuid;
 
 use crate::Daemon;
 use crate::ids::{ChannelId, HostId, LinkId};
+use crate::payload::CarrierKind;
 use crate::io::Output;
-use crate::trust::TrustChange;
+use crate::trust::{Reachability, TrustChange};
 
 /// How many hosts this profile does not trust it holds descriptions of.
 pub const HOST_CAP: usize = 1000;
@@ -323,11 +324,19 @@ impl Daemon {
                 self.revocation_cleared(peer, out);
             }
         }
+        let relayed = self
+            .routing
+            .links
+            .link(link)
+            .is_some_and(|up| up.kind == CarrierKind::Relay);
         for host in claimed {
             let Some(id) = HostId::from_slice(&host.host_id).filter(|id| other(*id)) else {
                 continue;
             };
             self.remember_said(id, host, out);
+            if relayed {
+                self.remember_on_the_account(id, out);
+            }
             self.routing
                 .catalogue
                 .claim_up(peer, id, Said::from_wire(host), &trusted);
@@ -343,6 +352,20 @@ impl Daemon {
             self.routing.catalogue.relay_gone(peer);
         }
         self.touched.host_set = true;
+    }
+
+    /// Keeps that the relay claimed a trusted host, so the next launch's
+    /// first flight sends through the relay too, however the host paired.
+    fn remember_on_the_account(&mut self, host: HostId, out: &mut Vec<Output>) {
+        let uuid = Uuid::from_bytes(host.0);
+        let known = self.trust.store().entry(uuid).is_none_or(|entry| {
+            entry
+                .reachabilities
+                .contains(&Reachability::Cloud)
+        });
+        if !known {
+            self.change_trust(TrustChange::OnTheAccount { host: uuid }, None, out);
+        }
     }
 
     /// Keeps what a trusted host said of itself, when it moved.

@@ -41,7 +41,7 @@ Use whatever is cheapest that still shows the problem:
   agent's recorded traffic in `providers/<agent>/`: testers use real agents only, so the scripted repro that
   takes the model out of it is built in triage;
 - a topology and a few `testnet ctl` steps, from `session.jsonl`;
-- a terminal set (`journeys/sets`) for a screen state;
+- a storybook story (`crates/shot/src/stories.rs`) for a screen state;
 - the dump's own facts, as an interpreter fixture.
 
 ## 4. Write the failing test where that stage's tests live

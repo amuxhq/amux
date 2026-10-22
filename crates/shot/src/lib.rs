@@ -2,6 +2,8 @@
 //! the same buffers the component goldens compare, rasterized with
 //! vendored fonts so a reviewer sees what the text goldens describe.
 
+pub mod stories;
+
 use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter};
 use std::path::{Path, PathBuf};

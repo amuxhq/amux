@@ -605,8 +605,7 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 | [`models`](../crates/models/README.md) | The protocol's promises as properties, explored by a checker over the real code; one fault vocabulary for every model's environment. |
 | [`replay-support`](../crates/replay-support/src/lib.rs) | Replays a debug bundle through its four stages with the protocol's properties judged at every step, and manages provider recordings for the capture tools. |
 | [`fake-amux`](../crates/fake-amux/src/main.rs) | A stand-in `amux` binary running the real supervisor over a scripted daemon. |
-| [`shot`](../crates/shot/README.md) | Deterministic PNG renderings of the terminal client's named states. |
-| [`tui-set`](../crates/tui-set/src/main.rs) | Serves a declared world on a test network and runs the terminal client on it, or draws it headlessly through `shot`. |
+| [`shot`](../crates/shot/README.md) | Deterministic PNG renderings of the terminal client's named states, and its storybook of whole screens. |
 | [`xtask`](../crates/xtask/src/main.rs) | Developer tasks: protobuf codegen, Swift type generation, re-stamping, iOS verification. |
 
 ## The dependency policy
@@ -623,7 +622,7 @@ workspace crates, and ignores dev-dependencies. Its rules:
    missing from the policy fails too.
 2. **Production never depends on test support.** `patience`, `testnet`,
    `qualification`, `claude-specs`, `codex-specs`, `provider-fakes`,
-   `fake-amux`, `shot`, `tui-set`, `models` and `replay-support` may be
+   `fake-amux`, `shot`, `models` and `replay-support` may be
    depended on only by each other.
 3. **The UI never reaches the daemon or a provider.** `model`, `client`,
    `ui-state`, `ui-view`, `ui-runtime`, `tui` and `app-runtime` may not

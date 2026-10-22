@@ -113,7 +113,6 @@ TEST_SUPPORT = {
     "provider-fakes",
     "fake-amux",
     "shot",
-    "tui-set",
     "models",
     "replay-support",
 }
@@ -143,11 +142,10 @@ SUPPORT_ALLOWED_LOCAL = {
     # A stand-in amux binary that runs the real supervisor, so the
     # supervisor tests exec and roll back the shipped code.
     "fake-amux": {"agent-dir", "node"},
-    # Renders the terminal client's named states to PNG for review.
-    "shot": {"tui"},
-    # Serves a declared world with `testnet serve` and runs the terminal
-    # client on it, or draws it headlessly through `shot`.
-    "tui-set": {"agent-dir", "client", "settings", "shot", "tui", "ui-runtime", "wire"},
+    # Renders the terminal client's named states to PNG for review, and
+    # its storybook, whose chats are recorded sessions replayed through the
+    # interpreters.
+    "shot": {"interpret", "tui", "ui-state", "ui-view", "wire"},
     # Replays a dump bundle's stages with the models' properties judged at
     # every step: facts through the interpreter (the journal for
     # comparison), the daemon core from its checkpoint over its store,

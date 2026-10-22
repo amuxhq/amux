@@ -140,6 +140,18 @@ full-debug:
 shot *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 600 cargo run --locked --quiet -p shot --bin amux-shot -- "$@"
 
+# Interactive, so only the build and a capture are bounded; `just storybook
+# capture --out DIR` draws every story to text and PNG (docs/TERMINAL.md).
+# Step through the terminal client's named screens, rebuilding on save.
+storybook *ARGS:
+    #!/usr/bin/env sh
+    set -eu
+    {{bounded}} 900 cargo build --locked -q -p shot --bin amux-storybook
+    case "${1-}" in
+    capture) exec {{bounded}} 600 target/debug/amux-storybook "$@" ;;
+    *) exec target/debug/amux-storybook --watch "$@" ;;
+    esac
+
 # Run one declared journey through its real client. System journeys are the
 # built binaries on the fakes, printing their transcripts. `just journey
 # terminal all` runs every terminal story, keeps going after a failure,
@@ -186,21 +198,6 @@ tui-evidence *ARGS:
 # Start a named world of real agents from environments/NAME.json (docs/TESTNET.md).
 env NAME:
     scripts/py -B scripts/env.py {{NAME}}
-
-# Serve a declared world from journeys/sets on real daemons and the fake
-# providers, and run the real terminal client on it in this terminal; the
-# door's address is in target/tui-set/NAME/door.json. `--frames KEYS
-# [--size WxH]...` draws the client headlessly to text and PNG instead.
-# `just tui-set list` lists the sets. The session is interactive, so only
-# the build and frames are bounded.
-tui-set NAME *ARGS:
-    #!/usr/bin/env sh
-    set -eu
-    {{bounded}} 900 cargo build --locked -p amux -p provider-fakes -p testnet -p tui-set --bins {{desktop_features}}
-    case " $* " in
-    *" --frames"*) exec {{bounded}} 600 target/debug/tui-set "$@" ;;
-    *) exec target/debug/tui-set "$@" ;;
-    esac
 
 # Fuzz the code that reads bytes amux did not write (the Claude and Codex
 # decoders, the journal's frames and reader, redaction) for 30 seconds a

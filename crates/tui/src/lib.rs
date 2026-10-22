@@ -19,6 +19,8 @@ pub(crate) mod markdown;
 pub(crate) mod panel;
 pub(crate) mod report;
 pub mod run;
+#[cfg(any(test, feature = "fixtures"))]
+pub mod sessions;
 pub mod setup;
 pub mod terminal;
 pub(crate) mod text;

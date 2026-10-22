@@ -931,7 +931,7 @@ cargo = [
 
 [[suite]]
 name = "terminal-evidence-tools"
-contract = "Terminal evidence tools render deterministic PNGs of every vocabulary component and verify them."
+contract = "Terminal evidence tools render deterministic PNGs of every vocabulary component and verify them, and every storybook story draws at every size in both palettes."
 paths = ["crates/shot/src"]
 recipe = "just test-crate shot"
 boundary = "Native presentation"
@@ -946,24 +946,7 @@ update = ""
 cargo = [
   { package = "shot", kind = "lib", targets = ["shot"] },
   { package = "shot", kind = "bin", targets = ["amux-shot"] },
-]
-
-[[suite]]
-name = "tui-set"
-contract = "Every declared world under journeys/sets loads, runs its client on a host it declares, and names only agents it declares or spawns; every plan-mode agent proposes a plan."
-paths = ["crates/tui-set/src", "journeys/sets"]
-recipe = "just test-crate tui-set"
-boundary = "Journeys"
-oracle = "Each set's topology and timeline checked against each other."
-real = ["set files"]
-substituted = []
-time = "none"
-capabilities = ["Rust toolchain"]
-lane = "tool"
-evidence = ""
-update = "Edit the set's JSON under journeys/sets."
-cargo = [
-  { package = "tui-set", kind = "bin", targets = ["tui-set"] },
+  { package = "shot", kind = "bin", targets = ["amux-storybook"] },
 ]
 
 [[suite]]

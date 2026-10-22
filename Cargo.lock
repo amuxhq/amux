@@ -4329,8 +4329,11 @@ name = "shot"
 version = "0.4.0"
 dependencies = [
  "clap",
+ "crossterm 0.29.0",
  "fontdue",
+ "interpret",
  "png 0.17.16",
+ "prost",
  "ratatui",
  "serde",
  "serde_json",
@@ -4338,6 +4341,9 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "tui",
+ "ui-state",
+ "ui-view",
+ "wire",
 ]
 
 [[package]]
@@ -5277,31 +5283,6 @@ dependencies = [
  "ui-view",
  "unicode-segmentation",
  "unicode-width 0.2.2",
- "wire",
-]
-
-[[package]]
-name = "tui-set"
-version = "0.1.0"
-dependencies = [
- "agent-dir",
- "anyhow",
- "clap",
- "client",
- "crossterm 0.29.0",
- "hyper-util",
- "ratatui",
- "serde",
- "serde_json",
- "serde_yaml",
- "settings",
- "shell-words",
- "shot",
- "tokio",
- "tonic",
- "tower",
- "tui",
- "ui-runtime",
  "wire",
 ]
 

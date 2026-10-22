@@ -40,7 +40,6 @@ members = [
     "crates/supervisor-core",
     "crates/testnet",
     "crates/tui",
-    "crates/tui-set",
     "crates/ui-runtime",
     "crates/ui-state",
     "crates/ui-view",

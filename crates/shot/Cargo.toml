@@ -3,14 +3,22 @@ name = "shot"
 version = "0.4.0"
 edition.workspace = true
 license.workspace = true
-description = "Deterministic PNG renderer for named amux TUI states"
+description = "Deterministic PNG renderer and storybook for named amux TUI states"
 publish = false
 
 [dependencies]
 tui = { workspace = true, features = ["fixtures"] }
+# The storybook replays recorded sessions through the interpreters, which
+# the client itself never links.
+interpret = { workspace = true }
+ui-state = { workspace = true }
+ui-view = { workspace = true }
+wire = { workspace = true }
 clap = { workspace = true }
+crossterm = { workspace = true }
 fontdue = { workspace = true }
 png = { workspace = true }
+prost = { workspace = true }
 ratatui = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -23,3 +31,7 @@ tempfile = { workspace = true }
 [[bin]]
 name = "amux-shot"
 path = "src/main.rs"
+
+[[bin]]
+name = "amux-storybook"
+path = "src/storybook.rs"

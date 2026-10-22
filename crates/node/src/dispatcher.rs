@@ -183,6 +183,7 @@ impl TunnelDispatcher {
                 };
                 let dispatcher = dispatcher.clone();
                 let connection_shutdown = shutdown_rx.clone();
+                let socket = endpoint.socket.clone();
                 connection_tasks.spawn(async move {
                     let connecting = match incoming.accept() {
                         Ok(connecting) => connecting,
@@ -196,7 +197,7 @@ impl TunnelDispatcher {
                         return;
                     };
                     if let Err(error) = dispatcher
-                        .dispatch_quic(arrival, addr, path, through, connection_shutdown)
+                        .dispatch_quic(arrival, addr, path, through, &socket, connection_shutdown)
                         .await
                     {
                         report_outcome(addr, error);
@@ -327,6 +328,7 @@ impl TunnelDispatcher {
         addr: std::net::SocketAddr,
         path: PathKind,
         through: Option<daemon_core::LinkId>,
+        socket: &std::sync::Arc<crate::link::socket::LinkSocket>,
         shutdown_rx: watch::Receiver<bool>,
     ) -> Result<(), DispatchError> {
         let serve = |ctx: LinkCtx, connection| {
@@ -335,7 +337,8 @@ impl TunnelDispatcher {
                 std::sync::Arc::new(
                     QuicCarrier::from_accepted(connection)
                         .with_path(path)
-                        .carried_through(through),
+                        .carried_through(through)
+                        .following(socket.clone()),
                 ),
                 crate::routing::ConnectRole::Acceptor,
             )

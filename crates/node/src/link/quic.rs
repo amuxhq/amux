@@ -407,7 +407,8 @@ impl QuicCarrier {
         );
         let control = open_control(&connection, None).await?;
         Ok(Self::new(connection, CarrierKind::Quic, Some(control))
-            .with_path(PathKind::of_addr(addr)))
+            .with_path(PathKind::of_addr(addr))
+            .following(endpoint.socket.clone()))
     }
 
     /// Dials `peer` at `addr` resuming with the ticket its last link
@@ -429,6 +430,7 @@ impl QuicCarrier {
         let control = open_control(&connection, early.as_ref()).await?;
         Ok(Self::new(connection, CarrierKind::Quic, Some(control))
             .with_path(PathKind::of_addr(addr))
+            .following(endpoint.socket.clone())
             .with_early(early))
     }
 
@@ -554,7 +556,8 @@ impl QuicCarrier {
         let control = open_control(&connection, None).await?;
         Ok(Self::new(connection, CarrierKind::Quic, Some(control))
             .with_path(endpoint.forwarded_kind(through))
-            .carried_through(Some(through)))
+            .carried_through(Some(through))
+            .following(endpoint.socket.clone()))
     }
 
     /// Dials the far end of `io`, a byte stream made one more path of the
@@ -676,8 +679,11 @@ impl QuicCarrier {
         self
     }
 
-    /// Reads the link's path from `socket`'s route for the peer.
-    fn following(mut self, socket: Arc<LinkSocket>) -> Self {
+    /// Reads the link's path from `socket`'s route for the peer, where the
+    /// socket has one: every link to a peer on the profile's socket goes
+    /// where its path machine moved the peer, whichever path it came up
+    /// on.
+    pub(crate) fn following(mut self, socket: Arc<LinkSocket>) -> Self {
         self.follows = Some(socket);
         self
     }
@@ -855,11 +861,13 @@ impl LinkCarrier for QuicCarrier {
     }
 
     fn forwarded_through(&self) -> Option<super::socket::LinkId> {
-        match &self.follows {
-            Some(socket) => match socket.path_of(self.connection.remote_address())? {
-                super::socket::Path::Forwarded(through) => Some(through),
-                _ => None,
-            },
+        let routed = self
+            .follows
+            .as_ref()
+            .and_then(|socket| socket.path_of(self.connection.remote_address()));
+        match routed {
+            Some(super::socket::Path::Forwarded(through)) => Some(through),
+            Some(_) => None,
             None => self.through,
         }
     }

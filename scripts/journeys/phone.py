@@ -388,13 +388,19 @@ class PhoneJourney:
 
     # --- the phone --------------------------------------------------------
 
-    def launch(self, *extra: str, found: list[str] | None = None, geometry: bool = True) -> None:
+    def launch(
+        self,
+        *extra: str,
+        found: list[str] | None = None,
+        geometry: bool = True,
+        relay_quic: str | None = None,
+    ) -> None:
         """The debug app, installed fresh so no earlier run's identity or
         trust is on the phone, launched against this net."""
         simctl("terminate", self.udid, BUNDLE_ID, timeout=60) if self._running() else None
         subprocess.run(["xcrun", "simctl", "uninstall", self.udid, BUNDLE_ID], capture_output=True, timeout=120)
         simctl("install", self.udid, str(self.build), timeout=300)
-        self.relaunch(*extra, found=found, geometry=geometry)
+        self.relaunch(*extra, found=found, geometry=geometry, relay_quic=relay_quic)
 
     def relaunch(
         self,

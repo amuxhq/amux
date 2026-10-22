@@ -119,6 +119,42 @@ class ARelayLaunchGatesEveryWayToTheRelay(unittest.TestCase):
         )
 
 
+class ALaunchingJourney(ARecordingJourney):
+    """Launches that answer every mark at once and record the relay each
+    was told to dial."""
+
+    MARKS = ("firstCachedFrame", "storeReadBegan", "nodeStarted", "fleetOpenBegan", "storeReadEnded", "reconciled")
+
+    def __init__(self):
+        super().__init__()
+        self.dialled = []
+
+    def quit(self):
+        pass
+
+    def relaunch(self, *extra, geometry=True, relay_quic=None):
+        self.dialled.append(relay_quic)
+
+    def app(self, body, timeout=None):
+        super().app(body, timeout)
+        return {"marks": [{"signpost": mark, "sinceProcessStart": 0.5} for mark in self.MARKS]}
+
+
+class EveryLaunchDialsTheRelayThroughItsGate(unittest.TestCase):
+    def test_launches_at_home_and_away_dial_the_gate(self):
+        # Signed in through anything but the gate, the relay would observe
+        # the phone's own loopback socket and the machines would punch to it
+        # around every gate the run sets.
+        journey = ALaunchingJourney()
+        run = perf.Run(journey, ["reconciliation"])
+        run.gate_the_relay()
+        with mock.patch.object(perf, "LAUNCH_SPACING_SECONDS", 0):
+            run.cold_launches(0)
+            run.leave_home()
+            run.relay_launches(100)
+        self.assertEqual(journey.dialled, ["127.0.0.1:7000"] * (2 * perf.SAMPLES))
+
+
 class TheJudge(unittest.TestCase):
     def samples(self, **given):
         samples = {name: [] for name in perf.BUDGETS}

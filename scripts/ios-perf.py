@@ -279,17 +279,17 @@ class Run:
         every machine has been reached through the relay."""
         self.relay_latency(latency_ms)
         for attempt in range(SAMPLES):
-            marks = self.marked_launch(attempt, f"through the relay at {latency_ms} ms", relay_quic=self.relay_gate)
+            marks = self.marked_launch(attempt, f"through the relay at {latency_ms} ms")
             self.samples[f"reconciliation through the relay at {latency_ms} ms"].append(
                 marks["reconciled"] - marks["storeReadEnded"]
             )
 
-    def marked_launch(self, attempt: int, named: str, relay_quic: str | None = None) -> dict[str, float]:
+    def marked_launch(self, attempt: int, named: str) -> dict[str, float]:
         """One launch, terminated and spaced from the last, read back to its
         reconciliation, with every mark a cold launch needs."""
         self.journey.quit()
         self.space_launches()
-        self.journey.relaunch(geometry=False, relay_quic=relay_quic)
+        self.journey.relaunch(geometry=False, relay_quic=self.relay_gate)
         marks = self.await_reconciled(120)
         for needed in ("firstCachedFrame", "storeReadBegan", "nodeStarted", "fleetOpenBegan", "storeReadEnded"):
             if needed not in marks:
@@ -385,7 +385,13 @@ class Run:
 
     def measure_everything(self) -> None:
         self.gate_the_machines()
-        self.journey.launch()
+        # Every launch dials the relay through its gate, whose socket toward
+        # the relay takes datagrams from the relay alone, as a strict router
+        # does. Signed in through anything else, the relay would observe the
+        # phone's own loopback socket, every machine would punch straight to
+        # it, and the relay launches would measure that ungated path.
+        self.gate_the_relay()
+        self.journey.launch(relay_quic=self.relay_gate)
         self.pair_through_the_gates()
         # A launch the cold launches are compared against: the same install,
         # the fleet already in its store. Every reconciled launch below reads
@@ -397,14 +403,13 @@ class Run:
                 self.cold_launches(latency)
             self.latency(0)
         if self.takes("reconciliation"):
-            self.gate_the_relay()
             self.leave_home()
             self.relay_launches(LATENCIES_MS[-1])
             self.come_home()
         if self.takes("idle") or self.takes("streaming"):
             self.journey.quit()
             self.space_launches()
-            self.journey.relaunch(geometry=False)
+            self.journey.relaunch(geometry=False, relay_quic=self.relay_gate)
             self.await_reconciled(120)
             self.open_the_conversation()
             if self.takes("idle"):

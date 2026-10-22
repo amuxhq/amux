@@ -1650,23 +1650,30 @@ async fn a_held_prompt_whose_agent_exits_while_its_chat_is_closed_stays_in_the_d
             while let Ok(event) = app.receiver.try_recv() {
                 app.event(event);
             }
-            let holds = app
-                .fleet
-                .session(&key)
-                .is_some_and(|session| session.state().held().count() > 0);
+            // Not just no longer held: a resent prompt is in flight until
+            // its refusal comes back, and only then is it on its way to the
+            // draft.
+            let ended = app.fleet.session(&key).is_none_or(|session| {
+                session.state().inputs().iter().all(|sent| {
+                    !matches!(
+                        sent.state,
+                        ui_state::InputState::Held | ui_state::InputState::Sent
+                    )
+                })
+            });
             let exited = app
                 .fleet
                 .state()
                 .agent(&key)
                 .is_some_and(|entry| entry.lifecycle() == wire::Lifecycle::Exited);
-            if exited && !holds {
+            if exited && ended {
                 return;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     })
     .await
-    .expect("the agent exits and nothing is held any more");
+    .expect("the agent exits and nothing is held or in flight any more");
     for _ in 0..10 {
         app.housekeep();
         while let Ok(event) = app.receiver.try_recv() {

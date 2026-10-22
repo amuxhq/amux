@@ -54,6 +54,10 @@ final class ComponentSnapshotTests: XCTestCase {
     func testComponents() async throws {
         UIView.setAnimationsEnabled(false)
         defer { UIView.setAnimationsEnabled(true) }
+        // A search field holding words draws its clear button on a Mac's
+        // simulator and not on a CI runner's, with nothing in the example
+        // to tell them apart; drawn always, the picture is the same on both.
+        UISearchTextField.appearance().clearButtonMode = .always
         let environment = ProcessInfo.processInfo.environment
         let requested = Self.requestedIDs(environment["AMUX_SNAPSHOT_ONLY"])
         let available = Set(ComponentCatalog.examples.map(\.id))

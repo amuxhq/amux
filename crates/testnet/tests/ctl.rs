@@ -431,6 +431,12 @@ fn down_never_kills_a_process_that_took_a_crashed_nets_pid() {
 #[test]
 fn a_qa_tester_is_refused_fake_agents() {
     let run = tempfile::tempdir().expect("a run folder");
+    // A topology may start a QA run's net only when all of it is real.
+    std::fs::write(
+        run.path().join("topology.json"),
+        r#"{"hosts": [{"name": "desk", "provider": "fake"}]}"#,
+    )
+    .expect("a topology");
     for args in [
         &["host", "add", "desk", "--provider", "fake"][..],
         &["host", "add", "desk", "--script", "hello.json"],

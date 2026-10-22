@@ -518,7 +518,9 @@ fn run(folder: &Folder, command: Command) -> Result<Outcome, String> {
             let clients = match topology.as_deref() {
                 Some(path) => {
                     if in_qa_run() {
-                        world::real_only(path)?;
+                        world::real_only(path).map_err(|unreal| {
+                            format!("a QA tester uses real agents only, as a person meets them: {unreal}")
+                        })?;
                     }
                     world::clients(path)?
                 }

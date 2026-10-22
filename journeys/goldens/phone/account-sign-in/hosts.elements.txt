@@ -1,9 +1,9 @@
 shell |  | hosts | 0,62,402,778
 home |  | ready | 0,174,402,617
 hosts |  | 1 reachable | 0,196,402,595
-hosts.row.<desk> | desk, reachable through the relay | through-the-relay | 16,202,370,65
+hosts.row.<desk> | desk, macOS, reachable through the relay | through-the-relay | 16,202,370,65
 hosts.subtitle |  | 1 reachable | 16,166,370,22
- | desk, reachable through the relay |  | 16,202,370,65
+ | desk, macOS, reachable through the relay |  | 16,202,370,65
  | Hosts |  | 16,127,93,42
  | 1 reachable |  | 16,170,77,18
  | Agents |  | 111,795,94,54

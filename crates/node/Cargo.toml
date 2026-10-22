@@ -14,7 +14,11 @@ async-trait = { workspace = true }
 base64 = "0.22"
 bytes = { workspace = true }
 chrono = { workspace = true }
+core-ring = { workspace = true }
 curve25519-dalek = { workspace = true }
+daemon-core = { workspace = true }
+relay-core = { workspace = true }
+path-core = { workspace = true }
 futures-util = { workspace = true }
 gethostname = { workspace = true }
 http-body-util = { workspace = true }
@@ -25,6 +29,7 @@ oauth2 = { workspace = true }
 quinn = { workspace = true }
 rcgen = { workspace = true }
 release = { workspace = true }
+supervisor-core = { workspace = true }
 ring = { workspace = true }
 rustls = { workspace = true }
 rustls-pemfile = { workspace = true }
@@ -33,7 +38,6 @@ tokio-rustls = { workspace = true }
 tokio-util = { workspace = true }
 tower = { workspace = true }
 webpki-roots = { workspace = true }
-yamux = { workspace = true }
 # The dump path's redactor: the one place the daemon decodes a body.
 interpret = { workspace = true }
 journal = { workspace = true }
@@ -51,7 +55,7 @@ tonic = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
 version-stamp = { workspace = true }
-wire = { workspace = true }
+wire = { workspace = true, features = ["grpc"] }
 zstd = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
@@ -76,3 +80,4 @@ journal = { workspace = true, features = ["synthetic"] }
 patience = { workspace = true }
 provider-fakes = { workspace = true }
 tempfile = { workspace = true }
+tracing-subscriber = { workspace = true }

@@ -142,6 +142,15 @@ impl Installation {
             profiles::host_id(&dir).map_err(|error| StartError::Profile { profile, error })?;
         let store = store::Sqlite::open(&dir.join(STORE), host.as_bytes().to_vec())
             .map_err(|error| StartError::Store { profile, error })?;
+        // Every write is the core's, which holds its commits while its
+        // checkpoint's WAL job runs; that job and the clean shutdown's
+        // flush are the only checkpoints.
+        store
+            .leave_checkpoints_to_owner()
+            .map_err(|error| StartError::Store {
+                profile,
+                error: error.into(),
+            })?;
         Ok(ProfileRuntime::open(Profile {
             profile,
             host,
@@ -366,6 +375,10 @@ fn since_last_run(
     events
 }
 
+/// How often the desktop daemon reads the machine's interface addresses
+/// for a change: a network change is noticed within it.
+const INTERFACE_POLL: std::time::Duration = std::time::Duration::from_secs(2);
+
 pub struct Daemon {
     installation: Arc<Installation>,
     generation: Generation,
@@ -417,8 +430,9 @@ pub async fn start(
     };
     // Before anything is served: a peer must never see this run's
     // revisions under the previous generation.
-    let (generation, last_run) =
-        Generation::start(&data_dir, &boot_id, crate::version()).map_err(StartError::Generation)?;
+    let (generation, last_run) = Generation::start(&data_dir, &boot_id, crate::version())
+        .await
+        .map_err(StartError::Generation)?;
 
     let installation = Arc::new(Installation {
         data_dir,
@@ -569,6 +583,34 @@ impl Daemon {
         self.uploader.as_ref().map(analytics::Uploader::flusher)
     }
 
+    /// Watches the machine's interface addresses and, whenever they change,
+    /// tells every profile's edge its network changed. Never resolves.
+    pub async fn follow_interfaces(&self) {
+        let mut seen = crate::edge::interface_addrs();
+        let mut every = tokio::time::interval(INTERFACE_POLL);
+        every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            every.tick().await;
+            let now = crate::edge::interface_addrs();
+            if now == seen {
+                continue;
+            }
+            seen = now;
+            for runtime in self.profiles() {
+                let Some(edge) = runtime.edge() else {
+                    continue;
+                };
+                if let Err(error) = edge.network_changed() {
+                    tracing::warn!(
+                        profile = %runtime.host(),
+                        %error,
+                        "binding the link socket afresh failed"
+                    );
+                }
+            }
+        }
+    }
+
     /// Resolves once a client has asked the daemon to shut down.
     pub async fn shutdown_requested(&self) {
         let mut shutdown = self.installation.shutdown.subscribe();
@@ -597,18 +639,23 @@ impl Daemon {
                 .await;
         }
         for hosted in hosted.values() {
+            // Before the watchers stop: a dump in flight still gets its
+            // agents' parts until its time is up.
+            hosted.runtime.finish_dumps().await;
             hosted.runtime.stop_background().await;
             hosted.runtime.stop_watching().await;
         }
         for hosted in hosted.values() {
             hosted
                 .runtime
-                .store()
+                .read_store(|store| store.flush_to_drive())
                 .await
-                .flush_to_drive()
+                .map_err(io::Error::other)?
                 .map_err(io::Error::other)?;
         }
-        self.generation.mark_clean(&self.installation.data_dir)?;
+        self.generation
+            .mark_clean(&self.installation.data_dir)
+            .await?;
         drop(hosted);
         // Said while the lock is still held: whoever waits for the lock to
         // free reads a log that already ends here.

@@ -1,54 +1,41 @@
-//! One agent's life: the interpreter between the provider and the journal,
-//! the daemon's control connection, and the lifecycle that decides when the
-//! process ends.
+//! The agent process's driver: the provider child, its terminal or
+//! app-server socket, the hooks socket, the control socket, attach serving
+//! and the journal writer around the agent core.
 //!
-//! Starting and running are the interpreter's business. The host adds what
-//! only a process can know: whether a daemon is connected, how long it has
-//! been gone, and whether this incarnation is on its way out.
+//! Everything the process hears becomes an [`Input`] to
+//! [`agent_core::Agent`], stepped with the clock as of that moment, and
+//! every [`Output`] it asks for is carried out here, in order: facts-ring
+//! lines, blobs and journal steps written inline, frames to the daemon,
+//! writes to the provider, timers, jobs and the process's end. What the
+//! lifecycle decides (grace, drain, stop and the one-shot exit) is the
+//! core's; see its crate.
 //!
-//! - With no daemon connected, at start or after ctl.sock's end of stream,
-//!   a grace timer runs; a daemon dialling in cancels it. When it runs out
-//!   the agent drains: it finishes the running turn, writes its final
-//!   boundary and exits. An ask left open with nobody to answer it gets the
-//!   drain deadline and then exits "orphaned while waiting for you".
-//! - A stop cancels the turn the provider's way and drains the same way; a
-//!   kill, the daemon's escalation past its stop deadline, ends the process
-//!   group at once and writes nothing. A draining agent answers new input as
-//!   `REFUSAL_DRAINING`.
-//! - Asking the provider to finish sends it SIGTERM, on which every provider
-//!   cleans up its commands; whatever still runs below it once it has
-//!   exited is killed (see the tree module).
-//! - An agent with a parent is one-shot: at a turn end with nothing queued,
-//!   running or accepted-but-unconsumed, and the last report of every child
-//!   incarnation the daemon named live already taken, it exits, and input
-//!   arriving while it does is refused as `REFUSAL_EXITING`. A turn end
-//!   after which the incarnation exits is marked last, so its parent can
-//!   tell its final report from an earlier one.
-//! - The provider exiting ends the agent, whatever state it was in.
+//! Some of what the process does is not the agent's state and never meets
+//! the core: raw terminal bytes go to the terminal log, keys and sizes an
+//! attached terminal sends go straight to the provider, and the messaging
+//! credentials terminal Claude's hooks report go to the provider that uses
+//! them.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use interpret::{Effect, Event, Interpreter, Stepped, reply};
+use agent_core::{
+    Agent, AgentJob, ConnId, DumpReason, Input, JobId, JobResult, Output, Resumed, TimerId,
+};
+use core_ring::{DumpKind, DumpLimit, Ring};
+use interpret::Interpreter;
+use interpret::ring::Entry;
 use tokio::io::AsyncReadExt;
-use tokio::sync::{Notify, mpsc, watch};
-use wire::{AgentHello, AgentSpec, CtlFrame, Nudge, Phase, Verdict, ctl_frame};
+use tokio::sync::{mpsc, watch};
+use wire::{AgentSpec, CtlFrame, ctl_frame};
 
 use crate::clock::Clock;
 use crate::dir::{self, PtyLog};
 use crate::local_socket::{LocalListener, LocalStream};
 use crate::provider::{Provider, ProviderEvent};
-use crate::ring::{self, Entry, Ring};
 use crate::{AgentError, ExitCause, VERSION, attach, ctl};
 
-/// Grace after the daemon leaves, when the spec leaves it unset.
-const DEFAULT_GRACE_MS: i64 = 5 * 60 * 1000;
-/// Drain deadline for an orphaned ask, when the spec leaves it unset: the
-/// installation setting's own default.
-const DEFAULT_DRAIN_MS: i64 = 5 * 60 * 1000;
-/// How long a provider asked to finish gets before its group is killed.
-const PROVIDER_STOP_MS: i64 = 10 * 1000;
 /// Journal segment size, when the spec leaves it unset.
 const DEFAULT_SEGMENT_BYTES: u64 = 1024 * 1024;
 /// The facts ring's size across its two segments, when the spec leaves it
@@ -58,136 +45,95 @@ const DEFAULT_RING_BYTES: u64 = 4 * 1024 * 1024;
 const PTY_SEGMENT_BYTES: u64 = 256 * 1024;
 const PTY_SEGMENTS_KEPT: usize = 4;
 
-enum Mode {
-    Running,
-    Draining {
-        why: Drain,
-        /// Set while an ask is open during a drain with no daemon.
-        ask_until: Option<i64>,
-    },
-    Exiting {
-        cause: ExitCause,
-        /// When the provider's group is killed if it has not exited.
-        until: i64,
-    },
-}
+/// How the agent's stderr names a dump its core asked for.
+pub const AGENT_CORE_DUMP: &str = "the agent core: ";
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Drain {
-    /// The daemon was gone past the grace: the running turn finishes.
-    DaemonLost,
-    /// The daemon stopped the agent: the turn was cancelled the provider's
-    /// own way, and the agent exits once it has ended.
-    Stop,
-}
-
-impl Drain {
-    fn cause(self) -> ExitCause {
-        match self {
-            Drain::DaemonLost => ExitCause::DaemonLost,
-            Drain::Stop => ExitCause::Stopped,
-        }
-    }
-}
-
-/// The children this agent waits on. Every child incarnation ends with
-/// exactly one last report to its parent: the report of a turn the child
-/// marked as its incarnation's last, or the report that it exited. So the agent
-/// keeps each direct child incarnation the daemon names live, and whether
-/// its last report has come; a one-shot agent exits at a turn end only
-/// once every one has. A child's last report starts a turn of its own, at
-/// whose end the check runs again, so nothing waits on the daemon's word
-/// that a child has gone.
-///
-/// Children are told apart, and last reports from earlier ones, because a
-/// count is not enough: one child's report can start a turn that spawns the
-/// next before the daemon's count of live children ever falls to none, and
-/// a child with its own child reports mid-way and again at its end.
-#[derive(Default)]
-struct Awaited {
-    /// Each direct child incarnation named live or heard from, by agent id
-    /// and incarnation: whether its last report has come. A report and the
-    /// daemon's word of its incarnation can come in either order.
-    children: HashMap<(Vec<u8>, u32), bool>,
-}
-
-impl Awaited {
-    /// The daemon's word of which child incarnations are live: each owes a
-    /// last report, unless it already came.
-    fn children(&mut self, frame: &wire::Children) {
-        for child in &frame.children {
-            self.children
-                .entry((child.agent_id.clone(), child.incarnation))
-                .or_insert(false);
-        }
-    }
-
-    /// A turn or exit report taken from incarnation `incarnation` of
-    /// the child `from`; `last` when it is that incarnation's last. A
-    /// mid-way report alone leaves the incarnation awaited.
-    fn report(&mut self, from: &[u8], incarnation: u32, last: bool) {
-        *self
-            .children
-            .entry((from.to_vec(), incarnation))
-            .or_insert(false) |= last;
-    }
-
-    /// Every child incarnation seen has sent its last report.
-    fn none(&self) -> bool {
-        self.children.values().all(|done| *done)
-    }
-}
-
-/// The daemon's connection: its id, so frames from a replaced one are
-/// ignored, and its outgoing frames.
+/// The daemon's connection: its id, so frames for a replaced one are
+/// dropped, and its outgoing frames.
 struct Daemon {
-    id: u64,
+    id: ConnId,
     frames: mpsc::UnboundedSender<CtlFrame>,
+    /// The agent's Hello has been written to it: the daemon reads the Hello
+    /// first and drops a connection that starts with anything else.
+    greeted: bool,
 }
 
-pub(crate) struct Host<I: Interpreter> {
+pub(crate) struct Driver<I: Interpreter> {
     dir: PathBuf,
     spec: AgentSpec,
     clock: Arc<dyn Clock>,
-    state: I::State,
+    agent: Agent<I>,
     journal: journal::Writer,
-    ring: Ring,
+    ring: Ring<Entry>,
     pty_log: Option<PtyLog>,
     /// Where the terminal log ends, for attached terminal clients.
     written: Option<watch::Sender<u64>>,
     provider: Option<Provider>,
     daemon: Option<Daemon>,
     connections: u64,
-    grace_until: Option<i64>,
-    mode: Mode,
-    phase: Phase,
-    queue_empty: bool,
-    /// The children whose last report this agent waits for.
-    awaited: Awaited,
-    turn_ended: bool,
-    /// The turn that just ended was marked this one-shot incarnation's
-    /// last: `settle` exits it finished.
-    finishing: bool,
-    /// The interpreter asked the process to exit.
-    asked_to_exit: Option<ExitCause>,
-    last_tick: i64,
-    done: Option<ExitCause>,
-    /// Asks for the folder's git facts to be read again.
-    git_wanted: Arc<Notify>,
+    /// The timers the core armed, by when they are due.
+    timers: BTreeMap<TimerId, u64>,
+    jobs: mpsc::UnboundedSender<(JobId, JobResult)>,
+    /// The core's word that the process exits, and why.
+    exit: Option<ExitCause>,
+    /// The dumps the core asked for that were reported, by kind.
+    dumps: DumpLimit,
+    /// Dumps asked of the daemon while none was connected.
+    asks: Asks,
 }
 
-/// Everything the host listens to.
+/// The agent's own record already has a dump's shape on disk (the facts
+/// ring and its checkpoints), and the daemon's bundle gathers it: so a dump
+/// the core asks for is asked of the daemon, which writes the bundle. One
+/// asked with no daemon connected, or before the Hello on a new connection
+/// (the step of the clock before a dial can run over), waits, the newest of
+/// each kind, and goes right after the next Hello.
+#[derive(Debug, Default)]
+struct Asks {
+    waiting: BTreeMap<String, CtlFrame>,
+}
+
+impl Asks {
+    /// Asks the connected daemon for a dump once it has the Hello, or keeps
+    /// the ask until it does.
+    fn ask(&mut self, daemon: Option<&Daemon>, reason: String, invariant: String) {
+        let frame = CtlFrame {
+            of: Some(ctl_frame::Of::DumpAsked(wire::DumpAsked {
+                reason,
+                invariant: invariant.clone(),
+            })),
+        };
+        match daemon {
+            Some(daemon) if daemon.greeted && daemon.frames.send(frame.clone()).is_ok() => {}
+            _ => {
+                self.waiting.insert(invariant, frame);
+            }
+        }
+    }
+
+    /// The daemon has the agent's Hello: what waited goes now.
+    fn hello_sent(&mut self, daemon: &Daemon) {
+        for (_, frame) in std::mem::take(&mut self.waiting) {
+            let _ = daemon.frames.send(frame);
+        }
+    }
+}
+
+/// Everything the driver listens to.
 struct Channels {
     provider: mpsc::Receiver<ProviderEvent>,
     provider_tx: mpsc::Sender<ProviderEvent>,
     connections: mpsc::Receiver<LocalStream>,
-    frames: mpsc::UnboundedReceiver<(u64, Option<CtlFrame>)>,
-    frames_tx: mpsc::UnboundedSender<(u64, Option<CtlFrame>)>,
+    frames: mpsc::UnboundedReceiver<(ConnId, Option<CtlFrame>)>,
+    frames_tx: mpsc::UnboundedSender<(ConnId, Option<CtlFrame>)>,
     /// What attached terminal clients type and their sizes.
     control: mpsc::UnboundedReceiver<attach::Control>,
-    /// The folder's git facts, each time they are read.
-    git: mpsc::UnboundedReceiver<Option<wire::Git>>,
+    /// Jobs' results.
+    jobs: mpsc::UnboundedReceiver<(JobId, JobResult)>,
 }
+
+/// A write the core asked for failed.
+struct WriteFailed(String);
 
 pub(crate) async fn run<I: Interpreter>(
     dir: PathBuf,
@@ -217,6 +163,7 @@ pub(crate) async fn run<I: Interpreter>(
     let (connections_tx, connections_rx) = mpsc::channel(4);
     let (frames_tx, frames_rx) = mpsc::unbounded_channel();
     let (control_tx, control_rx) = mpsc::unbounded_channel();
+    let (jobs_tx, jobs_rx) = mpsc::unbounded_channel();
     let mut tasks = vec![tokio::spawn(accept(ctl, connections_tx))];
     if let Some(hooks) = hooks {
         tasks.push(tokio::spawn(hook_payloads(hooks, provider_tx.clone())));
@@ -253,34 +200,29 @@ pub(crate) async fn run<I: Interpreter>(
         };
         tasks.push(tokio::spawn(attach::serve(pty, how)));
     }
-    // Read once at start; each turn end asks again.
-    let git_wanted = Arc::new(Notify::new());
-    git_wanted.notify_one();
-    let (git_tx, git_rx) = mpsc::unbounded_channel();
-    tasks.push(crate::git::reader(
-        PathBuf::from(&spec.cwd),
-        spec.base_branch.clone(),
-        git_wanted.clone(),
-        git_tx,
-    ));
     let facts = dir.join(dir::PRIVATE).join(dir::FACTS);
-    let (state, first) = start::<I>(&facts, &spec);
+    let mut first = Vec::new();
+    let agent = Agent::<I>::start(
+        &spec,
+        resumed::<I>(&facts),
+        VERSION,
+        now_ms(clock.as_ref()),
+        &mut first,
+    );
     let ring = Ring::open(
         facts,
         match config.facts_ring_bytes {
             0 => DEFAULT_RING_BYTES,
             bytes => bytes,
         },
-        &interpret::encode_checkpoint(&state),
+        &agent.checkpoint().state,
     )
     .map_err(AgentError::Journal)?;
-    let now = clock.now_ms();
-    let mut host = Host::<I> {
+    let mut driver = Driver::<I> {
         dir,
-        grace_until: Some(now + ms(config.grace_ms, DEFAULT_GRACE_MS)),
         spec,
         clock,
-        state,
+        agent,
         journal,
         ring,
         pty_log,
@@ -288,24 +230,17 @@ pub(crate) async fn run<I: Interpreter>(
         provider: None,
         daemon: None,
         connections: 0,
-        mode: Mode::Running,
-        phase: Phase::Starting,
-        queue_empty: true,
-        awaited: Awaited::default(),
-        turn_ended: false,
-        finishing: false,
-        asked_to_exit: None,
-        last_tick: i64::MIN,
-        done: None,
-        git_wanted,
+        timers: BTreeMap::new(),
+        jobs: jobs_tx,
+        exit: None,
+        dumps: DumpLimit::default(),
+        asks: Asks::default(),
     };
-    for step in first {
-        host.apply(Stepped {
-            step,
-            effects: Vec::new(),
-        })
-        .await?;
-    }
+    // An incarnation that cannot write its first steps does not start.
+    driver
+        .execute(first)
+        .await
+        .map_err(|WriteFailed(why)| AgentError::Journal(std::io::Error::other(why)))?;
 
     let mut channels = Channels {
         provider: provider_rx,
@@ -314,9 +249,9 @@ pub(crate) async fn run<I: Interpreter>(
         frames: frames_rx,
         frames_tx,
         control: control_rx,
-        git: git_rx,
+        jobs: jobs_rx,
     };
-    let result = host.run(&mut channels).await;
+    let cause = driver.run(&mut channels).await;
     // The listeners live in these tasks; waiting for each to be dropped
     // removes the sockets before the lock is released, so a next
     // incarnation never has its socket removed by this one.
@@ -324,44 +259,78 @@ pub(crate) async fn run<I: Interpreter>(
         task.abort();
         let _ = task.await;
     }
-    result
+    Ok(cause)
 }
 
-impl<I: Interpreter> Host<I> {
-    async fn run(&mut self, channels: &mut Channels) -> Result<ExitCause, AgentError> {
+/// What the last incarnation left in the facts ring: the interpreter's
+/// state at its newest checkpoint and the events after it. A ring that
+/// cannot be read starts the agent over.
+fn resumed<I: Interpreter>(facts: &std::path::Path) -> Option<Resumed<I::State>> {
+    let saved = match core_ring::saved::<Entry>(facts) {
+        Ok(saved) => saved?,
+        Err(error) => {
+            eprintln!("amux agent: reading the facts ring: {error}");
+            return None;
+        }
+    };
+    match interpret::decode_checkpoint::<I::State>(&saved.checkpoint) {
+        Ok(state) => Some(Resumed {
+            state,
+            inputs: saved.inputs,
+        }),
+        Err(error) => {
+            eprintln!("amux agent: reading the checkpoint: {error}");
+            None
+        }
+    }
+}
+
+impl<I: Interpreter> Driver<I> {
+    async fn run(&mut self, channels: &mut Channels) -> ExitCause {
         match Provider::spawn(&self.spec, &self.dir, channels.provider_tx.clone()).await {
             Ok(provider) => self.provider = Some(provider),
             Err(error) => {
-                let cause = ExitCause::Unstarted(error.to_string());
-                self.feed(Event::Exiting(cause.end())).await?;
-                return Ok(cause);
+                self.feed(Input::ProviderUnstarted {
+                    why: error.to_string(),
+                })
+                .await;
             }
         }
         loop {
-            let sleep = match self.deadline() {
-                Some(at) => self.clock.sleep_until(at),
+            if let Some(cause) = self.exit.take() {
+                return cause;
+            }
+            let sleep = match self.timers.values().min() {
+                Some(&at) => self
+                    .clock
+                    .sleep_until(i64::try_from(at).unwrap_or(i64::MAX)),
                 None => Box::pin(std::future::pending()),
             };
-            let handled = tokio::select! {
+            tokio::select! {
                 event = channels.provider.recv() => {
-                    // The host holds a sender, so the channel never closes.
+                    // The driver holds a sender, so the channel never closes.
                     match event {
                         Some(ProviderEvent::Exited(code)) => {
-                            match self.last_words(&mut channels.provider).await {
-                                Ok(()) => self.on_provider(ProviderEvent::Exited(code)).await,
-                                Err(error) => Err(error),
-                            }
+                            self.last_words(&mut channels.provider).await;
+                            self.feed(Input::ProviderExited { code }).await;
                         }
                         Some(event) => self.on_provider(event).await,
-                        None => Ok(()),
+                        None => {}
                     }
                 }
                 Some(stream) = channels.connections.recv() => {
-                    self.on_connect(stream, &channels.frames_tx);
-                    Ok(())
+                    self.on_connect(stream, &channels.frames_tx).await;
                 }
-                Some((id, frame)) = channels.frames.recv() => {
-                    self.on_frame(id, frame).await
+                Some((connection, frame)) = channels.frames.recv() => {
+                    match frame {
+                        Some(frame) => self.feed(Input::Control { connection, frame }).await,
+                        None => {
+                            if self.daemon.as_ref().is_some_and(|daemon| daemon.id == connection) {
+                                self.daemon = None;
+                            }
+                            self.feed(Input::DaemonGone { connection }).await;
+                        }
+                    }
                 }
                 Some(control) = channels.control.recv() => {
                     if let Some(provider) = &self.provider {
@@ -370,109 +339,117 @@ impl<I: Interpreter> Host<I> {
                             attach::Control::Resize { rows, cols } => provider.resize(rows, cols),
                         }
                     }
-                    Ok(())
                 }
-                Some(git) = channels.git.recv() => self.on_git(git).await,
-                () = sleep => self.on_deadline().await,
-            };
-            if let Err(error) = handled {
-                self.write_failed(error).await?;
+                Some((job, result)) = channels.jobs.recv() => {
+                    self.feed(Input::JobDone { job, result }).await;
+                }
+                () = sleep => self.on_timers().await,
             }
-            if self.done.is_none()
-                && let Err(error) = self.settle().await
+        }
+    }
+
+    // --- inputs ----------------------------------------------------------
+
+    /// Steps the core with `input` at the clock's time and carries out what
+    /// it asks. A write that fails is fed back as the input that says so,
+    /// in place of the rest of the step's outputs.
+    async fn feed(&mut self, input: Input) {
+        let mut next = Some(input);
+        while let Some(input) = next.take() {
+            if self.agent.exited().is_some() {
+                return;
+            }
+            // A full segment rotates first, checkpointing the state the
+            // input meets. A rotation that fails is a write that fails.
+            if !matches!(input, Input::WriteFailed { .. })
+                && self.ring.full()
+                && let Err(error) = self.ring.rotate(&self.agent.checkpoint().state)
             {
-                self.write_failed(error).await?;
+                next = Some(write_failed(error.to_string()));
+                continue;
             }
-            if let Some(cause) = self.done.take() {
-                return Ok(cause);
+            let mut out = Vec::new();
+            self.agent.step(
+                Input::Tick {
+                    now_ms: now_ms(self.clock.as_ref()),
+                },
+                &mut out,
+            );
+            self.agent.step(input, &mut out);
+            if let Err(WriteFailed(why)) = self.execute(out).await {
+                next = Some(write_failed(why));
             }
         }
     }
 
-    // --- events ----------------------------------------------------------
-
-    async fn on_git(&mut self, git: Option<wire::Git>) -> Result<(), AgentError> {
-        if matches!(self.mode, Mode::Exiting { .. }) {
-            // The final boundary is written; the incarnation is over.
-            return Ok(());
+    /// Every timer that is due, in the order of their ids.
+    async fn on_timers(&mut self) {
+        let now = now_ms(self.clock.as_ref());
+        let due: Vec<TimerId> = self
+            .timers
+            .iter()
+            .filter(|(_, at)| **at <= now)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in due {
+            self.timers.remove(&id);
+            self.feed(Input::Timer(id)).await;
         }
-        self.feed(Event::Git(git)).await
     }
 
-    async fn on_provider(&mut self, event: ProviderEvent) -> Result<(), AgentError> {
+    async fn on_provider(&mut self, event: ProviderEvent) {
         match event {
             ProviderEvent::Output(bytes) => {
                 if let Some(log) = &mut self.pty_log {
-                    log.append(&bytes).map_err(AgentError::Journal)?;
+                    if let Err(error) = log.append(&bytes) {
+                        self.feed(write_failed(error.to_string())).await;
+                        return;
+                    }
                     if let Some(written) = &self.written {
                         written.send_replace(log.offset());
                     }
                 }
             }
-            ProviderEvent::Fact(fact) => {
-                if matches!(self.mode, Mode::Exiting { .. }) {
-                    // The final boundary is written; what the provider says
-                    // while it shuts down is not part of the incarnation.
-                    return Ok(());
-                }
-                self.feed(Event::Fact(fact)).await?;
-            }
+            ProviderEvent::Fact(fact) => self.feed(Input::Provider(fact)).await,
             ProviderEvent::Messaging(messaging) => {
                 if let Some(provider) = &mut self.provider {
                     provider.set_messaging(messaging);
                 }
             }
             ProviderEvent::WriteFailed { path, error } => {
-                return Err(AgentError::Private {
-                    path,
-                    source: error,
-                });
+                self.feed(write_failed(format!("{}: {error}", path.display())))
+                    .await;
             }
-            ProviderEvent::Exited(code) => {
-                if let Mode::Exiting { cause, .. } = &self.mode {
-                    if let Some(provider) = &mut self.provider {
-                        provider.finish();
-                    }
-                    self.done = Some(cause.clone());
-                    return Ok(());
-                }
-                self.feed(Event::ProviderExit { code }).await?;
-                self.done = Some(ExitCause::ProviderExited(code));
-            }
+            ProviderEvent::Exited(code) => self.feed(Input::ProviderExited { code }).await,
         }
-        Ok(())
     }
 
     /// Before a provider's exit is recorded, everything it said first:
     /// what is already queued, then the transcript rows no follower has
     /// read yet, since it may have written its last rows just before it
     /// exited.
-    async fn last_words(
-        &mut self,
-        events: &mut mpsc::Receiver<ProviderEvent>,
-    ) -> Result<(), AgentError> {
+    async fn last_words(&mut self, events: &mut mpsc::Receiver<ProviderEvent>) {
         let rows = match &mut self.provider {
             Some(provider) => provider.finish_transcripts().await,
             None => Vec::new(),
         };
         while let Ok(event) = events.try_recv() {
             if !matches!(event, ProviderEvent::Exited(_)) {
-                self.on_provider(event).await?;
+                self.on_provider(event).await;
             }
         }
         for row in rows {
-            self.on_provider(ProviderEvent::Fact(row)).await?;
+            self.feed(Input::Provider(row)).await;
         }
-        Ok(())
     }
 
-    fn on_connect(
+    async fn on_connect(
         &mut self,
         stream: LocalStream,
-        frames_tx: &mpsc::UnboundedSender<(u64, Option<CtlFrame>)>,
+        frames_tx: &mpsc::UnboundedSender<(ConnId, Option<CtlFrame>)>,
     ) {
         self.connections += 1;
-        let id = self.connections;
+        let id = ConnId(self.connections);
         let (mut reader, mut writer) = tokio::io::split(stream);
         let incoming = frames_tx.clone();
         tokio::spawn(async move {
@@ -500,352 +477,33 @@ impl<I: Interpreter> Host<I> {
         });
         // A new connection replaces the old: a restarted daemon dials in
         // while the old one's socket may not have closed yet.
-        self.daemon = Some(Daemon { id, frames });
-        self.grace_until = None;
-        self.send(ctl_frame::Of::Hello(AgentHello {
-            agent_id: self.spec.agent_id.clone(),
-        }));
+        self.daemon = Some(Daemon {
+            id,
+            frames,
+            greeted: false,
+        });
+        self.feed(Input::DaemonDials { connection: id }).await;
     }
 
-    async fn on_frame(&mut self, id: u64, frame: Option<CtlFrame>) -> Result<(), AgentError> {
-        if self.daemon.as_ref().is_none_or(|daemon| daemon.id != id) {
-            return Ok(());
-        }
-        let Some(frame) = frame else {
-            // End of stream: the daemon is gone. Deliberate stops are Stop
-            // frames, so this starts the grace timer.
-            self.daemon = None;
-            if matches!(self.mode, Mode::Running) {
-                self.grace_until = Some(self.clock.now_ms() + self.grace_ms());
-            }
-            return Ok(());
-        };
-        match frame.of {
-            // A dump is answered in any mode: a draining agent is often the
-            // one someone wants to look at.
-            Some(ctl_frame::Of::DumpRequest(request)) => {
-                let part = crate::dump::part::<I>(&self.dir, request.dump_id);
-                self.send(ctl_frame::Of::Dump(part));
-            }
-            Some(ctl_frame::Of::Input(input)) => {
-                let id = input.input_id.clone();
-                self.take(id, Event::Input(input)).await?
-            }
-            Some(ctl_frame::Of::AgentMessage(envelope)) => {
-                let id = envelope.id.clone();
-                // Kept even before the daemon names the child: the report
-                // can come first.
-                if let Some(wire::envelope::Body::Report(report)) = &envelope.body {
-                    // An exit report is always its incarnation's last.
-                    let last = match &report.end {
-                        Some(wire::child_report::End::TurnEnded(turn)) => turn.last,
-                        Some(wire::child_report::End::Exited(_)) => true,
-                        None => false,
-                    };
-                    self.awaited
-                        .report(sender_id(&envelope), report.from_incarnation, last);
+    // --- outputs ---------------------------------------------------------
+
+    /// Carries out one step's outputs, in order. When a facts-ring line, a
+    /// blob or a journal step cannot be written, the rest are not carried
+    /// out, and the ring gives back the line of the event whose step did
+    /// not reach the journal, so it never claims more than the journal
+    /// holds.
+    async fn execute(&mut self, out: Vec<Output>) -> Result<(), WriteFailed> {
+        // Where the ring stood before the newest event's line.
+        let mut mark = None;
+        for output in out {
+            let written = match output {
+                Output::Record(entry) => {
+                    mark = Some(self.ring.offset());
+                    self.ring.append(&entry)
                 }
-                self.take(id, Event::AgentMessage(envelope)).await?
-            }
-            // A rename that arrives once the agent is leaving has no thread
-            // left to name.
-            Some(ctl_frame::Of::Rename(rename)) => {
-                if matches!(self.mode, Mode::Running) {
-                    self.feed(Event::Rename { name: rename.name }).await?
-                }
-            }
-            Some(ctl_frame::Of::Stop(stop)) => self.stop(stop.kill).await?,
-            Some(ctl_frame::Of::Children(children)) => self.awaited.children(&children),
-            // Hello, nudges, dump parts and replies travel the other way.
-            _ => {}
-        }
-        Ok(())
-    }
-
-    /// An input or agent message reaches the interpreter while the agent
-    /// runs; once it is leaving, the verdict says so.
-    async fn take(&mut self, id: Vec<u8>, event: Event) -> Result<(), AgentError> {
-        match self.mode {
-            Mode::Running => self.feed(event).await?,
-            Mode::Draining { .. } => self.reply(id, reply::rejected(wire::Refusal::Draining)),
-            Mode::Exiting { .. } => self.reply(id, reply::rejected(wire::Refusal::Exiting)),
-        }
-        Ok(())
-    }
-
-    /// The daemon's stop: the turn is cancelled the provider's own way and
-    /// the agent drains; with `kill`, the provider's group ends at once.
-    async fn stop(&mut self, kill: bool) -> Result<(), AgentError> {
-        if kill {
-            if let Some(provider) = &mut self.provider {
-                provider.kill();
-            }
-            self.done = Some(ExitCause::Killed);
-            return Ok(());
-        }
-        let stopping = matches!(
-            self.mode,
-            Mode::Draining {
-                why: Drain::Stop,
-                ..
-            } | Mode::Exiting { .. }
-        );
-        if !stopping {
-            self.feed(Event::StopRequested).await?;
-            self.mode = Mode::Draining {
-                why: Drain::Stop,
-                ask_until: None,
-            };
-        }
-        Ok(())
-    }
-
-    async fn on_deadline(&mut self) -> Result<(), AgentError> {
-        let now = self.clock.now_ms();
-        match &self.mode {
-            Mode::Running => {
-                if self.grace_until.is_some_and(|until| until <= now) {
-                    self.grace_until = None;
-                    self.feed(Event::DaemonLost).await?;
-                    self.mode = Mode::Draining {
-                        why: Drain::DaemonLost,
-                        ask_until: None,
-                    };
-                }
-            }
-            Mode::Draining { ask_until, .. } => {
-                if ask_until.is_some_and(|until| until <= now) {
-                    self.exit(ExitCause::Orphaned).await?;
-                }
-            }
-            Mode::Exiting { cause, until } => {
-                if *until <= now {
-                    self.done = Some(cause.clone());
-                    if let Some(provider) = &mut self.provider {
-                        provider.kill();
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn deadline(&self) -> Option<i64> {
-        match &self.mode {
-            Mode::Running if self.daemon.is_none() => self.grace_until,
-            Mode::Running => None,
-            Mode::Draining { ask_until, .. } => *ask_until,
-            Mode::Exiting { until, .. } => Some(*until),
-        }
-    }
-
-    /// Decides, after anything happened, whether this incarnation ends.
-    async fn settle(&mut self) -> Result<(), AgentError> {
-        let turn_ended = std::mem::take(&mut self.turn_ended);
-        let asked = self.asked_to_exit.take();
-        let now = self.clock.now_ms();
-        let drain_ms = self.drain_ms();
-        let quiescent = self.quiescent();
-        let one_shot = self.spec.parent.is_some();
-        let turn_running = matches!(self.phase, Phase::Working | Phase::NeedsYou);
-        let phase = self.phase;
-        let finishing = std::mem::take(&mut self.finishing);
-        let cause = match &mut self.mode {
-            Mode::Exiting { .. } => None,
-            _ if asked.is_some() => asked,
-            Mode::Running => finishing.then_some(ExitCause::Finished),
-            // A one-shot agent whose work ends while it drains for a lost
-            // daemon has finished it: its parent hears it finished, and so
-            // does its row.
-            Mode::Draining {
-                why: Drain::DaemonLost,
-                ..
-            } if turn_ended && one_shot && quiescent => Some(ExitCause::Finished),
-            Mode::Draining { why, ask_until } => {
-                if turn_ended || !turn_running {
-                    Some(why.cause())
-                } else {
-                    if *why == Drain::DaemonLost && phase == Phase::NeedsYou {
-                        ask_until.get_or_insert(now + drain_ms);
-                    } else {
-                        *ask_until = None;
-                    }
-                    None
-                }
-            }
-        };
-        if let Some(cause) = cause {
-            self.exit(cause).await?;
-        }
-        Ok(())
-    }
-
-    /// Nothing runs, nothing is queued, nothing handed to the provider
-    /// waits for it, and every child has sent its last report: a child's
-    /// report starts the next turn, which reports up as usual.
-    fn quiescent(&self) -> bool {
-        self.phase == Phase::Idle && self.queue_empty && self.nothing_pending()
-    }
-
-    /// No accepted agent message waits to be consumed, no typed prompt
-    /// waits for the provider to record it, and no child's last report is
-    /// still to come. A prompt typed into one of terminal Claude's own
-    /// screens is never recorded, so a one-shot child stays, idle, until a
-    /// later prompt row takes it, a stop ends it or its daemon is lost.
-    fn nothing_pending(&self) -> bool {
-        self.awaited.none()
-            && I::pending_messages(&self.state).is_empty()
-            && !I::typed_unrecorded(&self.state)
-    }
-
-    /// Whether the incarnation exits after a turn end in `step`: a
-    /// one-shot agent left quiescent by it, an agent the interpreter asks
-    /// to exit, and one already on its way out. Its parent hears the turn's
-    /// report as the incarnation's last.
-    fn last_turn(&self, step: &wire::Step, asks_exit: bool) -> bool {
-        match self.mode {
-            Mode::Running => {
-                let (phase, queue_empty) = step
-                    .snapshot
-                    .as_ref()
-                    .map_or((self.phase, self.queue_empty), |snapshot| {
-                        (snapshot.phase(), snapshot.queue.is_empty())
-                    });
-                asks_exit
-                    || (self.spec.parent.is_some()
-                        && phase == Phase::Idle
-                        && queue_empty
-                        && self.nothing_pending())
-            }
-            Mode::Draining { .. } | Mode::Exiting { .. } => true,
-        }
-    }
-
-    /// Writes the final boundary and asks the provider to finish.
-    async fn exit(&mut self, cause: ExitCause) -> Result<(), AgentError> {
-        self.feed(Event::Exiting(cause.end())).await?;
-        if let Some(provider) = &mut self.provider {
-            provider.close();
-        }
-        self.mode = Mode::Exiting {
-            cause,
-            until: self.clock.now_ms() + PROVIDER_STOP_MS,
-        };
-        Ok(())
-    }
-
-    /// A write to the agent directory failed, which in practice is a full
-    /// disk: nothing the provider does from here can be recorded, so the
-    /// incarnation ends now, whether the write was the journal's or the
-    /// provider's own state in private/ that the next incarnation resumes
-    /// from. The provider is stopped and the final boundary written if the
-    /// disk takes it; if it does not, the ring holds nothing the journal
-    /// lacks, so the next incarnation writes the missing boundary when it
-    /// starts. Any other error ends the agent.
-    async fn write_failed(&mut self, error: AgentError) -> Result<(), AgentError> {
-        let why = match error {
-            AgentError::Journal(error) => error.to_string(),
-            AgentError::Private { path, source } => {
-                format!("{}: {source}", path.display())
-            }
-            other => return Err(other),
-        };
-        eprintln!("amux agent: could not write to its directory: {why}; exiting");
-        let cause = ExitCause::WriteFailed(why);
-        if matches!(self.mode, Mode::Exiting { .. }) || self.exit(cause.clone()).await.is_err() {
-            if let Some(provider) = &mut self.provider {
-                provider.kill();
-            }
-            self.done = Some(cause);
-        }
-        Ok(())
-    }
-
-    // --- the interpreter -------------------------------------------------
-
-    async fn feed(&mut self, event: Event) -> Result<(), AgentError> {
-        let now = self.clock.now_ms();
-        if now > self.last_tick {
-            self.last_tick = now;
-            self.feed_one(Event::Tick { at_ms: now }).await?;
-        }
-        self.feed_one(event).await
-    }
-
-    /// One event through the ring, the interpreter and the journal. An
-    /// event whose step could not be journaled leaves the ring too, so the
-    /// ring never claims more than the journal holds.
-    async fn feed_one(&mut self, event: Event) -> Result<(), AgentError> {
-        let mark = self.ring.offset();
-        let stepped = self.step(event)?;
-        let applied = self.apply(stepped).await;
-        if applied.is_err() {
-            self.ring.undo(mark);
-        }
-        applied
-    }
-
-    /// Records the event in the facts ring, then steps the interpreter. A
-    /// full segment rotates first, checkpointing the state the event meets.
-    fn step(&mut self, event: Event) -> Result<Stepped, AgentError> {
-        if self.ring.full() {
-            self.ring
-                .rotate(&interpret::encode_checkpoint(&self.state))
-                .map_err(AgentError::Journal)?;
-        }
-        self.ring
-            .append(&Entry::of(&event))
-            .map_err(AgentError::Journal)?;
-        Ok(I::step(&mut self.state, event))
-    }
-
-    /// Blobs first, then the journal, then the effects: a
-    /// reply is sent and a provider written to only once the step that
-    /// explains it is on disk, and a step never names bytes that are not.
-    async fn apply(&mut self, stepped: Stepped) -> Result<(), AgentError> {
-        let Stepped { mut step, effects } = stepped;
-        // Marked here, not by the interpreter: only the process knows its
-        // children and whether it is leaving.
-        if step.turn_end.is_some() {
-            let asks_exit = effects
-                .iter()
-                .any(|effect| matches!(effect, Effect::Exit { .. }));
-            let last = self.last_turn(&step, asks_exit);
-            self.finishing = last && !asks_exit && matches!(self.mode, Mode::Running);
-            if let Some(turn_end) = &mut step.turn_end {
-                turn_end.last = last;
-            }
-        }
-        for effect in &effects {
-            let written = match effect {
-                Effect::WriteBlob { hash, bytes } => dir::write_blob(&self.dir, hash, bytes),
-                _ => Ok(()),
-            };
-            written.map_err(AgentError::Journal)?;
-        }
-        let before = self.journal.offset();
-        self.journal.append(&step).map_err(AgentError::Journal)?;
-        if let Some(snapshot) = &step.snapshot {
-            self.phase = snapshot.phase();
-            self.queue_empty = snapshot.queue.is_empty();
-        }
-        if step.turn_end.is_some() {
-            self.turn_ended = true;
-            // A turn changes the working tree; the row's totals follow.
-            self.git_wanted.notify_one();
-        }
-        if self.journal.offset() > before {
-            self.send(ctl_frame::Of::Nudge(Nudge {}));
-        }
-        for effect in effects {
-            match effect {
-                Effect::WriteBlob { .. } => {}
-                Effect::Reply { input_id, verdict } => self.reply(input_id, verdict),
-                Effect::Exit { cause } => {
-                    self.asked_to_exit
-                        .get_or_insert(ExitCause::Interpreter(cause));
-                }
-                effect => {
+                Output::WriteBlob { hash, bytes } => dir::write_blob(&self.dir, &hash, &bytes),
+                Output::AppendJournal(step) => self.journal.append(&step).map(|_| ()),
+                Output::WriteProvider(effect) => {
                     if let Some(provider) = &mut self.provider
                         && let Err(error) = provider.perform(effect).await
                     {
@@ -853,110 +511,138 @@ impl<I: Interpreter> Host<I> {
                         // its exit, which is what ends the agent.
                         eprintln!("amux agent: writing to the provider: {error}");
                     }
+                    Ok(())
                 }
+                Output::WriteControl { connection, frame } => {
+                    // Frames for a daemon that is no longer connected are
+                    // dropped: whoever sent the input is gone with it.
+                    if let Some(daemon) = &mut self.daemon
+                        && daemon.id == connection
+                    {
+                        let hello = matches!(frame.of, Some(ctl_frame::Of::Hello(_)));
+                        let _ = daemon.frames.send(frame);
+                        if hello {
+                            daemon.greeted = true;
+                            self.asks.hello_sent(daemon);
+                        }
+                    }
+                    Ok(())
+                }
+                Output::ArmTimer { id, at_ms } => {
+                    self.timers.insert(id, at_ms);
+                    Ok(())
+                }
+                Output::CancelTimer { id } => {
+                    self.timers.remove(&id);
+                    Ok(())
+                }
+                Output::Job { id, op } => {
+                    self.job(id, op);
+                    Ok(())
+                }
+                Output::CloseProvider => {
+                    if let Some(provider) = &mut self.provider {
+                        provider.close();
+                    }
+                    Ok(())
+                }
+                Output::KillProvider => {
+                    if let Some(provider) = &mut self.provider {
+                        provider.kill();
+                    }
+                    Ok(())
+                }
+                Output::Exit(cause) => {
+                    // What a provider asked to finish left running below
+                    // it ends with the agent.
+                    if let Some(provider) = &mut self.provider {
+                        provider.finish();
+                    }
+                    self.exit = Some(cause);
+                    Ok(())
+                }
+                Output::Dump { reason } => {
+                    let now = now_ms(self.clock.as_ref());
+                    if let Some(said) = limited_dump_reason(&mut self.dumps, &reason, now) {
+                        eprintln!("amux agent: {said}");
+                        let invariant = match &reason {
+                            DumpReason::Violation(violation) => violation.invariant.to_owned(),
+                            DumpReason::OverBudget { .. } => String::new(),
+                        };
+                        self.asks.ask(self.daemon.as_ref(), said, invariant);
+                    }
+                    Ok(())
+                }
+            };
+            if let Err(error) = written {
+                if let Some(mark) = mark {
+                    self.ring.undo(mark);
+                }
+                return Err(WriteFailed(error.to_string()));
             }
         }
         Ok(())
     }
 
-    // --- the daemon ------------------------------------------------------
-
-    /// A verdict, keyed by the input id or the envelope id it answers.
-    fn reply(&self, id: Vec<u8>, verdict: wire::SendInputResponse) {
-        self.send(ctl_frame::Of::Reply(Verdict {
-            id,
-            verdict: Some(verdict),
-        }));
-    }
-
-    /// Frames for a daemon that is not connected are dropped: whoever sent
-    /// the input is gone with it.
-    fn send(&self, of: ctl_frame::Of) {
-        if let Some(daemon) = &self.daemon {
-            let _ = daemon.frames.send(CtlFrame { of: Some(of) });
+    /// Runs a job off the step; its result comes back as an input.
+    fn job(&self, id: JobId, op: AgentJob) {
+        let done = self.jobs.clone();
+        match op {
+            AgentJob::ReadGit => {
+                let cwd = PathBuf::from(&self.spec.cwd);
+                let base = self.spec.base_branch.clone();
+                tokio::spawn(async move {
+                    let git = crate::git::read(&cwd, base.as_deref()).await;
+                    let _ = done.send((id, JobResult::Git(git)));
+                });
+            }
+            AgentJob::DumpPart { dump_id } => {
+                let dir = self.dir.clone();
+                tokio::task::spawn_blocking(move || {
+                    let part = crate::dump::part::<I>(&dir, dump_id);
+                    let _ = done.send((id, JobResult::DumpPart(part)));
+                });
+            }
         }
-    }
-
-    fn grace_ms(&self) -> i64 {
-        ms(
-            self.spec
-                .config
-                .as_ref()
-                .map_or(0, |config| config.grace_ms),
-            DEFAULT_GRACE_MS,
-        )
-    }
-
-    fn drain_ms(&self) -> i64 {
-        ms(
-            self.spec
-                .config
-                .as_ref()
-                .map_or(0, |config| config.drain_ms),
-            DEFAULT_DRAIN_MS,
-        )
     }
 }
 
-/// The interpreter's state for this incarnation and the steps it starts
-/// with. A first incarnation starts from nothing. A later one continues the
-/// state the last one ended in, rebuilt from the ring's newest checkpoint
-/// and the events after it, so its item keys carry on from there. An
-/// incarnation that ended without its final boundary (killed, or crashed)
-/// gets it now, then the resume step re-emits whatever is still open in
-/// full. A ring that cannot be read starts over.
-fn start<I: Interpreter>(facts: &std::path::Path, spec: &AgentSpec) -> (I::State, Vec<wire::Step>) {
-    let fresh = || {
-        let (state, step) = I::initial(spec, VERSION);
-        (state, vec![step])
-    };
-    let saved = match ring::saved(facts) {
-        Ok(Some(saved)) => saved,
-        Ok(None) => return fresh(),
-        Err(error) => {
-            eprintln!("amux agent: reading the facts ring: {error}");
-            return fresh();
-        }
-    };
-    let mut state = match interpret::decode_checkpoint::<I::State>(&saved.checkpoint) {
-        Ok(state) => state,
-        Err(error) => {
-            eprintln!("amux agent: reading the checkpoint: {error}");
-            return fresh();
-        }
-    };
-    let ended = saved
-        .entries
-        .last()
-        .is_none_or(|entry| matches!(entry, Entry::ProviderExit { .. } | Entry::Exiting { .. }));
-    for event in saved.entries.into_iter().filter_map(Entry::event) {
-        let _ = I::step(&mut state, event);
-    }
-    let mut steps = Vec::new();
-    if !ended {
-        let mut stepped = I::step(
-            &mut state,
-            Event::Exiting(wire::IncarnationEnd {
-                cause: wire::ExitCause::EndedUnexpectedly as i32,
-                detail: None,
-            }),
-        );
-        // The incarnation this boundary closes was marked exited, with the
-        // daemon's own cause, when its process was found gone; a cause here
-        // would be read as this incarnation's.
-        stepped.step.incarnation_end = None;
-        steps.push(stepped.step);
-    }
-    let (state, resume) = I::reincarnate(state, spec, VERSION);
-    steps.push(resume);
-    (state, steps)
+/// A write to the agent directory failed, which in practice is a full
+/// disk: whether the write was the journal's or the provider's own state
+/// in private/ that the next incarnation resumes from, the core ends the
+/// incarnation.
+fn write_failed(why: String) -> Input {
+    eprintln!("amux agent: could not write to its directory: {why}; exiting");
+    Input::WriteFailed { why }
 }
 
-fn ms(configured: u32, default: i64) -> i64 {
-    match configured {
-        0 => default,
-        ms => i64::from(ms),
-    }
+/// The reason to report for a dump the core asked for at `now_ms`, or
+/// `None` when the limit holds it back: a provider stuck in a loop meets
+/// the same broken invariant with every event.
+fn limited_dump_reason(limit: &mut DumpLimit, reason: &DumpReason, now_ms: u64) -> Option<String> {
+    let (kind, why) = match reason {
+        DumpReason::Violation(violation) => (
+            DumpKind::Violation(violation.invariant.into()),
+            violation.to_string(),
+        ),
+        DumpReason::OverBudget { micros, budget } => (
+            DumpKind::OverBudget,
+            format!(
+                "a step took {micros} µs against its budget of {} µs",
+                budget.micros
+            ),
+        ),
+    };
+    let suppressed = limit.admit(kind, now_ms)?;
+    Some(core_ring::with_suppressed(
+        format!("{AGENT_CORE_DUMP}{why}"),
+        suppressed,
+    ))
+}
+
+/// The clock, as the core counts it: milliseconds, never before the epoch.
+fn now_ms(clock: &dyn Clock) -> u64 {
+    u64::try_from(clock.now_ms()).unwrap_or(0)
 }
 
 async fn accept(mut listener: LocalListener, connections: mpsc::Sender<LocalStream>) {
@@ -997,125 +683,89 @@ async fn hook_payloads(mut listener: LocalListener, events: mpsc::Sender<Provide
     }
 }
 
-/// The agent that sent a message; empty for a person's.
-fn sender_id(envelope: &wire::Envelope) -> &[u8] {
-    match envelope.from.as_ref().and_then(|from| from.value.as_ref()) {
-        Some(wire::sender::Value::Agent(agent)) => &agent.agent_id,
-        _ => &[],
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn frame(children: &[(&[u8], u32)]) -> wire::Children {
-        wire::Children {
-            children: children
-                .iter()
-                .map(|(id, incarnation)| wire::LiveChild {
-                    agent_id: id.to_vec(),
-                    incarnation: *incarnation,
-                })
-                .collect(),
+    fn daemon() -> (Daemon, mpsc::UnboundedReceiver<CtlFrame>) {
+        let (frames, sent) = mpsc::unbounded_channel();
+        (
+            Daemon {
+                id: ConnId(1),
+                frames,
+                greeted: true,
+            },
+            sent,
+        )
+    }
+
+    fn asked(frame: CtlFrame) -> wire::DumpAsked {
+        match frame.of {
+            Some(ctl_frame::Of::DumpAsked(asked)) => asked,
+            other => panic!("not a dump ask: {other:?}"),
         }
     }
 
+    /// An admitted dump is asked of the connected daemon at once; with
+    /// none connected, or one not yet sent the Hello, the newest of each
+    /// kind waits for the next Hello.
     #[test]
-    fn a_report_from_the_only_child_ends_the_wait() {
-        let mut awaited = Awaited::default();
-        awaited.children(&frame(&[(b"a", 1)]));
-        awaited.report(b"a", 1, true);
-        assert!(awaited.none());
-    }
-
-    /// The child's report can come before the daemon's first word of it.
-    #[test]
-    fn a_report_before_its_child_is_counted_still_ends_the_wait() {
-        let mut awaited = Awaited::default();
-        awaited.report(b"a", 1, true);
-        awaited.children(&frame(&[(b"a", 1)]));
-        assert!(awaited.none());
-    }
-
-    /// A's report starts a turn that spawns B before the daemon's word that
-    /// A has gone: A's report must not stand in for B's, still on its way
-    /// when B has gone too.
-    #[test]
-    fn an_earlier_childs_report_never_stands_in_for_a_later_childs() {
-        let mut awaited = Awaited::default();
-        awaited.children(&frame(&[(b"a", 1)]));
-        awaited.report(b"a", 1, true);
-        awaited.children(&frame(&[(b"b", 1)]));
-        assert!(!awaited.none());
-        awaited.report(b"b", 1, true);
-        assert!(awaited.none());
-    }
-
-    /// A middle child reports mid-way (its own child still runs), then
-    /// again when it ends; the daemon's word that it has gone can come
-    /// before its last report, and the mid-way report must not stand in
-    /// for it.
-    #[test]
-    fn a_childs_mid_way_report_never_stands_in_for_its_last() {
-        let mut awaited = Awaited::default();
-        awaited.children(&frame(&[(b"c", 1)]));
-        awaited.report(b"c", 1, false);
-        awaited.children(&frame(&[]));
-        assert!(
-            !awaited.none(),
-            "no child is live, but c's last report is to come"
+    fn an_admitted_dump_is_asked_of_the_daemon_or_waits_for_its_hello() {
+        let mut asks = Asks::default();
+        let (connected, mut sent) = daemon();
+        asks.ask(Some(&connected), "the agent core: one".into(), "one".into());
+        let first = asked(sent.try_recv().expect("asked at once"));
+        assert_eq!(
+            (first.reason.as_str(), first.invariant.as_str()),
+            ("the agent core: one", "one")
         );
-        awaited.report(b"c", 1, true);
-        assert!(awaited.none());
+
+        asks.ask(None, "the agent core: two, older".into(), "two".into());
+        asks.ask(None, "the agent core: two".into(), "two".into());
+        assert!(sent.try_recv().is_err(), "nothing goes with no daemon");
+        // A daemon that has dialled in but not yet been sent the Hello
+        // reads the Hello first.
+        let (mut next, mut sent) = daemon();
+        next.greeted = false;
+        asks.ask(
+            Some(&next),
+            "the agent core: a slow step".into(),
+            String::new(),
+        );
+        assert!(sent.try_recv().is_err(), "nothing goes before the Hello");
+        next.greeted = true;
+        asks.hello_sent(&next);
+        let mut waited: Vec<_> = std::iter::from_fn(|| sent.try_recv().ok().map(asked))
+            .map(|asked| (asked.invariant, asked.reason))
+            .collect();
+        waited.sort();
+        assert_eq!(
+            waited,
+            [
+                (String::new(), "the agent core: a slow step".to_owned()),
+                ("two".to_owned(), "the agent core: two".to_owned()),
+            ]
+        );
+        asks.hello_sent(&next);
+        assert!(sent.try_recv().is_err(), "each waited once");
     }
 
-    /// A mid-way report before the daemon names its child leaves the
-    /// child awaited.
     #[test]
-    fn a_mid_way_report_before_its_child_is_named_leaves_it_awaited() {
-        let mut awaited = Awaited::default();
-        awaited.report(b"c", 1, false);
-        awaited.children(&frame(&[(b"c", 1)]));
-        assert!(!awaited.none());
-        awaited.report(b"c", 1, true);
-        assert!(awaited.none());
-    }
-
-    /// A child resumed by its parent's message reports again.
-    #[test]
-    fn a_resumed_childs_next_report_is_awaited() {
-        let mut awaited = Awaited::default();
-        awaited.children(&frame(&[(b"a", 1)]));
-        awaited.report(b"a", 1, true);
-        awaited.children(&frame(&[(b"a", 2)]));
-        assert!(!awaited.none());
-        awaited.report(b"a", 2, true);
-        assert!(awaited.none());
-    }
-
-    /// A resumed child's last report can come before the daemon names its
-    /// new incarnation: the report is kept for that incarnation, and the
-    /// frame that names it later awaits nothing more.
-    #[test]
-    fn a_resumed_childs_last_report_before_its_frame_ends_the_wait() {
-        let mut awaited = Awaited::default();
-        awaited.children(&frame(&[(b"a", 1)]));
-        awaited.report(b"a", 1, true);
-        awaited.report(b"a", 2, true);
-        awaited.children(&frame(&[(b"a", 2)]));
-        assert!(awaited.none(), "a's second last report was already taken");
-    }
-
-    /// A frame that names the same child again, even after its last
-    /// report, awaits nothing more of it.
-    #[test]
-    fn a_child_named_again_after_its_report_is_not_awaited_again() {
-        let mut awaited = Awaited::default();
-        awaited.children(&frame(&[(b"a", 1), (b"b", 1)]));
-        awaited.report(b"a", 1, true);
-        awaited.children(&frame(&[(b"a", 1)]));
-        awaited.report(b"b", 1, true);
-        assert!(awaited.none());
+    fn a_violation_the_agent_core_repeats_is_reported_once_per_interval() {
+        let broke = DumpReason::Violation(agent_core::Violation {
+            invariant: "one open ask at most",
+            detail: "two asks open".into(),
+        });
+        let mut limit = DumpLimit::default();
+        let first = limited_dump_reason(&mut limit, &broke, 0).unwrap();
+        assert!(first.starts_with(AGENT_CORE_DUMP), "{first}");
+        for at in [1, DumpLimit::INTERVAL_MS - 1] {
+            assert_eq!(limited_dump_reason(&mut limit, &broke, at), None);
+        }
+        let second = limited_dump_reason(&mut limit, &broke, DumpLimit::INTERVAL_MS).unwrap();
+        assert!(
+            second.ends_with("(2 more like it were not dumped since the last)"),
+            "{second}"
+        );
     }
 }

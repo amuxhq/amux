@@ -1,0 +1,55 @@
+# CI checks every protocol model at its CI bounds and walks the simulated
+# stories under a few seeds on each push. This workflow checks the models
+# at their nightly bounds, which explore further than a push can wait for,
+# each model in a job of its own, and walks thousands of seeds per story.
+name: Models at nightly bounds
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *"
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  nightly:
+    name: Nightly bounds (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    # The slowest model at its nightly bounds, the family, takes 757 s on
+    # the enrolled Mac's 12 threads and roughly seven times that here, with
+    # the build before it.
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [client, composed, family, lifecycle, path, presence, relay, replication, single_daemon, supervisor]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.98.0
+      # The models job's cache: this job builds the same test binaries.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: models
+          save-if: false
+      - uses: extractions/setup-just@v2
+      - name: Check the model at its nightly bounds
+        run: just models-nightly ${{ matrix.target }}
+
+  seeds:
+    name: Simulated stories, many seeds
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.98.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test
+          save-if: false
+      - uses: extractions/setup-just@v2
+      # The models run in the matrix above, so this walks seeds only; the
+      # report names every failing seed and the command that reruns it.
+      - name: Walk every simulated story under 2000 seeds
+        run: just nightly --seeds 2000 --bounds none

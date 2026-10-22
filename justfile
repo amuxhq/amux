@@ -194,6 +194,26 @@ tui-set NAME *ARGS:
     *) exec target/debug/tui-set "$@" ;;
     esac
 
+# Fuzz the code that reads bytes amux did not write (the Claude and Codex
+# decoders, the journal's frames and reader, redaction) for 30 seconds a
+# target on the pinned nightly, seeded from the recorded fixtures; fails on a
+# crash and prints the command that replays it. `--seconds N` and target
+# names (`just fuzz-smoke journal_reader`) change the run. Needs cargo-fuzz.
+fuzz-smoke *ARGS:
+    {{bounded}} 1500 scripts/py scripts/fuzz-smoke.py "$@"
+
+# Run the phone's C ABI tests under the pinned nightly's Miri, which checks
+# every pointer handed across the boundary, read and freed again. Tests that
+# start an installation or a tokio runtime are ignored under Miri, each with
+# its reason. Needs the nightly's miri and rust-src components.
+miri *ARGS:
+    {{bounded}} 1500 cargo +nightly-2026-08-30 miri test --locked -p app-ffi "$@"
+
+# Fail when any state-machine core's dependency graph contains tokio, or any
+# core source contains a lock, a spawned task, an async fn or an await.
+cores-check:
+    {{bounded}} 120 scripts/py scripts/cores-check.py
+
 # Enforce production and test-infrastructure dependency boundaries.
 dependency-policy:
     {{bounded}} 60 scripts/py scripts/check-dependency-policy.py
@@ -209,8 +229,50 @@ tests-list:
 tests-check:
     {{bounded}} 120 scripts/python -B scripts/tests-catalog.py check
 
-# Fail when a contract in tests/contracts.toml names no test or a test that
-# does not exist; `--table PATH` also writes the coverage table as Markdown.
+# List every parked property of the protocol models, with its reason, and fail
+# while any remains: the landing gate for decisions still waiting.
+parked-check:
+    {{bounded}} 600 cargo run --locked -q -p models --bin parked-check
+
+# Check the protocol models at their nightly bounds: each model's ignored
+# test, one test binary after another, every core each. Names of test
+# targets (`just models-nightly family`) narrow it to those models. On a
+# twelve-core Mac the models that finish take 3,362 s together (the README's
+# table) and the single daemon's peer runs past 4,000 s, so the whole run
+# takes over two hours: replication and the single daemon push it past the
+# bound, which leaves room for the rest on a machine busy with other work.
+models-nightly *TARGETS:
+    if [ "${1-}" = -- ]; then shift; fi; targets=--tests; [ $# -eq 0 ] || targets=$(printf -- '--test %s ' "$@"); {{bounded}} 4800 cargo test --locked -p models $targets -- --ignored --nocapture
+
+# Write the client model's traces that the phone's chat model replays
+# (ChatModelTraceTests) to the Swift tests' fixtures. A test run never
+# writes them; app-runtime's tests fail while they differ from the model.
+client-traces:
+    {{bounded}} 900 cargo test --locked -p app-runtime --lib -- --ignored --exact traces::write_client_traces --nocapture
+
+# Walk the testnet's simulated stories by seed: every suite tests/catalog.toml
+# declares a simulated mode for, under TESTNET_MODE=simulated, a few seeds per
+# story. `--seed N` reruns one seed (a failure prints its command), `--seeds N`
+# walks N, and names after them narrow the run to matching stories.
+sim *ARGS:
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 scripts/py scripts/sim.py sim "$@"
+
+# The nightly run: walk `--seeds N` seeds per simulated story, then check the
+# protocol models at `--bounds nightly` (the default), `ci` or `none`, and
+# print a report of seeds walked, time and failing seeds.
+nightly *ARGS:
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 14400 scripts/py scripts/sim.py nightly "$@"
+
+# Run every workspace test under cargo-llvm-cov with the desktop features and
+# write line coverage per crate, with the commit it measured, to
+# tests/coverage.md. Needs `cargo install cargo-llvm-cov` and the
+# llvm-tools-preview rustup component.
+coverage:
+    {{bounded}} 3600 scripts/py scripts/coverage.py
+
+# Fail when a contract in tests/contracts.toml names no test, or a test or a
+# model property that does not exist; `--table PATH` also writes the coverage
+# table as Markdown.
 contracts-check *ARGS:
     {{bounded}} 300 scripts/python -B scripts/contracts-check.py "$@"
 
@@ -235,7 +297,7 @@ no-update-flags:
     scripts/no-update-flags.sh
 
 # Run the same task sequence exercised across continuous-integration jobs.
-ci: no-update-flags check lint fmt-check codegen-check dependency-policy typed-provider-check deletion-ledger-check docs-check tests-check test contracts-check doctest release-check embedded-check embedded-test mobile-check
+ci: no-update-flags check lint fmt-check codegen-check dependency-policy cores-check typed-provider-check deletion-ledger-check docs-check tests-check test contracts-check doctest release-check embedded-check embedded-test mobile-check
 
 # Run the live provider compatibility lane for one kind (claude_pty,
 # claude_sdk or codex) and scenario (initialize, respond, decide, interrupt,
@@ -256,3 +318,9 @@ qa *ARGS:
 # record the current release medians after every absolute budget passes.
 perf *ARGS:
     set -e; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 cargo build --locked --release -p qualification --bin perf --features bundled,perf; {{bounded}} 1800 target/release/perf "$@"
+
+# Records the loopback scaling curve of the production relay at 10, 100 and
+# 1,000 connections (aggregate throughput, stream-open latency p50 and p99);
+# --baseline records, --compare judges within noise (docs/PERFORMANCE.md).
+relay-curve *ARGS:
+    set -e; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 cargo build --locked --release -p qualification --bin relay-curve --features bundled,perf; {{bounded}} 1200 target/release/relay-curve "$@"

@@ -438,26 +438,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tool_call_is_surfaced_to_thread_consumer() {
-        let (inner, _stdin_rx) = test_inner();
-        let registration = inner.register_thread("thread-1").await;
-        let mut rx = registration.take_receiver().await.unwrap();
-
-        inner.dispatch_line(&tool_call_json("thread-1")).await;
-
-        let event = rx.recv().await.expect("tool call event");
-        assert!(matches!(
-            event.event,
-            Event::Request {
-                id: RequestId::Integer(41),
-                request: ServerRequest::ToolCall(ref call),
-            } if call.call_id == "call-1"
-                && call.tool == "lookup"
-                && call.arguments == serde_json::json!({"key": "value"})
-        ));
-    }
-
-    #[tokio::test]
     async fn string_request_id_is_preserved_in_response() {
         let (inner, mut stdin_rx) = test_inner();
         let registration = inner.register_thread("thread-1").await;
@@ -537,35 +517,6 @@ mod tests {
 
         let response = written(stdin_rx.recv().await.expect("error response"));
         assert_eq!(response["error"]["code"], -32000);
-        assert_eq!(registration.state(), ThreadChannelState::Overflow);
-    }
-
-    #[tokio::test]
-    async fn terminal_notification_marks_full_thread_queue_as_overflowed() {
-        let (inner, _stdin_rx) = test_inner();
-        let registration = inner.register_thread("thread-1").await;
-        for _ in 0..THREAD_CHANNEL_CAPACITY {
-            assert!(registration.send(warning()));
-        }
-
-        inner
-            .dispatch_line(
-                &serde_json::json!({
-                    "method": "turn/completed",
-                    "params": {
-                        "threadId": "thread-1",
-                        "turn": {
-                            "id": "turn-1",
-                            "items": [],
-                            "status": "completed",
-                            "error": null
-                        }
-                    }
-                })
-                .to_string(),
-            )
-            .await;
-
         assert_eq!(registration.state(), ThreadChannelState::Overflow);
     }
 

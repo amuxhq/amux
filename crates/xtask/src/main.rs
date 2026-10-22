@@ -130,6 +130,11 @@ fn codegen() -> Result<(), Box<dyn std::error::Error>> {
         // constructors. Otherwise `RoutingService.Connect` collides with the
         // inherent `RoutingServiceClient::connect(endpoint)` constructor.
         .build_transport(false)
+        // The services need tonic and through it tokio; the messages need
+        // neither, so the cores that only speak the messages leave the
+        // services out.
+        .client_mod_attribute(".", "#[cfg(feature = \"grpc\")]")
+        .server_mod_attribute(".", "#[cfg(feature = \"grpc\")]")
         .file_descriptor_set_path(out_dir.join("amux.v1.bin"))
         .out_dir(&out_dir)
         .compile_with_config(

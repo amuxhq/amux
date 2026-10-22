@@ -472,6 +472,9 @@ impl State {
     /// An immediate hand-off to Claude's own queue: a message sent while a
     /// turn runs folds into it.
     fn agent_message(&mut self, emit: &mut Emit, envelope: Envelope) {
+        if self.shared.message_repeated(emit, &envelope.id) {
+            return;
+        }
         let attachments = crate::shared::attachments(&envelope).to_vec();
         self.shared.message_accepted(&envelope.id);
         self.clients.insert(
@@ -481,6 +484,7 @@ impl State {
                 message: true,
             },
         );
+        self.shared.message_handed();
         emit.effect(Effect::Inject {
             id: envelope.id.clone(),
             text: crate::shared::carried(&envelope),
@@ -1312,6 +1316,7 @@ impl Interpreter for ClaudeSdk {
             Event::ProviderExit { code } => state.exited(&mut emit, crate::provider_exit(code)),
             Event::Exiting(exiting) => state.exited(&mut emit, exiting),
             Event::DaemonLost => {
+                state.shared.leaving();
                 state.boundary(
                     &mut emit,
                     wire::BoundaryKind::DaemonLost,

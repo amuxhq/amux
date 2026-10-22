@@ -450,13 +450,19 @@ class PhoneJourney:
 
     # --- the phone --------------------------------------------------------
 
-    def launch(self, *extra: str, found: list[str] | None = None, geometry: bool = True) -> None:
+    def launch(
+        self,
+        *extra: str,
+        found: list[str] | None = None,
+        geometry: bool = True,
+        relay_quic: str | None = None,
+    ) -> None:
         """The debug app, installed fresh so no earlier run's identity or
         trust is on the phone, launched against this net."""
         simctl("terminate", self.udid, BUNDLE_ID, timeout=60) if self._running() else None
         subprocess.run(["xcrun", "simctl", "uninstall", self.udid, BUNDLE_ID], capture_output=True, timeout=120)
         simctl("install", self.udid, str(self.build), timeout=300)
-        self.relaunch(*extra, found=found, geometry=geometry)
+        self.relaunch(*extra, found=found, geometry=geometry, relay_quic=relay_quic)
 
     def relaunch(
         self,
@@ -675,7 +681,12 @@ class PhoneJourney:
         drawn = geometry(elements, volatile, ids)
         geometry_label = geometry_label or label
         (actual / f"{geometry_label}.elements.txt").write_text(drawn)
+        # A volatile surface is masked where it stood before the photograph
+        # and after it: an age crossing into another digit while the display
+        # settles (9s to 19s) grows past the frame read first.
+        after = self.query()
         masks = volatile_masks(elements, volatile, screen=state.get("screen"))
+        masks += volatile_masks(uncovered(after["elements"]), volatile, screen=after.get("screen"))
         masks += volatile_masks(pictured(elements, self.frozen, png_size(png)))
         self.actions.append(f"captured {label}")
         if self.update and os.environ.get("CI"):

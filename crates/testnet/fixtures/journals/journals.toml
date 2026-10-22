@@ -1,0 +1,105 @@
+# Every journal fixture: the frames file `<name>.frames`, the interpreter
+# that made it, the script it was cut from, what the journal reaches, and
+# what its end leaves on purpose. tests/journal_fixtures.rs holds each file to
+# this list and to the interpreter's invariants.
+
+# Cut from provider recordings through each kind's interpreter.
+
+[[journal]]
+name = "claude_pty-prompt"
+kind = "claude_pty"
+source = "../../../interpret/fixtures/claude_pty/recorded_prompt.json"
+reaches = ["turn_end"]
+
+[[journal]]
+name = "claude_pty-permission_allow_once"
+kind = "claude_pty"
+source = "../../../interpret/fixtures/claude_pty/recorded_permission_allow_once.json"
+reaches = ["ask"]
+
+[[journal]]
+name = "claude_pty-question_single"
+kind = "claude_pty"
+source = "../../../interpret/fixtures/claude_pty/recorded_question_single.json"
+reaches = ["ask"]
+
+[[journal]]
+name = "claude_sdk-multi_turn"
+kind = "claude_sdk"
+source = "../../../interpret/fixtures/claude_sdk/recorded_multi_turn.json"
+reaches = ["turn_end"]
+
+[[journal]]
+name = "claude_sdk-question_asked"
+kind = "claude_sdk"
+source = "../../../interpret/fixtures/claude_sdk/recorded_question_asked.json"
+reaches = ["ask", "turn_end"]
+
+[[journal]]
+name = "claude_sdk-permission_callback"
+kind = "claude_sdk"
+source = "../../../interpret/fixtures/claude_sdk/recorded_permission_callback.json"
+reaches = ["ask", "turn_end"]
+
+[[journal]]
+name = "codex-turn_round_trip"
+kind = "codex"
+source = "../../../interpret/fixtures/codex/recorded_turn_round_trip.json"
+reaches = ["turn_end"]
+
+[[journal]]
+name = "codex-approval_allow"
+kind = "codex"
+source = "../../../interpret/fixtures/codex/recorded_approval_allow.json"
+reaches = ["ask", "turn_end"]
+
+[[journal]]
+name = "codex-inject_busy"
+kind = "codex"
+source = "../../../interpret/fixtures/codex/recorded_inject_busy.json"
+reaches = ["turn_end"]
+
+# Generated from authored scripts through the test kind's interpreter, for
+# shapes the recordings never show.
+
+[[journal]]
+name = "test-turn_end"
+kind = "test"
+source = "generated/turn_end.json"
+reaches = ["turn_end"]
+
+[[journal]]
+name = "test-ask_answered"
+kind = "test"
+source = "generated/ask_answered.json"
+reaches = ["ask", "turn_end"]
+
+[[journal]]
+name = "test-ask_open"
+kind = "test"
+source = "generated/ask_open.json"
+reaches = ["ask"]
+
+[[journal]]
+name = "test-follow_up"
+kind = "test"
+source = "generated/follow_up.json"
+reaches = ["follow_up", "turn_end"]
+
+[[journal]]
+name = "test-follow_up_then_exit"
+kind = "test"
+source = "generated/follow_up_then_exit.json"
+reaches = ["follow_up", "turn_end", "exit"]
+
+[[journal]]
+name = "test-stopped_after_turn"
+kind = "test"
+source = "generated/stopped_after_turn.json"
+reaches = ["turn_end", "exit"]
+
+[[journal]]
+name = "test-provider_exited"
+kind = "test"
+source = "generated/provider_exited.json"
+reaches = ["ask", "exit"]

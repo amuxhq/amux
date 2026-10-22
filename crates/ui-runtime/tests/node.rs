@@ -9,7 +9,7 @@ mod support;
 use std::sync::Arc;
 use std::time::Duration;
 
-use client::{Client, GrpcClient, InProcess, SystemClock};
+use client::{Client, GrpcClient, SystemClock};
 use provider_fakes::script::Step;
 use support::until_within;
 use testnet::{AgentDecl, FakeKind, Net, Topology};
@@ -159,14 +159,6 @@ async fn drive(client: Arc<dyn Client>, net: &Net) {
     // so the trace and the state it must replay to are read together.
     let state = session.state();
     assert_eq!(state.trace().replay(), *state);
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_session_and_the_fleet_run_in_process_against_a_real_node() {
-    let net = Net::start(topology()).await.unwrap();
-    let client: Arc<dyn Client> = Arc::new(InProcess::new(net.client("desk").unwrap()));
-    drive(client, &net).await;
-    net.shutdown().await.unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]

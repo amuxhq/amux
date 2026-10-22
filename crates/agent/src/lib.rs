@@ -8,9 +8,9 @@
 //! Hello and then a Nudge whenever the journal grows, and sends inputs and
 //! stops, each input answered with the interpreter's verdict.
 //!
-//! The lifecycle rules (grace, drain, stop modes, the one-shot exit) are
-//! described in the host module; the clock they run on is injected, so tests
-//! drive every deadline by hand.
+//! The lifecycle rules (grace, drain, stop modes, the one-shot exit) are the
+//! agent core's (the `agent-core` crate); the host module drives it. The
+//! clock it runs on is injected, so tests drive every deadline by hand.
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
@@ -23,7 +23,6 @@ mod host;
 mod notebook;
 mod provider;
 mod ready;
-mod ring;
 mod terminal;
 mod tools;
 mod tree;
@@ -31,6 +30,7 @@ mod tree;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+pub use agent_core::ExitCause;
 pub use agent_dir::{
     Clock, ManualClock, SystemClock, clock, ctl, local_socket, read_frame, read_message,
     write_frame, write_message,
@@ -48,62 +48,6 @@ pub use crate::tools::{
 /// The version this agent reports in its Hello and stamps on what it writes.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Why an agent process ended: the cause its final step records, on the
-/// boundary and as the incarnation's end the daemon puts on the row.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ExitCause {
-    /// The provider exited on its own, with its code when it had one.
-    ProviderExited(Option<i32>),
-    /// The daemon went away and did not come back within the grace.
-    DaemonLost,
-    /// An ask stayed open past the drain deadline with no daemon to carry an
-    /// answer.
-    Orphaned,
-    /// Stopped: the turn was cancelled the provider's own way, then the
-    /// agent exited.
-    Stopped,
-    /// Killed: the process group ended at once; nothing more was written.
-    Killed,
-    /// One-shot: a child agent finished its work.
-    Finished,
-    /// The provider could not be started.
-    Unstarted(String),
-    /// The interpreter ended the incarnation.
-    Interpreter(String),
-    /// A write to the agent directory failed, most often because the disk
-    /// is full.
-    WriteFailed(String),
-}
-
-impl ExitCause {
-    /// The cause as the wire carries it, with its own words as the detail.
-    pub fn end(&self) -> wire::IncarnationEnd {
-        let (cause, detail) = match self {
-            ExitCause::ProviderExited(code) => return interpret::provider_exit(*code),
-            ExitCause::DaemonLost => (wire::ExitCause::DaemonLost, None),
-            ExitCause::Orphaned => (wire::ExitCause::Orphaned, None),
-            ExitCause::Stopped => (wire::ExitCause::Stopped, None),
-            ExitCause::Killed => (wire::ExitCause::Killed, None),
-            ExitCause::Finished => (wire::ExitCause::Finished, None),
-            ExitCause::Unstarted(why) => (
-                wire::ExitCause::CouldNotStart,
-                Some(format!("the provider: {why}")),
-            ),
-            // No interpreter asks to exit today; were one to, its words are
-            // all that says why.
-            ExitCause::Interpreter(why) => (wire::ExitCause::EndedUnexpectedly, Some(why.clone())),
-            ExitCause::WriteFailed(why) => (
-                wire::ExitCause::DirectoryFailed,
-                Some(format!("could not write to it: {why}")),
-            ),
-        };
-        wire::IncarnationEnd {
-            cause: cause as i32,
-            detail,
-        }
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum AgentError {
     #[error("another agent process holds {0}")]
@@ -118,12 +62,6 @@ pub enum AgentError {
     Socket(std::io::Error),
     #[error("writing the journal: {0}")]
     Journal(std::io::Error),
-    /// The provider's own state in private/ could not be written.
-    #[error("writing {}: {source}", path.display())]
-    Private {
-        path: PathBuf,
-        source: std::io::Error,
-    },
 }
 
 /// Runs the agent in `dir` until it exits.

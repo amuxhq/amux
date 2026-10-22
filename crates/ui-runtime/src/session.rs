@@ -22,12 +22,16 @@ use ui_state::{
 };
 use ui_view::SessionLine;
 use wire::{
-    Agent, BlobRef, DumpFile, DumpPart, ErrorCode, FetchRequest, GetBlobRequest, GetRequest,
-    HostEntry, Input, PromptSubmission, PutBlobRequest, ResumeAgentRequest, SendInputRequest,
-    SendInputResponse, SessionEvent, SubscribeRequest, send_input_response, session_event,
+    Agent, BlobRef, ClientSessionEvents, ClientSessionHistory, ClientTraced, DumpRequest,
+    ErrorCode, FetchRequest, GetBlobRequest, GetRequest, HostEntry, Input, PromptSubmission,
+    PutBlobRequest, ResumeAgentRequest, SendInputRequest, SendInputResponse, SessionEvent,
+    SubscribeRequest, client_traced, send_input_response, session_event,
 };
 
-use crate::trace::{DriverEvent, DriverTrace, Ring, Structure as _, TraceEvent};
+use crate::trace::{DriverEvent, DriverTrace, Ring, TraceEvent};
+
+/// Prefixes the reason of a dump a chat's transcript asked for.
+pub const TRANSCRIPT_DUMP: &str = "the client's transcript: ";
 use crate::{Backoff, inputs};
 
 /// What became of a send.
@@ -93,6 +97,9 @@ impl Changes {
 struct Model {
     state: SessionState,
     trace: Ring<SessionState, Msg>,
+    /// The trace as it stood when the transcript first failed its check,
+    /// ending at the message that broke it: what the dump carries.
+    cut: Option<DriverTrace<SessionState, Msg>>,
     changes: Changes,
     changed_keys: BTreeSet<Key>,
     /// Attachment bytes fetched during this open. Dropped with the session.
@@ -143,6 +150,8 @@ pub(crate) struct Inner {
     /// The model asked for a reload: the pump reopens the stream.
     reload: Notify,
     closed: AtomicBool,
+    /// The transcript failed its check and a dump was asked for.
+    dumped: AtomicBool,
     catalogues: Arc<Catalogues>,
     /// The catalogue hash last fetched for; asked again only when a chat
     /// opens anew.
@@ -177,6 +186,7 @@ impl Inner {
         let Model {
             state,
             trace,
+            cut,
             changes,
             changed_keys,
             home_line,
@@ -184,6 +194,10 @@ impl Inner {
         } = &mut *model;
         trace.record(state, at_ms, TraceEvent::Msg(msg.clone()));
         let outcome = state.update(msg);
+        // Taken under the same guard, before another message applies.
+        if outcome.broken.is_some() && cut.is_none() && !self.dumped.load(Ordering::Acquire) {
+            *cut = Some(trace.trace());
+        }
         let read = read(state);
         if self.gathering.load(Ordering::Acquire) {
             changes.absorb(&outcome, changed_keys);
@@ -241,6 +255,9 @@ impl Inner {
             self.want_catalogue();
         }
         self.resend(outcome.resend.clone());
+        if let Some(why) = &outcome.broken {
+            self.dump_broken(why);
+        }
         if let Some(key) = &outcome.need_get {
             self.note(DriverEvent::Get { key: key.clone() });
             let request = GetRequest {
@@ -260,6 +277,43 @@ impl Inner {
             }
         }
         outcome
+    }
+
+    /// Asks the runtime for a dump of the agent with this session's trace
+    /// as it stood at the message that broke the transcript: a transcript
+    /// that fails its own check is a client bug, and a replay of the trace
+    /// stops where it broke. Once per session, since the same transcript
+    /// fails again at the next CaughtUp.
+    fn dump_broken(self: &Arc<Self>, why: &str) {
+        let Some(cut) = self.model().cut.take() else {
+            return;
+        };
+        if self.dumped.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        self.note(DriverEvent::Broken {
+            why: why.to_owned(),
+        });
+        let request = DumpRequest {
+            agent_ids: vec![self.agent_id.clone()],
+            reason: format!("{TRANSCRIPT_DUMP}{why}"),
+            automatic: true,
+            sessions: vec![cut.history(&self.agent_id)],
+        };
+        let inner = self.clone();
+        tokio::spawn(async move {
+            if let Err(error) = inner.client.dump(request).await {
+                inner.note(DriverEvent::DumpFailed {
+                    error: error.to_string(),
+                });
+            }
+        });
+    }
+
+    /// This session as a dump carries it: the trace from the state its
+    /// oldest segment began from.
+    fn history(&self) -> ClientSessionHistory {
+        self.model().trace.trace().history(&self.agent_id)
     }
 
     /// On screen, fetches the catalogue the newest snapshot names unless
@@ -508,6 +562,7 @@ impl Session {
             clock: Arc::new(clock),
             model: Mutex::new(Model {
                 trace: Ring::new(state.clone()),
+                cut: None,
                 state,
                 changes: Changes::default(),
                 changed_keys: BTreeSet::new(),
@@ -520,6 +575,7 @@ impl Session {
             gathering: AtomicBool::new(on_screen),
             reload: Notify::new(),
             closed: AtomicBool::new(false),
+            dumped: AtomicBool::new(false),
             catalogues,
             asked: Mutex::new(None),
         });
@@ -945,27 +1001,11 @@ impl Session {
         self.inner.client.put_blob(request).await
     }
 
-    /// This session's part of a dump bundle: the structure of its state and
-    /// its trace, with no content (see `dump`).
-    pub fn dump_part(&self) -> DumpPart {
-        let (state, trace) = {
-            let model = self.inner.model();
-            (model.state.structure(), model.trace.trace())
-        };
-        let dir = format!("client/sessions/{}", hex(&self.inner.agent_id));
-        DumpPart {
-            dump_id: Vec::new(),
-            files: vec![
-                DumpFile {
-                    name: format!("{dir}/state.txt"),
-                    contents: state.into_bytes(),
-                },
-                DumpFile {
-                    name: format!("{dir}/trace.txt"),
-                    contents: trace.render().into_bytes(),
-                },
-            ],
-        }
+    /// This session as a dump carries it, for a dump this client asks for:
+    /// the state its trace began from and every event since. The daemon
+    /// redacts it through the agent's kind before it writes it.
+    pub fn history(&self) -> ClientSessionHistory {
+        self.inner.history()
     }
 
     /// Drops the stream. Nothing is flushed: nothing was kept. Results of
@@ -990,6 +1030,30 @@ impl DriverTrace<SessionState, Msg> {
             state.update(msg.clone());
         }
         state
+    }
+
+    /// The trace as a dump carries it: the start and each message in wire
+    /// form, the driver's own acts as it describes them.
+    pub fn history(&self, agent_id: &[u8]) -> ClientSessionHistory {
+        let traced = self
+            .events
+            .iter()
+            .map(|traced| ClientTraced {
+                seq: traced.seq,
+                at_ms: traced.at_ms,
+                event: Some(match &traced.event {
+                    TraceEvent::Msg(msg) => client_traced::Event::Msg(msg.to_wire()),
+                    TraceEvent::Driver(driver) => {
+                        client_traced::Event::Driver(format!("{driver:?}"))
+                    }
+                }),
+            })
+            .collect();
+        ClientSessionHistory {
+            agent_id: agent_id.to_vec(),
+            start: Some(self.start.to_wire()),
+            events: Some(ClientSessionEvents { traced }),
+        }
     }
 }
 

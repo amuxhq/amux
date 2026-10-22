@@ -1,6 +1,6 @@
 //! The transcript window and its run index.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::RangeInclusive;
 
 use wire::{Append, Item, Kind};
@@ -37,8 +37,10 @@ impl Held {
 pub struct Transcript {
     kind: Kind,
     items: BTreeMap<u64, Held>,
-    by_key: HashMap<Key, u64>,
-    by_input: HashMap<Vec<u8>, Key>,
+    /// Ordered, like every map a session holds, so two equal sessions
+    /// print alike: the client model tells states apart by their print.
+    by_key: BTreeMap<Key, u64>,
+    by_input: BTreeMap<Vec<u8>, Key>,
     exhausted: bool,
     runs: RunIndex,
 }
@@ -62,11 +64,38 @@ impl Transcript {
         Transcript {
             kind,
             items: BTreeMap::new(),
-            by_key: HashMap::new(),
-            by_input: HashMap::new(),
+            by_key: BTreeMap::new(),
+            by_input: BTreeMap::new(),
             exhausted: false,
             runs: RunIndex::default(),
         }
+    }
+
+    /// A transcript holding `items` as they are, with its indexes rebuilt
+    /// from them: how a dump's rows become a window again. Nothing is
+    /// checked or repaired, so a window a dump caught broken stays broken.
+    pub(crate) fn restore(kind: Kind, items: Vec<Item>, exhausted: bool) -> Transcript {
+        let mut transcript = Transcript::new(kind);
+        transcript.exhausted = exhausted;
+        for item in items {
+            let held = Held::new(kind, item);
+            transcript
+                .by_key
+                .insert(held.item.key.clone(), held.item.order);
+            if !held.item.input_id.is_empty() {
+                transcript
+                    .by_input
+                    .insert(held.item.input_id.clone(), held.item.key.clone());
+            }
+            transcript.items.insert(held.item.order, held);
+        }
+        transcript.runs = RunIndex::rebuild(&transcript);
+        transcript
+    }
+
+    /// Whether the oldest row held is known to be the agent's first.
+    pub(crate) fn exhausted(&self) -> bool {
+        self.exhausted
     }
 
     pub fn is_empty(&self) -> bool {

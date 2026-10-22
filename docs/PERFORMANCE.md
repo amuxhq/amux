@@ -157,6 +157,52 @@ flood ingest cost per frame | 21.002 µs | median 21.002 µs | 100.000 µs | 21.
 `measured` is the metric's named statistic over its samples; `baseline` and `drift` read `ceiling only` for metrics
 without a drift gate. The run fails if any verdict is `FAIL`.
 
+## The relay curve
+
+`just relay-curve` measures how the production relay scales with the hosts holding links to it
+(`crates/qualification/src/perf/relay.rs`). At 10, 100 and 1,000 concurrent connections it starts a fresh relay on
+loopback, links that many hosts to it in pairs, one pair to an account, then links each pair end to end through the
+relay, one host dialling the other through its own link to the relay as a daemon does, and measures three things:
+link admissions per second, the level's hosts over the time from the first dial to the last link the relay accepted,
+sixty-four hosts dialling at once; stream-open latency, every host opening twenty streams to its partner on their
+link one after another, all hosts at once, each timed from the open to the partner's one-byte answer; and aggregate
+throughput, every host writing into one stream on that link as fast as the link takes the bytes, read over a
+three-second window after a second's warm-up. Each level runs five rounds, each waiting a quarter second after the relay has let the last round's links go,
+since their teardown otherwise delays the next round's dials: admissions and throughput are the median round's, and
+the latency percentiles are taken over every round's opens together, so the 99th percentile at ten connections rests
+on a thousand opens.
+
+```sh
+just relay-curve              # measure and print
+just relay-curve --baseline   # record perf/relay/<hw.model>/baseline.json
+just relay-curve --compare    # judge against it; non-zero outside the noise bands
+```
+
+The hosts link over the relay's TLS-over-TCP listener, the one a deployment runs beside QUIC: the relay admits ten
+new QUIC handshakes a minute from one address, and every host here dials from the same loopback address. The links
+between partners are QUIC whose packets the relay forwards over those TCP legs. The hosts are bare: a link to the
+relay, a link to the partner and raw streams on it, serving no calls, so the work measured is the relay's forwarding,
+the partners' QUIC and the TLS on the relay's legs, in the same process with the relay on a runtime of its own. The run records the machine model, OS, cores,
+reference state (the flood's busy core) and the load average before and after; the binary refuses a debug build
+and a machine that is not enrolled.
+
+The comparison is one-sided: a run passes unless a figure is worse than its baseline by more than its band, and a
+faster run is reported as such. The bands are constants beside the workload, set from three consecutive runs of one
+build on the enrolled Mac: throughput moved by up to 4% and the median open by up to 2%, so their bands are 15% and
+25%; the 99th percentile moved by up to 76% and at a thousand connections falls in one of two modes, so it fails only
+past double. Admissions moved by up to 10% at every level over three runs with the Mac busy elsewhere, so their band
+is 25%, like the median open's; more admissions per second is better. A baseline from another model, profile, carrier
+or reference state, or one recorded before admissions were measured, is refused.
+
+Before the relay forwarded links' packets it carried the hosts' streams itself, and the baseline on the enrolled Mac
+was recorded then: about 190 MiB/s from 10 connections to 100 and 160 at a thousand, with the median open at 3, 29
+and 294 ms. Forwarded, an open is one round trip between the partners rather than a stream the relay sets up, so the
+median open fell to 0.8, 7 and 69 ms. Throughput first fell to 46, 77 and 39 MiB/s, because every 1,200-byte packet
+was its own write, a TLS record and a system call on each TCP leg, and the queues behind those writes overflowed on
+QUIC's bursts; with each byte-stream path gathering its frames into 64 KiB writes it rose to about 450, 270 and
+275 MiB/s, above the carried baseline at every level, with admissions and opens unchanged. A change to the relay shows
+when it adds round trips, packets or system calls to a link, or serialises work across links.
+
 ## The phone
 
 `just ios perf` measures the iPhone app itself, on this Mac's pinned simulator, against a served network built for
@@ -166,9 +212,11 @@ generates the topology; `scripts/ios-perf.py` runs the suite). The app is the `M
 the shipped build is, with the driving door kept in, because an unoptimised Swift build measures the compiler
 rather than the app. Every packet between the phone and a machine crosses a gate the run can delay (the served
 net's `LanGate` and `LanFaults` verbs), so reaching the fleet is measured over a household network's latency as
-well as over none; and once more with the phone away from home, signed in to the relay with every direct dial lost
-and a gate in front of the relay's QUIC carrier (`RelayGate` and `RelayFaults`), which is the path mobile data
-takes.
+well as over none; and once more with the phone away from home, signed in to the relay with every direct dial lost,
+which is the path mobile data takes. Away from home every way to the relay is gated: the phone dials a gate in front
+of the relay's QUIC carrier (`RelayGate`), each machine already reaches the relay through a gate of its own, and the
+net's `NetFaults` verb aimed at `relay` delays them all at once, so a relayed round trip pays the latency on both
+legs. The account service is not gated, since a launch reuses the phone's relay token rather than fetching one.
 
 Every number is taken by the app: the launch marks (`Signposts` in `AmuxCore`, emitted in every build) and the
 door's `measure` verb, which watches the display, the main thread and the footprint for a stretch while the run
@@ -182,8 +230,8 @@ the phone, rather than reporting a number about an idle screen.
 | `cold store read` | cold | Inside each of those launches, the store's own share: the embedded node's start (opening every profile's store, the listener, the identity) plus the profile on screen opening its fleet from the store and catching up with it, before any host is reached; the main thread's wait between the two is not counted | 50 ms | | 15% |
 | `cold fleet render` | cold | From the fleet on screen having caught up with its store to the first presented frame carrying its rows: building the home from what the store held, and the rest of the shell's first frame around it | 250 ms | | 15% |
 | `reconciliation at 0 ms` | reconciliation | From that point to the first presented frame after every trusted machine's agents were current with the machine, over loopback | 250 ms | | 15% |
-| `reconciliation at 100 ms` | reconciliation | The same, with every gate holding each packet 100 ms | 1,000 ms | | 15% |
-| `reconciliation through the relay at 100 ms` | reconciliation | The same, the phone away from home: signed in to the machines' account at the served relay, every direct dial lost, and the gate in front of the relay holding each packet 100 ms | 1,500 ms | | 15% |
+| `reconciliation at 100 ms` | reconciliation | The same, with every gate holding each packet 100 ms | 336 ms | | 15% |
+| `reconciliation through the relay at 100 ms` | reconciliation | The same, the phone away from home: signed in to the machines' account at the served relay, every direct dial lost, and every way to the relay, the phone's and each machine's, holding each packet 100 ms | 566 ms | | 15% |
 | `streaming hitch time` | streaming | Missed frame time per second while fifty rows a second arrive for twenty seconds into the conversation on screen, resting at its tail | 5 ms/s | | ceiling only |
 | `streaming main-thread CPU` | streaming | The main thread's share of one core over the same stream | 60 % | | 15% |
 | `streaming footprint` | streaming | The process's footprint at the end of the stream | 120 MB | | 10% |
@@ -219,16 +267,29 @@ while the main thread builds the tab bar, and 40 is the redrawn list. No one pie
 two runs of the same build differ. The budget is now 850 ms median and 900 worst, and the fleet render's 250: that
 cost, with room for the 40 to 60 ms by which runs of one build move on this Mac. A device's budget is written when a device is enrolled and measured.
 
-Where reconciliation goes, over a gate that holds each packet 100 ms (a 200 ms round trip, printed by the links'
-own logs as `rtt`): two round trips for the QUIC handshake, since a listener answers an address it has not seen with
-a Retry; one for the link's Hello and HelloAck; then one to each host for its inventory, with the remembered
-sessions' subscriptions in the same flight. A stream to a paired host over a direct link of our own is plain, with
-no handshake inside and no wait to be accepted, so the inventory's first bytes leave with the stream's preface; one
-Session channel per host carries every agent's subscription. That is four round trips, about 760 ms on the pinned
-Mac from 1,986 when each stream waited to be accepted and then handshook inside, and each agent opened a stream of
-its own. The test gate itself passes datagrams in the order they came: held each on its own timer, two sent in the
-same millisecond could swap places, and a packet overtaking the handshake it followed was dropped and counted lost,
-costing a round trip a household network never does.
+Where reconciliation goes, over a gate that holds each packet 100 ms (a 200 ms round trip): one round trip. A
+launch resumes each host's link with the TLS ticket and address-validation token its last process kept, so no Retry
+and no full handshake intervene, and its first flight carries the link's Hello, the inventory subscription and every
+remembered session's subscription as early data, on every remembered path and through the relay at once; the host
+answers with the catch-up beside its handshake. The phone's link log times each host's catch-up 213 to 219 ms after
+the link's first packet, and the reconciliation mark reads a 162 ms median, since the first flight leaves while the
+store is still being read. Before, a launch took four round trips, about 760 ms (797 ms in the run this work started
+from): two for the QUIC handshake, since a listener answers an address it has not seen with a Retry; one for the
+link's Hello and HelloAck; and one for the inventory. A stream to a paired host is plain, with no handshake inside and
+no wait to be accepted, and one Session channel per host carries every agent's subscription. The test gate itself
+passes datagrams in the order they came: held each on its own timer, two sent in the same millisecond could swap
+places, and a packet overtaking the handshake it followed was dropped and counted lost, costing a round trip a
+household network never does.
+
+Through the relay, with the gate holding both the phone's leg and each machine's (a relayed round trip, 400 ms,
+crosses both), the pinned Mac measured a 355 ms median against 1,608 ms before, each machine's catch-up logged 420
+to 427 ms after the first packet. Both launch budgets are the ungated reconciliation (91.8 ms) plus one gated round
+trip, with 15% over that: 336 ms at home and 566 ms through the relay.
+
+A launch leaves its successor a ticket only once the host sends one, when the phone's handshake finishes: two round
+trips into a resumed link, one after the catch-up. The run keeps each launch open until the next is due, ten
+seconds apart, as a person looking at their fleet does; quit as soon as the fleet reconciled, every other launch
+found no ticket and paid a full handshake (839 ms through the relay).
 
 `--only cold|reconciliation|streaming|idle` takes one group, for working on it; `--baseline` needs a whole run, and
 judges it on the budgets alone, since the baseline it replaces is no reference for its own successor.

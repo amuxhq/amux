@@ -1,32 +1,127 @@
 //! The link registry: this daemon's live links and the wire-side adjacency
 //! discipline.
 //!
-//! The registry is the single source of truth for *wire* adjacency. Every
-//! `NeighborUp`/`NeighborDown` a peer ever receives from us is emitted here,
-//! under one lock, in registration order — so "advertise only adjacency" is
-//! structural: there is no API for broadcasting anything else. The handshake
-//! snapshot is reconciled here too: registering a link diffs the neighbor
-//! set the handshake advertised against the current one and sends the
-//! difference down the new link, atomically with registration, which closes
-//! the window between composing the snapshot and the link going live.
+//! The registry holds each live link's writer. Which links stay and what
+//! each is told of its neighbors are the forwarding core's decisions
+//! (`relay_core`): every link coming up or going is stepped through it
+//! under the registry's one lock, and the `NeighborUp`/`NeighborDown`
+//! messages it names are sent from here, in the order it named them, so
+//! the core's view and the writers held never disagree. A new link is told
+//! the difference between its handshake's neighbor snapshot and the
+//! neighbors there are in the same step that registers it, which closes the
+//! window between composing the snapshot and the link going live.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use tokio::sync::{Notify, RwLock, mpsc};
 use wire::pb;
 
+use crate::driver::CoreLinks;
 use crate::link::LinkCarrier as NativeLinkCarrier;
-use crate::routing::types::LinkId;
+use crate::link::link_log::PathKind;
+use crate::link::paths::PathDriver;
+use crate::link::relaying::Relaying;
+use crate::routing::types::{LinkId, core_host, host_from_core};
 use crate::routing::wire::{neighbor_down_message, neighbor_up_message};
 use crate::routing::{ConnectRole, Host, RuntimeInstance};
 use crate::{HostId, Tier, audit};
 
 pub(crate) type LinkOutputTx = mpsc::Sender<pb::Message>;
 
-#[derive(Default)]
+impl LinkRegistry {
+    /// The registry of a host whose own id is `own`: a daemon's links are
+    /// all one account's, and it forwards between them on its own.
+    pub(crate) fn new(own: HostId) -> Self {
+        Self::relayed(Relaying::new(own), relay_core::UserId::default())
+    }
+
+    /// A profile's registry, whose links its core hears of.
+    pub(crate) fn for_core(own: HostId, core: CoreLinks) -> Self {
+        Self {
+            core: Some(core),
+            ..Self::new(own)
+        }
+    }
+
+    /// One account's registry on a relay: its links are reported to the
+    /// relay's core, which every account shares, under `user`.
+    pub(crate) fn relayed(relaying: Arc<Relaying>, user: relay_core::UserId) -> Self {
+        Self {
+            state: RwLock::default(),
+            core: None,
+            relaying,
+            user,
+            refusals: tokio::sync::broadcast::channel(16).0,
+            last_refusals: std::sync::Mutex::default(),
+            paths: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// Tells `paths` of every peer link from now on.
+    pub(crate) fn drive_paths(&self, paths: &Arc<PathDriver>) {
+        let _ = self.paths.set(Arc::downgrade(paths));
+    }
+
+    /// The profile's path machines, when this is a profile's registry.
+    pub(crate) fn paths(&self) -> Option<Arc<PathDriver>> {
+        self.paths.get()?.upgrade()
+    }
+
+    /// A peer link came up: its peer's path machine chooses its path from
+    /// now on.
+    fn path_up(
+        &self,
+        link: &LinkId,
+        host: HostId,
+        role: LinkRole,
+        carrier: Option<&Arc<dyn NativeLinkCarrier>>,
+    ) {
+        if let (LinkRole::Peer, Some(carrier), Some(paths)) = (role, carrier, self.paths()) {
+            paths.link_up(link.core(), host, carrier.as_ref());
+        }
+    }
+
+    /// The core that decides which links forward to each other.
+    pub(crate) fn relaying(&self) -> &Arc<Relaying> {
+        &self.relaying
+    }
+
+    fn report_down(&self, state: &LinkRegistryState, link: &LinkId) {
+        let out = self
+            .relaying
+            .step([relay_core::Input::LinkDown { link: link.core() }]);
+        tell_neighbors(state, out, None);
+    }
+
+    /// The profile's core, when this is a profile's registry.
+    pub(crate) fn core(&self) -> Option<&CoreLinks> {
+        self.core.as_ref()
+    }
+}
+
 pub struct LinkRegistry {
     state: RwLock<LinkRegistryState>,
+    /// The profile's core, told of every link registered here and asked
+    /// for every channel opened over one. A relay's registry has none.
+    core: Option<CoreLinks>,
+    /// The forwarding core, told of every link registered here and asked
+    /// for every stream a link opens toward another host.
+    relaying: Arc<Relaying>,
+    /// The account these links are on, as the forwarding core knows it.
+    user: relay_core::UserId,
+    refusals: tokio::sync::broadcast::Sender<(HostId, pb::ForwardRefusal)>,
+    last_refusals: std::sync::Mutex<HashMap<HostId, pb::ForwardRefusal>>,
+    /// The profile's path machines, told of every peer link that comes up
+    /// or goes on the profile's socket.
+    paths: std::sync::OnceLock<std::sync::Weak<PathDriver>>,
+}
+
+pub(crate) fn relay_tier(tier: Tier) -> relay_core::Tier {
+    match tier {
+        Tier::Free => relay_core::Tier::Free,
+        Tier::Pro => relay_core::Tier::Pro,
+    }
 }
 
 #[derive(Default)]
@@ -41,13 +136,17 @@ pub enum LinkRole {
     CloudRelay,
 }
 
-/// The physical carrier underneath a direct routing link. Relay routes are
-/// identified by `Route::Via`; direct routes use this tag to distinguish SSH
-/// from a network connection.
+/// What carries a host-to-host link's packets: the network, SSH, or a
+/// forwarder (the relay, or a paired daemon) between the two hosts.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum LinkCarrier {
     Direct,
     Ssh,
+    /// A link through a forwarder is the two hosts' own, but takes no part
+    /// in forwarding or in what links are told of their neighbors:
+    /// forwarding is one hop, and the hosts it reaches are the
+    /// forwarder's to tell.
+    Forwarded,
 }
 
 /// How this daemon authenticated a live link. Only token-admitted links
@@ -68,24 +167,18 @@ pub(crate) struct LinkProperties {
     pub(crate) direct_order: Option<DirectLinkOrder>,
 }
 
-/// Stable ordering for crossed direct dials. A fallback remains valid when it
-/// is the only connection; when both directions connect, both peers retain the
-/// same preferred physical link.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub(crate) enum DirectLinkOrder {
-    Preferred,
-    Fallback,
-}
+/// Which of a crossed dial's two links both peers keep: the forwarding
+/// core's to decide.
+pub(crate) type DirectLinkOrder = relay_core::DialOrder;
 
-impl DirectLinkOrder {
-    pub(crate) fn for_hosts(local: HostId, peer: HostId, role: ConnectRole) -> Self {
-        let local_opens_preferred = local < peer;
-        if local_opens_preferred == (role == ConnectRole::Connector) {
-            Self::Preferred
-        } else {
-            Self::Fallback
-        }
-    }
+/// The order of a direct link `local` holds to `peer`, in the role it
+/// played opening it.
+pub(crate) fn direct_order(local: HostId, peer: HostId, role: ConnectRole) -> DirectLinkOrder {
+    relay_core::DialOrder::for_hosts(
+        core_host(local),
+        core_host(peer),
+        role == ConnectRole::Connector,
+    )
 }
 
 #[derive(Clone)]
@@ -97,8 +190,6 @@ struct LinkWriter {
     role: LinkRole,
     admission: LinkAdmission,
     carrier: LinkCarrier,
-    runtime_instance: RuntimeInstance,
-    direct_order: Option<DirectLinkOrder>,
     native_carrier: Option<Arc<dyn NativeLinkCarrier>>,
 }
 
@@ -114,6 +205,10 @@ pub(crate) enum LinkCloseRequest {
     /// close code, so the peer learns it even when closing the connection
     /// drops the message.
     Revoked,
+    /// The link it was carried through, to a forwarder, went.
+    ForwarderGone,
+    /// The peer said on another link that it no longer trusts this host.
+    PeerRevoked,
     /// A call could not open a channel on the link while it stayed up: it
     /// closes as a dead connection would, and the host reads offline until
     /// a channel opens on a link that replaces it.
@@ -124,11 +219,6 @@ pub(crate) enum LinkCloseRequest {
 pub(crate) struct Registration {
     /// Receives the registry's requests to close this link.
     pub(crate) close_rx: mpsc::Receiver<LinkCloseRequest>,
-    /// Direct links to the same peer this one superseded. They are gone from
-    /// the registry already and are asked to close, but their own tasks take
-    /// time to finish; whoever routes over links has to forget them now, or a
-    /// call in that gap picks a link nothing can open a stream on.
-    pub(crate) displaced: Vec<LinkId>,
 }
 
 impl LinkRegistry {
@@ -235,69 +325,101 @@ impl LinkRegistry {
         let (close_tx, close_rx) = mpsc::channel(1);
         let closed = Arc::new(Notify::new());
         let mut state = self.state.write().await;
-        let first_link_to_peer = !state
-            .writers
-            .values()
-            .any(|writer| writer.host.id == host.id);
-
-        let mut displaced = Vec::new();
-        if role == LinkRole::Peer
-            && carrier == LinkCarrier::Direct
-            && let Some(order) = direct_order
+        let carrier_for_paths = native_carrier.clone();
+        if carrier == LinkCarrier::Forwarded {
+            self.last_refusals
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .remove(&host.id);
+            let old = state.writers.insert(
+                link,
+                LinkWriter {
+                    host: host.clone(),
+                    tx: outgoing_tx,
+                    close_tx,
+                    closed,
+                    role,
+                    admission,
+                    carrier,
+                    native_carrier,
+                },
+            );
+            drop(state);
+            if let Some(old) = old {
+                old.closed.notify_waiters();
+                audit::link_down(old.host.id, &link, "replaced");
+            }
+            self.path_up(&link, host.id, role, carrier_for_paths.as_ref());
+            audit::link_up(host.id, &link, role);
+            return Some(Registration { close_rx });
+        }
+        // The forwarding core settles which of two direct links to one peer
+        // stays and what every link is told of its neighbors; it is asked
+        // under the lock, so what it says and the writers held agree.
+        let direct = match (role, carrier, direct_order) {
+            (LinkRole::Peer, LinkCarrier::Direct, Some(order)) => Some(relay_core::Direct {
+                order,
+                instance: runtime_instance.bytes(),
+            }),
+            _ => None,
+        };
+        let out = self.relaying.step([relay_core::Input::LinkUp {
+            link: link.core(),
+            user: self.user,
+            host: core_host(host.id),
+            tier: match admission {
+                LinkAdmission::PinnedKey => None,
+                LinkAdmission::CloudToken { tier } => Some(relay_tier(tier)),
+            },
+            direct,
+            advertised: advertised_snapshot.iter().copied().map(core_host).collect(),
+        }]);
+        if out
+            .iter()
+            .any(|output| matches!(output, relay_core::Output::RefuseLink { .. }))
         {
-            let duplicates = state
-                .writers
-                .iter()
-                .filter(|(_, writer)| {
-                    writer.host.id == host.id
-                        && writer.role == LinkRole::Peer
-                        && writer.carrier == LinkCarrier::Direct
-                        && writer.direct_order.is_some()
-                })
-                .map(|(id, writer)| (*id, writer.direct_order.unwrap(), writer.runtime_instance))
-                .collect::<Vec<_>>();
-            // A duplicate from the same runtime instance is the same live process:
-            // a crossed dial, settled by keeping the preferred link. One from
-            // another runtime instance belongs to a process that has since died, so
-            // it is replaced whichever direction either link was dialled in.
-            if duplicates.iter().any(|(_, existing, from)| {
-                *from == runtime_instance
-                    && (*existing == DirectLinkOrder::Preferred || *existing == order)
-            }) {
-                return None;
-            }
-            for (id, _, _) in duplicates {
-                if let Some(writer) = state.writers.remove(&id) {
-                    displaced.push((id, writer));
-                }
+            return None;
+        }
+        let mut displaced = Vec::new();
+        for output in &out {
+            if let relay_core::Output::Displace { link: gone } = output
+                && let Some(id) = state.writers.keys().find(|id| id.core() == *gone).copied()
+                && let Some(writer) = state.writers.remove(&id)
+            {
+                displaced.push((id, writer));
             }
         }
-        // Reconcile the new link's view: the handshake snapshot plus this
-        // diff equals the registry's neighbor set at this instant.
-        let advertised: HashSet<HostId> = advertised_snapshot.iter().copied().collect();
-        let mut current: HashMap<HostId, Host> = HashMap::new();
-        for writer in state.writers.values() {
-            current.entry(writer.host.id).or_insert(writer.host.clone());
+        // A link admitted by a token is a relay's link to a host, which
+        // forwards for the host rather than through it.
+        let through = match (role, admission) {
+            (LinkRole::CloudRelay, LinkAdmission::PinnedKey) => Some(
+                native_carrier
+                    .as_ref()
+                    .map_or(PathKind::RelayUdp, |carrier| carrier.path_kind()),
+            ),
+            (LinkRole::Peer, LinkAdmission::PinnedKey) => Some(PathKind::ViaDaemon),
+            (_, LinkAdmission::CloudToken { .. }) => None,
+        };
+        // Packets are forwarded through a link on the profile's own socket:
+        // the host's link to the relay, over UDP or TCP, and a pinned link
+        // to a paired daemon. A link over a byte stream of its own has no
+        // stand-in there, and is passed over.
+        if let Some(carrier) = &native_carrier {
+            self.relaying.admitted(
+                link.core(),
+                outgoing_tx.clone(),
+                host.id,
+                carrier.clone(),
+                through,
+            );
         }
-        for (peer, peer_host) in &current {
-            if *peer != host.id && !advertised.contains(peer) {
-                try_send_or_request_close(&outgoing_tx, &close_tx, neighbor_up_message(peer_host));
-            }
-        }
-        for advertised_peer in advertised {
-            if advertised_peer != host.id && !current.contains_key(&advertised_peer) {
-                try_send_or_request_close(
-                    &outgoing_tx,
-                    &close_tx,
-                    neighbor_down_message(advertised_peer),
-                );
-            }
-        }
-
-        if first_link_to_peer {
-            let message = neighbor_up_message(&host);
-            fanout(&state, message, host.id);
-        }
+        let new = NewLink {
+            link: link.core(),
+            host: &host,
+            tx: &outgoing_tx,
+            close_tx: &close_tx,
+        };
+        tell_neighbors(&state, out, Some(new));
 
         let old = state.writers.insert(
             link,
@@ -309,13 +431,10 @@ impl LinkRegistry {
                 role,
                 admission,
                 carrier,
-                runtime_instance,
-                direct_order,
                 native_carrier,
             },
         );
         drop(state);
-        let displaced_ids = displaced.iter().map(|(id, _)| *id).collect();
         for (id, writer) in displaced {
             let _ = writer.close_tx.try_send(LinkCloseRequest::Superseded);
             writer.closed.notify_waiters();
@@ -325,43 +444,69 @@ impl LinkRegistry {
             old.closed.notify_waiters();
             audit::link_down(old.host.id, &link, "replaced");
         }
+        self.path_up(&link, host.id, role, carrier_for_paths.as_ref());
         audit::link_up(host.id, &link, role);
-        Some(Registration {
-            close_rx,
-            displaced: displaced_ids,
-        })
+        Some(Registration { close_rx })
     }
 
     /// Removes a link; if it was the last link to its peer, other links
-    /// learn `NeighborDown(peer)`.
+    /// learn `NeighborDown(peer)`. The links carried through it close: a
+    /// link through a forwarder has no other path.
     pub(crate) async fn remove(&self, link: &LinkId) {
         let mut state = self.state.write().await;
         let Some(writer) = state.writers.remove(link) else {
             return;
         };
-        let peer = writer.host.id;
-        let last_link_to_peer = !state.writers.values().any(|other| other.host.id == peer);
-        if last_link_to_peer {
-            let message = neighbor_down_message(peer);
-            fanout(&state, message, peer);
+        if writer.carrier != LinkCarrier::Forwarded {
+            self.report_down(&state, link);
         }
+        for carried in state.writers.values().filter(|carried| {
+            carried
+                .native_carrier
+                .as_ref()
+                .and_then(|carrier| carrier.forwarded_through())
+                == Some(link.core())
+        }) {
+            let _ = carried.close_tx.try_send(LinkCloseRequest::ForwarderGone);
+        }
+        let peer = writer.host.id;
         drop(state);
+        if let Some(paths) = self.paths() {
+            paths.link_down(link.core());
+        }
         writer.closed.notify_waiters();
         audit::link_down(peer, link, "removed");
+    }
+
+    /// `host` said on `told` that it no longer trusts this host: its other
+    /// links are no use, so they leave the registry at once, before anyone
+    /// is told and a call picks one, and are asked to close.
+    pub(crate) async fn forsake(&self, host: HostId, told: LinkId) {
+        let others: Vec<LinkId> = {
+            let state = self.state.read().await;
+            state
+                .writers
+                .iter()
+                .filter(|(link, writer)| writer.host.id == host && **link != told)
+                .map(|(link, writer)| {
+                    let _ = writer.close_tx.try_send(LinkCloseRequest::PeerRevoked);
+                    *link
+                })
+                .collect()
+        };
+        for link in others {
+            self.remove(&link).await;
+        }
     }
 
     /// The current neighbor set, as a handshake snapshot.
     pub(crate) async fn neighbor_snapshot(&self) -> Vec<Host> {
         let state = self.state.read().await;
-        let mut seen = HashSet::new();
-        let mut snapshot = Vec::new();
-        for writer in state.writers.values() {
-            if seen.insert(writer.host.id) {
-                snapshot.push(writer.host.clone());
-            }
-        }
-        snapshot.sort_unstable_by_key(|host| host.id);
-        snapshot
+        self.relaying
+            .neighbors(self.user)
+            .into_iter()
+            .filter_map(|host| state.host(host).cloned())
+            .collect()
     }
 
     /// Every peer this registry holds a link to, and how many links each one
@@ -383,12 +528,70 @@ impl LinkRegistry {
         host_id: HostId,
         request: LinkCloseRequest,
     ) -> Vec<LinkId> {
+        self.close_where(|writer| writer.host.id == host_id, request)
+            .await
+    }
+
+    /// Closes every link to `host` carried through `through`, whose
+    /// forwarder refused to carry it, and waits until they are gone;
+    /// whoever dials one now is told. A link to the host through another
+    /// forwarder stays: the relay refusing for the plan says nothing of a
+    /// paired daemon.
+    pub(crate) async fn close_forwarded(
+        &self,
+        host: HostId,
+        through: daemon_core::LinkId,
+        reason: pb::ForwardRefusal,
+    ) {
+        self.last_refusals
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(host, reason);
+        let _ = self.refusals.send((host, reason));
+        self.close_where(
+            |writer| {
+                writer.host.id == host
+                    && writer
+                        .native_carrier
+                        .as_ref()
+                        .and_then(|carrier| carrier.forwarded_through())
+                        == Some(through)
+            },
+            LinkCloseRequest::Superseded,
+        )
+        .await;
+    }
+
+    /// Why a forwarder last refused to carry links to `host`, until a link
+    /// to it through one comes up. A forwarder repeats a refusal only every
+    /// few seconds, so a dial in between hears nothing and this is what it
+    /// was refused for.
+    pub(crate) fn last_refusal(&self, host: HostId) -> Option<pb::ForwardRefusal> {
+        self.last_refusals
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(&host)
+            .copied()
+    }
+
+    /// The refusals forwarders send from now on, by the host refused.
+    pub(crate) fn forward_refusals(
+        &self,
+    ) -> tokio::sync::broadcast::Receiver<(HostId, pb::ForwardRefusal)> {
+        self.refusals.subscribe()
+    }
+
+    async fn close_where(
+        &self,
+        closes: impl Fn(&LinkWriter) -> bool,
+        request: LinkCloseRequest,
+    ) -> Vec<LinkId> {
         let closing = {
             let state = self.state.read().await;
             state
                 .writers
                 .iter()
-                .filter(|(_, writer)| writer.host.id == host_id)
+                .filter(|(_, writer)| closes(writer))
                 .map(|(link, writer)| {
                     let _ = writer.close_tx.try_send(request);
                     (*link, writer.closed.clone())
@@ -434,6 +637,7 @@ impl LinkRegistry {
         closing.into_iter().map(|(link, _)| link).collect()
     }
 
+    #[cfg(test)]
     pub(crate) async fn admission(&self, link: &LinkId) -> Option<LinkAdmission> {
         self.state
             .read()
@@ -441,15 +645,6 @@ impl LinkRegistry {
             .writers
             .get(link)
             .map(|writer| writer.admission)
-    }
-
-    pub(crate) async fn carrier(&self, link: &LinkId) -> Option<LinkCarrier> {
-        self.state
-            .read()
-            .await
-            .writers
-            .get(link)
-            .map(|writer| writer.carrier)
     }
 
     pub(crate) async fn native_carrier(&self, link: &LinkId) -> Option<Arc<dyn NativeLinkCarrier>> {
@@ -482,24 +677,23 @@ impl LinkRegistry {
             })
     }
 
-    pub(crate) async fn native_route_to_peer(
+    /// The link `carrier` carries, while it is registered.
+    pub(crate) async fn link_carried_by(
         &self,
-        peer: HostId,
-    ) -> Option<(LinkId, Arc<dyn NativeLinkCarrier>, LinkAdmission)> {
+        carrier: &Arc<dyn NativeLinkCarrier>,
+    ) -> Option<LinkId> {
         self.state
             .read()
             .await
             .writers
             .iter()
-            .find_map(|(link, writer)| {
-                if writer.host.id != peer {
-                    return None;
-                }
+            .find(|(_, writer)| {
                 writer
                     .native_carrier
-                    .clone()
-                    .map(|carrier| (*link, carrier, writer.admission))
+                    .as_ref()
+                    .is_some_and(|held| Arc::ptr_eq(held, carrier))
             })
+            .map(|(link, _)| *link)
     }
 
     pub(crate) async fn update_cloud_tier(&self, link: &LinkId, tier: Tier) {
@@ -509,6 +703,24 @@ impl LinkRegistry {
         };
         if matches!(writer.admission, LinkAdmission::CloudToken { .. }) {
             writer.admission = LinkAdmission::CloudToken { tier };
+            self.relaying.step([relay_core::Input::TierChanged {
+                link: link.core(),
+                tier: relay_tier(tier),
+            }]);
+        }
+    }
+
+    /// A token link's token ran out before a fresh one came: nothing is
+    /// forwarded for it from now on.
+    pub(crate) async fn expire(&self, link: &LinkId) {
+        let state = self.state.read().await;
+        if let Some(LinkWriter {
+            admission: LinkAdmission::CloudToken { .. },
+            ..
+        }) = state.writers.get(link)
+        {
+            self.relaying
+                .step([relay_core::Input::Expired { link: link.core() }]);
         }
     }
 
@@ -540,16 +752,6 @@ impl LinkRegistry {
     /// Whether any live link to `peer` is the authenticated cloud link.
     /// Pairing route selection keys on the link role, never on the peer's
     /// self-asserted capabilities.
-    #[cfg(test)]
-    pub(crate) async fn link_role(&self, link: &LinkId) -> Option<LinkRole> {
-        self.state
-            .read()
-            .await
-            .writers
-            .get(link)
-            .map(|writer| writer.role)
-    }
-
     pub(crate) async fn has_cloud_relay_link_to(&self, peer: HostId) -> bool {
         self.state
             .read()
@@ -575,15 +777,60 @@ impl LinkRegistry {
     }
 }
 
-/// Enqueues `message` to every writer except links to `skip_peer` (a host is
-/// never told about itself). A full queue requests the link's closure; the
-/// connect task then removes it through the normal path.
-fn fanout(state: &LinkRegistryState, message: pb::Message, skip_peer: HostId) {
-    for writer in state.writers.values() {
-        if writer.host.id == skip_peer {
+/// A link the core has been told of that is not among the writers yet.
+struct NewLink<'a> {
+    link: daemon_core::LinkId,
+    host: &'a Host,
+    tx: &'a LinkOutputTx,
+    close_tx: &'a mpsc::Sender<LinkCloseRequest>,
+}
+
+/// Sends each neighbor the core told of down the link it named. A full
+/// queue requests the link's closure; the connect task then removes it
+/// through the normal path.
+fn tell_neighbors(
+    state: &LinkRegistryState,
+    out: Vec<relay_core::Output>,
+    new: Option<NewLink<'_>>,
+) {
+    for output in out {
+        let relay_core::Output::Neighbor { to, host, up } = output else {
             continue;
+        };
+        let host = host_from_core(host);
+        let message = if up {
+            let described = match &new {
+                Some(new) if new.host.id == host => Some(new.host),
+                _ => state.host(core_host(host)),
+            };
+            let Some(described) = described else {
+                continue;
+            };
+            neighbor_up_message(described)
+        } else {
+            neighbor_down_message(host)
+        };
+        match &new {
+            Some(new) if new.link == to => {
+                try_send_or_request_close(new.tx, new.close_tx, message);
+            }
+            _ => {
+                if let Some(writer) = state.writers.iter().find(|(id, _)| id.core() == to) {
+                    try_send_or_request_close(&writer.1.tx, &writer.1.close_tx, message);
+                }
+            }
         }
-        try_send_or_request_close(&writer.tx, &writer.close_tx, message.clone());
+    }
+}
+
+impl LinkRegistryState {
+    /// What `host` said of itself on a link held to it.
+    fn host(&self, host: daemon_core::HostId) -> Option<&Host> {
+        let host = host_from_core(host);
+        self.writers
+            .values()
+            .find(|writer| writer.host.id == host)
+            .map(|writer| &writer.host)
     }
 }
 
@@ -646,201 +893,13 @@ mod tests {
         }
     }
 
+    /// The link `instance` to `peer`. Instances are unique within the
+    /// process, as the cores name links by them alone.
     fn link(peer: u128, instance: u128) -> LinkId {
         LinkId {
             peer: Uuid::from_u128(peer),
-            instance: Uuid::from_u128(instance),
+            instance: u64::try_from(peer * 1_000 + instance).expect("a test link's instance fits"),
         }
-    }
-
-    async fn recv_message(rx: &mut mpsc::Receiver<pb::Message>) -> pb::Message {
-        tokio::time::timeout(Duration::from_secs(1), rx.recv())
-            .await
-            .expect("timed out waiting for a registry message")
-            .expect("registry writer channel closed")
-    }
-
-    fn neighbor_up_host_id(message: &pb::Message) -> Vec<u8> {
-        let Some(pb::message::Body::NeighborUp(up)) = &message.body else {
-            panic!("expected NeighborUp, got {message:?}");
-        };
-        up.host.as_ref().expect("NeighborUp.host").host_id.clone()
-    }
-
-    fn neighbor_down_host_id(message: &pb::Message) -> Vec<u8> {
-        let Some(pb::message::Body::NeighborDown(down)) = &message.body else {
-            panic!("expected NeighborDown, got {message:?}");
-        };
-        down.host_id.clone()
-    }
-
-    #[tokio::test]
-    async fn registering_a_link_announces_the_new_neighbor_to_existing_links() {
-        let registry = LinkRegistry::default();
-        let (first_tx, mut first_rx) = mpsc::channel(8);
-        registry
-            .register(link(1, 1), host(1), first_tx, LinkRole::Peer, &[])
-            .await;
-
-        let (second_tx, _second_rx) = mpsc::channel(8);
-        registry
-            .register(link(2, 1), host(2), second_tx, LinkRole::Peer, &[])
-            .await;
-
-        assert_eq!(
-            neighbor_up_host_id(&recv_message(&mut first_rx).await),
-            Uuid::from_u128(2).as_bytes()
-        );
-        assert!(first_rx.try_recv().is_err());
-    }
-
-    #[tokio::test]
-    async fn registering_a_link_reconciles_its_handshake_snapshot() {
-        let registry = LinkRegistry::default();
-        let (existing_tx, _existing_rx) = mpsc::channel(8);
-        registry
-            .register(link(1, 1), host(1), existing_tx, LinkRole::Peer, &[])
-            .await;
-
-        // The new link's handshake advertised a now-gone neighbor (3) and
-        // missed the existing one (1): registration sends the difference.
-        let (new_tx, mut new_rx) = mpsc::channel(8);
-        registry
-            .register(
-                link(2, 1),
-                host(2),
-                new_tx,
-                LinkRole::Peer,
-                &[Uuid::from_u128(3)],
-            )
-            .await;
-
-        let first = recv_message(&mut new_rx).await;
-        let second = recv_message(&mut new_rx).await;
-        let (up, down) = match &first.body {
-            Some(pb::message::Body::NeighborUp(_)) => (first, second),
-            _ => (second, first),
-        };
-        assert_eq!(neighbor_up_host_id(&up), Uuid::from_u128(1).as_bytes());
-        assert_eq!(neighbor_down_host_id(&down), Uuid::from_u128(3).as_bytes());
-        assert!(new_rx.try_recv().is_err());
-    }
-
-    #[tokio::test]
-    async fn only_the_last_link_to_a_peer_announces_neighbor_down() {
-        let registry = LinkRegistry::default();
-        let (observer_tx, mut observer_rx) = mpsc::channel(8);
-        registry
-            .register(link(9, 1), host(9), observer_tx, LinkRole::Peer, &[])
-            .await;
-
-        let (first_tx, _first_rx) = mpsc::channel(8);
-        let (second_tx, _second_rx) = mpsc::channel(8);
-        registry
-            .register(link(2, 1), host(2), first_tx, LinkRole::Peer, &[])
-            .await;
-        registry
-            .register(
-                link(2, 2),
-                host(2),
-                second_tx,
-                LinkRole::Peer,
-                &[Uuid::from_u128(9)],
-            )
-            .await;
-        // One NeighborUp for the peer's first link; the second link is silent.
-        assert_eq!(
-            neighbor_up_host_id(&recv_message(&mut observer_rx).await),
-            Uuid::from_u128(2).as_bytes()
-        );
-        assert!(observer_rx.try_recv().is_err());
-
-        registry.remove(&link(2, 1)).await;
-        assert!(observer_rx.try_recv().is_err(), "one link is still up");
-
-        registry.remove(&link(2, 2)).await;
-        assert_eq!(
-            neighbor_down_host_id(&recv_message(&mut observer_rx).await),
-            Uuid::from_u128(2).as_bytes()
-        );
-    }
-
-    #[tokio::test]
-    async fn crossed_direct_dials_converge_on_the_same_physical_link() {
-        let registry = LinkRegistry::default();
-        let peer = host(2);
-        let fallback = link(2, 1);
-        let preferred = link(2, 2);
-        let life = crate::routing::RuntimeInstance::random();
-
-        let (fallback_tx, _) = mpsc::channel(8);
-        let mut fallback_close = registry
-            .register_with_details(
-                fallback,
-                peer.clone(),
-                fallback_tx,
-                LinkProperties {
-                    role: LinkRole::Peer,
-                    admission: LinkAdmission::PinnedKey,
-                    carrier: LinkCarrier::Direct,
-                    runtime_instance: life,
-                    direct_order: Some(DirectLinkOrder::Fallback),
-                },
-                &[],
-                None,
-            )
-            .await
-            .expect("a lone fallback link is usable");
-
-        let (preferred_tx, _) = mpsc::channel(8);
-        let registration = registry
-            .register_displacing(
-                preferred,
-                peer.clone(),
-                preferred_tx,
-                LinkProperties {
-                    role: LinkRole::Peer,
-                    admission: LinkAdmission::PinnedKey,
-                    carrier: LinkCarrier::Direct,
-                    runtime_instance: life,
-                    direct_order: Some(DirectLinkOrder::Preferred),
-                },
-                &[],
-                None,
-            )
-            .await
-            .expect("a preferred link supersedes a fallback");
-        assert_eq!(registration.displaced, vec![fallback]);
-        assert_eq!(
-            fallback_close.recv().await,
-            Some(LinkCloseRequest::Superseded)
-        );
-        assert_eq!(registry.links_per_peer().await, vec![(peer.id, 1)]);
-
-        let (late_fallback_tx, _) = mpsc::channel(8);
-        assert!(
-            registry
-                .register_with_details(
-                    link(2, 3),
-                    peer,
-                    late_fallback_tx,
-                    LinkProperties {
-                        role: LinkRole::Peer,
-                        admission: LinkAdmission::PinnedKey,
-                        carrier: LinkCarrier::Direct,
-                        runtime_instance: life,
-                        direct_order: Some(DirectLinkOrder::Fallback),
-                    },
-                    &[],
-                    None,
-                )
-                .await
-                .is_none()
-        );
-        assert_eq!(
-            registry.links_per_peer().await,
-            vec![(Uuid::from_u128(2), 1)]
-        );
     }
 
     fn direct(order: DirectLinkOrder, runtime_instance: RuntimeInstance) -> LinkProperties {
@@ -853,16 +912,83 @@ mod tests {
         }
     }
 
+    /// A link to a host carried through a forwarder: one end of a QUIC
+    /// pair, marked as carried through `through`.
+    async fn carried_through(through: LinkId) -> Arc<dyn NativeLinkCarrier> {
+        let (near, _far) =
+            crate::link::quic::stream_pair(crate::link::framed::FramedKind::InProcess).await;
+        let near = Arc::try_unwrap(near).unwrap_or_else(|_| panic!("one holder"));
+        Arc::new(near.carried_through(Some(through.core())))
+    }
+
+    /// The relay refusing to carry a host (its plan lapsed) closes the link
+    /// to the host the relay carried, and leaves the one through a paired
+    /// daemon up: only the forwarder that refused stopped carrying it.
+    #[tokio::test]
+    async fn link_registry_relay_refusal_leaves_a_via_daemon_link_up() {
+        let registry = Arc::new(LinkRegistry::new(HostId::nil()));
+        let phone = host(3);
+        let (relay, laptop) = (link(1, 1), link(2, 1));
+        let forwarded = || LinkProperties {
+            role: LinkRole::Peer,
+            admission: LinkAdmission::PinnedKey,
+            carrier: LinkCarrier::Forwarded,
+            runtime_instance: RuntimeInstance::random(),
+            direct_order: None,
+        };
+        let mut closes = Vec::new();
+        for (instance, through) in [(1, relay), (2, laptop)] {
+            let (tx, _) = mpsc::channel(8);
+            closes.push(
+                registry
+                    .register_with_details(
+                        link(3, instance),
+                        phone.clone(),
+                        tx,
+                        forwarded(),
+                        &[],
+                        Some(carried_through(through).await),
+                    )
+                    .await
+                    .expect("a forwarded link is usable"),
+            );
+        }
+        let mut via_daemon = closes.pop().unwrap();
+        let mut via_relay = closes.pop().unwrap();
+        // The link's run loop leaves the registry when asked to close.
+        let closer = tokio::spawn({
+            let registry = registry.clone();
+            async move {
+                let request = via_relay.recv().await;
+                registry.remove(&link(3, 1)).await;
+                request
+            }
+        });
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            registry.close_forwarded(phone.id, relay.core(), pb::ForwardRefusal::PaymentRequired),
+        )
+        .await
+        .expect("the link through the relay closes");
+        assert_eq!(closer.await.unwrap(), Some(LinkCloseRequest::Superseded));
+        assert!(
+            via_daemon.try_recv().is_err(),
+            "the via-daemon link was not asked to close"
+        );
+        assert_eq!(registry.links_per_peer().await, vec![(phone.id, 1)]);
+        assert!(registry.native_carrier(&link(3, 2)).await.is_some());
+    }
+
     #[tokio::test]
     async fn a_link_from_a_new_runtime_instance_replaces_the_old_one_in_either_direction() {
-        use DirectLinkOrder::{Fallback, Preferred};
+        use relay_core::DialOrder::{Fallback, Preferred};
         for (held, arriving) in [
             (Fallback, Fallback),
             (Fallback, Preferred),
             (Preferred, Fallback),
             (Preferred, Preferred),
         ] {
-            let registry = LinkRegistry::default();
+            let registry = LinkRegistry::new(HostId::nil());
             let peer = host(2);
             let dead = link(2, 1);
             let (dead_tx, _) = mpsc::channel(8);
@@ -879,7 +1005,7 @@ mod tests {
                 .expect("a lone link is usable");
 
             let (restarted_tx, _) = mpsc::channel(8);
-            let registration = registry
+            let _registration = registry
                 .register_displacing(
                     link(2, 2),
                     peer.clone(),
@@ -890,7 +1016,6 @@ mod tests {
                 )
                 .await
                 .unwrap_or_else(|| panic!("{arriving:?} from a restart was refused by {held:?}"));
-            assert_eq!(registration.displaced, vec![dead]);
             assert_eq!(dead_close.recv().await, Some(LinkCloseRequest::Superseded));
             assert_eq!(registry.links_per_peer().await, vec![(peer.id, 1)]);
         }
@@ -899,7 +1024,7 @@ mod tests {
     #[tokio::test]
     async fn one_runtime_instance_keeps_its_first_link_in_each_direction() {
         for order in [DirectLinkOrder::Fallback, DirectLinkOrder::Preferred] {
-            let registry = LinkRegistry::default();
+            let registry = LinkRegistry::new(HostId::nil());
             let peer = host(2);
             let life = RuntimeInstance::random();
             let (first_tx, _) = mpsc::channel(8);
@@ -935,32 +1060,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_neighbor_is_never_told_about_itself() {
-        let registry = LinkRegistry::default();
-        let (peer_tx, mut peer_rx) = mpsc::channel(8);
-        registry
-            .register(link(2, 1), host(2), peer_tx, LinkRole::Peer, &[])
-            .await;
-
-        // A second link to the same peer: no announcement to the peer.
-        let (second_tx, mut second_rx) = mpsc::channel(8);
-        registry
-            .register(
-                link(2, 2),
-                host(2),
-                second_tx,
-                LinkRole::Peer,
-                &[Uuid::from_u128(2)],
-            )
-            .await;
-
-        assert!(peer_rx.try_recv().is_err());
-        assert!(second_rx.try_recv().is_err());
-    }
-
-    #[tokio::test]
     async fn snapshot_lists_each_neighbor_once() {
-        let registry = LinkRegistry::default();
+        let registry = LinkRegistry::new(HostId::nil());
         let (first_tx, _first_rx) = mpsc::channel(8);
         let (second_tx, _second_rx) = mpsc::channel(8);
         let (other_tx, _other_rx) = mpsc::channel(8);
@@ -983,7 +1084,7 @@ mod tests {
 
     #[tokio::test]
     async fn full_outgoing_queue_requests_link_close() {
-        let registry = LinkRegistry::default();
+        let registry = LinkRegistry::new(HostId::nil());
         let (full_tx, _full_rx) = mpsc::channel(1);
         full_tx.try_send(pb::Message { body: None }).unwrap();
         let mut close_rx = registry
@@ -1003,7 +1104,7 @@ mod tests {
 
     #[tokio::test]
     async fn link_close_notification_is_best_effort_for_full_link_queues() {
-        let registry = LinkRegistry::default();
+        let registry = LinkRegistry::new(HostId::nil());
         let (tx, _rx) = mpsc::channel(1);
         tx.try_send(pb::Message { body: None }).unwrap();
         registry
@@ -1020,7 +1121,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_link_close_to_all_sends_typed_reason() {
-        let registry = LinkRegistry::default();
+        let registry = LinkRegistry::new(HostId::nil());
         let (tx, mut rx) = mpsc::channel(8);
         registry
             .register(link(99, 1), host(99), tx, LinkRole::Peer, &[])
@@ -1042,7 +1143,7 @@ mod tests {
 
     #[tokio::test]
     async fn cloud_admission_tier_updates_without_changing_pinned_links() {
-        let registry = LinkRegistry::default();
+        let registry = LinkRegistry::new(HostId::nil());
         let cloud = link(1, 1);
         let pinned = link(2, 1);
         let (cloud_tx, _cloud_rx) = mpsc::channel(8);
@@ -1072,26 +1173,5 @@ mod tests {
             registry.admission(&pinned).await,
             Some(LinkAdmission::PinnedKey)
         );
-    }
-
-    #[tokio::test]
-    async fn cloud_relay_role_is_tracked_per_link() {
-        let registry = LinkRegistry::default();
-        let (cloud_tx, _cloud_rx) = mpsc::channel(1);
-        let (peer_tx, _peer_rx) = mpsc::channel(1);
-        registry
-            .register(link(1, 1), host(1), cloud_tx, LinkRole::CloudRelay, &[])
-            .await;
-        registry
-            .register(link(2, 1), host(2), peer_tx, LinkRole::Peer, &[])
-            .await;
-
-        assert_eq!(
-            registry.link_role(&link(1, 1)).await,
-            Some(LinkRole::CloudRelay)
-        );
-        assert_eq!(registry.link_role(&link(2, 1)).await, Some(LinkRole::Peer));
-        assert!(registry.has_cloud_relay_link_to(Uuid::from_u128(1)).await);
-        assert!(!registry.has_cloud_relay_link_to(Uuid::from_u128(2)).await);
     }
 }

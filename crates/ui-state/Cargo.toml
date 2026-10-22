@@ -10,3 +10,6 @@ publish = false
 model = { workspace = true }
 prost = { workspace = true }
 wire = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

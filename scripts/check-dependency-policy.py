@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWED_LOCAL = {
@@ -29,8 +30,8 @@ ALLOWED_LOCAL = {
     # The agent process: its lock, journal and sockets, the interpreter,
     # and the provider hosts.
     "agent": {
-        "agent-dir", "attachments", "claude", "claude-protocol", "codex", "codex-protocol",
-        "git-facts", "interpret", "journal", "pty-host", "wire",
+        "agent-core", "agent-dir", "attachments", "claude", "claude-protocol", "codex",
+        "codex-protocol", "core-ring", "git-facts", "interpret", "journal", "pty-host", "wire",
     },
     "claude": {"claude-protocol", "pty-host"},
     "codex": {"codex-protocol"},
@@ -44,7 +45,7 @@ ALLOWED_LOCAL = {
     # provider in its graph.
     # interpret only for the dump path's per-kind redactor: the one stated
     # exception to "the daemon interprets nothing".
-    "node": {"agent-dir", "analytics", "git-facts", "interpret", "journal", "release", "settings", "store", "version-stamp", "wire"},
+    "node": {"agent-dir", "analytics", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "path-core", "relay-core", "release", "settings", "store", "supervisor-core", "version-stamp", "wire"},
     "amux": {"agent", "agent-dir", "analytics", "claude", "client", "node", "settings", "store", "tui", "wire"},
     # The version stamp a release tool can rewrite in a built binary, and the
     # release manifest the tool signs and the daemon verifies; the xtask
@@ -68,13 +69,25 @@ ALLOWED_LOCAL = {
     "app-ffi": {"app-embedded", "app-runtime", "client", "model", "node", "ui-view"},
     # The terminal client composes the views over the drivers' state.
     "tui": {"attachments", "client", "ui-runtime", "ui-state", "ui-view", "wire"},
-    # Replays a dump bundle's three pure stages: facts through the
-    # interpreter (the journal for comparison), records through the session
-    # model, state through the views; and provider recordings for the
-    # capture tools.
-    "replay-support": {
-        "interpret", "journal", "redaction", "ui-state", "ui-view", "wire",
-    },
+    # The bounded ring of a core's inputs since its last checkpoint, in
+    # segments named as the journal's are.
+    "core-ring": {"journal"},
+}
+# The state-machine cores: each decides everything in one step over typed
+# inputs and outputs, so none may reach a runtime, a socket or a lock. Their
+# edges are what each core may use, a ceiling rather than an exact list,
+# since each core takes in its machines one at a time. The daemon's holds the
+# store, reads journals, speaks the message types and records its inputs in
+# the ring; the relay's is built from the daemon's link and routing state;
+# the agent's wraps the interpreter; the supervisor's reads release
+# manifests and version stamps; the path machine names links and reports
+# dumps as the daemon's does.
+CORES_ALLOWED_LOCAL = {
+    "daemon-core": {"core-ring", "journal", "store", "wire"},
+    "relay-core": {"daemon-core"},
+    "path-core": {"daemon-core"},
+    "agent-core": {"core-ring", "interpret", "journal", "wire"},
+    "supervisor-core": {"release", "version-stamp"},
 }
 # The UI library and the clients built on it reach the daemon only through
 # the client seam: none of them may link, directly or through another crate,
@@ -101,6 +114,8 @@ TEST_SUPPORT = {
     "fake-amux",
     "shot",
     "tui-set",
+    "models",
+    "replay-support",
 }
 SUPPORT_ALLOWED_LOCAL = {
     # The many-daemons harness: real daemons in process, real agents on the
@@ -110,9 +125,11 @@ SUPPORT_ALLOWED_LOCAL = {
     "patience": set(),
     # The harness also signs release manifests with the test key for its
     # supervised hosts, and draws the terminal client's screens through shot.
+    # Its simulated mode holds every daemon and agent core in one process,
+    # the agents on the test kind's interpreter.
     "testnet": {
-        "agent-dir", "journal", "node", "patience", "provider-fakes", "release", "shot",
-        "store", "tui", "wire",
+        "agent-core", "agent-dir", "daemon-core", "interpret", "journal", "models", "node",
+        "patience", "provider-fakes", "release", "shot", "store", "tui", "wire",
     },
     # Qualification owns environment-dependent provider and performance
     # checks while reusing the network harness rather than shipping it.
@@ -131,7 +148,41 @@ SUPPORT_ALLOWED_LOCAL = {
     # Serves a declared world with `testnet serve` and runs the terminal
     # client on it, or draws it headlessly through `shot`.
     "tui-set": {"agent-dir", "client", "settings", "shot", "tui", "ui-runtime", "wire"},
+    # Replays a dump bundle's stages with the models' properties judged at
+    # every step: facts through the interpreter (the journal for
+    # comparison), the daemon core from its checkpoint over its store,
+    # records through the session model, state through the views; and
+    # provider recordings for the capture tools. A debugging tool: nothing
+    # that ships links it.
+    "replay-support": {
+        "core-ring", "daemon-core", "interpret", "journal", "models", "redaction", "store",
+        "ui-state", "ui-view", "wire",
+    },
+    # The protocol's properties, explored over the real code: the store, the
+    # journal and the message types, each state-machine core, and the
+    # clients' session state.
+    "models": {"agent-core", "daemon-core", "interpret", "journal", "path-core", "provider-fakes", "relay-core", "release", "store", "supervisor-core", "ui-state", "wire"},
 }
+
+# Every dependency comes from crates.io but rustls, which comes from the
+# fork carrying the amux patch (docs/ARCHITECTURE.md, "The rustls patch")
+# at whatever commit the lockfile pins.
+CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
+GIT_SOURCES = {"rustls": "git+https://github.com/jordanwebster/rustls?rev="}
+
+
+def source_failures() -> list[str]:
+    lock = tomllib.loads((ROOT / "Cargo.lock").read_text())
+    failures = []
+    for package in lock["package"]:
+        source = package.get("source")
+        if source is None or source == CRATES_IO:
+            continue
+        allowed = GIT_SOURCES.get(package["name"])
+        if allowed is None or not source.startswith(allowed):
+            failures.append(f"{package['name']} {package['version']}: comes from {source}")
+    return failures
+
 
 def local_edges(package: dict[str, object]) -> set[str]:
     return {
@@ -155,7 +206,7 @@ def main() -> int:
         for package in metadata["packages"]
         if package["id"] in members
     }
-    failures = []
+    failures = source_failures()
 
     for name, allowed in (ALLOWED_LOCAL | SUPPORT_ALLOWED_LOCAL).items():
         package = packages.get(name)
@@ -165,6 +216,13 @@ def main() -> int:
             failures.append(
                 f"{name}: local dependencies are {sorted(actual)}, expected {sorted(allowed)}"
             )
+
+    for name, allowed in CORES_ALLOWED_LOCAL.items():
+        package = packages.get(name)
+        if package is None:
+            failures.append(f"missing required workspace package {name}")
+        elif extra := local_edges(package) - allowed:
+            failures.append(f"{name}: a core depends on {sorted(extra)}, outside {sorted(allowed)}")
 
     for name, allowed in PURE_EXTERNAL.items():
         package = packages.get(name)
@@ -194,7 +252,7 @@ def main() -> int:
         if forbidden := reached & FORBIDDEN_FOR_UI:
             failures.append(f"{name}: a UI crate reaches {sorted(forbidden)}")
 
-    unlisted = packages.keys() - (ALLOWED_LOCAL | SUPPORT_ALLOWED_LOCAL).keys()
+    unlisted = packages.keys() - (ALLOWED_LOCAL | SUPPORT_ALLOWED_LOCAL | CORES_ALLOWED_LOCAL).keys()
     for name in sorted(unlisted):
         failures.append(f"{name}: a workspace package with no entry in the policy")
 

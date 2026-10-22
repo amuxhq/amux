@@ -28,15 +28,20 @@ provider children, and how it ends.
 
 | Crate or file | What it holds |
 |---|---|
-| [`crates/agent`](../crates/agent/src/lib.rs) | The process: `run` and `main` in `lib.rs`; the lifecycle, the control connection and the interpreter loop in `host.rs`; provider children in `provider.rs`; typing into terminal Claude in `terminal.rs`; reading terminal Claude's first screen in `ready.rs`; the facts ring in `ring.rs`; raw attach on `pty.sock` in `attach.rs`; the tool server in `tools.rs`; the agent's part of a dump in `dump.rs`; directory helpers in `dir.rs` |
+| [`crates/agent`](../crates/agent/src/lib.rs) | The process: `run` and `main` in `lib.rs`; the driver that runs the agent core over the provider child, the sockets and the journal in `host.rs`; provider children in `provider.rs`; typing into terminal Claude in `terminal.rs`; reading terminal Claude's first screen in `ready.rs`; the facts ring in `crates/core-ring`; raw attach on `pty.sock` in `attach.rs`; the tool server in `tools.rs`; the agent's part of a dump in `dump.rs`; directory helpers in `dir.rs` |
+| [`crates/agent-core`](../crates/agent-core/src/lib.rs) | The lifecycle as a state machine around the interpreter: one step per input (a provider fact, a daemon dialling in or leaving, a control frame, a timer, a failed write, a job's result), asking for journal steps, provider writes, frames, timers, jobs and the exit; how the next incarnation starts from the facts ring |
 | [`crates/agent-dir`](../crates/agent-dir/src/lib.rs) | What the agent and the daemon must agree on: the file and socket names, the directory lock, the frame format on `ctl.sock` and `pty.sock` (`ctl.rs`), local sockets (`local_socket.rs`) and the injectable clock (`clock.rs`) |
 | [`crates/journal`](../crates/journal/src/lib.rs) | The segmented, append-only journal writer and reader |
 | [`crates/pty-host`](../crates/pty-host/src/lib.rs) | Provider-neutral pseudo-terminal hosting: spawn in a process group, output stream, input, resize, signals |
 | [`crates/interpret`](../crates/interpret/src/lib.rs) | The per-kind interpreters the process runs |
 | [`crates/amux/src/main.rs`](../crates/amux/src/main.rs) | The hidden subcommands a harness runs from the install path: `amux agent <dir>`, `amux mcp <dir>` (the tool server) and `amux hooks claude` (terminal Claude's hook command) |
 
-The daemon's side of the relationship (spawning, dialling, ingesting,
-stopping) is the agent registry in
+The daemon's side of the relationship is the agent registry: what to
+start, stop, kill, delete, resume or rename, and when, is decided in the
+daemon core's
+[`crates/daemon-core/src/families.rs`](../crates/daemon-core/src/families.rs),
+and the processes themselves (spawning, dialling, the control connection,
+the startup sweep) are kept by
 [`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs).
 
 ## The agent directory
@@ -112,10 +117,15 @@ a prompt.
 
 ## Lifecycle
 
-The host in [`host.rs`](../crates/agent/src/host.rs) is a single loop over
-five sources: provider events, daemon connections, control frames, keys and
-resizes from attached terminals, and the next deadline. The process is in one
-of three modes:
+The lifecycle is decided by the agent core,
+[`agent_core::Agent`](../crates/agent-core/src/lib.rs): one step per input,
+with no I/O of its own. The driver in [`host.rs`](../crates/agent/src/host.rs)
+is a single loop over six sources (provider events, daemon connections,
+control frames, keys and resizes from attached terminals, finished jobs, and
+the next timer the core armed); it steps the core with each, at the clock's
+time, and carries out what the step asks in order. Keys and sizes from an
+attached terminal and raw terminal output never meet the core: they are not
+the agent's state. The process is in one of three modes:
 
 | Mode | Meaning |
 |---|---|
@@ -131,7 +141,7 @@ and carries in its snapshots.
 
 ### One decision, one way out
 
-After every event the host calls `settle`, the only place that decides
+After every input the core's step calls `settle`, the only place that decides
 whether this incarnation ends, and every decision to end goes through one
 action, `exit(cause)`:
 
@@ -245,6 +255,7 @@ version integer, and a frame a reader does not know is ignored.
 | `stop` | daemon → agent | `Stop { kill }`: without `kill`, cancel the turn the provider's own way and exit; with it, kill everything below the provider and its process group at once (the daemon's escalation past the stop deadline) |
 | `children` | daemon → agent | `Children { children }`: the agents directly below this one that are live, on every host its daemon knows of, each with its incarnation, sent when the agent connects with any and whenever the list changes; a one-shot agent waits for each incarnation's last report |
 | `dump` | agent → daemon | `DumpPart`, answering a dump request |
+| `dump_asked` | agent → daemon | `DumpAsked { reason, invariant }`: the agent's core asked for a dump (the invariant it broke, or none for a step over its budget). The daemon writes a bundle of this agent, its part gathered as for any dump, after a limit of its own per kind; one asked with no daemon connected waits, the newest of each kind, and goes right after the next `hello` |
 | `reply` | agent → daemon | `Verdict { id, verdict }`: the interpreter's verdict on an input, keyed by its input id, which the daemon relays as the `SendInput` reply; or on an agent message, keyed by its envelope id, which settles the message's delivery |
 
 Within one step the order is fixed: blobs the step refers to are written
@@ -252,7 +263,7 @@ first, then the step is appended to the journal, then the daemon is nudged,
 then the effects run (replies are sent, bytes go to the provider). A reply
 therefore never reaches the daemon before the step that explains it is on
 disk. Before each event, when the clock has moved since the last one, the
-host feeds the interpreter a `Tick`, so the interpreter never reads a clock
+core feeds the interpreter a `Tick`, so the interpreter never reads a clock
 itself.
 
 A later connection takes over from an earlier one: a restarted daemon may
@@ -622,9 +633,10 @@ terminal. `amux agent` exits 0 whatever the cause; 1 means it could not start
 | Grace after the daemon leaves | 5 minutes | `agent.grace_secs` in settings, copied into the spec's `grace_ms`; 5 minutes if the spec leaves it unset |
 | Drain deadline for an orphaned ask | 5 minutes | `agent.drain_secs`, copied into `drain_ms`; the same 5 minutes if the spec leaves it unset |
 | Facts ring size, across its two segments | 4 MiB | `agent.facts_ring_mib`, copied into `facts_ring_bytes` |
+| A step of the agent's core, before it asks for a dump | 10 ms | the spec's `step_budget_micros` (`Launch.agent_step_budget_micros`, not a configuration key); `StepBudget::AGENT` in `agent-core` if the spec leaves it zero |
 | Journal segment size | 1 MiB | the spec's `journal_segment_bytes` |
 | Terminal log | 4 segments of 256 KiB | constants in `host.rs` |
-| Provider asked to finish, then killed | 10 s | `PROVIDER_STOP_MS` in `host.rs` |
+| Provider asked to finish, then killed | 10 s | `PROVIDER_STOP_MS` in `agent-core` |
 | Output collected after a child exits | 300 ms | `TRAILING_OUTPUT` in `provider.rs` |
 | Transcript poll | 25 ms | `TRANSCRIPT_POLL` in `provider.rs` |
 | Terminal Claude's first screen: quiet, cap | 100 ms, 500 ms | `FIRST_SCREEN_QUIET`, `FIRST_SCREEN_WAIT` in `provider.rs` |

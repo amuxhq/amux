@@ -1,0 +1,37 @@
+[package]
+name = "models"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "The protocol's promises as properties a checker explores over the real code"
+publish = false
+
+[dependencies]
+agent-core = { workspace = true }
+daemon-core = { workspace = true }
+interpret = { workspace = true, features = ["testkind"] }
+journal = { workspace = true }
+path-core = { workspace = true }
+prost = { workspace = true }
+provider-fakes = { workspace = true }
+relay-core = { workspace = true }
+release = { workspace = true }
+rusqlite = { workspace = true }
+serde_json = { workspace = true }
+stateright = { workspace = true }
+store = { workspace = true }
+supervisor-core = { workspace = true }
+tempfile = { workspace = true }
+ui-state = { workspace = true }
+uuid = { workspace = true }
+wire = { workspace = true }
+
+[[bin]]
+name = "parked-check"
+path = "src/bin/parked-check.rs"
+test = false
+
+[[bin]]
+name = "properties"
+path = "src/bin/properties.rs"
+test = false

@@ -37,6 +37,7 @@ pub enum Call {
     GetBlob(GetBlobRequest, Reply<GetBlobResponse>),
     PutBlob(PutBlobRequest, Reply<BlobRef>),
     Stop(StopAgentRequest, Reply<()>),
+    Dump(DumpRequest, Reply<DumpReport>),
 }
 
 impl std::fmt::Debug for Call {
@@ -51,6 +52,7 @@ impl std::fmt::Debug for Call {
             Call::GetBlob(request, _) => write!(f, "GetBlob({request:?})"),
             Call::PutBlob(request, _) => write!(f, "PutBlob({:?})", request.name),
             Call::Stop(request, _) => write!(f, "Stop({request:?})"),
+            Call::Dump(request, _) => write!(f, "Dump({request:?})"),
         }
     }
 }
@@ -188,8 +190,8 @@ impl Client for FakeRuntime {
         unimplemented!("list_repositories")
     }
 
-    async fn dump(&self, _: DumpRequest) -> Result<DumpReport, RpcError> {
-        unimplemented!("dump")
+    async fn dump(&self, request: DumpRequest) -> Result<DumpReport, RpcError> {
+        self.call(|reply| Call::Dump(request, reply)).await
     }
 }
 

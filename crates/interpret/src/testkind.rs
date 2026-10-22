@@ -4,25 +4,24 @@
 //! Facts arrive on the stream channel as `{"type": …}`: `ready`, `user`
 //! (a prompt's reflection, or `envelope` for an injected message's),
 //! `text`/`text_done` (a streamed message), `tool`/`tool_result`,
-//! `ask`/`ask_closed`, `turn_start`, `turn_end` and `model`. Bodies are the
-//! SDK's messages under the kind tag `test`.
+//! `ask`/`ask_closed`, `turn_start`, `turn_end` and `model`. It writes
+//! `user`, `answer` and, on a stop while a turn runs or an ask is open,
+//! `interrupt`. Bodies are the SDK's messages under the kind tag `test`.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
 
 use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    AgentSpec, Ask, ClaudeSdkItem, ClaudeSdkSnapshot, Envelope, Input, PermissionAsk, Phase,
-    Refusal, Step, ToolCall, ToolState, Turn, TurnOutcome, claude_sdk_input, claude_sdk_item,
+    AgentSpec, Ask, ClaudeSdkItem, ClaudeSdkSnapshot, Envelope, Input, PermissionAsk, Refusal,
+    Step, ToolCall, ToolState, Turn, TurnOutcome, claude_sdk_input, claude_sdk_item,
 };
 
 use crate::{
-    Carrier, Channel, Checkpoint, Effect, Emit, EndRules, Event, Fact, FixtureInput, Interpreter,
-    ItemDraft, ItemView, RedactTarget, Shared, SnapshotView, Stepped, agent_message_body,
-    agent_message_key, check_invariants, claude_sdk_input, human, is_status_tool, run_golden,
-    status_working_on, unknown,
+    Carrier, Channel, Checkpoint, Effect, Emit, Event, Fact, FixtureInput, Interpreter, ItemDraft,
+    ItemView, RedactTarget, Shared, SnapshotView, Stepped, agent_message_body, agent_message_key,
+    claude_sdk_input, human, is_status_tool, status_working_on, unknown,
 };
 
 /// With `FORGET` set, a resume loses the model: the checkpoint property
@@ -34,6 +33,8 @@ pub struct State<const FORGET: bool> {
     shared: Shared<Ask>,
     model: Option<String>,
     tools: BTreeMap<String, String>,
+    /// A stop interrupted the turn running: its end reads as cut short.
+    interrupted: bool,
 }
 
 impl<const FORGET: bool> State<FORGET> {
@@ -198,14 +199,23 @@ impl<const FORGET: bool> TestKind<FORGET> {
                 shared.close_ask(&id);
             }
             "turn_end" => {
-                if let Some(turn) = shared.turn_ended(emit, TurnOutcome::Completed) {
+                // Only a stop interrupts this kind's turns, so an
+                // interrupted turn reads as stopped, as the step's TurnEnd
+                // records it.
+                let interrupted = std::mem::take(&mut state.interrupted);
+                let (ended, outcome) = if interrupted {
+                    (TurnOutcome::Interrupted, TurnOutcome::Stopped)
+                } else {
+                    (TurnOutcome::Completed, TurnOutcome::Completed)
+                };
+                if let Some(turn) = shared.turn_ended(emit, ended) {
                     shared.item(
                         emit,
                         ItemDraft {
                             key: format!("turn:{}", turn.id),
                             body: body(claude_sdk_item::Kind::Turn(Turn {
                                 turn_id: turn.id,
-                                outcome: TurnOutcome::Completed as i32,
+                                outcome: outcome as i32,
                                 started_at_ms: turn.started_at_ms,
                                 cost_usd: None,
                             })),
@@ -221,7 +231,11 @@ impl<const FORGET: bool> TestKind<FORGET> {
 
     fn agent_message(state: &mut State<FORGET>, emit: &mut Emit, envelope: Envelope) {
         let shared = &mut state.shared;
+        if shared.message_repeated(emit, &envelope.id) {
+            return;
+        }
         shared.message_accepted(&envelope.id);
+        shared.message_handed();
         emit.effect(Effect::Inject {
             id: envelope.id.clone(),
             text: crate::shared::words(&envelope),
@@ -294,6 +308,7 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
             shared: Shared::new(spec, Self::KIND, producer_version),
             model: None,
             tools: BTreeMap::new(),
+            interrupted: false,
         };
         let step = state.shared.initial_step(Self::unknown_snapshot());
         (state, step)
@@ -319,12 +334,27 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
             Event::Input(input) => Self::input(state, &mut emit, input),
             Event::AgentMessage(envelope) => Self::agent_message(state, &mut emit, envelope),
             Event::Rename { .. } => {}
-            Event::ProviderExit { .. } | Event::Exiting { .. } => {
+            Event::ProviderExit { code } => {
                 // A session end closes every open ask, outcome unknown.
                 state.shared.close_all_asks();
                 state.shared.provider_exited();
+                emit.end_incarnation(crate::provider_exit(code));
             }
-            Event::DaemonLost | Event::StopRequested => {}
+            Event::Exiting(end) => {
+                state.shared.close_all_asks();
+                state.shared.provider_exited();
+                emit.end_incarnation(end);
+            }
+            Event::DaemonLost => state.shared.leaving(),
+            // A stop cancels the turn the provider's way, as every kind
+            // does, and the agent drains.
+            Event::StopRequested => {
+                state.shared.stop_requested();
+                if state.shared.is_busy() || !state.shared.asks().is_empty() {
+                    state.interrupted = true;
+                    emit.effect(Effect::ProviderWrite(br#"{"type":"interrupt"}"#.to_vec()));
+                }
+            }
             Event::Git(git) => state.shared.set_git(git),
         }
         if let Some(entry) = state.shared.next_queued() {
@@ -405,307 +435,317 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
     }
 }
 
-fn fixtures() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/core")
-}
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
 
-fn run(name: &str) {
-    run_golden::<TestKind>(&fixtures().join(format!("{name}.json"))).assert_ok();
-}
-
-#[test]
-fn queue_submits_when_idle_and_drains_in_order() {
-    run("queue");
-}
-
-#[test]
-fn asks_open_and_close_only_on_facts() {
-    run("asks");
-}
-
-#[test]
-fn agent_messages_stay_pending_until_consumed() {
-    run("agent-messages");
-}
-
-#[test]
-fn streams_end_full_and_resume_re_emits_open_items() {
-    run("streaming");
-}
-
-#[test]
-fn a_spawn_prompt_seeds_the_queue_and_working_on() {
-    run("spawn");
-}
-
-#[test]
-fn the_checkpoint_property_catches_state_a_resume_loses() {
-    let dir = std::env::temp_dir().join(format!("interpret-forget-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let fixture = dir.join("forget.json");
-    std::fs::write(
-        &fixture,
-        r#"{"events": [{"fact": {"channel": "stream", "json": {"type": "ready"}}},
-                       {"fact": {"channel": "stream", "json": {"type": "model", "model": "opus"}}},
-                       {"tick": 5}]}"#,
-    )
-    .unwrap();
-    let report = run_golden::<TestKind<true>>(&fixture);
-    std::fs::remove_dir_all(&dir).unwrap();
-    assert!(
-        report
-            .violations
-            .iter()
-            .any(|violation| violation.contains("diverges: the final snapshot differs")),
-        "{:?}",
-        report.violations
-    );
-}
-
-#[test]
-fn a_golden_mismatch_fails_and_names_the_line() {
-    let dir = std::env::temp_dir().join(format!("interpret-golden-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let fixture = dir.join("tiny.json");
-    std::fs::write(&fixture, r#"{"events": [{"tick": 5}]}"#).unwrap();
-    std::fs::write(dir.join("tiny.golden"), "## 0 initial\nsomething else\n").unwrap();
-    let report = run_golden::<TestKind>(&fixture);
-    std::fs::remove_dir_all(&dir).unwrap();
-    assert!(report.violations.is_empty(), "{:?}", report.violations);
-    assert_eq!(report.failures.len(), 1, "{:?}", report.failures);
-    assert!(
-        report.failures[0].contains("line 2"),
-        "{}",
-        report.failures[0]
-    );
-}
-
-#[test]
-fn an_unmet_expectation_fails() {
-    let dir = std::env::temp_dir().join(format!("interpret-expect-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let fixture = dir.join("expect.json");
-    std::fs::write(
-        &fixture,
-        r#"{"events": [{"fact": {"channel": "stream", "json": {"type": "ready"}},
-                        "expect": {"phase": "WORKING"}}]}"#,
-    )
-    .unwrap();
-    let report = run_golden::<TestKind>(&fixture);
-    std::fs::remove_dir_all(&dir).unwrap();
-    assert!(
-        report
-            .failures
-            .iter()
-            .any(|failure| failure.contains("phase expected WORKING, got IDLE")),
-        "{:?}",
-        report.failures
-    );
-}
-
-mod invariants {
-    use wire::{Append, Item, QueuedInput, Snapshot};
+    use wire::Phase;
 
     use super::*;
+    use crate::{EndRules, check_invariants, run_golden};
 
-    fn first() -> Step {
-        Step {
-            snapshot: Some(Snapshot {
-                kind: wire::Kind::Unspecified as i32,
-                body: TestKind::<false>::unknown_snapshot(),
-                phase: Phase::Starting as i32,
-                ..Default::default()
-            }),
-            ..Default::default()
-        }
+    fn fixtures() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/core")
     }
 
-    fn item(key: &str, kind: claude_sdk_item::Kind) -> Item {
-        Item {
-            key: key.into(),
-            kind: wire::Kind::Unspecified as i32,
-            body: body(kind),
-            ..Default::default()
-        }
-    }
-
-    fn streaming(key: &str, complete: bool) -> Item {
-        item(key, claude_sdk_item::Kind::Message(wire::Text { complete }))
-    }
-
-    fn append(key: &str) -> Append {
-        Append {
-            key: key.into(),
-            text: "x".into(),
-            ..Default::default()
-        }
-    }
-
-    fn check(steps: &[Step]) -> Vec<String> {
-        check_invariants::<TestKind>(steps, &EndRules::default())
+    fn run(name: &str) {
+        run_golden::<TestKind>(&fixtures().join(format!("{name}.json"))).assert_ok();
     }
 
     #[test]
-    fn a_clean_run_has_no_violations() {
-        let steps = [
-            first(),
-            Step {
-                items: vec![streaming("m", false)],
-                appends: vec![append("m")],
-                ..Default::default()
-            },
-            Step {
-                items: vec![streaming("m", true)],
-                ..Default::default()
-            },
-        ];
-        assert_eq!(check(&steps), Vec::<String>::new());
+    fn queue_submits_when_idle_and_drains_in_order() {
+        run("queue");
     }
 
     #[test]
-    fn the_first_frame_must_be_a_starting_snapshot_at_its_unknowns() {
-        assert!(check(&[Step::default()])[0].contains("not a Snapshot"));
-        let mut known = first();
-        known.snapshot.as_mut().unwrap().body = ClaudeSdkSnapshot {
-            model: Some("opus".into()),
-            ..unknown::claude_sdk()
-        }
-        .encode_to_vec();
-        assert!(check(&[known])[0].contains("not every field at its unknown"));
-        let mut idle = first();
-        idle.snapshot.as_mut().unwrap().phase = Phase::Idle as i32;
-        assert!(check(&[idle])[0].contains("not STARTING"));
+    fn asks_open_and_close_only_on_facts() {
+        run("asks");
     }
 
     #[test]
-    fn keys_are_unique_in_a_step_and_never_change_arm() {
-        let twice = Step {
-            items: vec![streaming("k", true), streaming("k", true)],
-            ..Default::default()
-        };
-        assert!(check(&[first(), twice])[0].contains("twice in one step"));
-        let changed = [
-            first(),
-            Step {
-                items: vec![streaming("k", true)],
-                ..Default::default()
-            },
-            Step {
-                items: vec![item("k", claude_sdk_item::Kind::Prompt(wire::Prompt {}))],
-                ..Default::default()
-            },
-        ];
-        assert!(check(&changed)[0].contains("changed from message to prompt"));
+    fn agent_messages_stay_pending_until_consumed() {
+        run("agent-messages");
     }
 
     #[test]
-    fn appends_go_to_any_open_item_and_never_after_its_final() {
-        let after_final = [
-            first(),
-            Step {
-                items: vec![streaming("m", true)],
-                ..Default::default()
-            },
-            Step {
-                appends: vec![append("m")],
-                ..Default::default()
-            },
-        ];
-        assert!(check(&after_final)[0].contains("after its final item"));
-        let below_the_newest = [
-            first(),
-            Step {
-                items: vec![streaming("a", false), streaming("b", true)],
-                appends: vec![append("a")],
-                ..Default::default()
-            },
-            Step {
-                items: vec![streaming("a", true)],
-                ..Default::default()
-            },
-        ];
-        assert_eq!(check(&below_the_newest), Vec::<String>::new());
-        let unknown_key = [
-            first(),
-            Step {
-                appends: vec![append("ghost")],
-                ..Default::default()
-            },
-        ];
-        assert!(check(&unknown_key)[0].contains("unknown key"));
+    fn streams_end_full_and_resume_re_emits_open_items() {
+        run("streaming");
     }
 
     #[test]
-    fn every_open_ask_has_an_item() {
-        let snapshot = Snapshot {
-            body: ClaudeSdkSnapshot {
-                asks: vec![Ask {
-                    key: "ask".into(),
-                    item_key: "tool-1".into(),
-                    ..Default::default()
-                }],
-                ..unknown::claude_sdk()
-            }
-            .encode_to_vec(),
-            phase: Phase::NeedsYou as i32,
-            ..Default::default()
-        };
-        let steps = [
-            first(),
-            Step {
-                snapshot: Some(snapshot),
-                ..Default::default()
-            },
-        ];
-        assert!(check(&steps)[0].contains("has no item"));
+    fn a_spawn_prompt_seeds_the_queue_and_working_on() {
+        run("spawn");
     }
 
     #[test]
-    fn the_queue_drains_and_streams_end_unless_the_fixture_says_otherwise() {
-        let left = [
-            first(),
+    fn the_checkpoint_property_catches_state_a_resume_loses() {
+        let dir = std::env::temp_dir().join(format!("interpret-forget-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fixture = dir.join("forget.json");
+        std::fs::write(
+            &fixture,
+            r#"{"events": [{"fact": {"channel": "stream", "json": {"type": "ready"}}},
+                           {"fact": {"channel": "stream", "json": {"type": "model", "model": "opus"}}},
+                           {"tick": 5}]}"#,
+        )
+        .unwrap();
+        let report = run_golden::<TestKind<true>>(&fixture);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(
+            report
+                .violations
+                .iter()
+                .any(|violation| violation.contains("diverges: the final snapshot differs")),
+            "{:?}",
+            report.violations
+        );
+    }
+
+    #[test]
+    fn a_golden_mismatch_fails_and_names_the_line() {
+        let dir = std::env::temp_dir().join(format!("interpret-golden-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fixture = dir.join("tiny.json");
+        std::fs::write(&fixture, r#"{"events": [{"tick": 5}]}"#).unwrap();
+        std::fs::write(dir.join("tiny.golden"), "## 0 initial\nsomething else\n").unwrap();
+        let report = run_golden::<TestKind>(&fixture);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(report.violations.is_empty(), "{:?}", report.violations);
+        assert_eq!(report.failures.len(), 1, "{:?}", report.failures);
+        assert!(
+            report.failures[0].contains("line 2"),
+            "{}",
+            report.failures[0]
+        );
+    }
+
+    #[test]
+    fn an_unmet_expectation_fails() {
+        let dir = std::env::temp_dir().join(format!("interpret-expect-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fixture = dir.join("expect.json");
+        std::fs::write(
+            &fixture,
+            r#"{"events": [{"fact": {"channel": "stream", "json": {"type": "ready"}},
+                            "expect": {"phase": "WORKING"}}]}"#,
+        )
+        .unwrap();
+        let report = run_golden::<TestKind>(&fixture);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(
+            report
+                .failures
+                .iter()
+                .any(|failure| failure.contains("phase expected WORKING, got IDLE")),
+            "{:?}",
+            report.failures
+        );
+    }
+
+    mod invariants {
+        use wire::{Append, Item, QueuedInput, Snapshot};
+
+        use super::*;
+
+        fn first() -> Step {
             Step {
-                items: vec![streaming("m", false)],
                 snapshot: Some(Snapshot {
-                    queue: vec![QueuedInput {
-                        input_id: b"p1".to_vec(),
-                        ..Default::default()
-                    }],
+                    kind: wire::Kind::Unspecified as i32,
+                    body: TestKind::<false>::unknown_snapshot(),
+                    phase: Phase::Starting as i32,
                     ..Default::default()
                 }),
                 ..Default::default()
-            },
-        ];
-        let violations = check(&left);
-        assert!(
-            violations[0].contains("did not drain: p1"),
-            "{violations:?}"
-        );
-        assert!(violations[1].contains("never ended"), "{violations:?}");
-        let allowed = EndRules {
-            queue_may_remain: true,
-            streams_may_remain: true,
-        };
-        assert!(check_invariants::<TestKind>(&left, &allowed).is_empty());
-    }
+            }
+        }
 
-    #[test]
-    fn a_reopened_final_item_is_a_violation() {
-        let steps = [
-            first(),
-            Step {
-                items: vec![streaming("m", true)],
+        fn item(key: &str, kind: claude_sdk_item::Kind) -> Item {
+            Item {
+                key: key.into(),
+                kind: wire::Kind::Unspecified as i32,
+                body: body(kind),
                 ..Default::default()
-            },
-            Step {
-                items: vec![streaming("m", false)],
+            }
+        }
+
+        fn streaming(key: &str, complete: bool) -> Item {
+            item(key, claude_sdk_item::Kind::Message(wire::Text { complete }))
+        }
+
+        fn append(key: &str) -> Append {
+            Append {
+                key: key.into(),
+                text: "x".into(),
                 ..Default::default()
-            },
-            Step {
-                items: vec![streaming("m", true)],
+            }
+        }
+
+        fn check(steps: &[Step]) -> Vec<String> {
+            check_invariants::<TestKind>(steps, &EndRules::default())
+        }
+
+        #[test]
+        fn a_clean_run_has_no_violations() {
+            let steps = [
+                first(),
+                Step {
+                    items: vec![streaming("m", false)],
+                    appends: vec![append("m")],
+                    ..Default::default()
+                },
+                Step {
+                    items: vec![streaming("m", true)],
+                    ..Default::default()
+                },
+            ];
+            assert_eq!(check(&steps), Vec::<String>::new());
+        }
+
+        #[test]
+        fn the_first_frame_must_be_a_starting_snapshot_at_its_unknowns() {
+            assert!(check(&[Step::default()])[0].contains("not a Snapshot"));
+            let mut known = first();
+            known.snapshot.as_mut().unwrap().body = ClaudeSdkSnapshot {
+                model: Some("opus".into()),
+                ..unknown::claude_sdk()
+            }
+            .encode_to_vec();
+            assert!(check(&[known])[0].contains("not every field at its unknown"));
+            let mut idle = first();
+            idle.snapshot.as_mut().unwrap().phase = Phase::Idle as i32;
+            assert!(check(&[idle])[0].contains("not STARTING"));
+        }
+
+        #[test]
+        fn keys_are_unique_in_a_step_and_never_change_arm() {
+            let twice = Step {
+                items: vec![streaming("k", true), streaming("k", true)],
                 ..Default::default()
-            },
-        ];
-        assert!(check(&steps)[0].contains("reopened"));
+            };
+            assert!(check(&[first(), twice])[0].contains("twice in one step"));
+            let changed = [
+                first(),
+                Step {
+                    items: vec![streaming("k", true)],
+                    ..Default::default()
+                },
+                Step {
+                    items: vec![item("k", claude_sdk_item::Kind::Prompt(wire::Prompt {}))],
+                    ..Default::default()
+                },
+            ];
+            assert!(check(&changed)[0].contains("changed from message to prompt"));
+        }
+
+        #[test]
+        fn appends_go_to_any_open_item_and_never_after_its_final() {
+            let after_final = [
+                first(),
+                Step {
+                    items: vec![streaming("m", true)],
+                    ..Default::default()
+                },
+                Step {
+                    appends: vec![append("m")],
+                    ..Default::default()
+                },
+            ];
+            assert!(check(&after_final)[0].contains("after its final item"));
+            let below_the_newest = [
+                first(),
+                Step {
+                    items: vec![streaming("a", false), streaming("b", true)],
+                    appends: vec![append("a")],
+                    ..Default::default()
+                },
+                Step {
+                    items: vec![streaming("a", true)],
+                    ..Default::default()
+                },
+            ];
+            assert_eq!(check(&below_the_newest), Vec::<String>::new());
+            let unknown_key = [
+                first(),
+                Step {
+                    appends: vec![append("ghost")],
+                    ..Default::default()
+                },
+            ];
+            assert!(check(&unknown_key)[0].contains("unknown key"));
+        }
+
+        #[test]
+        fn every_open_ask_has_an_item() {
+            let snapshot = Snapshot {
+                body: ClaudeSdkSnapshot {
+                    asks: vec![Ask {
+                        key: "ask".into(),
+                        item_key: "tool-1".into(),
+                        ..Default::default()
+                    }],
+                    ..unknown::claude_sdk()
+                }
+                .encode_to_vec(),
+                phase: Phase::NeedsYou as i32,
+                ..Default::default()
+            };
+            let steps = [
+                first(),
+                Step {
+                    snapshot: Some(snapshot),
+                    ..Default::default()
+                },
+            ];
+            assert!(check(&steps)[0].contains("has no item"));
+        }
+
+        #[test]
+        fn the_queue_drains_and_streams_end_unless_the_fixture_says_otherwise() {
+            let left = [
+                first(),
+                Step {
+                    items: vec![streaming("m", false)],
+                    snapshot: Some(Snapshot {
+                        queue: vec![QueuedInput {
+                            input_id: b"p1".to_vec(),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            ];
+            let violations = check(&left);
+            assert!(
+                violations[0].contains("did not drain: p1"),
+                "{violations:?}"
+            );
+            assert!(violations[1].contains("never ended"), "{violations:?}");
+            let allowed = EndRules {
+                queue_may_remain: true,
+                streams_may_remain: true,
+            };
+            assert!(check_invariants::<TestKind>(&left, &allowed).is_empty());
+        }
+
+        #[test]
+        fn a_reopened_final_item_is_a_violation() {
+            let steps = [
+                first(),
+                Step {
+                    items: vec![streaming("m", true)],
+                    ..Default::default()
+                },
+                Step {
+                    items: vec![streaming("m", false)],
+                    ..Default::default()
+                },
+                Step {
+                    items: vec![streaming("m", true)],
+                    ..Default::default()
+                },
+            ];
+            assert!(check(&steps)[0].contains("reopened"));
+        }
     }
 }

@@ -441,6 +441,8 @@ pub async fn dump(
             agent_ids,
             reason: reason.unwrap_or_default(),
             automatic: false,
+            // The command line holds no session open.
+            sessions: Vec::new(),
         })
         .await
         .map_err(crate::plain)?

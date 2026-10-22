@@ -56,6 +56,8 @@ pub struct Install {
     pub data_dir: PathBuf,
     pub work: PathBuf,
     pub profile: ProfileId,
+    /// The test makes the daemon core ask for dumps on purpose.
+    core_dumps_expected: std::sync::atomic::AtomicBool,
 }
 
 impl Install {
@@ -70,6 +72,7 @@ impl Install {
             data_dir,
             work,
             profile,
+            core_dumps_expected: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -92,6 +95,10 @@ impl Install {
             install_path: binary("amux"),
             claude_command: binary("fake-claude-sdk").to_string_lossy().into_owned(),
             codex_command: binary("fake-codex").to_string_lossy().into_owned(),
+            step_budget: daemon_core::StepBudget::TEST,
+            // An agent's core gets the daemon's test budget, for the same
+            // reason: a loaded debug-build run stretches ordinary steps.
+            agent_step_budget_micros: daemon_core::StepBudget::TEST.micros,
             ..Launch::default()
         };
         launch
@@ -145,6 +152,62 @@ impl Install {
 impl Default for Install {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Install {
+    /// Says this test makes the daemon core ask for dumps on purpose, so
+    /// the installation may be left with them.
+    pub fn expect_core_dumps(&self) {
+        self.core_dumps_expected
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// The reason of every dump in the installation's reports that the
+    /// daemon core or an agent's core asked for: an invariant it broke, or
+    /// a step over its budget.
+    pub fn core_dumps(&self) -> Vec<String> {
+        let Ok(bundles) = std::fs::read_dir(self.data_dir.join(node::REPORTS)) else {
+            return Vec::new();
+        };
+        bundles
+            .filter_map(|bundle| {
+                let manifest = std::fs::read(bundle.ok()?.path().join(node::MANIFEST)).ok()?;
+                let manifest: serde_json::Value = serde_json::from_slice(&manifest).ok()?;
+                let reason = manifest["reason"].as_str()?;
+                (reason.starts_with(node::CORE_DUMP) || reason.starts_with(node::AGENT_DUMP))
+                    .then(|| reason.to_owned())
+            })
+            .collect()
+    }
+}
+
+impl Drop for Install {
+    /// No test leaves a dump the daemon core or an agent's core asked for
+    /// because one of its invariants failed: production asserts them, so
+    /// such a dump is a bug.
+    /// A test that breaks one on purpose says so first. Dumps for a step
+    /// over its budget are printed and tolerated: an overrun on a loaded
+    /// machine is time the core thread was not running, not work inside the
+    /// step (measured under the desktop flood: step CPU at most 14 ms
+    /// against 100 to 833 ms wall), and a parallel debug-build run on a
+    /// four-core CI runner is exactly that machine.
+    fn drop(&mut self) {
+        if std::thread::panicking() || *self.core_dumps_expected.get_mut() {
+            return;
+        }
+        let (violations, slow): (Vec<_>, Vec<_>) =
+            self.core_dumps().into_iter().partition(|reason| {
+                reason.starts_with(node::CORE_VIOLATION_DUMP)
+                    || reason.starts_with(node::AGENT_VIOLATION_DUMP)
+            });
+        for reason in &slow {
+            println!("tolerated a dump a core asked for: {reason}");
+        }
+        assert!(
+            violations.is_empty(),
+            "a core asked for dumps for broken invariants: {violations:#?}"
+        );
     }
 }
 

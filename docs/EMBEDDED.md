@@ -9,8 +9,8 @@ app layer splits those into three crates:
 | Crate | Owns |
 | --- | --- |
 | `app-runtime` | The chats and fleet over a local runtime: session and fleet drivers, views asked for by row key, changes gathered until the host's next main-thread turn, and the values a host passes in and gets back |
-| `app-embedded` | The daemon hosted in the client's own process: one installation with one profile per account, each with its identity, trust, store of replica rows, pairing, direct links and relay link |
-| `app-ffi` | The C ABI over both: exported `amux_*` functions, JSON in and out, callbacks, opaque handles, the `staticlib`, and the header `cbindgen` generates |
+| `app-embedded` | The daemon hosted in the client's own process: one installation with one profile per account, each with its identity, trust, store of replica rows, pairing, direct links and relay link; and `Phone`, the driver that steps its cores on the client's queue and confines its transport to one thread |
+| `app-ffi` | The C ABI over both: exported `amux_*` functions, JSON in and out, a wake descriptor and a step, tickets for acts, opaque handles, the `staticlib`, and the header `cbindgen` generates |
 
 The iPhone app is the one client built on them. How the Swift side uses
 them is on [the iPhone page](IOS.md).
@@ -84,11 +84,33 @@ It reads the whole list again only when a change batch says it was reloaded,
 which a Reset does, and so does a return to the newest row after more arrived
 than the window holds.
 
-The host's wake is called on a worker thread with the fleet or a chat's id
-whenever that one moved, and at most once until the host takes its changes.
-However many updates land in between, the host takes every changed key
-together on its next turn (`Coalescer`, in `app-runtime/src/coalesce.rs`), so
-it reconfigures only the rows that changed.
+The host is told the fleet or a chat moved whenever it did, and at most once
+until it takes that one's changes. However many updates land in between, the
+host takes every changed key together on its next turn (`Coalescer`, in
+`app-runtime/src/coalesce.rs`), so it reconfigures only the rows that
+changed.
+
+## The loop
+
+The client owns the loop; Rust never calls into it. `Phone` in
+`app-embedded` starts the installation with its profiles' daemon cores held
+for stepping (`node::Cores`) rather than on threads of their own, and runs
+links, channels, gRPC and the client streams on one confined tokio thread.
+That thread posts what it decodes onto the cores' input queues, and every
+input posted, like every view that moved and every act that ended, makes a
+wake descriptor readable. The client watches the descriptor from one serial
+queue and calls `step` there, which reads the descriptor empty and steps
+every input waiting for every core, a batch per core at a time, on that
+queue. So a core steps one thing at a time on the client's queue and
+nowhere else, while its timers and jobs still run on the transport thread
+and come back as inputs.
+
+A call that waits for the cores to do something (starting, stopping, a
+profile or chat opening) runs its work on the transport thread and steps the
+cores on the calling thread meanwhile, so it never waits on a queue the
+calling thread holds. Through the C ABI a step answers JSON naming the
+fleets and chats to redraw, whether the profile list moved, and the results
+of acts, each under the ticket its act returned when it started.
 
 ## Profiles
 
@@ -177,13 +199,13 @@ a view value means adding it there.
 Everything crosses as JSON; every returned string is the caller's to free with
 `amux_string_free`, and every `AmuxBytes` with `amux_bytes_free`. A null
 return means the call failed, and a panic is caught at the boundary and reads
-as a failure. Reads return at once. Acts that wait take a callback, called
-once on a worker thread with a JSON result the callback borrows until it
-returns.
+as a failure. Reads return at once. An act that waits returns a ticket at
+once, and its JSON result comes back from a later `amux_runtime_step` under
+that ticket; nothing in the library calls into the client.
 
 | Family | Handle | What it covers |
 | --- | --- | --- |
-| `amux_runtime_*` | `AmuxRuntime` | The installation: start and stop, the profile list and its wake, the registry (create, delete, bind, sign out, pause, resume), source policy, discovered machines, bearers, entitlement refresh, which profiles trust a host, product analytics (the setting, foreground, background flush, the app's own events) |
+| `amux_runtime_*` | `AmuxRuntime` | The installation: start and stop, the wake descriptor and the step, lifecycle inputs (foreground, background, suspending, network changed), the profile list, the registry (create, delete, bind, sign out, pause, resume), source policy, discovered machines, bearers, entitlement refresh, which profiles trust a host, product analytics (the setting and the app's own events) |
 | `amux_profile_*` | `AmuxProfile` | One profile open on screen: pairing, the roster, account state, creating agents and listing directories, renaming, stopping and deleting agents, the dump |
 | `amux_fleet_*` | `AmuxProfile` | That profile's fleet: rows, cards, family headers, hosts, and taking its changes |
 | `amux_session_*` | `AmuxChat` | One open chat: keys and rows by key, the ask card, overview, settings and frame, taking changes; sending, answering, withdrawing, interrupting, resuming, paging, blobs and the review |
@@ -193,8 +215,9 @@ close every chat before its profile and every profile before stopping the
 runtime.
 
 ```c
-AmuxRuntime *rt = amux_runtime_start(config_json, list_wake, context, &error);
-AmuxProfile *p = amux_profile_open(rt, profile_id, wake, context, &error);
+AmuxRuntime *rt = amux_runtime_start(config_json, &error);
+/* watch amux_runtime_wake_fd(rt); call amux_runtime_step(rt) when readable */
+AmuxProfile *p = amux_profile_open(rt, profile_id, &error);
 AmuxChat *chat = amux_session_open(p, agent_key_json, 0, &error);
 /* ... */
 amux_session_close(chat);

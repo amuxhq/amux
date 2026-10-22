@@ -326,7 +326,11 @@ async fn inventory_is_origin_only() {
     until(
         "the laptop's replica to follow the desk's agent",
         || async {
-            let rows = pair.laptop_runtime.store().await.agents().unwrap();
+            let rows = pair
+                .laptop_runtime
+                .read_store(|store| store.agents().unwrap())
+                .await
+                .unwrap();
             match rows.iter().find(|row| row.agent.agent == coder) {
                 Some(row) if row.phase == Phase::Working as i32 => Ok(()),
                 Some(row) => Err(format!("phase {}", row.phase)),

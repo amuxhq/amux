@@ -3,6 +3,8 @@
 
 #![allow(dead_code)]
 
+use proptest::prelude::*;
+use proptest::test_runner::RngSeed;
 use prost::Message;
 use ui_state::{
     Connection, InputOutcome, ItemClass, Msg, Outcome, RunIndex, SessionState, Transcript,
@@ -368,8 +370,12 @@ pub fn caught_up(revision: u64) -> Msg {
     event(session_event::Of::CaughtUp(wire::CaughtUp { revision }))
 }
 
-pub fn reset() -> Msg {
-    event(session_event::Of::Reset(wire::Reset {}))
+pub fn opening(generation: u64) -> Msg {
+    event(session_event::Of::Opening(wire::Opening { generation }))
+}
+
+pub fn reset(generation: u64) -> Msg {
+    event(session_event::Of::Reset(wire::Reset { generation }))
 }
 
 pub fn detached() -> Msg {
@@ -498,9 +504,21 @@ pub fn projection(transcript: &Transcript) -> Vec<(String, String)> {
 }
 
 /// Checks the invariants every update must keep: the run index equals a
-/// rebuild; the changed set names exactly the rows that differ.
+/// rebuild; the changed set names exactly the rows that differ; and the
+/// state and the message read back from the form a dump carries them in as
+/// themselves, so a dump's replay starts where the client stood.
 pub fn apply_checked(state: &mut SessionState, msg: Msg) -> Outcome {
     let before = projection(state.transcript());
+    assert_eq!(
+        &SessionState::from_wire(state.to_wire()).expect("a session reads back"),
+        state,
+        "the session does not read back from its dump form before {msg:?}"
+    );
+    assert_eq!(
+        Msg::from_wire(msg.to_wire()).expect("a message reads back"),
+        msg,
+        "the message does not read back from its dump form"
+    );
     let outcome = state.update(msg.clone());
     let after = projection(state.transcript());
     assert_eq!(
@@ -618,31 +636,24 @@ impl Tape {
     }
 }
 
-/// A small deterministic generator for property cases.
-pub struct Rng(u64);
-
-impl Rng {
-    pub fn new(seed: u64) -> Rng {
-        Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1)
+/// The configuration the property tests run under: a fixed seed, so a run
+/// repeats exactly unless PROPTEST_RNG_SEED names another, and no regression
+/// files written beside the sources (a failure prints its shrunk input).
+pub fn cases(cases: u32) -> ProptestConfig {
+    let config = ProptestConfig::default();
+    let rng_seed = match config.rng_seed {
+        RngSeed::Random => RngSeed::Fixed(1),
+        seed => seed,
+    };
+    ProptestConfig {
+        cases,
+        rng_seed,
+        failure_persistence: None,
+        ..config
     }
+}
 
-    pub fn next(&mut self) -> u64 {
-        let mut x = self.0;
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        self.0 = x;
-        x
-    }
-
-    pub fn below(&mut self, n: u64) -> u64 {
-        self.next() % n
-    }
-
-    pub fn shuffle<T>(&mut self, items: &mut [T]) {
-        for i in (1..items.len()).rev() {
-            let j = self.below(i as u64 + 1) as usize;
-            items.swap(i, j);
-        }
-    }
+/// Any of the agent kinds.
+pub fn kinds() -> impl Strategy<Value = Kind> {
+    prop::sample::select(KINDS.to_vec())
 }

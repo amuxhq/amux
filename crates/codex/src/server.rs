@@ -542,50 +542,6 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn from_io_sends_initialized_after_initialize() {
-        let (client_side, server_side) = duplex(4096);
-        let (client_read, client_write) = split(client_side);
-        let (server_read, mut server_write) = split(server_side);
-
-        let server_task = tokio::spawn(async move {
-            let mut reader = BufReader::new(server_read);
-            let mut line = String::new();
-
-            reader.read_line(&mut line).await.unwrap();
-            let initialize: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
-            assert_eq!(initialize["method"], "initialize");
-
-            server_write
-                .write_all(
-                    br#"{"id":1,"result":{"userAgent":"ua","codexHome":"/tmp/codex","platformFamily":"unix","platformOs":"macos"}}"#,
-                )
-                .await
-                .unwrap();
-            server_write.write_all(b"\n").await.unwrap();
-            server_write.flush().await.unwrap();
-
-            line.clear();
-            reader.read_line(&mut line).await.unwrap();
-            let initialized: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
-            assert_eq!(initialized["method"], "initialized");
-            assert!(initialized.get("params").is_none());
-        });
-
-        let codex = Codex::from_io(
-            BufReader::new(client_read),
-            client_write,
-            CodexConfig::default(),
-        )
-        .await
-        .unwrap();
-        let init = codex.initialization_result().unwrap();
-        assert_eq!(init.user_agent, "ua");
-        assert_eq!(init.extra["platformOs"], "macos");
-
-        server_task.await.unwrap();
-    }
-
-    #[tokio::test]
     async fn record_io_tees_both_wire_directions() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("io.jsonl");

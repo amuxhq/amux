@@ -1,0 +1,25 @@
+[package]
+name = "daemon-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "The daemon as one function of its state and an input: typed inputs in, typed outputs out"
+publish = false
+
+[dependencies]
+chrono = { workspace = true }
+curve25519-dalek = { workspace = true }
+postcard = { workspace = true }
+journal = { workspace = true }
+prost = { workspace = true }
+ring = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+store = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+wire = { workspace = true }
+
+[dev-dependencies]
+journal = { workspace = true, features = ["synthetic"] }
+tempfile = { workspace = true }

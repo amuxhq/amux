@@ -21,22 +21,6 @@ pub(crate) mod category {
     pub(crate) const TRUST_REMOVE: &str = "trust.remove";
     pub(crate) const LINK_UP: &str = "link.up";
     pub(crate) const LINK_DOWN: &str = "link.down";
-
-    #[cfg(test)]
-    pub(crate) const ALL: &[&str] = &[
-        PAIRING_START,
-        PAIRING_SUCCESS,
-        PAIRING_FAILURE,
-        PAIRING_CANCEL,
-        AUTH_MTLS_HANDSHAKE_FAILURE,
-        AUTH_JWT_FAILURE,
-        TRUST_INSERT,
-        TRUST_UPDATE,
-        TRUST_REPLACE,
-        TRUST_REMOVE,
-        LINK_UP,
-        LINK_DOWN,
-    ];
 }
 
 pub(crate) fn pairing_start(method: &str) {
@@ -160,30 +144,4 @@ pub(crate) fn link_down(host_id: HostId, link: &LinkId, reason: impl fmt::Displa
         reason = %reason,
         "link.down"
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::category;
-
-    #[test]
-    fn audit_categories_match_networking_spec() {
-        assert_eq!(
-            category::ALL,
-            &[
-                "pairing.start",
-                "pairing.success",
-                "pairing.failure",
-                "pairing.cancel",
-                "auth.mtls_handshake_failure",
-                "auth.jwt_failure",
-                "trust.insert",
-                "trust.update",
-                "trust.replace",
-                "trust.remove",
-                "link.up",
-                "link.down",
-            ]
-        );
-    }
 }

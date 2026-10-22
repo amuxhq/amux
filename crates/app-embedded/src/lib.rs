@@ -15,6 +15,7 @@
 //! chat asks for otherwise.
 
 mod log;
+mod phone;
 
 use std::io;
 use std::net::SocketAddr;
@@ -29,13 +30,14 @@ use app_runtime::values::{
     PendingPair, RelayLink, Roster,
 };
 pub use app_runtime::values::{PairRequest, ProfileView, StartConfig, UsageEvent};
-use client::{Client, Clock, InProcess, SystemClock};
+use client::{Client, Clock, InProcess};
 use futures_util::{Stream, StreamExt};
-pub use node::ProfileId;
 use node::{
     ClientApi, CloudOptions, Daemon, DiscoveryFactory, EdgeOptions, FrontDoor, LanOptions,
     ProfileRuntime, SourcePolicy, StartError, StartOptions,
 };
+pub use node::{Cores, ProfileId};
+pub use phone::Phone;
 use sha2::{Digest, Sha256};
 use tonic::Request;
 use wire::profile_service_server::ProfileService as _;
@@ -54,7 +56,8 @@ pub struct EdgeOverrides {
     /// Local-network discovery; the phone's system browses and hands its
     /// results over, so there is none by default.
     pub discovery: Option<DiscoveryFactory>,
-    /// Where direct links listen: every interface by default.
+    /// Where direct links listen: every interface of both families by
+    /// default.
     pub lan_bind: SocketAddr,
     /// Whether this is the app as published, which sends product
     /// analytics; tests and driving builds are not, and send none unless
@@ -69,7 +72,7 @@ impl Default for EdgeOverrides {
         EdgeOverrides {
             cloud: CloudOptions::default(),
             discovery: None,
-            lan_bind: SocketAddr::from(([0, 0, 0, 0], 0)),
+            lan_bind: node::DUAL_STACK_ANY,
             published: false,
             recording: None,
         }
@@ -114,6 +117,21 @@ pub enum EmbeddedError {
     Account(#[from] node::AuthError),
     #[error("{0}")]
     Relay(String),
+    #[error("checkpointing profile {0}: {1}")]
+    Checkpoint(ProfileId, String),
+    #[error("binding profile {0}'s link socket afresh: {1}")]
+    Rebind(ProfileId, io::Error),
+}
+
+/// What a network change did across every profile.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct NetworkChangeReport {
+    /// The profiles whose link socket was bound afresh.
+    pub profiles_rebound: usize,
+    /// The path machines told, one per peer of every profile.
+    pub machines_told: usize,
+    /// The device's interface addresses now.
+    pub addrs: Vec<std::net::IpAddr>,
 }
 
 /// One installation with every profile it hosts, in process.
@@ -157,15 +175,19 @@ impl ProfileEvents {
 
 impl EmbeddedRuntime {
     /// Starts the installation under `config.data_dir`, creating its first
-    /// profile on first start.
-    pub async fn start(config: &StartConfig) -> Result<EmbeddedRuntime, EmbeddedError> {
-        Self::start_with(config, EdgeOverrides::default(), Arc::new(SystemClock)).await
-    }
-
+    /// profile on first start. Its profiles' cores have no threads: whoever
+    /// rings for `cores` steps them.
+    ///
+    /// A relaunch starts each core from its store as every start does,
+    /// never from the checkpoint a suspend left: the rest of a checkpoint is
+    /// links, channels, calls, jobs, timers and pairings bound to the
+    /// process that ended, and what outlives it is read back from the
+    /// store, the drafts file, the trust store and the settings.
     pub async fn start_with(
         config: &StartConfig,
         overrides: EdgeOverrides,
         clock: Arc<dyn Clock>,
+        cores: Cores,
     ) -> Result<EmbeddedRuntime, EmbeddedError> {
         if let Some(path) = &config.log_path {
             // A log that cannot be opened costs the dump its log, never the
@@ -185,6 +207,7 @@ impl EmbeddedRuntime {
             dial: config.lan,
             link_socket: false,
             cloud: overrides.cloud,
+            interfaces: None,
         };
         let telemetry = Arc::new(AtomicBool::new(config.telemetry));
         let analytics = match overrides.recording {
@@ -205,7 +228,10 @@ impl EmbeddedRuntime {
             data_dir: config.data_dir.clone(),
             // The phone has no boot id to read; each start is its own boot.
             boot_id: Some(uuid::Uuid::new_v4().to_string()),
-            launch: node::Launch::default(),
+            launch: node::Launch {
+                cores: Some(cores),
+                ..node::Launch::default()
+            },
             clock: clock.clone(),
             push: Arc::new(node::NoopSender),
             daemon_log: config.log_path.clone(),
@@ -279,6 +305,19 @@ impl EmbeddedRuntime {
         if let Some(flusher) = &self.analytics {
             flusher.flush(BACKGROUND_FLUSH).await;
         }
+    }
+
+    /// Checkpoints every profile's core, each at a passive WAL checkpoint
+    /// of its store, and waits until every one is on the drive: as the app
+    /// is about to be suspended.
+    pub async fn checkpoint(&self) -> Result<(), EmbeddedError> {
+        for runtime in self.hosted() {
+            runtime
+                .checkpoint()
+                .await
+                .map_err(|error| EmbeddedError::Checkpoint(runtime.profile(), error))?;
+        }
+        Ok(())
     }
 
     fn runtime(&self, profile: ProfileId) -> Result<Arc<ProfileRuntime>, EmbeddedError> {
@@ -450,6 +489,19 @@ impl EmbeddedRuntime {
     pub fn client(&self, profile: ProfileId) -> Result<Arc<dyn Client>, EmbeddedError> {
         let runtime = self.runtime(profile)?;
         Ok(Arc::new(InProcess::new(ClientApi::new(&runtime, None))))
+    }
+
+    /// Runs `work` where the profile's core steps, between two of its
+    /// steps: how a check finds out which queue that is.
+    pub async fn between_steps<T: Send + 'static>(
+        &self,
+        profile: ProfileId,
+        work: impl FnOnce() -> T + Send + 'static,
+    ) -> Result<T, EmbeddedError> {
+        self.runtime(profile)?
+            .read_store(move |_| work())
+            .await
+            .map_err(|_| EmbeddedError::NoProfile(profile))
     }
 
     pub fn clock(&self) -> Arc<dyn Clock> {
@@ -666,6 +718,32 @@ impl EmbeddedRuntime {
                 edge.hand_over_discovered(found.clone());
             }
         }
+    }
+
+    /// The phone's network changed under it: every profile's link socket
+    /// is bound afresh, so its links move to the new network with their
+    /// QUIC connections, and every path machine probes its paths again.
+    /// Every profile is told even when one fails to rebind; the first
+    /// failure is the answer.
+    pub async fn network_changed(&self) -> Result<NetworkChangeReport, EmbeddedError> {
+        let mut report = NetworkChangeReport::default();
+        let mut failed = None;
+        for runtime in self.hosted() {
+            let Some(edge) = runtime.edge() else {
+                continue;
+            };
+            match edge.network_changed() {
+                Ok(change) => {
+                    report.profiles_rebound += usize::from(change.rebound);
+                    report.machines_told += change.machines_told;
+                    report.addrs = change.addrs;
+                }
+                Err(error) => {
+                    failed.get_or_insert(EmbeddedError::Rebind(runtime.profile(), error));
+                }
+            }
+        }
+        failed.map_or(Ok(report), Err)
     }
 
     /// The account a profile is bound to, and its relay link.

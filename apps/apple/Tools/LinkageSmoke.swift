@@ -10,33 +10,23 @@ private func fail(_ code: Int, _ message: String) -> NSError {
     NSError(domain: "LinkageSmoke", code: code, userInfo: [NSLocalizedDescriptionKey: message])
 }
 
-/// One callback's answer, waited for on a condition.
-private final class Answer: @unchecked Sendable {
-    let condition = NSCondition()
-    var json: String?
-
-    func wait(_ what: String) throws -> Any {
-        condition.lock()
-        defer { condition.unlock() }
-        let deadline = Date().addingTimeInterval(30)
-        while json == nil {
-            guard condition.wait(until: deadline) else { throw fail(6, "no answer to \(what) within 30 seconds") }
+/// Steps until the act under `ticket` is answered, and returns its JSON.
+/// This thread is the smoke's one queue: it watches the wake descriptor and
+/// steps when it is readable, as the app's core queue does.
+private func answer(_ runtime: OpaquePointer, _ what: String, _ ticket: UInt64) throws -> Any {
+    guard ticket != 0 else { throw fail(6, "\(what) did not start") }
+    let deadline = Date().addingTimeInterval(30)
+    var watched = pollfd(fd: amux_runtime_wake_fd(runtime), events: Int16(POLLIN), revents: 0)
+    while Date() < deadline {
+        guard poll(&watched, 1, 50) > 0 else { continue }
+        let stepped = try read(amux_runtime_step(runtime)) as? [String: Any] ?? [:]
+        for answer in stepped["answers"] as? [[String: Any]] ?? []
+        where (answer["ticket"] as? NSNumber)?.uint64Value == ticket {
+            let json = answer["json"] as? String ?? "null"
+            return try JSONSerialization.jsonObject(with: Data(json.utf8), options: [.fragmentsAllowed])
         }
-        return try JSONSerialization.jsonObject(with: Data(json!.utf8), options: [.fragmentsAllowed])
     }
-}
-
-/// The runtime wakes its host on every change; this smoke reads snapshots
-/// instead, so a wake has nothing to do.
-private func woke(_ context: UnsafeMutableRawPointer?, _ chat: UInt64) {}
-
-private func answered(_ context: UnsafeMutableRawPointer?, _ json: UnsafePointer<CChar>?) {
-    guard let context, let json else { return }
-    let answer = Unmanaged<Answer>.fromOpaque(context).takeRetainedValue()
-    answer.condition.lock()
-    answer.json = String(cString: json)
-    answer.condition.broadcast()
-    answer.condition.unlock()
+    throw fail(6, "no answer to \(what) within 30 seconds")
 }
 
 private func read(_ bytes: UnsafeMutablePointer<CChar>?) throws -> Any {
@@ -65,7 +55,7 @@ private func smoke() throws {
         "lan": false,
     ]
     var error: UnsafeMutablePointer<CChar>?
-    guard let runtime = json(config).withCString({ amux_runtime_start($0, woke, nil, &error) }) else {
+    guard let runtime = json(config).withCString({ amux_runtime_start($0, &error) }) else {
         let reason = error.map { String(cString: $0) } ?? "no reason"
         if let error { amux_string_free(error) }
         throw fail(3, "the runtime did not start: \(reason)")
@@ -76,9 +66,8 @@ private func smoke() throws {
     print("installation started by the shipping mobile library")
 
     // Only a driving build offers a pairing code of its own.
-    let answer = Answer()
-    id.withCString { amux_runtime_offer_pairing(runtime, $0, answered, Unmanaged.passRetained(answer).toOpaque()) }
-    let reply = try answer.wait("offering pairing")
+    let ticket = id.withCString { amux_runtime_offer_pairing(runtime, $0) }
+    let reply = try answer(runtime, "offering pairing", ticket)
     guard let result = reply as? [String: Any], result["Err"] != nil else {
         throw fail(5, "the shipping bridge offered pairing: \(reply)")
     }

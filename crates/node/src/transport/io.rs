@@ -34,7 +34,6 @@ pub(crate) enum PreTrustPairingReachability {
     /// endpoint it listens on, so the address it was seen at is where it
     /// can be dialled back.
     Direct(std::net::SocketAddr),
-    NoReusableReachability,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -59,10 +59,6 @@ pub type ExitCode = i32;
 
 pub struct Child {
     pub pid: u32,
-    /// The clock's time at spawn.
-    pub started_ms: i64,
-    /// Set once it has been told `go`; an inherited child already has been.
-    pub activated_ms: Option<i64>,
     exit: watch::Receiver<Option<ExitCode>>,
     go: Option<File>,
     /// Kept open so the next supervisor inherits it; a duplicate feeds the
@@ -75,7 +71,7 @@ pub struct Child {
 
 impl Child {
     /// Starts `<binary> <args> daemon` with the pipe.
-    pub fn spawn(binary: &Path, args: &[std::ffi::OsString], now_ms: i64) -> io::Result<Self> {
+    pub fn spawn(binary: &Path, args: &[std::ffi::OsString]) -> io::Result<Self> {
         let (child_reads, go) = io::pipe()?;
         let (prepared_end, child_writes) = io::pipe()?;
         let (child_reads, child_writes) = (file(child_reads), file(child_writes));
@@ -93,8 +89,6 @@ impl Child {
         let process = platform::process_of(child)?;
         Ok(Self {
             pid,
-            started_ms: now_ms,
-            activated_ms: None,
             #[cfg(unix)]
             exit: platform::wait(pid),
             #[cfg(windows)]
@@ -108,15 +102,13 @@ impl Child {
     }
 
     /// Takes over a child an earlier supervisor started and activated.
-    pub fn inherit(inherited: &Inherited, now_ms: i64) -> io::Result<Self> {
+    pub fn inherit(inherited: &Inherited) -> io::Result<Self> {
         let go = platform::file_from_raw(inherited.go)?;
         let prepared_end = platform::file_from_raw(inherited.prepared)?;
         #[cfg(windows)]
         let process = platform::open_process(inherited.pid)?;
         Ok(Self {
             pid: inherited.pid,
-            started_ms: now_ms,
-            activated_ms: Some(now_ms),
             #[cfg(unix)]
             exit: platform::wait(inherited.pid),
             #[cfg(windows)]
@@ -127,10 +119,6 @@ impl Child {
             prepared_end,
             prepared: None,
         })
-    }
-
-    pub fn activated(&self) -> bool {
-        self.activated_ms.is_some()
     }
 
     /// Resolves when the child writes `prepared`; never, once it cannot.

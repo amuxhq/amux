@@ -90,10 +90,7 @@ pub fn carrier(net: &Net, host: &str) -> Option<RelayCarrier> {
 
 /// Reads a peer's inventory to its CaughtUp and returns the hosts it named.
 pub async fn peer_inventory_hosts(from: &Edge, to: Uuid) -> Result<Vec<Vec<u8>>, tonic::Status> {
-    let mut client = from
-        .peer(to)
-        .await
-        .map_err(|error| tonic::Status::unavailable(error.to_string()))?;
+    let mut client = from.peer(to).await.map_err(|error| error.status())?;
     let mut events = client.subscribe_inventory(Empty {}).await?.into_inner();
     let mut hosts = Vec::new();
     loop {
@@ -225,7 +222,7 @@ pub async fn open_session(
     let mut client = from
         .session_peer(host)
         .await
-        .map_err(|error| tonic::Status::unavailable(error.to_string()))?;
+        .map_err(|error| error.status())?;
     let mut events = client
         .subscribe(wire::PeerSubscribeRequest {
             agent_id: agent.as_bytes().to_vec(),

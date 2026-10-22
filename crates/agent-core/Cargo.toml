@@ -1,0 +1,15 @@
+[package]
+name = "agent-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "The agent process around its interpreter as one function of its state and an input"
+publish = false
+
+[dependencies]
+interpret = { workspace = true }
+wire = { workspace = true }
+
+[dev-dependencies]
+interpret = { workspace = true, features = ["testkind"] }
+serde_json = { workspace = true }

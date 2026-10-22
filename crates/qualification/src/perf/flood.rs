@@ -321,10 +321,10 @@ const CAPACITY_WINDOWS: usize = 7;
 const WINDOW_FRAMES: u64 = 8 * node::INGEST_BATCH as u64;
 
 /// Ingest's cost per committed frame. The agents write unthrottled while
-/// the phase holds the origin's store, so ingest commits nothing, until
-/// their journals hold `backlog` bytes past the origin's cursors; then
-/// the writers stop, the store is let go, and ingest drains the backlog
-/// alone. The drain is cut into equal shares of the frames it committed,
+/// the phase holds the origin's core thread in a read, so ingest commits
+/// nothing, until their journals hold `backlog` bytes past the origin's
+/// cursors; then the writers stop, the core is let go, and ingest drains
+/// the backlog alone. The drain is cut into equal shares of the frames it committed,
 /// and each share's wall time over its frames is one sample. Pausing the
 /// writers leaves ingest the machine to itself, so the figure is ingest's
 /// own cost rather than how busy writers share the cores with it, and
@@ -355,17 +355,39 @@ async fn capacity(net: &mut Net, options: &FloodOptions) -> Result<MetricRun> {
         names.len()
     );
     let runtime = net.runtime(ORIGIN)?;
-    let store = runtime.store().await;
     let keys = names
         .iter()
         .map(|name| Ok(net.agent(name)?.key()))
         .collect::<Result<Vec<_>>>()?;
+    // The read hands back the cursors, then holds the core until `release`
+    // is sent or dropped; until then the cursors cannot move.
+    let (release, gate) = std::sync::mpsc::channel::<()>();
+    let (cursors_tx, cursors_rx) = tokio::sync::oneshot::channel();
+    let held = tokio::spawn({
+        let runtime = runtime.clone();
+        let keys = keys.clone();
+        async move {
+            runtime
+                .read_store(move |store| {
+                    let cursors = keys
+                        .iter()
+                        .map(|key| store.cursor(key))
+                        .collect::<Result<Vec<_>, _>>();
+                    let _ = cursors_tx.send(cursors);
+                    let _ = gate.recv();
+                })
+                .await
+        }
+    });
+    let cursors = cursors_rx
+        .await
+        .context("the origin's core read its cursors")??;
     let deadline = Instant::now() + PATIENCE;
     let ends = loop {
         let ends = journals(net, &names)?;
         let mut behind = 0;
-        for (key, end) in keys.iter().zip(&ends) {
-            behind += end.saturating_sub(store.cursor(key)?);
+        for (cursor, end) in cursors.iter().zip(&ends) {
+            behind += end.saturating_sub(*cursor);
         }
         if behind >= options.backlog {
             break ends;
@@ -386,9 +408,11 @@ async fn capacity(net: &mut Net, options: &FloodOptions) -> Result<MetricRun> {
         .collect::<Vec<_>>();
 
     // Every change in the committed count, until the cursors reach the
-    // ends; the check takes the store, so it runs far less often.
+    // ends; the check reads the store on the core thread, so it runs far
+    // less often.
     let mut drain = vec![(Instant::now(), runtime.ingested_frames())];
-    drop(store);
+    drop(release);
+    held.await.context("the origin's held read")??;
     let mut checked = Instant::now();
     loop {
         tokio::time::sleep(Duration::from_millis(1)).await;
@@ -400,10 +424,17 @@ async fn capacity(net: &mut Net, options: &FloodOptions) -> Result<MetricRun> {
             continue;
         }
         checked = Instant::now();
-        let store = runtime.store().await;
+        let keys = keys.clone();
+        let cursors = runtime
+            .read_store(move |store| {
+                keys.iter()
+                    .map(|key| store.cursor(key))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .await??;
         let mut drained = true;
-        for (key, end) in keys.iter().zip(&ends) {
-            drained &= store.cursor(key)? >= *end;
+        for (cursor, end) in cursors.iter().zip(&ends) {
+            drained &= *cursor >= *end;
         }
         if drained {
             break;
@@ -628,8 +659,10 @@ fn listed_agents(events: &[InventoryEvent], host: &[u8]) -> usize {
 async fn origin_newest(net: &Net, agent: &str) -> Result<u64> {
     let key = net.agent(agent)?.key();
     let runtime = net.runtime(ORIGIN)?;
-    let store = runtime.store().await;
-    let row = store.agent(&key)?.context("the origin lists its agent")?;
+    let row = runtime
+        .read_store(move |store| store.agent(&key))
+        .await??
+        .context("the origin lists its agent")?;
     Ok(row.next_revision - 1)
 }
 
@@ -664,7 +697,11 @@ async fn wait_ingested(net: &Net, agent: &str, end: u64) -> Result<()> {
     let key = net.agent(agent)?.key();
     let deadline = Instant::now() + PATIENCE;
     loop {
-        let cursor = net.runtime(ORIGIN)?.store().await.cursor(&key)?;
+        let key = key.clone();
+        let cursor = net
+            .runtime(ORIGIN)?
+            .read_store(move |store| store.cursor(&key))
+            .await??;
         if cursor >= end {
             return Ok(());
         }

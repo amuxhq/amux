@@ -7,14 +7,18 @@ publish = false
 
 [dependencies]
 chrono.workspace = true
+core-ring.workspace = true
+daemon-core.workspace = true
 interpret.workspace = true
 journal.workspace = true
+models.workspace = true
 prost.workspace = true
 redaction.workspace = true
 semver = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+store.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

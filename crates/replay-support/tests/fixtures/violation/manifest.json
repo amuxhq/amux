@@ -1,0 +1,32 @@
+{
+  "agents": [
+    {
+      "agent_id": "afcb89f9-69de-4cb5-ad24-d653881bbc40",
+      "host_id": "1bd0b316-a757-43eb-b193-e7c194f05665",
+      "incarnation": 1,
+      "kind": 2,
+      "lifecycle": 1,
+      "own": true,
+      "part": [
+        "facts/0000000000",
+        "facts/0000000000.checkpoint",
+        "spec.1"
+      ],
+      "rows": 0
+    }
+  ],
+  "automatic": true,
+  "core": {
+    "inputs": 6,
+    "reads": 0,
+    "schema": 1
+  },
+  "created_at_ms": 1792444164973,
+  "daemon_version": "0.8.0",
+  "dump_id": "2c99c0c8-c472-4755-9c2a-eb969765238a",
+  "errors": [],
+  "generation": 1,
+  "host": "1bd0b316-a757-43eb-b193-e7c194f05665",
+  "profile": "5df049d8-556b-4cd7-94e2-280ae6bb2948",
+  "reason": "the daemon core: an invariant failed: the generation this host's streams open under only ever rises: a stream opened under generation 1 after one under 2"
+}

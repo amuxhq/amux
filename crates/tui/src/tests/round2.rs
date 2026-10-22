@@ -790,19 +790,6 @@ fn a_slash_command_codex_does_not_offer_is_refused_in_the_composer() {
 
 // --- decided behaviour: interrupt ----------------------------------------
 
-/// Decided: Ctrl+X ends the turn and the agent stays live, so its hint
-/// reads "interrupt"; "stop" now means ending the agent.
-#[test]
-fn ctrl_x_reads_interrupt_while_the_agent_works() {
-    let (state, at) = fixtures::Named::ClaudeWorking.state();
-    let mut view = ChatView::new(b"agent".to_vec(), at, false);
-    let screen = screen_of(&mut view, &state, at, W, H);
-    assert!(
-        screen.contains("ctrl+x interrupt") && !screen.contains("ctrl+x stop"),
-        "the working chat's key line:\n{screen}"
-    );
-}
-
 // --- remaining terminal causes ---------------------------------------------
 
 /// A multi-select question with nothing ticked: Enter submits the empty

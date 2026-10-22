@@ -27,6 +27,13 @@
 //!
 //! Scenarios live in the tests that use these pieces.
 //!
+//! A topology also runs simulated: [`SimNet`] holds every host's daemon
+//! core and every agent's core as values in one process, over in-memory
+//! links, fake jobs and a virtual clock, and a seed picks the order of
+//! every delivery between them, so one seed is one schedule (see
+//! [`sim`]). The verbs, fences and observations both nets offer are the
+//! [`World`] trait, and a story written against it runs on either.
+//!
 //! <!-- door-capabilities:start -->
 //! | Door verb (`door::Control`) | Harness capability |
 //! | --- | --- |
@@ -57,6 +64,11 @@
 //! | `RelayFaults` | `Net::set_relay_faults` |
 //! | `NetFaults` | `Net::set_net_faults` |
 //! | `BlockUdp` | `Net::block_udp` |
+//! | `SetRouter` | `Net::set_router` |
+//! | `ChangeNetwork` | `Net::change_network` |
+//! | `BindIpv6Only` | `Net::bind_ipv6_only` |
+//! | `CarryingPath` | `Net::carrying_path` |
+//! | `LinkLog` | `Net::link_log` |
 //! | `Flap` | `Net::sever_link + Net::restore_link on a period` |
 //! | `FlapStop` | `Net::restore_link for each flapping link` |
 //! | `PairGate` | `Net::pair_gate` |
@@ -84,12 +96,19 @@ mod feed;
 mod gate;
 mod invariant;
 mod lan;
+pub mod link_log;
+pub mod modes;
 mod net;
 pub mod observe;
+mod probes;
 mod process;
 mod providers;
 mod relay;
+mod router;
+pub mod sim;
+mod ssh;
 mod topology;
+mod world;
 
 pub use binaries::{Binaries, PREBUILT_ENV};
 pub use clock::DrivenClock;
@@ -103,7 +122,10 @@ pub use observe::{
     InventoryObserver, Observer, ObserverOf, PATIENCE, Stuck, holds_for, until, until_within,
 };
 pub use relay::{CREDENTIAL_TTL, RELAY_HOST, Relay};
+pub use router::{Router, RouterKind};
+pub use sim::{SimNet, SimOptions};
 pub use topology::{
     AccountDecl, AgentDecl, FakeKind, HostDecl, LinkDecl, Provider, RelayDecl, TierDecl, Topology,
     TopologyError,
 };
+pub use world::World;

@@ -15,7 +15,7 @@ settings = { workspace = true }
 shot = { path = "../shot" }
 tui = { workspace = true }
 ui-runtime = { workspace = true }
-wire = { workspace = true }
+wire = { workspace = true, features = ["grpc"] }
 anyhow = { workspace = true }
 clap = { workspace = true }
 crossterm = { workspace = true, features = ["event-stream"] }

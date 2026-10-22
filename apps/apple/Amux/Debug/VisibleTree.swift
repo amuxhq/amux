@@ -220,9 +220,25 @@ enum VisibleTree {
             }
         }
         if let view = node as? UIView {
-            children.append(contentsOf: view.subviews)
+            children.append(contentsOf: subviews(of: view))
         }
         return children
+    }
+
+    /// A view's subviews in drawing order, except a list's cells, which go
+    /// top to bottom: a list keeps its cells in the order it happened to
+    /// make or reuse them, which changes with how the rows arrived, while
+    /// VoiceOver reads them as they stand.
+    @MainActor
+    private static func subviews(of view: UIView) -> [UIView] {
+        guard view is UICollectionView else { return view.subviews }
+        var subviews = view.subviews
+        let slots = subviews.indices.filter { subviews[$0] is UICollectionViewCell }
+        let cells = slots.map { subviews[$0] }.sorted {
+            ($0.frame.minY, $0.frame.minX) < ($1.frame.minY, $1.frame.minX)
+        }
+        for (slot, cell) in zip(slots, cells) { subviews[slot] = cell }
+        return subviews
     }
 
     @MainActor

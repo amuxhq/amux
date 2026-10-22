@@ -657,6 +657,12 @@ impl Install {
         if self.kind == Kind::ClaudePty && scenario == Scenario::Interrupt {
             args.extend(["--allowedTools", "Bash"]);
         }
+        // Terminal Claude takes the operator's default permission mode even
+        // with only project settings, and an `auto` default runs the decide
+        // recording's command without asking.
+        if self.kind == Kind::ClaudePty && scenario == Scenario::Decide {
+            args.extend(["--permission-mode", "default"]);
+        }
         args.extend(extra);
         let output = self.amux(&args).await?;
         let agent = created_id(&output).ok_or_else(|| format!("amux create said {output:?}"))?;

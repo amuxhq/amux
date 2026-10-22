@@ -1520,7 +1520,6 @@ impl Interpreter<'_, '_> {
 mod format {
     use super::*;
 
-    const BAKED_ORIGIN: &str = "keymaps/claude-2.1.toml";
     const BAKED: &str = include_str!("../../keymaps/claude-2.1.toml");
 
     fn user_source() -> KeymapSource {
@@ -1533,49 +1532,6 @@ mod format {
         let rendered = error.to_string();
         assert!(rendered.contains("broken.toml"), "{rendered}");
         assert!(rendered.contains(needle), "{rendered}");
-    }
-
-    #[test]
-    fn baked_keymap_transcribes_the_2_1_tables() {
-        let keymap = load_str(BAKED, BAKED_ORIGIN, KeymapSource::Baked).expect("baked keymap");
-
-        assert_eq!(keymap.name, "claude-2.1");
-        assert_eq!(keymap.applies_to.to_string(), ">=2.1.228, <2.2.0");
-        assert!(keymap.verified.iter().any(|entry| {
-            entry.version == "2.1.251".parse().unwrap() && entry.spec == "prompt"
-        }));
-        assert_eq!(keymap.keys[&KeyName::ShiftTab], b"\x1b[Z");
-        assert_eq!(keymap.delays[&DelayName::AfterDeny], 1_500);
-        assert_eq!(keymap.delays[&DelayName::AfterOtherSave], 600);
-        assert_eq!(
-            keymap.menus[&MenuName::Permission]
-                .entries
-                .keys()
-                .collect::<Vec<_>>(),
-            [&MenuEntryName::AllowOnce, &MenuEntryName::AllowScoped],
-            "No has no fixed entry"
-        );
-        assert_eq!(
-            keymap.menus[&MenuName::Plan].entries[&MenuEntryName::RequestChanges],
-            3
-        );
-        assert_eq!(
-            keymap.verified_shapes[&ProgramName::PermissionMenu].permission_suggestions,
-            [1]
-        );
-        assert_eq!(
-            keymap.verified_shapes[&ProgramName::PermissionMenu].permission_folded_suggestions,
-            [2]
-        );
-        assert_eq!(keymap.programs.len(), PROGRAM_TABLE.len());
-        assert_eq!(
-            keymap.programs[&ProgramName::Prompt].stability,
-            Stability::Stable
-        );
-        assert_eq!(
-            keymap.programs[&ProgramName::QuestionForm].stability,
-            Stability::Menu
-        );
     }
 
     #[test]

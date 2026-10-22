@@ -90,6 +90,14 @@ pub enum DriverEvent {
     Ended {
         error: String,
     },
+    /// The transcript failed its own check: the profile was asked for a
+    /// dump with this session's part.
+    Broken {
+        why: String,
+    },
+    DumpFailed {
+        error: String,
+    },
 }
 
 /// A trace as a dump carries it: the model at the start of the oldest

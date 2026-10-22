@@ -1,0 +1,6 @@
+{"event":"tick","at_ms":1792444089927}
+{"event":"git"}
+{"event":"tick","at_ms":1792444089933}
+{"event":"fact","channel":"stream","text":"{\"response\":{\"pending_permission_requests\":[],\"pending_user_dialog_requests\":[],\"request_id\":\"agent-initialize\",\"response\":{\"account\":{\"apiProvider\":\"firstParty\",\"email\":\"<REDACTED_IDENTIFIER>\",\"subscriptionType\":\"Claude Max\",\"tokenSource\":\"claude.ai\"},\"agents\":[],\"available_output_styles\":[\"default\"],\"commands\":[],\"current_permission_mode\":\"default\",\"fast_mode_state\":\"off\",\"models\":[{\"description\":\"The scripted model\",\"displayName\":\"claude-fake-1\",\"supportedEffortLevels\":[\"low\",\"medium\",\"high\"],\"value\":\"claude-fake-1\"}],\"output_style\":\"default\"},\"subtype\":\"success\"},\"type\":\"control_response\"}"}
+{"event":"tick","at_ms":1792444089938}
+{"event":"fact","channel":"stream","text":"{\"response\":{\"request_id\":\"amux-1\",\"response\":{\"applied\":{\"effort\":\"medium\",\"model\":\"claude-fake-1\"}},\"subtype\":\"success\"},\"type\":\"control_response\"}"}

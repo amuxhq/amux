@@ -1,0 +1,14 @@
+[package]
+name = "path-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Which path a link's packets take, as one function of its state and an input"
+publish = false
+
+[dependencies]
+daemon-core = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+postcard = { workspace = true }

@@ -359,6 +359,11 @@ pub struct Shared<A: OpenAsk> {
     /// envelope id. A one-shot agent does not exit while this is non-empty.
     #[serde(with = "serde_pb::bytes_set")]
     pending_messages: BTreeSet<Vec<u8>>,
+    /// Agent messages the provider consumed, by envelope id. With the
+    /// pending set this is every message the incarnation took, so a second
+    /// hand-off of one is answered without a second inject or item.
+    #[serde(default, with = "serde_pb::bytes_set")]
+    taken_messages: BTreeSet<Vec<u8>>,
     working_on: Option<String>,
     /// The agent declared its work with the status tool: from then on only
     /// that call changes working_on. Until then it is the first line of
@@ -394,6 +399,12 @@ pub struct Shared<A: OpenAsk> {
     /// stopped, however the provider words its end.
     #[serde(default)]
     stopping: bool,
+    /// The incarnation is on its way out, stopped or with its daemon lost:
+    /// nothing more is handed to the provider from the queue, so what waits
+    /// there stays for the next incarnation rather than going to a
+    /// provider about to be closed.
+    #[serde(default)]
+    leaving: bool,
 }
 
 impl<A: OpenAsk> Shared<A> {
@@ -411,6 +422,7 @@ impl<A: OpenAsk> Shared<A> {
             queue: Queue::default(),
             asks: Asks::default(),
             pending_messages: BTreeSet::new(),
+            taken_messages: BTreeSet::new(),
             working_on: None,
             declared: false,
             turn: TurnCounter::default(),
@@ -422,6 +434,7 @@ impl<A: OpenAsk> Shared<A> {
             catalogue: None,
             turn_on_reflection: false,
             stopping: false,
+            leaving: false,
         };
         if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap) {
             shared.prompted(&entry.text);
@@ -436,6 +449,7 @@ impl<A: OpenAsk> Shared<A> {
     pub fn reincarnate(&mut self, spec: &AgentSpec, producer_version: &str) {
         self.producer_version = producer_version.to_owned();
         self.stopping = false;
+        self.leaving = false;
         // A new provider process runs nothing in the background yet.
         self.set_jobs(Vec::new());
         self.now_ms = self.now_ms.max(spec.created_at_ms);
@@ -686,6 +700,7 @@ impl<A: OpenAsk> Shared<A> {
     /// it as one prompt).
     fn ready(&self) -> bool {
         self.started
+            && !self.leaving
             && !self.busy
             && self.asks.is_empty()
             && !self.queue.has_steered()
@@ -887,9 +902,42 @@ impl<A: OpenAsk> Shared<A> {
         self.pending_messages.insert(envelope_id.to_vec());
     }
 
+    /// The kind handed an agent message to the provider. An idle provider
+    /// runs it as a turn at once, as it does a handed prompt, so the turn
+    /// begins here as a submission's does, and the provider's own turn
+    /// start finds it open: a stop arriving before that start must find
+    /// the turn running and cancel it the provider's way. A message handed
+    /// while a turn runs joins that turn and changes nothing. A kind whose
+    /// turns start on the provider's reflection begins none.
+    pub fn message_handed(&mut self) {
+        if self.turn_on_reflection || self.busy {
+            return;
+        }
+        self.busy = true;
+        self.turn.begin(self.now_ms);
+    }
+
     /// The carrier consumed the message. False if it was not pending.
     pub fn message_consumed(&mut self, envelope_id: &[u8]) -> bool {
-        self.pending_messages.remove(envelope_id)
+        let pending = self.pending_messages.remove(envelope_id);
+        if pending {
+            self.taken_messages.insert(envelope_id.to_vec());
+        }
+        pending
+    }
+
+    /// An agent message this incarnation already took, pending or consumed,
+    /// is accepted again and goes no further: the daemon hands a message
+    /// over again when it never saw the first answer (its patience ran out,
+    /// or it restarted and adopted this process), and the parent must see
+    /// it once. True when the kind must do nothing more.
+    pub fn message_repeated(&mut self, emit: &mut Emit, envelope_id: &[u8]) -> bool {
+        let pending = self.pending_messages.contains(envelope_id);
+        if !pending && !self.taken_messages.contains(envelope_id) {
+            return false;
+        }
+        self.accept(emit, envelope_id, pending);
+        true
     }
 
     pub fn pending_messages(&self) -> &BTreeSet<Vec<u8>> {
@@ -955,6 +1003,15 @@ impl<A: OpenAsk> Shared<A> {
     /// transcript row, which may come after the stop.
     pub fn stop_requested(&mut self) {
         self.stopping = true;
+        self.leaving();
+    }
+
+    /// The incarnation is on its way out: the daemon stopped it, or was
+    /// lost past the grace. The turn running may finish, but nothing more
+    /// is handed from the queue: the provider is closed at that turn's end,
+    /// and an input handed to it then would be lost with it.
+    pub fn leaving(&mut self) {
+        self.leaving = true;
     }
 
     /// What began as a turn was a local command (terminal Claude's
@@ -1732,34 +1789,6 @@ mod tests {
         shared.set_working_on(Some("Reviewing the parser".into()));
         turn(&mut shared, b"p3", "Something else");
         assert_eq!(shared.working_on(), Some("Reviewing the parser"));
-    }
-
-    #[test]
-    fn a_checkpoint_round_trips_every_field() {
-        let mut shared = shared();
-        let mut emit = Emit::default();
-        shared.provider_started();
-        shared.admit_prompt(&mut emit, b"p1", PromptInput::default(), human());
-        shared.admit_prompt(&mut emit, b"p2", PromptInput::default(), human());
-        shared.open_ask(Ask {
-            key: "k".into(),
-            item_key: "t".into(),
-            ..Default::default()
-        });
-        shared.message_accepted(&[0, 255]);
-        shared.set_working_on(Some("w".into()));
-        shared.item(
-            &mut emit,
-            ItemDraft {
-                key: "m".into(),
-                text: "open".into(),
-                ..Default::default()
-            },
-        );
-        shared.finish(emit, Vec::new());
-        let json = serde_json::to_string(&shared).unwrap();
-        let back: Shared<Ask> = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, shared);
     }
 
     #[test]

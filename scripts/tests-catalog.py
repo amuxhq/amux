@@ -27,9 +27,13 @@ BOUNDARIES = {
     "Native presentation",
     "System composition",
     "Journeys",
+    "Model",
 }
 TIMES = {"driven", "real", "none"}
 LANES = {"fast", "system", "journey", "qualification", "tool"}
+# The nets a testnet story runs on: production daemons on loopback, or every
+# core in one process walked by seed (`just sim` runs the simulated ones).
+MODES = {"real", "simulated"}
 REQUIRED = {
     "name",
     "contract",
@@ -45,6 +49,8 @@ REQUIRED = {
     "evidence",
     "update",
 }
+CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+MODELS_SUITE = "protocol-models"
 PERF_BASELINE_ROOTS = (
     ROOT / "perf" / "baselines" / "desktop",
     ROOT / "perf" / "baselines" / "phone",
@@ -173,6 +179,36 @@ def validate_cargo_recipe(
                 errors.append(f"{label}: recipe selects zero catalogued tests named {value!r}")
 
 
+def runs_testnet_stories(suite: dict[str, Any]) -> bool:
+    """Whether the suite's tests run nets: a testnet test target in a suite
+    whose time moves."""
+    return suite.get("time") != "none" and any(
+        selector.get("package") == "testnet" and selector.get("kind", "test") == "test"
+        for selector in suite.get("cargo", [])
+    )
+
+
+def validate_modes(label: str, suite: dict[str, Any], errors: list[str]) -> None:
+    """Every suite of testnet stories says which nets its stories run on,
+    and no other suite does."""
+    modes = suite.get("modes")
+    if not runs_testnet_stories(suite):
+        if modes is not None:
+            errors.append(f"{label}: modes belong to suites of testnet stories only")
+        return
+    if modes is None:
+        errors.append(f"{label}: a suite of testnet stories must declare its modes ({', '.join(sorted(MODES))})")
+        return
+    if not isinstance(modes, list) or not modes:
+        errors.append(f"{label}: modes must be a non-empty list")
+        return
+    unknown = [mode for mode in modes if mode not in MODES]
+    if unknown:
+        errors.append(f"{label}: unknown modes {', '.join(map(repr, unknown))}")
+    if len(set(modes)) != len(modes):
+        errors.append(f"{label}: modes lists a mode twice")
+
+
 def expand(pattern: str) -> list[Path]:
     if any(character in pattern for character in "*?["):
         return sorted(ROOT.glob(pattern))
@@ -218,6 +254,8 @@ def validate(suites: list[dict[str, Any]]) -> tuple[list[str], set[tuple[str, st
         for field in ("recipe", "oracle", "evidence", "update"):
             if not isinstance(suite.get(field), str):
                 errors.append(f"{label}: {field} must be a string")
+
+        validate_modes(label, suite, errors)
 
         command = suite.get("recipe", "")
         recipe = recipe_name(command) if isinstance(command, str) else None
@@ -353,7 +391,45 @@ def validate(suites: list[dict[str, Any]]) -> tuple[list[str], set[tuple[str, st
     for baseline in sorted(discovered_baselines - set(catalog_baselines)):
         errors.append(f"performance baseline {baseline} is not listed")
 
+    errors.extend(validate_models_matrix(suites, CI_WORKFLOW.read_text()))
+
     return errors, set(catalog_cargo), set(catalog_swift)
+
+
+def models_matrix(text: str) -> set[str] | None:
+    """The test targets a CI workflow's models job runs, one per matrix entry."""
+    job = re.search(r"^  models:\n((?:    .*\n|\s*\n)*)", text, re.MULTILINE)
+    if job is None:
+        return None
+    targets = re.search(r"^\s+target: \[([^\]]*)\]", job.group(1), re.MULTILINE)
+    if targets is None:
+        return None
+    return {target.strip() for target in targets.group(1).split(",") if target.strip()}
+
+
+def validate_models_matrix(suites: list[dict[str, Any]], workflow: str) -> list[str]:
+    """Every protocol model's test target is its own entry of the CI models job."""
+    suite = next((suite for suite in suites if suite["name"] == MODELS_SUITE), None)
+    if suite is None:
+        return [f"suite {MODELS_SUITE} is missing"]
+    targets = {
+        target
+        for entry in suite.get("cargo", [])
+        if entry.get("kind", "test") == "test" and entry.get("package") == "models"
+        for target in entry.get("targets", [])
+    }
+    matrix = models_matrix(workflow)
+    if matrix is None:
+        return [f"{CI_WORKFLOW.relative_to(ROOT)} has no models job with a target matrix"]
+    errors = [
+        f"{MODELS_SUITE} test target {target} is not in the CI models job's matrix"
+        for target in sorted(targets - matrix)
+    ]
+    errors.extend(
+        f"the CI models job's matrix names {target}, which is no {MODELS_SUITE} test target"
+        for target in sorted(matrix - targets)
+    )
+    return errors
 
 
 def print_table(suites: list[dict[str, Any]], cargo: set[tuple[str, str, str]], swift: set[str]) -> None:

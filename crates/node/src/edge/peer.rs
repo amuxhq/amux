@@ -1,6 +1,8 @@
 //! PeerService: the calls a trusted host makes over a link, answered by the
 //! same runtime as the client service's; the caller is the host whose
-//! pinned key the stream's handshake presented. It answers only for this
+//! pinned key the stream's handshake presented. Reads go to the profile's
+//! core as the peer's calls; the rest are served by the shell until what
+//! they write moves into the core. It answers only for this
 //! host's own agents and passes nothing on: the inventory it streams is
 //! this host's entry and agents, and any call that names an agent this
 //! host only replicates is not found here.
@@ -18,7 +20,7 @@ use wire::{
     Empty, Envelope, FetchRequest, FetchResponse, GetBlobRequest, GetBlobResponse, GetRequest,
     InventoryEvent, Item, ListRepositoriesRequest, ListRepositoriesResponse, PeerSubscribeRequest,
     PutBlobRequest, RenameAgentRequest, ResumeAgentRequest, SendInputRequest, SendInputResponse,
-    SendMessageResponse, SessionEvent, StopAgentRequest, peer_subscribe_request,
+    SendMessageResponse, SessionEvent, StopAgentRequest,
 };
 
 use crate::HostId;
@@ -101,10 +103,10 @@ impl PeerService for PeerApi {
         &self,
         request: Request<Empty>,
     ) -> Result<Response<Self::SubscribeInventoryStream>, Status> {
-        caller(&request)?;
+        let from = caller(&request)?;
         let subscription = self
             .runtime()?
-            .subscribe_own_inventory()
+            .peer_subscribe_inventory(from)
             .await
             .map_err(|error| status(error.to_wire()))?;
         let stream = futures_util::stream::unfold(subscription, |mut subscription| async move {
@@ -120,31 +122,17 @@ impl PeerService for PeerApi {
         &self,
         request: Request<PeerSubscribeRequest>,
     ) -> Result<Response<Self::SubscribeStream>, Status> {
-        caller(&request)?;
+        let from = caller(&request)?;
         let request = request.into_inner();
-        self.own(&request.agent_id).await?;
+        let agent_id = request.agent_id.clone();
         let asked = std::time::Instant::now();
-        let runtime = self.runtime()?;
-        let subscription = match request.from {
-            Some(peer_subscribe_request::From::After(after)) => {
-                runtime
-                    .subscribe_after(
-                        &request.agent_id,
-                        after.revision,
-                        after.cap,
-                        after.generation,
-                    )
-                    .await
-            }
-            Some(peer_subscribe_request::From::Tail(tail)) => {
-                runtime.subscribe(&request.agent_id, tail).await
-            }
-            None => runtime.subscribe(&request.agent_id, 0).await,
-        }
-        .map_err(|error| status(error.to_wire()))?;
-        drop(runtime);
+        let subscription = self
+            .runtime()?
+            .peer_subscribe(from, request)
+            .await
+            .map_err(|error| status(error.to_wire()))?;
         tracing::debug!(
-            agent = %uuid::Uuid::from_slice(&request.agent_id).map(|id| id.to_string()).unwrap_or_default(),
+            agent = %uuid::Uuid::from_slice(&agent_id).map(|id| id.to_string()).unwrap_or_default(),
             opened_ms = asked.elapsed().as_millis(),
             "opened a session subscription"
         );
@@ -159,15 +147,21 @@ impl PeerService for PeerApi {
         &self,
         request: Request<FetchRequest>,
     ) -> Result<Response<FetchResponse>, Status> {
-        caller(&request)?;
-        self.own(&request.get_ref().agent_id).await?;
-        self.client.fetch(request).await
+        let from = caller(&request)?;
+        self.runtime()?
+            .peer_fetch(from, request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(|error| status(error.to_wire()))
     }
 
     async fn get(&self, request: Request<GetRequest>) -> Result<Response<Item>, Status> {
-        caller(&request)?;
-        self.own(&request.get_ref().agent_id).await?;
-        self.client.get(request).await
+        let from = caller(&request)?;
+        self.runtime()?
+            .peer_get(from, request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(|error| status(error.to_wire()))
     }
 
     async fn send_input(

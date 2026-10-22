@@ -30,9 +30,11 @@ gives a form one `FormValue` per field, and the answer is built in Rust.
 ## Lifecycle
 
 ```c
-AmuxRuntime *rt = amux_runtime_start(config_json, list_wake, context, &error);
+AmuxRuntime *rt = amux_runtime_start(config_json, &error);
+int fd = amux_runtime_wake_fd(rt);                   /* watch for readable */
+char *stepped = amux_runtime_step(rt);               /* on every wake */
 char *profiles = amux_runtime_profiles(rt);          /* [ProfileView] */
-AmuxProfile *p = amux_profile_open(rt, profile_id, wake, context, &error);
+AmuxProfile *p = amux_profile_open(rt, profile_id, &error);
 AmuxChat *chat = amux_session_open(p, agent_key_json, 0, &error);
 ...
 amux_session_close(chat);
@@ -40,9 +42,20 @@ amux_profile_close(p);
 amux_runtime_stop(rt);
 ```
 
+The app owns the loop. Every profile's daemon core steps on the queue that
+calls `amux_runtime_step`; links, channels and gRPC run on one confined Rust
+thread, which posts what it decodes onto the cores' queues and never calls
+into the app. Whenever something waits for a step, the descriptor
+`amux_runtime_wake_fd` answers becomes readable; the app watches it from the
+queue it steps on. A step answers JSON: `profiles` (read
+`amux_runtime_profiles` again), `redraws` (each a profile id and a chat id,
+0 for the fleet, whose changes wait to be taken) and `answers` (each an act's
+ticket and its result as JSON text).
+
 `amux_runtime_start` takes a `StartConfig` and blocks until every profile's
-store is open; its wake is called with 0 whenever the profile list moves, and
-the host reads `amux_runtime_profiles` again. `amux_profile_open` opens one
+store is open. Every call that blocks until the cores have done something
+steps them on the calling thread while it waits, so it may be made from the
+queue that steps. `amux_profile_open` opens one
 profile's fleet and blocks until it has caught up with that profile's store;
 the app keeps only the profile on screen open. `amux_session_open` blocks
 until the chat's snapshot and the rows this device holds are applied, so the
@@ -51,8 +64,8 @@ before its profile, and every profile before stopping the runtime.
 
 ## The profile registry
 
-The installation's registry, by profile id, each answering through a
-callback: `amux_runtime_create_profile`, `amux_runtime_delete_profile` (the
+The installation's registry, by profile id, each an act answering under its
+ticket: `amux_runtime_create_profile`, `amux_runtime_delete_profile` (the
 installation keeps at least one), `amux_runtime_bind` (a sign-in's refresh
 token with the OAuth client it was issued to; a named profile is adopted even
 when it paired machines before, null lets the registry pick the account's own
@@ -76,10 +89,15 @@ Product analytics ([what is sent](../../docs/ANALYTICS.md)) is the
 runtime's; the app tells it what only the app knows.
 `amux_runtime_set_telemetry(rt, on)` follows the app's Share Usage setting
 (the start's `StartConfig.telemetry` is its first value), and off holds back
-what is waiting too. `amux_runtime_foreground(rt)` says the app came to the
-front, counted at most once an hour. `amux_runtime_background(rt, callback,
-context)` sends what is waiting, for a few seconds at most, then calls the
-callback with `null`. `amux_runtime_record(rt, profile, event_json)` records a
+what is waiting too. `amux_runtime_feed(rt, input_json, &error)` feeds the
+app's life as a `Lifecycle`: `"Foreground"` says the app came to the front,
+counted at most once an hour; `"Background"` sends what is waiting, for a
+few seconds at most, before it returns; `"Suspending"` does too, then
+checkpoints every profile's core at a passive WAL checkpoint of its store and
+returns once each checkpoint is on the drive; `"NetworkChanged"` binds every
+profile's link socket afresh, so its links move to the new network with
+their QUIC connections, tells every path machine to probe its paths again,
+and writes a `rebind` line to the link log saying so. `amux_runtime_record(rt, profile, event_json)` records a
 `UsageEvent` (the paywall opening, a purchase starting) on that profile, or on
 every profile when `profile` is null. Only a published build sends; every
 other build records nothing unless `AMUX_ANALYTICS_URL` names a server.
@@ -115,17 +133,16 @@ the window stays put, arrivals are held apart and the frame's `arrivals_held`
 says so; the return releases them, or reloads the newest rows when more
 arrived than the window holds.
 
-A profile's wake is called on a worker thread with a chat's id, or 0 for the fleet,
-whenever that one moved, and at most once until the host takes its changes
-with `amux_session_take_changes` or `amux_fleet_take_changes`. However many
-updates land in between, the host is woken once and takes every changed key
-together. It schedules the take on its main thread and returns; it never
-does the work in the wake.
+A step names a profile's fleet (chat 0) or a chat in its redraws whenever
+that one moved, and at most once until the host takes its changes with
+`amux_session_take_changes` or `amux_fleet_take_changes`. However many
+updates land in between, the host is told once and takes every changed key
+together.
 
 ## Acts
 
-Acts that wait on the agent take a callback, called once on a worker thread
-with a JSON result the callback borrows until it returns:
+Acts that wait on the agent return a ticket at once (0 when the handle is
+gone), and their JSON result comes back in a later step's answers under it:
 `amux_session_send`, `amux_session_command` (a draft that may be one of the client's own commands or a refused one; the result says which), `amux_session_answer` (by choice index),
 `amux_session_answer_questions`, `amux_session_reply_instead`, `amux_session_answer_form`
 (one `FormValue` per field, checked and encoded in Rust), `amux_session_change_setting` (a pick from
@@ -162,9 +179,12 @@ failure. The `debug-tools` feature, which only driving builds carry, lets
 `cargo test -p app-ffi` drives the C functions against a desk served in
 process: pairing by PIN, the fleet, a chat's rows by key, a permission
 answered by position, a question answered with picks, paging and a dump, and
-the profile registry (create, the list wake, per-profile identity and source
+the profile registry (create, the list moving, per-profile identity and source
 policy, delete and the refusal to delete the last).
-`cargo test -p app-runtime` covers the wake-once coalescing and the chat
+A confinement test holds the loop's shape: the header declares no function
+type the library could call back through, and a step on one thread drains
+the inputs another thread posted. `cargo test -p app-runtime` covers the
+wake-once coalescing and the chat
 views; `cargo test -p app-embedded` covers pairing on the local network,
 sign-in with pairing through the relay, and one profile per account: binding
 by id with adoption, a second account's own profile, pause and resume,

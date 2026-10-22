@@ -97,6 +97,12 @@ pub fn redact(kind: Kind, target: RedactTarget) -> RedactTarget {
             RedactTarget::Step(_) => RedactTarget::Step(Vec::new()),
             // A row has no body, so any kind's redactor reads it.
             RedactTarget::Agent(agent) => ClaudeSdk::redact(RedactTarget::Agent(agent)),
+            // Walked with every body, which no kind is there to decode,
+            // emptied.
+            RedactTarget::ClientSession(history) => RedactTarget::ClientSession(redact_message(
+                &wire::ClientSessionHistory::full_name(),
+                &history,
+            )),
         },
     }
 }
@@ -105,6 +111,15 @@ pub fn redact(kind: Kind, target: RedactTarget) -> RedactTarget {
 /// shared capture rules, credential prefixes and secret assignments.
 pub fn redact_text(text: &str) -> String {
     Scrubber::default().twice(|s| s.text(text))
+}
+
+/// Redacts an encoded protocol message of the named type (`amux.v1.Item`)
+/// that belongs to no one kind, such as one the daemon's core was fed:
+/// walked by descriptor as every target is, with per-kind bodies, which no
+/// kind is there to decode, emptied.
+pub fn redact_message(name: &str, bytes: &[u8]) -> Vec<u8> {
+    let name = format!(".{name}");
+    Scrubber::default().twice(|s| s.message(&name, bytes))
 }
 
 /// The per-kind redactor: `Item` and `Snapshot` bodies of this kind, the
@@ -154,6 +169,10 @@ pub(crate) fn redact_kind<ItemBody: Name, SnapshotBody: Name, InputBody: Name, S
         RedactTarget::Agent(agent) => {
             let name = type_name::<wire::Agent>();
             RedactTarget::Agent(scrubber.twice(|s| s.message(&name, &agent)))
+        }
+        RedactTarget::ClientSession(history) => {
+            let name = type_name::<wire::ClientSessionHistory>();
+            RedactTarget::ClientSession(scrubber.twice(|s| s.message(&name, &history)))
         }
     }
 }

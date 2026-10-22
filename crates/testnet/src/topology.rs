@@ -109,6 +109,14 @@ pub struct HostDecl {
     /// the net's release feed; a supervised host is a process host.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub supervised: bool,
+    /// The newest rows its replicas keep, K, where it differs from the
+    /// product's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_rows: Option<u32>,
+    /// Bind the host's socket to IPv6 loopback alone, so every link it
+    /// has runs over IPv6. In-process hosts only.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ipv6_only: bool,
 }
 
 /// What an agent's provider is.
@@ -194,6 +202,11 @@ pub struct AgentDecl {
     /// Its provider, where it differs from its host's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<Provider>,
+    /// A recorded journal its process plays as what it writes, in place of
+    /// a script: the name of one of the journal fixtures in
+    /// `fixtures/journals`. Only a simulated net plays one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub journal: Option<String>,
 }
 
 /// Which fake provider an agent runs, and so which interpreter reads it.
@@ -371,6 +384,16 @@ impl Topology {
     pub fn host(self, name: &str) -> Self {
         self.host_decl(HostDecl {
             name: name.to_owned(),
+            ..HostDecl::default()
+        })
+    }
+
+    /// A host like [`Topology::host`] whose replicas keep the newest `k`
+    /// rows.
+    pub fn host_keeping(self, name: &str, k: u32) -> Self {
+        self.host_decl(HostDecl {
+            name: name.to_owned(),
+            tail_rows: Some(k),
             ..HostDecl::default()
         })
     }
@@ -566,6 +589,12 @@ impl AgentDecl {
 
     pub fn prompt(mut self, prompt: &str) -> Self {
         self.prompt = Some(prompt.to_owned());
+        self
+    }
+
+    /// Plays the named journal fixture as what its process writes.
+    pub fn journal(mut self, name: &str) -> Self {
+        self.journal = Some(name.to_owned());
         self
     }
 

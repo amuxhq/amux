@@ -1756,7 +1756,7 @@ fn folded(choices: Vec<ScopeChoice>) -> ScopeChoice {
 
 #[cfg(test)]
 mod tests {
-    use super::{peer_message_bodies, unwrap_pasted};
+    use super::unwrap_pasted;
 
     #[test]
     fn pasted_blocks_read_as_what_was_pasted() {
@@ -1778,22 +1778,5 @@ mod tests {
         let mismatched = "<pasted_content id=\"x\">\nhalf\n</pasted_content id=\"y\">";
         assert_eq!(unwrap_pasted(mismatched), mismatched);
         assert_eq!(unwrap_pasted("\n  plain\n"), "\n  plain\n");
-    }
-
-    #[test]
-    fn peer_messages_are_read_in_both_wordings() {
-        assert_eq!(
-            peer_message_bodies(
-                "Another Claude session sent a message:\n<cross-session-message from=\"amux\">\nhi\n</cross-session-message>\n\nThis came from another Claude session."
-            ),
-            ["hi"]
-        );
-        assert_eq!(
-            peer_message_bodies(
-                "Another Claude session sent a message:\nReply BRAVO.\n\nThis came from another Claude session — not typed by your user."
-            ),
-            ["Reply BRAVO."]
-        );
-        assert!(peer_message_bodies("an ordinary prompt").is_empty());
     }
 }

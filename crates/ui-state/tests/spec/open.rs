@@ -2,7 +2,7 @@
 //! Reset, and a re-tail after the runtime connection drops.
 
 use ui_state::{Composer, Connection, Msg, SessionState, Waiting};
-use wire::{Kind, Phase};
+use wire::Phase;
 
 use crate::harness::*;
 
@@ -117,81 +117,6 @@ fn detached_clears_caught_up_and_keeps_the_rows() {
     }
 }
 
-/// The origin rewound: its stream sends Reset, a fresh tail and CaughtUp.
-/// The rows on screen stay until that CaughtUp swaps the rebuilt transcript
-/// in, and the composer is live only after it.
-#[test]
-fn reset_swaps_at_caught_up() {
-    let kind = Kind::ClaudeSdk;
-    let mut tape = Tape::new(agent(kind));
-    tape.apply(
-        "snapshot",
-        ev_snapshot(snapshot(kind, 220, Phase::Idle, &[], &[])),
-    );
-    for order in 300..=303 {
-        tape.apply("held", ev_item(text(kind, order, 200 + order, "stale")));
-    }
-    tape.apply("CaughtUp", caught_up(503));
-    assert!(tape.state.can_send());
-    let on_screen = projection(tape.state.transcript());
-
-    let outcome = tape.apply("Reset", reset());
-    assert!(
-        outcome.changed.is_empty(),
-        "a Reset changes nothing on screen"
-    );
-    assert!(
-        !tape.state.can_send(),
-        "the composer waits for the rebuilt transcript"
-    );
-    tape.apply(
-        "snapshot after rewind",
-        ev_snapshot(snapshot(kind, 214, Phase::Idle, &[], &[])),
-    );
-    for order in 701..=703 {
-        let outcome = tape.apply("fresh tail", ev_item(text(kind, order, order, "rebuilt")));
-        assert!(
-            outcome.changed.is_empty(),
-            "nothing is drawn before the swap"
-        );
-    }
-    let outcome = tape.apply("fresh append", ev_append("k703", 703, 704, "!"));
-    assert!(outcome.changed.is_empty() && outcome.need_get.is_none());
-    assert_eq!(
-        projection(tape.state.transcript()),
-        on_screen,
-        "the stale rows stay on screen"
-    );
-    assert!(tape.state.reset_pending());
-
-    let epoch = tape.state.epoch();
-    let outcome = tape.apply("CaughtUp", caught_up(704));
-    assert!(outcome.reloaded);
-    assert_eq!(
-        outcome.changed,
-        vec!["k300", "k301", "k302", "k303", "k701", "k702", "k703"],
-        "every row that left or arrived"
-    );
-    assert!(tape.state.can_send());
-    assert_eq!(tape.state.oldest_order(), Some(701));
-    assert_eq!(
-        tape.state.transcript().get("k703").unwrap().item.text,
-        "rebuilt!"
-    );
-    assert_eq!(tape.state.epoch(), epoch + 1);
-
-    // A page requested before the swap describes the transcript that is gone.
-    let late = Msg::Page {
-        items: vec![text(kind, 299, 1, "late")],
-        exhausted: false,
-        epoch,
-    };
-    let outcome = tape.apply("late page from before the swap", late);
-    assert!(outcome.changed.is_empty());
-    assert_eq!(tape.state.oldest_order(), Some(701));
-    tape.print("reset_swaps_at_caught_up");
-}
-
 #[test]
 fn a_retail_that_meets_the_window_merges_without_a_reload() {
     for kind in KINDS {
@@ -223,38 +148,60 @@ fn a_retail_that_meets_the_window_merges_without_a_reload() {
 }
 
 #[test]
-fn a_retail_past_a_gap_builds_apart_and_swaps_at_caught_up() {
+fn a_reopen_under_the_generation_a_live_reset_named_continues_the_window() {
     for kind in KINDS {
-        let mut state = SessionState::new(agent(kind), CAP);
-        apply_checked(
-            &mut state,
-            ev_snapshot(snapshot(kind, 5, Phase::Idle, &[], &[])),
-        );
-        for order in 1..=5 {
-            apply_checked(&mut state, ev_item(text(kind, order, order, "a")));
-        }
-        apply_checked(&mut state, caught_up(5));
-        apply_checked(&mut state, lagged());
-        assert!(
-            !state.can_send(),
-            "Lagged closes the stream; the driver re-tails"
-        );
-        apply_checked(
-            &mut state,
-            ev_snapshot(snapshot(kind, 90, Phase::Idle, &[], &[])),
-        );
-        for order in 80..=90 {
-            let outcome = apply_checked(&mut state, ev_item(text(kind, order, order, "b")));
-            assert!(
-                outcome.changed.is_empty(),
-                "a tail that leaves a gap is not appended"
+        for opened_under in [0, 1] {
+            // Opened under generation 1, or on a replica no source had
+            // caught up yet, which names none (0).
+            let mut state = SessionState::new(agent(kind), CAP);
+            apply_checked(&mut state, opening(opened_under));
+            apply_checked(
+                &mut state,
+                ev_snapshot(snapshot(kind, 3, Phase::Idle, &[], &[])),
             );
+            for order in 1..=3 {
+                apply_checked(&mut state, ev_item(text(kind, order, order, "old")));
+            }
+            apply_checked(&mut state, caught_up(3));
+
+            // The replica takes the block of generation 2, live.
+            apply_checked(&mut state, reset(2));
+            apply_checked(
+                &mut state,
+                ev_snapshot(snapshot(kind, 9, Phase::Idle, &[], &[])),
+            );
+            for order in 4..=5 {
+                apply_checked(&mut state, ev_item(text(kind, order, order + 4, "new")));
+            }
+            let outcome = apply_checked(&mut state, caught_up(9));
+            assert!(outcome.reloaded, "the Reset swaps its block in");
+
+            // A reader pages below the fresh block.
+            apply_page(&mut state, vec![text(kind, 3, 7, "paged")], false);
+            assert_eq!(state.oldest_order(), Some(3));
+
+            // The stream lags and reopens under generation 2 with a tail
+            // that meets the window: the window continues.
+            apply_checked(&mut state, lagged());
+            apply_checked(&mut state, Msg::Connection(Connection::Live));
+            apply_checked(&mut state, opening(2));
+            apply_checked(
+                &mut state,
+                ev_snapshot(snapshot(kind, 10, Phase::Idle, &[], &[])),
+            );
+            for order in 5..=6 {
+                apply_checked(&mut state, ev_item(text(kind, order, order + 4, "new")));
+            }
+            let outcome = apply_checked(&mut state, caught_up(10));
+            assert!(
+                !outcome.reloaded,
+                "opened under {opened_under}: a reopen under the Reset's generation does not \
+                 rebuild"
+            );
+            assert_eq!(state.oldest_order(), Some(3), "the paged row stays");
+            assert_eq!(state.transcript().head(), Some(6));
+            assert_eq!(state.generation(), Some(2));
         }
-        assert_eq!(state.transcript().head(), Some(5));
-        let outcome = apply_checked(&mut state, caught_up(90));
-        assert!(outcome.reloaded);
-        assert_eq!(state.oldest_order(), Some(80));
-        assert!(state.can_send());
     }
 }
 
@@ -273,5 +220,32 @@ fn nothing_is_kept_between_opens() {
         assert!(reopened.transcript().is_empty());
         assert_eq!(reopened.inputs().iter().count(), 0);
         assert!(!reopened.has_snapshot());
+    }
+}
+
+#[test]
+fn a_transcript_that_fails_its_check_says_so_at_caught_up_and_at_reset() {
+    for kind in KINDS {
+        let mut state = SessionState::new(agent(kind), 10);
+        state.update(ev_snapshot(snapshot(kind, 1, Phase::Working, &[], &[])));
+        // An origin skipping an order breaks the block the client holds.
+        state.update(ev_item(text(kind, 1, 1, "one")));
+        state.update(ev_item(text(kind, 3, 3, "three")));
+        let outcome = state.update(caught_up(3));
+        let broken = outcome.broken.expect("a gap is a broken transcript");
+        assert!(broken.contains("between 1 and 3"), "{broken}");
+        let outcome = state.update(reset(2));
+        assert!(outcome.broken.is_some(), "{outcome:?}");
+
+        let mut state = SessionState::new(agent(kind), 10);
+        apply_block(
+            &mut state,
+            ev_snapshot(snapshot(kind, 1, Phase::Working, &[], &[])),
+        );
+        for order in 1..=3 {
+            apply_block(&mut state, ev_item(text(kind, order, order, "held")));
+        }
+        assert_eq!(apply_block(&mut state, caught_up(3)).broken, None);
+        assert_eq!(apply_block(&mut state, reset(2)).broken, None);
     }
 }

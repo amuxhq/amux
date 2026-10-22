@@ -29,6 +29,7 @@ tokio = { workspace = true }
 ui-view = { workspace = true }
 
 [dev-dependencies]
+libc = { workspace = true }
 provider-fakes = { workspace = true }
 tempfile = { workspace = true }
 testnet = { workspace = true }

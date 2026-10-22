@@ -27,6 +27,7 @@ use uuid::Uuid;
 use crate::gate::Faults;
 use crate::net::{ClockMode, JournalCut, Net, NetError, NetOptions};
 use crate::observe;
+use crate::router::RouterKind;
 use crate::topology::{AccountDecl, AgentDecl, FakeKind, HostDecl, Provider, TierDecl, Topology};
 
 /// A request to the door.
@@ -165,6 +166,31 @@ pub enum Control {
         host: String,
         blocked: bool,
     },
+    /// Puts an imitated router in front of a host's link socket, now and
+    /// on every start after.
+    SetRouter {
+        host: String,
+        kind: RouterKind,
+    },
+    /// Moves a host onto another network: its link socket rebinds and its
+    /// links migrate.
+    ChangeNetwork {
+        host: String,
+    },
+    /// Binds a host to IPv6 loopback alone from its next start.
+    BindIpv6Only {
+        host: String,
+    },
+    /// The path carrying a host's link to a peer, by the host's link log;
+    /// null while the link is down.
+    CarryingPath {
+        host: String,
+        peer: String,
+    },
+    /// Every line the host has written to the link log, oldest first.
+    LinkLog {
+        host: String,
+    },
     /// Severs a link and restores it on a period until stopped.
     Flap {
         a: String,
@@ -274,6 +300,11 @@ pub const CAPABILITIES: &[(&str, &str)] = &[
     ("RelayFaults", "Net::set_relay_faults"),
     ("NetFaults", "Net::set_net_faults"),
     ("BlockUdp", "Net::block_udp"),
+    ("SetRouter", "Net::set_router"),
+    ("ChangeNetwork", "Net::change_network"),
+    ("BindIpv6Only", "Net::bind_ipv6_only"),
+    ("CarryingPath", "Net::carrying_path"),
+    ("LinkLog", "Net::link_log"),
     ("Flap", "Net::sever_link + Net::restore_link on a period"),
     ("FlapStop", "Net::restore_link for each flapping link"),
     ("PairGate", "Net::pair_gate"),
@@ -332,6 +363,11 @@ impl Control {
             Self::RelayFaults { .. } => "RelayFaults",
             Self::NetFaults { .. } => "NetFaults",
             Self::BlockUdp { .. } => "BlockUdp",
+            Self::SetRouter { .. } => "SetRouter",
+            Self::ChangeNetwork { .. } => "ChangeNetwork",
+            Self::BindIpv6Only { .. } => "BindIpv6Only",
+            Self::CarryingPath { .. } => "CarryingPath",
+            Self::LinkLog { .. } => "LinkLog",
             Self::Flap { .. } => "Flap",
             Self::FlapStop {} => "FlapStop",
             Self::PairGate { .. } => "PairGate",
@@ -855,6 +891,27 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
             ),
         )?),
         Control::BlockUdp { host, blocked } => value(net.block_udp(&host, blocked)?),
+        Control::SetRouter { host, kind } => value(net.set_router(&host, kind)?),
+        Control::ChangeNetwork { host } => value(net.change_network(&host)?),
+        Control::BindIpv6Only { host } => value(net.bind_ipv6_only(&host)?),
+        Control::CarryingPath { host, peer } => json!({
+            "path": net.carrying_path(&host, &peer)?.map(|path| path.to_string()),
+        }),
+        Control::LinkLog { host } => Value::Array(
+            net.link_log(&host)?
+                .iter()
+                .map(|event| {
+                    json!({
+                        "peer": event.peer,
+                        "event": event.event.to_string(),
+                        "path": event.path.to_string(),
+                        "resumed": event.resumed,
+                        "early_data": event.early_data.to_string(),
+                        "first_packet_to_catch_up_ms": event.first_packet_to_catch_up_ms,
+                    })
+                })
+                .collect(),
+        ),
         Control::Flap { .. } | Control::FlapStop {} => {
             unreachable!("the connection handles flaps")
         }

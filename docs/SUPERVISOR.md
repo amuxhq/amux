@@ -69,6 +69,14 @@ The supervisor logs to `<data_dir>/supervisor.log`; the daemon logs to
 `<data_dir>/daemon.log` unless `AMUX_LOG` names another file. `<data_dir>` is
 the config's `root`, `~/.local/share/amux` by default.
 
+When the supervisor's core breaks one of its invariants it logs the reason
+and writes `<data_dir>/reports/supervisor-<unix ms>-<id>.txt`: the reason, the
+core's state when its window began, every input stepped since (at least the
+last 256) and its state now, under a header naming this build. The file
+holds what the log does (manifests, paths, exit codes, failures), no secret.
+One is written per kind of reason every ten minutes. Nothing replays it; it
+is what a step test of the supervisor core is written from by hand.
+
 ## Login items
 
 `amux init` asks once, on a terminal, whether amux should start at login.
@@ -176,7 +184,14 @@ daemon runs.
 
 These timings are `Params::default()` in
 [`crates/node/src/supervisor/mod.rs`](../crates/node/src/supervisor/mod.rs);
-they are compiled in and not read from the config. [Parameters](PARAMETERS.md)
+they are compiled in and not read from the config. The rules above are
+decided by one state machine,
+[`crates/supervisor-core`](../crates/supervisor-core/src/lib.rs), which checks
+after every step that an installed binary able to start always exists and
+that at most one daemon serves, and asks for a dump if either fails or a
+step takes longer than its 10 ms budget (`Params.step_budget`);
+`node`'s supervisor module runs the processes, the pipe, the feed and the
+files for it. [Parameters](PARAMETERS.md)
 lists them with the rest.
 
 ## Updates and channels

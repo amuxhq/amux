@@ -283,7 +283,12 @@ async fn a_client_starts_the_supervisor_only_where_the_install_has_one() {
     );
 }
 
-#[cfg(target_os = "macos")]
+// Built on every Unix so the test listing names it wherever the contracts
+// are checked; only macOS has the assertion to look for.
+#[cfg_attr(
+    not(target_os = "macos"),
+    ignore = "only macOS holds a sleep assertion"
+)]
 #[tokio::test(flavor = "multi_thread")]
 async fn the_supervisor_holds_the_sleep_assertion_under_keep_awake() {
     fn assertions_of(pid: u32) -> Vec<String> {

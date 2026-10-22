@@ -206,6 +206,13 @@
       "claim": "A phone paired with a machine running two agents is put away. At the machine one agent comes to need the person and the other answers a question. A push built from journeys/fixtures/needs-you.apns names the first: xcrun simctl push shows its notification, and because this simulator never hands a push's payload to an app put away, the debug door hands the same payload to the app's remote-notification handler with the app held in the background, as iOS calls it for a push that wakes the app; the handler brings that one chat current and nothing else: with the machine stopped and the app brought back to the foreground, the named agent's chat holds its ask and the other agent's chat does not hold the answer it gave while the app was away. In the foreground, with the machine running again, the other agent catches up without being named, and the ask answered on the phone reaches the machine, which finishes the turn."
     },
     {
+      "id": "resume",
+      "stage": 16,
+      "clients": ["phone"],
+      "topology": "journeys/topologies/phone-resume.json",
+      "claim": "A phone signed in to the account two machines are on pairs with both on its network. Opened for the first time ever, it reaches each with a full handshake; closed and opened again, it reaches each by resuming the last session with its first calls sent as early data and accepted; with one machine restarted while the phone was closed, the next launch still resumes both. After each launch the fleet reads current and the app's link log for that launch is kept beside the run."
+    },
+    {
       "id": "survive-daemon",
       "clients": ["system"],
       "claim": "Three agents, one of each kind, are mid-turn when amux is killed; they finish their turns into their journals with no daemon, outlive their grace and exit. Any amux command starts amux again under its supervisor, which finds them exited; a newer build is installed under the supervisor and activated; every finished turn is in the store, and resuming the exited agents loses nothing."

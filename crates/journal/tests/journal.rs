@@ -1,6 +1,7 @@
 use journal::synthetic::{SyntheticWriter, cut};
 use journal::{
-    Batch, Reader, Step, Torn, Writer, encode_frame, is_final, reclaimable, segment_name, segments,
+    Batch, Frame, Reader, Step, Torn, Writer, encode_frame, is_final, reclaimable, segment_name,
+    segments,
 };
 use wire::{Item, Snapshot};
 
@@ -106,7 +107,14 @@ fn a_reader_follows_a_live_writer_across_rotations() {
     }
     seen.extend(keys(&reader.read_to_end().unwrap()));
     assert_eq!(seen, (0..30).map(|n| format!("k{n}")).collect::<Vec<_>>());
-    assert_eq!(reader.read_to_end().unwrap(), Batch::default());
+    let end = writer.offset();
+    assert_eq!(
+        reader.read_to_end().unwrap(),
+        Batch {
+            seen: end,
+            ..Batch::default()
+        }
+    );
 }
 
 #[test]
@@ -341,5 +349,38 @@ fn a_limited_read_takes_a_backlog_in_pieces_across_rotations() {
     assert_eq!(seen, (0..30).map(|n| format!("k{n}")).collect::<Vec<_>>());
     assert_eq!(reads, 5);
     assert_eq!(reader.cursor(), writer.offset());
-    assert_eq!(reader.read_up_to(7).unwrap(), Batch::default());
+    assert_eq!(
+        reader.read_up_to(7).unwrap(),
+        Batch {
+            seen: writer.offset(),
+            ..Batch::default()
+        }
+    );
+}
+
+#[test]
+fn a_frame_of_a_given_length_reads_back_as_its_step() {
+    let short = step("k", "short");
+    let natural = frame_len(&short) as usize;
+    for len in natural..natural + 300 {
+        let frame = journal::encode_frame_exact(&short, len).expect("the step fits");
+        assert_eq!(frame.len(), len);
+        assert_eq!(
+            journal::decode_frame(&frame),
+            Frame::Whole(Box::new(short.clone()), len)
+        );
+    }
+    assert_eq!(journal::encode_frame_exact(&short, natural - 1), None);
+}
+
+#[test]
+fn a_read_says_how_far_it_saw_the_journal_torn_tail_included() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut writer = SyntheticWriter::open(dir.path(), 1 << 20).unwrap();
+    writer.append(&step("a", "one")).unwrap();
+    let whole = frame_len(&step("a", "one"));
+    writer.write_partial(&step("b", "two"), 3).unwrap();
+    let batch = Reader::new(dir.path(), 0).read_to_end().unwrap();
+    assert_eq!(keys(&batch), ["a"]);
+    assert_eq!(batch.seen, whole + 3);
 }

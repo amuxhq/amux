@@ -1,7 +1,9 @@
 //! One open chat's state: the agent's entry and snapshot, the transcript
 //! window, and this client's inputs.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+mod history;
+
+use std::collections::{BTreeMap, BTreeSet};
 
 pub use model::{Activity, ActivityKind, BlobStatus, Composer, Connection, PhaseView, Waiting};
 use wire::{Agent, HostEntry, Input, Item, Kind, QueuedInput, SessionEvent, session_event};
@@ -81,6 +83,9 @@ pub struct Outcome {
     /// Held inputs the host can be reached for again: each is `Sent` from
     /// now, and the driver sends it under its own id.
     pub resend: Vec<Input>,
+    /// The transcript failed its own check at a Reset or a CaughtUp, saying
+    /// how: the driver asks for a dump.
+    pub broken: Option<String>,
 }
 
 /// A queued prompt as the composer draws it.
@@ -100,7 +105,9 @@ pub struct SessionState {
     agent: Agent,
     host: Option<HostEntry>,
     state: AgentState,
-    has_snapshot: bool,
+    /// The newest snapshot as it arrived: `state` is decoded from it, and a
+    /// dump carries it so a replay decodes the same.
+    snapshot: Option<wire::Snapshot>,
     /// The catalogue last fetched for the agent, with the hash it was
     /// fetched by; what it offers shows while
     /// the newest snapshot names its hash.
@@ -112,6 +119,10 @@ pub struct SessionState {
     /// The stream was reopened; a tail that leaves a gap above the head
     /// builds a pending transcript instead of appending.
     retail: bool,
+    /// The origin generation the window's rows belong to, or the pending
+    /// transcript's while one builds: from the first stream's Opening, then
+    /// from each Reset, which names the block it replaces the rows with.
+    generation: Option<u64>,
     inputs: Inputs,
     caught_up: bool,
     detached: bool,
@@ -122,7 +133,7 @@ pub struct SessionState {
     /// and each CaughtUp. A held input goes at the first one after it left.
     reach: u64,
     epoch: u64,
-    blobs: HashMap<Vec<u8>, BlobStatus>,
+    blobs: BTreeMap<Vec<u8>, BlobStatus>,
     /// The most rows the window keeps while the reader follows.
     cap: usize,
     /// The reader is at the newest row, as the client last said.
@@ -142,7 +153,7 @@ pub struct SessionState {
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Arrivals {
     rows: BTreeMap<u64, Held>,
-    by_key: HashMap<Key, u64>,
+    by_key: BTreeMap<Key, u64>,
     moved_on: bool,
     /// Counts every change, so an update can say the activity line and the
     /// affordance, which read these rows, may have moved.
@@ -223,18 +234,20 @@ impl SessionState {
     pub fn new(agent: Agent, cap: usize) -> SessionState {
         let kind = agent.kind();
         SessionState {
+            // Until a snapshot arrives the phase is the entry's (see
+            // `phase`), so this one is never read.
             state: AgentState {
                 kind,
-                phase: agent.phase(),
                 ..AgentState::default()
             },
             agent,
             host: None,
-            has_snapshot: false,
+            snapshot: None,
             catalogue: None,
             transcript: Transcript::new(kind),
             pending: None,
             retail: false,
+            generation: None,
             inputs: Inputs::default(),
             caught_up: false,
             detached: false,
@@ -242,7 +255,7 @@ impl SessionState {
             exited_under: None,
             reach: 0,
             epoch: 0,
-            blobs: HashMap::new(),
+            blobs: BTreeMap::new(),
             cap: cap.max(1),
             following: true,
             arrivals: Arrivals::default(),
@@ -338,7 +351,7 @@ impl SessionState {
     }
 
     pub fn has_snapshot(&self) -> bool {
-        self.has_snapshot
+        self.snapshot.is_some()
     }
 
     /// The window on screen. During a Reset it is the old one, until the
@@ -357,6 +370,11 @@ impl SessionState {
 
     pub fn caught_up(&self) -> bool {
         self.caught_up
+    }
+
+    /// The origin generation the rows belong to, once a stream named one.
+    pub fn generation(&self) -> Option<u64> {
+        self.generation
     }
 
     pub fn connection(&self) -> Connection {
@@ -412,7 +430,7 @@ impl SessionState {
                 cause: crate::exit_cause(&self.agent),
             };
         }
-        let phase = if self.has_snapshot {
+        let phase = if self.has_snapshot() {
             self.state.phase
         } else {
             self.agent.phase()
@@ -601,7 +619,7 @@ impl SessionState {
                 self.connection = connection;
                 if connection == Connection::Reconnecting {
                     self.caught_up = false;
-                    self.retail = true;
+                    self.reopened();
                 }
                 outcome.session = true;
             }
@@ -712,7 +730,7 @@ impl SessionState {
             Of::Snapshot(snapshot) => {
                 self.state = AgentState::from_snapshot(self.kind(), &snapshot);
                 self.offer();
-                self.has_snapshot = true;
+                self.snapshot = Some(snapshot);
                 self.queue_moved();
                 outcome.session = true;
             }
@@ -754,14 +772,19 @@ impl SessionState {
                 self.reach += 1;
                 outcome.resend = self.release_held();
                 outcome.session = true;
+                outcome.broken = self.transcript.check().err();
             }
             Of::Lagged(_) => {
                 self.caught_up = false;
-                self.retail = true;
+                self.reopened();
                 outcome.session = true;
             }
-            Of::Reset(_) => {
+            Of::Reset(reset) => {
+                // The transcript as it stood before the origin's history
+                // changed under it.
+                outcome.broken = self.transcript.check().err();
                 self.caught_up = false;
+                self.generation = Some(reset.generation);
                 self.pending = Some(Transcript::new(self.kind()));
                 outcome.session = true;
             }
@@ -770,9 +793,18 @@ impl SessionState {
                 self.detached = true;
                 outcome.session = true;
             }
-            // The origin's generation is a peer source's concern: it
-            // resumes by revision, a client re-tails.
-            Of::Opening(_) => {}
+            // A stream reopened under another generation follows a Reset
+            // the gap in the stream may have carried: the rows held are of
+            // a history the origin no longer has, so the tail is built
+            // apart and swapped in at CaughtUp.
+            Of::Opening(opening) => {
+                let known = self.generation.replace(opening.generation);
+                if known.is_some_and(|known| known != opening.generation) {
+                    self.caught_up = false;
+                    self.pending = Some(Transcript::new(self.kind()));
+                    outcome.session = true;
+                }
+            }
         }
     }
 
@@ -816,6 +848,17 @@ impl SessionState {
         self.transcript.upsert(item, changed);
         self.trim(changed);
         true
+    }
+
+    /// The stream ended and the driver opens it again with a fresh tail. A
+    /// transcript being built apart starts over: the tail that follows is
+    /// its whole, and what it held may not meet it.
+    fn reopened(&mut self) {
+        self.retail = true;
+        let kind = self.kind();
+        if let Some(pending) = &mut self.pending {
+            *pending = Transcript::new(kind);
+        }
     }
 
     /// While the reader follows, the window keeps only the newest rows.

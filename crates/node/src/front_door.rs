@@ -27,6 +27,10 @@ use crate::edge::{Edge, Observed, RelayCarrier, account};
 use crate::grpc::{self, status, wire_error};
 use crate::profiles::{PROFILE_SOCKET, Registry, profile_dir};
 
+/// How long a profile's removal waits for its store to close before it
+/// removes the profile's files.
+const PROFILE_CLOSES_WITHIN: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// A change the front door's watchers see.
 #[derive(Clone, Debug)]
 pub(crate) enum ProfileEvent {
@@ -411,15 +415,26 @@ impl ProfileService for FrontDoor {
             .write(&installation.data_dir)
             .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
         let hosted = installation.hosted.lock().unwrap().remove(&id);
+        let closed = runtime.as_ref().map(|runtime| runtime.driver().closed());
         if let Some(hosted) = hosted {
             hosted
                 .runtime
                 .stop_edge(wire::LinkCloseReason::UserShutdown)
                 .await;
+            // As at shutdown: a dump in flight would hold the runtime and
+            // its store open past the directory's removal.
+            hosted.runtime.finish_dumps().await;
             hosted.runtime.stop_background().await;
             hosted.runtime.stop_watching().await;
         }
         drop(runtime);
+        // Some systems refuse to remove a file still open: the directory
+        // goes once the store and the ring are closed, which may be on the
+        // core thread after a step under way. A handle held elsewhere past
+        // the wait leaves the removal to fail on such a system.
+        if let Some(closed) = closed {
+            let _ = tokio::time::timeout(PROFILE_CLOSES_WITHIN, closed).await;
+        }
         std::fs::remove_dir_all(profile_dir(&installation.data_dir, id))
             .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
         installation.publish(ProfileEvent::Removed(id));

@@ -11,15 +11,20 @@ name = "testnet"
 path = "src/bin/testnet.rs"
 
 [dependencies]
+agent-core = { workspace = true }
 agent-dir = { workspace = true }
 anyhow = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
+daemon-core = { workspace = true }
+futures-util = { workspace = true }
 http-body-util = { workspace = true }
 hyper = { workspace = true }
 hyper-util = { workspace = true }
+interpret = { workspace = true, features = ["testkind"] }
 journal = { workspace = true, features = ["synthetic"] }
+models = { workspace = true }
 node = { workspace = true }
 patience = { workspace = true }
 prost = { workspace = true }
@@ -42,9 +47,9 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tui = { workspace = true }
 unicode-width = "0.2"
 uuid = { workspace = true }
-wire = { workspace = true }
+wire = { workspace = true, features = ["grpc"] }
 
 [dev-dependencies]
 analytics = { workspace = true }
-interpret = { workspace = true }
+toml = { workspace = true }
 ui-state = { workspace = true }

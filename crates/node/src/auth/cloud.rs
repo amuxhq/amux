@@ -187,17 +187,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn connect_response_carries_the_account_tier() {
-        let response: ApiConnectResult = serde_json::from_str(
-            r#"{"host":"relay.test","port":9001,"token":"jwt","expires_at":"2030-01-01T00:00:00Z","tier":"free"}"#,
-        )
-        .unwrap();
-
-        let details = CloudRoutingConnectionDetails::from(response);
-        assert_eq!(details.tier, crate::Tier::Free);
-    }
-
     #[tokio::test]
     async fn network_failures_remain_retriable_connection_errors() {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))

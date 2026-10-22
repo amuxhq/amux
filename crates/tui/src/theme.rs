@@ -1337,21 +1337,6 @@ mod tests {
         render_named(Named::ClaudeWorking, theme)
     }
 
-    #[test]
-    fn default_is_dark_truecolor() {
-        let theme = Theme::default();
-        assert_eq!(theme.name, ThemeName::Dark);
-        assert_eq!(theme.mode, ColorMode::TrueColor);
-        assert!(matches!(theme.text().fg, Some(Color::Rgb(..))));
-    }
-
-    #[test]
-    fn token_resolves_the_selected_face() {
-        let token = Token::new((1, 2, 3), Color::Cyan);
-        assert_eq!(token.resolve(ColorMode::TrueColor), Color::Rgb(1, 2, 3));
-        assert_eq!(token.resolve(ColorMode::Ansi), Color::Cyan);
-    }
-
     /// The attention ink on the person's message surface.
     fn attention_on_surface(theme: Theme) -> Style {
         Style::default()

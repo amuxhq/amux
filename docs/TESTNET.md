@@ -18,7 +18,8 @@ agent` processes, running the scripted fake providers from `crates/provider-fake
 links over loopback. A declared relay is the production relay server on loopback, beside a stand-in for the
 account service that signs accounts in and mints relay credentials.
 
-What is replaced: the providers (by the fakes, unless a host or agent asks for the real ones), the account service
+This is the real net; a [simulated net](#two-modes) runs the same stories with every core in memory, stepped by a
+seed. What is replaced on the real net: the providers (by the fakes, unless a host or agent asks for the real ones), the account service
 (by the stand-in), multicast discovery (by a scripted bus, unless a host asks for real mDNS), and, in a Rust test,
 policy time (by a driven clock).
 
@@ -32,6 +33,37 @@ On first use in a process, the harness builds `amux` and the fake providers with
 built the test, so agents always run the binary under test. With `TESTNET_BINARIES` naming a directory that
 already holds `amux`, the fakes and the probes, it builds nothing and uses those: a driver that built them once,
 with the features it chose, keeps every net it starts on that one build.
+
+## Two modes
+
+Everything above describes the real net. The same topology can also start as a simulated net (`SimNet`,
+`crates/testnet/src/sim`), and a story written against the `World` trait (`crates/testnet/src/world.rs`) runs
+unchanged on either:
+
+| | Real | Simulated |
+| --- | --- | --- |
+| A host | a production daemon runtime on loopback | its daemon core over an in-memory store |
+| An agent | an `amux agent` process on a fake provider | its agent core over the test kind's interpreter, playing the script or a recorded headless Claude journal |
+| Links, jobs, timers, processes | real sockets, files, tasks and the driven clock | values in memory, moved one delivery at a time |
+| Who picks what happens next | the operating system's scheduler | a seed: each step makes the delivery the seed picks among those waiting |
+| A wait that cannot come true | fails at its deadline | fails at once, when nothing is left to deliver without the story acting |
+| A failure is reported as | the assertion and the net's trace | the seed, the assertion and the trace of deliveries, with the command that reruns that seed |
+
+The simulated net is the composed-net model of `crates/models` walked by seed: the story's verbs are the model's
+actions, so the checker and the simulator explore one definition. After every step it checks each core's own
+invariants and every store's after a write, so a broken invariant fails the seed where it broke, not where a story
+later noticed. One seed is one schedule: the same seed gives the same trace on every run. `SimNet::ring` records the
+choices a run made, `SimNet::replay` replays any prefix of them, and `testnet::sim::shrink` looks for a shorter
+failing run, first among other seeds, then by cutting the ring.
+
+What a simulated net does not have it refuses at start rather than pretending: the relay, the LAN and discovery,
+process and supervised hosts, real providers, repositories, and agents of a kind other than headless Claude.
+Stories that need any of those run on the real net only.
+
+`testnet::modes::run_story(topology, real, simulated)` runs a story on the net `TESTNET_MODE` names: `real` (or
+nothing) once, `simulated` under each seed, a few by default, `TESTNET_SEEDS=N` for N of them, `TESTNET_SEED=N` for
+exactly one. `just sim` runs every story the catalogue gives a simulated mode, and `just nightly --seeds N` walks
+thousands of seeds per story and reports each failing one; see [Testing](TESTING.md#two-modes-of-the-many-daemons-harness).
 
 ## Topologies
 
@@ -80,6 +112,7 @@ The same network as JSON, as `testnet serve` reads it:
 | `hosts[].provider` | `fake` (the default) or `real`: what every agent created on this host runs, whichever client creates it. See [real providers](#real-providers). |
 | `hosts[].process` | Run the host as a real `amux` daemon process with its own installation config. |
 | `hosts[].supervised` | Run it under `amux supervise`, taking releases from the net's feed; implies `process`. |
+| `hosts[].ipv6_only` | Bind the host's socket to IPv6 loopback alone, so every link it has runs over IPv6; `Net::bind_ipv6_only` sets it from the host's next start. In-process hosts only. |
 | `links[]` | `{"a", "b"}`: two hosts that trust each other and are linked at start. |
 | `relay.accounts[]` | `{"name", "tier"}`, tier `pro` (the default: relayed tunnels) or `free` (hosts are listed; the relay opens no tunnels). |
 | `settle` | Start each declared agent only once the one before it has settled (see `settle(name)` below), so agents that come to rest in the same standing are listed in declaration order, the last declared as most recently active. Every declared agent must come to rest. Without it the agents start together and which first turn ends last is a race. |
@@ -162,7 +195,9 @@ grace, and the next daemon adopts them. The net reaches it as a client does, ove
 socket: the waits that listen inside an in-process runtime (`fence`, `turn_ended`, `input_settled`) use the
 profile's Subscribe stream instead, back-filling with Fetch past the 200 rows a subscription opens with.
 Subscribing on a host that only replicates an agent can start replication there, which the in-process wait does
-not.
+not. It lists no interface addresses to its peers (`AMUX_TEST_INTERFACES` is set empty), as an in-process host on
+loopback lists none: the machine's real interfaces would give a peer's path machine a way around a cut, gated or
+imitated network.
 
 A supervised host runs under `amux supervise`, from a copy of the build under test stamped as version `0.0.1`
 (`SUPERVISED_VERSION`), so any ordinary version is newer. Its supervisor takes releases from the net's
@@ -223,6 +258,67 @@ them directly.
 | `set_relay_faults(faults)`, `relay_gate()` | A gate in front of the relay's QUIC carrier for a client outside the net. |
 | `pair_gate(from, to)` | The gate `from` dials to reach `to`'s LAN listener: give it to a pairing in place of `to`'s address. |
 | `block_udp(host, blocked)` | Drop every datagram on the host's way to the relay, so it falls back to TCP. |
+
+### Routers
+
+`Router` imitates the home router in front of a host, for the stories that decide whether two hosts can punch
+through to each other. It is the substrate under the host's link socket: the host's own address is a private one
+(`10.n.0.2`) nobody can reach, what it sends leaves from a public loopback port the router's table hands out, and
+what arrives passes only through a mapping the router's filter allows. A mapping nothing has used for the router's
+idle time expires, and the next packet out gets a new port. `public_addr_for(inner, dst)` says which public address
+packets to `dst` leave from now, which is what the relay sees.
+
+| `RouterKind` | Mapping | Inbound filter |
+| --- | --- | --- |
+| `Open` | none: the host's own address is public | anyone |
+| `Ordinary` | one public port for every destination | from any address and port the host sent to through it |
+| `Strict` | a public port per destination | only from the exact address and port that port was opened toward |
+
+A punch works behind `Ordinary`: the port the relay saw is the port the host punches from, so the peer's answer to
+the address the relay told it gets in. Behind `Strict` the punch leaves from a different port, and the answer to the
+relay's address is dropped.
+
+A story puts a router in front of an in-process host and moves it between networks with these verbs; each is also
+on `World`, and a simulated net, which has no sockets, refuses them:
+
+| Verb | Effect |
+| --- | --- |
+| `set_router(host, kind)` | Put a router of that kind in front of the host's link socket, now if it runs and on every start after. Its links migrate onto the router's public port; a mapping idle for 30 seconds expires. A host started behind a router reaches the relay's QUIC listener straight from its public port, not through the net's gate, so the relay sees and reports the router's port. |
+| `change_network(host)` | Move a running host onto another network, as a phone leaving Wi-Fi does: its link socket rebinds to a fresh port, or behind a fresh router of the same kind with new public ports, its links migrate without going down, and its path machines are told as the phone's runtime tells them. |
+| `bind_ipv6_only(host)` | Bind the host's socket to IPv6 loopback alone from its next start. |
+
+The router stories in `spec_links.rs` put two paid hosts behind routers with nothing between them but the relay:
+
+| Story | What it shows |
+| --- | --- |
+| `punch_ordinary_routers_…` | Behind `Ordinary` routers each host probes the address the relay saw the other at, both routers open, and the link moves from `relay_udp` to `punched` with the session streaming. |
+| `punch_strict_routers_…` | Behind `Strict` routers both hosts learn the other's observed address, every probe is dropped, and the link stays on `relay_udp`. |
+| `punch_free_never_…` | Two hosts on one free account on the same network: neither learns where the relay sees the other, so neither has anything to punch to, and the link stays on `lan`. |
+| `punch_lapse_drops_…` | A lapse takes the punched path away: the link leaves `punched`, and with no free path between the routers goes down. |
+| `path_change_lan_relay_lan_…` | One subscription stays open while the LAN between two signed-in hosts is cut (the link moves to `relay_udp`) and restored (back to `lan`): every line once, one opening, no reset, lag or detach, and the link never goes down. |
+| `path_change_phone_network_…` | `change_network` under a host mid-stream: the same subscription reads on with no gap and the link stays up. |
+
+### Which path carries a link
+
+Every daemon writes the link log: one line at INFO each time one of its links comes up, goes down or changes path,
+naming the peer and the path (`lan`, `direct`, `punched`, `relay_udp`, `relay_tcp`, `ssh`, `via_daemon`). The net
+reads an in-process host's lines from its own trace and a process host's from its daemon log, so a story says which
+path carried a link the way a person reading the log would:
+
+| Verb | Effect |
+| --- | --- |
+| `link_log(host)` | Every line the host has written, oldest first, across restarts. |
+| `carrying_path(host, peer)` | The path the host's last line for that peer names, or none once that line says the link went down. |
+
+### SSH
+
+A host reaches a peer over SSH by running `ssh <target> amux relay --profile <id>` and carrying the link over that
+process's stdio into the far daemon's link socket (`link.sock` in its profile directory), where the pinned QUIC
+handshake admits only a paired key. Every in-process host serves its link socket. The net puts a stand-in `ssh`
+(`crates/testnet/stand-in/ssh`) first on its process's PATH, which process hosts inherit; no real SSH runs. A target
+is a host's directory, which `ssh_target(host)` answers: the stand-in runs the far host's own `amux` against its own
+installation there, so `amux relay` joins the far daemon's link socket. Give the target to a peer as an SSH pairing
+does, with the far host's profile id.
 
 ## Growing a net while it runs
 
@@ -411,6 +507,11 @@ verb without fields is a bare string (`"Shutdown"`).
 | `{"RelayGate": {}}`, `{"RelayFaults": {…}}` | A gate in front of the relay's QUIC carrier: `{"addr": "…"}`; its faults. |
 | `{"PairGate": {"from", "to"}}` | The gate `from` dials to reach `to`'s LAN listener: `{"addr": "…"}`. |
 | `{"BlockUdp": {"host", "blocked"}}` | Drop every datagram on the host's way to the relay, or stop. |
+| `{"SetRouter": {"host", "kind"}}` | Put a router (`open`, `ordinary` or `strict`) in front of the host's link socket, now and on every start after. |
+| `{"ChangeNetwork": {"host"}}` | Move a running host onto another network: its link socket rebinds and its links migrate. |
+| `{"BindIpv6Only": {"host"}}` | Bind the host's socket to IPv6 loopback alone from its next start. |
+| `{"CarryingPath": {"host", "peer"}}` | The path carrying the host's link to the peer, by its link log: `{"path": "lan"}`, or `{"path": null}` while the link is down. |
+| `{"LinkLog": {"host"}}` | Every line the host has written to the link log, oldest first: `[{"peer", "event", "path", "resumed", "early_data", "first_packet_to_catch_up_ms"}]`. |
 | `{"Flap": {"a", "b", "down_ms", "up_ms"}}`, `{"FlapStop": {}}` | Sever and restore a link on a period, until stopped; stop every flap, leaving each link restored. |
 | `{"Release": {"version", "channel", "rollout", "broken"}}` | Publish the build under test on the release feed (channel `stable` by default) and have supervised hosts check now. |
 | `{"Status": {}}` | The readiness record as it stands now, with `topology`: the declaration that would start this net again, run-time additions included. |
@@ -548,9 +649,11 @@ for a [QA](QA.md) run and need its `AMUX_QA_RUN`. Inside such a run agents are r
 ```sh
 just test -- --test harness                  # topology validation, clock, waits, faults, growth, process hosts, the door
 just test -- --test ctl                      # testnet ctl end to end: up, hosts, a link, a fake agent, a shot, a capture, down
-just test -- --test spec_edge --test spec_families --test spec_inventory --test spec_network --test spec_replication
+just test -- --test spec_edge --test spec_families --test spec_inventory --test spec_links --test spec_network --test spec_replication
 ```
 
 The `spec_*` targets are the many-daemon specifications: pairing, trust, discovery, routing, relay carriers,
 credential refresh, revocation, account isolation, the inventory, replication and agent families across hosts.
+`spec_links` holds one story per route a link takes (the same network, SSH, IPv6 alone), each reaching an agent's
+session, streaming it live and naming the carrying path from the link log.
 Each reads top to bottom as a description of one behaviour, with its assertions in the test body.

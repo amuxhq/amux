@@ -10,6 +10,8 @@
 //!   profiles/<profile_id>/
 //!     host_id             this profile's host id, written once
 //!     store.sqlite        the profile store
+//!     core.checkpoint     the profile's core as of its last checkpoint
+//!     core-ring/          every input the core stepped since, and before
 //!     agents/<agent_id>/  one directory per agent, the agent's contract
 //!     replicas/<host_id>/agents/<agent_id>/blobs/
 //!                         bytes fetched for a peer's agent
@@ -26,6 +28,8 @@ pub const REPORTS: &str = "reports";
 pub const PROFILES: &str = "profiles";
 pub const HOST_ID: &str = "host_id";
 pub const STORE: &str = "store.sqlite";
+pub const CORE_CHECKPOINT: &str = "core.checkpoint";
+pub const CORE_RING: &str = "core-ring";
 pub const AGENTS: &str = "agents";
 pub const REPLICAS: &str = "replicas";
 pub const INSTALLATION_ID: &str = "installation_id";

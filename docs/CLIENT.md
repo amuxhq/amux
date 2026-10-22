@@ -276,7 +276,7 @@ host, and from its replica for another host's agent even while that host is away
 | `working_tree_review()` | The agent's working-tree `Diff` and the patch it names, for a review page. |
 | `ended()` | Set when the runtime refuses to serve the chat again, as when the agent was deleted. |
 | `suspended()` | Whether the stream is dropped because the phone left the foreground. |
-| `trace()`, `dump_part()` | The bounded trace, and this chat's part of a dump bundle. |
+| `trace()`, `history()` | The bounded trace, and the same in the form a dump carries it. |
 | `close()` | Drops the stream. Nothing is flushed; results of calls still in flight change nothing. |
 
 The acts that wait on the agent return `InputError::Rejected(refusal)`, `InputError::Uncertain`, or
@@ -314,10 +314,15 @@ every message it applied and every act of its own (`DriverEvent`: subscribed, st
 page requested, Get, blob fetch), together with a clone of the state taken when the trace's oldest segment
 began. `DriverTrace::replay()` rebuilds the final state from that start, which is what makes a dump replayable
 rather than only inspectable: the order this client saw things in is the one thing the runtime's rows cannot
-reproduce. `dump_part()` writes `client/sessions/<agent id>/state.txt` and `trace.txt` with the structure only
-(keys, orders, revisions, input ids and states, markers), never item text or bodies. The phone's runtime adds
-these parts to a dump bundle; the daemon's part carries the content, redacted per kind. See
-[DEBUGGING.md](DEBUGGING.md).
+reproduce. `history()` is that trace as wire values (`wire.ClientSessionHistory`): the start state with the rows
+its window held and every value the session model keeps, each message, and each driver act as it describes itself.
+`SessionState::to_wire` and `from_wire`, and the same pair on `Msg`, convert both ways, and every index over the
+rows is rebuilt on the way back, so a replay starts where the client stood. A client hands its open chats'
+histories to the daemon inside the dump call, and the daemon redacts each through its agent's kind and writes it
+into the bundle under `client/sessions/<agent id>/` before the bundle is complete. When a transcript fails its
+check, the trace is taken under the same lock as the failing message, so the dump ends at it. The fleet writes
+only the structure of its state and trace (`client/fleet/state.txt`, `trace.txt`), never names, paths or status
+text. See [DEBUGGING.md](DEBUGGING.md).
 
 ## Views
 
@@ -555,7 +560,11 @@ A Reset means the origin's history changed under the chat (a rewind, for example
 screen and builds a fresh transcript from the events that follow; at the next CaughtUp it swaps the fresh one in
 and reports `reloaded`, one of the two times a client reloads its whole list; the other is the reload of a head
 that moved on while the reader was in history. A re-tail after a reconnect whose rows do not meet the held
-window is handled the same way while the reader follows; in history it only marks the head as moved on. Detached
+window is handled the same way while the reader follows; in history it only marks the head as moved on. So is a
+re-tail whose `Opening` names another generation than the window was built under, since the gap may have
+carried a Reset. The window is built under the generation of the stream's first `Opening` and then of each
+Reset, which names the block it brings, so a re-tail after a Reset the stream carried continues the window; and a transcript being built apart starts over when the stream reopens, the re-tail being its
+whole. Detached
 clears `caught_up`; the rows stay.
 
 ## The two draw loops
@@ -589,16 +598,26 @@ the fleet. `ChatModel.following` is told to the session with `follow(_:)` whenev
 from the frame's `arrivals_held`. [IOS.md](IOS.md) and
 [EMBEDDED.md](EMBEDDED.md) cover the phone side.
 
+`ChatModel`'s edge logic is the one place a chat's rows move by rules written a second time, so it is held equal to
+the Rust session by traces. [`app-runtime/src/traces.rs`](../crates/app-runtime/src/traces.rs) walks seeded schedules
+of the client model (`models::client`) and records, at every wake, the changes `take_changes()` would gather, the held
+keys, every row and the frame; `just client-traces` writes them to
+`apps/apple/Packages/AmuxCore/Tests/AmuxCoreTests/Fixtures/client-traces`, and app-runtime's tests fail while they
+differ from the model. `ChatModelTraceTests` replays each through `ChatModel` and asserts the same keys and rows at
+every cut.
+
 ## Replay and redaction
 
 [`replay-support`](../crates/replay-support/src/lib.rs) serves two purposes.
 
 - **Dump bundles.** [`bundle.rs`](../crates/replay-support/src/bundle.rs) opens a bundle the daemon wrote and
-  replays its three pure stages: `AgentDump::replay_facts` runs the agent's facts ring through its interpreter
+  replays its stages: `AgentDump::replay_facts` runs the agent's facts ring through its interpreter
   from the checkpoint at the oldest segment (compare the result with the journal the bundle also carries);
   `AgentDump::session` feeds the store slice through `SessionState` exactly as a Subscribe opening delivers it
   (snapshot, held rows, CaughtUp); `AgentDump::rows` renders that state through `chat_rows`. An interpreter bug
-  reproduces from the first stage, a client bug from the second and third.
+  reproduces from the facts, a client bug from the slice. `Bundle::replay_all` (in `replay.rs`, and the
+  `dump-replay` binary) runs all four stages, the daemon core's among them, with the properties judged at every
+  step; see [Debugging](DEBUGGING.md#replaying-a-dump).
 - **Recorded provider traffic.** `ReplayTransport`, `strict_replay`, recording manifests and probes let the
   provider spec crates (`claude-specs`, `codex-specs`) replay captured sessions byte for byte.
 
@@ -616,6 +635,6 @@ only code that can decode them.
 | `crates/ui-view/tests/` | View goldens replayed from every interpreter fixture of all three kinds (`goldens.rs`), authored goldens, row invariants over random windows (`views.rs`), and the interpreter accepting each card's answers (`answers.rs`). Rewrite goldens with `UI_VIEW_UPDATE_GOLDENS=1` and review the diff. | `just test-crate ui-view` |
 | `crates/ui-runtime/tests/` | The drivers against an in-memory runtime whose every answer and clock tick the test controls (opening, reconnect and re-tail, uncertain inputs, paging, blobs, traces and dump parts), and against a real daemon in process running an agent on a fake provider, through both clients. | `just test-crate ui-runtime` |
 | `crates/client/tests/seam.rs` | Both `Client` implementations answer alike against one real daemon. | `just test-crate client` |
-| `crates/replay-support/tests/` | A real dump bundle replayed through its three stages, and strict replay of recordings. | `just test-crate replay-support` |
+| `crates/replay-support/tests/` | Real dump bundles replayed through their four stages, and strict replay of recordings. | `just test-crate replay-support` |
 
 [TESTING.md](TESTING.md) places these in the suite catalogue.

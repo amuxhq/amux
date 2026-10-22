@@ -19,9 +19,9 @@ mod daemon;
 pub mod discovery;
 mod dispatcher;
 mod drafts;
+mod driver;
 mod dump;
 mod edge;
-mod fanout;
 mod forward;
 mod front_door;
 mod generation;
@@ -38,6 +38,7 @@ mod pairing;
 mod profiles;
 mod relay;
 pub mod release;
+mod replicas;
 mod repositories;
 mod resource_limits;
 mod retention;
@@ -45,35 +46,47 @@ mod routing;
 mod runtime;
 mod serve;
 mod services;
-mod sources;
 mod spec;
 #[cfg(not(target_os = "ios"))]
 pub mod supervisor;
 mod telemetry;
 mod transport;
 mod trust;
+mod window;
 mod worktree;
 
 pub use activation::{ActivationError, ActivationPipe, GO, InheritedPipe, PIPE_ENV, PREPARED};
 pub use blobs::{BlobError, PATCH_MIME};
 pub use daemon::{Daemon, StartError, StartOptions, start};
-pub use dump::{DAEMON_LOG, DUMP_LOG_BYTES, DUMP_ROWS, DUMP_SEGMENTS, DumpError, MANIFEST, pack};
+pub use daemon_core::names::word_pairs;
+pub use driver::{
+    AGENT_DUMP, AGENT_VIOLATION_DUMP, CORE_DUMP, CORE_VIOLATION_DUMP, Cores, InventorySubscription,
+    Subscription,
+};
+pub use dump::{
+    CLIENT_CHECKPOINT, CLIENT_EVENTS, CLIENT_SESSIONS, DAEMON_LOG, DUMP_LOG_BYTES, DUMP_ROWS,
+    DUMP_SEGMENTS, DumpError, MANIFEST, pack,
+};
 pub use edge::{
-    ACCOUNT_FILE, CloudLinkServer, CloudOptions, DiscoveryFactory, Edge, EdgeError, EdgeOptions,
-    FREE_TIER_REFRESH_INTERVAL, JwtCloudLinkAuthenticator, LAN_PORT_FILE, LINK_SOCKET, LanOptions,
-    LoopbackLink, Observed, RelayCarrier, RelayIdentity, RelayQuic, UDP_BLOCKED_MEMORY,
-    mdns_discovery,
+    ACCOUNT_FILE, CloudLinkServer, CloudOptions, DUAL_STACK_ANY, DiscoveryFactory, Edge, EdgeError,
+    EdgeOptions, FREE_TIER_REFRESH_INTERVAL, JwtCloudLinkAuthenticator, LAN_PORT_FILE, LINK_SOCKET,
+    LanOptions, LoopbackLink, NetworkChange, Observed, RELAY_TOKEN_FILE, RelayCarrier,
+    RelayIdentity, RelayQuic, RelayServing, UDP_BLOCKED_MEMORY, interface_addrs, mdns_discovery,
+    test_interfaces,
 };
 pub use forward::{ForwardError, HostNameError, Owner};
 pub use front_door::FrontDoor;
 pub use generation::{Generation, boot_id};
 pub use grpc::{ClientApi, status};
+pub use identity::{quic_endpoint, quic_endpoint_config};
 pub use install::{
-    AGENTS, GENERATION, HOST_ID, INSTALLATION_LOCK, InstallationLock, LockError, PROFILES,
-    REGISTRY, REPLICAS, REPORTS, STORE, write_durably,
+    AGENTS, CORE_CHECKPOINT, CORE_RING, GENERATION, HOST_ID, INSTALLATION_LOCK, InstallationLock,
+    LockError, PROFILES, REGISTRY, REPLICAS, REPORTS, STORE, write_durably,
 };
-pub use link::{PeerChannel, PeerClient, TRUST_REVOKED};
-pub use names::{assign_name, word_pairs};
+pub use link::{
+    Cursor, EarlyAnswer, EarlyCall, EarlyReply, PeerChannel, PeerClient, ResumedLink,
+    TRUST_REVOKED, forwarder, framed, link_log, paths, socket,
+};
 pub use offers::{CatalogueError, HostCatalogue, PROVIDERS, Provider};
 pub use outbox::{DrainReport, HttpSender, NoopSender, Push, PushError, PushFuture, PushSender};
 pub use pairing::PairingAdmin;
@@ -90,14 +103,15 @@ pub use profiles::{
     PROFILE_SOCKET, ProfileEntry, ProfileId, Registry, create_profile, host_id, profile_dir,
 };
 pub use relay::RelayError;
+pub use replicas::{InventoryHook, SourceHook, SourcePolicy, SourceVerdict};
 pub use retention::Retention;
 pub use routing::local_kinds;
 pub use runtime::{
-    AGENT_LOG, AgentId, FANOUT_CAPACITY, INGEST_BATCH, JoinHook, KEPT_SEGMENTS, Launch, Profile,
-    ProfileRuntime, RegistryError, SweepReport, TAIL_ROWS, locked, to_wire,
+    AGENT_LOG, AgentId, DUMPS_FINISH_WITHIN, FANOUT_CAPACITY, INGEST_BATCH, JoinHook,
+    KEPT_SEGMENTS, Launch, Profile, ProfileRuntime, RegistryError, Stopped, SweepReport, TAIL_ROWS,
+    locked, to_wire,
 };
-pub use serve::{InventorySubscription, MAX_PAGE, ServeError, Subscription};
-pub use sources::{InventoryHook, SourceHook, SourcePolicy, SourceVerdict};
+pub use serve::{MAX_PAGE, ServeError};
 pub use telemetry::Telemetry;
 pub use worktree::{GitWorktrees, MakeWorktree, WORKTREES};
 
@@ -105,9 +119,13 @@ pub use worktree::{GitWorktrees, MakeWorktree, WORKTREES};
 /// unstable: reachable only for test infrastructure, never for products.
 #[doc(hidden)]
 pub mod harness {
+    pub use agent_dir::SystemClock;
+
     pub use crate::auth::claims::Tier;
     pub use crate::discovery::{Advertisement, Discovery, DiscoveryEvent, ScriptedDiscovery};
-    pub use crate::identity::device_key_path;
+    pub use crate::identity::{device_key_path, host_id_path};
+    pub use crate::link::ByteStream;
+    pub use crate::link::relay_host::RelayHost;
     pub use crate::routing::{AuthenticatedLinkUser, LinkTokenAuthenticator, LiveRoute};
     pub use crate::transport::{
         relay_quic_client_config_with_roots, relay_quic_server_config_from_der,
@@ -129,6 +147,9 @@ pub use agent_dir::Clock;
 pub use auth::claims::Tier;
 pub use auth::oauth::{OAuthError, run_device_flow};
 pub use auth::{AccessToken, AuthError};
+pub use link::client_tickets::CLIENT_TICKETS_DIR;
+pub use link::resumption::{RELAY_TICKETS, SessionTickets, TICKETS_DIR};
+pub use link::validation::CLIENT_TOKENS_DIR;
 /// This binary's version, as stamped: the one it writes into every spec.
 pub use release::version;
 pub use transport::{TransportError, create_tls_acceptor, relay_quic_server_config};

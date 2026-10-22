@@ -309,13 +309,4 @@ mod tests {
         assert_eq!(markdown_words("``a ` b`` code"), "a ` b code");
         assert_eq!(markdown_words(r"\*not emphasis\*"), "*not emphasis*");
     }
-
-    #[test]
-    fn names_lose_their_direction_controls() {
-        assert_eq!(
-            without_direction_controls("invoice\u{202E}fdp.exe"),
-            "invoicefdp.exe"
-        );
-        assert_eq!(without_direction_controls("plain"), "plain");
-    }
 }

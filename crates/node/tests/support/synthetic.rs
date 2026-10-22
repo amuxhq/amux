@@ -23,9 +23,16 @@ use wire::{
 use super::{Install, PATIENCE, until};
 
 /// What daemons in these tests start with: nothing is ever spawned.
+/// The one file a synthetic agent sends as its part of a dump.
+pub const SYNTHETIC_PART: &str = "synthetic";
+
 pub fn quiet_launch() -> Launch {
     Launch {
         install_path: PathBuf::from("/nonexistent/amux"),
+        step_budget: daemon_core::StepBudget::TEST,
+        // An agent's core gets the daemon's test budget, for the same
+        // reason: a loaded debug-build run stretches ordinary steps.
+        agent_step_budget_micros: daemon_core::StepBudget::TEST.micros,
         ..Launch::default()
     }
 }
@@ -80,6 +87,8 @@ pub struct SyntheticAgent {
     /// Set while the agent holds every answer back.
     frozen: Arc<tokio::sync::watch::Sender<bool>>,
     cwd: PathBuf,
+    /// The directory's lock, taken before the agent answers dials.
+    held: Option<agent_dir::Lock>,
     live: Option<Live>,
 }
 
@@ -127,6 +136,7 @@ impl SyntheticAgent {
             wedged: Arc::new(tokio::sync::watch::Sender::new(false)),
             frozen: Arc::new(tokio::sync::watch::Sender::new(false)),
             cwd: install.work.clone(),
+            held: None,
             live: None,
         }
     }
@@ -200,7 +210,11 @@ impl SyntheticAgent {
 
     /// Writes the row through a running daemon's store.
     pub async fn register(&self, install: &Install, runtime: &ProfileRuntime) {
-        runtime.store().await.put_agent(&self.row(install)).unwrap();
+        let row = self.row(install);
+        runtime
+            .write_store_beneath(move |store| store.put_agent(&row).unwrap())
+            .await
+            .unwrap();
     }
 
     pub fn append(&mut self, step: &Step) -> u64 {
@@ -230,13 +244,27 @@ impl SyntheticAgent {
         .unwrap();
     }
 
-    /// Takes the directory's lock and answers dials with a Hello, as a
-    /// running agent process does.
+    /// Takes the directory's lock without answering dials yet, as a
+    /// process that is still starting does.
+    pub fn hold_lock(&mut self) {
+        assert!(self.held.is_none() && self.live.is_none(), "already locked");
+        self.held = Some(
+            agent_dir::lock(&self.dir)
+                .unwrap()
+                .expect("nothing else holds the lock"),
+        );
+    }
+
+    /// Takes the directory's lock, unless it holds it already, and answers
+    /// dials with a Hello, as a running agent process does.
     pub fn go_live(&mut self) {
         assert!(self.live.is_none(), "already live");
-        let lock = agent_dir::lock(&self.dir)
-            .unwrap()
-            .expect("nothing else holds the lock");
+        let lock = match self.held.take() {
+            Some(lock) => lock,
+            None => agent_dir::lock(&self.dir)
+                .unwrap()
+                .expect("nothing else holds the lock"),
+        };
         let mut listener = LocalListener::bind(&self.dir.join(agent_dir::CTL_SOCK)).unwrap();
         let conn = Arc::new(tokio::sync::Mutex::new(None));
         let reading = Arc::new(Mutex::new(None));
@@ -286,6 +314,23 @@ impl SyntheticAgent {
                                 frame = agent_dir::read_frame(&mut reader) => frame,
                             };
                             let Ok(Some(frame)) = frame else { break };
+                            if let Some(ctl_frame::Of::DumpRequest(asked)) = &frame.of {
+                                // Its part of the bundle, as an agent
+                                // process sends its facts ring.
+                                let part = CtlFrame {
+                                    of: Some(ctl_frame::Of::Dump(wire::DumpPart {
+                                        dump_id: asked.dump_id.clone(),
+                                        files: vec![wire::DumpFile {
+                                            name: SYNTHETIC_PART.to_owned(),
+                                            contents: b"a synthetic agent's part".to_vec(),
+                                        }],
+                                    })),
+                                };
+                                if let Some(writer) = conn.lock().await.as_mut() {
+                                    let _ = agent_dir::write_frame(writer, &part).await;
+                                }
+                                continue;
+                            }
                             let input = match frame.of {
                                 Some(ctl_frame::Of::Input(input)) => Handed::Input(input),
                                 Some(ctl_frame::Of::AgentMessage(envelope)) => {
@@ -322,6 +367,16 @@ impl SyntheticAgent {
     /// Tells the daemon the journal grew. Waits for a connection first.
     pub async fn nudge(&self) {
         self.send(ctl_frame::Of::Nudge(Nudge {})).await;
+    }
+
+    /// Asks the daemon for a dump as an agent's core does: for a broken
+    /// invariant, or for a step over its budget when `invariant` is empty.
+    pub async fn ask_for_dump(&self, reason: &str, invariant: &str) {
+        self.send(ctl_frame::Of::DumpAsked(wire::DumpAsked {
+            reason: reason.to_owned(),
+            invariant: invariant.to_owned(),
+        }))
+        .await;
     }
 
     /// Sends one frame to the daemon, once one is connected.

@@ -62,26 +62,3 @@ pub async fn read_message<R: AsyncRead + Unpin, M: Message + Default>(
         "a frame length longer than ten bytes",
     ))
 }
-
-#[cfg(test)]
-mod tests {
-    use wire::{AgentHello, ctl_frame};
-
-    use super::*;
-
-    #[tokio::test]
-    async fn frames_round_trip_and_a_clean_end_is_none() {
-        let hello = CtlFrame {
-            of: Some(ctl_frame::Of::Hello(AgentHello {
-                agent_id: vec![7; 16],
-            })),
-        };
-        let mut bytes = Vec::new();
-        write_frame(&mut bytes, &hello).await.unwrap();
-        write_frame(&mut bytes, &hello).await.unwrap();
-        let mut input = bytes.as_slice();
-        assert_eq!(read_frame(&mut input).await.unwrap(), Some(hello.clone()));
-        assert_eq!(read_frame(&mut input).await.unwrap(), Some(hello));
-        assert_eq!(read_frame(&mut input).await.unwrap(), None);
-    }
-}

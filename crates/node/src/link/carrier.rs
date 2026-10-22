@@ -1,6 +1,4 @@
-use std::future::Future;
 use std::io;
-use std::pin::Pin;
 
 use futures_util::future::BoxFuture;
 use prost::Message as _;
@@ -10,16 +8,12 @@ use wire::{self, pb};
 
 /// A bidirectional byte stream carried by a link.
 pub trait AsyncStream: AsyncRead + AsyncWrite + Send + Unpin {
-    /// Rejects an unopened stream, preserving the application refusal reason.
-    fn reset(&mut self, code: pb::StreamRefusal) -> BoxFuture<'_, io::Result<()>>;
-
-    /// Waits for the far end to accept a stream this end opened. A stream
-    /// is handed back as soon as its preface is written, so that the bytes
-    /// behind it leave in the same flight; an opener that must know the
-    /// answer before it sends, or wants a refusal's reason rather than a
-    /// failed read, waits here.
-    fn accepted(&mut self) -> BoxFuture<'_, Result<(), OpenError>> {
-        Box::pin(std::future::ready(Ok(())))
+    /// Abandons the stream both ways: the far end's reads and writes fail.
+    fn reset(&mut self);
+    /// Whether the far end opened the stream in early data, before the
+    /// link's handshake had finished.
+    fn arrived_early(&self) -> bool {
+        false
     }
 }
 
@@ -36,52 +30,33 @@ pub enum CarrierKind {
     Ssh,
 }
 
+impl CarrierKind {
+    /// The path a carrier of this kind runs on, where nothing more is
+    /// known: a QUIC link's address says whether it is on the same network.
+    pub fn path(self) -> super::link_log::PathKind {
+        use super::link_log::PathKind;
+        match self {
+            Self::Quic => PathKind::Direct,
+            Self::RelayQuic => PathKind::RelayUdp,
+            Self::RelayTcp => PathKind::RelayTcp,
+            Self::Ssh => PathKind::Ssh,
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum OpenError {
-    #[error("stream refused: {0:?}")]
-    Refused(pb::StreamRefusal),
     #[error("link closed")]
     LinkClosed,
     #[error("stream I/O failed: {0}")]
     Io(#[source] io::Error),
 }
 
-impl OpenError {
-    /// A refusal read from a stream that was not waited on, as the I/O
-    /// error it surfaces as there.
-    pub(crate) fn into_io(self) -> io::Error {
-        match self {
-            Self::Refused(reason) => {
-                io::Error::new(io::ErrorKind::ConnectionRefused, Self::Refused(reason))
-            }
-            Self::LinkClosed => io::Error::new(io::ErrorKind::NotConnected, Self::LinkClosed),
-            Self::Io(error) => error,
-        }
-    }
-
-    /// The refusal an I/O error carries, if it was one.
-    pub(crate) fn refusal(error: &io::Error) -> Option<pb::StreamRefusal> {
-        match Self::carried(error) {
-            Some(Self::Refused(reason)) => Some(*reason),
-            _ => None,
-        }
-    }
-
-    /// What an I/O error from a stream that was not waited on says about
-    /// its open, if that is what it says.
-    pub(crate) fn carried(error: &io::Error) -> Option<&Self> {
-        error.get_ref()?.downcast_ref::<Self>()
-    }
-}
-
 pub trait LinkCarrier: Send + Sync + 'static {
     fn kind(&self) -> CarrierKind;
     fn control(&self) -> (ControlSink, ControlSource);
-    fn open_stream(
-        &self,
-        preface: pb::StreamPreface,
-    ) -> BoxFuture<'_, Result<ByteStream, OpenError>>;
-    fn accept_stream(&self) -> BoxFuture<'_, Option<(pb::StreamPreface, ByteStream)>>;
+    fn open_stream(&self) -> BoxFuture<'_, Result<ByteStream, OpenError>>;
+    fn accept_stream(&self) -> BoxFuture<'_, Option<ByteStream>>;
     fn close(&self, reason: pb::LinkCloseReason);
     fn closed(&self) -> BoxFuture<'_, pb::LinkCloseReason>;
     /// Why the connection closed, if it has: read at once, for a link
@@ -89,8 +64,33 @@ pub trait LinkCarrier: Send + Sync + 'static {
     fn close_reason(&self) -> Option<pb::LinkCloseReason> {
         None
     }
+    /// The path the link's packets take, as the link log names it.
+    fn path_kind(&self) -> super::link_log::PathKind {
+        self.kind().path()
+    }
+    /// What became of the data the link sent before its handshake
+    /// finished: none was sent unless the dial resumed with a ticket.
+    fn early_data(&self) -> super::link_log::EarlyData {
+        super::link_log::EarlyData::None
+    }
+    /// The forwarding link a link through a forwarder is carried on: it
+    /// has no other path, so it ends when that link does.
+    fn forwarded_through(&self) -> Option<daemon_core::LinkId> {
+        None
+    }
     /// What the carrier's path has seen so far, for the link's logs: round
     /// trip, losses, packets. Empty where the carrier keeps no such count.
+    /// The address the far end's packets arrive from, as this side's QUIC
+    /// endpoint sees it: on a link socket, the far end's stand-in.
+    fn remote_address(&self) -> Option<std::net::SocketAddr> {
+        None
+    }
+    /// Whether the far end dialled this link. Its address is then the one
+    /// the far end sends from, and moves when the far end's network does.
+    fn accepted(&self) -> bool {
+        false
+    }
+
     fn path_stats(&self) -> String {
         String::new()
     }
@@ -143,5 +143,3 @@ pub async fn write_message(sink: &mut ControlSink, message: &pb::Message) -> io:
 pub async fn read_message(source: &mut ControlSource) -> io::Result<Option<pb::Message>> {
     source.rx.recv().await.transpose()
 }
-
-pub(super) type BoxIoFuture<'a, T> = Pin<Box<dyn Future<Output = io::Result<T>> + Send + 'a>>;

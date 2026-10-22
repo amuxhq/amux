@@ -7,7 +7,7 @@ use std::path::Path;
 
 use rusqlite::{Connection, TransactionBehavior, params};
 
-use crate::migrations::{MIGRATIONS, SCHEMA_STAMP, migration_hash};
+use crate::migrations::{MIGRATIONS, SCHEMA_STAMP, shipped_hash};
 use crate::retention::{self, Sweep};
 use crate::rows::{self, ABSORBED, COMMITTED, Rows};
 use crate::{
@@ -37,9 +37,13 @@ pub enum OpenError {
 }
 
 pub struct Sqlite {
-    conn: Connection,
-    own_host: Vec<u8>,
-    markers: HashMap<AgentKey, Marker>,
+    pub(crate) conn: Connection,
+    pub(crate) own_host: Vec<u8>,
+    pub(crate) markers: HashMap<AgentKey, Marker>,
+    /// How many resets each replica row has absorbed since the store
+    /// opened: what a replica that was told to forget its block went
+    /// through, for the checks that judge it.
+    pub(crate) resets: HashMap<AgentKey, u64>,
 }
 
 impl std::fmt::Debug for Sqlite {
@@ -50,6 +54,10 @@ impl std::fmt::Debug for Sqlite {
     }
 }
 
+/// How long a clean shutdown's flush waits out a checkpoint another
+/// connection is taking.
+const FLUSH_PATIENCE: std::time::Duration = std::time::Duration::from_secs(2);
+
 impl Sqlite {
     /// Opens or creates the profile store at `path` for the host whose own
     /// rows it holds, applying any migrations it lacks. A store whose
@@ -57,6 +65,13 @@ impl Sqlite {
     pub fn open(path: &Path, own_host: impl Into<Vec<u8>>) -> Result<Self, OpenError> {
         let conn = Connection::open(path)?;
         Self::with_connection(conn, &path.display().to_string(), own_host.into())
+    }
+
+    /// A store with the same schema that lives only in memory: gone when
+    /// it is dropped, for exploring the store's own transitions.
+    pub fn open_in_memory(own_host: impl Into<Vec<u8>>) -> Result<Self, OpenError> {
+        let conn = Connection::open_in_memory()?;
+        Self::with_connection(conn, ":memory:", own_host.into())
     }
 
     fn with_connection(
@@ -71,6 +86,7 @@ impl Sqlite {
             conn,
             own_host,
             markers: HashMap::new(),
+            resets: HashMap::new(),
         })
     }
 
@@ -80,18 +96,37 @@ impl Sqlite {
         &self.conn
     }
 
+    /// Turns SQLite's own WAL checkpoints off, leaving every one to whoever
+    /// owns the store: a commit never moves the WAL into the main file, so
+    /// the main file changes only at a checkpoint its owner asked for.
+    pub fn leave_checkpoints_to_owner(&self) -> Result<(), rusqlite::Error> {
+        self.conn.pragma_update(None, "wal_autocheckpoint", 0)
+    }
+
     /// Moves every committed transaction from the WAL into the database
     /// file and flushes it to the drive itself (fullfsync, which macOS
     /// needs for a flush to pass the drive's cache). Commits are otherwise
     /// not synced, so this is what a clean shutdown promises before it
-    /// marks the installation clean.
+    /// marks the installation clean. A checkpoint on another connection
+    /// (the owner's passive one, running as a job) holds the checkpoint
+    /// lock while it copies, so a busy checkpoint is tried again for up to
+    /// two seconds.
     pub fn flush_to_drive(&self) -> Result<(), rusqlite::Error> {
         self.conn.pragma_update(None, "fullfsync", true)?;
-        let checkpoint = self
-            .conn
-            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
-                row.get::<_, i64>(0)
-            });
+        let started = std::time::Instant::now();
+        let checkpoint = loop {
+            let checkpoint = self
+                .conn
+                .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+                    row.get::<_, i64>(0)
+                });
+            match checkpoint {
+                Ok(busy) if busy != 0 && started.elapsed() < FLUSH_PATIENCE => {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                checkpoint => break checkpoint,
+            }
+        };
         let restored = self.conn.pragma_update(None, "fullfsync", false);
         match checkpoint? {
             0 => restored,
@@ -100,6 +135,48 @@ impl Sqlite {
                 Some("a reader held the WAL through the checkpoint".into()),
             )),
         }
+    }
+
+    /// Moves every transaction committed to the WAL of the store at `path`
+    /// into its main file, on a connection of its own and without waiting
+    /// for a writer: the passive checkpoint, which the store's owner runs
+    /// off its own thread while the store stays open there. The main file
+    /// is synced once the checkpoint completes, so on success it holds
+    /// exactly what was committed before the call; with SQLite's own
+    /// checkpoints left to the owner, it changes again only at the owner's
+    /// next one. One that cannot move the whole WAL, or cannot run at all
+    /// because another connection is checkpointing, fails as busy.
+    pub fn checkpoint_wal(path: &Path) -> Result<(), rusqlite::Error> {
+        let conn = Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        // SQLite answers busy, the WAL's pages and the pages moved; a
+        // checkpoint that could not run at all, because another connection
+        // holds the checkpoint lock, answers busy with both counts -1.
+        let (busy, log, checkpointed) =
+            conn.query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            })?;
+        if busy != 0 || log < 0 || checkpointed < log {
+            return Err(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+                Some(format!(
+                    "the checkpoint moved {checkpointed} of the WAL's {log} pages (busy {busy})"
+                )),
+            ));
+        }
+        Ok(())
+    }
+
+    /// How many rows this store's writes have changed since it opened: a
+    /// count that moves whenever a write was made.
+    pub fn changes(&self) -> u64 {
+        self.conn.total_changes()
     }
 }
 
@@ -130,9 +207,8 @@ fn migrate(conn: &mut Connection, name: &str) -> Result<(), OpenError> {
     // carries a higher stamp than this build knows, and is the past, not
     // the future.
     for (id, hash) in &applied {
-        if let Some(text) = MIGRATIONS.get(*id as usize - 1)
-            && migration_hash(text) != *hash
-        {
+        let index = (*id as usize).wrapping_sub(1);
+        if index < MIGRATIONS.len() && shipped_hash(index) != hash {
             return Err(OpenError::EditedMigration {
                 path: name.into(),
                 id: *id,
@@ -154,7 +230,7 @@ fn migrate(conn: &mut Connection, name: &str) -> Result<(), OpenError> {
         tx.execute_batch(text)?;
         tx.execute(
             "INSERT INTO schema_migrations (id, sha256) VALUES (?1, ?2)",
-            params![id, migration_hash(text)],
+            params![id, shipped_hash(index)],
         )?;
         tx.pragma_update(None, "application_id", APPLICATION_ID)?;
         let current: u32 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
@@ -165,7 +241,7 @@ fn migrate(conn: &mut Connection, name: &str) -> Result<(), OpenError> {
 }
 
 /// The lowest order the block counts from.
-fn block_floor(row: &AgentRow, own: bool) -> Option<u64> {
+pub(crate) fn block_floor(row: &AgentRow, own: bool) -> Option<u64> {
     match (own, row.complete_from_order) {
         (_, Some(order)) => Some(order),
         (true, None) => Some(0),
@@ -205,7 +281,10 @@ fn last_n(rows: &Rows<'_>, agent: &AgentKey, n: u32) -> Result<Vec<Item>, StoreE
 impl Sqlite {
     /// Runs `f` in one read transaction: every read inside sees one commit
     /// point.
-    fn read<R>(&self, f: impl FnOnce(&Rows<'_>) -> Result<R, StoreError>) -> Result<R, StoreError> {
+    pub(crate) fn read<R>(
+        &self,
+        f: impl FnOnce(&Rows<'_>) -> Result<R, StoreError>,
+    ) -> Result<R, StoreError> {
         let tx = self.conn.unchecked_transaction()?;
         let result = f(&Rows {
             conn: &tx,
@@ -236,7 +315,7 @@ impl Sqlite {
         &self.own_host
     }
 
-    fn is_own(&self, agent: &AgentKey) -> bool {
+    pub(crate) fn is_own(&self, agent: &AgentKey) -> bool {
         agent.host == self.own_host
     }
 
@@ -419,6 +498,7 @@ impl Sqlite {
     /// Removes an agent whole: row, items, deliveries and notifications.
     pub fn delete_agent(&mut self, agent: &AgentKey) -> Result<(), StoreError> {
         self.markers.remove(agent);
+        self.resets.remove(agent);
         self.write(|rows| rows.remove_agent(agent))
     }
 
@@ -459,9 +539,13 @@ impl Sqlite {
             Absorb::Reset { .. } => Some(None),
             _ => None,
         };
+        let reset = matches!(what, Absorb::Reset { .. });
         let absorbed = self.write(|rows| absorb(rows, agent, what))?;
         if let Some(marker) = marker {
             self.set_marker(agent, marker);
+        }
+        if reset {
+            *self.resets.entry(agent.clone()).or_default() += 1;
         }
         Ok(absorbed)
     }
@@ -501,6 +585,7 @@ impl Sqlite {
         let sweep = self.write(|rows| retention::sweep_own(rows, budget, chunk, floor_k))?;
         for agent in &sweep.removed {
             self.markers.remove(agent);
+            self.resets.remove(agent);
         }
         Ok(sweep)
     }
@@ -523,6 +608,7 @@ impl Sqlite {
             .write(|rows| retention::sweep_replicas(rows, budget, floor_k, sourced, last_used))?;
         for agent in &sweep.removed {
             self.markers.remove(agent);
+            self.resets.remove(agent);
         }
         Ok(sweep)
     }

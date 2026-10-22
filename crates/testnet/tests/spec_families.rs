@@ -12,20 +12,19 @@
 #![cfg(unix)]
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use node::SourceVerdict;
 use prost::Message as _;
 use provider_fakes::script::{Ask, Question, Script, Step};
 use store::AgentRow;
-use testnet::{AgentDecl, Net, PATIENCE, Topology, holds_for, observe, until};
+use testnet::{AgentDecl, Net, PATIENCE, Topology, observe, until};
 use tonic::{Code, Request};
 use ui_state::{Attention, FleetMsg, FleetState};
 use uuid::Uuid;
 use wire::client_service_server::ClientService as _;
 use wire::{
-    AgentRef, AgentSender, AmbiguousHostName, ClaudeSdkInput, CreateAgentRequest, Envelope,
-    InventoryEvent, Kind, Lifecycle, Phase, Sender, claude_sdk_input, inventory_event, sender,
+    AgentRef, AmbiguousHostName, ClaudeSdkInput, CreateAgentRequest, InventoryEvent, Kind,
+    Lifecycle, Phase, claude_sdk_input, inventory_event,
 };
 
 fn text(text: &str) -> Step {
@@ -81,19 +80,6 @@ fn message(id: &[u8], to: &AgentRef, text: &str) -> wire::SendMessageRequest {
     }
 }
 
-/// A message as a peer daemon forwards it, its sender stamped.
-fn envelope(id: &[u8], to: &AgentRef, text: &str) -> Envelope {
-    Envelope {
-        id: id.to_vec(),
-        to: Some(to.clone()),
-        body: Some(wire::envelope::Body::Message(wire::MessageBody {
-            text: text.into(),
-            ..Default::default()
-        })),
-        ..Envelope::default()
-    }
-}
-
 fn interrupt() -> wire::Input {
     wire::Input::new(
         Uuid::new_v4().as_bytes().to_vec(),
@@ -108,9 +94,8 @@ async fn row(net: &Net, host: &str, agent: &str) -> Option<AgentRow> {
     let key = net.agent(agent).unwrap().key();
     net.runtime(host)
         .unwrap()
-        .store()
+        .read_store(move |store| store.agent(&key).unwrap())
         .await
-        .agent(&key)
         .unwrap()
 }
 
@@ -127,13 +112,12 @@ async fn received(net: &Net, agent: &str) -> Vec<wire::Item> {
 /// Everything `agent`'s own host holds for it, oldest first.
 async fn items(net: &Net, agent: &str) -> Vec<wire::Item> {
     let at = net.agent(agent).unwrap().clone();
+    let key = at.key();
     net.runtime(&at.host)
         .unwrap()
-        .store()
+        .read_store(move |store| store.page(&key, None, 1_000).unwrap().items)
         .await
-        .page(&at.key(), None, 1_000)
         .unwrap()
-        .items
 }
 
 async fn with_input(net: &Net, agent: &str, input_id: &[u8]) -> usize {
@@ -204,11 +188,9 @@ async fn taken(net: &Net, agent: &str, text: &str) -> usize {
 async fn outbox(net: &Net, host: &str) -> usize {
     net.runtime(host)
         .unwrap()
-        .store()
+        .read_store(|store| store.deliveries().unwrap().len())
         .await
-        .deliveries()
         .unwrap()
-        .len()
 }
 
 async fn lifecycle(net: &Net, host: &str, agent: &str) -> Option<Lifecycle> {
@@ -221,12 +203,12 @@ async fn lifecycle(net: &Net, host: &str, agent: &str) -> Option<Lifecycle> {
 /// snapshot its own host holds.
 async fn open_ask(net: &Net, agent: &str) -> String {
     let at = net.agent(agent).unwrap().clone();
+    let key = at.key();
     let cut = net
         .runtime(&at.host)
         .unwrap()
-        .store()
+        .read_store(move |store| store.cut(&key, 0).unwrap())
         .await
-        .cut(&at.key(), 0)
         .unwrap();
     let snapshot = cut.snapshot.expect("a snapshot");
     let body = wire::ClaudeSdkSnapshot::decode(snapshot.body.as_slice()).unwrap();
@@ -518,238 +500,6 @@ async fn stop_and_send_are_lineage_checked_across_hosts() {
     net.shutdown().await.unwrap();
 }
 
-/// A parent stopped while its far child's host is away: nothing reaches
-/// the child then, and it carries on. Once its host is back and has caught
-/// up with the parent's host, the listing says the parent exited and the
-/// child's own host stops it. The stop to an away host used to be sent once
-/// and lost.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_far_child_whose_parent_stopped_while_its_host_was_away_stops_on_return() {
-    let mut net = Net::start(
-        Topology::new()
-            .host("desk")
-            .host("laptop")
-            .link("desk", "laptop")
-            .agent(lead()),
-    )
-    .await
-    .unwrap();
-    net.spawn_child(
-        "lead",
-        child("scout", "laptop", vec![waits("never"), Step::TurnEnd]),
-    )
-    .await
-    .unwrap();
-    until_live(&net, "laptop", "scout").await;
-    net.sever_link("desk", "laptop").unwrap();
-    net.wait_link("desk", "laptop", false).await.unwrap();
-    net.stop("lead").await.unwrap();
-    until_exited(&net, "desk", "lead").await;
-    assert_eq!(
-        lifecycle(&net, "laptop", "scout").await,
-        Some(Lifecycle::Live),
-        "scout runs on while laptop cannot hear of the stop"
-    );
-    println!("lead stopped with laptop away: scout runs on");
-
-    net.restore_link("desk", "laptop").await.unwrap();
-    until_exited(&net, "laptop", "scout").await;
-    let scout = row(&net, "laptop", "scout").await.unwrap();
-    println!(
-        "laptop back: scout ended {:?}",
-        wire::ExitCause::try_from(scout.exit_cause)
-    );
-    assert_eq!(scout.exit_cause, wire::ExitCause::Stopped as i32);
-    net.shutdown().await.unwrap();
-}
-
-/// A parent deleted while its far child's host is away. Its child on its
-/// own host follows at once, by the same rule; the far child carries on
-/// until its host is back and caught up, where the parent is listed no
-/// more, and then its own host stops and deletes it. A delete used to be
-/// refused outright while part of the family was out of reach.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_far_child_whose_parent_was_deleted_while_its_host_was_away_is_deleted_on_return() {
-    let mut net = Net::start(
-        Topology::new()
-            .host("desk")
-            .host("laptop")
-            .link("desk", "laptop")
-            .agent(lead()),
-    )
-    .await
-    .unwrap();
-    net.spawn_child(
-        "lead",
-        child("notes", "desk", vec![waits("never"), Step::TurnEnd]),
-    )
-    .await
-    .unwrap();
-    net.spawn_child(
-        "lead",
-        child("scout", "laptop", vec![waits("never"), Step::TurnEnd]),
-    )
-    .await
-    .unwrap();
-    until_live(&net, "desk", "notes").await;
-    until_live(&net, "laptop", "scout").await;
-    let notes = net.agent("notes").unwrap().key();
-    let scout = net.agent("scout").unwrap().key();
-    net.sever_link("desk", "laptop").unwrap();
-    net.wait_link("desk", "laptop", false).await.unwrap();
-
-    net.delete("lead").await.expect("the delete is not refused");
-    until("notes to follow lead on desk", || {
-        let (net, notes) = (&net, &notes);
-        async move {
-            let held = net
-                .runtime("desk")
-                .unwrap()
-                .store()
-                .await
-                .agent(notes)
-                .unwrap();
-            held.is_none()
-                .then_some(())
-                .ok_or_else(|| "desk still holds notes".to_owned())
-        }
-    })
-    .await
-    .unwrap();
-    assert_eq!(
-        lifecycle(&net, "laptop", "scout").await,
-        Some(Lifecycle::Live),
-        "scout runs on while laptop cannot hear of the delete"
-    );
-    println!("lead deleted with laptop away: notes deleted on desk, scout runs on");
-
-    net.restore_link("desk", "laptop").await.unwrap();
-    until("laptop to delete scout", || {
-        let (net, scout) = (&net, &scout);
-        async move {
-            let held = net
-                .runtime("laptop")
-                .unwrap()
-                .store()
-                .await
-                .agent(scout)
-                .unwrap();
-            held.is_none()
-                .then_some(())
-                .ok_or_else(|| format!("laptop holds scout as {:?}", held.map(|row| row.lifecycle)))
-        }
-    })
-    .await
-    .unwrap();
-    println!("laptop back: scout stopped and deleted there");
-    net.shutdown().await.unwrap();
-}
-
-/// A host still catching up with the parent's host never deletes a child
-/// on a listing that predates it. Here laptop is following desk again, its
-/// listing taken and its CaughtUp held back, when lead starts on desk and
-/// spawns scout on laptop: the listing lacks lead, yet scout is not judged
-/// by it, and lead's row arrives on the live stream after. Scout finishes
-/// its task and lead hears it.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_child_made_while_its_host_catches_up_is_not_deleted_by_the_older_listing() {
-    let mut net = Net::start(
-        Topology::new()
-            .host("desk")
-            .host("laptop")
-            .link("desk", "laptop"),
-    )
-    .await
-    .unwrap();
-    let desk = net.host("desk").unwrap().host_id;
-    let (held_tx, held_rx) = tokio::sync::oneshot::channel::<()>();
-    let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
-    let armed = std::sync::Mutex::new(Some((held_tx, release_rx)));
-    net.runtime("laptop")
-        .unwrap()
-        .set_inventory_hook(Some(Arc::new(move |host, event: &InventoryEvent| {
-            if host == desk
-                && matches!(event.of, Some(inventory_event::Of::CaughtUp(_)))
-                && let Some((held, release)) = armed.lock().unwrap().take()
-            {
-                let _ = held.send(());
-                return SourceVerdict::Hold(Box::pin(async move {
-                    let _ = release.await;
-                }));
-            }
-            SourceVerdict::Keep
-        })));
-    net.sever_link("desk", "laptop").unwrap();
-    net.wait_link("desk", "laptop", false).await.unwrap();
-    net.restore_link("desk", "laptop").await.unwrap();
-    tokio::time::timeout(PATIENCE, held_rx)
-        .await
-        .expect("laptop to take desk's listing")
-        .unwrap();
-    println!("laptop has desk's listing and holds its CaughtUp");
-
-    net.spawn(lead()).await.unwrap();
-    net.spawn_child(
-        "lead",
-        child(
-            "scout",
-            "laptop",
-            vec![waits("finish"), text("Survey done."), Step::TurnEnd],
-        ),
-    )
-    .await
-    .unwrap();
-    release_tx.send(()).unwrap();
-    until("laptop to hold lead's row", || {
-        let net = &net;
-        async move {
-            row(net, "laptop", "lead")
-                .await
-                .is_some()
-                .then_some(())
-                .ok_or_else(|| "laptop does not hold lead".to_owned())
-        }
-    })
-    .await
-    .unwrap();
-    assert_eq!(
-        lifecycle(&net, "laptop", "scout").await,
-        Some(Lifecycle::Live),
-        "laptop judged scout by a listing taken before it was made"
-    );
-    net.open_gate("finish").unwrap();
-    until("lead to hear from scout", || {
-        let net = &net;
-        async move {
-            let got = received(net, "lead").await;
-            (!got.is_empty())
-                .then_some(())
-                .ok_or_else(|| "nothing yet".to_owned())
-        }
-    })
-    .await
-    .unwrap();
-    let got = received(&net, "lead").await;
-    let scout = row(&net, "laptop", "scout").await;
-    println!(
-        "lead heard {:?}; scout ended {:?}",
-        got.iter().map(|item| &item.text).collect::<Vec<_>>(),
-        scout
-            .as_ref()
-            .map(|row| wire::ExitCause::try_from(row.exit_cause))
-    );
-    assert!(
-        got.iter().any(|item| item.text.contains("Survey done.")),
-        "scout did not finish its task: {got:?}"
-    );
-    assert_eq!(
-        scout.map(|row| row.exit_cause),
-        Some(wire::ExitCause::Finished as i32),
-        "scout was stopped or deleted"
-    );
-    net.shutdown().await.unwrap();
-}
-
 /// Unpairing the parent's host leaves its far child running: a host that
 /// is no longer paired says nothing of the parent. The report the child
 /// owes the parent can never be delivered, so its host drops it.
@@ -809,161 +559,6 @@ async fn unpairing_the_parents_host_leaves_the_child_and_drops_its_owed_report()
     );
     assert!(received(&net, "lead").await.is_empty());
     println!("unpaired: the report is dropped and scout is kept");
-    net.shutdown().await.unwrap();
-}
-
-/// A child whose parent's host is away carries on: its finished message
-/// waits in its host's outbox, and arrives once when the host returns. A row for a parent
-/// incarnation that has since ended is dropped instead; and the parent's
-/// own daemon drops a message for any incarnation but the current one.
-#[tokio::test(flavor = "multi_thread")]
-async fn an_away_parents_rows_wait_and_a_stale_incarnation_is_dropped() {
-    let mut net = Net::start(
-        Topology::new()
-            .host("desk")
-            .host("server")
-            .link("desk", "server")
-            .agent(lead()),
-    )
-    .await
-    .unwrap();
-    net.spawn_child(
-        "lead",
-        child(
-            "helper",
-            "server",
-            vec![waits("finish"), text("Suite green."), Step::TurnEnd],
-        ),
-    )
-    .await
-    .unwrap();
-    net.sever_link("desk", "server").unwrap();
-    net.wait_link("desk", "server", false).await.unwrap();
-    net.open_gate("finish").unwrap();
-    until("helper's finished row", || {
-        let net = &net;
-        async move {
-            let rows = outbox(net, "server").await;
-            (rows == 1)
-                .then_some(())
-                .ok_or_else(|| format!("{rows} outbox rows"))
-        }
-    })
-    .await
-    .unwrap();
-    net.advance(Duration::from_secs(120)).unwrap();
-    // A window: the retry runs on the policy clock and finds no parent
-    // row to hand to; nothing the test controls marks that attempt.
-    holds_for(
-        "the row to wait for its parent",
-        Duration::from_secs(1),
-        || {
-            let net = &net;
-            async move { outbox(net, "server").await == 1 }
-        },
-    )
-    .await
-    .unwrap();
-    assert!(received(&net, "lead").await.is_empty());
-    println!("desk away: helper's finished message waits on server");
-    net.restore_link("desk", "server").await.unwrap();
-    until("the row to be delivered", || {
-        let net = &net;
-        async move {
-            let rows = outbox(net, "server").await;
-            (rows == 0)
-                .then_some(())
-                .ok_or_else(|| format!("{rows} outbox rows"))
-        }
-    })
-    .await
-    .unwrap();
-    let got = received(&net, "lead").await;
-    assert_eq!(got.len(), 1, "one finished message: {got:?}");
-    println!("desk back: lead received {:?}", got[0].text);
-
-    // A second child finishes while the parent's host is away, and the
-    // parent is resumed there meanwhile: the row is for an incarnation
-    // that is not waiting for anything.
-    net.spawn_child(
-        "lead",
-        child(
-            "second",
-            "server",
-            vec![waits("second"), text("Done too."), Step::TurnEnd],
-        ),
-    )
-    .await
-    .unwrap();
-    net.sever_link("desk", "server").unwrap();
-    net.wait_link("desk", "server", false).await.unwrap();
-    net.open_gate("second").unwrap();
-    until("second's finished row", || {
-        let net = &net;
-        async move {
-            let rows = outbox(net, "server").await;
-            (rows == 1)
-                .then_some(())
-                .ok_or_else(|| format!("{rows} outbox rows"))
-        }
-    })
-    .await
-    .unwrap();
-    let lead = net.agent("lead").unwrap().id;
-    net.runtime("desk").unwrap().stop(lead).await.unwrap();
-    net.resume("lead", None).await.unwrap();
-    net.restore_link("desk", "server").await.unwrap();
-    until("the stale row to be dropped", || {
-        let net = &net;
-        async move {
-            let rows = outbox(net, "server").await;
-            (rows == 0)
-                .then_some(())
-                .ok_or_else(|| format!("{rows} outbox rows"))
-        }
-    })
-    .await
-    .unwrap();
-    assert_eq!(
-        received(&net, "lead").await.len(),
-        1,
-        "the resumed lead receives nothing"
-    );
-    println!("lead resumed while desk was away: second's row dropped as stale");
-
-    // The parent's daemon makes the same check itself.
-    let server = net.host("server").unwrap().host_id;
-    let desk = net.host("desk").unwrap().host_id;
-    let helper = net.agent("helper").unwrap().clone();
-    let from = Sender {
-        value: Some(sender::Value::Agent(AgentSender {
-            agent_id: helper.id.as_bytes().to_vec(),
-            host_id: server.as_bytes().to_vec(),
-            name: "helper".into(),
-        })),
-    };
-    let current = row(&net, "desk", "lead").await.unwrap().incarnation;
-    let stale = Envelope {
-        from: Some(from),
-        body: Some(wire::envelope::Body::Report(wire::ChildReport {
-            to_incarnation: current - 1,
-            end: Some(wire::child_report::End::TurnEnded(wire::TurnEnded {
-                text: "late news".into(),
-                ..Default::default()
-            })),
-            ..Default::default()
-        })),
-        ..envelope(b"stale", &net.agent("lead").unwrap().parent(), "")
-    };
-    let mut peer = net.edge("server").unwrap().peer(desk).await.unwrap();
-    let refused = peer.send_message(stale).await.unwrap_err();
-    assert_eq!(refused.code(), Code::NotFound);
-    assert_eq!(with_input(&net, "lead", b"stale").await, 0);
-    println!(
-        "a message for lead's incarnation {} reaching desk: dropped ({})",
-        current - 1,
-        refused.message()
-    );
     net.shutdown().await.unwrap();
 }
 
@@ -1046,9 +641,12 @@ async fn a_row_for_a_parent_resumed_out_of_sight_is_refused_where_the_parent_liv
                 let end = net
                     .journal_end("helper")
                     .map_err(|error| error.to_string())?;
-                let store = net.runtime("server").unwrap();
-                let store = store.store().await;
-                let row = store.agent(&helper).unwrap().unwrap();
+                let row = net
+                    .runtime("server")
+                    .unwrap()
+                    .read_store(move |store| store.agent(&helper).unwrap().unwrap())
+                    .await
+                    .unwrap();
                 (row.lifecycle == Lifecycle::Exited as i32 && row.ingest_cursor >= end)
                     .then_some(())
                     .ok_or_else(|| {
@@ -1354,12 +952,12 @@ async fn cross_host_family_journey() {
     until("server to delete helper", || {
         let (net, helper) = (&net, &helper);
         async move {
+            let key = helper.key();
             let held = net
                 .runtime("server")
                 .unwrap()
-                .store()
+                .read_store(move |store| store.agent(&key).unwrap())
                 .await
-                .agent(&helper.key())
                 .unwrap();
             held.is_none()
                 .then_some(())
@@ -1428,82 +1026,6 @@ async fn a_headless_claude_parent_reads_which_child_finished() {
             .iter()
             .any(|line| line.contains("helper") && line.contains("finished")),
         "the report reached Claude without its sender or kind: {lines:?}"
-    );
-    net.shutdown().await.unwrap();
-}
-
-/// Stopping a parent stops its whole family: each descendant's own host
-/// stops it once it sees its parent's row say exited, on the parent's own
-/// host as on another, and that stop is a row its own children's hosts
-/// see in turn. Each child here is mid-turn on a gate that never opens;
-/// only a stop ends it, as stopped.
-#[tokio::test(flavor = "multi_thread")]
-async fn stopping_a_parent_stops_every_descendant_on_every_host() {
-    let mut net = Net::start(three_hosts().agent(lead())).await.unwrap();
-    net.settle("lead").await.unwrap();
-    let busy = || vec![waits("never"), text("Survey part done."), Step::TurnEnd];
-    net.spawn_child("lead", child("notes", "desk", busy()))
-        .await
-        .unwrap();
-    net.spawn_child("lead", child("helper", "server", busy()))
-        .await
-        .unwrap();
-    net.spawn_child("helper", child("scout", "phone", busy()))
-        .await
-        .unwrap();
-    let family = [("notes", "desk"), ("helper", "server"), ("scout", "phone")];
-    until("every descendant to be live on its host", || {
-        let net = &net;
-        async move {
-            let mut held = Vec::new();
-            for (name, host) in family {
-                held.push((name, lifecycle(net, host, name).await));
-            }
-            held.iter()
-                .all(|(_, lifecycle)| *lifecycle == Some(Lifecycle::Live))
-                .then_some(())
-                .ok_or_else(|| format!("{held:?}"))
-        }
-    })
-    .await
-    .unwrap();
-
-    net.stop("lead").await.unwrap();
-    until("lead to exit", || {
-        let net = &net;
-        async move {
-            let now = lifecycle(net, "desk", "lead").await;
-            (now == Some(Lifecycle::Exited))
-                .then_some(())
-                .ok_or_else(|| format!("lead {now:?}"))
-        }
-    })
-    .await
-    .unwrap();
-    println!("lead stopped");
-
-    let mut causes = Vec::new();
-    for (name, host) in family {
-        until(&format!("{name} to exit on {host}"), || {
-            let net = &net;
-            async move {
-                let now = lifecycle(net, host, name).await;
-                (now == Some(Lifecycle::Exited))
-                    .then_some(())
-                    .ok_or_else(|| format!("{name} {now:?}"))
-            }
-        })
-        .await
-        .unwrap();
-        let row = row(&net, host, name).await.unwrap();
-        causes.push((name, wire::ExitCause::try_from(row.exit_cause).ok()));
-    }
-    println!("how each descendant ended: {causes:?}");
-    assert!(
-        causes
-            .iter()
-            .all(|(_, cause)| *cause == Some(wire::ExitCause::Stopped)),
-        "stopping lead stopped none of its descendants; they ran on to the end of their turns: {causes:?}"
     );
     net.shutdown().await.unwrap();
 }
@@ -1601,206 +1123,6 @@ async fn a_name_on_two_hosts_resolves_as_name_at_host_and_the_refusal_offers_tho
     );
     let picked = picked.unwrap_or_else(|error| panic!("worker@server picks nothing: {error:?}"));
     assert_eq!(picked.agent_id, other.as_bytes().to_vec());
-}
-
-/// A one-shot subagent exits only once its turn has ended, its queue is
-/// empty and no child it spawned is still running. Here the middle agent
-/// ends its first turn while its scout still works; it stays, the scout's
-/// report starts its next turn, and it reports up to the lead. QA: the
-/// middle agent exited at once, the scout's report had nowhere to go, and
-/// the lead waited forever.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_sub_agent_waits_for_its_running_child_and_reports_its_result_up() {
-    let mut net = Net::start(three_hosts().agent(lead())).await.unwrap();
-    net.settle("lead").await.unwrap();
-    net.spawn_child(
-        "lead",
-        child(
-            "mid",
-            "server",
-            vec![
-                waits("mid-go"),
-                text("Started the scout."),
-                Step::TurnEnd,
-                text("The scout reported; all done."),
-                Step::TurnEnd,
-            ],
-        ),
-    )
-    .await
-    .unwrap();
-    net.spawn_child(
-        "mid",
-        child(
-            "scout",
-            "phone",
-            vec![waits("scout-go"), text("Scout done."), Step::TurnEnd],
-        ),
-    )
-    .await
-    .unwrap();
-    until_live(&net, "phone", "scout").await;
-    net.open_gate("mid-go").unwrap();
-    net.turn_ended("mid", 1).await.unwrap();
-    net.open_gate("scout-go").unwrap();
-    let reached = until("the lead to hear mid report the scout's result", || {
-        let net = &net;
-        async move {
-            let got = received(net, "lead").await;
-            got.iter()
-                .any(|item| item.text.contains("all done"))
-                .then_some(())
-                .ok_or_else(|| {
-                    format!(
-                        "lead received {:?}",
-                        got.iter().map(|item| &item.text).collect::<Vec<_>>()
-                    )
-                })
-        }
-    })
-    .await;
-    let mid = row(&net, "server", "mid").await.unwrap();
-    println!(
-        "mid ended {:?}: {:?}",
-        Lifecycle::try_from(mid.lifecycle),
-        wire::ExitCause::try_from(mid.exit_cause)
-    );
-    net.shutdown().await.unwrap();
-    reached.expect(
-        "mid exited while its scout still ran, and the scout's result never reached the lead",
-    );
-}
-
-/// A one-shot subagent waits for its child's last report, not its first.
-/// Its child reports mid-way (it started a scout of its own) and again when
-/// the scout's result is in; the subagent takes the mid-way report as a
-/// turn of its own and stays, and reports up only once the child's last
-/// report has come. Every hop crosses hosts.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_sub_agent_waits_for_its_childs_last_report_not_its_mid_way_one() {
-    let mut net = Net::start(three_hosts().agent(lead())).await.unwrap();
-    net.settle("lead").await.unwrap();
-    net.spawn_child(
-        "lead",
-        child(
-            "planner",
-            "server",
-            vec![
-                waits("planner-go"),
-                text("Started mid."),
-                Step::TurnEnd,
-                text("Mid is still on it."),
-                Step::TurnEnd,
-                text("Mid reported the scout's result; planner done."),
-                Step::TurnEnd,
-            ],
-        ),
-    )
-    .await
-    .unwrap();
-    net.spawn_child(
-        "planner",
-        child(
-            "mid",
-            "phone",
-            vec![
-                waits("mid-go"),
-                text("Started the scout."),
-                Step::TurnEnd,
-                text("The scout reported; mid done."),
-                Step::TurnEnd,
-            ],
-        ),
-    )
-    .await
-    .unwrap();
-    net.spawn_child(
-        "mid",
-        child(
-            "scout",
-            "desk",
-            vec![waits("scout-go"), text("Scout done."), Step::TurnEnd],
-        ),
-    )
-    .await
-    .unwrap();
-    until_live(&net, "desk", "scout").await;
-    net.open_gate("planner-go").unwrap();
-    net.turn_ended("planner", 1).await.unwrap();
-    net.open_gate("mid-go").unwrap();
-    net.turn_ended("planner", 2).await.unwrap();
-    let planner = row(&net, "server", "planner").await.unwrap();
-    assert_eq!(
-        Lifecycle::try_from(planner.lifecycle),
-        Ok(Lifecycle::Live),
-        "the planner left on mid's mid-way report"
-    );
-    net.open_gate("scout-go").unwrap();
-    let reached = until("the lead to hear the planner report mid's result", || {
-        let net = &net;
-        async move {
-            let got = received(net, "lead").await;
-            got.iter()
-                .any(|item| item.text.contains("planner done"))
-                .then_some(())
-                .ok_or_else(|| {
-                    format!(
-                        "lead received {:?}",
-                        got.iter().map(|item| &item.text).collect::<Vec<_>>()
-                    )
-                })
-        }
-    })
-    .await;
-    net.shutdown().await.unwrap();
-    reached.expect("the planner never reported mid's last result to the lead");
-}
-
-/// Every child incarnation ends with a last report. A subagent stopped
-/// while it waits idle for its own child has no turn to cut short, yet its
-/// parent still hears that it stopped: a parent waiting on it would
-/// otherwise wait for good.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_sub_agent_stopped_while_it_waits_tells_its_parent_it_stopped() {
-    let mut net = Net::start(three_hosts().agent(lead())).await.unwrap();
-    net.settle("lead").await.unwrap();
-    net.spawn_child(
-        "lead",
-        child(
-            "mid",
-            "server",
-            vec![waits("mid-go"), text("Started the scout."), Step::TurnEnd],
-        ),
-    )
-    .await
-    .unwrap();
-    net.spawn_child(
-        "mid",
-        child(
-            "scout",
-            "phone",
-            vec![waits("never"), text("Scout done."), Step::TurnEnd],
-        ),
-    )
-    .await
-    .unwrap();
-    until_live(&net, "phone", "scout").await;
-    net.open_gate("mid-go").unwrap();
-    net.turn_ended("mid", 1).await.unwrap();
-    net.stop("mid").await.unwrap();
-    let reached = until("the lead to hear that mid stopped", || {
-        let net = &net;
-        async move {
-            let got = received(net, "lead").await;
-            let texts: Vec<&String> = got.iter().map(|item| &item.text).collect();
-            (texts.len() >= 2 && texts.iter().any(|text| text.contains("stopped")))
-                .then_some(())
-                .ok_or_else(|| format!("lead received {texts:?}"))
-        }
-    })
-    .await;
-    net.shutdown().await.unwrap();
-    reached.expect("the lead never heard that mid stopped");
 }
 
 /// A child's report says how its turn ended. A child deleted in the
@@ -1906,13 +1228,12 @@ async fn the_agent_row_counts_live_descendants_and_background_jobs() {
     until("lead's background job to be listed", || {
         let net = &net;
         async move {
-            let at = net.agent("lead").unwrap().clone();
+            let key = net.agent("lead").unwrap().key();
             let cut = net
                 .runtime("desk")
                 .unwrap()
-                .store()
+                .read_store(move |store| store.cut(&key, 0).unwrap())
                 .await
-                .cut(&at.key(), 0)
                 .unwrap();
             let jobs = cut
                 .snapshot

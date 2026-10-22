@@ -1,0 +1,80 @@
+# Moves the rustls patch (docs/ARCHITECTURE.md, "The rustls patch") to the
+# newest release the fork has carried it onto. The fork's own job replays
+# the patch onto each new rustls 0.23 release and pushes it as
+# amux/<version>; this one notices a newer amux/* branch than the one
+# Cargo.toml pins, moves the pin on a branch of its own, opens a pull
+# request to main and starts CI there. Everything goes through the
+# workflow's own token: main takes changes only from its owner, and GitHub
+# starts no pull_request run for a pull request that token opens, so CI is
+# started by hand.
+name: rustls bump
+
+on:
+  schedule:
+    - cron: '30 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+env:
+  FORK: https://github.com/jordanwebster/rustls
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find the newest patched release
+        id: find
+        run: |
+          pinned=$(sed -n 's|^rustls = { git = "https://github.com/jordanwebster/rustls", rev = "\([0-9a-f]*\)" }$|\1|p' Cargo.toml)
+          if [ -z "$pinned" ]; then
+            echo "Cargo.toml pins no rustls rev; nothing to bump"
+            exit 0
+          fi
+          newest=$(git ls-remote --heads "$FORK" 'amux/*' | sed 's|.*refs/heads/amux/||' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
+          rev=$(git ls-remote --heads "$FORK" "refs/heads/amux/$newest" | cut -f 1)
+          echo "pinned $pinned; newest amux/$newest at $rev"
+          if [ -n "$rev" ] && [ "$rev" != "$pinned" ]; then
+            echo "version=$newest" >> "$GITHUB_OUTPUT"
+            echo "rev=$rev" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: dtolnay/rust-toolchain@1.98.0
+        if: steps.find.outputs.rev != ''
+
+      - name: Move the pin on a branch
+        if: steps.find.outputs.rev != ''
+        env:
+          VERSION: ${{ steps.find.outputs.version }}
+          REV: ${{ steps.find.outputs.rev }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="rustls-bump/$VERSION"
+          pushed=false
+          if git ls-remote --exit-code --heads origin "$branch" > /dev/null; then
+            echo "$branch exists already"
+          else
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git checkout -b "$branch"
+            sed -i "s|^\(rustls = { git = \"https://github.com/jordanwebster/rustls\", rev = \"\)[0-9a-f]*\(\" }\)$|\1$REV\2|" Cargo.toml
+            cargo update -p rustls
+            git commit -am "Move rustls to the amux patch on $VERSION"
+            git push origin "$branch"
+            pushed=true
+          fi
+          if [ -z "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
+            gh pr create --base main --head "$branch" \
+              --title "Move rustls to the amux patch on $VERSION" \
+              --body "The fork carries the amux patch onto rustls $VERSION (branch amux/$VERSION, commit $REV); this moves Cargo.toml's pin and the lockfile to it. CI was started on the branch by the bump job."
+          fi
+          # A branch pushed by an earlier run was tested then.
+          if [ "$pushed" = true ]; then
+            gh workflow run ci.yml --ref "$branch"
+          fi

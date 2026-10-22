@@ -6,12 +6,18 @@ license.workspace = true
 description = "Committed protobuf types for the amux protocol"
 publish = false
 
+[features]
+default = ["grpc"]
+# The generated gRPC clients and servers, and tonic with them. The messages
+# build without it, so a crate that only speaks them carries no tokio.
+grpc = ["dep:tonic", "dep:tonic-prost"]
+
 [dependencies]
 prost = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
-tonic = { workspace = true }
-tonic-prost = { workspace = true }
+tonic = { workspace = true, optional = true }
+tonic-prost = { workspace = true, optional = true }
 
 [dev-dependencies]
 prost-types = { workspace = true }

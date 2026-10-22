@@ -1,21 +1,28 @@
 pub mod carrier;
 pub(crate) mod channels;
-pub(crate) mod mux;
-pub(crate) mod piper;
+pub mod client_tickets;
+mod early;
+pub mod forwarder;
+pub mod framed;
+pub mod link_log;
+pub mod paths;
 pub(crate) mod quic;
+pub(crate) mod relay_host;
+pub(crate) mod relaying;
+pub mod resumption;
 pub(crate) mod run;
+pub mod socket;
+pub(crate) mod validation;
 
 pub use carrier::{
     ByteStream, CarrierKind, ControlSink, ControlSource, LinkCarrier, OpenError, read_message,
     write_message,
 };
 pub use channels::{
-    BulkResponseHold, ChannelClass, ChannelError, ChannelPool, PeerChannel, PeerClient,
-    TRUST_REVOKED,
+    BulkResponseHold, ChannelClass, ChannelError, ChannelPool, Cursor, EarlyAnswer, EarlyCall,
+    EarlyReply, PeerChannel, PeerClient, ResumedLink, TRUST_REVOKED,
 };
 pub(crate) use channels::{ChannelKey, InboundStream, peer_client, serve_inbound_streams};
-pub use mux::{MuxCarrier, MuxRole};
-pub(crate) use piper::Piper;
 pub use quic::QuicCarrier;
-pub(crate) use quic::accepted_quic_bidi_stream;
+pub(crate) use quic::{LinkEndpoint, accepted_quic_bidi_stream};
 pub use run::{LinkCtx, LinkError, run_link};

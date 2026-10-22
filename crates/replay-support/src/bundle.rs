@@ -1,15 +1,20 @@
-//! Replaying a dump bundle's three pure stages, each from what the bundle
-//! carries: the facts ring through the agent's interpreter from the
+//! Opening a dump bundle, and replaying an agent's stages from what the
+//! bundle carries: the facts ring through the agent's interpreter from the
 //! checkpoint at its oldest segment, the daemon's store slice through the
 //! session model as a Subscribe opening would deliver it, and that state
-//! through the views. A client bug reproduces from the second and third
-//! stages; an interpreter bug from the first, compared with the journal the
-//! bundle also carries.
+//! through the views. A client bug reproduces from the slice; an
+//! interpreter bug from the facts, compared with the journal the bundle
+//! also carries. `replay` runs these and the daemon core's stage with the
+//! properties judged.
 //!
-//! The layout is the daemon's (see `node::dump`): `manifest.json`, and per
+//! The layout is the daemon's (see `node::dump`): `manifest.json`, per
 //! agent `agents/<id>/row.pb`, `store.pb`, `journal/<segment>` and the
 //! agent's own part under `part/`, with `facts/<segment>` and
-//! `facts/<segment>.checkpoint`.
+//! `facts/<segment>.checkpoint`; the daemon core's part under `core/`:
+//! its `checkpoint`, the `inputs` since and the `store.sqlite` as of that
+//! checkpoint; and each session the asking client had open, under
+//! `client/sessions/<id>/`: its `checkpoint` and the `events` since, which
+//! the manifest names.
 
 use std::collections::BTreeMap;
 use std::io;
@@ -19,10 +24,19 @@ use interpret::Interpreter;
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
-use interpret::ring::{self, Entry};
+use interpret::ring::Entry;
 use ui_state::{Msg, SessionState};
 use ui_view::{ChatOptions, Row};
-use wire::{Agent, CaughtUp, Item, Kind, SessionEvent, Step, session_event};
+use wire::{
+    Agent, CaughtUp, ClientSession, ClientSessionEvents, ClientTraced, Item, Kind, SessionEvent,
+    Step, session_event,
+};
+
+/// The core's part of a bundle, and its files.
+pub const CORE: &str = "core";
+pub const CORE_CHECKPOINT: &str = "checkpoint";
+pub const CORE_INPUTS: &str = "inputs";
+pub const CORE_STORE: &str = "store.sqlite";
 
 #[derive(Debug, thiserror::Error)]
 pub enum BundleError {
@@ -70,10 +84,42 @@ pub struct AgentDump {
     pub facts: Vec<FactsSegment>,
 }
 
+/// The daemon core's part of a bundle: its newest checkpoint, every line
+/// its driver recorded since (each input, and how far each ingest read a
+/// journal), and the store as of that checkpoint.
+#[derive(Clone, Debug)]
+pub struct CoreDump {
+    pub checkpoint: Vec<u8>,
+    pub inputs: Vec<daemon_core::Recorded>,
+    pub store: PathBuf,
+}
+
+/// One session the asking client had open, as the manifest names it.
+#[derive(Clone, Debug)]
+pub struct ClientDump {
+    /// The agent id, as the bundle writes ids.
+    pub agent: String,
+    /// The session, or why its files cannot be read.
+    pub history: Result<ClientHistory, String>,
+}
+
+/// A client session's state when its trace began, and every event its
+/// driver saw since.
+#[derive(Clone, Debug)]
+pub struct ClientHistory {
+    pub start: ClientSession,
+    pub events: Vec<ClientTraced>,
+}
+
 #[derive(Clone, Debug)]
 pub struct Bundle {
     pub dir: PathBuf,
     pub agents: Vec<AgentDump>,
+    /// None for a bundle taken without the core's part: from a peer, or
+    /// when the core could not be had, as its manifest says.
+    pub core: Option<CoreDump>,
+    /// Empty when no client was attached: a dump from the command line.
+    pub clients: Vec<ClientDump>,
 }
 
 pub(crate) fn read(path: &Path) -> Result<Vec<u8>, BundleError> {
@@ -175,7 +221,7 @@ impl Bundle {
                 facts.push(FactsSegment {
                     start,
                     checkpoint,
-                    entries: ring::entries(&read(&path)?),
+                    entries: core_ring::inputs(&read(&path)?),
                 });
             }
             agents.push(AgentDump {
@@ -186,11 +232,66 @@ impl Bundle {
                 id,
             });
         }
+        let core_dir = dir.join(CORE);
+        let core = if core_dir.join(CORE_CHECKPOINT).is_file() {
+            Some(CoreDump {
+                checkpoint: read(&core_dir.join(CORE_CHECKPOINT))?,
+                inputs: core_ring::inputs(&read(&core_dir.join(CORE_INPUTS))?),
+                store: core_dir.join(CORE_STORE),
+            })
+        } else {
+            None
+        };
         Ok(Bundle {
             dir: dir.to_owned(),
             agents,
+            core,
+            clients: clients(dir)?,
         })
     }
+}
+
+/// The client sessions the manifest names, each read or the reason it
+/// cannot be.
+fn clients(dir: &Path) -> Result<Vec<ClientDump>, BundleError> {
+    let path = dir.join("manifest.json");
+    let manifest: serde_json::Value = match std::fs::read(&path) {
+        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|error| BundleError::Decode {
+            path: path.clone(),
+            what: "manifest",
+            error: error.to_string(),
+        })?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(BundleError::Read { path, error }),
+    };
+    let named = manifest["client"]["sessions"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    Ok(named
+        .iter()
+        .map(|entry| {
+            let field = |name: &str| entry[name].as_str().unwrap_or_default().to_owned();
+            ClientDump {
+                agent: field("agent_id"),
+                history: client_history(dir, &field("checkpoint"), &field("events")),
+            }
+        })
+        .collect())
+}
+
+fn client_history(dir: &Path, checkpoint: &str, events: &str) -> Result<ClientHistory, String> {
+    if checkpoint.is_empty() || events.is_empty() {
+        return Err("the manifest names no checkpoint or no events".to_owned());
+    }
+    let start: ClientSession =
+        decode(&dir.join(checkpoint), "wire.ClientSession").map_err(|error| error.to_string())?;
+    let events: ClientSessionEvents =
+        decode(&dir.join(events), "wire.ClientSessionEvents").map_err(|error| error.to_string())?;
+    Ok(ClientHistory {
+        start,
+        events: events.traced,
+    })
 }
 
 impl AgentDump {
@@ -244,18 +345,27 @@ impl AgentDump {
     /// CaughtUp.
     pub fn session(&self) -> SessionState {
         let mut state = SessionState::new(self.row.clone(), usize::MAX);
-        let event = |of| Msg::Event(SessionEvent { of: Some(of) });
+        for of in self.opening() {
+            state.update(Msg::Event(SessionEvent { of: Some(of) }));
+        }
+        state
+    }
+
+    /// The events a Subscribe opening delivers for the slice: the
+    /// snapshot, the held rows, then CaughtUp.
+    pub fn opening(&self) -> Vec<session_event::Of> {
+        let mut events = Vec::new();
         let mut revision = 0;
         if let Some(snapshot) = &self.store.snapshot {
             revision = snapshot.revision;
-            state.update(event(session_event::Of::Snapshot(snapshot.clone())));
+            events.push(session_event::Of::Snapshot(snapshot.clone()));
         }
         for item in &self.store.items {
             revision = revision.max(item.revision);
-            state.update(event(session_event::Of::Item(item.clone())));
+            events.push(session_event::Of::Item(item.clone()));
         }
-        state.update(event(session_event::Of::CaughtUp(CaughtUp { revision })));
-        state
+        events.push(session_event::Of::CaughtUp(CaughtUp { revision }));
+        events
     }
 
     /// Stage three: the rows the views draw for everything the state holds.

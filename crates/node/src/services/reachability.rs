@@ -1,11 +1,11 @@
 //! Runtime Link establishment from discovery and persisted reachabilities.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use futures_util::future::BoxFuture;
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 use tracing::Instrument;
@@ -14,14 +14,18 @@ use crate::HostId;
 use crate::connection::ConnectionManager;
 use crate::discovery::{Discovery, DiscoveryEvent, FoundHosts};
 use crate::identity::DeviceIdentity;
-use crate::link::{
-    CarrierKind, ChannelPool, LinkCarrier as NativeLinkCarrier, MuxCarrier, MuxRole, QuicCarrier,
-};
-use crate::routing::{Host, LinkCarrier, LinkConnectorCtx, LiveLocalHost, Route, RoutingCore};
+use crate::link::channels::{ForwardedDial, ResumedDial, Resuming, says_revoked};
+use crate::link::framed::{FramedKind, StreamEndpoint};
+use crate::link::quic::DEVICE_SERVER_NAME;
+use crate::link::socket::Path;
+use crate::link::{ChannelError, ChannelPool, LinkCarrier as NativeLinkCarrier, QuicCarrier};
+use crate::routing::{Host, LinkCarrier, LinkConnectorCtx, LinkId, LiveLocalHost, Route};
 use crate::transport::spawn_ssh_relay;
 use crate::trust::{Reachability, SharedTrustStore};
 
 const DIRECT_LINK_ESTABLISHMENT_TIMEOUT: Duration = Duration::from_secs(10);
+/// SSH's own connection setup comes ahead of the QUIC handshake through it.
+const SSH_LINK_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 // Quinn's first Initial PTO is about one second with its default initial RTT.
 // Two seconds lets one lost handshake packet retransmit while still moving
 // through several black-holed candidate addresses in a few seconds.
@@ -46,6 +50,21 @@ pub struct ReachabilityLinkConnector {
     mode: ReachabilityLinkConnectorMode,
 }
 
+/// Dials the hosts the profile's core says to, at the addresses discovery
+/// found for them.
+pub(crate) struct Dialer(std::sync::Weak<ReachabilityLinkConnectorInner>);
+
+impl Dialer {
+    pub(crate) fn dial(&self, peer: HostId) {
+        if let Some(inner) = self.0.upgrade() {
+            ReachabilityLinkConnector {
+                mode: ReachabilityLinkConnectorMode::Enabled(inner),
+            }
+            .dial_found(peer);
+        }
+    }
+}
+
 #[derive(Clone)]
 enum ReachabilityLinkConnectorMode {
     Enabled(Arc<ReachabilityLinkConnectorInner>),
@@ -67,18 +86,16 @@ struct ReachabilityLinkContext {
     identity: DeviceIdentity,
     trust_store: SharedTrustStore,
     local_host: LiveLocalHost,
-    routing: Arc<RoutingCore>,
     channels: Arc<ChannelPool>,
     connections: Arc<ConnectionManager>,
     incoming_streams_tx: tokio::sync::mpsc::Sender<crate::link::InboundStream>,
     runtime: Arc<Mutex<Option<ReachabilityRuntime>>>,
-    quic_endpoint: Arc<Mutex<Option<quinn::Endpoint>>>,
+    quic_endpoint: Arc<Mutex<Option<crate::link::LinkEndpoint>>>,
     quic_transport: Arc<Mutex<Option<Arc<quinn::TransportConfig>>>>,
 }
 
 #[derive(Clone)]
 struct ReachabilityRuntime {
-    data_dir: PathBuf,
     discovery: Arc<dyn Discovery>,
     found_hosts: Arc<FoundHosts>,
     /// Discovery lists only hosts in this scope.
@@ -99,7 +116,6 @@ impl ReachabilityLinkConnector {
         identity: DeviceIdentity,
         trust_store: SharedTrustStore,
         local_host: LiveLocalHost,
-        routing: Arc<RoutingCore>,
         channels: Arc<ChannelPool>,
         connections: Arc<ConnectionManager>,
         incoming_streams_tx: tokio::sync::mpsc::Sender<crate::link::InboundStream>,
@@ -111,7 +127,6 @@ impl ReachabilityLinkConnector {
                         identity,
                         trust_store,
                         local_host,
-                        routing,
                         channels,
                         connections,
                         incoming_streams_tx,
@@ -131,31 +146,26 @@ impl ReachabilityLinkConnector {
 
     pub fn configure(
         &self,
-        data_dir: PathBuf,
         discovery: Arc<dyn Discovery>,
         found_hosts: Arc<FoundHosts>,
-        quic_endpoint: quinn::Endpoint,
+        quic_endpoint: crate::link::LinkEndpoint,
         scope: String,
     ) {
         let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
             return;
         };
+        let dialer = Arc::new(ForwardedDialer {
+            inner: Arc::downgrade(inner),
+            dialing: Mutex::default(),
+        });
+        inner.context.channels.dial_forwarded_with(dialer.clone());
+        inner.context.channels.dial_resumed_with(dialer);
         *inner.context.runtime.lock().unwrap() = Some(ReachabilityRuntime {
-            data_dir,
             discovery,
             found_hosts,
             scope,
         });
         *inner.context.quic_endpoint.lock().unwrap() = Some(quic_endpoint);
-    }
-
-    pub fn rebind_quic(&self, socket: std::net::UdpSocket) -> std::io::Result<()> {
-        let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
-            return Ok(());
-        };
-        let endpoint = inner.context.quic_endpoint.lock().unwrap();
-        let endpoint = endpoint.as_ref().expect("QUIC endpoint is configured");
-        QuicCarrier::rebind(endpoint, socket)
     }
 
     pub(crate) fn spawn_startup_links(&self) -> Vec<JoinHandle<()>> {
@@ -177,6 +187,9 @@ impl ReachabilityLinkConnector {
 
     /// Records what discovery finds in this profile's scope and, when `dial`
     /// is set, dials the trusted hosts among them.
+    /// Tells the profile's core of every host discovery resolves in this
+    /// profile's scope, and from now on dials those it says to while `dial`
+    /// holds and direct links are on.
     pub fn spawn_dial_on_found(
         &self,
         mut events: broadcast::Receiver<DiscoveryEvent>,
@@ -185,9 +198,12 @@ impl ReachabilityLinkConnector {
         let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
             return tokio::spawn(async {});
         };
-        let connector = self.clone();
         let context = inner.context.clone();
-        let enabled = inner.direct_enabled.clone();
+        if dial {
+            context
+                .connections
+                .set_dialer(Dialer(Arc::downgrade(inner)));
+        }
         tokio::spawn(async move {
             loop {
                 match events.recv().await {
@@ -210,16 +226,13 @@ impl ReachabilityLinkConnector {
                             DiscoveryEvent::Lost { .. } => None,
                         };
                         runtime.found_hosts.apply(event);
+                        context
+                            .connections
+                            .candidates(runtime.found_hosts.candidates());
                         let Some(advert) = found else { continue };
-                        if !dial
-                            || !enabled.load(Ordering::SeqCst)
-                            || advert.host_id == context.identity.host_id
-                            || has_direct_route(&context, advert.host_id).await
-                            || !is_trusted(&context.trust_store, advert.host_id)
-                        {
-                            continue;
-                        }
-                        connector.dial_found(advert.host_id);
+                        // Whether to dial is the profile core's to decide.
+                        let trusted = is_trusted(&context.trust_store, advert.host_id);
+                        context.connections.discovered(advert.host_id, trusted);
                     }
                     Err(broadcast::error::RecvError::Lagged(_)) => {
                         if let Some(runtime) = context.runtime.lock().unwrap().clone() {
@@ -248,6 +261,11 @@ impl ReachabilityLinkConnector {
     }
 
     fn dial_found(&self, peer: HostId) {
+        if let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode
+            && !inner.direct_enabled.load(Ordering::SeqCst)
+        {
+            return;
+        }
         let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
             return;
         };
@@ -290,6 +308,18 @@ impl ReachabilityLinkConnector {
         self.retain_task(task);
     }
 
+    /// Dials `peer` at the addresses discovery found and the profile
+    /// remembers for it, where there are any, redialling while it is
+    /// away: what a host the first flight did not reach is left to.
+    pub(crate) fn dial_direct(&self, peer: HostId) {
+        let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
+            return;
+        };
+        if !direct_candidates(&inner.context, peer).is_empty() {
+            self.dial_found(peer);
+        }
+    }
+
     pub(crate) fn requery(&self) {
         let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
             return;
@@ -308,6 +338,10 @@ impl ReachabilityLinkConnector {
         };
         if let Some(runtime) = inner.context.runtime.lock().unwrap().as_ref() {
             runtime.found_hosts.hand_over(found);
+            inner
+                .context
+                .connections
+                .candidates(runtime.found_hosts.candidates());
         }
     }
 
@@ -441,19 +475,15 @@ fn snapshot_attempts(
     let store = context.trust_store.read().map_err(|_| ())?;
     let mut attempts = Vec::new();
     for (peer, entry) in store.entries() {
+        // A launch's first flight takes the relay and every address at
+        // once; only SSH is dialled here.
         for (ordinal, reachability) in entry
             .reachabilities
             .iter()
-            .filter(|reachability| !matches!(reachability, Reachability::Cloud))
+            .filter(|reachability| matches!(reachability, Reachability::Ssh { .. }))
             .cloned()
             .enumerate()
         {
-            let reachability = match reachability {
-                Reachability::Direct { .. } => Reachability::Direct {
-                    addrs: direct_candidates(context, peer),
-                },
-                other => other,
-            };
             attempts.push(ReachabilityLinkAttempt {
                 peer,
                 reachability,
@@ -501,6 +531,340 @@ fn is_trusted(trust_store: &SharedTrustStore, peer: HostId) -> bool {
         .unwrap_or(false)
 }
 
+/// Dials links through forwarders for the channel pool: one dial to a
+/// host at a time, the others waiting on it.
+struct ForwardedDialer {
+    inner: std::sync::Weak<ReachabilityLinkConnectorInner>,
+    dialing: Mutex<std::collections::HashMap<HostId, Arc<tokio::sync::Mutex<()>>>>,
+}
+
+impl ForwardedDialer {
+    fn endpoint(
+        &self,
+    ) -> Result<
+        (
+            Arc<ReachabilityLinkConnectorInner>,
+            crate::link::LinkEndpoint,
+        ),
+        ChannelError,
+    > {
+        let unavailable = || ChannelError::Handshake("the edge is not running".to_owned());
+        let inner = self.inner.upgrade().ok_or_else(unavailable)?;
+        let endpoint = inner
+            .context
+            .quic_endpoint
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or_else(unavailable)?;
+        Ok((inner, endpoint))
+    }
+
+    async fn dial(&self, peer: HostId, through: LinkId) -> Result<(), ChannelError> {
+        let (inner, endpoint) = self.endpoint()?;
+        let context = &inner.context;
+        let one_at_a_time = self
+            .dialing
+            .lock()
+            .unwrap()
+            .entry(peer)
+            .or_default()
+            .clone();
+        let _dialing = one_at_a_time.lock().await;
+        let registry = context.channels.link_registry();
+        if registry.native_carrier_to_peer(peer).await.is_some() {
+            return Ok(());
+        }
+        let refusals = registry.forward_refusals();
+        let dialled = refused_or(
+            refusals,
+            registry.as_ref(),
+            peer,
+            QuicCarrier::connect_through(
+                &endpoint,
+                through.core(),
+                &context.identity,
+                context.trust_store.clone(),
+                peer,
+            ),
+        )
+        .await?
+        .map_err(|error| dial_failed(context, peer, error))?;
+        let shutdown = inner.direct_shutdown.lock().unwrap().subscribe();
+        let (_, connector_task, abort_on_drop) = establish_carrier(
+            context,
+            peer,
+            Arc::new(dialled),
+            LinkCarrier::Forwarded,
+            shutdown,
+        )
+        .await?;
+        tokio::spawn(await_connector(connector_task, abort_on_drop));
+        Ok(())
+    }
+
+    async fn pair(
+        &self,
+        peer: HostId,
+        through: LinkId,
+    ) -> Result<tonic::transport::Channel, ChannelError> {
+        let (inner, endpoint) = self.endpoint()?;
+        let registry = inner.context.channels.link_registry();
+        let pairing = refused_or(
+            registry.forward_refusals(),
+            registry.as_ref(),
+            peer,
+            crate::transport::pairing_quic_channel_through(&endpoint, peer, through.core()),
+        )
+        .await?
+        .map_err(|error| ChannelError::Handshake(error.to_string()))?;
+        Ok(pairing.channel)
+    }
+}
+
+/// Runs `dial` under the handshake's deadline, unless the forwarder
+/// refuses to carry packets to `peer` first. A dial that times out after a
+/// refusal the forwarder has not repeated yet fails with that refusal.
+async fn refused_or<T>(
+    mut refusals: broadcast::Receiver<(HostId, wire::pb::ForwardRefusal)>,
+    registry: &crate::routing::LinkRegistry,
+    peer: HostId,
+    dial: impl std::future::Future<Output = T>,
+) -> Result<T, ChannelError> {
+    let refused = async {
+        loop {
+            match refusals.recv().await {
+                Ok((host, reason)) if host == peer => return reason,
+                Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Err(broadcast::error::RecvError::Closed) => {
+                    std::future::pending::<()>().await;
+                }
+            }
+        }
+    };
+    tokio::select! {
+        reason = refused => Err(ChannelError::Refused(reason)),
+        dialled = tokio::time::timeout(DIRECT_QUIC_HANDSHAKE_TIMEOUT, dial) => {
+            dialled.map_err(|_| match registry.last_refusal(peer) {
+                Some(reason) => ChannelError::Refused(reason),
+                None => ChannelError::Handshake("the QUIC handshake timed out".to_owned()),
+            })
+        }
+    }
+}
+
+impl ForwardedDialer {
+    /// Dials `peer` resuming with its ticket on every path it may be
+    /// reached by at once: the addresses discovery found and the profile
+    /// remembers for it (the last that worked among them), the forwarders
+    /// a route to it names and, for a host on the account, the relay, even
+    /// before the relay has said the host is there. The first path the
+    /// host answers on carries the link. Other dials to the host wait for
+    /// this one.
+    async fn resume(&self, peer: HostId) -> Result<Resuming, ChannelError> {
+        let (inner, endpoint) = self.endpoint()?;
+        let context = &inner.context;
+        let registry = context.channels.link_registry();
+        let one_at_a_time = self
+            .dialing
+            .lock()
+            .unwrap()
+            .entry(peer)
+            .or_default()
+            .clone();
+        let dialing = one_at_a_time.lock_owned().await;
+        // A direct dial discovery asks for meanwhile waits for this one.
+        let direct = DirectDial::claim(&inner.dialing, peer);
+        if registry.native_carrier_to_peer(peer).await.is_some() {
+            return Err(ChannelError::Handshake(
+                "a link to the host is already up".to_owned(),
+            ));
+        }
+        let mut paths: Vec<Path> = direct_candidates(context, peer)
+            .into_iter()
+            .map(Path::Direct)
+            .collect();
+        for route in context.connections.routes_to(peer).await {
+            if let Route::Via(forwarder) = route
+                && let Some((link, _)) = registry.native_carrier_to_peer(forwarder).await
+            {
+                paths.push(Path::Forwarded(link.core()));
+            }
+        }
+        let through_relay = on_the_account(&context.trust_store, peer);
+        if paths.is_empty() && !through_relay {
+            return Err(ChannelError::NoRoute { host_id: peer });
+        }
+        tracing::debug!(%peer, ?paths, through_relay, "sending a first flight");
+        let carrier = Arc::new(
+            QuicCarrier::first_flight(
+                &endpoint,
+                paths,
+                through_relay,
+                &context.identity,
+                context.trust_store.clone(),
+                peer,
+            )
+            .await
+            .map_err(|error| dial_failed(context, peer, error))?,
+        );
+        // The carrier names the path its link came up on: the connector
+        // reads it there.
+        let connector_ctx =
+            LinkConnectorCtx::new_live(context.local_host.clone(), registry.clone())
+                .with_expected_peer(peer)
+                .with_carrier(LinkCarrier::Direct)
+                .with_incoming_streams(context.incoming_streams_tx.clone());
+        let shutdown = inner.direct_shutdown.lock().unwrap().subscribe();
+        let pause_shutdown = shutdown.clone();
+        let (connector_task, established) =
+            crate::routing::spawn_connector_with_establishment_and_shutdown(
+                connector_ctx,
+                carrier.clone(),
+                shutdown,
+            );
+        let abort_on_failure = AbortTaskOnDrop(connector_task.abort_handle());
+        let connector = self.inner.clone();
+        let context = context.clone();
+        let handshake = carrier.clone();
+        let link_carrier = carrier.clone();
+        let established = Box::pin(async move {
+            let _dialing = (dialing, direct);
+            if let Err(error) = handshake.handshake().await {
+                return Err(ChannelError::from(dial_failed(&context, peer, error)));
+            }
+            match tokio::time::timeout(DIRECT_LINK_ESTABLISHMENT_TIMEOUT, established).await {
+                Ok(Ok(Ok(_))) => {}
+                // The host refused the identity the ticket named.
+                Ok(Ok(Err(status))) if says_revoked(&status) => {
+                    return Err(ChannelError::from(revoked(&context, peer)));
+                }
+                Ok(Ok(Err(status))) => return Err(ChannelError::Handshake(status.to_string())),
+                Ok(Err(_)) | Err(_) => {
+                    return Err(ChannelError::Handshake(
+                        "the resumed link did not come up".to_owned(),
+                    ));
+                }
+            }
+            // The flight's own link, not any link to the peer: one the peer
+            // dialled meanwhile may have won the crossing, and this link
+            // was then refused or displaced. What the flight sent early
+            // rides this link alone, so it is handed to no call then.
+            let flown: Arc<dyn NativeLinkCarrier> = link_carrier.clone();
+            let link = registry.link_carried_by(&flown).await.ok_or_else(|| {
+                ChannelError::Handshake("a link to the host is already up".to_owned())
+            })?;
+            if let Some(addr) = link_carrier
+                .remote_address()
+                .and_then(|stand_in| endpoint.socket.path_of(stand_in))
+                .and_then(|path| match path {
+                    Path::Direct(addr) => Some(addr),
+                    _ => None,
+                })
+            {
+                persist_working_addr(&context, peer, addr);
+            }
+            context.connections.clear_reachability_error(peer).await;
+            tokio::spawn(redial_after(
+                connector,
+                context,
+                peer,
+                connector_task,
+                abort_on_failure,
+                pause_shutdown,
+            ));
+            Ok(link)
+        });
+        Ok(Resuming {
+            carrier,
+            established,
+        })
+    }
+}
+
+/// A host marked as being dialled directly until this is dropped, unless
+/// a dial already had it.
+struct DirectDial(Option<(Arc<Mutex<HashSet<HostId>>>, HostId)>);
+
+impl DirectDial {
+    fn claim(dialing: &Arc<Mutex<HashSet<HostId>>>, peer: HostId) -> Self {
+        Self(
+            dialing
+                .lock()
+                .unwrap()
+                .insert(peer)
+                .then(|| (dialing.clone(), peer)),
+        )
+    }
+}
+
+impl Drop for DirectDial {
+    fn drop(&mut self) {
+        if let Some((dialing, peer)) = self.0.take() {
+            dialing.lock().unwrap().remove(&peer);
+        }
+    }
+}
+
+/// Waits for a link to `peer` to close, then dials it again as one that
+/// came up at its address would be.
+async fn redial_after(
+    connector: std::sync::Weak<ReachabilityLinkConnectorInner>,
+    context: ReachabilityLinkContext,
+    peer: HostId,
+    connector_task: JoinHandle<Result<(), tonic::Status>>,
+    abort_on_drop: AbortTaskOnDrop,
+    shutdown_rx: watch::Receiver<bool>,
+) {
+    let established = tokio::time::Instant::now();
+    await_connector(connector_task, abort_on_drop).await;
+    if *shutdown_rx.borrow() {
+        return;
+    }
+    pause_after_short_link(established, shutdown_rx.clone()).await;
+    if let Some(runtime) = context.runtime.lock().unwrap().clone() {
+        runtime.discovery.requery();
+    }
+    redial_while_away(connector, context, peer, 0, shutdown_rx).await;
+}
+
+/// Whether `peer` is a host on the account, which the relay reaches.
+fn on_the_account(trust_store: &SharedTrustStore, peer: HostId) -> bool {
+    trust_store.read().is_ok_and(|store| {
+        store.entries().any(|(id, entry)| {
+            id == peer
+                && entry
+                    .reachabilities
+                    .iter()
+                    .any(|reachability| matches!(reachability, Reachability::Cloud))
+        })
+    })
+}
+
+impl ResumedDial for ForwardedDialer {
+    fn dial_resumed(&self, peer: HostId) -> BoxFuture<'_, Result<Resuming, ChannelError>> {
+        Box::pin(self.resume(peer))
+    }
+}
+
+impl ForwardedDial for ForwardedDialer {
+    fn dial_through(
+        &self,
+        peer: HostId,
+        through: LinkId,
+    ) -> BoxFuture<'_, Result<(), ChannelError>> {
+        Box::pin(self.dial(peer, through))
+    }
+
+    fn pair_through(
+        &self,
+        peer: HostId,
+        through: LinkId,
+    ) -> BoxFuture<'_, Result<tonic::transport::Channel, ChannelError>> {
+        Box::pin(self.pair(peer, through))
+    }
+}
+
 async fn has_direct_route(context: &ReachabilityLinkContext, peer: HostId) -> bool {
     context
         .channels
@@ -508,7 +872,7 @@ async fn has_direct_route(context: &ReachabilityLinkContext, peer: HostId) -> bo
         .has_direct_peer_link_to(peer)
         .await
         || context
-            .routing
+            .connections
             .routes_to(peer)
             .await
             .iter()
@@ -532,7 +896,7 @@ async fn establish_reachability_link(
                     prepare_direct_carrier(&context, attempt.peer, addr),
                 )
                 .await
-                .map_err(|_| "the QUIC handshake timed out".to_owned())
+                .map_err(|_| DialError::Failed("the QUIC handshake timed out".to_owned()))
                 .and_then(|result| result);
                 match prepared {
                     Ok(carrier) => match establish_carrier(
@@ -573,14 +937,19 @@ async fn establish_reachability_link(
             None
         }
         Reachability::Ssh { target, profile } => {
-            let carrier = match spawn_ssh_relay(&target, profile).map_err(|error| error.to_string())
+            let carrier = match tokio::time::timeout(
+                SSH_LINK_HANDSHAKE_TIMEOUT,
+                prepare_ssh_carrier(&context, attempt.peer, &target, profile),
+            )
+            .await
+            .map_err(|_| DialError::Failed("the QUIC handshake over SSH timed out".to_owned()))
+            .and_then(|result| result)
             {
-                Ok(io) => Arc::new(MuxCarrier::new(io, MuxRole::Connector, CarrierKind::Ssh))
-                    as Arc<dyn NativeLinkCarrier>,
+                Ok(carrier) => carrier,
                 Err(error) => {
                     context
                         .connections
-                        .record_reachability_error(attempt.peer, &error)
+                        .record_reachability_error(attempt.peer, error.to_string())
                         .await;
                     tracing::warn!(error = %error, "failed to prepare SSH Link transport");
                     return None;
@@ -606,7 +975,7 @@ async fn establish_reachability_link(
                 Err(error) => {
                     context
                         .connections
-                        .record_reachability_error(attempt.peer, &error)
+                        .record_reachability_error(attempt.peer, error.to_string())
                         .await;
                     tracing::warn!(error = %error, "SSH Link establishment failed");
                 }
@@ -616,17 +985,38 @@ async fn establish_reachability_link(
     }
 }
 
+/// Runs `amux relay` on the far host over SSH and dials its link socket
+/// through the session, pinning the peer's key as a direct dial does.
+async fn prepare_ssh_carrier(
+    context: &ReachabilityLinkContext,
+    peer: HostId,
+    target: &str,
+    profile: crate::ProfileId,
+) -> Result<Arc<dyn NativeLinkCarrier>, DialError> {
+    let failed = |error: &dyn std::fmt::Display| DialError::Failed(error.to_string());
+    let io = spawn_ssh_relay(target, profile).map_err(|error| failed(&error))?;
+    let stream = StreamEndpoint::new(io, FramedKind::Ssh, None).map_err(|error| failed(&error))?;
+    let config = context
+        .identity
+        .quic_client_config_for_peer(context.trust_store.clone(), peer)
+        .map_err(|error| failed(&error))?;
+    QuicCarrier::connect_over_stream(stream, config, DEVICE_SERVER_NAME)
+        .await
+        .map(|carrier| Arc::new(carrier) as Arc<dyn NativeLinkCarrier>)
+        .map_err(|error| dial_failed(context, peer, error))
+}
+
 async fn prepare_direct_carrier(
     context: &ReachabilityLinkContext,
     peer: HostId,
     addr: std::net::SocketAddr,
-) -> Result<Arc<dyn NativeLinkCarrier>, String> {
+) -> Result<Arc<dyn NativeLinkCarrier>, DialError> {
     let endpoint = context
         .quic_endpoint
         .lock()
         .unwrap()
         .clone()
-        .ok_or_else(|| "direct QUIC endpoint is not configured".to_string())?;
+        .ok_or_else(|| DialError::Failed("direct QUIC endpoint is not configured".to_owned()))?;
     let transport = context.quic_transport.lock().unwrap().clone();
     QuicCarrier::connect_direct_with_transport(
         &endpoint,
@@ -638,7 +1028,55 @@ async fn prepare_direct_carrier(
     )
     .await
     .map(|carrier| Arc::new(carrier) as Arc<dyn NativeLinkCarrier>)
-    .map_err(|error| error.to_string())
+    .map_err(|error| dial_failed(context, peer, error))
+}
+
+/// Why a link to a peer did not come up.
+#[derive(Debug)]
+enum DialError {
+    /// The peer refused this host's certificate: it no longer trusts this
+    /// one. The profile's core has been told.
+    Revoked,
+    Failed(String),
+}
+
+impl std::fmt::Display for DialError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DialError::Revoked => f.write_str(crate::link::TRUST_REVOKED),
+            DialError::Failed(error) => f.write_str(error),
+        }
+    }
+}
+
+impl From<DialError> for ChannelError {
+    fn from(error: DialError) -> Self {
+        match error {
+            DialError::Revoked => ChannelError::Revoked,
+            DialError::Failed(error) => ChannelError::Handshake(error),
+        }
+    }
+}
+
+/// The peer's handshake refusing this host's certificate is the peer
+/// saying it no longer trusts this one, on whichever route the dial took:
+/// a host revoked while its links were down learns it here, when it next
+/// dials, as it would from the link's close had it been up.
+fn revoked(context: &ReachabilityLinkContext, peer: HostId) -> DialError {
+    context.connections.peer_revoked(peer);
+    DialError::Revoked
+}
+
+fn dial_failed(
+    context: &ReachabilityLinkContext,
+    peer: HostId,
+    error: crate::link::quic::ConnectError,
+) -> DialError {
+    if error.refused_as_revoked() {
+        revoked(context, peer)
+    } else {
+        DialError::Failed(error.to_string())
+    }
 }
 
 async fn establish_carrier(
@@ -647,29 +1085,34 @@ async fn establish_carrier(
     native_carrier: Arc<dyn NativeLinkCarrier>,
     carrier: LinkCarrier,
     shutdown_rx: watch::Receiver<bool>,
-) -> Result<(Host, JoinHandle<Result<(), tonic::Status>>, AbortTaskOnDrop), String> {
-    let connector_ctx = LinkConnectorCtx::new_live(
-        context.local_host.clone(),
-        context.routing.clone(),
-        context.channels.link_registry(),
-    )
-    .with_expected_peer(peer)
-    .with_carrier(carrier)
-    .with_incoming_streams(context.incoming_streams_tx.clone());
+) -> Result<(Host, JoinHandle<Result<(), tonic::Status>>, AbortTaskOnDrop), DialError> {
+    let connector_ctx =
+        LinkConnectorCtx::new_live(context.local_host.clone(), context.channels.link_registry())
+            .with_expected_peer(peer)
+            .with_carrier(carrier)
+            .with_incoming_streams(context.incoming_streams_tx.clone());
     let (connector_task, established_rx) =
         crate::routing::spawn_connector_with_establishment_and_shutdown(
             connector_ctx,
-            native_carrier,
+            native_carrier.clone(),
             shutdown_rx,
         );
     let abort_on_failure = AbortTaskOnDrop(connector_task.abort_handle());
-    let host = match tokio::time::timeout(DIRECT_LINK_ESTABLISHMENT_TIMEOUT, established_rx).await {
-        Ok(Ok(Ok(host))) => host,
-        Ok(Ok(Err(status))) => return Err(status.to_string()),
-        Ok(Err(_)) => return Err("reachability Link task ended before establishment".to_string()),
-        Err(_) => return Err("reachability Link establishment timed out".to_string()),
+    let failed = match tokio::time::timeout(DIRECT_LINK_ESTABLISHMENT_TIMEOUT, established_rx).await
+    {
+        Ok(Ok(Ok(host))) => return Ok((host, connector_task, abort_on_failure)),
+        // A dial resuming with a ticket whose key the host no longer pins.
+        Ok(Ok(Err(status))) if says_revoked(&status) => return Err(revoked(context, peer)),
+        Ok(Ok(Err(status))) => status.to_string(),
+        Ok(Err(_)) => "reachability Link task ended before establishment".to_owned(),
+        Err(_) => "reachability Link establishment timed out".to_owned(),
     };
-    Ok((host, connector_task, abort_on_failure))
+    // The handshake seemed done, but the peer refused the certificate
+    // after it, as TLS 1.3 lets a server.
+    if native_carrier.close_reason() == Some(wire::pb::LinkCloseReason::UserRevoked) {
+        return Err(revoked(context, peer));
+    }
+    Err(DialError::Failed(failed))
 }
 
 fn persist_working_addr(
@@ -677,18 +1120,7 @@ fn persist_working_addr(
     peer: HostId,
     addr: std::net::SocketAddr,
 ) {
-    let Some(runtime) = context.runtime.lock().unwrap().clone() else {
-        return;
-    };
-    let Ok(mut store) = context.trust_store.write() else {
-        tracing::warn!("failed to lock trust store after direct dial");
-        return;
-    };
-    if store.replace_direct_addrs(peer, vec![addr])
-        && let Err(error) = store.save_in(&runtime.data_dir)
-    {
-        tracing::warn!(error = %error, "failed to persist working direct address");
-    }
+    context.connections.remember_direct_addr(peer, addr);
 }
 
 async fn await_connector(

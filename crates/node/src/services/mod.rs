@@ -5,9 +5,6 @@
 mod pairing;
 mod reachability;
 
-pub(crate) use pairing::{
-    LocalPairingIdentity, PAIR_INITIATOR_TIMEOUT, PairingService, PendingPairing,
-    begin_pair_initiator,
-};
-pub use pairing::{PeerTrustCommitContext, PeerTrustUpdate, commit_peer_trust};
+pub(crate) use pairing::{LocalPairingIdentity, PairingService};
+pub(crate) use reachability::Dialer;
 pub use reachability::ReachabilityLinkConnector;

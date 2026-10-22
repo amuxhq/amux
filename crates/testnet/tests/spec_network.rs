@@ -42,7 +42,8 @@ async fn hosts_on_one_account_reach_each_other_through_the_relay_over_quic_or_tc
     println!("desk on the relay over QUIC; phone, UDP blocked, over TCP");
 
     // One relay joins the two carriers: each host reaches the other and
-    // calls it, through a tunnel the relay pipes but cannot read.
+    // calls it, over their own link, which the relay forwards but cannot
+    // read.
     until_via(&net, "desk", "phone", LiveRoute::Relay).await;
     let from_phone = peer_inventory_hosts(&edge(&net, "phone"), desk)
         .await
@@ -59,8 +60,8 @@ async fn hosts_on_one_account_reach_each_other_through_the_relay_over_quic_or_tc
     assert_eq!(links, expected, "one relay link per host");
     println!("desk and phone call each other through the relay");
 
-    // The relay carries links but serves nothing: a stream addressed to
-    // the relay itself is refused.
+    // The relay forwards links but serves nothing: a call addressed to the
+    // relay itself is refused.
     let relay_id = net.relay().unwrap().host_id();
     let refused = peer_inventory_hosts(&edge(&net, "phone"), relay_id)
         .await
@@ -354,6 +355,9 @@ async fn a_pairing_window_is_one_shot_attempt_capped_and_expires() {
     .await
     .unwrap();
     assert_eq!(started.ttl_seconds, 1);
+    // The window keeps to the net's policy clock, as every daemon's
+    // deadlines do.
+    net.advance(Duration::from_secs(1)).unwrap();
     until("the window to expire", || async {
         (!edge(&net, "attic").pairing_active())
             .then_some(())
@@ -761,6 +765,90 @@ fn stored_addrs(net: &Net, host: &str, peer: &str) -> Vec<String> {
         .collect()
 }
 
+/// Pairing with a host under an id this host already trusts replaces the
+/// pinned key, and a link the old key still holds open is closed, saying
+/// the trust was replaced, before the new key is trusted: nothing opened
+/// under the old key outlives the replacement.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pairing_that_replaces_a_hosts_key_closes_the_old_keys_live_link_first() {
+    // Nothing discovers anything, and the desk listens on no LAN: the one
+    // link between the old desk and the laptop is the one held here.
+    let mut net = Net::start(
+        Topology::new()
+            .host_decl(testnet::HostDecl {
+                name: "desk".to_owned(),
+                ..testnet::HostDecl::default()
+            })
+            .host_decl(undiscovered_lan_host("laptop", "home")),
+    )
+    .await
+    .unwrap();
+    let desk = host_id(&net, "desk");
+    net.trust("desk", "laptop").await.unwrap();
+    net.trust("laptop", "desk").await.unwrap();
+    let old = edge(&net, "desk")
+        .link_in_process(&edge(&net, "laptop"))
+        .unwrap();
+    until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
+    let old_key = edge(&net, "desk").public_key().to_vec();
+
+    // Another machine starts under the desk's id with a key of its own,
+    // while the old desk and its link stay up.
+    net.add_host(undiscovered_lan_host("new-desk", "home"))
+        .await
+        .unwrap();
+    net.stop_daemon("new-desk").await.unwrap();
+    let profile_dir = |name: &str| {
+        let host = net.host(name).unwrap();
+        node::profile_dir(&host.data_dir, host.profile)
+    };
+    std::fs::copy(
+        node::harness::host_id_path(&profile_dir("desk")),
+        node::harness::host_id_path(&profile_dir("new-desk")),
+    )
+    .unwrap();
+    net.restart_daemon("new-desk").await.unwrap();
+    assert_eq!(edge(&net, "new-desk").host_id(), desk);
+    let new_key = edge(&net, "new-desk").public_key().to_vec();
+    assert_ne!(new_key, old_key);
+
+    // The moment the laptop's side of the old link ends, read what the
+    // laptop pins for the desk.
+    let closed = tokio::spawn({
+        let laptop = edge(&net, "laptop");
+        async move {
+            let end = old.accepted_end().await;
+            let pinned = laptop
+                .trusted()
+                .into_iter()
+                .find(|(host, ..)| *host == desk)
+                .map(|(.., key)| key);
+            (end, pinned)
+        }
+    });
+    pair(&net, "new-desk", "laptop").await;
+    let (end, pinned_at_close) = tokio::time::timeout(Duration::from_secs(10), closed)
+        .await
+        .expect("the old key's link closes when its key is replaced")
+        .unwrap();
+    let end = end.expect("the laptop ends the old link with a reason");
+    assert!(end.contains("peer trust was replaced"), "{end}");
+    assert_ne!(
+        pinned_at_close.as_ref(),
+        Some(&new_key),
+        "the old link closed before the new key was trusted"
+    );
+    let pinned = edge(&net, "laptop")
+        .trusted()
+        .into_iter()
+        .find(|(host, ..)| *host == desk)
+        .map(|(.., key)| key);
+    assert_eq!(pinned, Some(new_key), "the pairing replaced the pinned key");
+    println!("the old desk's live link closed ({end}) before its replacement key was trusted");
+
+    net.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn discovery_advertises_a_listener_and_finds_a_paired_host_at_its_new_address() {
     // The phone listens for nothing, as a phone does: it dials, and only
@@ -883,6 +971,69 @@ async fn discovery_advertises_a_listener_and_finds_a_paired_host_at_its_new_addr
     net.shutdown().await.unwrap();
 }
 
+/// A host revoked while it was away has no link to hear the revocation
+/// close: it learns it when it next dials, from the desk's handshake
+/// refusing its certificate, and reads the desk as no longer trusting it
+/// rather than as offline.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_host_revoked_while_away_reads_the_desk_as_revoked_once_it_dials_through_the_relay() {
+    let mut net = Net::start_with(
+        Topology::new()
+            .relay(&["ada"])
+            .host_decl(relay_host("desk", "ada"))
+            .host_decl(relay_host("tablet", "ada"))
+            .agent(
+                testnet::AgentDecl::new("worker", "desk")
+                    .prompt("Watch the build.")
+                    .steps(vec![
+                        provider_fakes::script::Step::Text {
+                            chunks: vec!["Watching.".to_owned()],
+                        },
+                        provider_fakes::script::Step::TurnEnd,
+                    ]),
+            ),
+        testnet::NetOptions::default(),
+    )
+    .await
+    .unwrap();
+    let desk = host_id(&net, "desk");
+    let worker = net.agent("worker").unwrap().id;
+    net.trust("desk", "tablet").await.unwrap();
+    net.trust("tablet", "desk").await.unwrap();
+    until_via(&net, "tablet", "desk", LiveRoute::Relay).await;
+    open_session(&edge(&net, "tablet"), desk, worker)
+        .await
+        .expect("the tablet reaches the desk through the relay");
+
+    net.stop_daemon("tablet").await.unwrap();
+    net.untrust("desk", "tablet").await.unwrap();
+    net.restart_daemon("tablet").await.unwrap();
+
+    // Back up, the tablet hears from the relay that the desk is online and
+    // tries it: the desk's handshake refuses its certificate.
+    let mut fleet = net.observe_inventory("tablet").await.unwrap();
+    row_until(
+        &mut fleet,
+        desk,
+        "the tablet to read the desk as no longer trusting it",
+        |row| row.revoked == Some(true),
+    )
+    .await;
+    let refused = open_session(&edge(&net, "tablet"), desk, worker)
+        .await
+        .expect_err("a revoked host opens nothing");
+    assert_eq!(
+        (refused.code(), refused.message()),
+        (tonic::Code::Unauthenticated, node::TRUST_REVOKED),
+        "a call through the relay is refused as no longer trusted"
+    );
+    println!(
+        "the tablet, revoked while stopped, dialled through the relay and reads the desk as revoked"
+    );
+
+    net.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_the_relay() {
     // The phone reaches the desk directly, with the relay beside it as a
@@ -944,14 +1095,23 @@ async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_t
 
     // Revoking closes every stream the revoked host holds, at once, and
     // neither route lets it back in: the desk no longer holds its key, and
-    // says so when the host tries. The relay may still say the host is
+    // its link closing said why, so the host reads the desk as no longer
+    // trusting it rather than as gone. The relay may still say the host is
     // online, as it says of any host on the account; saying so grants
     // nothing.
     for (host, mut session, mut inventory) in held {
         let id = host_id(&net, host);
+        let mut fleet = net.observe_inventory(host).await.unwrap();
         net.untrust("desk", host).await.unwrap();
         let session_end = ended(&mut session, &format!("{host}'s session")).await;
         let inventory_end = ended(&mut inventory, &format!("{host}'s inventory")).await;
+        row_until(
+            &mut fleet,
+            desk,
+            &format!("{host} to read the desk as no longer trusting it"),
+            |row| row.revoked == Some(true),
+        )
+        .await;
         let refused = open_session(&edge(&net, host), desk, worker)
             .await
             .expect_err("a revoked host opens nothing");
@@ -967,6 +1127,7 @@ async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_t
         );
         println!(
             "{host} revoked: session {session_end}, inventory {inventory_end}; \
+             it reads the desk as revoked and its reopen is refused; \
              the desk calling it: {:?}; the desk sees it {:?}",
             unasked.code(),
             edge(&net, "desk").via(id).await,
@@ -984,7 +1145,7 @@ async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_t
 
     // The relay's word that the tablet is online is what lets it pair
     // again, by the code the desk shows, with neither side reconnecting:
-    // the exchange runs inside a tunnel the relay pipes and cannot read,
+    // the exchange runs over a handshake the relay forwards and cannot read,
     // with a QR secret as well as a PIN.
     let links_before = net.relay().unwrap().links("ada").await;
     let started = start_pairing(&net, "desk", qr_window()).await.unwrap();
@@ -1283,102 +1444,12 @@ fn relay_host(name: &str, account: &str) -> testnet::HostDecl {
     }
 }
 
-/// On a free account the relay lists a host and refuses the tunnel to it
-/// for the plan: a trusted host only the relay reaches is away, which the
-/// phone draws as its away banner and host group. A direct link to the
-/// same host makes it online again, and so does the account going Pro, at
-/// once rather than after the backoff of the retry the refusal started.
-#[tokio::test(flavor = "multi_thread")]
-async fn free_tier_relay_only_host_is_away() {
-    let mut topology = Topology::new()
-        .relay(&["ada"])
-        .host_decl(relay_host("desk", "ada"))
-        .host_decl(relay_host("laptop", "ada"))
-        .link("desk", "laptop");
-    topology.relay.as_mut().unwrap().accounts[0].tier = testnet::TierDecl::Free;
-    let mut net = Net::start(topology).await.unwrap();
-    net.trust("desk", "laptop").await.unwrap();
-    net.trust("laptop", "desk").await.unwrap();
-    let (desk, laptop) = (host_id(&net, "desk"), host_id(&net, "laptop"));
-    assert_eq!(tier(&net, "laptop"), Some(node::Tier::Free));
-    let mut fleet = net.observe_inventory("laptop").await.unwrap();
-    let presence = |row: &wire::HostEntry| (row.presence(), row.via());
-
-    until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
-    let row = row_until(&mut fleet, desk, "the desk online over its link", |row| {
-        presence(row) == (wire::Presence::Online, wire::RouteKind::Direct)
-    })
-    .await;
-    println!("linked: the desk is {:?}", presence(&row));
-
-    net.sever_link("desk", "laptop").unwrap();
-    until_via(&net, "laptop", "desk", LiveRoute::Relay).await;
-    let row = row_until(
-        &mut fleet,
-        desk,
-        "the desk away on the relay alone",
-        |row| presence(row) == (wire::Presence::Away, wire::RouteKind::Relay),
-    )
-    .await;
-    let own = row_until(&mut fleet, laptop, "the laptop's own entry", |_| true).await;
-    assert_eq!(
-        own.presence(),
-        wire::Presence::Online,
-        "a host is online to itself"
-    );
-    println!("relay only, free: the desk is {:?}", presence(&row));
-
-    net.restore_link("desk", "laptop").await.unwrap();
-    until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
-    let row = row_until(
-        &mut fleet,
-        desk,
-        "the desk online over its link again",
-        |row| presence(row) == (wire::Presence::Online, wire::RouteKind::Direct),
-    )
-    .await;
-    println!("linked again: the desk is {:?}", presence(&row));
-
-    net.sever_link("desk", "laptop").unwrap();
-    until_via(&net, "laptop", "desk", LiveRoute::Relay).await;
-    row_until(&mut fleet, desk, "the desk away again", |row| {
-        presence(row) == (wire::Presence::Away, wire::RouteKind::Relay)
-    })
-    .await;
-    // Long enough for the refused desk's retry to back off past a few
-    // seconds, so only the plan change can turn it online promptly.
-    holds_for("the desk away", Duration::from_secs(8), || async {
-        edge(&net, "laptop").presence(desk).await.0 == wire::Presence::Away
-    })
-    .await
-    .unwrap();
-    let paid = std::time::Instant::now();
-    net.set_tier("ada", testnet::TierDecl::Pro).await.unwrap();
-    let row = row_until(
-        &mut fleet,
-        desk,
-        "the desk online through the relay on Pro",
-        |row| presence(row) == (wire::Presence::Online, wire::RouteKind::Relay),
-    )
-    .await;
-    let took = paid.elapsed();
-    println!(
-        "relay only, Pro: the desk is {:?} {took:?} after the plan changed",
-        presence(&row)
-    );
-    assert!(
-        took < Duration::from_secs(5),
-        "a host away for the plan turns online promptly once it is paid: {took:?}"
-    );
-
-    net.shutdown().await.unwrap();
-}
-
 /// An account that lapses from Pro to Free stops being carried at once:
-/// the relay "refuses to carry any stream to or from a free link", so a
-/// host the relay alone reaches is away and nothing reaches it through the
-/// relay any more, even over a channel that was opened while the account
-/// was Pro. A host told the peer is away must not still be able to call it.
+/// the relay stops forwarding between the account's hosts and tells each
+/// end, so a host the relay alone reaches is away and nothing reaches it
+/// through the relay any more, even over a channel that was opened while
+/// the account was Pro. A host told the peer is away must not still be
+/// able to call it.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_lapsed_account_stops_carrying_calls_the_relay_carried_while_it_was_pro() {
     let topology = Topology::new()
@@ -1459,13 +1530,21 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
     let (desk, phone) = (host_id(&net, "desk"), host_id(&net, "phone"));
     assert_eq!(tier(&net, "desk"), Some(node::Tier::Free));
 
-    // On a free account the relay lists the account's hosts and opens no
-    // tunnel between them, for calls or for pairing; the refused pairing
+    // On a free account the relay lists the account's hosts and forwards
+    // nothing between them, for calls or for pairing; the refused pairing
     // leaves the responder's window open, as the secret never reached it.
     until_via(&net, "desk", "phone", LiveRoute::Relay).await;
     let call = peer_inventory_hosts(&edge(&net, "phone"), desk)
         .await
-        .expect_err("no tunnel on a free account");
+        .expect_err("nothing forwarded on a free account");
+    let mut phones_fleet = net.observe_inventory("phone").await.unwrap();
+    row_until(
+        &mut phones_fleet,
+        desk,
+        "the phone to read the desk away, refused for the plan",
+        |row| row.presence() == wire::Presence::Away,
+    )
+    .await;
     let started = start_pairing(&net, "desk", pin_window()).await.unwrap();
     let pairing = begin_pair(
         &net,
@@ -1475,7 +1554,7 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
         Vec::new(),
     )
     .await
-    .expect_err("no pairing tunnel on a free account");
+    .expect_err("no pairing forwarded on a free account");
     assert!(edge(&net, "desk").pairing_active());
     println!(
         "free: listed via the relay; call {:?}; pairing {:?}",
@@ -2021,22 +2100,13 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
         "bob@example.com"
     );
 
-    // Bob's account is revoked. The work profile has to sign in again; the
-    // main profile's link to the relay does not notice.
+    // Bob's account is revoked. The relay credential the work profile holds
+    // stays valid, so nothing changes until its refresh, five minutes before
+    // it expires on this net: the account service refuses that, and the
+    // work profile has to sign in again. The main profile's link to the
+    // relay refreshes at the same moment and does not notice.
     net.relay().unwrap().revoke("bob");
-    door(&net, "desk")
-        .await
-        .pause_profile(wire::ProfileRequest {
-            profile_id: work.clone(),
-        })
-        .await
-        .unwrap();
-    door(&net, "desk")
-        .await
-        .resume_profile(wire::ProfileRequest {
-            profile_id: work.clone(),
-        })
-        .await
+    net.advance(testnet::CREDENTIAL_TTL - Duration::from_secs(5 * 60))
         .unwrap();
     until("the work profile to need a sign-in", || async {
         let observed = profile_info(&net, "desk", &work).await.observed;
@@ -2128,11 +2198,9 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     let listed = net
         .runtime("desk")
         .unwrap()
-        .store()
+        .read_store(|store| store.agents().unwrap().len())
         .await
-        .agents()
-        .unwrap()
-        .len();
+        .unwrap();
     assert_eq!(listed, 1, "the worker is still the desk's");
     // The signed-out profile keeps its place for the account, across a
     // restart: a login naming no profile lands on it again.
@@ -2293,72 +2361,8 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     net.shutdown().await.unwrap();
 }
 
-/// Waits until `viewer`'s own inventory describes `host` as `check` wants,
-/// and returns that row.
-/// A host that connects goes from offline straight to online: while its
-/// link is up and no channel on it has opened yet, it reads as it did,
-/// never away and never online on another route first.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_host_that_connects_reads_offline_until_its_first_channel_opens() {
-    let mut net = Net::start(
-        Topology::new()
-            .host("desk")
-            .host("laptop")
-            .link("desk", "laptop"),
-    )
-    .await
-    .unwrap();
-    let laptop = host_id(&net, "laptop");
-    until_via(&net, "desk", "laptop", LiveRoute::Direct).await;
-    net.sever_link("desk", "laptop").unwrap();
-    net.wait_link("desk", "laptop", false).await.unwrap();
-    let mut fleet = net.observe_inventory("desk").await.unwrap();
-    row_until(&mut fleet, laptop, "the laptop offline", |row| {
-        row.presence() == wire::Presence::Offline
-    })
-    .await;
-    // The stream opened before the lost link reached presence can carry
-    // the laptop online first; only rows from reconnecting on are judged.
-    let before_restore = rows_seen(&mut fleet, laptop).await.len();
-
-    net.restore_link("desk", "laptop").await.unwrap();
-    row_until(&mut fleet, laptop, "the laptop online", |row| {
-        (row.presence(), row.via()) == (wire::Presence::Online, wire::RouteKind::Direct)
-    })
-    .await;
-    let rows = rows_seen(&mut fleet, laptop).await[before_restore..].to_vec();
-    println!("connecting, the laptop read {rows:?}");
-    let (last, before) = rows.split_last().expect("rows");
-    assert_eq!(*last, (wire::Presence::Online, wire::RouteKind::Direct));
-    assert!(
-        before
-            .iter()
-            .all(|row| *row == (wire::Presence::Offline, wire::RouteKind::Unspecified)),
-        "the laptop read offline until it was online: {rows:?}"
-    );
-    net.shutdown().await.unwrap();
-}
-
-/// How `host` read in each entry `fleet` has carried so far, in order.
-async fn rows_seen(
-    fleet: &mut testnet::InventoryObserver,
-    host: uuid::Uuid,
-) -> Vec<(wire::Presence, wire::RouteKind)> {
-    let events = fleet
-        .observe_until(|_| true, testnet::PATIENCE)
-        .await
-        .expect("the inventory stream is open");
-    events
-        .iter()
-        .filter_map(|event| match &event.of {
-            Some(wire::inventory_event::Of::Host(row)) if row.host_id == host.as_bytes() => {
-                Some((row.presence(), row.via()))
-            }
-            _ => None,
-        })
-        .collect()
-}
-
+/// Waits until the inventory `fleet` watches describes `host` as `check`
+/// wants, and returns that row.
 async fn row_until(
     fleet: &mut testnet::InventoryObserver,
     host: uuid::Uuid,
@@ -2598,7 +2602,9 @@ async fn a_direct_link_keeps_its_session_through_a_rebind_a_held_transfer_and_a_
     // connection migrates with it, and the open session carries on.
     let moved = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
     let moved_to = moved.local_addr().unwrap();
-    edge(&net, "laptop").rebind_lan(moved).unwrap();
+    edge(&net, "laptop")
+        .rebind(node::socket::LinkSocket::on_udp(moved).unwrap())
+        .unwrap();
     net.open_gate("one").unwrap();
     until_item(&mut session, "after the rebind").await;
     assert_eq!(edge(&net, "laptop").via(desk).await, LiveRoute::Direct);
@@ -2885,12 +2891,12 @@ async fn a_call_to_a_host_only_a_lapsed_account_reached_names_the_lapse_at_once(
     until("the desk to hold w's row", || {
         let (net, key) = (&net, &key);
         async move {
+            let key = key.clone();
             let held = net
                 .runtime("desk")
                 .unwrap()
-                .store()
+                .read_store(move |store| store.agent(&key).unwrap())
                 .await
-                .agent(key)
                 .unwrap();
             held.map(|_| ()).ok_or_else(|| "not yet".to_owned())
         }
@@ -3029,171 +3035,85 @@ async fn an_attachment_at_the_stated_limit_stores_and_one_over_it_is_refused_nam
     );
 }
 
-/// Presence says whether a channel to a host opens. A host whose route
-/// stays listed while no channel opens on it (a hiccup shorter than the
-/// link's idle timeout, a relay listing a host whose tunnel fails) reads
-/// offline once a call fails, never away: away is only the relay refusing
-/// for the account's plan. Over a direct link the failed call closes the
-/// link, as its idle timeout would; a link that comes back while channels
-/// still fail leaves the host offline, where it used to read online the
-/// moment the link was up. Over the relay a fresh channel is retried. Once
-/// channels open again the laptop reads online, which is what releases a
-/// client's held sends, and the same send goes through.
+/// The host behind the relay, not the one that opened the session, moves
+/// to another network mid-stream. Its socket rebinds; the relay finds its
+/// link at the new address, by the connection quinn moved there, and goes
+/// on forwarding both ways. The session carries on over the same link:
+/// neither end's link log has it going down, and the relay holds one link
+/// per host.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_host_no_call_can_reach_reads_offline_until_one_can() {
-    for relayed in [false, true] {
-        let mut topology = Topology::new().agent(
-            testnet::AgentDecl::new("w", "laptop")
-                .prompt("Wait.")
+async fn a_host_behind_the_relay_rebinds_mid_stream_and_its_session_carries_on() {
+    use node::link_log::LinkTransition;
+    use provider_fakes::script::Step;
+
+    let say = |text: &str| Step::Text {
+        chunks: vec![text.to_owned()],
+    };
+    let wait = |gate: &str| Step::WaitFor { path: gate.into() };
+    let topology = Topology::new()
+        .relay(&["ada"])
+        .host_decl(relay_host("desk", "ada"))
+        .host_decl(relay_host("laptop", "ada"))
+        .agent(
+            testnet::AgentDecl::new("worker", "desk")
+                .prompt("Keep me posted.")
                 .steps(vec![
-                    provider_fakes::script::Step::Text {
-                        chunks: vec!["Ready.".into()],
-                    },
-                    provider_fakes::script::Step::TurnEnd,
+                    wait("one"),
+                    say("before the move"),
+                    wait("two"),
+                    say("after the move"),
+                    Step::TurnEnd,
                 ]),
         );
-        topology = if relayed {
-            topology
-                .relay(&["ada"])
-                .host_decl(relay_host("desk", "ada"))
-                .host_decl(relay_host("laptop", "ada"))
-        } else {
-            topology.host("desk").host("laptop").link("desk", "laptop")
-        };
-        let mut net = Net::start(topology).await.unwrap();
-        if relayed {
-            net.trust("laptop", "desk").await.unwrap();
-            net.trust("desk", "laptop").await.unwrap();
-        }
-        let route = if relayed {
-            LiveRoute::Relay
-        } else {
-            LiveRoute::Direct
-        };
-        let laptop = host_id(&net, "laptop");
-        until_via(&net, "desk", "laptop", route).await;
-        net.settle("w").await.unwrap();
-        let key = net.agent("w").unwrap().key();
-        until("the desk to hold w's row", || {
-            let (net, key) = (&net, &key);
-            async move {
-                let held = net
-                    .runtime("desk")
-                    .unwrap()
-                    .store()
-                    .await
-                    .agent(key)
-                    .unwrap();
-                held.map(|_| ()).ok_or_else(|| "not yet".to_owned())
-            }
-        })
+    // Both hosts reach the relay over UDP, the path a network change moves.
+    let closed = std::net::TcpListener::bind("127.0.0.1:0")
+        .and_then(|listener| listener.local_addr())
+        .unwrap();
+    let options = testnet::NetOptions {
+        edge: Some(std::sync::Arc::new(move |_, edge| {
+            edge.cloud.relay_tcp = Some(closed);
+        })),
+        ..testnet::NetOptions::default()
+    };
+    let mut net = Net::start_with(topology, options).await.unwrap();
+    net.trust("desk", "laptop").await.unwrap();
+    net.trust("laptop", "desk").await.unwrap();
+    let (desk, laptop) = (host_id(&net, "desk"), host_id(&net, "laptop"));
+    let worker = net.agent("worker").unwrap().id;
+    assert_eq!(carrier(&net, "desk"), Some(RelayCarrier::Quic));
+    until_via(&net, "laptop", "desk", LiveRoute::Relay).await;
+    let mut session = open_session(&edge(&net, "laptop"), desk, worker)
         .await
         .unwrap();
-        let mut fleet = net.observe_inventory("desk").await.unwrap();
-        row_until(
-            &mut fleet,
-            laptop,
-            "the laptop online",
-            testnet::observe::host_online,
-        )
-        .await;
-
-        let agent_id = net.agent("w").unwrap().id.as_bytes().to_vec();
-        let send = |text: &str| wire::SendInputRequest {
-            agent_id: agent_id.clone(),
-            input: Some(sdk_prompt(text)),
-        };
-        // The stream keeps every row since it opened, the laptop's coming
-        // online included; only rows after the refusal are judged.
-        let before_refusal = rows_seen(&mut fleet, laptop).await.len();
-        net.refuse_calls("desk", "laptop", true).await.unwrap();
-        let refused = net
-            .client("desk")
+    net.open_gate("one").unwrap();
+    until_item(&mut session, "before the move").await;
+    let downs = |host: &str, peer: uuid::Uuid| {
+        net.link_log(host)
             .unwrap()
-            .send_input(tonic::Request::new(send("Are you there?")))
-            .await
-            .expect("the send is answered")
-            .into_inner();
-        assert!(
-            matches!(
-                &refused.of,
-                Some(wire::send_input_response::Of::Rejected(rejected))
-                    if rejected.refusal() == wire::Refusal::HostUnreachable
-            ),
-            "a send no call channel opens for is refused as unreachable: {refused:?}"
-        );
-        let away = row_until(&mut fleet, laptop, "the laptop offline", |row| {
-            row.presence() == wire::Presence::Offline
-        })
-        .await;
-        println!(
-            "relayed {relayed}: a refused call takes the laptop {:?}",
-            away.presence()
-        );
-        if !relayed {
-            // The link comes back while every channel is still refused:
-            // the laptop is seen again and still cannot be called.
-            net.redial("desk", "laptop").await.unwrap();
-            assert_eq!(
-                edge(&net, "desk").presence(laptop).await,
-                (wire::Presence::Offline, LiveRoute::Offline),
-                "a link back up with no channel open on it reads offline"
-            );
-            let refused = net
-                .client("desk")
-                .unwrap()
-                .send_input(tonic::Request::new(send("Are you there?")))
-                .await
-                .expect("the send is answered")
-                .into_inner();
-            assert!(
-                matches!(
-                    &refused.of,
-                    Some(wire::send_input_response::Of::Rejected(rejected))
-                        if rejected.refusal() == wire::Refusal::HostUnreachable
-                ),
-                "a send over the link back up is still refused: {refused:?}"
-            );
-            println!("the link came back while calls were refused; the laptop stayed offline");
-        }
-        let since_refused = rows_seen(&mut fleet, laptop).await;
+            .into_iter()
+            .filter(|line| line.peer == peer && line.event == LinkTransition::Down)
+            .count()
+    };
+    let before = (downs("laptop", desk), downs("desk", laptop));
 
-        net.refuse_calls("desk", "laptop", false).await.unwrap();
-        let back = row_until(
-            &mut fleet,
-            laptop,
-            "the laptop online again",
-            testnet::observe::host_online,
-        )
-        .await;
-        assert_eq!(back.via(), route.to_wire(), "back on the route it had");
-        // From the first offline row until calls were let through, the
-        // laptop read nothing but offline: no flip back to online on a
-        // link that carried no call, and no away for a refusal that was
-        // not about the plan.
-        let since_refused = &since_refused[before_refusal..];
-        let first_offline = since_refused
-            .iter()
-            .position(|row| row.0 == wire::Presence::Offline)
-            .expect("the laptop read offline");
-        assert!(
-            since_refused[first_offline..]
-                .iter()
-                .all(|row| *row == (wire::Presence::Offline, wire::RouteKind::Unspecified)),
-            "the laptop read only offline while calls were refused: {since_refused:?}"
-        );
-        let sent = net
-            .client("desk")
-            .unwrap()
-            .send_input(tonic::Request::new(send("Are you there?")))
-            .await
-            .expect("the send is answered")
-            .into_inner();
-        assert!(
-            matches!(sent.of, Some(wire::send_input_response::Of::Accepted(_))),
-            "once calls open again the send goes through: {sent:?}"
-        );
-        println!("relayed {relayed}: calls open again, the laptop is online and takes the send");
-        net.shutdown().await.unwrap();
-    }
+    println!("{:?}", net.change_network("desk").unwrap());
+    net.open_gate("two").unwrap();
+    until_item(&mut session, "after the move").await;
+    peer_inventory_hosts(&edge(&net, "laptop"), desk)
+        .await
+        .expect("the laptop's calls reach the desk at its new address");
+    assert_eq!(
+        (downs("laptop", desk), downs("desk", laptop)),
+        before,
+        "the link between them never went down"
+    );
+    let mut links = net.relay().unwrap().links("ada").await;
+    links.sort();
+    let mut expected = vec![(desk, 1), (laptop, 1)];
+    expected.sort();
+    assert_eq!(links, expected, "one relay link per host");
+    assert_eq!(edge(&net, "laptop").via(desk).await, LiveRoute::Relay);
+    println!("the desk moved under an open session; the relay carried it on");
+
+    net.shutdown().await.unwrap();
 }

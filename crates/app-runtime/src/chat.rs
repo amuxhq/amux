@@ -497,7 +497,7 @@ impl Drop for Chat {
 
 /// Notes where each prompt on its way is drawn as a frame first sees it,
 /// and forgets the ones no longer on their way.
-fn note_drawn(state: &SessionState, first_drawn: &mut HashMap<Vec<u8>, bool>) {
+pub(crate) fn note_drawn(state: &SessionState, first_drawn: &mut HashMap<Vec<u8>, bool>) {
     let to_feed = ui_view::sends_to_feed(state);
     let mut underway = HashSet::new();
     for sent in state.inputs().iter() {

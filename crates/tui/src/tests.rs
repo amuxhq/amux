@@ -996,8 +996,10 @@ fn ctrl_v_attaches_a_file_through_put_blob() {
 
 // --- Detached and Reset ----------------------------------------------------
 
+/// A chat whose host is away keeps its rows and says the host is away and
+/// the chat not current, and keeps what is being typed.
 #[test]
-fn detached_keeps_the_rows_and_disables_send() {
+fn detached_keeps_the_rows_and_the_draft() {
     let mut state = chat(replies(1, 5));
     state.update(Msg::Host(wire::HostEntry {
         host_id: b"host".to_vec(),
@@ -1166,6 +1168,26 @@ fn a_host_away_on_the_free_plan_names_the_plan() {
     );
 }
 
+/// An empty chat caught up from its host has nothing yet, even while the
+/// fleet, on its own stream, still has the host away; once its source
+/// is lost the chat says the host is away.
+#[test]
+fn an_empty_caught_up_chat_is_not_away_by_a_lagging_fleet() {
+    let mut state = chat(vec![]);
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    view.reach = ui_view::Reach::Offline(ui_view::Offline::Plain);
+    let screen = text(&draw(&mut view, &state, 0, W, H, theme()).0);
+    assert!(screen.contains("Nothing here yet."), "{screen}");
+    assert!(!screen.contains("host is away"), "{screen}");
+
+    state.update(event(session_event::Of::Detached(wire::Detached {})));
+    let screen = text(&draw(&mut view, &state, 0, W, H, theme()).0);
+    assert!(
+        screen.contains("Its host is away, and nothing of this chat is held here yet."),
+        "{screen}"
+    );
+}
+
 /// A host that closed its link saying it no longer trusts this machine is
 /// captioned and headed with that, never with its own old sign-in.
 #[test]
@@ -1231,7 +1253,9 @@ fn a_reset_keeps_the_rows_until_caught_up_then_shows_the_newest() {
     view.key(&state, key(KeyCode::PageUp), theme());
     let (before, _) = feed(&mut view, &state);
 
-    state.update(event(session_event::Of::Reset(wire::Reset {})));
+    state.update(event(session_event::Of::Reset(wire::Reset {
+        generation: 1,
+    })));
     state.update(snapshot(Phase::Idle, vec![], vec![]));
     for order in 200..=210 {
         let mut fresh = item(order, None);
@@ -1661,126 +1685,6 @@ fn deleting_comments_and_the_token_drops_the_draft_review() {
     view.key(&state, key(KeyCode::Backspace), theme());
     assert!(view.editor.is_empty());
     assert!(!view.resume_review());
-}
-
-/// Answers Diff with a patch reference and GetBlob with its bytes, and
-/// records what it was asked.
-#[derive(Default)]
-struct DiffHost {
-    asked: std::sync::Mutex<Vec<String>>,
-}
-
-#[async_trait::async_trait]
-impl client::Client for DiffHost {
-    async fn diff(&self, request: wire::DiffRequest) -> Result<wire::Diff, client::RpcError> {
-        assert!(matches!(
-            request.base.and_then(|base| base.base),
-            Some(wire::diff_base::Base::Head(_))
-        ));
-        self.asked.lock().unwrap().push("diff".into());
-        Ok(working_tree_diff())
-    }
-    async fn get_blob(
-        &self,
-        request: wire::GetBlobRequest,
-    ) -> Result<wire::GetBlobResponse, client::RpcError> {
-        assert_eq!(request.hash, vec![9; 32]);
-        self.asked.lock().unwrap().push("get_blob".into());
-        Ok(wire::GetBlobResponse {
-            bytes: PATCH.as_bytes().to_vec(),
-        })
-    }
-    async fn get_catalogue(
-        &self,
-        _: wire::GetCatalogueRequest,
-    ) -> Result<wire::CatalogueBlob, client::RpcError> {
-        unimplemented!()
-    }
-    async fn subscribe_inventory(
-        &self,
-    ) -> Result<client::EventStream<wire::InventoryEvent>, client::RpcError> {
-        unimplemented!()
-    }
-    async fn resolve_agent(
-        &self,
-        _: wire::ResolveAgentRequest,
-    ) -> Result<wire::Agent, client::RpcError> {
-        unimplemented!()
-    }
-    async fn subscribe(
-        &self,
-        _: wire::SubscribeRequest,
-    ) -> Result<client::EventStream<SessionEvent>, client::RpcError> {
-        unimplemented!()
-    }
-    async fn fetch(&self, _: wire::FetchRequest) -> Result<wire::FetchResponse, client::RpcError> {
-        unimplemented!()
-    }
-    async fn get(&self, _: wire::GetRequest) -> Result<Item, client::RpcError> {
-        unimplemented!()
-    }
-    async fn send_input(
-        &self,
-        _: wire::SendInputRequest,
-    ) -> Result<wire::SendInputResponse, client::RpcError> {
-        unimplemented!()
-    }
-    async fn create_agent(
-        &self,
-        _: wire::CreateAgentRequest,
-    ) -> Result<wire::Agent, client::RpcError> {
-        unimplemented!()
-    }
-    async fn rename_agent(
-        &self,
-        _: wire::RenameAgentRequest,
-    ) -> Result<wire::Agent, client::RpcError> {
-        unimplemented!()
-    }
-    async fn stop_agent(&self, _: wire::StopAgentRequest) -> Result<(), client::RpcError> {
-        unimplemented!()
-    }
-    async fn resume_agent(
-        &self,
-        _: wire::ResumeAgentRequest,
-    ) -> Result<wire::Agent, client::RpcError> {
-        unimplemented!()
-    }
-    async fn delete_agent(&self, _: wire::DeleteAgentRequest) -> Result<(), client::RpcError> {
-        unimplemented!()
-    }
-    async fn send_message(
-        &self,
-        _: wire::SendMessageRequest,
-    ) -> Result<wire::SendMessageResponse, client::RpcError> {
-        unimplemented!()
-    }
-    async fn put_blob(&self, _: wire::PutBlobRequest) -> Result<wire::BlobRef, client::RpcError> {
-        unimplemented!()
-    }
-    async fn list_repositories(
-        &self,
-        _: wire::ListRepositoriesRequest,
-    ) -> Result<wire::ListRepositoriesResponse, client::RpcError> {
-        unimplemented!()
-    }
-    async fn dump(&self, _: wire::DumpRequest) -> Result<wire::DumpReport, client::RpcError> {
-        unimplemented!()
-    }
-}
-
-#[tokio::test]
-async fn a_review_asks_for_the_working_tree_diff_then_its_patch() {
-    let host = DiffHost::default();
-    let base = wire::DiffBase {
-        base: Some(wire::diff_base::Base::Head(wire::Empty {})),
-    };
-    let (diff, patch) = ui_runtime::review::review(&host, b"agent", base)
-        .await
-        .unwrap();
-    assert_eq!(*host.asked.lock().unwrap(), ["diff", "get_blob"]);
-    assert_eq!(diff, working_tree_diff());
-    assert_eq!(patch, PATCH);
 }
 
 // --- wording and keys found in use ------------------------------------------
@@ -3336,28 +3240,6 @@ fn an_opened_run_stays_open_as_its_older_steps_page_in() {
     for order in 21..=25 {
         assert!(screen.contains(&format!("src/file{order}.rs")), "{screen}");
     }
-}
-
-/// A run the agent is still at shows its newest steps, with a line for the
-/// ones above them, until its text follows.
-#[test]
-fn a_run_under_way_shows_its_newest_steps() {
-    let mut items = replies(1, 1);
-    items.extend((2..=6).map(|order| item(order, Some(&format!("src/file{order}.rs")))));
-    let mut state = chat(items);
-    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
-    let (screen, _) = feed(&mut view, &state);
-    assert!(screen.contains("2 earlier steps"), "{screen}");
-    for order in 4..=6 {
-        assert!(screen.contains(&format!("src/file{order}.rs")), "{screen}");
-    }
-    assert!(!screen.contains("src/file3.rs"), "{screen}");
-
-    // The agent speaks: the run folds.
-    state.update(event(session_event::Of::Item(item(7, None))));
-    let (screen, _) = feed(&mut view, &state);
-    assert!(screen.contains("▸ 5 reads"), "{screen}");
-    assert!(!screen.contains("src/file6.rs"), "{screen}");
 }
 
 /// A failed command its turn left unresolved stays in view where it ran

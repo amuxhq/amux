@@ -2,6 +2,9 @@
 //! the person said, kept current on every message and equal to a rebuild
 //! from the transcript.
 
+use proptest::collection::vec;
+use proptest::prelude::*;
+use proptest::sample::Index;
 use ui_state::{Run, SessionState};
 use wire::{Kind, Phase, ToolState};
 
@@ -207,48 +210,79 @@ fn a_revision_that_changes_an_items_class_splits_or_merges_runs() {
     }
 }
 
-#[test]
-fn the_run_index_equals_a_rebuild_after_every_message() {
+/// One message in a run-index case.
+#[derive(Clone, Debug)]
+enum Arrival {
+    /// A new item at the head.
+    Head(u8),
+    /// A revision of an item between the first and the head.
+    Revise(Index, u8),
+    /// A page of up to `back` older items, maybe the last page.
+    Page {
+        back: u64,
+        shapes: Vec<u8>,
+        exhausted: bool,
+    },
+}
+
+fn shape() -> impl Strategy<Value = u8> {
+    0..6u8
+}
+
+fn arrival() -> impl Strategy<Value = Arrival> {
+    prop_oneof![
+        2 => shape().prop_map(Arrival::Head),
+        1 => (any::<Index>(), shape()).prop_map(|(at, shape)| Arrival::Revise(at, shape)),
+        1 => (1..=3u64, vec(shape(), 3), prop::bool::weighted(0.1)).prop_map(
+            |(back, shapes, exhausted)| Arrival::Page { back, shapes, exhausted }
+        ),
+    ]
+}
+
+proptest! {
+    #![proptest_config(cases(128))]
+
     // apply_checked asserts the rebuild and changed-key invariants on every
     // message; this drives it through random windows, pages and revisions.
-    for kind in KINDS {
-        for seed in 0..40 {
-            let mut rng = Rng::new(seed + 1);
-            let mut state = open(kind);
-            let start = 30 + rng.below(20);
-            let mut head = start;
-            apply_checked(&mut state, ev_item(read(kind, head, 1)));
-            let mut revision = 2;
-            for _ in 0..80 {
-                revision += 1;
-                let order = match rng.below(4) {
-                    0 | 1 => {
-                        head += 1;
-                        head
+    #[test]
+    fn the_run_index_equals_a_rebuild_after_every_message(
+        kind in kinds(),
+        start in 30..50u64,
+        arrivals in vec(arrival(), 0..=80),
+    ) {
+        let mut state = open(kind);
+        let mut head = start;
+        apply_checked(&mut state, ev_item(read(kind, head, 1)));
+        let mut revision = 2;
+        for arrival in arrivals {
+            revision += 1;
+            let (order, shape) = match arrival {
+                Arrival::Head(shape) => {
+                    head += 1;
+                    (head, shape)
+                }
+                Arrival::Revise(at, shape) => {
+                    (start + at.index((head - start + 1) as usize) as u64, shape)
+                }
+                Arrival::Page { back, shapes, exhausted } => {
+                    let oldest = state.oldest_order().unwrap();
+                    if oldest > 1 {
+                        let items = (oldest.saturating_sub(back).max(1)..oldest)
+                            .zip(&shapes)
+                            .map(|(o, shape)| shaped_item(kind, *shape, o, revision))
+                            .collect();
+                        apply_page(&mut state, items, exhausted);
                     }
-                    2 => start + rng.below(head - start + 1),
-                    _ => {
-                        let oldest = state.oldest_order().unwrap();
-                        if oldest > 1 {
-                            let items = (oldest.saturating_sub(1 + rng.below(3)).max(1)..oldest)
-                                .map(|o| random_item(kind, &mut rng, o, revision))
-                                .collect();
-                            apply_page(&mut state, items, rng.below(10) == 0);
-                        }
-                        continue;
-                    }
-                };
-                apply_checked(
-                    &mut state,
-                    ev_item(random_item(kind, &mut rng, order, revision)),
-                );
-            }
+                    continue;
+                }
+            };
+            apply_checked(&mut state, ev_item(shaped_item(kind, shape, order, revision)));
         }
     }
 }
 
-fn random_item(kind: Kind, rng: &mut Rng, order: u64, revision: u64) -> wire::Item {
-    match rng.below(6) {
+fn shaped_item(kind: Kind, shape: u8, order: u64, revision: u64) -> wire::Item {
+    match shape {
         0 => read(kind, order, revision),
         1 => thinking(kind, order, revision),
         2 => command(kind, order, revision, ToolState::Succeeded),

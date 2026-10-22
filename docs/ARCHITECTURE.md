@@ -105,6 +105,29 @@ The principles that follow from that picture:
 - **Ask the operating system first.** Existence is a directory, liveness is
   a held file lock, "the peer went away" is end of file on a socket. A
   protocol earns its place only where the kernel has no answer.
+- **A core is a function of its inputs.** The daemon, the relay, the agent
+  process and the supervisor each decide everything in one `step`: a typed
+  input in, typed outputs appended, with no lock, task or await inside.
+  Sockets, codecs, timers and disk belong to a driver around the core,
+  which decodes what arrives into inputs and carries out the outputs. What
+  only produces a result, such as an fsync or a token refresh, is a job the
+  driver runs and reports back as an input.
+- **The properties are the protocol spec.** Every promise the protocol
+  makes is written once, as a sentence and a predicate over a core's state,
+  in [`models`](../crates/models/README.md). A checker explores the real
+  cores against them under `just test`. The code is the only
+  implementation of a rule; a test that restates a rule a property already
+  holds is a second copy, and goes.
+- **A seed reproduces a run.** Nothing in a core reads the clock, the
+  network or a random source, so a run is decided by its inputs, and a
+  simulated run's inputs are decided by its seed. A failure is reported as
+  the seed that produced it, and that seed alone replays it.
+- **An invariant violation produces a dump, and a dump replays.** The cheap
+  invariants are checked inside `step` in production, and a violation
+  emits a dump with the violation as its reason instead of carrying on. A
+  dump is, for each stage, a checkpoint and the inputs since, so replaying
+  it re-runs the stage with every property checked and stops at the step
+  that broke one.
 
 ## Processes
 
@@ -133,6 +156,41 @@ like any other, with its own identity, trust and store of replica rows.
 
 Clients never talk to agent processes, and agent processes never talk to
 clients: the journal and the control socket are an agent's only interface.
+
+### Each process is a core and its driver
+
+Four of these processes decide what they do in a state-machine core, and
+everything else in them is the core's driver. Inside the daemon, and the
+relay, a second kind of core decides one thing per peer:
+
+| Process | Core | Driver | What the driver holds |
+|---|---|---|---|
+| daemon | [`daemon-core`](../crates/daemon-core/README.md), one per profile | [`node::driver`](../crates/node/src/driver/mod.rs) | the profile's sockets, links, channels and calls in flight, its timers and the jobs it runs |
+| relay | [`relay-core`](../crates/relay-core/README.md) | [`node`'s relay server](../crates/node/src/edge/relay_server.rs) and its [forwarder](../crates/node/src/link/forwarder.rs) | accepted links, the pair table and the hold buffer for senders not yet admitted |
+| daemon, per peer | [`path-core`](../crates/path-core/README.md), one per peer of a profile | [`node::link::paths`](../crates/node/src/link/paths.rs) | the profile's one link socket, the probes in flight and the route each peer's packets take |
+| agent process | [`agent-core`](../crates/agent-core/README.md) | [`agent`](../crates/agent/src/lib.rs) | the provider child, the control socket, the journal writer and the hook and tool sockets |
+| supervisor | [`supervisor-core`](../crates/supervisor-core/README.md) | [`node::supervisor`](../crates/node/src/supervisor/mod.rs) | the daemon child, its readiness pipe and exit, the release feed and the binaries on disk |
+
+A driver turns what arrives (a socket's bytes, a process exiting, a timer
+firing, a job finishing) into one typed input, steps the core with it, and
+carries out the outputs the step appended: frames to write, timers to arm,
+jobs to run, calls to answer. Each core records every input it steps in a
+ring beside its newest checkpoint ([`core-ring`](../crates/core-ring/src/lib.rs)),
+which is what a dump carries and what a replay steps again.
+
+On a desktop the daemon steps each profile's core on a thread of its own.
+On the phone the app owns the loop: the profiles' cores step on the app's
+core queue whenever the library's wake descriptor turns readable, and the
+transport (links, channels, the client streams) runs on one thread of its
+own beside them; nothing in the library calls into the app. Suspending
+checkpoints every core so a kill after it loses nothing; a relaunch starts
+every core from its store and files, as every start does. While the runtime
+runs, the app's network watch
+([`NetworkWatch.swift`](../apps/apple/Packages/AmuxCore/Sources/AmuxCore/NetworkWatch.swift),
+the system's path monitor) tells it of every change to the phone's network;
+the runtime binds each profile's link socket afresh and has every path
+machine try its paths again, as a desktop daemon does when its interface
+addresses change. See [embedding](EMBEDDED.md).
 
 ## Who dials the daemon
 
@@ -163,15 +221,23 @@ One daemon process is one installation ([`node::start`](../crates/node/src/daemo
 It holds the installation lock, the profile registry, the generation file
 and the front door, and hosts one
 [`ProfileRuntime`](../crates/node/src/runtime.rs) per profile. A profile
-runtime is a complete amux with three groups of work:
+runtime is a complete amux: one daemon core, which owns the profile's store
+and decides everything the protocol promises (the registry, ingest,
+subscriptions, replication, families and deliveries, presence and routes,
+pairing and trust), and the driver around it. The driver's work falls in
+three groups:
 
 - **Edges** ([`node::edge`](../crates/node/src/edge/mod.rs)): the profile's
   local socket, its LAN listener, its links to paired hosts and to the
-  relay, discovery, pairing and the account binding.
+  relay, discovery, the pairing streams and the account binding. The
+  pairing window, the exchange and the trust store are the profile's core's
+  ([`daemon_core::pairing`](../crates/daemon-core/src/pairing/mod.rs),
+  [`daemon_core::trust`](../crates/daemon-core/src/trust.rs)).
 - **Agent hosting**: the agent registry (spawn, stop, resume, delete,
   rename), one handle per agent, and journal ingest into the store.
-- **Serving** ([`node::serve`](../crates/node/src/serve.rs),
-  [`node::fanout`](../crates/node/src/fanout.rs)): subscriptions, history
+- **Serving** ([`node::serve`](../crates/node/src/serve.rs), and the
+  profile's core in [`daemon-core`](../crates/daemon-core/src/serve.rs)
+  through its [driver](../crates/node/src/driver/mod.rs)): subscriptions, history
   pages, the inventory, messaging between agents, blob reads, and the two
   outboxes (deliveries to parents, and pushes).
 
@@ -184,26 +250,31 @@ neither.
 [`runtime.rs`](../crates/node/src/runtime.rs)) exists for every agent whose
 process is live. It holds the agent's directory, the write half of the
 control connection, the inputs and dumps waiting for the agent's answer on
-that connection, the last Hello, and the stop the daemon asked for (which
-names the exit's cause). One watcher task per handle dials `ctl.sock`,
-ingests on every Nudge, and when the connection ends decides whether the
-process is gone (its lock is free: ingest the remainder, mark the row
-exited, remove `tools.sock`) or the connection merely dropped (dial again).
-The ingest cursor itself lives on the agent's store row, committed in the
-same transaction as the rows it produced.
+that connection, the last Hello, and the process ids. One watcher task per
+handle dials `ctl.sock` and feeds the core what it reads: the Hello, each
+Nudge, the connection ending. The core ingests the journal on a Nudge, and
+when the connection ends the driver tells it whether the process is gone
+(its lock is free: the core ingests the remainder and marks the row exited)
+or the connection merely dropped (dial again). The ingest cursor itself
+lives on the agent's store row, committed in the same transaction as the
+rows it produced.
 
-**The subscription handle** (`Subscription` in
-[`serve.rs`](../crates/node/src/serve.rs)) exists for every open Subscribe
-stream. It holds the opening read, taken under the store lock, and a
-receiver on the agent's broadcast channel. Fan-out keeps one bounded
-channel per agent with a subscriber, plus one for the inventory; publishing
-never waits, and a subscriber that falls more than the channel's capacity
-behind is told it lagged and closed, and reads the store again at once: a
-chat with a fresh tail, a fleet with a fresh listing. The store is never a
-buffer for a live stream.
+**The call queue** (in [`driver/calls.rs`](../crates/node/src/driver/calls.rs))
+exists for every open call the core is answering, a Subscribe stream among
+them. The core cannot hold a response stream, so the driver holds it under
+a call id and the core's answers land in its queue. The core takes a
+stream's opening read in the step that registers it and appends each live
+answer in the step that commits the row it carries. A queue holds a bounded
+number of live answers; a stream that falls further behind is reported to
+the core as lagged, told so, and reads the store again at once: a chat with
+a fresh tail, a fleet with a fresh listing. The store is never a buffer for
+a live stream.
 
 After a restart both are rebuilt: agent handles from the directories on
-disk and the store's rows, subscription handles from clients reconnecting.
+disk and the store's rows, call queues from clients reconnecting. The core
+starts from the store, the drafts file, the trust store, the settings and
+the generation; its checkpoint (`core.checkpoint` beside the store) is what
+a dump and a replay start from.
 
 ## The agent directory is the contract
 
@@ -330,25 +401,43 @@ daemon.
 
 ## Remote hosts and the cloud
 
-Each profile holds links to the hosts it trusts: direct QUIC on the local
-network, SSH (`amux relay` joining the SSH session to the profile's
-`link.sock`), or through a relay. Every link carries a control stream and
-application streams. A direct QUIC link is itself the pinned handshake,
-and the streams on it between the two paired hosts are plain; inside every
-other stream the two hosts run a TLS handshake pinned to the keys they
-exchanged when they paired, so a relay never grants authority. Pairing, the
-handshake, routing and the relay's forwarding rule are on
-[the link protocol](PROTOCOL.md) page.
+Each profile holds one link to each host it trusts: one QUIC connection,
+pinned at pairing, carrying a control stream and plain application
+streams. Its handshake is the authority for every call on it, whichever way
+its packets go: direct on the local network or across the internet, through
+the relay over UDP or TLS on TCP, over SSH (`amux relay` joining the SSH
+session to the profile's `link.sock`), or through another paired daemon.
+Every UDP path leaves from the profile's one dual-stack link socket
+([`link/socket.rs`](../crates/node/src/link/socket.rs)), which sits under
+quinn: quinn sends to a stand-in address per peer, and the socket puts each
+packet on that peer's carrying path, behind a header naming the other end
+when a forwarder carries it; byte-stream paths frame the same packets. Which
+path carries a link is the path machine's decision
+([`path-core`](../crates/path-core/README.md), one per peer): it probes the
+candidates, moves the link to a better path that answers, keeps the relay's
+ready while the link is direct, and lets a paid account punch through
+routers to an address the relay observed. A link moved between paths keeps
+its streams. Pairing, the handshake, paths, routing and the forwarding rule
+are on [the link protocol](PROTOCOL.md) page.
+
+A launch costs one round trip to a host it has linked to before. The
+profile keeps a TLS session ticket and an address-validation token from
+each host and from the relay, and its relay token, so its first flight
+resumes every remembered host's link on every candidate path at once with
+the Hello and the inventory and session subscriptions sent as 0-RTT data;
+the relay holds that flight's packets until it has admitted the sender's
+own link.
 
 **Paired daemons are replicas of each other.** A daemon follows each trusted
 host's inventory, keeps replica rows for the agents it lists, and for each
 of those agents holds one subscription to the origin: a tail when it holds
 nothing, or what came after its revision cursor. What arrives is absorbed
-into the local store before it is broadcast to local subscribers
-([`node::sources`](../crates/node/src/sources.rs)). So every client,
-including the terminal on the same machine, reads through its own local
-runtime: the calls on the local socket and on a peer link are one
-vocabulary. Untrusting a host drops its replicas and ends its followers;
+into the local store before it is broadcast to local subscribers, all of it
+decided in the daemon core
+([`daemon_core::sources`](../crates/daemon-core/src/sources.rs)) while its
+driver only carries the streams. So every client, including the terminal on
+the same machine, reads through its own local runtime: the calls on the
+local socket and on a peer link are one vocabulary. Untrusting a host drops its replicas and ends its followers;
 nothing else drops one.
 
 The remembered agents' subscriptions are opened in the same flight as the
@@ -366,18 +455,26 @@ catch-ups lands first; the inventory's only records the new generation.
 **The relay** is the same binary run as `amux server start --cloud`
 ([`crates/amux/src/relay.rs`](../crates/amux/src/relay.rs)). A signed-in
 profile keeps one cloud link to it, over QUIC with a TLS-over-TCP fallback,
-authenticated by a short-lived token from the account service. The relay
-routes streams only between hosts of the same account and forwards bytes it
-cannot read. A link whose account has no subscription carries presence and
-control messages only: the relay refuses every application stream to or
-from it ([`link/piper.rs`](../crates/node/src/link/piper.rs)). Every daemon
-can forward the same way for its own paired hosts, and a link admitted by a
-pinned key has no tier to check. The account service is a separate
+authenticated by a week-long token from the account service that the
+profile keeps across launches and renews hourly. Hosts of
+one account hold links of their own through it, and the relay forwards their
+packets, which it cannot read, per pair of hosts. A link whose account has no
+subscription carries presence and control messages only: the relay forwards
+nothing to or from it. Which pairs it forwards is the relay core's decision
+([`relay-core`](../crates/relay-core/src/lib.rs)), one state machine for
+every account; its driver
+([`link/forwarder.rs`](../crates/node/src/link/forwarder.rs)) moves the
+packets. Every daemon forwards the same way for its own paired hosts, and a
+link admitted by a pinned key has no tier to check: the
+[forwarder](../crates/node/src/link/forwarder.rs) and its core are the same
+code on a daemon, with every link's tier none. The account service is a separate
 deployment; [the phone and amux.sh](CLOUD.md) describes what the app asks of
 it.
 
-**Push notifications** come from an outbox
-([`node::outbox`](../crates/node/src/outbox.rs)). In the transaction that
+**Push notifications** come from an outbox the daemon core drains
+([`notifications.rs`](../crates/daemon-core/src/notifications.rs)), handing
+each push to a sender in [`node::outbox`](../crates/node/src/outbox.rs) as a
+job. In the transaction that
 turns an agent's phase to needs-you, ingest writes a notifications row with
 a due time a short delay away; the row is deleted unsent if the phase moves
 on first, or when the agent exits or is deleted. A drain hands due rows to a
@@ -434,7 +531,7 @@ checks.
 
 | Crate | What it is |
 |---|---|
-| [`wire`](../crates/wire/src/lib.rs) | Committed protobuf types for every boundary: the journal's records, the agent spec and control frames, and the client, peer, pairing, profile and installation services. Sources in `crates/wire/proto/`. |
+| [`wire`](../crates/wire/src/lib.rs) | Committed protobuf types for every boundary: the journal's records, the agent spec and control frames, and the client, peer, pairing, profile and installation services. Sources in `crates/wire/proto/`. The services and tonic sit behind its `grpc` feature: a crate that only speaks the messages leaves it off and takes no tokio from `wire`. |
 | [`model`](../crates/model/src/lib.rs) | Plain values the views and the phone bridge share; the Swift mirrors are generated from them. |
 | [`attachments`](../crates/attachments/src/lib.rs) | Attachments as positioned text, and the `<amux-attachment>` element the model sees. |
 | [`settings`](../crates/settings/src/lib.rs) | Installation, profile and UI settings, and where their files live. |
@@ -463,7 +560,19 @@ checks.
 | Crate | What it is |
 |---|---|
 | [`store`](../crates/store/src/lib.rs) | The profile store: one SQLite file per profile holding own and replica rows, commit and absorb, retention decisions. |
-| [`node`](../crates/node/src/lib.rs) | The daemon: installation, profile runtimes, agent registry, ingest, fan-out, edges, pairing, the relay server, outboxes, debug bundles and the supervisor. |
+| [`node`](../crates/node/README.md) | The daemon around the cores: installation, profile runtimes and their core threads, agent processes, edges and links, the relay server, debug bundles and the supervisor; its README lists the policy it still owns, its tasks and its locks. |
+
+**The state-machine cores** — each decides everything in one `step` over
+typed inputs and outputs, with no runtime, socket or lock in its graph.
+
+| Crate | What it is |
+|---|---|
+| [`daemon-core`](../crates/daemon-core/README.md) | The daemon as one function of its state and an input; it owns the profile store. |
+| [`relay-core`](../crates/relay-core/README.md) | The relay's admission and forwarding decisions, built on the daemon core's link state. |
+| [`path-core`](../crates/path-core/README.md) | Which path one link's packets take: candidates, probes, the carrying path and its hold-down, and which paths the account's plan allows. |
+| [`agent-core`](../crates/agent-core/README.md) | The agent process around its interpreter: incarnation, timers, queue and the open ask. |
+| [`core-ring`](../crates/core-ring/src/lib.rs) | The bounded ring of a core's inputs since its last checkpoint, in segments beside their checkpoints; the agent process's facts ring is one. |
+| [`supervisor-core`](../crates/supervisor-core/README.md) | The supervisor's update decisions: which binary to fetch, start, set aside, go with or roll back to. |
 
 **The UI library** — reaches the daemon only through `client`.
 
@@ -493,9 +602,11 @@ checks.
 | [`provider-fakes`](../crates/provider-fakes/src/lib.rs) | Scripted stand-ins for the Claude and Codex binaries, playing authored scripts or recordings. |
 | [`qualification`](../crates/qualification/src/lib.rs) | Environment-dependent checks: live providers and performance baselines on enrolled machines. |
 | [`claude-specs`](../crates/claude-specs/src/lib.rs), [`codex-specs`](../crates/codex-specs/src/lib.rs) | Recorded protocol corpora for each provider, and the probes that record them. |
-| [`replay-support`](../crates/replay-support/src/lib.rs) | Replays a debug bundle's three pure stages, and manages provider recordings for the capture tools. |
+| [`models`](../crates/models/README.md) | The protocol's promises as properties, explored by a checker over the real code; one fault vocabulary for every model's environment. |
+| [`replay-support`](../crates/replay-support/src/lib.rs) | Replays a debug bundle through its four stages with the protocol's properties judged at every step, and manages provider recordings for the capture tools. |
 | [`fake-amux`](../crates/fake-amux/src/main.rs) | A stand-in `amux` binary running the real supervisor over a scripted daemon. |
 | [`shot`](../crates/shot/README.md) | Deterministic PNG renderings of the terminal client's named states. |
+| [`tui-set`](../crates/tui-set/src/main.rs) | Serves a declared world on a test network and runs the terminal client on it, or draws it headlessly through `shot`. |
 | [`xtask`](../crates/xtask/src/main.rs) | Developer tasks: protobuf codegen, Swift type generation, re-stamping, iOS verification. |
 
 ## The dependency policy
@@ -512,35 +623,83 @@ workspace crates, and ignores dev-dependencies. Its rules:
    missing from the policy fails too.
 2. **Production never depends on test support.** `patience`, `testnet`,
    `qualification`, `claude-specs`, `codex-specs`, `provider-fakes`,
-   `fake-amux` and `shot` may be depended on only by each other.
+   `fake-amux`, `shot`, `tui-set`, `models` and `replay-support` may be
+   depended on only by each other.
 3. **The UI never reaches the daemon or a provider.** `model`, `client`,
    `ui-state`, `ui-view`, `ui-runtime`, `tui` and `app-runtime` may not
-   reach `node`, `store`, `interpret`, `agent`, `claude`, `codex` or
-   `pty-host`, directly or through any chain of dependencies.
+   reach `node`, `store`, `interpret`, `agent`, `claude`, `claude-protocol`,
+   `codex`, `codex-protocol` or `pty-host`, directly or through any chain of
+   dependencies.
+4. **A core reaches no runtime.** Each state-machine core's edges stay
+   within its listed set, an upper bound rather than an exact list, so a
+   core takes in its machines one at a time. `just cores-check` adds what
+   the dependency graph cannot say: no core, and not the ring they record
+   into, has tokio anywhere in its graph on any target, and none of their
+   sources holds a lock, spawns a task or awaits.
+5. **Every dependency comes from crates.io, but rustls.** The check reads
+   `Cargo.lock`: rustls alone may come from git, and only from the fork
+   that carries the patch below, at whatever commit the lockfile pins.
 
 The allowed sets encode the layering above:
 
 | Crate | May depend on | Why |
 |---|---|---|
-| `wire`, `model`, `settings`, `redaction`, `release`, `version-stamp`, `analytics`, `codex`, `pty-host` | nothing in the workspace | leaves everything else builds on |
+| `wire`, `model`, `settings`, `redaction`, `release`, `version-stamp`, `analytics`, `git-facts`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code |
 | `journal`, `store`, `agent-dir`, `attachments` | `wire` | |
-| `interpret` | `wire`, `redaction` | the pure step and its body redactor |
-| `claude` | `pty-host` | |
-| `agent` | `agent-dir`, `attachments`, `claude`, `interpret`, `journal`, `pty-host`, `wire` | the agent process is the only production crate that reads a provider |
-| `node` | `agent-dir`, `analytics`, `interpret`, `journal`, `release`, `settings`, `store`, `version-stamp`, `wire` | reaches agents only through the directory contract, never the `agent` crate, so the phone can host a runtime with no provider in its graph; `interpret` only for the debug bundle's per-kind redactor |
+| `core-ring` | `journal` | a core's input ring, in segments named as the journal's are |
+| `interpret` | `attachments`, `claude-protocol`, `codex-protocol`, `redaction`, `wire` | the pure step and its body redactor |
+| `claude` → `claude-protocol`, `pty-host`; `codex` → `codex-protocol` | | |
+| `daemon-core` | at most `core-ring`, `journal`, `store`, `wire` | holds the store, reads journals, records its inputs |
+| `relay-core` | at most `daemon-core` | built from the daemon core's link and routing state |
+| `path-core` | at most `daemon-core` | names links and reports dumps as the daemon core does |
+| `agent-core` | at most `core-ring`, `interpret`, `journal`, `wire` | wraps the interpreter |
+| `supervisor-core` | at most `release`, `version-stamp` | reads release manifests and version stamps |
+| `agent` | `agent-core`, `agent-dir`, `attachments`, `claude`, `claude-protocol`, `codex`, `codex-protocol`, `core-ring`, `git-facts`, `interpret`, `journal`, `pty-host`, `wire` | the agent core's driver, and the only production crate that reads a provider |
+| `node` | `agent-dir`, `analytics`, `core-ring`, `daemon-core`, `git-facts`, `interpret`, `journal`, `path-core`, `relay-core`, `release`, `settings`, `store`, `supervisor-core`, `version-stamp`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` crate, so the phone can host a runtime with no provider in its graph; `interpret` only for the dump's per-kind redactor |
 | `client` | `agent-dir`, `wire` | the local socket and the clock come from the contract crate |
-| `ui-state` → `model`, `wire`; `ui-view` → `attachments`, `ui-state`, `wire`; `ui-runtime` → `client`, `ui-state`, `wire` | | the view library |
+| `ui-state` → `model`, `wire`; `ui-view` → `attachments`, `ui-state`, `wire`; `ui-runtime` → `client`, `ui-state`, `ui-view`, `wire` | | the view library |
 | `tui` | `attachments`, `client`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | |
 | `app-runtime` | `client`, `model`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | the phone's chats with no `node` |
 | `app-embedded` | `analytics`, `app-runtime`, `client`, `node`, `wire` | the daemon in the phone's process |
 | `app-ffi` | `app-embedded`, `app-runtime`, `client`, `model`, `node`, `ui-view` | the C ABI over both |
 | `amux` | `agent`, `agent-dir`, `analytics`, `claude`, `client`, `node`, `settings`, `store`, `tui`, `wire` | the one binary |
-| `replay-support` | `interpret`, `journal`, `redaction`, `ui-state`, `ui-view`, `wire` | replays the three pure stages |
-| `xtask` | `app-runtime`, `model`, `release`, `ui-view`, `version-stamp` | generates the Swift mirrors; signs releases |
+| `models` | `agent-core`, `daemon-core`, `interpret`, `journal`, `path-core`, `provider-fakes`, `relay-core`, `release`, `store`, `supervisor-core`, `ui-state`, `wire` | the properties, explored over the real cores, store and session state |
+| `replay-support` | `core-ring`, `daemon-core`, `interpret`, `journal`, `models`, `redaction`, `store`, `ui-state`, `ui-view`, `wire` | replays the four stages, judging the models' properties; a debugging tool nothing that ships links |
+| `xtask` | `app-runtime`, `model`, `release`, `ui-view`, `version-stamp`, `wire` | generates the Swift mirrors; signs releases |
 
 The phone bridge (`app-embedded`, `app-ffi`) links `node` on purpose: it
 hosts the runtime in process. `just embedded-check` and `just mobile-check`
 build that provider-free graph for the host and for iOS.
+
+### The rustls patch
+
+rustls 0.23 cannot save a client's TLS 1.3 session ticket, so a process
+that starts again (the phone above all, which the system ends between
+launches) would begin every link with a full handshake and send nothing
+early. The workspace takes rustls from a fork,
+[`jordanwebster/rustls`](https://github.com/jordanwebster/rustls), through
+one `[patch.crates-io]` line in `Cargo.toml`. The maintained diff is the
+branch `amux/<version>`: the rustls release named in its `.amux-base` file
+plus one commit, the save-and-load half of upstream's serializable client
+session (`Tls13ClientSessionValue::encode` and `from_slice`, the loaded
+value bound to the configuration it will resume under, since 0.23 ties a
+session to its configuration's verifier rather than to the peer).
+
+Two scheduled jobs keep it current. The fork's `follow.yml` replays the
+patch onto each newer `v/0.23.*` release, runs rustls's tests and pushes
+`amux/<version>`, or opens an issue in the fork when it cannot. This
+repository's `rustls-bump.yml` notices a newer `amux/*` branch than the pin,
+moves the pin and the lockfile on a `rustls-bump/<version>` branch, opens a
+pull request to `main` and starts CI on the branch.
+
+Only `node::link::client_tickets` uses the patched API: it saves each ticket
+under `profiles/<id>/client-tickets/<peer>/<pinned key>/` (the relay's
+under `client-tickets/relay/<relay name>/`) as it is given, loads a peer's
+tickets when the peer's client configuration is first built
+in a process, and deletes a ticket's file before handing it to a handshake,
+so each is offered once. Dropping the patch is removing the `Cargo.toml`
+line and having that module keep tickets in memory only: links still
+resume within a process, and a relaunch does a full handshake.
 
 ## Where to go next
 

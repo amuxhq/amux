@@ -4,7 +4,9 @@ use std::io;
 
 pub mod flood;
 pub mod phone;
+pub mod relay;
 mod report;
+pub mod warmer;
 pub use report::{
     Baselines, DESKTOP_REFERENCE_STATE, Machine, Metric, MetricRun, PerfError, Report, Sample,
     Statistic, Unit, Verdict, Workload,

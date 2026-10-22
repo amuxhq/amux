@@ -1018,7 +1018,7 @@ impl DiffFileChange {
 /// Host-to-host control envelope exchanged on the link's control stream.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Message {
-    #[prost(oneof = "message::Body", tags = "1, 2, 3, 4, 5, 6")]
+    #[prost(oneof = "message::Body", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
     pub body: ::core::option::Option<message::Body>,
 }
 /// Nested message and enum types in `Message`.
@@ -1037,6 +1037,12 @@ pub mod message {
         Reauth(super::Reauth),
         #[prost(message, tag = "6")]
         LinkClose(super::LinkClose),
+        #[prost(message, tag = "7")]
+        Addresses(super::Addresses),
+        #[prost(message, tag = "8")]
+        ObservedAddress(super::ObservedAddress),
+        #[prost(message, tag = "9")]
+        ForwardRefused(super::ForwardRefused),
     }
 }
 impl ::prost::Name for Message {
@@ -1067,6 +1073,15 @@ pub struct Hello {
     /// a process that no longer exists, however healthy it still looks.
     #[prost(bytes = "vec", tag = "5")]
     pub runtime_instance_id: ::prost::alloc::vec::Vec<u8>,
+    /// Every interface address the sender can be reached at, with its
+    /// listener's port, as host:port; never loopback or link-local.
+    #[prost(string, repeated, tag = "6")]
+    pub addrs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The address the relay last told the sender its packets come from, as
+    /// host:port. Only a paid host is told one: it is the candidate hole
+    /// punching works from, so a receiver keeps it apart from `addrs`.
+    #[prost(string, optional, tag = "7")]
+    pub public_addr: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for Hello {
     const NAME: &'static str = "Hello";
@@ -1114,6 +1129,17 @@ pub struct HelloAccepted {
     /// The acceptor's; see `Hello.runtime_instance_id`.
     #[prost(bytes = "vec", tag = "4")]
     pub runtime_instance_id: ::prost::alloc::vec::Vec<u8>,
+    /// The acceptor's; see `Hello.addrs`.
+    #[prost(string, repeated, tag = "5")]
+    pub addrs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The address the relay saw the sender's packets come from, as host:port.
+    /// Only a relay sets it, and only for a paid host: it is the candidate
+    /// hole punching works from.
+    #[prost(string, optional, tag = "6")]
+    pub observed_addr: ::core::option::Option<::prost::alloc::string::String>,
+    /// The acceptor's; see `Hello.public_addr`.
+    #[prost(string, optional, tag = "7")]
+    pub public_addr: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for HelloAccepted {
     const NAME: &'static str = "HelloAccepted";
@@ -1176,28 +1202,59 @@ impl ::prost::Name for NeighborDown {
         "/amux.v1.NeighborDown".into()
     }
 }
-/// Written by the opener as the first bytes of every non-control stream. The
-/// destination is routing information only; the pinned handshake inside the
-/// stream establishes the caller's authority, unless the stream is `plain`.
+/// The sender's address list changed; the whole new list, replacing the one
+/// its Hello or an earlier Addresses carried.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct StreamPreface {
-    #[prost(bytes = "vec", tag = "1")]
-    pub dst: ::prost::alloc::vec::Vec<u8>,
-    /// The stream carries no handshake of its own: the opener is the host at
-    /// the near end of the link it arrived on, already authenticated by that
-    /// link, and the stream's bytes start at once. Honoured only on a direct
-    /// link to a paired host; a relay never forwards a plain stream as plain.
-    #[prost(bool, tag = "2")]
-    pub plain: bool,
+pub struct Addresses {
+    #[prost(string, repeated, tag = "1")]
+    pub addrs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "2")]
+    pub public_addr: ::core::option::Option<::prost::alloc::string::String>,
 }
-impl ::prost::Name for StreamPreface {
-    const NAME: &'static str = "StreamPreface";
+impl ::prost::Name for Addresses {
+    const NAME: &'static str = "Addresses";
     const PACKAGE: &'static str = "amux.v1";
     fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.StreamPreface".into()
+        "amux.v1.Addresses".into()
     }
     fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.StreamPreface".into()
+        "/amux.v1.Addresses".into()
+    }
+}
+/// The relay's view of where the sender's packets now come from, sent to a
+/// paid host when it changes after the handshake.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ObservedAddress {
+    #[prost(string, tag = "1")]
+    pub addr: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ObservedAddress {
+    const NAME: &'static str = "ObservedAddress";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ObservedAddress".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ObservedAddress".into()
+    }
+}
+/// A forwarder could not deliver packets naming `dst`, sent on the control
+/// link they arrived on. The packets themselves are dropped, never answered.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ForwardRefused {
+    #[prost(bytes = "vec", tag = "1")]
+    pub dst: ::prost::alloc::vec::Vec<u8>,
+    #[prost(enumeration = "ForwardRefusal", tag = "2")]
+    pub reason: i32,
+}
+impl ::prost::Name for ForwardRefused {
+    const NAME: &'static str = "ForwardRefused";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ForwardRefused".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ForwardRefused".into()
     }
 }
 /// Fire-and-forget credential refresh on the cloud link, sent before the
@@ -1286,41 +1343,37 @@ impl ::prost::Name for Host {
         "/amux.v1.Host".into()
     }
 }
-/// A stream reset before acceptance carries one of these refusal reasons.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
-pub enum StreamRefusal {
+pub enum ForwardRefusal {
     Unspecified = 0,
     NoRoute = 1,
     PaymentRequired = 2,
     RateLimited = 3,
-    NotAdjacent = 4,
-    ShuttingDown = 5,
+    ShuttingDown = 4,
 }
-impl StreamRefusal {
+impl ForwardRefusal {
     /// String value of the enum field names used in the ProtoBuf definition.
     ///
     /// The values are not transformed in any way and thus are considered stable
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            Self::Unspecified => "STREAM_REFUSAL_UNSPECIFIED",
-            Self::NoRoute => "STREAM_REFUSAL_NO_ROUTE",
-            Self::PaymentRequired => "STREAM_REFUSAL_PAYMENT_REQUIRED",
-            Self::RateLimited => "STREAM_REFUSAL_RATE_LIMITED",
-            Self::NotAdjacent => "STREAM_REFUSAL_NOT_ADJACENT",
-            Self::ShuttingDown => "STREAM_REFUSAL_SHUTTING_DOWN",
+            Self::Unspecified => "FORWARD_REFUSAL_UNSPECIFIED",
+            Self::NoRoute => "FORWARD_REFUSAL_NO_ROUTE",
+            Self::PaymentRequired => "FORWARD_REFUSAL_PAYMENT_REQUIRED",
+            Self::RateLimited => "FORWARD_REFUSAL_RATE_LIMITED",
+            Self::ShuttingDown => "FORWARD_REFUSAL_SHUTTING_DOWN",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "STREAM_REFUSAL_UNSPECIFIED" => Some(Self::Unspecified),
-            "STREAM_REFUSAL_NO_ROUTE" => Some(Self::NoRoute),
-            "STREAM_REFUSAL_PAYMENT_REQUIRED" => Some(Self::PaymentRequired),
-            "STREAM_REFUSAL_RATE_LIMITED" => Some(Self::RateLimited),
-            "STREAM_REFUSAL_NOT_ADJACENT" => Some(Self::NotAdjacent),
-            "STREAM_REFUSAL_SHUTTING_DOWN" => Some(Self::ShuttingDown),
+            "FORWARD_REFUSAL_UNSPECIFIED" => Some(Self::Unspecified),
+            "FORWARD_REFUSAL_NO_ROUTE" => Some(Self::NoRoute),
+            "FORWARD_REFUSAL_PAYMENT_REQUIRED" => Some(Self::PaymentRequired),
+            "FORWARD_REFUSAL_RATE_LIMITED" => Some(Self::RateLimited),
+            "FORWARD_REFUSAL_SHUTTING_DOWN" => Some(Self::ShuttingDown),
             _ => None,
         }
     }
@@ -1533,6 +1586,7 @@ impl ::prost::Name for SshPairingIdentity {
     }
 }
 /// Generated client implementations.
+#[cfg(feature = "grpc")]
 pub mod pairing_service_client {
     #![allow(
         unused_variables,
@@ -1639,6 +1693,7 @@ pub mod pairing_service_client {
     }
 }
 /// Generated server implementations.
+#[cfg(feature = "grpc")]
 pub mod pairing_service_server {
     #![allow(
         unused_variables,
@@ -5750,7 +5805,9 @@ impl ::prost::Name for SessionEvent {
 }
 /// The first event of every stream: the origin generation its rows and
 /// revisions belong to. A peer source stores it on the block it takes and
-/// names it with its cursor when it resumes; clients ignore it.
+/// names it with its cursor when it resumes; a client that reopens a stream
+/// under another generation than its last Opening or Reset named rebuilds as
+/// at a Reset, which the gap may have carried.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Opening {
     #[prost(uint64, tag = "1")]
@@ -5797,9 +5854,16 @@ impl ::prost::Name for Lagged {
         "/amux.v1.Lagged".into()
     }
 }
-/// Forget the transcript; a fresh tail follows, then CaughtUp.
+/// Forget the transcript; a fresh tail of the block under `generation`, the
+/// origin generation its rows and revisions belong to, follows, then
+/// CaughtUp. A replica sends one live when it takes a new block (its first,
+/// or one replacing what it held); a client holds `generation` from here as
+/// it would from an Opening.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Reset {}
+pub struct Reset {
+    #[prost(uint64, tag = "1")]
+    pub generation: u64,
+}
 impl ::prost::Name for Reset {
     const NAME: &'static str = "Reset";
     const PACKAGE: &'static str = "amux.v1";
@@ -6311,7 +6375,7 @@ impl ::prost::Name for ProjectEntry {
 /// Assembles the host-side parts of a dump bundle into the reports
 /// directory: the agents' journal tails, store slices and agent parts, all
 /// redacted.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DumpRequest {
     /// Empty means every agent of the profile.
     #[prost(bytes = "vec", repeated, tag = "1")]
@@ -6321,6 +6385,12 @@ pub struct DumpRequest {
     /// Produced on an invariant violation or panic rather than on request.
     #[prost(bool, tag = "3")]
     pub automatic: bool,
+    /// The asking client's open sessions, each as its trace began and every
+    /// message since: the client stage of a replay. Unredacted as the client
+    /// holds it; the daemon redacts each through its agent's kind before it
+    /// writes it into the bundle, and passes none on to another host.
+    #[prost(message, repeated, tag = "4")]
+    pub sessions: ::prost::alloc::vec::Vec<ClientSessionHistory>,
 }
 impl ::prost::Name for DumpRequest {
     const NAME: &'static str = "DumpRequest";
@@ -6330,6 +6400,358 @@ impl ::prost::Name for DumpRequest {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.DumpRequest".into()
+    }
+}
+/// One open chat as a client's dump carries it: the session's state when its
+/// trace began, and everything its driver saw since, in the order it saw it.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClientSessionHistory {
+    #[prost(bytes = "vec", tag = "1")]
+    pub agent_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "2")]
+    pub start: ::core::option::Option<ClientSession>,
+    #[prost(message, optional, tag = "3")]
+    pub events: ::core::option::Option<ClientSessionEvents>,
+}
+impl ::prost::Name for ClientSessionHistory {
+    const NAME: &'static str = "ClientSessionHistory";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientSessionHistory".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientSessionHistory".into()
+    }
+}
+/// A client's session state: the rows and every value the session model
+/// keeps. Indexes over the rows are not carried; they are rebuilt from them.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClientSession {
+    #[prost(message, optional, tag = "1")]
+    pub agent: ::core::option::Option<Agent>,
+    #[prost(message, optional, tag = "2")]
+    pub host: ::core::option::Option<HostEntry>,
+    /// The newest snapshot, when one arrived.
+    #[prost(message, optional, tag = "3")]
+    pub snapshot: ::core::option::Option<Snapshot>,
+    /// The catalogue last fetched for the agent, with the hash it was fetched
+    /// by.
+    #[prost(message, optional, tag = "4")]
+    pub catalogue: ::core::option::Option<ClientCatalogue>,
+    #[prost(message, optional, tag = "5")]
+    pub transcript: ::core::option::Option<ClientTranscript>,
+    /// A transcript being built apart, swapped in at the next CaughtUp.
+    #[prost(message, optional, tag = "6")]
+    pub pending: ::core::option::Option<ClientTranscript>,
+    #[prost(bool, tag = "7")]
+    pub retail: bool,
+    #[prost(uint64, optional, tag = "8")]
+    pub generation: ::core::option::Option<u64>,
+    #[prost(message, repeated, tag = "9")]
+    pub inputs: ::prost::alloc::vec::Vec<ClientInput>,
+    #[prost(bool, tag = "10")]
+    pub caught_up: bool,
+    #[prost(bool, tag = "11")]
+    pub detached: bool,
+    #[prost(enumeration = "ClientConnection", tag = "12")]
+    pub connection: i32,
+    #[prost(uint32, optional, tag = "13")]
+    pub exited_under: ::core::option::Option<u32>,
+    #[prost(uint64, tag = "14")]
+    pub reach: u64,
+    #[prost(uint64, tag = "15")]
+    pub epoch: u64,
+    #[prost(message, repeated, tag = "16")]
+    pub blobs: ::prost::alloc::vec::Vec<ClientBlob>,
+    #[prost(uint64, tag = "17")]
+    pub cap: u64,
+    #[prost(bool, tag = "18")]
+    pub following: bool,
+    /// Rows held above the window while the reader is in history.
+    #[prost(message, repeated, tag = "19")]
+    pub arrivals: ::prost::alloc::vec::Vec<Item>,
+    #[prost(bool, tag = "20")]
+    pub arrivals_moved_on: bool,
+    #[prost(uint64, tag = "21")]
+    pub arrivals_changes: u64,
+    #[prost(bool, tag = "22")]
+    pub reload_owed: bool,
+}
+impl ::prost::Name for ClientSession {
+    const NAME: &'static str = "ClientSession";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientSession".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientSession".into()
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClientTranscript {
+    #[prost(message, repeated, tag = "1")]
+    pub items: ::prost::alloc::vec::Vec<Item>,
+    #[prost(bool, tag = "2")]
+    pub exhausted: bool,
+}
+impl ::prost::Name for ClientTranscript {
+    const NAME: &'static str = "ClientTranscript";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientTranscript".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientTranscript".into()
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClientCatalogue {
+    #[prost(bytes = "vec", tag = "1")]
+    pub hash: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "2")]
+    pub catalogue: ::core::option::Option<Catalogue>,
+}
+impl ::prost::Name for ClientCatalogue {
+    const NAME: &'static str = "ClientCatalogue";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientCatalogue".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientCatalogue".into()
+    }
+}
+/// One input this client sent, and what became of it.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ClientInput {
+    #[prost(message, optional, tag = "1")]
+    pub input: ::core::option::Option<Input>,
+    #[prost(enumeration = "ClientInputState", tag = "2")]
+    pub state: i32,
+    /// Why it was refused, when its state is REJECTED.
+    #[prost(message, optional, tag = "3")]
+    pub rejected: ::core::option::Option<Rejected>,
+    #[prost(bool, tag = "4")]
+    pub seen_queued: bool,
+    #[prost(uint64, tag = "5")]
+    pub left_at: u64,
+}
+impl ::prost::Name for ClientInput {
+    const NAME: &'static str = "ClientInput";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientInput".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientInput".into()
+    }
+}
+/// An attachment's bytes in the client's cache.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ClientBlob {
+    #[prost(bytes = "vec", tag = "1")]
+    pub hash: ::prost::alloc::vec::Vec<u8>,
+    #[prost(enumeration = "ClientBlobState", tag = "2")]
+    pub state: i32,
+    /// Why the fetch failed, when its state is FAILED.
+    #[prost(string, tag = "3")]
+    pub failed: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ClientBlob {
+    const NAME: &'static str = "ClientBlob";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientBlob".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientBlob".into()
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClientSessionEvents {
+    #[prost(message, repeated, tag = "1")]
+    pub traced: ::prost::alloc::vec::Vec<ClientTraced>,
+}
+impl ::prost::Name for ClientSessionEvents {
+    const NAME: &'static str = "ClientSessionEvents";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientSessionEvents".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientSessionEvents".into()
+    }
+}
+/// One event a session's driver saw.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClientTraced {
+    /// Position in everything the driver saw since the chat opened.
+    #[prost(uint64, tag = "1")]
+    pub seq: u64,
+    /// When, on the driver's clock.
+    #[prost(int64, tag = "2")]
+    pub at_ms: i64,
+    #[prost(oneof = "client_traced::Event", tags = "3, 4")]
+    pub event: ::core::option::Option<client_traced::Event>,
+}
+/// Nested message and enum types in `ClientTraced`.
+pub mod client_traced {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Event {
+        /// A message the driver applied to the session.
+        #[prost(message, tag = "3")]
+        Msg(super::ClientSessionMsg),
+        /// Something the driver did that is not a message, as it describes it.
+        #[prost(string, tag = "4")]
+        Driver(::prost::alloc::string::String),
+    }
+}
+impl ::prost::Name for ClientTraced {
+    const NAME: &'static str = "ClientTraced";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientTraced".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientTraced".into()
+    }
+}
+/// A message the session model applies.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClientSessionMsg {
+    #[prost(
+        oneof = "client_session_msg::Of",
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13"
+    )]
+    pub of: ::core::option::Option<client_session_msg::Of>,
+}
+/// Nested message and enum types in `ClientSessionMsg`.
+pub mod client_session_msg {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Of {
+        #[prost(message, tag = "1")]
+        Event(super::SessionEvent),
+        #[prost(message, tag = "2")]
+        Page(super::ClientPage),
+        #[prost(enumeration = "super::ClientConnection", tag = "3")]
+        Connection(i32),
+        #[prost(message, tag = "4")]
+        Send(super::Input),
+        #[prost(message, tag = "5")]
+        Sent(super::ClientSent),
+        #[prost(bytes, tag = "6")]
+        DiscardInputId(::prost::alloc::vec::Vec<u8>),
+        #[prost(message, tag = "7")]
+        Entry(super::Agent),
+        #[prost(message, tag = "8")]
+        Host(super::HostEntry),
+        #[prost(message, tag = "9")]
+        Blob(super::ClientBlob),
+        #[prost(bool, tag = "10")]
+        Following(bool),
+        #[prost(message, tag = "11")]
+        Reloading(super::ClientReloading),
+        #[prost(uint64, tag = "12")]
+        Window(u64),
+        #[prost(message, tag = "13")]
+        Catalogue(super::ClientCatalogue),
+    }
+}
+impl ::prost::Name for ClientSessionMsg {
+    const NAME: &'static str = "ClientSessionMsg";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientSessionMsg".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientSessionMsg".into()
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClientPage {
+    #[prost(message, repeated, tag = "1")]
+    pub items: ::prost::alloc::vec::Vec<Item>,
+    #[prost(bool, tag = "2")]
+    pub exhausted: bool,
+    #[prost(uint64, tag = "3")]
+    pub epoch: u64,
+}
+impl ::prost::Name for ClientPage {
+    const NAME: &'static str = "ClientPage";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientPage".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientPage".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ClientReloading {}
+impl ::prost::Name for ClientReloading {
+    const NAME: &'static str = "ClientReloading";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientReloading".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientReloading".into()
+    }
+}
+/// What became of a send.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ClientSent {
+    #[prost(bytes = "vec", tag = "1")]
+    pub input_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(oneof = "client_sent::Outcome", tags = "2, 3, 4")]
+    pub outcome: ::core::option::Option<client_sent::Outcome>,
+}
+/// Nested message and enum types in `ClientSent`.
+pub mod client_sent {
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Outcome {
+        #[prost(message, tag = "2")]
+        Reply(super::SendInputResponse),
+        /// The transport failed before a reply.
+        #[prost(message, tag = "3")]
+        Lost(super::ClientLost),
+        /// It never left: held to send once the host is back.
+        #[prost(message, tag = "4")]
+        Held(super::ClientHeld),
+    }
+}
+impl ::prost::Name for ClientSent {
+    const NAME: &'static str = "ClientSent";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientSent".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientSent".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ClientLost {}
+impl ::prost::Name for ClientLost {
+    const NAME: &'static str = "ClientLost";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientLost".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientLost".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ClientHeld {}
+impl ::prost::Name for ClientHeld {
+    const NAME: &'static str = "ClientHeld";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientHeld".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientHeld".into()
     }
 }
 /// Where the bundle was written, for a caller on the same machine.
@@ -6697,6 +7119,105 @@ impl Provider {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
+pub enum ClientConnection {
+    Connecting = 0,
+    Live = 1,
+    Reconnecting = 2,
+}
+impl ClientConnection {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Connecting => "CLIENT_CONNECTION_CONNECTING",
+            Self::Live => "CLIENT_CONNECTION_LIVE",
+            Self::Reconnecting => "CLIENT_CONNECTION_RECONNECTING",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CLIENT_CONNECTION_CONNECTING" => Some(Self::Connecting),
+            "CLIENT_CONNECTION_LIVE" => Some(Self::Live),
+            "CLIENT_CONNECTION_RECONNECTING" => Some(Self::Reconnecting),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ClientInputState {
+    Sent = 0,
+    Queued = 1,
+    Settled = 2,
+    Rejected = 3,
+    Uncertain = 4,
+    Held = 5,
+}
+impl ClientInputState {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Sent => "CLIENT_INPUT_STATE_SENT",
+            Self::Queued => "CLIENT_INPUT_STATE_QUEUED",
+            Self::Settled => "CLIENT_INPUT_STATE_SETTLED",
+            Self::Rejected => "CLIENT_INPUT_STATE_REJECTED",
+            Self::Uncertain => "CLIENT_INPUT_STATE_UNCERTAIN",
+            Self::Held => "CLIENT_INPUT_STATE_HELD",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CLIENT_INPUT_STATE_SENT" => Some(Self::Sent),
+            "CLIENT_INPUT_STATE_QUEUED" => Some(Self::Queued),
+            "CLIENT_INPUT_STATE_SETTLED" => Some(Self::Settled),
+            "CLIENT_INPUT_STATE_REJECTED" => Some(Self::Rejected),
+            "CLIENT_INPUT_STATE_UNCERTAIN" => Some(Self::Uncertain),
+            "CLIENT_INPUT_STATE_HELD" => Some(Self::Held),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ClientBlobState {
+    Missing = 0,
+    Fetching = 1,
+    Ready = 2,
+    Failed = 3,
+}
+impl ClientBlobState {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Missing => "CLIENT_BLOB_STATE_MISSING",
+            Self::Fetching => "CLIENT_BLOB_STATE_FETCHING",
+            Self::Ready => "CLIENT_BLOB_STATE_READY",
+            Self::Failed => "CLIENT_BLOB_STATE_FAILED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CLIENT_BLOB_STATE_MISSING" => Some(Self::Missing),
+            "CLIENT_BLOB_STATE_FETCHING" => Some(Self::Fetching),
+            "CLIENT_BLOB_STATE_READY" => Some(Self::Ready),
+            "CLIENT_BLOB_STATE_FAILED" => Some(Self::Failed),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
 pub enum Refusal {
     Unspecified = 0,
     /// The answer's ask is not open.
@@ -6752,6 +7273,7 @@ impl Refusal {
     }
 }
 /// Generated client implementations.
+#[cfg(feature = "grpc")]
 pub mod client_service_client {
     #![allow(
         unused_variables,
@@ -7287,6 +7809,7 @@ pub mod client_service_client {
     }
 }
 /// Generated server implementations.
+#[cfg(feature = "grpc")]
 pub mod client_service_server {
     #![allow(
         unused_variables,
@@ -8436,6 +8959,7 @@ pub mod client_service_server {
     }
 }
 /// Generated client implementations.
+#[cfg(feature = "grpc")]
 pub mod peer_service_client {
     #![allow(
         unused_variables,
@@ -8895,6 +9419,7 @@ pub mod peer_service_client {
     }
 }
 /// Generated server implementations.
+#[cfg(feature = "grpc")]
 pub mod peer_service_server {
     #![allow(
         unused_variables,
@@ -10541,6 +11066,7 @@ impl RelayCarrier {
     }
 }
 /// Generated client implementations.
+#[cfg(feature = "grpc")]
 pub mod profile_service_client {
     #![allow(
         unused_variables,
@@ -11057,6 +11583,7 @@ pub mod profile_service_client {
     }
 }
 /// Generated server implementations.
+#[cfg(feature = "grpc")]
 pub mod profile_service_server {
     #![allow(
         unused_variables,
@@ -12188,6 +12715,7 @@ pub mod profile_service_server {
     }
 }
 /// Generated client implementations.
+#[cfg(feature = "grpc")]
 pub mod installation_service_client {
     #![allow(
         unused_variables,
@@ -12315,6 +12843,7 @@ pub mod installation_service_client {
     }
 }
 /// Generated server implementations.
+#[cfg(feature = "grpc")]
 pub mod installation_service_server {
     #![allow(
         unused_variables,
@@ -12699,6 +13228,10 @@ pub struct EffectiveConfig {
     /// The canonical install path the hook binary and tool server run from.
     #[prost(string, tag = "9")]
     pub install_path: ::prost::alloc::string::String,
+    /// How long one step of the agent's core may take before it asks for a
+    /// dump; 0 is the agent's own budget.
+    #[prost(uint64, tag = "10")]
+    pub step_budget_micros: u64,
 }
 impl ::prost::Name for EffectiveConfig {
     const NAME: &'static str = "EffectiveConfig";
@@ -12714,7 +13247,7 @@ impl ::prost::Name for EffectiveConfig {
 /// EOF in either direction means the peer is gone.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CtlFrame {
-    #[prost(oneof = "ctl_frame::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
+    #[prost(oneof = "ctl_frame::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11")]
     pub of: ::core::option::Option<ctl_frame::Of>,
 }
 /// Nested message and enum types in `CtlFrame`.
@@ -12761,6 +13294,10 @@ pub mod ctl_frame {
         /// report before it exits.
         #[prost(message, tag = "10")]
         Children(super::Children),
+        /// Agent to daemon: the agent's core asked for a dump. The daemon
+        /// writes a bundle of the agent, after a limit of its own.
+        #[prost(message, tag = "11")]
+        DumpAsked(super::DumpAsked),
     }
 }
 impl ::prost::Name for CtlFrame {
@@ -12786,6 +13323,27 @@ impl ::prost::Name for AgentDumpRequest {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.AgentDumpRequest".into()
+    }
+}
+/// Why an agent's core asked for a dump.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DumpAsked {
+    /// As the agent reports it, saying how many like it it held back.
+    #[prost(string, tag = "1")]
+    pub reason: ::prost::alloc::string::String,
+    /// The invariant that failed, as the sentence it checks; empty for a step
+    /// over its budget.
+    #[prost(string, tag = "2")]
+    pub invariant: ::prost::alloc::string::String,
+}
+impl ::prost::Name for DumpAsked {
+    const NAME: &'static str = "DumpAsked";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.DumpAsked".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.DumpAsked".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

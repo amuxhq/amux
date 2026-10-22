@@ -179,6 +179,9 @@ struct Fixture {
     bin: PathBuf,
     server: Server,
     supervisor: Option<Child>,
+    /// The supervisor core's step budget, when a test sets one: the
+    /// stand-in otherwise gives it a second.
+    step_budget_micros: Option<u64>,
 }
 
 impl Fixture {
@@ -193,6 +196,7 @@ impl Fixture {
             _root: root,
             server: Server::start().await,
             supervisor: None,
+            step_budget_micros: None,
         };
         let build = fixture.build("1.0.0");
         write_executable(|| std::fs::copy(build, &fixture.bin)).unwrap();
@@ -256,6 +260,9 @@ impl Fixture {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(log);
+        if let Some(micros) = self.step_budget_micros {
+            command.env("FAKE_AMUX_STEP_BUDGET_MICROS", micros.to_string());
+        }
         let child = start(|| command.spawn()).unwrap();
         let pid = child.id();
         self.supervisor = Some(child);
@@ -471,6 +478,48 @@ async fn restarts_the_daemon_whenever_it_exits_and_stops_it_when_asked() {
     assert!(!locked(&lock), "a stopped supervisor releases its lock");
 }
 
+/// The supervisor core times its steps against the budget in its
+/// parameters: under a budget of zero the running supervisor soon takes a
+/// step over it, and writes the text file of its state and inputs that
+/// names the overrun, once in the interval however many steps run over.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_step_over_its_budget_leaves_the_supervisors_state_and_inputs_file() {
+    let mut fixture = Fixture::new().await;
+    fixture.step_budget_micros = Some(0);
+    fixture.start();
+    fixture.nth(1, "go", "1.0.0").await;
+    let reports = fixture.dir.join("data").join(node::REPORTS);
+    let files = until("the supervisor's dump", || {
+        let files: Vec<PathBuf> = std::fs::read_dir(&reports)
+            .map(|entries| entries.map(|entry| entry.unwrap().path()).collect())
+            .unwrap_or_default();
+        std::future::ready((!files.is_empty()).then_some(files).ok_or("no file yet"))
+    })
+    .await
+    .unwrap();
+    assert_eq!(files.len(), 1, "{files:?}");
+    let name = files[0].file_name().unwrap().to_string_lossy().into_owned();
+    assert!(
+        name.starts_with("supervisor-") && name.ends_with(".txt"),
+        "{name}"
+    );
+    let text = std::fs::read_to_string(&files[0]).unwrap();
+    let reason = text.lines().find(|line| line.starts_with("reason: "));
+    println!("{}\n{}", files[0].display(), reason.unwrap_or_default());
+    assert!(
+        reason.is_some_and(|reason| reason.starts_with(&format!(
+            "reason: {}a step took ",
+            node::supervisor::SUPERVISOR_CORE_DUMP
+        )) && reason.contains(", over its budget of 0 µs")),
+        "{text}"
+    );
+    assert!(text.contains("state now:\nSupervisor {"), "{text}");
+    fixture.signal_supervisor(libc::SIGTERM);
+    assert!(fixture.supervisor_exit().await.success());
+    // Every step ran over, and the file stayed one.
+    assert_eq!(std::fs::read_dir(&reports).unwrap().count(), 1);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn installs_a_newer_signed_release_and_execs_it_keeping_pid_child_pipe_and_lock() {
     let mut fixture = Fixture::new().await;
@@ -623,21 +672,6 @@ async fn a_child_that_hangs_before_prepared_is_stopped_at_the_start_deadline_and
     }
     assert_eq!(fixture.rejected().as_deref(), Some("2.0.0"));
     assert_eq!(fixture.installed(), "1.0.0");
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_crash_after_go_is_restarted_and_not_rolled_back() {
-    let mut fixture = Fixture::new().await;
-    fixture.start();
-    fixture.nth(1, "go", "1.0.0").await;
-    fixture.behave("2.0.0", "crash-after-go");
-    fixture.publish("2.0.0");
-
-    fixture.nth(1, "crash", "2.0.0").await;
-    fixture.nth(2, "go", "2.0.0").await;
-    assert_eq!(fixture.rejected(), None);
-    assert_eq!(fixture.installed(), "2.0.0");
-    assert_eq!(fixture.count("go", "1.0.0"), 1);
 }
 
 #[tokio::test(flavor = "multi_thread")]

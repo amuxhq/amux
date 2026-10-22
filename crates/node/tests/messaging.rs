@@ -153,16 +153,18 @@ fn heard(agent: &SyntheticAgent, n: usize) -> Result<(), String> {
 }
 
 async fn deliveries(runtime: &ProfileRuntime) -> usize {
-    runtime.store().await.deliveries().unwrap().len()
+    runtime
+        .read_store(|store| store.deliveries().unwrap().len())
+        .await
+        .unwrap()
 }
 
 async fn items_with_input(runtime: &ProfileRuntime, key: &AgentKey) -> Vec<wire::Item> {
+    let key = key.clone();
     runtime
-        .store()
+        .read_store(move |store| store.page(&key, None, 1_000).unwrap().items)
         .await
-        .page(key, None, 1_000)
         .unwrap()
-        .items
         .into_iter()
         .filter(|item| !item.input_id.is_empty())
         .collect()
@@ -277,10 +279,10 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
         .await
         .unwrap();
     assert_eq!(sent.envelope_id, b"envelope-1");
+    let key = recipient.key(&install);
     let accepted = runtime
-        .store()
+        .read_store(move |store| store.item_by_input(&key, b"envelope-1").unwrap())
         .await
-        .item_by_input(&recipient.key(&install), b"envelope-1")
         .unwrap();
     assert!(
         accepted.is_some(),
@@ -503,6 +505,127 @@ async fn a_message_waits_for_its_item_to_commit_and_one_envelope_is_handed_over_
     crash(daemon, runtime).await;
 }
 
+/// A message whose verdict comes after reply patience is concluded lost;
+/// the sender's retry is written again and concluded by the verdict that
+/// comes, not lost on arrival because the first write stopped waiting.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_retry_after_reply_patience_is_concluded_by_the_verdict_that_comes() {
+    const REPLY_MS: i64 = 400;
+    let install = Install::new();
+    let mut recipient = SyntheticAgent::new(&install, "recipient", SEGMENTS);
+    recipient.register_offline(&install);
+    recipient.go_live();
+    recipient.freeze();
+    let launch = Launch {
+        reply_patience_ms: REPLY_MS,
+        ..quiet_launch()
+    };
+    let daemon = install.start("boot-1", launch).await;
+    let runtime = runtime(&daemon, &install);
+    let envelope = SendMessageRequest {
+        id: b"envelope-1".to_vec(),
+        to: to(&recipient, &install),
+        text: "can you look at the build?".into(),
+        ..SendMessageRequest::default()
+    };
+
+    let first = runtime.send_message(envelope.clone(), None).await;
+    assert!(matches!(first, Err(RelayError::Lost)), "{first:?}");
+    let retry = tokio::spawn({
+        let runtime = runtime.clone();
+        async move { runtime.send_message(envelope, None).await }
+    });
+    // A window: the retry is written to the frozen recipient, which reads
+    // it only once it answers the first, and waits for its verdict; a first
+    // write that gave up must not answer for it.
+    holds_for(
+        "the retry to wait for its verdict",
+        Duration::from_millis(300),
+        || async { !retry.is_finished() },
+    )
+    .await
+    .expect("the retry waits for the verdict, not concluded lost by the first write");
+    recipient.thaw();
+    retry
+        .await
+        .unwrap()
+        .expect("the retry is accepted on the verdict that came");
+    until("the retry written again", || async {
+        handed(&recipient, 2)
+    })
+    .await
+    .unwrap();
+    crash(daemon, runtime).await;
+}
+
+/// A message waits for its recipient to connect for at most the connect
+/// patience. When that patience runs out just as the recipient's Hello
+/// comes, the firing can wait behind the Hello, whose step writes the
+/// message and replaces the patience with the reply patience. The firing
+/// is of an arm the core replaced: the message is answered by its
+/// verdict, not concluded lost.
+#[tokio::test(flavor = "multi_thread")]
+async fn connect_patience_running_out_behind_the_hello_does_not_lose_the_message() {
+    let install = Install::new();
+    let mut recipient = SyntheticAgent::new(&install, "recipient", SEGMENTS);
+    recipient.register_offline(&install);
+    // Running but not answering yet: the daemon keeps dialing it.
+    recipient.hold_lock();
+    let (daemon, runtime) = start(&install, "boot-1").await;
+    let envelope = SendMessageRequest {
+        id: b"envelope-1".to_vec(),
+        to: to(&recipient, &install),
+        text: "can you look at the build?".into(),
+        ..SendMessageRequest::default()
+    };
+    let sent = tokio::spawn({
+        let runtime = runtime.clone();
+        async move { runtime.send_message(envelope, None).await }
+    });
+    // A read queued behind the call returns once the call is stepped and
+    // its connect patience armed.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    runtime.read_store(|_| ()).await.unwrap();
+    let armed = tokio::time::Instant::now();
+
+    // A read waiting on `release` holds the core while the Hello is
+    // queued and then the patience fires behind it.
+    let (release, gate) = std::sync::mpsc::channel::<()>();
+    let mut hold = Box::pin(runtime.read_store(move |_| gate.recv().is_ok()));
+    assert!(poll_once(&mut hold).await.is_pending());
+    recipient.go_live();
+    until("the recipient's Hello", || async {
+        (recipient.hellos() == 1)
+            .then_some(())
+            .ok_or("no Hello yet")
+    })
+    .await
+    .unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        armed.elapsed() < Duration::from_millis(daemon_core::deliveries::CONNECT_PATIENCE_MS),
+        "the Hello was queued before the patience ran out"
+    );
+    tokio::time::sleep_until(
+        armed + Duration::from_millis(daemon_core::deliveries::CONNECT_PATIENCE_MS + 1_000),
+    )
+    .await;
+    release.send(()).unwrap();
+    assert!(hold.await.unwrap());
+
+    sent.await
+        .unwrap()
+        .expect("the message is accepted on its verdict, not concluded lost");
+    assert_eq!(recipient.inputs().len(), 1, "the message was written once");
+    crash(daemon, runtime).await;
+}
+
+/// Polls a future once, as far as it gets before it waits.
+async fn poll_once<F: std::future::Future + Unpin>(future: &mut F) -> std::task::Poll<F::Output> {
+    std::future::poll_fn(|cx| std::task::Poll::Ready(std::pin::Pin::new(&mut *future).poll(cx)))
+        .await
+}
+
 /// A daemon that starts real agent processes on the fake provider, for
 /// resumes of synthetic agents.
 async fn start_resuming(install: &Install) -> (Daemon, Arc<ProfileRuntime>) {
@@ -562,13 +685,12 @@ async fn a_child_answering_exiting_to_its_parents_message_is_resumed_with_it() {
         }
         other => panic!("the parent's message, not {other:?}"),
     }
+    let key = child.key(&install);
     assert!(
         runtime
-            .store()
+            .read_store(move |store| store.item_by_input(&key, b"wrap-up").unwrap().is_some())
             .await
-            .item_by_input(&child.key(&install), b"wrap-up")
-            .unwrap()
-            .is_some(),
+            .unwrap(),
         "the new incarnation accepted it"
     );
     kill_all(&runtime).await;
@@ -666,12 +788,15 @@ async fn a_delivery_waiting_on_its_parents_lane_is_dropped_when_the_parent_resum
     .expect("the drain waits for the parent's lane");
 
     // While it waits, the parent becomes its second incarnation.
-    {
-        let mut store = runtime.store().await;
-        let mut row = store.agent(&parent.key(&install)).unwrap().unwrap();
-        row.incarnation = 2;
-        store.put_agent(&row).unwrap();
-    }
+    let key = parent.key(&install);
+    runtime
+        .write_store_beneath(move |store| {
+            let mut row = store.agent(&key).unwrap().unwrap();
+            row.incarnation = 2;
+            store.put_agent(&row).unwrap();
+        })
+        .await
+        .unwrap();
     parent.nudge().await;
     held.await.unwrap().unwrap();
     let report = drained.await.unwrap();
@@ -775,7 +900,10 @@ async fn a_resumed_parent_receives_nothing() {
     let (daemon, runtime) = start(&install, "boot-1").await;
     assert_eq!(runtime.drain_deliveries().await.kept, 1);
     assert_eq!(
-        runtime.store().await.deliveries().unwrap()[0].parent_incarnation,
+        runtime
+            .read_store(|store| store.deliveries().unwrap()[0].parent_incarnation)
+            .await
+            .unwrap(),
         1
     );
     crash(daemon, runtime).await;
@@ -809,7 +937,10 @@ async fn a_child_whose_parent_row_is_missing_keeps_its_row_until_the_parent_is_k
     let (daemon, runtime) = start(&install, "boot-1").await;
     let report = runtime.drain_deliveries().await;
     assert_eq!(report.kept, 1, "never dropped and never sent");
-    let row = runtime.store().await.deliveries().unwrap().remove(0);
+    let row = runtime
+        .read_store(|store| store.deliveries().unwrap().remove(0))
+        .await
+        .unwrap();
     assert_eq!(
         row.parent_incarnation, 0,
         "the incarnation is unknown, not guessed"
@@ -1084,11 +1215,14 @@ async fn a_parents_message_resumes_its_exited_child_and_the_child_finishes_again
     );
     assert!(
         runtime
-            .store()
+            .read_store(move |store| {
+                store
+                    .item_by_input(&child_key, b"follow-up")
+                    .unwrap()
+                    .is_some()
+            })
             .await
-            .item_by_input(&child_key, b"follow-up")
-            .unwrap()
-            .is_some(),
+            .unwrap(),
         "accepted once the child's item for the message committed"
     );
     until("the child's second finished message", || finished(2))

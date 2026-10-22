@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/agent",
+    "crates/agent-core",
     "crates/analytics",
     "crates/app-embedded",
     "crates/app-ffi",
@@ -16,21 +17,27 @@ members = [
     "crates/codex",
     "crates/codex-protocol",
     "crates/codex-specs",
+    "crates/core-ring",
+    "crates/daemon-core",
     "crates/fake-amux",
     "crates/git-facts",
     "crates/interpret",
     "crates/journal",
     "crates/model",
+    "crates/models",
     "crates/node",
+    "crates/path-core",
     "crates/patience",
     "crates/provider-fakes",
     "crates/pty-host",
     "crates/qualification",
     "crates/redaction",
+    "crates/relay-core",
     "crates/replay-support",
     "crates/settings",
     "crates/shot",
     "crates/store",
+    "crates/supervisor-core",
     "crates/testnet",
     "crates/tui",
     "crates/tui-set",
@@ -50,6 +57,12 @@ license = "FSL-1.1-ALv2"
 [workspace.dependencies]
 # Internal
 agent = { path = "crates/agent" }
+agent-core = { path = "crates/agent-core" }
+core-ring = { path = "crates/core-ring" }
+daemon-core = { path = "crates/daemon-core" }
+relay-core = { path = "crates/relay-core" }
+path-core = { path = "crates/path-core" }
+supervisor-core = { path = "crates/supervisor-core" }
 agent-dir = { path = "crates/agent-dir" }
 analytics = { path = "crates/analytics" }
 app-embedded = { path = "crates/app-embedded" }
@@ -64,8 +77,9 @@ client = { path = "crates/client" }
 interpret = { path = "crates/interpret" }
 journal = { path = "crates/journal" }
 model = { path = "crates/model" }
+models = { path = "crates/models" }
 store = { path = "crates/store" }
-wire = { path = "crates/wire" }
+wire = { path = "crates/wire", default-features = false }
 settings = { path = "crates/settings" }
 attachments = { path = "crates/attachments" }
 git-facts = { path = "crates/git-facts" }
@@ -108,7 +122,6 @@ http-body-util = "0.1"
 thiserror = "2"
 uuid = { version = "1", features = ["v4", "v5", "serde"] }
 futures-util = "0.3"
-yamux = "0.14"
 quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
 tokio-tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
 gethostname = "1"
@@ -158,6 +171,11 @@ if-addrs = "0.13"
 vt100 = "0.15"
 # Compression for the channels between daemons; the raw streaming API only.
 zstd = { version = "0.13", default-features = false }
+# The exhaustive checker the protocol models run under; its seeded chooser
+# drives their walks.
+stateright = "0.31"
+# Generated cases with shrinking for the pure-function property tests.
+proptest = { version = "1.11", default-features = false, features = ["std"] }
 
 # Cargo defaults macOS debug profiles to split-debuginfo = "unpacked", which
 # keeps every codegen unit's object file under target/<profile>/deps for the
@@ -178,6 +196,19 @@ zstd = { version = "0.13", default-features = false }
 debug = false
 incremental = true
 panic = "unwind"
+
+# SQLite's C and the protocol models run optimised in development builds too:
+# the models explore real stores in memory, thousands of transactions per
+# second of a test's budget, and unoptimised SQLite and Rust there are ten
+# times slower. Neither is anything a debugger steps through.
+[profile.dev.package.libsqlite3-sys]
+opt-level = 3
+
+[profile.dev.package.models]
+opt-level = 3
+
+[profile.dev.package.store]
+opt-level = 3
 
 # What a release ships, for the daemon and the phone alike, and what perf runs
 # measure, so the numbers are the shipped binary's. Whole-program optimisation
@@ -205,3 +236,10 @@ inherits = "release"
 lto = false
 codegen-units = 16
 debug = false
+
+# rustls with a TLS 1.3 client session that can be saved and loaded, so a
+# relaunched client resumes with the tickets it kept. docs/ARCHITECTURE.md
+# ("The rustls patch") says what the patch holds, the jobs that keep it on
+# rustls's newest 0.23 release, and how to drop it.
+[patch.crates-io]
+rustls = { git = "https://github.com/jordanwebster/rustls", rev = "222873dc0a3753af770548d595524ed3f6f8febe" }

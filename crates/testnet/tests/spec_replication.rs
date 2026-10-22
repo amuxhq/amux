@@ -2,14 +2,14 @@
 //! links with real agents on the fakes.
 //!
 //! A replica's rows for another host's agent are empty or one contiguous
-//! block ending at the origin's newest row. These cases hold that under a
-//! first tail, live records, a delta after a break, a Reset beyond the cap,
-//! a stream that dies right after its Snapshot while a page lands a newer
-//! revision of an old row, a link back before the follower looks, an exit
-//! whose records arrive after its Exited row, pages from the origin,
-//! trimming after a Reset, the source policy, a rewound origin and an ask
-//! held open across its daemon's restart; and they hold the markers in
-//! sequence with the rows they cover.
+//! block ending at the origin's newest row. These cases hold that where a
+//! story needs the real net: a stream that dies right after its Snapshot
+//! while a page lands a newer revision of an old row, a link back before
+//! the follower looks, an exit whose records arrive after its Exited row,
+//! trimming after a Reset, the source policy across an exit and a resume,
+//! a rewound origin and an ask held open across its daemon's restart; and
+//! they hold the markers in sequence with the rows they cover. The stories
+//! that hold on either net are in `replication_stories`.
 
 #![cfg(unix)]
 
@@ -17,12 +17,12 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use node::{Launch, SourcePolicy, SourceVerdict};
+use node::{Launch, SourceVerdict};
 use prost::Message as _;
 use provider_fakes::script::{Ask, Question, Step};
 use store::{AgentKey, CommitClock, Marker, PageEnd};
 use testnet::observe::{self, Mark, marks};
-use testnet::{AgentDecl, JournalCut, Net, NetOptions, PATIENCE, Topology, holds_for, until};
+use testnet::{AgentDecl, JournalCut, Net, NetOptions, PATIENCE, Topology, until};
 use wire::client_service_server::ClientService as _;
 use wire::{FetchRequest, InventoryEvent, Item, SessionEvent, inventory_event, session_event};
 
@@ -74,8 +74,11 @@ fn desk_and_laptop() -> Topology {
 async fn origin_rows(net: &Net, agent: &str) -> Vec<Item> {
     let agent = net.agent(agent).unwrap().clone();
     let runtime = net.runtime(&agent.host).unwrap();
-    let store = runtime.store().await;
-    let mut rows = store.cut(&agent.key(), u32::MAX).unwrap().held;
+    let key = agent.key();
+    let mut rows = runtime
+        .read_store(move |store| store.cut(&key, u32::MAX).unwrap().held)
+        .await
+        .unwrap();
     rows.sort_by_key(|item| item.order);
     rows
 }
@@ -84,7 +87,11 @@ async fn origin_rows(net: &Net, agent: &str) -> Vec<Item> {
 async fn origin_revision(net: &Net, agent: &str) -> u64 {
     let agent = net.agent(agent).unwrap().clone();
     let runtime = net.runtime(&agent.host).unwrap();
-    let row = runtime.store().await.agent(&agent.key()).unwrap().unwrap();
+    let key = agent.key();
+    let row = runtime
+        .read_store(move |store| store.agent(&key).unwrap().unwrap())
+        .await
+        .unwrap();
     row.next_revision - 1
 }
 
@@ -92,9 +99,13 @@ async fn origin_revision(net: &Net, agent: &str) -> u64 {
 async fn replica_state(net: &Net, host: &str, agent: &str) -> Option<(u64, Option<Marker>)> {
     let key = net.agent(agent).unwrap().key();
     let runtime = net.runtime(host).unwrap();
-    let store = runtime.store().await;
-    let row = store.agent(&key).unwrap()?;
-    Some((row.source_cursor, store.cut(&key, 0).unwrap().marker))
+    runtime
+        .read_store(move |store| {
+            let row = store.agent(&key).unwrap()?;
+            Some((row.source_cursor, store.cut(&key, 0).unwrap().marker))
+        })
+        .await
+        .unwrap()
 }
 
 /// `work`, failing with `what` if it has not finished within twice the
@@ -231,155 +242,6 @@ async fn a_replica_is_carried_compressed() {
     );
 }
 
-/// A replica starts from a tail of K, follows live records, takes a delta
-/// after a break that fits the cap and a Reset with a fresh tail after one
-/// that does not; its markers arrive in sequence with the rows they cover,
-/// again after every reconnect, and never while the host is away. A client
-/// asking for more than K rows gets K.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_replica_takes_a_tail_live_records_a_delta_and_a_reset_with_markers_in_sequence() {
-    const K: u32 = 6;
-    let topology = desk_and_laptop().agent(
-        AgentDecl::new("worker", "desk")
-            .steps(turns(8, 2))
-            .prompt("go"),
-    );
-    let mut net = Net::start_with(topology, options(K, |_, _| {}))
-        .await
-        .unwrap();
-    wait_origin_says(&net, "worker", "t0-1").await;
-    net.current("laptop", "worker").await.unwrap();
-
-    let mut chat = net.observe("laptop", "worker", 50).await.unwrap();
-    chat.observe_until(observe::caught_up, PATIENCE)
-        .await
-        .unwrap();
-
-    // Live: each record reaches the chat, and the cursor follows it.
-    net.send("worker", "two").await.unwrap();
-    wait_origin_says(&net, "worker", "t1-1").await;
-    chat.observe_until(
-        |events| {
-            events.iter().any(|event| {
-                matches!(&event.of, Some(session_event::Of::Item(item)) if item.text.contains("t1-1"))
-            })
-        },
-        PATIENCE,
-    )
-    .await
-    .unwrap();
-    net.current("laptop", "worker").await.unwrap();
-
-    // N is clamped to K, at the replica and at the origin alike.
-    for host in ["laptop", "desk"] {
-        let mut wide = net.observe(host, "worker", 50).await.unwrap();
-        let opening = wide
-            .observe_until(observe::caught_up, PATIENCE)
-            .await
-            .unwrap();
-        let held = marks(opening)
-            .iter()
-            .filter(|mark| matches!(mark, Mark::Item(_)))
-            .count();
-        assert_eq!(held, K as usize, "{host}: {}", wide.transcript());
-        assert!(origin_rows(&net, "worker").await.len() > K as usize);
-        assert!(
-            matches!(marks(opening)[..], [Mark::Opening(_), Mark::Snapshot, ..]),
-            "{host}: {}",
-            wide.transcript()
-        );
-    }
-
-    // A break that fits the cap: Detached, then the delta and CaughtUp,
-    // with no Reset and nothing marked current while the host is away.
-    sever(&mut net).await;
-    chat.observe_until(
-        |events| marks(events).last() == Some(&Mark::Detached),
-        PATIENCE,
-    )
-    .await
-    .unwrap();
-    let caught_up_before = count_caught_up(chat.events());
-    net.send("worker", "three").await.unwrap();
-    wait_origin_says(&net, "worker", "t2-1").await;
-    // A window: nothing the test controls gates a marker the laptop must
-    // not mint while the host is away.
-    holds_for(
-        "no CaughtUp while the host is away",
-        Duration::from_millis(300),
-        || {
-            let seen = count_caught_up(chat.events());
-            async move { seen == caught_up_before }
-        },
-    )
-    .await
-    .unwrap();
-    restore(&mut net).await;
-    let events = chat
-        .observe_until(
-            |events| {
-                since_last_detached(events)
-                    .iter()
-                    .any(|m| matches!(m, Mark::CaughtUp(_)))
-            },
-            PATIENCE,
-        )
-        .await
-        .unwrap();
-    let delta = since_last_detached(events);
-    assert!(
-        !delta.contains(&Mark::Reset),
-        "a delta, not a Reset: {delta:?}"
-    );
-    assert!(
-        delta.iter().any(|mark| matches!(mark, Mark::Item(_))),
-        "the missed rows arrive before CaughtUp: {delta:?}"
-    );
-    assert!(matches!(delta.last(), Some(Mark::CaughtUp(_))), "{delta:?}");
-    net.current("laptop", "worker").await.unwrap();
-
-    // A break beyond the cap: Reset, the Snapshot, a fresh tail of K, then
-    // CaughtUp.
-    sever(&mut net).await;
-    chat.observe_until(
-        |events| marks(events).last() == Some(&Mark::Detached),
-        PATIENCE,
-    )
-    .await
-    .unwrap();
-    for turn in 3..7 {
-        net.send("worker", &format!("turn {turn}")).await.unwrap();
-        wait_origin_says(&net, "worker", &format!("t{turn}-1")).await;
-    }
-    restore(&mut net).await;
-    let events = chat
-        .observe_until(
-            |events| {
-                since_last_detached(events)
-                    .iter()
-                    .any(|m| matches!(m, Mark::CaughtUp(_)))
-            },
-            PATIENCE,
-        )
-        .await
-        .unwrap();
-    let reset = since_last_detached(events);
-    assert_eq!(reset.first(), Some(&Mark::Reset), "{reset:?}");
-    assert_eq!(reset.get(1), Some(&Mark::Snapshot), "{reset:?}");
-    let tail = reset
-        .iter()
-        .filter(|mark| matches!(mark, Mark::Item(_)))
-        .count();
-    assert_eq!(tail, K as usize, "{reset:?}");
-    assert!(matches!(reset.last(), Some(Mark::CaughtUp(_))), "{reset:?}");
-    net.current("laptop", "worker").await.unwrap();
-    println!(
-        "the laptop's chat on the desk's worker, K = {K}:\n{}",
-        chat.transcript()
-    );
-    net.shutdown().await.unwrap();
-}
-
 /// A source's stream dies right after the origin's Snapshot, whose revision
 /// is ahead of the rows behind it, while a page from the origin lands a
 /// newer revision of an old row and a newer row is still missing. The
@@ -447,27 +309,33 @@ async fn a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page
     let oldest = origin_rows(&net, "worker").await[0].clone();
     {
         let runtime = net.runtime("desk").unwrap();
-        let mut store = runtime.store().await;
-        let at = store.cursor(&key).unwrap();
         let revised = Item {
             text: format!("{} (revised)", oldest.text),
             ..oldest.clone()
         };
-        store
-            .commit(
-                &key,
-                &[(
-                    at,
-                    wire::Step {
-                        items: vec![revised],
-                        ..wire::Step::default()
-                    },
-                )],
-                CommitClock {
-                    now_ms: net.now_ms(),
-                    notify_delay_ms: 0,
-                },
-            )
+        let clock = CommitClock {
+            now_ms: net.now_ms(),
+            notify_delay_ms: 0,
+        };
+        let key = key.clone();
+        runtime
+            .write_store_beneath(move |store| {
+                let at = store.cursor(&key).unwrap();
+                store
+                    .commit(
+                        &key,
+                        &[(
+                            at,
+                            wire::Step {
+                                items: vec![revised],
+                                ..wire::Step::default()
+                            },
+                        )],
+                        clock,
+                    )
+                    .unwrap();
+            })
+            .await
             .unwrap();
     }
     let revised = origin_rows(&net, "worker").await[0].clone();
@@ -491,7 +359,11 @@ async fn a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page
     // which answers with the revised row; it joins the block and is kept.
     let floor = {
         let runtime = net.runtime("laptop").unwrap();
-        let row = runtime.store().await.agent(&key).unwrap().unwrap();
+        let key = key.clone();
+        let row = runtime
+            .read_store(move |store| store.agent(&key).unwrap().unwrap())
+            .await
+            .unwrap();
         row.complete_from_order.unwrap()
     };
     let page = fetch(&net, "laptop", "worker", Some(floor), 100)
@@ -507,24 +379,24 @@ async fn a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page
     );
     {
         let runtime = net.runtime("laptop").unwrap();
-        let store = runtime.store().await;
-        let held = store.get(&key, &revised.key).unwrap().unwrap();
+        let (key, item) = (key.clone(), revised.key.clone());
+        let (held, at, rows) = runtime
+            .read_store(move |store| {
+                (
+                    store.get(&key, &item).unwrap().unwrap(),
+                    store.cursor(&key).unwrap(),
+                    store.cut(&key, u32::MAX).unwrap().held,
+                )
+            })
+            .await
+            .unwrap();
         assert_eq!(
             held.revision, revised.revision,
             "the page's revision is kept"
         );
-        assert_eq!(
-            store.cursor(&key).unwrap(),
-            cursor,
-            "a page never moves the cursor"
-        );
+        assert_eq!(at, cursor, "a page never moves the cursor");
         assert!(
-            !store
-                .cut(&key, u32::MAX)
-                .unwrap()
-                .held
-                .iter()
-                .any(|item| item.text.contains("second-0")),
+            !rows.iter().any(|item| item.text.contains("second-0")),
             "the new turn is still missing"
         );
     }
@@ -555,8 +427,11 @@ async fn a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page
     );
     let laptop_rows = {
         let runtime = net.runtime("laptop").unwrap();
-        let store = runtime.store().await;
-        store.cut(&key, u32::MAX).unwrap().held
+        let key = key.clone();
+        runtime
+            .read_store(move |store| store.cut(&key, u32::MAX).unwrap().held)
+            .await
+            .unwrap()
     };
     assert_eq!(
         laptop_rows.len(),
@@ -733,90 +608,6 @@ async fn a_link_back_before_the_follower_looks_is_followed_without_its_backoff()
     net.shutdown().await.unwrap();
 }
 
-/// Fetch serves the block from the replica's own rows; below it the origin
-/// answers and the page extends the block; with the origin away it is an
-/// error, never an empty page.
-#[tokio::test(flavor = "multi_thread")]
-async fn fetch_serves_the_block_locally_extends_it_from_the_origin_and_errors_when_away() {
-    const K: u32 = 4;
-    let topology = desk_and_laptop()
-        .agent(
-            AgentDecl::new("worker", "desk")
-                .steps(turns(4, 2))
-                .prompt("go"),
-        )
-        .agent(
-            AgentDecl::new("other", "desk")
-                .steps(turns(4, 2))
-                .prompt("go"),
-        );
-    let mut net = Net::start_with(topology, options(K, |_, _| {}))
-        .await
-        .unwrap();
-    for agent in ["worker", "other"] {
-        wait_origin_says(&net, agent, "t0-1").await;
-        net.current("laptop", agent).await.unwrap();
-    }
-    // A break past the cap leaves each replica a block of the newest K.
-    sever(&mut net).await;
-    for agent in ["worker", "other"] {
-        for turn in 1..3 {
-            net.send(agent, &format!("turn {turn}")).await.unwrap();
-            wait_origin_says(&net, agent, &format!("t{turn}-1")).await;
-        }
-    }
-    restore(&mut net).await;
-    for agent in ["worker", "other"] {
-        net.current("laptop", agent).await.unwrap();
-    }
-
-    // Inside the block: the replica's own rows.
-    let top = fetch(&net, "laptop", "worker", None, 2).await.unwrap();
-    assert_eq!(top.items.len(), 2);
-    assert!(!top.exhausted);
-
-    // Below it: the origin, and the block grows down to the first row.
-    let origin = origin_rows(&net, "worker").await;
-    assert!(origin.len() > K as usize);
-    let all = fetch(&net, "laptop", "worker", None, 100).await.unwrap();
-    assert_eq!(all.items.len(), origin.len());
-    assert!(all.exhausted);
-    {
-        let runtime = net.runtime("laptop").unwrap();
-        let store = runtime.store().await;
-        let page = store
-            .page(&net.agent("worker").unwrap().key(), None, 100)
-            .unwrap();
-        assert_eq!(page.items.len(), origin.len());
-        assert_eq!(
-            page.end,
-            PageEnd::Exhausted,
-            "the origin said there is no more"
-        );
-    }
-    net.assert_block_invariant("laptop", "worker")
-        .await
-        .unwrap();
-
-    // With the origin away, what the block holds is still served, and
-    // asking below it is an error.
-    sever(&mut net).await;
-    let held = fetch(&net, "laptop", "other", None, 100).await.unwrap();
-    assert_eq!(
-        held.items.len(),
-        K as usize,
-        "the block, and no claim of more"
-    );
-    assert!(!held.exhausted);
-    let floor = held.items.last().unwrap().order;
-    let below = fetch(&net, "laptop", "other", Some(floor), 10).await;
-    assert!(
-        matches!(below, Err(node::ServeError::OriginUnreachable)),
-        "{below:?}"
-    );
-    net.shutdown().await.unwrap();
-}
-
 /// After a Reset the old block's rows lie below the new one; the replica
 /// retention sweep takes them first and then trims the block to K, and
 /// paging down from the top never skips an order. The sweep runs on the
@@ -860,12 +651,17 @@ async fn trimming_after_a_reset_keeps_the_block_whole_and_runs_on_the_retention_
     net.current("laptop", "worker").await.unwrap();
     let (floor, stored) = {
         let runtime = net.runtime("laptop").unwrap();
-        let store = runtime.store().await;
-        let row = store.agent(&key).unwrap().unwrap();
-        (
-            row.complete_from_order.unwrap(),
-            store.get(&key, &all.items.last().unwrap().key).unwrap(),
-        )
+        let (key, item) = (key.clone(), all.items.last().unwrap().key.clone());
+        runtime
+            .read_store(move |store| {
+                let row = store.agent(&key).unwrap().unwrap();
+                (
+                    row.complete_from_order.unwrap(),
+                    store.get(&key, &item).unwrap(),
+                )
+            })
+            .await
+            .unwrap()
     };
     assert!(
         stored.is_some(),
@@ -873,39 +669,41 @@ async fn trimming_after_a_reset_keeps_the_block_whole_and_runs_on_the_retention_
     );
     assert!(stored.unwrap().order < floor);
 
-    let (sweep, _) = net
+    let sweep = net
         .runtime("laptop")
         .unwrap()
-        .sweep_replica_retention()
+        .sweep_retention()
         .await
+        .unwrap()
+        .replicas
         .unwrap();
     assert!(!sweep.steps.is_empty(), "{sweep:?}");
     {
         let runtime = net.runtime("laptop").unwrap();
-        let store = runtime.store().await;
-        let mut orders = Vec::new();
-        let mut before = None;
-        loop {
-            let page = store.page(&key, before, 2).unwrap();
-            orders.extend(page.items.iter().map(|item| item.order));
-            before = page.items.last().map(|item| item.order);
-            if page.end != PageEnd::More {
-                assert_eq!(page.end, PageEnd::Boundary);
-                break;
-            }
-        }
+        let (key, item) = (key.clone(), all.items.last().unwrap().key.clone());
+        let (orders, end, stale) = runtime
+            .read_store(move |store| {
+                let mut orders = Vec::new();
+                let mut before = None;
+                let end = loop {
+                    let page = store.page(&key, before, 2).unwrap();
+                    orders.extend(page.items.iter().map(|item| item.order));
+                    before = page.items.last().map(|item| item.order);
+                    if page.end != PageEnd::More {
+                        break page.end;
+                    }
+                };
+                (orders, end, store.get(&key, &item).unwrap())
+            })
+            .await
+            .unwrap();
+        assert_eq!(end, PageEnd::Boundary);
         assert_eq!(orders.len(), K as usize, "{orders:?}");
         assert!(
             orders.windows(2).all(|pair| pair[0] == pair[1] + 1),
             "paging down yields no gap: {orders:?}"
         );
-        assert!(
-            store
-                .get(&key, &all.items.last().unwrap().key)
-                .unwrap()
-                .is_none(),
-            "the stale rows went first"
-        );
+        assert!(stale.is_none(), "the stale rows went first");
     }
     net.assert_block_invariant("laptop", "worker")
         .await
@@ -938,206 +736,12 @@ async fn trimming_after_a_reset_keeps_the_block_whole_and_runs_on_the_retention_
     net.shutdown().await.unwrap();
 }
 
-/// Under OnDemand no agent gets a source until a client subscribes, and
-/// then only that one: a background wake warms one chat. Switching to
-/// Listed sweeps every other agent current. A source for an agent that
-/// exits closes once its catch-up has landed, and opens again when its
-/// origin resumes it.
-#[tokio::test(flavor = "multi_thread")]
-async fn on_demand_warms_one_chat_listed_sweeps_the_rest_and_exited_agents_close() {
-    const K: u32 = 6;
-    let topology = desk_and_laptop()
-        .agent(
-            AgentDecl::new("named", "desk")
-                .steps(turns(4, 1))
-                .prompt("go"),
-        )
-        .agent(
-            AgentDecl::new("quiet", "desk")
-                .steps(turns(4, 1))
-                .prompt("go"),
-        );
-    let mut net = Net::start_with(topology, options(K, |_, _| {}))
-        .await
-        .unwrap();
-    let named = net.agent("named").unwrap().key();
-    let quiet = net.agent("quiet").unwrap().key();
-    for agent in ["named", "quiet"] {
-        wait_origin_says(&net, agent, "t0-0").await;
-        net.current("laptop", agent).await.unwrap();
-    }
-    let laptop = net.runtime("laptop").unwrap();
-    assert_eq!(laptop.open_sources(), {
-        let mut both = vec![named.clone(), quiet.clone()];
-        both.sort();
-        both
-    });
-
-    // The phone asleep: the link goes, work happens, the app wakes OnDemand.
-    laptop.set_source_policy(SourcePolicy::OnDemand);
-    drop(laptop);
-    sever(&mut net).await;
-    for agent in ["named", "quiet"] {
-        net.send(agent, "two").await.unwrap();
-        wait_origin_says(&net, agent, "t1-0").await;
-    }
-    restore(&mut net).await;
-    let laptop = net.runtime("laptop").unwrap();
-    until("the laptop's inventory to catch up", || async {
-        laptop
-            .host_ready(net.host("desk").unwrap().host_id)
-            .then_some(())
-            .ok_or("desk not ready at the laptop")
-    })
-    .await
-    .unwrap();
-    // A window: nothing the test controls gates a source that the policy
-    // must not open.
-    holds_for(
-        "no source opens by itself",
-        Duration::from_millis(300),
-        || {
-            let open = laptop.open_sources();
-            async move { open.is_empty() }
-        },
-    )
-    .await
-    .unwrap();
-
-    // The notification names one chat; opening it brings that one current.
-    let mut chat = net.observe("laptop", "named", 10).await.unwrap();
-    chat.observe_until(
-        |events| {
-            since_last_detached(events)
-                .iter()
-                .any(|m| matches!(m, Mark::CaughtUp(_)))
-        },
-        PATIENCE,
-    )
-    .await
-    .unwrap();
-    net.current("laptop", "named").await.unwrap();
-    assert_eq!(laptop.open_sources(), vec![named.clone()]);
-    let stale = replica_state(&net, "laptop", "quiet").await.unwrap();
-    assert!(
-        stale.0 < origin_revision(&net, "quiet").await,
-        "quiet was left alone"
-    );
-
-    // Foreground: every listed agent gets a source.
-    laptop.set_source_policy(SourcePolicy::Listed);
-    net.current("laptop", "quiet").await.unwrap();
-
-    // An agent that exits: its source closes once its catch-up has landed.
-    let quiet_id = net.agent("quiet").unwrap().id;
-    net.runtime("desk").unwrap().stop(quiet_id).await.unwrap();
-    until("quiet's source to close", || async {
-        let open = laptop.open_sources();
-        (!open.contains(&quiet))
-            .then_some(())
-            .ok_or_else(|| format!("open sources: {open:?}"))
-    })
-    .await
-    .unwrap();
-    net.current("laptop", "quiet").await.unwrap();
-    let row = laptop.store().await.agent(&quiet).unwrap().unwrap();
-    assert_eq!(row.lifecycle, wire::Lifecycle::Exited as i32);
-    assert_eq!(laptop.open_sources(), vec![named]);
-
-    // Resumed by its origin, it is followed again.
-    net.resume("quiet", Some("again")).await.unwrap();
-    until("quiet's source to reopen", || async {
-        let open = laptop.open_sources();
-        open.contains(&quiet)
-            .then_some(())
-            .ok_or_else(|| format!("open sources: {open:?}"))
-    })
-    .await
-    .unwrap();
-    wait_origin_says(&net, "quiet", "t0-0").await;
-    net.current("laptop", "quiet").await.unwrap();
-    let row = laptop.store().await.agent(&quiet).unwrap().unwrap();
-    assert_eq!(
-        (row.lifecycle, row.incarnation),
-        (wire::Lifecycle::Live as i32, 2)
-    );
-    drop(laptop);
-    net.shutdown().await.unwrap();
-}
-
-/// A runtime switched to OnDemand with its link still up, as a phone put
-/// away while it still runs is, closes every source no client is
-/// subscribed to at once and keeps the watched one: work at the origin
-/// reaches only the watched chat until the runtime is Listed again. The
-/// watched chat's source opens again when its host comes back, without the
-/// client subscribing again.
-#[tokio::test(flavor = "multi_thread")]
-async fn switching_to_on_demand_closes_every_source_no_client_watches() {
-    const K: u32 = 6;
-    let topology = desk_and_laptop()
-        .agent(
-            AgentDecl::new("named", "desk")
-                .steps(turns(4, 1))
-                .prompt("go"),
-        )
-        .agent(
-            AgentDecl::new("quiet", "desk")
-                .steps(turns(4, 1))
-                .prompt("go"),
-        );
-    let mut net = Net::start_with(topology, options(K, |_, _| {}))
-        .await
-        .unwrap();
-    let named = net.agent("named").unwrap().key();
-    for agent in ["named", "quiet"] {
-        wait_origin_says(&net, agent, "t0-0").await;
-        net.current("laptop", agent).await.unwrap();
-    }
-    let laptop = net.runtime("laptop").unwrap();
-    assert_eq!(laptop.open_sources().len(), 2);
-
-    let chat = net.observe("laptop", "named", 10).await.unwrap();
-    laptop.set_source_policy(SourcePolicy::OnDemand);
-    until("the unwatched source to close", || async {
-        let open = laptop.open_sources();
-        (open == vec![named.clone()])
-            .then_some(())
-            .ok_or_else(|| format!("open sources: {open:?}"))
-    })
-    .await
-    .unwrap();
-    for agent in ["named", "quiet"] {
-        net.send(agent, "two").await.unwrap();
-        wait_origin_says(&net, agent, "t1-0").await;
-    }
-    net.current("laptop", "named").await.unwrap();
-    let stale = replica_state(&net, "laptop", "quiet").await.unwrap();
-    assert!(
-        stale.0 < origin_revision(&net, "quiet").await,
-        "quiet was left alone"
-    );
-
-    sever(&mut net).await;
-    net.send("named", "three").await.unwrap();
-    wait_origin_says(&net, "named", "t2-0").await;
-    restore(&mut net).await;
-    net.current("laptop", "named").await.unwrap();
-    assert_eq!(laptop.open_sources(), vec![named.clone()]);
-
-    laptop.set_source_policy(SourcePolicy::Listed);
-    net.current("laptop", "quiet").await.unwrap();
-    drop(chat);
-    drop(laptop);
-    net.shutdown().await.unwrap();
-}
-
 /// A replica of a host that lost power holds rows the host no longer has,
 /// under a cursor the host will mint again for other content. A source
 /// resumes naming the generation its cursor was taken under, and the
 /// rewound origin answers that with a fresh tail: every chat sees a Reset
 /// before its next CaughtUp and never a row the origin lost, and the
-/// replica's cursor ends up under the new generation. A cursor taken under
-/// the new generation is answered with a delta as usual.
+/// replica's cursor ends up under the new generation.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_rewound_origin_resets_every_source_that_resumes_under_its_old_generation() {
     const K: u32 = 6;
@@ -1154,12 +758,12 @@ async fn a_rewound_origin_resets_every_source_that_resumes_under_its_old_generat
     net.current("laptop", "worker").await.unwrap();
     until("the journal read to its end", || async {
         let end = net.journal_end("worker").unwrap();
+        let key = key.clone();
         let cursor = net
             .runtime("desk")
             .unwrap()
-            .store()
+            .read_store(move |store| store.cursor(&key).unwrap())
             .await
-            .cursor(&key)
             .unwrap();
         (cursor == end)
             .then_some(())
@@ -1177,14 +781,14 @@ async fn a_rewound_origin_resets_every_source_that_resumes_under_its_old_generat
         .await
         .unwrap();
     let generation = net.generation("desk").unwrap();
-    let before = net
-        .runtime("laptop")
-        .unwrap()
-        .store()
-        .await
-        .agent(&key)
-        .unwrap()
-        .unwrap();
+    let before = {
+        let key = key.clone();
+        net.runtime("laptop")
+            .unwrap()
+            .read_store(move |store| store.agent(&key).unwrap().unwrap())
+            .await
+            .unwrap()
+    };
     assert_eq!(before.source_generation, generation);
 
     // The laptop loses desk before desk comes back rewound.
@@ -1253,14 +857,18 @@ async fn a_rewound_origin_resets_every_source_that_resumes_under_its_old_generat
     net.current("laptop", "worker").await.unwrap();
     let laptop = net.runtime("laptop").unwrap();
     let (held, row, recorded) = {
-        let store = laptop.store().await;
-        (
-            store.cut(&key, u32::MAX).unwrap().held,
-            store.agent(&key).unwrap().unwrap(),
-            store
-                .host_generation(net.host("desk").unwrap().host_id.as_bytes())
-                .unwrap(),
-        )
+        let key = key.clone();
+        let desk_id = net.host("desk").unwrap().host_id;
+        laptop
+            .read_store(move |store| {
+                (
+                    store.cut(&key, u32::MAX).unwrap().held,
+                    store.agent(&key).unwrap().unwrap(),
+                    store.host_generation(desk_id.as_bytes()).unwrap(),
+                )
+            })
+            .await
+            .unwrap()
     };
     assert!(
         !held.iter().any(|item| item.text.contains("t1-0")),
@@ -1269,52 +877,8 @@ async fn a_rewound_origin_resets_every_source_that_resumes_under_its_old_generat
     assert_eq!(row.source_generation, generation + 1);
     assert_eq!(recorded, Some(generation + 1));
 
-    // The origin itself: the same cursor is a fresh tail under the old
-    // generation and a delta under the new.
-    let desk = net.runtime("desk").unwrap();
-    let stale = desk
-        .subscribe_after(&key.agent, row.source_cursor, K, generation)
-        .await
-        .unwrap();
-    let stale = opening_of(stale).await;
-    assert_eq!(
-        stale[..2],
-        [Mark::Opening(generation + 1), Mark::Reset],
-        "{stale:?}"
-    );
-    let fresh = desk
-        .subscribe_after(&key.agent, row.source_cursor, K, generation + 1)
-        .await
-        .unwrap();
-    let fresh = opening_of(fresh).await;
-    assert_eq!(
-        fresh,
-        [
-            Mark::Opening(generation + 1),
-            Mark::Snapshot,
-            Mark::CaughtUp(row.source_cursor)
-        ],
-        "{fresh:?}"
-    );
-    drop(desk);
     drop(laptop);
     net.shutdown().await.unwrap();
-}
-
-/// The marks of a stream's opening, through its CaughtUp.
-async fn opening_of(mut subscription: node::Subscription) -> Vec<Mark> {
-    let mut seen = Vec::new();
-    tokio::time::timeout(PATIENCE, async {
-        while let Some(event) = subscription.next().await {
-            seen.push(observe::mark(&event));
-            if matches!(seen.last(), Some(Mark::CaughtUp(_))) {
-                break;
-            }
-        }
-    })
-    .await
-    .expect("the opening reaches CaughtUp");
-    seen
 }
 
 /// An exited agent's replica has settled: its source closed for good once
@@ -1342,7 +906,11 @@ async fn a_rewound_origin_resets_a_settled_replica_too() {
     net.runtime("desk").unwrap().stop(brief.id).await.unwrap();
     let laptop = net.runtime("laptop").unwrap();
     until("the laptop to settle brief exited", || async {
-        let row = laptop.store().await.agent(&key).unwrap();
+        let key = key.clone();
+        let row = laptop
+            .read_store(move |store| store.agent(&key).unwrap())
+            .await
+            .unwrap();
         let exited = row.is_some_and(|row| row.lifecycle == wire::Lifecycle::Exited as i32);
         let open = laptop.open_sources();
         (exited && open.is_empty())
@@ -1365,13 +933,15 @@ async fn a_rewound_origin_resets_a_settled_replica_too() {
     .unwrap();
     restore(&mut net).await;
     net.current("laptop", "brief").await.unwrap();
-    let (held, row) = {
-        let store = laptop.store().await;
-        (
-            store.cut(&key, u32::MAX).unwrap().held,
-            store.agent(&key).unwrap().unwrap(),
-        )
-    };
+    let (held, row) = laptop
+        .read_store(move |store| {
+            (
+                store.cut(&key, u32::MAX).unwrap().held,
+                store.agent(&key).unwrap().unwrap(),
+            )
+        })
+        .await
+        .unwrap();
     assert!(
         !held.iter().any(|item| item.text.contains("t1-0")),
         "a row the origin lost never returns: {held:#?}"
@@ -1444,12 +1014,11 @@ async fn an_exited_agent_settles_only_once_its_own_stream_has_passed_the_exit() 
         "the laptop to list brief exited while holding an exit record",
         || async {
             let holding = holding.load(Ordering::SeqCst);
+            let key = key.clone();
             let lifecycle = laptop
-                .store()
+                .read_store(move |store| store.agent(&key).unwrap().map(|row| row.lifecycle))
                 .await
-                .agent(&key)
-                .unwrap()
-                .map(|row| row.lifecycle);
+                .unwrap();
             (holding && lifecycle == Some(wire::Lifecycle::Exited as i32))
                 .then_some(())
                 .ok_or_else(|| format!("holding {holding}, lifecycle {lifecycle:?}"))
@@ -1466,7 +1035,13 @@ async fn an_exited_agent_settles_only_once_its_own_stream_has_passed_the_exit() 
 
     net.current("laptop", "brief").await.unwrap();
     let origin = origin_rows(&net, "brief").await;
-    let mut replica = laptop.store().await.cut(&key, u32::MAX).unwrap().held;
+    let mut replica = {
+        let key = key.clone();
+        laptop
+            .read_store(move |store| store.cut(&key, u32::MAX).unwrap().held)
+            .await
+            .unwrap()
+    };
     replica.sort_by_key(|item| item.order);
     assert_eq!(
         replica.last().map(|item| (&item.key, item.revision)),
@@ -1648,6 +1223,7 @@ async fn a_dump_gathers_the_host_side_of_a_peers_agents() {
         agent_ids: Vec::new(),
         reason: "gathered".to_owned(),
         automatic: false,
+        sessions: Vec::new(),
     };
 
     let bundle = net
@@ -1741,7 +1317,11 @@ async fn a_dump_gathers_the_host_side_of_a_peers_agents() {
 async fn held_ask(net: &Net, host: &str, agent: &str) -> (Option<String>, Option<wire::Phase>) {
     let key = net.agent(agent).unwrap().key();
     let runtime = net.runtime(host).unwrap();
-    let Some(snapshot) = runtime.store().await.cut(&key, 0).unwrap().snapshot else {
+    let snapshot = runtime
+        .read_store(move |store| store.cut(&key, 0).unwrap().snapshot)
+        .await
+        .unwrap();
+    let Some(snapshot) = snapshot else {
         return (None, None);
     };
     let body = wire::ClaudeSdkSnapshot::decode(snapshot.body.as_slice()).unwrap();

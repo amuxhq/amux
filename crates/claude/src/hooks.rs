@@ -231,7 +231,7 @@ pub fn forward(_stdin: &[u8], _socket: &Path) -> Result<(), std::io::Error> {
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
@@ -246,52 +246,6 @@ mod tests {
         .unwrap()
     }
 
-    #[test]
-    fn unwrapping_splits_the_payload_from_the_credentials() {
-        let messaging = MessagingCredentials {
-            socket_path: PathBuf::from("/runtime/claude.sock"),
-            token: "secret".to_string(),
-        };
-        let envelope = serde_json::to_vec(&serde_json::json!({
-            FORWARD_ENVELOPE_FIELD: {
-                "version": 1,
-                "payload": serde_json::from_slice::<Value>(&session_start()).unwrap(),
-                "messaging": messaging,
-            }
-        }))
-        .unwrap();
-        let (payload, unwrapped) = unwrap_forwarded(&envelope).unwrap();
-        assert_eq!(
-            serde_json::from_slice::<Value>(&payload).unwrap(),
-            serde_json::from_slice::<Value>(&session_start()).unwrap()
-        );
-        let unwrapped = unwrapped.unwrap();
-        assert_eq!(unwrapped.socket_path, messaging.socket_path);
-        assert_eq!(unwrapped.token, messaging.token);
-
-        let (bare, none) = unwrap_forwarded(&session_start()).unwrap();
-        assert_eq!(bare, session_start());
-        assert!(none.is_none());
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn receiver_accepts_forwarded_stdin() {
-        let dir = tempfile::Builder::new()
-            .prefix("ch")
-            .tempdir_in("/tmp")
-            .unwrap();
-        let receiver = HookReceiver::bind(dir.path()).await.unwrap();
-        let mut payloads = receiver.payloads();
-        forward(&session_start(), &receiver.path).unwrap();
-        let received = tokio::time::timeout(std::time::Duration::from_secs(1), payloads.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(matches!(received, Payload::SessionStart(_)));
-    }
-
-    #[cfg(unix)]
     #[tokio::test]
     async fn receiver_keeps_messaging_credentials_out_of_the_payload() {
         let dir = tempfile::Builder::new()

@@ -3,6 +3,7 @@ mod manifest;
 mod observation;
 mod probe;
 mod registry;
+pub mod replay;
 mod sanitize;
 pub mod show;
 pub mod transport;

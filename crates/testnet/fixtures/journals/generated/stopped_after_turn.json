@@ -1,0 +1,15 @@
+{
+  "about": "A stop asked for mid-turn drains: the turn runs to its end and the agent exits stopped at that turn end.",
+  "spec": { "created_at_ms": 1000 },
+  "events": [
+    { "fact": { "channel": "stream", "json": { "type": "ready" } } },
+    { "input": { "id": "p1", "prompt": { "text": "refactor the parser" } } },
+    { "fact": { "channel": "stream", "json": { "type": "user", "id": "u1", "text": "refactor the parser" } } },
+    { "fact": { "channel": "stream", "json": { "type": "text", "id": "m1", "delta": "Splitting it in two." } } },
+    { "stop": {} },
+    { "fact": { "channel": "stream", "json": { "type": "text_done", "id": "m1" } } },
+    { "tick": 2500 },
+    { "fact": { "channel": "stream", "json": { "type": "turn_end" } } },
+    { "exiting": "stopped" }
+  ]
+}

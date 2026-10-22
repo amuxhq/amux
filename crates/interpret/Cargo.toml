@@ -21,5 +21,10 @@ sha2 = { workspace = true }
 shell-words = { workspace = true }
 wire = { workspace = true }
 
+[features]
+# The test kind: an interpreter over an authored fact vocabulary, for
+# exercising the agent process's lifecycle without a provider's format.
+testkind = []
+
 [dev-dependencies]
 toml = { workspace = true }

@@ -14,6 +14,7 @@ recipes; [Testing](TESTING.md) describes the suites they run.
 | CI | [`ci.yml`](../.github/workflows/ci.yml) | Pushes to `main`; pull requests into `main` | Every check a change is held to, on Linux, macOS and Windows, plus the iOS gate |
 | Weekly offline tests | [`offline.yml`](../.github/workflows/offline.yml) | Sundays 04:00 UTC (GitHub often starts it hours late), and by hand | The workspace tests with no external network |
 | iOS captures | [`ios-captures.yml`](../.github/workflows/ios-captures.yml) | Nightly 03:00 UTC (GitHub often starts it hours late), and by hand | The phone's photographed suites |
+| Models at nightly bounds | [`models-nightly.yml`](../.github/workflows/models-nightly.yml) | Daily 02:00 UTC (GitHub often starts it hours late), and by hand | Every protocol model at its nightly bounds, one Linux job per model, and every simulated testnet story under 2000 seeds |
 | Release | [`release.yml`](../.github/workflows/release.yml) | A pushed `v*` tag | The `amux` release binaries; see [Release](RELEASE.md) |
 
 Every workflow sets `CARGO_INCREMENTAL=0`, and every job has a
@@ -25,11 +26,14 @@ Every workflow sets `CARGO_INCREMENTAL=0`, and every job has a
 | --- | --- | --- |
 | Check and Clippy | `ubuntu-latest` | `just check`, `just lint` |
 | Format | `ubuntu-latest` | `just fmt-check` with `nightly-2026-08-30` |
-| Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just typed-provider-check`, `just tests-check`, `just docs-check`, `just deletion-ledger-check` |
-| Test | `ubuntu-latest`, `macos-latest`, `windows-latest` | `scripts/no-update-flags.sh`, `just test -- --no-fail-fast`, `just doctest`; on macOS also `just contracts-check` |
+| Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just cores-check`, `just typed-provider-check`, `just tests-check`, `just docs-check`, `just deletion-ledger-check` |
+| Test | `ubuntu-latest`, `macos-latest`, `windows-latest` | `scripts/no-update-flags.sh`, `just test -- --no-fail-fast --exclude models` |
+| Simulated stories, doctests and contracts | `ubuntu-latest` | `just sim`, `just contracts-check`, `just doctest`: what reads the same on every platform, run once |
+| Models | `ubuntu-latest`, one job per protocol-models test target | `just test-crate models -- --test <target>`: one model at its CI bounds |
 | Build | `ubuntu-latest`, `macos-latest`, `windows-latest` | `just release-check` |
 | Terminal journeys | `ubuntu-latest`, `macos-latest` | Installs `tmux`, then `just journey terminal all`: every terminal story in the manifest |
 | Embedded client | `ubuntu-latest` | `just embedded-check`, `just embedded-test` |
+| Pointer checks over the C ABI | `ubuntu-latest` | `just miri`: the phone's C ABI tests under the pinned nightly's interpreter, which fails on any undefined behaviour in a pointer handed across the boundary, read or freed; the tests that start an installation or a tokio runtime are ignored there, each saying why |
 | iOS target check | `macos-latest` | `just mobile-check` |
 | iOS gate | `macos-26` | `just ios gate` on Xcode 26.6, when a push touches the phone's paths |
 
@@ -49,10 +53,12 @@ headless Claude and Codex test as everywhere. On Linux and macOS the same run is
 system lane as well: the built `amux` binary's suites (`process`,
 `supervise_cli`, `overlap`, `attach` and the rest), node's `supervisor` suite
 and the `survive-daemon` system journey are ordinary test targets.
-`contracts-check` runs on the macOS test runner only, after the tests have
-built: the contracts name Unix-only tests and one macOS-only test, so only
-there does every named test exist. It lists the binaries of the test run's
-own build (the same Cargo arguments), so it compiles nothing more.
+`contracts-check` runs on Linux after `just sim` has built what the
+workspace test run builds: the contracts name Unix-only tests, which Windows
+does not build, and the one test of a macOS facility is built on every Unix
+and ignored off macOS, so the listing names it there too. It lists the
+binaries of that build (the same Cargo arguments), so it compiles nothing
+more.
 
 The terminal journeys are `reach-host`,
 `conversation-decision-claude-pty`, `conversation-decision-claude-sdk`,
@@ -98,6 +104,50 @@ the package under test. Started with them, every test crate's build reran
 crate on the macOS runner; that pushed the macOS run from 449 s to past its
 1000 s bound in
 [36616922626](https://github.com/jordanwebster/amux/actions/runs/36616922626).
+
+### Protocol models
+
+The protocol models ([`crates/models`](../crates/models/README.md)) explore
+every state of the real cores within their bounds, a minute or more of
+every core each, so they leave the three Test jobs (`--exclude models`;
+`just test` itself still runs them) for the Models job: one Linux job per
+protocol-models test target, side by side, each building the models crate
+and running one model at its CI bounds on the runner's four cores. `just
+tests-check` fails when a protocol-models test target is missing from the
+job's matrix. Linux minutes cost a public repository nothing, and each job
+stays far inside the run's wall time, which the iOS gate sets.
+
+A model's budget is sized to that runner. CI run
+[39185561814](https://github.com/jordanwebster/amux/actions/runs/39185561814)
+measured the models there at their CI bounds: the runner took 2.1 to 4.2 times
+the enrolled Mac's four-thread time, and replication, the model heaviest on
+the store, was the slowest (274 s against 66 s); a later run measured presence
+at 4.7 times (339.9 s against 73 s). So a model's budget is at least twice its
+runner time, rounded up to a whole minute, and no budget is above 600 s; a
+model whose doubled runner time would pass that has its CI bounds cut; a model
+not yet measured there is sized from its four-thread Mac time times 4.7. The models' README records each model's times. The job
+guard is 25 minutes.
+
+The Models at nightly bounds workflow runs each model's ignored nightly
+test, the same matrix, daily and by hand; `just models-nightly` runs the
+same tests locally, one test binary after another. It restores the Models
+job's Rust cache and never saves its own. Its job guard is 100
+minutes: the slowest model at its nightly bounds, the family model, takes
+757 s on the Mac's 12 threads, and roughly seven times that on
+the runner.
+
+### Simulated stories
+
+The testnet's stories that the test catalogue declares a simulated mode for
+(`modes` in [`tests/catalog.toml`](../tests/catalog.toml)) run twice: on
+the real net under `just test` in each Test job, then on the simulated net
+under `just sim` in the Linux job beside them, every core in one process, a
+few seeds per story. A failing seed is printed with the
+`just sim --seed N <story>` that reruns it. The
+nightly workflow's seeds job runs `just nightly --seeds 2000 --bounds none`:
+2000 seeds per story and a report of every failing seed, without the models,
+which its matrix already checks. Locally, `just nightly --seeds N` walks the
+seeds and then runs `just models-nightly`.
 
 ### The iOS gate
 
@@ -198,12 +248,13 @@ stopping at the first failure:
 | `fmt-check` | Formatting, with the pinned nightly |
 | `codegen-check` | The committed protobuf output matches the schemas |
 | `dependency-policy` | Production and test-infrastructure dependency boundaries ([`scripts/check-dependency-policy.py`](../scripts/check-dependency-policy.py)) |
+| `cores-check` | No state-machine core (`daemon-core`, `relay-core`, `agent-core`, `supervisor-core`) nor the `core-ring` they record inputs in has tokio in its dependency graph on any target, and none of their sources holds a lock, spawns a task or awaits ([`scripts/cores-check.py`](../scripts/cores-check.py)) |
 | `typed-provider-check` | The interpreters, the agent's provider handshake and Claude's messaging socket read and write provider messages only through the protocol crates: no `json!`, field looked up by name or untyped `Value` outside the listed tool payloads ([`scripts/typed-provider-check.py`](../scripts/typed-provider-check.py)) |
 | `deletion-ledger-check` | No code, config, proto, recipe, script, workflow or doc names a mechanism amux removed |
 | `docs-check` | Every link, image and heading anchor under `docs/` resolves, every figure is referenced and standalone, and `docs/README.md` lists every page once ([`scripts/docs-check.py`](../scripts/docs-check.py)) |
 | `tests-check` | The suite catalogue names only things that exist |
 | `test` | Every workspace test target |
-| `contracts-check` | Every design contract in [`tests/contracts.toml`](../tests/contracts.toml) names at least one test, and every test it names exists |
+| `contracts-check` | Every design contract in [`tests/contracts.toml`](../tests/contracts.toml) names at least one test, and every test and model property it names exists |
 | `doctest` | Documentation tests |
 | `release-check` | The shipping binary builds and passes the release policy check |
 | `embedded-check`, `embedded-test` | The provider-free client graph and the embedded owner and client boundary |

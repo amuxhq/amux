@@ -140,7 +140,7 @@ cargo = [{ package = "agent", targets = ["tools"], features = [] }]
 name = "embedded-runtime"
 contract = "The embedded runtime pairs with a desk by the PIN it shows, holds the desk's agents as replica rows a chat reads in process, switches its source policy, and reaches an account's hosts over the relay once signed in."
 paths = ["crates/app-embedded/tests"]
-recipe = "just test -- --test embedded"
+recipe = "just test -- --test embedded --test runtime_log"
 boundary = "Store, effects, bridge"
 oracle = "Replica rows read in process, the desk's record of the prompt, and link observations."
 real = ["embedded profile runtime", "served daemon runtimes", "relay", "SQLite store", "loopback network"]
@@ -152,7 +152,7 @@ evidence = ""
 update = ""
 cargo = [
   { package = "app-embedded", kind = "lib", targets = ["app_embedded"], features = [] },
-  { package = "app-embedded", targets = ["embedded"], features = [] },
+  { package = "app-embedded", targets = ["embedded", "runtime_log"], features = [] },
 ]
 
 [[suite]]
@@ -191,6 +191,25 @@ update = ""
 cargo = [
   { package = "app-runtime", kind = "lib", targets = ["app_runtime"], features = [] },
   { package = "app-runtime", targets = ["runtime"], features = [] },
+]
+
+[[suite]]
+name = "protocol-models"
+contract = "Every protocol promise, written as a sentence, holds in every state a checker reaches by exploring the real code on small instances, and a seed reproduces a walk."
+paths = ["crates/models"]
+recipe = "just test-crate models"
+boundary = "Model"
+oracle = "Each property judged in every explored state: an always that never fails, a sometimes that is reached, an eventually that holds on every ending path, with the shortest counterexample printed for a failure."
+real = ["the code under each model"]
+substituted = ["transport, processes and clocks by the model's environment"]
+time = "none"
+capabilities = ["Rust toolchain"]
+lane = "fast"
+evidence = "the checker's printed verdict"
+update = ""
+cargo = [
+  { package = "models", kind = "lib", targets = ["models"], features = [] },
+  { package = "models", targets = ["client", "composed", "family", "lifecycle", "path", "presence", "relay", "replication", "single_daemon", "supervisor", "switch"], features = [] },
 ]
 
 [[suite]]
@@ -363,6 +382,22 @@ update = ""
 cargo = [{ package = "interpret", targets = ["redaction"], features = [] }]
 
 [[suite]]
+name = "simulated-agent-journals"
+contract = "Every journal the simulated net's agents play is listed, made of whole frames, obeys its interpreter's invariants and reaches what its listing says: turn ends, asks, follow-ups and exits, cut from Claude and Codex recordings and from authored scripts."
+paths = ["crates/testnet/fixtures/journals", "crates/testnet/tests/journal_fixtures.rs"]
+recipe = "just test -- --test journal_fixtures"
+boundary = "Interpreter"
+oracle = "Whole journal frames, the interpreter's journal invariants and each listing's reach claims."
+real = ["recorded provider facts", "the interpreters", "journal frame encoding"]
+substituted = ["provider processes", "agent process", "wall clock"]
+time = "none"
+capabilities = ["Rust toolchain"]
+lane = "fast"
+evidence = "crates/testnet/fixtures/journals"
+update = ""
+cargo = [{ package = "testnet", targets = ["journal_fixtures"], features = [] }]
+
+[[suite]]
 name = "attachment-elements"
 contract = "Attachments round-trip between positioned text and the element the model sees, placeholders are counted against attachments, and malformed or stray elements stay text and are reported."
 paths = ["crates/attachments/tests", "crates/attachments/src"]
@@ -402,19 +437,22 @@ cargo = [
 
 [[suite]]
 name = "dump-bundle-replay"
-contract = "A dump bundle a real daemon wrote replays its facts through the interpreter to what the journal holds, and its store slice through the session model and the views."
-paths = ["crates/replay-support/tests/bundle.rs", "crates/replay-support/tests/fixtures"]
-recipe = "just test-crate replay-support -- --test bundle"
+contract = "A dump bundle a real daemon wrote replays through its four stages with the models' properties judged at every step: its facts through the interpreter to what the journal holds, the daemon core from its checkpoint through every input since, its store slice through the session model, and that state through the views; `dump-replay` prints one line per stage and a ring the replay does not reproduce fails, naming the step and the property."
+paths = ["crates/replay-support/src/replay.rs", "crates/replay-support/src/bin/dump-replay.rs", "crates/replay-support/tests/bundle.rs", "crates/replay-support/tests/core_replay.rs", "crates/replay-support/tests/fixtures"]
+recipe = "just test-crate replay-support -- --test bundle --test core_replay"
 boundary = "Client model"
-oracle = "Equality between replayed steps and the journaled ones, and the views drawn from the replayed session."
-real = ["a recorded dump bundle"]
-substituted = ["daemon", "provider", "network"]
+oracle = "Equality between replayed steps and the journaled ones, the models' properties after every replayed step, and the views drawn from the replayed session."
+real = ["recorded dump bundles", "the daemon core", "the store"]
+substituted = ["provider", "network", "the core's drivers"]
 time = "none"
 capabilities = ["Rust toolchain"]
 lane = "fast"
 evidence = "crates/replay-support/tests/fixtures"
 update = ""
-cargo = [{ package = "replay-support", targets = ["bundle"], features = [] }]
+cargo = [
+  { package = "replay-support", kind = "bin", targets = ["dump-replay"], features = [] },
+  { package = "replay-support", targets = ["bundle", "core_replay"], features = [] },
+]
 
 [[suite]]
 name = "wire-size"
@@ -475,7 +513,7 @@ cargo = [
 
 [[suite]]
 name = "sqlite-store-contract"
-contract = "The SQLite profile store answers one reader and writer suite, retention trims own and replica rows on a driven clock, and the file keeps its migrations, refuses a store with another history untouched, and keeps its position tripwire, one transaction per commit and its rows across a reopen."
+contract = "The SQLite profile store answers one reader and writer suite, retention trims own and replica rows on a driven clock, and the file keeps its migrations, refuses a store with another history untouched, and keeps its position tripwire, one transaction per commit and its rows across a reopen; a store in memory dumps every row canonically and restores to an equal store."
 paths = ["crates/store/tests"]
 recipe = "just test-store"
 boundary = "Single daemon"
@@ -489,7 +527,7 @@ evidence = ""
 update = ""
 cargo = [
   { package = "store", kind = "lib", targets = ["store"], features = ["bundled"] },
-  { package = "store", targets = ["conformance", "retention", "sqlite"], features = ["bundled"] },
+  { package = "store", targets = ["conformance", "explore", "retention", "sqlite"], features = ["bundled"] },
 ]
 
 [[suite]]
@@ -506,7 +544,7 @@ capabilities = ["desktop", "Unix for the agent-process cases"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [{ package = "node", targets = ["agent_names", "analytics", "blobs", "catalogue", "diff", "dump", "forwarded_send", "front_door", "host_catalogue", "hosts", "messaging", "peer_service", "push", "registry", "single_daemon", "worktree"], features = [] }]
+cargo = [{ package = "node", targets = ["addresses", "agent_names", "analytics", "blobs", "catalogue", "diff", "dump", "forwarded_send", "front_door", "host_catalogue", "hosts", "messaging", "peer_service", "push", "registry", "resumption", "single_daemon", "worktree"], features = [] }]
 
 [[suite]]
 name = "supervisor-update"
@@ -550,6 +588,29 @@ cargo = [
   { package = "settings", kind = "lib", targets = ["settings"], features = [] },
   { package = "version-stamp", kind = "lib", targets = ["version_stamp"], features = [] },
   { package = "wire", kind = "lib", targets = ["wire"], features = [] },
+]
+
+[[suite]]
+name = "state-machine-cores"
+contract = "Each state-machine core takes one input to the outputs it wants done and ends every step by checking its cheap invariants, a checkpoint restores only under the layout it was written with, and the ring of inputs since a checkpoint resumes from the newest one with a torn tail cut."
+paths = ["crates/agent-core/src", "crates/core-ring/src", "crates/daemon-core/src", "crates/path-core/src", "crates/relay-core/src", "crates/supervisor-core/src"]
+recipe = "just test -- --lib -p agent-core -p core-ring -p daemon-core -p path-core -p relay-core -p supervisor-core"
+boundary = "Single daemon"
+oracle = "The exact outputs of a step, the checkpoint a restored core writes, and the inputs a ring hands back."
+real = ["in-memory SQLite store", "temporary files"]
+substituted = ["drivers, transport and clocks by the inputs a test feeds"]
+time = "none"
+capabilities = ["Rust toolchain"]
+lane = "fast"
+evidence = ""
+update = ""
+cargo = [
+  { package = "agent-core", kind = "lib", targets = ["agent_core"], features = [] },
+  { package = "core-ring", kind = "lib", targets = ["core_ring"], features = [] },
+  { package = "daemon-core", kind = "lib", targets = ["daemon_core"], features = [] },
+  { package = "path-core", kind = "lib", targets = ["path_core"], features = [] },
+  { package = "relay-core", kind = "lib", targets = ["relay_core"], features = [] },
+  { package = "supervisor-core", kind = "lib", targets = ["supervisor_core"], features = [] },
 ]
 
 [[suite]]
@@ -610,8 +671,9 @@ cargo = [
 [[suite]]
 name = "testnet-harness"
 contract = "The test network harness validates topologies, runs real agents on each fake provider, sleeps every daemon's policy timers on its driven clock, installs each fault, fails stuck observations, catches a broken replica, and serves a topology through its door."
-paths = ["crates/patience/src", "crates/testnet/src", "crates/testnet/tests/harness.rs"]
+paths = ["crates/patience/src", "crates/testnet/src", "crates/testnet/tests/harness.rs", "crates/testnet/tests/stories"]
 recipe = "just test -- --test harness"
+modes = ["real"]
 boundary = "Many daemons"
 oracle = "Harness values, event observations, observation deadlines, door replies and the capability map the crate docs list."
 real = ["daemon runtimes", "agent processes", "loopback sockets", "child processes"]
@@ -629,10 +691,96 @@ cargo = [
 ]
 
 [[suite]]
+name = "link-stories"
+contract = "Hosts link over one QUIC connection per pair, whatever path carries it, from a socket of both address families: on the same network, over SSH into the far host's link socket, whose pinned handshake refuses a key it does not trust, and between two hosts bound to IPv6 alone, a host reaches another's agent, streams its session live and reads the carrying path from its link log."
+paths = ["crates/testnet/tests/spec_links.rs", "crates/testnet/stand-in"]
+recipe = "just test -- --test spec_links"
+modes = ["real"]
+boundary = "Many daemons"
+oracle = "Listener addresses, the route each host reports, the path each host's link log names and session events, at bounded deadlines."
+real = ["daemon runtimes", "agent processes", "loopback QUIC over IPv4 and IPv6", "TLS", "amux relay processes", "Unix sockets", "files"]
+substituted = ["providers by the scripted fakes", "multicast discovery by a scripted bus", "ssh by the net's stand-in, which runs the far host's amux without a network"]
+time = "driven"
+capabilities = ["loopback network", "desktop", "Unix"]
+lane = "fast"
+evidence = ""
+update = ""
+cargo = [{ package = "testnet", targets = ["spec_links"], features = [] }]
+
+[[suite]]
+name = "testnet-stories"
+contract = "The harness's stories that hold on either net, a stuck observation failing at its deadline, a fence holding a host to its own cursors, a severed link going down and coming back, and a killed daemon's agents running on while its restart reads what they wrote, pass on the real net and under every seed on the simulated one, and a failing seed is reported with the command that reruns it."
+paths = ["crates/testnet/src/modes.rs", "crates/testnet/src/world.rs", "crates/testnet/src/probes.rs", "crates/testnet/tests/harness_stories.rs", "crates/testnet/tests/stories", "scripts/sim.py"]
+recipe = "just test -- --test harness_stories"
+modes = ["real", "simulated"]
+boundary = "Many daemons"
+oracle = "The stories' observations and fences on each net, and the seeds each simulated story walked."
+real = ["daemon runtimes and agent processes in real mode", "daemon cores, agent cores and the test kind's interpreter in simulated mode", "stores", "journal files"]
+substituted = ["cloud account", "providers by the scripted fakes", "in simulated mode: transport by in-memory links, agent processes by their cores, the wall clock by the virtual clock, jobs by fakes"]
+time = "driven"
+capabilities = ["desktop", "loopback network", "Unix"]
+lane = "fast"
+evidence = "`just sim` prints each story's seeds walked and failing seeds"
+update = ""
+cargo = [{ package = "testnet", targets = ["harness_stories"], features = [] }]
+
+[[suite]]
+name = "replication-stories"
+contract = "Replication's stories that hold on either net, a replica taking a tail, live records, a delta and a Reset with its markers in sequence, pages served from the block and from the origin with an error when the origin is away, switching to OnDemand closing every source no client watches, and OnDemand warming one chat with an exited agent's source closing and reopening on its resume, pass on the real net and under every seed on the simulated one."
+paths = ["crates/testnet/tests/replication_stories.rs"]
+recipe = "just test -- --test replication_stories"
+modes = ["real", "simulated"]
+boundary = "Many daemons"
+oracle = "The stories' marker sequences, pages, open sources and fences on each net, and the seeds each simulated story walked."
+real = ["daemon runtimes and agent processes in real mode", "daemon cores, agent cores and the test kind's interpreter in simulated mode", "stores", "journal files"]
+substituted = ["cloud account", "providers by the scripted fakes", "in simulated mode: transport by in-memory links, agent processes by their cores, the wall clock by the virtual clock, jobs by fakes"]
+time = "driven"
+capabilities = ["desktop", "loopback network", "Unix"]
+lane = "fast"
+evidence = "`just sim` prints each story's seeds walked and failing seeds"
+update = ""
+cargo = [{ package = "testnet", targets = ["replication_stories"], features = [] }]
+
+[[suite]]
+name = "family-stories"
+contract = "Families' stories that hold on either net, a far child stopped or deleted on its host's return after its parent was, a stop reaching every descendant on every host, a one-shot sub-agent staying for its child's last report and telling its parent when it is stopped, and an away parent's reports waiting while one for a past incarnation is dropped, pass on the real net and under every seed on the simulated one."
+paths = ["crates/testnet/tests/family_stories.rs"]
+recipe = "just test -- --test family_stories"
+modes = ["real", "simulated"]
+boundary = "Many daemons"
+oracle = "The stories' rows, outboxes, received items and exit causes on each net, and the seeds each simulated story walked."
+real = ["daemon runtimes and agent processes in real mode", "daemon cores, agent cores and the test kind's interpreter in simulated mode", "stores", "journal files"]
+substituted = ["cloud account", "providers by the scripted fakes", "in simulated mode: transport by in-memory links, agent processes by their cores, the wall clock by the virtual clock, jobs by fakes"]
+time = "driven"
+capabilities = ["desktop", "loopback network", "Unix"]
+lane = "fast"
+evidence = "`just sim` prints each story's seeds walked and failing seeds"
+update = ""
+cargo = [{ package = "testnet", targets = ["family_stories"], features = [] }]
+
+[[suite]]
+name = "simulated-net-harness"
+contract = "The simulated net makes one schedule of one seed and another of another, replays a seed's schedule line for line, reports a failing seed that fails again the same way on demand and shrinks it to a shorter run by seed search and ring cut, moves time only when the story advances it, lets an agent outlive its daemon for exactly its grace, breaks a call whose message it loses and still brings the replica current, carries a recorded Claude journal an agent plays turn by turn to the far host, and fails a wait as soon as nothing is left to deliver, under every seed it walks."
+paths = ["crates/testnet/src/sim", "crates/testnet/tests/sim_harness.rs", "crates/testnet/tests/sim_seeds.rs"]
+recipe = "just test -- --test sim_harness --test sim_seeds"
+modes = ["simulated"]
+boundary = "Many daemons"
+oracle = "The stories' observations and fences, the delivery trace of each seed, and the virtual clock."
+real = ["daemon cores", "agent cores", "the test kind's interpreter", "in-memory stores", "journal files", "recorded Claude journals"]
+substituted = ["transport by in-memory links", "providers by a scripted provider or a recorded journal", "agent processes by their cores in process", "wall clock by the virtual clock", "jobs by fakes"]
+time = "driven"
+capabilities = ["Rust toolchain"]
+lane = "fast"
+evidence = ""
+update = ""
+cargo = [{ package = "testnet", targets = ["sim_harness", "sim_seeds"], features = [] }]
+
+[[suite]]
 name = "testnet-ctl"
 contract = "testnet ctl, run from a folder, starts an empty net there, adds hosts and a link, runs a fake agent, drives the real terminal client in tmux and draws it to PNG, captures the topology, session log, a dump of every host, the screens and the logs, and shuts the net down leaving the evidence."
 paths = ["crates/testnet/src/ctl", "crates/testnet/src/bin/testnet.rs", "crates/testnet/tests/ctl.rs"]
 recipe = "just test -- --test ctl"
+modes = ["real"]
 boundary = "System composition"
 oracle = "Command exit status and replies, the host's chat, the client's screen text and frame, and the files a capture writes."
 real = ["built testnet and amux binaries", "daemon runtimes", "agent processes", "tmux", "terminal client", "loopback sockets", "temporary files"]
@@ -649,6 +797,7 @@ name = "many-daemon-protocol-spec"
 contract = "Production daemons enforce pairing, trust, discovery, routing, relay carriers, credential refresh, revocation and account isolation, reconcile the inventory, keep each replica one contiguous block, carry agent families and their deliveries across hosts, and count pairings and forwarded prompts once on the right host."
 paths = ["crates/testnet/tests/spec_analytics.rs", "crates/testnet/tests/spec_edge.rs", "crates/testnet/tests/spec_families.rs", "crates/testnet/tests/spec_inventory.rs", "crates/testnet/tests/spec_network.rs", "crates/testnet/tests/spec_replication.rs", "crates/testnet/tests/support"]
 recipe = "just test -- --test spec_analytics --test spec_edge --test spec_families --test spec_inventory --test spec_network --test spec_replication"
+modes = ["real"]
 boundary = "Many daemons"
 oracle = "Typed topology observations, protocol events, refusals, replica markers and state dumps at bounded deadlines."
 real = ["daemon runtimes", "agent processes", "loopback QUIC and TCP", "TLS", "relay server", "files"]
@@ -734,7 +883,7 @@ oracle = "The generated topology round-trips through the served form and its cou
 real = ["topology generator"]
 substituted = []
 time = "none"
-capabilities = []
+capabilities = ["Rust toolchain"]
 lane = "fast"
 evidence = ""
 update = "Change the constants in crates/qualification/src/perf/phone.rs and this test together."
@@ -745,7 +894,7 @@ cargo = [
 
 [[suite]]
 name = "phone-performance-qualification"
-contract = "The optimised iPhone app on the enrolled Mac's simulator, against the served performance network, stays within its budgets for cold launch, store read, reconciliation over none and over 100 ms of latency, streaming and idle, and within reviewed drift of the machine's baseline."
+contract = "The optimised iPhone app on the enrolled Mac's simulator, against the served performance network, stays within its budgets for cold launch, store read, reconciliation over none and over 100 ms of latency directly and through the relay with every way to it gated, streaming and idle, and within reviewed drift of the machine's baseline."
 paths = ["scripts/ios-perf.py", "crates/qualification/src/perf/phone.rs", "perf/baselines/phone"]
 recipe = "just ios perf"
 boundary = "System composition"
@@ -914,24 +1063,24 @@ cargo = [
 
 [[suite]]
 name = "phone-unit-tests"
-contract = "Swift packages and the app-hosted suite preserve bridge schemas, stores, features, design tokens, shell navigation, and test fixtures."
+contract = "Swift packages and the app-hosted suite preserve bridge schemas, stores, features, design tokens, shell navigation, and test fixtures; the chat model replays the Rust client model's traces (ChatModelTraceTests) and holds the same keys and rows at every cut."
 paths = ["apps/apple/Packages/*/Tests", "apps/apple/AmuxAppTests"]
 recipe = "just ios unit"
 boundary = "Store, effects, bridge"
-oracle = "Swift Testing and XCTest assertions over production package and app-hosted behavior."
+oracle = "Swift Testing and XCTest assertions over production package and app-hosted behavior; ChatModelTraceTests compares against the client traces app-runtime records and checks are current."
 real = ["built Swift packages", "Rust bridge", "signed simulator app for app-hosted tests"]
 substituted = ["cloud account", "providers"]
 time = "real"
 capabilities = ["macOS", "Xcode 26.6", "iOS 26.5 golden simulator"]
 lane = "fast"
 evidence = "target/ios/DerivedData"
-update = ""
+update = "just client-traces rewrites the chat model's trace fixtures from the Rust client model; review the diff."
 swift = ["AmuxAppTests", "AmuxCoreTests", "AmuxDesignTests", "AmuxFeaturesTests", "AmuxShellTests", "AmuxTestSupportTests"]
 
 [[suite]]
 name = "phone-journeys"
 contract = "A person can complete every declared phone story through the real app and production amux path against a served topology."
-paths = ["scripts/journeys/phone.py", "scripts/ios-journey.py", "journeys/manifest.json", "journeys/topologies/phone-stories.json", "journeys/topologies/phone-reach.json", "journeys/topologies/phone-authority.json", "journeys/topologies/phone-accounts.json", "journeys/topologies/phone-purchase.json", "journeys/topologies/phone-accessible.json", "journeys/topologies/phone-push.json", "journeys/topologies/phone-flows.json", "journeys/fixtures/needs-you.apns", "journeys/goldens/phone"]
+paths = ["scripts/journeys/phone.py", "scripts/ios-journey.py", "journeys/manifest.json", "journeys/topologies/phone-stories.json", "journeys/topologies/phone-reach.json", "journeys/topologies/phone-authority.json", "journeys/topologies/phone-accounts.json", "journeys/topologies/phone-purchase.json", "journeys/topologies/phone-accessible.json", "journeys/topologies/phone-push.json", "journeys/topologies/phone-resume.json", "journeys/topologies/phone-flows.json", "journeys/fixtures/needs-you.apns", "journeys/goldens/phone"]
 recipe = "just ios journey"
 boundary = "Journeys"
 oracle = "Declared acts, independent door and host observations, screenshots, exits, and teardown evidence."
@@ -943,7 +1092,7 @@ lane = "journey"
 evidence = "target/ios/journeys"
 update = "UPDATE_JOURNEY_GOLDENS=1 just ios journey -- conversation-decision-claude-sdk"
 journey_manifest = "journeys/manifest.json"
-journeys = ["account-sign-in", "purchase-restore", "report", "accessibility", "local-network", "push-wake"]
+journeys = ["account-sign-in", "purchase-restore", "report", "accessibility", "local-network", "push-wake", "resume"]
 
 [[suite]]
 name = "terminal-journeys"
@@ -1080,6 +1229,23 @@ cargo = [
 ]
 
 [[suite]]
+name = "relay-scaling-qualification"
+contract = "The production relay's link admissions per second, aggregate throughput and stream-open latency at 10, 100 and 1,000 concurrent connections on loopback stay within noise of the curve recorded from an earlier build on the same enrolled machine."
+paths = ["crates/qualification/src/perf/relay.rs", "crates/qualification/src/bin/relay_curve.rs", "crates/node/src/link/relay_host.rs", "perf/relay"]
+recipe = "just relay-curve --compare"
+boundary = "System composition"
+oracle = "Median admissions and throughput and pooled open-latency percentiles against a machine-specific reviewed baseline, within stated one-sided noise bands."
+real = ["release build", "production relay server", "loopback TCP and TLS", "the link multiplexer on both sides"]
+substituted = ["cloud account by a stand-in that names an account per token", "hosts by bare relay links that serve no calls"]
+time = "real"
+capabilities = ["enrolled Mac14,6", "quiet machine", "release toolchain"]
+lane = "qualification"
+evidence = "the printed curve and judgement"
+update = "just relay-curve --baseline"
+baselines = ["perf/relay/Mac14,6/baseline.json"]
+cargo = [{ package = "qualification", kind = "bin", targets = ["relay-curve"], features = ["perf"] }]
+
+[[suite]]
 name = "phone-source-policy"
 contract = "Phone source obeys the registered leaf, platform-conditional, spinner, and localized-copy policies."
 paths = ["apps/apple/Tools/feature-lint.sh", "apps/apple/Tools/strings-lint.sh"]
@@ -1110,6 +1276,22 @@ lane = "tool"
 evidence = "target/ios/scope-audit"
 update = ""
 cases = ["scripts/ios-scope-audit.py"]
+
+[[suite]]
+name = "line-coverage"
+contract = "The coverage recipe runs every workspace test under instrumentation with the desktop features and reports line coverage per crate with the commit it measured, naming any target that failed while measured."
+paths = ["scripts/coverage.py", "tests/coverage.md"]
+recipe = "just coverage"
+boundary = "System composition"
+oracle = "cargo-llvm-cov's per-file line counts summed over each crate's own sources; a reading aid, never a gate on the numbers."
+real = ["every workspace test target", "LLVM source-based coverage"]
+substituted = []
+time = "real"
+capabilities = ["Rust toolchain", "cargo-llvm-cov", "llvm-tools-preview"]
+lane = "tool"
+evidence = "tests/coverage.md"
+update = "just coverage, then commit tests/coverage.md."
+cases = ["scripts/coverage.py"]
 
 [[suite]]
 name = "production-cloud-signin-qualification"

@@ -6,7 +6,9 @@ served performance network (`qualification::perf::phone`: three machines on
 the phone's local network, forty agents, one conversation a thousand rows
 long that streams on cue). Every packet between the phone and a machine
 crosses a gate the run can delay, so reconciliation is measured over a
-household network's latency as well as over none. Every number is taken by
+household network's latency as well as over none; away from home, every way
+to the relay (the phone's and each machine's) crosses one, so a relayed
+launch pays the latency on both legs, as it does over mobile data. Every number is taken by
 the app itself and read back through the door; this script only arranges the
 workload, keeps the samples, judges them against the budgets below and the
 enrolled Mac's baseline, and writes the report.
@@ -95,13 +97,15 @@ BUDGETS: dict[str, tuple[str, str, float, float | None, int | None]] = {
     "cold store read": ("ms", "cold", 50, None, 15),
     "cold fleet render": ("ms", "cold", 250, None, 15),
     # On the same network the fleet should be current within a few
-    # frames of the first one; a second is the slow-network figure.
+    # frames of the first one. A launch resumes every link with its first
+    # calls as early data, so over a gate it should cost one round trip
+    # more than the ungated launch: the budget is the ungated median the
+    # starting product measured (91.8 ms) plus the gated round trip, with
+    # the recipe's 15% over that. Through the relay the round trip crosses
+    # both gated legs, 400 ms; on the same network it is 200 ms.
     "reconciliation at 0 ms": ("ms", "reconciliation", 250, None, 15),
-    "reconciliation at 100 ms": ("ms", "reconciliation", 1000, None, 15),
-    # Away from home a phone reaches its machines through the relay, every
-    # stream handshaking end to end inside; a person on mobile data accepts
-    # about a second and a half to see a current fleet.
-    "reconciliation through the relay at 100 ms": ("ms", "reconciliation", 1500, None, 15),
+    "reconciliation at 100 ms": ("ms", "reconciliation", 336, None, 15),
+    "reconciliation through the relay at 100 ms": ("ms", "reconciliation", 566, None, 15),
     "streaming hitch time": ("ms/s", "streaming", 5, None, None),
     "streaming main-thread CPU": ("%", "streaming", 60, None, 15),
     # What keeps the app resident when it is put away, rather than what
@@ -110,6 +114,13 @@ BUDGETS: dict[str, tuple[str, str, float, float | None, int | None]] = {
     "idle transcript commits": ("count", "idle", 0, 0, 0),
     "idle display ticks": ("count", "idle", 0, 0, 0),
 }
+
+# Metrics whose measurement was redefined and whose budget and baseline are
+# to be set from the first run under the new definition: each is measured and
+# reported, but neither its budget nor a baseline recorded under the old
+# definition can fail a run. A metric leaves this set in the commit that
+# writes its measured budget and baseline.
+SET_FROM_FIRST_MEASUREMENT: set[str] = set()
 
 
 class Refusal(Exception):
@@ -174,14 +185,19 @@ class Run:
     def gate_the_relay(self) -> None:
         """A gate in front of the served relay's QUIC carrier, dialled in the
         relay's place, so the run can put latency between the phone and the
-        relay the way mobile data does."""
+        relay the way mobile data does. Each machine already reaches the
+        relay's QUIC carrier through a gate of its own."""
         reply = self.journey.request({"RelayGate": {}})
         assert isinstance(reply, dict)
         self.relay_gate = reply["addr"]
 
     def relay_latency(self, ms: int) -> None:
-        self.journey.request({"RelayFaults": {"delay_ms": ms, "loss_percent": 0}})
-        self.notes.append(f"latency {ms} ms each way on the relay's gate")
+        """Every way to the relay holds each packet `ms`: the phone's gate and
+        each machine's, so a relayed round trip pays the latency on both legs
+        as it would with the machines away from the relay too. The account
+        service is not gated: a launch reuses its relay token."""
+        self.journey.request({"NetFaults": {"target": "relay", "delay_ms": ms, "loss_percent": 0}})
+        self.notes.append(f"latency {ms} ms each way on every way to the relay, the phone's and each machine's")
 
     def leave_home(self) -> None:
         """The phone away from home: signed in to the machines' account at
@@ -258,22 +274,27 @@ class Run:
                 )
 
     def relay_launches(self, latency_ms: int) -> None:
-        """Five launches of the phone away from home, the relay's gate
+        """Five launches of the phone away from home, every way to the relay
         holding each packet `latency_ms`: the fleet is current only once
         every machine has been reached through the relay."""
         self.relay_latency(latency_ms)
         for attempt in range(SAMPLES):
-            marks = self.marked_launch(attempt, f"through the relay at {latency_ms} ms", relay_quic=self.relay_gate)
+            marks = self.marked_launch(attempt, f"through the relay at {latency_ms} ms")
             self.samples[f"reconciliation through the relay at {latency_ms} ms"].append(
                 marks["reconciled"] - marks["storeReadEnded"]
             )
 
-    def marked_launch(self, attempt: int, named: str, relay_quic: str | None = None) -> dict[str, float]:
-        """One launch, terminated and spaced from the last, read back to its
-        reconciliation, with every mark a cold launch needs."""
-        self.journey.quit()
+    def marked_launch(self, attempt: int, named: str) -> dict[str, float]:
+        """One launch, spaced from the last, read back to its reconciliation,
+        with every mark a cold launch needs. The last launch stays open until
+        the spacing is up, as a person looking at their fleet keeps the app
+        open: a machine sends a resumed link's next ticket once the phone's
+        handshake finishes, two round trips in, and an app quit at its
+        reconciliation, one round trip in, would keep none and make every
+        other launch a full handshake."""
         self.space_launches()
-        self.journey.relaunch(geometry=False, relay_quic=relay_quic)
+        self.journey.quit()
+        self.journey.relaunch(geometry=False, relay_quic=self.relay_gate)
         marks = self.await_reconciled(120)
         for needed in ("firstCachedFrame", "storeReadBegan", "nodeStarted", "fleetOpenBegan", "storeReadEnded"):
             if needed not in marks:
@@ -369,7 +390,13 @@ class Run:
 
     def measure_everything(self) -> None:
         self.gate_the_machines()
-        self.journey.launch()
+        # Every launch dials the relay through its gate, whose socket toward
+        # the relay takes datagrams from the relay alone, as a strict router
+        # does. Signed in through anything else, the relay would observe the
+        # phone's own loopback socket, every machine would punch straight to
+        # it, and the relay launches would measure that ungated path.
+        self.gate_the_relay()
+        self.journey.launch(relay_quic=self.relay_gate)
         self.pair_through_the_gates()
         # A launch the cold launches are compared against: the same install,
         # the fleet already in its store. Every reconciled launch below reads
@@ -381,14 +408,13 @@ class Run:
                 self.cold_launches(latency)
             self.latency(0)
         if self.takes("reconciliation"):
-            self.gate_the_relay()
             self.leave_home()
             self.relay_launches(LATENCIES_MS[-1])
             self.come_home()
         if self.takes("idle") or self.takes("streaming"):
             self.journey.quit()
             self.space_launches()
-            self.journey.relaunch(geometry=False)
+            self.journey.relaunch(geometry=False, relay_quic=self.relay_gate)
             self.await_reconciled(120)
             self.open_the_conversation()
             if self.takes("idle"):
@@ -421,13 +447,16 @@ def judge(samples: dict[str, list[float]], baseline: dict[str, float] | None) ->
         worst = max(values)
         notes = []
         passed = True
-        if med > budget:
+        provisional = name in SET_FROM_FIRST_MEASUREMENT
+        if provisional:
+            notes.append("budget and baseline to be set from this measurement; not judged")
+        if med > budget and not provisional:
             passed = False
             notes.append(f"median {med:.1f} {unit} over the budget of {budget:g}")
-        if worst_budget is not None and worst > worst_budget:
+        if worst_budget is not None and worst > worst_budget and not provisional:
             passed = False
             notes.append(f"worst {worst:.1f} {unit} over the worst-sample budget of {worst_budget:g}")
-        recorded = baseline.get(name) if baseline else None
+        recorded = baseline.get(name) if baseline and not provisional else None
         drift = None
         if recorded is not None and tolerance is not None:
             allowed = recorded * (1 + tolerance / 100)
@@ -451,6 +480,7 @@ def judge(samples: dict[str, list[float]], baseline: dict[str, float] | None) ->
             "baseline": recorded,
             "drift_percent": drift,
             "passed": passed,
+            "provisional": provisional,
             "note": "; ".join(notes),
         })
     return {"passed": all(result["passed"] for result in results), "results": results}
@@ -466,18 +496,35 @@ def summary_line(result: dict) -> str:
         )
         against = f", baseline {result['baseline']:.1f} ({drift})"
     verdict = "" if result["passed"] else f" — FAILED: {result['note']}"
+    if result.get("provisional"):
+        verdict = f" — {result['note']}"
     return (
         f"{result['metric']}: median {result['median']:.1f} {result['unit']}, worst {result['worst']:.1f}, "
         f"budget {result['budget']:g}{against}{verdict}"
     )
 
 
-def report(verdict: dict, machine_name: str, model: str, minutes: float, notes: list[str]) -> str:
+def verdict_cell(result: dict) -> str:
+    if result.get("provisional"):
+        return "MEASURED: " + result["note"]
+    return "PASS" if result["passed"] else "FAIL: " + result["note"]
+
+
+def load_average() -> str:
+    return " ".join(f"{value:.2f}" for value in os.getloadavg())
+
+
+def report(
+    verdict: dict, machine_name: str, model: str, minutes: float, notes: list[str], load: tuple[str, str]
+) -> str:
     lines = [
         "# The phone measured",
         "",
         f"Machine `{machine_name}` ({model}), the `Measured` app on the `{SIMULATOR}` simulator, "
         f"{SAMPLES} samples per metric; the run took {minutes:.1f} minutes.",
+        "",
+        # A busy Mac slows the simulator; the load says whether a miss is the app's.
+        f"Load average (1, 5, 15 minutes) before the run: {load[0]} · after: {load[1]}.",
         "",
         "The simulator reports 60 Hz and composites through the Mac's display: hitch time is display-link "
         "accounting, a proxy for a device's hitch metric.",
@@ -488,6 +535,8 @@ def report(verdict: dict, machine_name: str, model: str, minutes: float, notes: 
     for result in verdict["results"]:
         unit = result["unit"]
         budget = f"{result['budget']:g} {unit}"
+        if result.get("provisional"):
+            budget = "to be set from this run"
         if result["worst_budget"] is not None:
             budget += f" (worst {result['worst_budget']:g})"
         baseline = f"{result['baseline']:.1f}" if result["baseline"] is not None else "none"
@@ -499,7 +548,7 @@ def report(verdict: dict, machine_name: str, model: str, minutes: float, notes: 
             drift = "unavailable"
         lines.append(
             f"| {result['metric']} | {result['median']:.1f} {unit} | {result['worst']:.1f} {unit} | {budget} | "
-            f"{baseline} | {drift} | {'PASS' if result['passed'] else 'FAIL: ' + result['note']} |"
+            f"{baseline} | {drift} | {verdict_cell(result)} |"
         )
     lines += ["", "## Samples", ""] + [f"- {note}" for note in notes] + [""]
     return "\n".join(lines)
@@ -551,6 +600,7 @@ def main() -> int:
     if baseline is None:
         print(f"no baseline for {name} in use: judged on budgets alone", flush=True)
 
+    load_before = load_average()
     began = time.monotonic()
     udid = ios_simulators.ready(SIMULATOR)
     journey = PhoneJourney({"id": "perf"}, topology, udid, output=OUTPUT / "journey", app=APP)
@@ -576,7 +626,7 @@ def main() -> int:
     verdict = judge(run.samples, baseline)
     (OUTPUT / "samples.json").write_text(json.dumps(run.samples, indent=2) + "\n")
     (OUTPUT / "verdict.json").write_text(json.dumps(verdict, indent=2) + "\n")
-    text = report(verdict, name, model, minutes, run.notes)
+    text = report(verdict, name, model, minutes, run.notes, (load_before, load_average()))
     (OUTPUT / "report.md").write_text(text)
     for result in verdict["results"]:
         print(summary_line(result), flush=True)

@@ -1296,6 +1296,9 @@ impl State {
     /// An agent message goes to Claude's messaging socket and is accepted
     /// at once; its item is the record that it arrived.
     fn agent_message(&mut self, emit: &mut Emit, envelope: Envelope) {
+        if self.shared.message_repeated(emit, &envelope.id) {
+            return;
+        }
         let words = crate::shared::words(&envelope);
         let attachments = crate::shared::attachments(&envelope).to_vec();
         self.shared.message_accepted(&envelope.id);
@@ -1307,6 +1310,7 @@ impl State {
             text: carried.clone(),
             words: words.clone(),
         });
+        self.shared.message_handed();
         emit.effect(Effect::Inject {
             id: envelope.id.clone(),
             text: carried,
@@ -1724,11 +1728,14 @@ impl Interpreter for ClaudePty {
             Event::Rename { .. } => {}
             Event::ProviderExit { code } => state.exited(&mut emit, crate::provider_exit(code)),
             Event::Exiting(exiting) => state.exited(&mut emit, exiting),
-            Event::DaemonLost => state.boundary(
-                &mut emit,
-                wire::BoundaryKind::DaemonLost,
-                wire::IncarnationEnd::default(),
-            ),
+            Event::DaemonLost => {
+                state.shared.leaving();
+                state.boundary(
+                    &mut emit,
+                    wire::BoundaryKind::DaemonLost,
+                    wire::IncarnationEnd::default(),
+                );
+            }
             Event::StopRequested => {
                 state.shared.stop_requested();
                 state.interrupt(&mut emit);

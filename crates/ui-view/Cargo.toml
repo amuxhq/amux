@@ -17,3 +17,4 @@ wire = { workspace = true }
 
 [dev-dependencies]
 interpret = { workspace = true }
+proptest = { workspace = true }

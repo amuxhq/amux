@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 use client::{ManualClock, RpcError};
 use support::*;
-use ui_runtime::{DriverEvent, InputError, PageError, Session, TRACE_EVENTS, TraceEvent};
+use ui_runtime::{
+    DriverEvent, InputError, PageError, Session, TRACE_EVENTS, TRANSCRIPT_DUMP, TraceEvent,
+};
 use ui_state::{Composer, Connection, InputOutcome, InputState, Refusal, RefusalReason, Waiting};
 use wire::{
     ErrorCode, FetchResponse, GetBlobResponse, Input, Kind, SendInputRequest, claude_pty_input,
@@ -587,138 +589,38 @@ async fn the_trace_is_bounded_and_replays_from_its_starting_state() {
 }
 
 #[tokio::test]
-async fn the_dump_part_carries_the_state_and_the_trace() {
+async fn a_sessions_history_is_its_trace_in_the_form_a_dump_carries() {
     let clock = ManualClock::new(0);
     let (session, _calls, _feed) = open_caught_up(&clock, 2).await;
-    let part = session.dump_part();
-    let names: Vec<&str> = part.files.iter().map(|file| file.name.as_str()).collect();
-    let dir = "client/sessions/6167656e742d31";
-    assert_eq!(
-        names,
-        [format!("{dir}/state.txt"), format!("{dir}/trace.txt")]
+    let history = session.history();
+    assert_eq!(history.agent_id, agent(KIND).agent_id);
+    let start = history
+        .start
+        .clone()
+        .expect("the state the trace began from");
+    let events = history.events.clone().expect("the events since").traced;
+    assert!(
+        events.windows(2).all(|pair| pair[1].seq == pair[0].seq + 1),
+        "in order, no gaps"
     );
-    let trace = String::from_utf8(part.files[1].contents.clone()).unwrap();
-    assert!(trace.starts_with("start:\n"));
-    assert!(trace.contains("Subscribed { tail: 40 }"));
-    assert!(trace.contains("CaughtUp"));
-
-    let bundle = tempfile::tempdir().unwrap();
-    ui_runtime::write_part(bundle.path(), &part).unwrap();
-    assert!(bundle.path().join(dir).join("trace.txt").is_file());
-    let mut outside = part.clone();
-    outside.files[0].name = "../escape".into();
-    assert!(ui_runtime::write_part(bundle.path(), &outside).is_err());
-}
-
-#[tokio::test]
-async fn the_dump_part_writes_structure_and_no_content() {
-    const ITEM_TEXT: &str = "PLANTEDitemtext0001";
-    const ITEM_BODY: &str = "PLANTEDitembody0002";
-    const APPENDED: &str = "PLANTEDappended0003";
-    const SNAPSHOT_BODY: &str = "PLANTEDsnapshotbody0004";
-    const WORKING_ON: &str = "PLANTEDworkingon0005";
-    const QUEUED: &str = "PLANTEDqueuedtext0006";
-    const PROMPT: &str = "PLANTEDprompt0007";
-    const HIDDEN_ANSWER: &str = "PLANTEDhiddenanswer0008";
-    const ENTRY: &str = "PLANTEDentry0009";
-    const HOST: &str = "PLANTEDhostname0010";
-
-    let clock = ManualClock::new(0);
-    let (client, mut calls) = runtime();
-    let open = tokio::spawn(Session::open(client, agent(KIND), 40, CAP, clock.clone()));
-    let (_, feed) = calls.subscribe().await;
-    let mut first = snapshot(KIND, 3, &[b"queued-1"]);
-    if let Some(wire::session_event::Of::Snapshot(snapshot)) = &mut first.of {
-        snapshot.body = SNAPSHOT_BODY.as_bytes().to_vec();
-        snapshot.working_on = Some(WORKING_ON.into());
-        snapshot.queue[0].text = QUEUED.into();
-    }
-    feed.send(first);
-    feed.send(ev(wire::Item {
-        body: ITEM_BODY.as_bytes().to_vec(),
-        ..text_item(KIND, 1, 1, ITEM_TEXT)
-    }));
-    feed.send(ev(text_item(KIND, 2, 2, "streaming ")));
-    feed.send(append("k2", 2, 3, APPENDED));
-    feed.send(caught_up(3));
-    let session = Arc::new(open.await.unwrap().unwrap());
-    session.set_entry(wire::Agent {
-        name: ENTRY.into(),
-        cwd: format!("/Users/{ENTRY}"),
-        working_on: Some(ENTRY.into()),
-        ..agent(KIND)
-    });
-    session.set_host(wire::HostEntry {
-        host_id: b"host-a".to_vec(),
-        name: HOST.into(),
-        last_dial_error: Some(HOST.into()),
-        ..wire::HostEntry::default()
-    });
-
-    let prompting = tokio::spawn({
-        let session = session.clone();
-        async move { session.send_prompt(PROMPT, Vec::new()).await }
-    });
-    let (_, reply) = calls.send_input().await;
-    reply.send(Ok(accepted(true))).ok();
-    let prompt = prompting.await.unwrap();
-    let answering = tokio::spawn({
-        let session = session.clone();
-        async move {
-            let answer = wire::ClaudeAnswer {
-                ask_key: "ask-1".into(),
-                of: Some(wire::claude_answer::Of::Reply(wire::ReplyInstead {
-                    text: HIDDEN_ANSWER.into(),
-                    answers_so_far: Vec::new(),
-                })),
-            };
-            session
-                .answer(Input::new(
-                    Vec::new(),
-                    wire::ClaudeSdkInput {
-                        of: Some(claude_sdk_input::Of::Answer(answer)),
-                    },
-                ))
-                .await
-        }
-    });
-    let (_, reply) = calls.send_input().await;
-    reply.send(Ok(accepted(false))).ok();
-    answering.await.unwrap().unwrap();
-
-    let part = session.dump_part();
-    for secret in [
-        ITEM_TEXT,
-        ITEM_BODY,
-        APPENDED,
-        SNAPSHOT_BODY,
-        WORKING_ON,
-        QUEUED,
-        PROMPT,
-        HIDDEN_ANSWER,
-        ENTRY,
-        HOST,
-    ] {
-        assert_eq!(part_holds(&part, secret), None, "{secret} is in the dump");
-    }
-    // The structure stays: keys, revisions, input ids and the order of events.
-    let text: String = part
-        .files
+    let driver: Vec<&str> = events
         .iter()
-        .map(|file| String::from_utf8_lossy(&file.contents).into_owned())
+        .filter_map(|traced| match &traced.event {
+            Some(wire::client_traced::Event::Driver(driver)) => Some(driver.as_str()),
+            _ => None,
+        })
         .collect();
-    let id: String = prompt.id.iter().map(|byte| format!("{byte:02x}")).collect();
-    for expected in [
-        "k1 order=1 rev=1",
-        "Append k2 base=2 rev=3",
-        "CaughtUp rev=3",
-        "Subscribed { tail: 40 }",
-        "answer ask=ask-1",
-    ] {
-        assert!(text.contains(expected), "{expected} is missing:\n{text}");
+    assert!(driver.contains(&"Subscribed { tail: 40 }"), "{driver:?}");
+
+    // Read back, the start and its messages replay to the session as it
+    // stands.
+    let mut replayed = ui_state::SessionState::from_wire(start).expect("the start reads back");
+    for traced in events {
+        if let Some(wire::client_traced::Event::Msg(msg)) = traced.event {
+            replayed.update(ui_state::Msg::from_wire(msg).expect("a message reads back"));
+        }
     }
-    assert!(text.contains(&format!("Send {id} prompt attachments=0")));
-    assert!(text.contains(&format!("Sent {id} accepted queued=true")));
+    assert_eq!(replayed, *session.state());
 }
 
 #[tokio::test]
@@ -909,9 +811,9 @@ async fn a_return_whose_held_rows_fit_releases_them_without_a_fetch() {
 /// Decided: an input the runtime refused before it was written, because the
 /// agent's host could not be reached, certainly never left. The client
 /// library holds it as pending (visible, with Cancel), and once the host is
-/// reachable again sends it once more under the same id. Today it becomes a
-/// rejection and nothing sends it again. Covers a prompt and an ask answer;
-/// a stop is held the same way once it goes through the library.
+/// reachable again sends it once more under the same id. Covers a prompt
+/// and an ask answer; a stop is held the same way once it goes through the
+/// library.
 #[tokio::test]
 async fn an_input_refused_because_the_host_was_unreachable_is_held_and_sent_again_with_its_id() {
     for act in ["prompt", "answer"] {
@@ -966,4 +868,63 @@ async fn an_input_refused_because_the_host_was_unreachable_is_held_and_sent_agai
         }
         drop(feed);
     }
+}
+
+#[tokio::test]
+async fn a_transcript_that_fails_its_check_asks_for_a_dump_with_its_trace_cut_there() {
+    let (client, mut calls) = runtime();
+    let open = tokio::spawn(Session::open(
+        client,
+        agent(KIND),
+        40,
+        CAP,
+        ManualClock::new(0),
+    ));
+    let (_, feed) = calls.subscribe().await;
+    feed.send(snapshot(KIND, 3, &[]));
+    // An origin skipping an order breaks the block the client holds.
+    feed.send(ev(text_item(KIND, 1, 1, "one")));
+    feed.send(ev(text_item(KIND, 3, 3, "three")));
+    let _session = open.await.unwrap().expect("the session opens");
+    feed.send(caught_up(3));
+    let Call::Dump(request, reply) = calls.next().await else {
+        panic!("the driver asked for no dump");
+    };
+    assert!(request.automatic);
+    assert_eq!(request.agent_ids, vec![agent(KIND).agent_id]);
+    assert!(
+        request.reason.starts_with(TRANSCRIPT_DUMP) && request.reason.contains("between 1 and 3"),
+        "{}",
+        request.reason
+    );
+    // The session's trace rides along, cut at the message that broke the
+    // transcript, for the daemon to redact and write before it answers.
+    let [history] = &request.sessions[..] else {
+        panic!("{} sessions in the request", request.sessions.len());
+    };
+    assert_eq!(history.agent_id, agent(KIND).agent_id);
+    let events = &history.events.as_ref().expect("events").traced;
+    let last = events.last().expect("an event");
+    assert!(
+        matches!(
+            &last.event,
+            Some(wire::client_traced::Event::Msg(wire::ClientSessionMsg {
+                of: Some(wire::client_session_msg::Of::Event(wire::SessionEvent {
+                    of: Some(wire::session_event::Of::CaughtUp(_))
+                }))
+            }))
+        ),
+        "{last:?}"
+    );
+    reply
+        .send(Ok(wire::DumpReport {
+            report_path: "elsewhere".to_owned(),
+        }))
+        .unwrap();
+
+    // The same transcript fails again at the next CaughtUp: one dump is
+    // enough for the session.
+    feed.send(caught_up(3));
+    feed.send(lagged());
+    let (_, _feed) = calls.subscribe().await;
 }

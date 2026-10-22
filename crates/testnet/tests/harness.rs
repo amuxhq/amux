@@ -6,6 +6,8 @@
 
 #![cfg(unix)]
 
+mod stories;
+
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::net::{SocketAddr, TcpStream};
 use std::process::{Command, Stdio};
@@ -15,6 +17,7 @@ use prost::Message as _;
 use provider_fakes::script::Step;
 use serde_json::{Value, json};
 use store::{Absorb, AgentRow};
+use stories::{gate, says, text};
 use testnet::door::{CAPABILITIES, Control, ErrorKind, Readiness, Reply};
 use testnet::observe::{self, Mark, marks};
 use testnet::{
@@ -22,31 +25,6 @@ use testnet::{
     TopologyError, UdpGate, holds_for, until, until_within,
 };
 use wire::{ClaudeSdkItem, SessionEvent, claude_sdk_item, session_event};
-
-fn text(text: &str) -> Step {
-    Step::Text {
-        chunks: vec![text.to_owned()],
-    }
-}
-
-fn gate(name: &str) -> Step {
-    Step::WaitFor { path: name.into() }
-}
-
-/// The texts of every item seen, in order.
-fn texts(events: &[SessionEvent]) -> Vec<String> {
-    events
-        .iter()
-        .filter_map(|event| match &event.of {
-            Some(session_event::Of::Item(item)) => Some(item.text.clone()),
-            _ => None,
-        })
-        .collect()
-}
-
-fn says(events: &[SessionEvent], wanted: &str) -> bool {
-    texts(events).iter().any(|text| text.contains(wanted))
-}
 
 /// Whether a claude_sdk agent's turn-end row has been seen: the last row
 /// its turn writes, so its journal is settled once this shows.
@@ -255,224 +233,6 @@ async fn every_daemon_sleeps_its_policy_timers_on_the_driven_clock() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_stuck_observation_fails_at_its_deadline_and_a_closed_one_at_once() {
-    let topology = Topology::new().host("desk").agent(
-        AgentDecl::new("worker", "desk")
-            .steps(vec![text("started"), gate("never"), Step::TurnEnd])
-            .prompt("go"),
-    );
-    let mut net = Net::start(topology).await.unwrap();
-    let mut observer = net.observe("desk", "worker", 50).await.unwrap();
-    observer
-        .observe_until(|events| says(events, "started"), PATIENCE)
-        .await
-        .unwrap();
-
-    let stuck = observer
-        .observe_until(
-            |events| says(events, "finished"),
-            Duration::from_millis(300),
-        )
-        .await
-        .expect_err("nothing says finished");
-    let Stuck::Deadline { seen, .. } = &stuck else {
-        panic!("a deadline, not {stuck:?}");
-    };
-    assert!(
-        seen.contains("started"),
-        "the failure shows what it saw: {seen}"
-    );
-
-    // The daemon going away ends the stream: the observer says so at once
-    // instead of waiting out a long deadline.
-    net.kill_daemon("desk").await.unwrap();
-    let began = Instant::now();
-    let closed = observer
-        .observe_until(|events| says(events, "finished"), PATIENCE)
-        .await
-        .expect_err("a closed stream never finishes");
-    assert!(matches!(closed, Stuck::Closed { .. }), "{closed:?}");
-    assert!(began.elapsed() < Duration::from_secs(5));
-    net.restart_daemon("desk").await.unwrap();
-    net.shutdown().await.unwrap();
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_fence_holds_a_host_to_what_its_own_cursors_report() {
-    let topology = Topology::new()
-        .host("desk")
-        .host("laptop")
-        .link("desk", "laptop")
-        .agent(
-            AgentDecl::new("worker", "desk")
-                .steps(vec![
-                    text("one"),
-                    Step::TurnEnd,
-                    gate("second"),
-                    text("two"),
-                    Step::TurnEnd,
-                ])
-                .prompt("go"),
-        );
-    let net = Net::start(topology).await.unwrap();
-    let key = net.agent("worker").unwrap().key();
-
-    // The first turn ends on the origin; fenced to the row that ended it,
-    // the laptop holds everything before it.
-    let first = net.turn_ended("worker", 1).await.unwrap();
-    net.fence("laptop", "worker", first).await.unwrap();
-    let held = {
-        let runtime = net.runtime("laptop").unwrap();
-        let store = runtime.store().await;
-        store.cut(&key, u32::MAX).unwrap().held
-    };
-    assert!(held.iter().any(|item| item.text.contains("one")));
-    assert_eq!(
-        held.iter()
-            .filter(|item| item.key.starts_with("turn:"))
-            .count(),
-        1
-    );
-    assert!(
-        !held.iter().any(|item| item.text.contains("two")),
-        "the second turn waits on its gate"
-    );
-    net.current("laptop", "worker").await.unwrap();
-
-    // A sent input settles as the row that reflects it, and the second
-    // turn's end comes after it.
-    let input = b"second-go".to_vec();
-    net.input(
-        "worker",
-        testnet::prompt(net.agent("worker").unwrap().kind, &input, "again"),
-    )
-    .await
-    .unwrap();
-    let settled = net.input_settled("worker", &input).await.unwrap();
-    assert!(settled > first);
-    net.open_gate("second").unwrap();
-    let second = net.turn_ended("worker", 2).await.unwrap();
-    assert!(second > settled);
-    net.fence("laptop", "worker", second).await.unwrap();
-    let held = {
-        let runtime = net.runtime("laptop").unwrap();
-        let store = runtime.store().await;
-        store.cut(&key, u32::MAX).unwrap().held
-    };
-    assert!(held.iter().any(|item| item.text.contains("two")));
-    net.shutdown().await.unwrap();
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_severed_link_goes_down_and_a_restored_one_comes_back() {
-    let mut net = Net::start(Topology::new().host("a").host("b").host("c").link("a", "b"))
-        .await
-        .unwrap();
-    assert!(
-        net.link_up("a", "b").await,
-        "declared links are up at start"
-    );
-
-    let ack = net.sever_link("b", "a").unwrap();
-    assert_eq!(ack.installed, "link b - a severed");
-    net.wait_link("a", "b", false).await.unwrap();
-    net.restore_link("a", "b").await.unwrap();
-    net.wait_link("a", "b", true).await.unwrap();
-
-    // Restored at once, before either end has seen the cut: the new link
-    // comes back and stays, rather than being refused as a second dial
-    // while the severed one still looks up.
-    net.sever_link("a", "b").unwrap();
-    net.restore_link("a", "b").await.unwrap();
-    net.wait_link("a", "b", true).await.unwrap();
-    // A window: nothing the test controls gates a link that must not
-    // drop again.
-    holds_for(
-        "the restored link to stay up",
-        Duration::from_millis(500),
-        || net.link_up("a", "b"),
-    )
-    .await
-    .unwrap();
-
-    assert!(matches!(
-        net.sever_link("a", "c"),
-        Err(NetError::NoLink(..))
-    ));
-    net.shutdown().await.unwrap();
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_killed_daemon_leaves_its_agents_running_and_its_restart_reads_what_they_wrote() {
-    let topology = Topology::new()
-        .host("desk")
-        .host("laptop")
-        .link("desk", "laptop")
-        .agent(
-            AgentDecl::new("worker", "desk")
-                .steps(vec![
-                    text("before"),
-                    gate("release"),
-                    text("after"),
-                    Step::TurnEnd,
-                ])
-                .prompt("go"),
-        );
-    let mut net = Net::start(topology).await.unwrap();
-    let generation = net.generation("desk").unwrap();
-    let mut observer = net.observe("desk", "worker", 50).await.unwrap();
-    observer
-        .observe_until(|events| says(events, "before"), PATIENCE)
-        .await
-        .unwrap();
-
-    net.kill_daemon("desk").await.unwrap();
-    assert!(!net.is_up("desk"));
-    assert!(matches!(net.runtime("desk"), Err(NetError::Down(_))));
-    net.wait_link("desk", "laptop", false).await.unwrap();
-    // With no daemon, the agent goes on and writes its journal.
-    let written = net.journal_end("worker").unwrap();
-    net.open_gate("release").unwrap();
-    testnet::until("the agent to write on", || {
-        let end = net.journal_end("worker").unwrap();
-        async move {
-            (end > written)
-                .then_some(())
-                .ok_or_else(|| format!("journal end {end}, was {written}"))
-        }
-    })
-    .await
-    .unwrap();
-
-    net.restart_daemon("desk").await.unwrap();
-    assert_eq!(
-        net.generation("desk").unwrap(),
-        generation,
-        "a crash under the same boot keeps the generation"
-    );
-    let mut observer = net.observe("desk", "worker", 50).await.unwrap();
-    observer
-        .observe_until(|events| says(events, "after"), PATIENCE)
-        .await
-        .unwrap();
-    let agent = net
-        .runtime("desk")
-        .unwrap()
-        .agent(net.agent("worker").unwrap().id)
-        .await
-        .unwrap();
-    assert_eq!(agent.lifecycle, wire::Lifecycle::Live as i32);
-    assert_eq!(agent.incarnation, 1, "the same process, never restarted");
-    net.wait_link("desk", "laptop", true).await.unwrap();
-
-    // A clean stop and start also keeps the generation.
-    net.stop_daemon("desk").await.unwrap();
-    net.restart_daemon("desk").await.unwrap();
-    assert_eq!(net.generation("desk").unwrap(), generation);
-    net.shutdown().await.unwrap();
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn a_rewound_host_loses_what_the_drive_never_got_under_a_new_generation() {
     let topology = Topology::new().host("desk").agent(
         AgentDecl::new("worker", "desk")
@@ -491,12 +251,12 @@ async fn a_rewound_host_loses_what_the_drive_never_got_under_a_new_generation() 
     // drive.
     testnet::until("the journal read to its end", || async {
         let end = net.journal_end("worker").unwrap();
+        let key = key.clone();
         let cursor = net
             .runtime("desk")
             .unwrap()
-            .store()
+            .read_store(move |store| store.cursor(&key).unwrap())
             .await
-            .cursor(&key)
             .unwrap();
         (cursor == end)
             .then_some(())
@@ -592,8 +352,11 @@ async fn the_block_invariant_holds_at_the_origin_and_catches_a_replica_with_a_ho
     let key = worker.key();
     let (origin, snapshot) = {
         let runtime = net.runtime("desk").unwrap();
-        let store = runtime.store().await;
-        let cut = store.cut(&key, 50).unwrap();
+        let key = key.clone();
+        let cut = runtime
+            .read_store(move |store| store.cut(&key, 50).unwrap())
+            .await
+            .unwrap();
         (cut.held, cut.snapshot.unwrap_or_default())
     };
     assert!(origin.len() >= 3, "{origin:#?}");
@@ -601,19 +364,23 @@ async fn the_block_invariant_holds_at_the_origin_and_catches_a_replica_with_a_ho
     holed.remove(1);
     {
         let runtime = net.runtime("attic").unwrap();
-        let mut store = runtime.store().await;
-        store
-            .put_agent(&AgentRow::new(key.clone(), wire::Kind::ClaudeSdk, "/"))
-            .unwrap();
-        store
-            .absorb(
-                &key,
-                Absorb::Reset {
-                    tail: holed,
-                    snapshot,
-                    generation: 1,
-                },
-            )
+        runtime
+            .write_store_beneath(move |store| {
+                store
+                    .put_agent(&AgentRow::new(key.clone(), wire::Kind::ClaudeSdk, "/"))
+                    .unwrap();
+                store
+                    .absorb(
+                        &key,
+                        Absorb::Reset {
+                            tail: holed,
+                            snapshot,
+                            generation: 1,
+                        },
+                    )
+                    .unwrap();
+            })
+            .await
             .unwrap();
     }
     let broken = net
@@ -953,6 +720,17 @@ fn every_door_verb_maps_to_one_capability_and_the_crate_docs_list_the_same_map()
             host: "a".into(),
             blocked: true,
         },
+        Control::SetRouter {
+            host: "a".into(),
+            kind: testnet::RouterKind::Strict,
+        },
+        Control::ChangeNetwork { host: "a".into() },
+        Control::BindIpv6Only { host: "a".into() },
+        Control::CarryingPath {
+            host: "a".into(),
+            peer: "b".into(),
+        },
+        Control::LinkLog { host: "a".into() },
         Control::Flap {
             a: "a".into(),
             b: "b".into(),
@@ -1484,5 +1262,136 @@ async fn a_changed_tier_reaches_a_process_host_and_the_plan_read_at_once() {
     net.set_tier("ada", testnet::TierDecl::Pro).await.unwrap();
     assert_eq!(tier(&net).await, wire::Tier::Pro);
     assert_eq!(plan(&net, "ada")["until"], Value::Null);
+    net.shutdown().await.unwrap();
+}
+
+/// Two in-process hosts with no LAN between them, for links a test makes
+/// by hand.
+fn bare_host(name: &str) -> HostDecl {
+    HostDecl {
+        name: name.to_owned(),
+        ..HostDecl::default()
+    }
+}
+
+/// Waits until `near` reaches `far` by `via`, as `near` sees it.
+async fn until_route(net: &Net, near: &str, far: &str, via: node::harness::LiveRoute) {
+    let edge = net.edge(near).unwrap();
+    let far_id = net.host(far).unwrap().host_id;
+    until(&format!("{near} to reach {far} {via:?}"), || {
+        let edge = edge.clone();
+        async move {
+            let seen = edge.via(far_id).await;
+            (seen == via).then_some(()).ok_or(format!("{seen:?}"))
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_ssh_stand_in_carries_a_link_into_the_far_hosts_link_socket() {
+    let mut net = Net::start_with(Topology::new(), testnet::NetOptions::default())
+        .await
+        .unwrap();
+    net.add_host(bare_host("desk")).await.unwrap();
+    net.add_host(bare_host("laptop")).await.unwrap();
+    let desk = net.host("desk").unwrap().clone();
+    let target = net.ssh_target("desk").unwrap();
+
+    // The desk trusts the laptop, so its link socket admits the laptop's
+    // pinned handshake; the laptop trusts the desk as an SSH pairing does,
+    // with the target and profile it reaches the desk by.
+    net.trust("desk", "laptop").await.unwrap();
+    let desk_edge = net.edge("desk").unwrap();
+    net.edge("laptop")
+        .unwrap()
+        .trust_ssh_peer(wire::TrustSshPeerRequest {
+            profile_id: Vec::new(),
+            peer: Some(wire::PairingIdentity {
+                host_id: desk.host_id.as_bytes().to_vec(),
+                pubkey: desk_edge.public_key().to_vec(),
+                name: "desk".to_owned(),
+                expires_at_ms: 0,
+            }),
+            ssh_target: Some(wire::SshTarget {
+                target: target.clone(),
+                profile_id: desk.profile.as_bytes().to_vec(),
+            }),
+        })
+        .await
+        .unwrap();
+    until_route(&net, "laptop", "desk", node::harness::LiveRoute::Ssh).await;
+    until("the laptop's link log to name SSH", || async {
+        match net.carrying_path("laptop", "desk") {
+            Ok(Some(node::link_log::PathKind::Ssh)) => Ok(()),
+            other => Err(format!("{other:?}")),
+        }
+    })
+    .await
+    .unwrap();
+    println!("the laptop reached the desk over the stand-in at {target}");
+    net.shutdown().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_link_behind_a_router_survives_its_host_changing_network() {
+    let mut net = Net::start_with(Topology::new(), testnet::NetOptions::default())
+        .await
+        .unwrap();
+    net.add_host(lan_host("desk")).await.unwrap();
+    net.add_host(lan_host("laptop")).await.unwrap();
+    net.set_router("laptop", testnet::RouterKind::Ordinary)
+        .unwrap();
+    net.trust("desk", "laptop").await.unwrap();
+    net.trust("laptop", "desk").await.unwrap();
+    let desk = net.host("desk").unwrap().host_id;
+    let laptop = net.edge("laptop").unwrap();
+    assert!(
+        laptop.lan_addr().is_some(),
+        "the laptop listens behind its router"
+    );
+    // From behind an ordinary router the laptop's dial opens the mapping
+    // the desk's answers come back through.
+    laptop.dial(desk, net.edge("desk").unwrap().lan_addr().unwrap());
+    until_route(&net, "laptop", "desk", node::harness::LiveRoute::Direct).await;
+    let ups = |net: &Net| {
+        net.link_log("laptop")
+            .unwrap()
+            .iter()
+            .filter(|event| event.event == node::link_log::LinkTransition::Up)
+            .count()
+    };
+    let before = ups(&net);
+
+    // A new network is a new router with new public ports: the connection
+    // migrates, and the link neither drops nor comes up again.
+    println!("{}", net.change_network("laptop").unwrap().installed);
+    let mut peer = net
+        .edge("laptop")
+        .unwrap()
+        .peer(desk)
+        .await
+        .expect("a channel to the desk after the move");
+    let mut inventory = peer
+        .subscribe_inventory(wire::Empty {})
+        .await
+        .expect("the desk answers across the moved link")
+        .into_inner();
+    inventory
+        .message()
+        .await
+        .expect("the desk's inventory streams across the moved link")
+        .expect("a first event");
+    assert_eq!(
+        laptop.via(desk).await,
+        node::harness::LiveRoute::Direct,
+        "the link stays direct"
+    );
+    assert_eq!(ups(&net), before, "the link did not come up again");
+    assert!(matches!(
+        net.change_network("nobody"),
+        Err(NetError::NoHost(_))
+    ));
     net.shutdown().await.unwrap();
 }

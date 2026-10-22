@@ -20,9 +20,12 @@ mod rows;
 mod sqlite;
 
 mod blobs;
+mod explore;
+pub mod redact;
 mod retention;
 
 pub use blobs::BlobLru;
+pub use explore::{BlockOrders, Dump};
 pub use migrations::{MIGRATIONS, SCHEMA_STAMP, migration_hash};
 pub use retention::{Sweep, SweepStep};
 pub use sqlite::{OpenError, Sqlite};
@@ -231,7 +234,7 @@ pub struct Absorbed {
 }
 
 /// The marker a subscriber reads once at join, after its held rows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Marker {
     CaughtUp,
     Detached,
@@ -318,6 +321,9 @@ pub enum StoreError {
     Sqlite(#[from] rusqlite::Error),
     #[error("stored data does not decode: {0}")]
     Corrupt(String),
+    /// Whoever owned the store let it go: nothing reads or writes it now.
+    #[error("the store is closed")]
+    Closed,
 }
 
 /// What one held row costs against a retention budget: its envelope's

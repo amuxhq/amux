@@ -51,13 +51,43 @@ final class AppDelegate: NSObject, UIApplicationDelegate, ObservableObject,
     UNUserNotificationCenterDelegate {
     /// Built when first asked for: by the root view, or by a push.
     lazy var composition = Composition()
+    /// The background time held while the runtime gets ready for the app
+    /// to be suspended.
+    private var suspendTime = UIBackgroundTaskIdentifier.invalid
 
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.suspending() }
+        }
         return true
+    }
+
+    /// The app was put away, and the system suspends it shortly. Before it
+    /// does, every profile's store is made whole on the drive, under
+    /// background time asked for that long, should the system end the app
+    /// while it is suspended.
+    private func suspending() {
+        suspended()
+        let held = UIApplication.shared.beginBackgroundTask(withName: "suspending") { [weak self] in
+            self?.suspended()
+        }
+        suspendTime = held
+        Task {
+            await composition.runtime.suspending()
+            if suspendTime == held { suspended() }
+        }
+    }
+
+    private func suspended() {
+        guard suspendTime != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(suspendTime)
+        suspendTime = .invalid
     }
 
     /// Brings the chat the notification names current, and nothing else,
@@ -69,7 +99,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, ObservableObject,
         guard let agent = PushPayload.agent(payload) else { return .noData }
         Signposts.emit(.pushWoke)
         let background = application.applicationState == .background
-        switch await composition.runtime.warm(agent, inBackground: background) {
+        let warmed = await composition.runtime.warm(agent, inBackground: background)
+        // The system suspends a woken app again once this returns.
+        if background { await composition.runtime.suspending() }
+        switch warmed {
         case .current:
             Signposts.emit(.pushCurrent)
             return .newData

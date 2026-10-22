@@ -41,11 +41,62 @@ Each catalogued suite names one boundary.
 | Native presentation | The terminal and the phone draw a view correctly and interaction sends the right command. The phone's compared pictures are drawn with reduce transparency on, so they hold no glass the render server finishes on its own schedule. | `crates/tui/tests`, `apps/apple` snapshot and golden suites |
 | System composition | Built binaries launch, survive, stop and clean up as promised: agents outlive a killed daemon, the supervisor updates and rolls back. | `crates/amux/tests`, `crates/agent/tests/lifecycle.rs`, `crates/node/tests/supervisor.rs` |
 | Journeys | A person completes a declared task through a real client and the production path. | `journeys/`, `scripts/terminal-journey.py`, `scripts/ios-journey.py`, `crates/amux/tests/system_journeys.rs` |
+| Model | A protocol promise, written as a sentence, holds in every state a checker reaches by exploring the real code on small instances. | `crates/models` |
 
 Choose cases by distinct transitions, authorities and failure cuts, not by product words: "allow this ask" rightly
 appears in interpreter semantics, in Swift command dispatch and in one journey, because each catches a different
 failure. Pair every replay or golden with explicit expected outcomes at the transitions that matter; a replay can
 reproduce its own mistake.
+
+## The Model boundary
+
+A promise the protocol makes is a property: a sentence a person would argue over, and a predicate over a core's
+state that says whether it holds. The properties live in [`crates/models`](../crates/models/README.md), one
+machine per slice of the protocol (the single daemon under crashes and power loss, replication between an origin
+and a replica, presence and routing, families and deliveries, an agent's lifecycle, the supervisor's update, the
+client model, and the composed net of several daemons and their agents; a lamp and its switch test the checker
+itself). A machine holds real state, calls the real cores, store and session model on small instances, and lists
+the faults its environment may inject. A checker explores every state the machine reaches within its bounds and judges every
+property in each: an always must hold everywhere, a sometimes must be reached, an eventually must hold on every
+path that ends. A failure prints the shortest path to the state that broke it.
+
+```sh
+just test-crate models                     # every machine at its CI bounds, within its budget
+just test-crate models -- --test family    # one machine
+just models-nightly [machine..]            # the larger nightly bounds, one machine after another
+cargo run -p models --bin properties       # every property's sentence, by machine
+```
+
+Each machine's CI bounds are sized to finish within a stated budget on a four-core runner, and its nightly bounds
+explore more keys, faults and steps. The Model boundary owns rules; the other boundaries own what the cores do not
+decide: a driver's sockets and deadlines, a real process, a provider's bytes, what a screen draws. A test that
+restates a rule a property holds is a second copy of the rule, so it goes.
+
+Properties over pure functions that are not protocol state (the client model taking items in any arrival order,
+its run index, the views' row ids) generate their cases rather than looping over seeds: each case is a value
+built from what can happen, and a failure is shrunk to the smallest case that still fails before it is reported.
+A fixed seed keeps a run repeatable.
+
+## One rule, one implementation
+
+No protocol rule is written twice. The rules live only in the cores' code; there is no abstract model of the
+protocol to keep in step with it and no conformance copy. A property states what must be true and the checker
+runs the real code to find out. The one second implementation is the phone's Swift chat model, which keeps its own
+rows for the platform's list view: it is held equal to the Rust client model by replaying the same traces.
+`just client-traces` writes traces of the client model's seeded schedules (what the runtime hands the phone at
+every wake), app-runtime's tests fail while the committed traces differ from the model, and the Swift
+`ChatModelTraceTests` replay each one and assert the same keys, rows and frame at every cut.
+
+## A plant round before deletion
+
+A suite's examples go only when a property is shown to catch what they caught. Before a machine's stories and
+example tests are deleted, bugs are planted in the code they guard (a broadcast before its commit, a segment
+reclaimed above the checkpoint's cursor, a stale listing deleting a child), each chosen to break a promise those
+tests were there for. The machine's checker must fail on every plant at its CI bounds, naming the property and
+the path; then the plants are reverted, and one commit deletes the tests the properties cover and names the
+plants and the counterexamples that caught them. A plant the checker misses means a property is weak or a model
+action hides an interleaving, and nothing is deleted until it is fixed. Tests that reach what no model holds (a
+real process, a real carrier, a file cut at a byte) stay.
 
 ## Lanes
 
@@ -63,6 +114,30 @@ Nothing in an ordinary push inherits credentials, spending or hardware. The live
 qualification crate; `just test` and `just ci` never select it. `just ci` refuses to start when an `UPDATE_*`
 variable is set, so no asserted run can rewrite a golden.
 
+## Two modes of the many-daemons harness
+
+A [TestNet](TESTNET.md) story is written once against the harness's verbs and runs on either net:
+
+| Mode | What runs | What decides the order | A failure is |
+| --- | --- | --- | --- |
+| real | Production daemon runtimes in one process, real agent processes on the fake providers, real links over loopback | The operating system's scheduler and real time, bounded by deadlines | the story's assertion and the net's trace |
+| simulated | Every host's daemon core over an in-memory store and every agent's core over the test kind's interpreter, with links, jobs, clock and processes in memory | A seed: each delivery is the one the seed picks among those waiting | the seed that reproduces it, with the trace of deliveries |
+
+The simulated net is the composed-net machine walked by seed, so the checker and the simulator explore one
+definition; a story is decided entirely by its seed, runs in milliseconds, and checks the cores' invariants after
+every step. What it does not have (the relay, the LAN, process hosts, real providers) it refuses at start. Suites
+whose stories run in both modes say so in the catalogue's `modes`.
+
+```sh
+just sim                         # every simulated story, a few seeds each
+just sim --seeds 300 <name>      # 300 seeds of each story whose test name contains <name>
+just sim --seed 17 <name>        # exactly the failing seed, as a failure prints it
+just nightly --seeds 2000        # thousands of seeds per story, then the models at nightly bounds, as a report
+```
+
+Under `cargo test` the same switch is the environment: `TESTNET_MODE=simulated`, with `TESTNET_SEEDS=N` or
+`TESTNET_SEED=N`.
+
 ## The catalogue and the contracts
 
 `tests/catalog.toml` lists every suite once: its contract in a sentence, paths, focused recipe, boundary, oracle,
@@ -76,13 +151,15 @@ just tests-check   # fail on a missing recipe, target, feature, journey or basel
 ```
 
 `tests/contracts.toml` lists every promise the design makes that a test must hold, grouped by source (a worked
-failure, an invariant, or a suite contract), each with the tests that hold it. A test is named as
+failure, an invariant, a suite contract, or a model property), each with the tests that hold it. A test is named as
 `<package>/<target>::<test path>` for Cargo (`<target>` is a test target, `lib`, or `bin:<name>`),
 `swift:<Target>/<Class>/<method>` for XCTest, or `journey:<client>/<story>` for a story in
-`journeys/manifest.json`.
+`journeys/manifest.json`. A model property is named by its crate, machine and sentence, which must be one the
+crate's `properties` binary lists (`cargo run -p models --bin properties`), with the checker test that explores
+it and the real-mode stories that demonstrate it.
 
 ```sh
-just contracts-check                      # fail when a contract names no test or a test that does not exist
+just contracts-check                      # fail when a contract names no test, a test or a property that does not exist
 just contracts-check --table coverage.md  # also write the contract-to-test table as Markdown
 ```
 
@@ -106,7 +183,21 @@ just ios journey                           # the shared stories on the phone; `-
 just live claude_sdk all                   # live compatibility for one kind (qualification)
 just live codex attach                     # Codex's own app co-driving a fresh agent; capture in target/live/codex-attach
 just perf                                  # performance qualification (see Performance)
+just coverage                              # every workspace test with line coverage per crate
+just fuzz-smoke                            # each fuzz target for 30 s; fails on a crash
 ```
+
+`just coverage` writes `tests/coverage.md`: line coverage per crate and the commit it measured. Each crate's lines
+count whichever tests ran them, so a core's figure includes what the models and the testnet reach. It is a reading
+aid for judging which tests earn their keep, not a gate. The recipe's comment names the coverage tool and the
+toolchain component it needs.
+
+`just fuzz-smoke` fuzzes the code that reads bytes amux did not write: the tolerant Claude and Codex decoders, the
+journal's frame decoder and its reader over segments cut anywhere, and redaction of JSON values and free text. The
+targets live in `fuzz/`, a workspace of their own built on the pinned nightly with debug assertions on. Each starts
+from seeds cut from the recorded provider captures and journal fixtures and runs for 30 seconds (`--seconds N`;
+target names narrow the run); its corpus and any crashing input stay under `target/fuzz/`, and a crash prints the
+command that replays it. The recipe's comment names the tool it needs installed.
 
 `just tests-list` gives the focused recipe for every suite. Recipes carry outer timeouts; a timeout that fires is a
 hang to diagnose, not a limit to raise. On macOS a freshly built test binary can stall before its first
@@ -124,6 +215,16 @@ when policy time is stopped, and are never the oracle.
 Waits subscribe before they read, return what they saw, and fail on a deadline or a closed stream; a wait never
 passes by timing out. An absence is shown by draining to a declared boundary or watching a whole declared window,
 never by one empty poll.
+
+A daemon core reports a step that runs past its budget with a dump. Test installations (node's test support and
+testnet's real hosts) run under `StepBudget::TEST`, one second, not the daemon's 100 ms: debug builds on a loaded
+four-core CI runner take 118 to 143 ms for such steps, and a dump for that overrun would land in `reports/` while
+a test may be reading it. Tests see the tripwire only where they set a budget themselves (node's dump tests set 0 µs;
+a testnet `NetOptions.launch` hook may set any), and `just perf` judges the real daemon at its own budget. A test
+installation's teardown prints any over-budget dump and fails only on a broken invariant's. The agents those
+installations start get the same one second (`Launch.agent_step_budget_micros`) for the same reason, and the
+supervisor tests' stand-in binary gives its supervisor one too; the models and the simulated net run every core
+under `StepBudget::UNLIMITED`, so a verdict is a function of its inputs alone.
 
 ## Fixtures and goldens
 
@@ -146,7 +247,7 @@ production code, and small authored scenarios. Ordinary runs compare and never r
 | Journey screen goldens | `journeys/goldens/terminal/<story>`, `journeys/goldens/phone/<story>` | `UPDATE_JOURNEY_GOLDENS=1` |
 | Phone whole-screen goldens | `apps/apple/Goldens` | `just ios goldens -- --update` |
 | Phone component snapshots | `apps/apple/AmuxComponentSnapshotTests/__Snapshots__` | `just ios component-snapshots -- --record` |
-| A dump bundle replayed through its three stages | `crates/replay-support/tests/fixtures/bundle` | a fresh `amux dump`; see [Debugging](DEBUGGING.md) |
+| Dump bundles replayed through their four stages | `crates/replay-support/tests/fixtures/bundle`, `crates/replay-support/tests/fixtures/healthy` | a fresh `amux dump` (for `healthy`, through `testnet ctl` on a served net); see [Debugging](DEBUGGING.md) |
 | Performance baselines | `perf/baselines` | `just perf --baseline` and `just ios perf --baseline`; see [Performance](PERFORMANCE.md) |
 
 The recordings and live captures are read by the protocol crates' strict decode tests (every message decodes to a
@@ -166,8 +267,10 @@ terminal and the phone enact the same story each in their own way.
 The shared stories are `reach-host`, `conversation-decision-claude-pty`, `conversation-decision-claude-sdk`,
 `conversation-decision-codex`, `leave-and-recover`, `manage-agent`, `attachment-or-review` and `keep-authority`.
 The phone has its own besides (`account-sign-in`, `purchase-restore`, `report`, `accessibility`,
-`local-network`, `push-wake`; `just ios journey -- --native` runs them), and `survive-daemon` is the system
-journey on the built binaries.
+`local-network`, `push-wake`, `resume`; `just ios journey -- --native` runs them), and `survive-daemon` is the
+system journey on the built binaries. `resume` launches one installation three times (the first launch ever, a
+relaunch, and a launch after a machine restarted) and keeps each launch's link log in
+`target/ios/journey/resume/<launch>.log`.
 
 The phone journeys written before these stories are listed under `retired_phone_journeys`: each of their claims
 either names the story step that carries it (`story/screen`, a screen that story photographs) or is listed as

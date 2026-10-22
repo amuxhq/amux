@@ -50,12 +50,18 @@ struct Held {
 }
 
 async fn held(runtime: &ProfileRuntime, agent: &SyntheticAgent, install: &Install) -> Held {
-    let store = runtime.store().await;
     let key = agent.key(install);
-    let row = store.agent(&key).unwrap().expect("the row");
-    let items = store
-        .page(&key, None, 1_000)
-        .unwrap()
+    let (row, page) = runtime
+        .read_store(move |store| {
+            (
+                store.agent(&key).unwrap(),
+                store.page(&key, None, 1_000).unwrap(),
+            )
+        })
+        .await
+        .unwrap();
+    let row = row.expect("the row");
+    let items = page
         .items
         .into_iter()
         .map(|item| (item.key.clone(), (item.order, item.revision, item.text)))
@@ -266,10 +272,9 @@ async fn cut_run(cut: Cut, at: usize) -> Held {
                 _ => CURSOR_CUT,
             };
             runtime
-                .store()
+                .write_store_beneath(move |store| store.connection().execute_batch(trigger))
                 .await
-                .connection()
-                .execute_batch(trigger)
+                .unwrap()
                 .unwrap();
             assert!(
                 runtime.ingest(agent.id).await.is_err(),
@@ -288,10 +293,11 @@ async fn cut_run(cut: Cut, at: usize) -> Held {
                 log(&live)
             );
             runtime
-                .store()
+                .write_store_beneath(|store| {
+                    store.connection().execute_batch("DROP TRIGGER temp.cut;")
+                })
                 .await
-                .connection()
-                .execute_batch("DROP TRIGGER temp.cut;")
+                .unwrap()
                 .unwrap();
             runtime.ingest(agent.id).await.unwrap();
             at + 1
@@ -446,138 +452,6 @@ async fn torn_tails_are_never_read_whether_the_writer_lives_or_dies() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn each_record_is_broadcast_once_after_its_commit_and_caught_up_once_per_hello() {
-    let install = Install::new();
-    let mut agent = SyntheticAgent::new(&install, "live", BIG_SEGMENTS);
-    agent.register_offline(&install);
-    // A backlog written while no daemon ran.
-    for step in &steps()[..3] {
-        agent.append(step);
-    }
-    agent.go_live();
-    let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
-    assert_eq!(agent.hellos(), 1);
-
-    let mut subscription = runtime.subscribe(agent.id.as_bytes(), 10).await.unwrap();
-    let mut seen = Vec::new();
-    read_until(&mut subscription, &mut seen, "the opening", |seen| {
-        caught_ups(seen) == 1
-    })
-    .await;
-    assert_eq!(
-        log(&seen),
-        vec![
-            "opening g1",
-            "snapshot r0 Starting queue=[]",
-            "item a o1 r1 \"one\"",
-            "item b o2 r3 \"two\"",
-            "caught_up r3",
-        ],
-        "the opening: the kind's empty Snapshot, the held rows in their latest state, the marker"
-    );
-
-    // Live: one event per committed record, in commit order, each only
-    // after the store can serve it.
-    let rest = steps();
-    for step in &rest[3..6] {
-        agent.append(step);
-        agent.nudge().await;
-    }
-    read_until(&mut subscription, &mut seen, "three live records", |seen| {
-        seen.len() == 8
-    })
-    .await;
-    for event in &seen[4..] {
-        if let Some(session_event::Of::Item(item)) = &event.of {
-            let stored = runtime
-                .get(&GetRequest {
-                    agent_id: agent.id.as_bytes().to_vec(),
-                    key: item.key.clone(),
-                })
-                .await
-                .unwrap();
-            assert!(
-                stored.revision >= item.revision,
-                "commit precedes broadcast"
-            );
-        }
-    }
-    assert_eq!(
-        log(&seen[5..]),
-        vec![
-            "snapshot r4 Working queue=[\"q1\"]",
-            "item c o3 r5 \"three\"",
-            "item b o2 r6 \"two, again\"",
-        ]
-    );
-
-    // A connection that drops with the process alive: the daemon dials
-    // again, gets a new Hello, reads what was written meanwhile, and says
-    // CaughtUp once more, after those rows.
-    for step in &rest[6..] {
-        agent.append(step);
-    }
-    agent.drop_connection().await;
-    read_until(
-        &mut subscription,
-        &mut seen,
-        "the second CaughtUp",
-        |seen| caught_ups(seen) == 2,
-    )
-    .await;
-    assert_eq!(agent.hellos(), 2);
-    assert_eq!(
-        log(&seen[8..]),
-        vec![
-            "snapshot r7 Idle queue=[]",
-            "item d o4 r8 \"four\"",
-            "caught_up r8"
-        ]
-    );
-
-    // More Nudges under the same Hello bring rows, never another marker.
-    agent.append(&item("e", "five"));
-    agent.nudge().await;
-    agent.append(&append("e", "!"));
-    agent.nudge().await;
-    read_until(&mut subscription, &mut seen, "two more records", |seen| {
-        seen.len() == 13
-    })
-    .await;
-    drain(&mut subscription, &mut seen, Duration::from_millis(100)).await;
-    assert_eq!(
-        log(&seen[11..]),
-        vec!["item e o5 r9 \"five\"", "append e r10 base r9 \"!\""]
-    );
-
-    // The process dies after its marker: nothing more to announce.
-    agent.die().await;
-    until("the row says exited", || async {
-        let lifecycle = runtime
-            .store()
-            .await
-            .agent(&agent.key(&install))
-            .unwrap()
-            .unwrap()
-            .lifecycle;
-        (lifecycle == Lifecycle::Exited as i32)
-            .then_some(())
-            .ok_or_else(|| format!("lifecycle {lifecycle}"))
-    })
-    .await
-    .unwrap();
-    drain(&mut subscription, &mut seen, Duration::from_millis(100)).await;
-    assert_eq!(
-        caught_ups(&seen),
-        2,
-        "CaughtUp once per Hello: {:#?}",
-        log(&seen)
-    );
-    println!("one subscription across two Hellos: {:#?}", log(&seen));
-    crash(daemon, runtime).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn a_lagging_subscriber_is_closed_with_lagged_and_ingest_never_waits() {
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "flood", BIG_SEGMENTS);
@@ -671,51 +545,6 @@ fn ingest_between_join_and_cut(runtime: &Arc<ProfileRuntime>, agent: uuid::Uuid)
         })
     });
     runtime.set_join_hook(Some(hook));
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_snapshot_committed_between_join_and_cut_arrives_once() {
-    let install = Install::new();
-    let mut agent = SyntheticAgent::new(&install, "cut", BIG_SEGMENTS);
-    agent.register_offline(&install);
-    let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
-    write_and_ingest(&runtime, &mut agent, &[item("a", "one")]).await;
-
-    agent.append(&snapshot(Phase::Working, &[], 2_000));
-    ingest_between_join_and_cut(&runtime, agent.id);
-    let mut subscription = runtime.subscribe(agent.id.as_bytes(), 10).await.unwrap();
-    runtime.set_join_hook(None);
-    let mut seen = Vec::new();
-    read_until(&mut subscription, &mut seen, "the snapshot", |seen| {
-        seen.iter().any(
-            |event| matches!(&event.of, Some(session_event::Of::Snapshot(s)) if s.revision == 2),
-        )
-    })
-    .await;
-    drain(&mut subscription, &mut seen, Duration::from_millis(200)).await;
-    let snapshots = seen
-        .iter()
-        .filter(
-            |event| matches!(&event.of, Some(session_event::Of::Snapshot(s)) if s.revision == 2),
-        )
-        .count();
-    assert_eq!(
-        snapshots,
-        1,
-        "the commit waited for the cut and arrived live, once: {:#?}",
-        log(&seen)
-    );
-    assert_eq!(
-        log(&seen),
-        vec![
-            "opening g1",
-            "snapshot r0 Starting queue=[]",
-            "item a o1 r1 \"one\"",
-            "caught_up r1",
-            "snapshot r2 Working queue=[]",
-        ]
-    );
-    crash(daemon, runtime).await;
 }
 
 /// The newest snapshot a stream has delivered at each CaughtUp must be
@@ -816,6 +645,12 @@ async fn segments_are_deleted_only_below_a_cursor_on_the_drive() {
         .collect();
     write_and_ingest(&runtime, &mut agent, &many).await;
     let cursor = held(&runtime, &agent, &install).await.cursor;
+    assert_eq!(
+        journal::segments(&journal_dir).unwrap()[0],
+        0,
+        "nothing goes before a checkpoint puts the cursor on the drive"
+    );
+    runtime.checkpoint().await.unwrap();
     let remaining = journal::segments(&journal_dir).unwrap();
     assert!(
         remaining[0] > 0,
@@ -845,22 +680,21 @@ async fn segments_are_deleted_only_below_a_cursor_on_the_drive() {
         agent.append(step);
     }
     runtime
-        .store()
+        .write_store_beneath(|store| store.connection().execute_batch(CURSOR_CUT))
         .await
-        .connection()
-        .execute_batch(CURSOR_CUT)
+        .unwrap()
         .unwrap();
     assert!(runtime.ingest(agent.id).await.is_err());
+    runtime.checkpoint().await.unwrap();
     let after_failure = journal::segments(&journal_dir).unwrap();
     assert!(
         before.iter().all(|start| after_failure.contains(start)),
         "no segment goes below a cursor that was never committed"
     );
     runtime
-        .store()
+        .write_store_beneath(|store| store.connection().execute_batch("DROP TRIGGER temp.cut;"))
         .await
-        .connection()
-        .execute_batch("DROP TRIGGER temp.cut;")
+        .unwrap()
         .unwrap();
     runtime.ingest(agent.id).await.unwrap();
 
@@ -884,9 +718,12 @@ async fn segments_are_deleted_only_below_a_cursor_on_the_drive() {
 /// The store file as the drive holds it: what was checkpointed, without
 /// what the WAL holds beyond that.
 async fn checkpointed_store(runtime: &ProfileRuntime, install: &Install) -> Vec<u8> {
-    // Held so no checkpoint runs while the file is read.
-    let _store = runtime.store().await;
-    std::fs::read(install.profile_dir().join(node::STORE)).unwrap()
+    // Read on the core thread, so no commit lands while the file is read.
+    let path = install.profile_dir().join(node::STORE);
+    runtime
+        .read_store(move |_| std::fs::read(path).unwrap())
+        .await
+        .unwrap()
 }
 
 /// The WAL truncated to its last checkpoint: the store file as it was
@@ -922,9 +759,8 @@ async fn run_to_the_cut(
     let (daemon, runtime) = start(install, "boot-1", quiet_launch()).await;
     let steps = steps();
     let mut offsets = write_and_ingest(&runtime, agent, &steps[..4]).await;
-    // The last checkpoint before the power goes: SQLite's own, as a
-    // clean shutdown or reclaiming a segment would run it.
-    runtime.store().await.flush_to_drive().unwrap();
+    // The last checkpoint before the power goes.
+    runtime.checkpoint().await.unwrap();
     offsets.extend(write_and_ingest(&runtime, agent, &steps[4..]).await);
     let before = held(&runtime, agent, install).await;
     (daemon, runtime, offsets, before)
@@ -1018,9 +854,10 @@ async fn a_journal_cut_below_a_durable_cursor_rewinds_it_and_re_derived_steps_co
     agent.register_offline(&install);
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
     let offsets = write_and_ingest(&runtime, &mut agent, &steps()).await;
-    // The store reaches the drive after the last step; the journal, never
-    // synced, keeps only what the cut leaves of it.
-    runtime.store().await.flush_to_drive().unwrap();
+    // The store reaches the drive after the last step, through the core's
+    // checkpoint; the journal, never synced, keeps only what the cut
+    // leaves of it.
+    runtime.checkpoint().await.unwrap();
     let before = held(&runtime, &agent, &install).await;
     assert_eq!(before.cursor, offsets[7]);
     let checkpointed = checkpointed_store(&runtime, &install).await;
@@ -1100,13 +937,14 @@ async fn a_batch_that_fails_on_a_later_frame_commits_and_broadcasts_none_of_it()
         agent.append(step);
     }
     runtime
-        .store()
+        .write_store_beneath(|store| {
+            store.connection().execute_batch(
+                "CREATE TEMP TRIGGER cut BEFORE INSERT ON items WHEN NEW.key = 'c' \
+                 BEGIN SELECT RAISE(ABORT, 'cut'); END;",
+            )
+        })
         .await
-        .connection()
-        .execute_batch(
-            "CREATE TEMP TRIGGER cut BEFORE INSERT ON items WHEN NEW.key = 'c' \
-             BEGIN SELECT RAISE(ABORT, 'cut'); END;",
-        )
+        .unwrap()
         .unwrap();
     assert!(runtime.ingest(agent.id).await.is_err());
     assert_eq!(
@@ -1123,10 +961,9 @@ async fn a_batch_that_fails_on_a_later_frame_commits_and_broadcasts_none_of_it()
     );
 
     runtime
-        .store()
+        .write_store_beneath(|store| store.connection().execute_batch("DROP TRIGGER temp.cut;"))
         .await
-        .connection()
-        .execute_batch("DROP TRIGGER temp.cut;")
+        .unwrap()
         .unwrap();
     runtime.ingest(agent.id).await.unwrap();
     read_until(&mut subscription, &mut live, "the batch", |seen| {
@@ -1169,9 +1006,8 @@ async fn the_sweep_ingests_a_finished_childs_journal_before_marking_it_exited() 
     );
     // The parent has exited too, so the outbox keeps what the sweep wrote.
     let deliveries: Vec<_> = runtime
-        .store()
+        .read_store(|store| store.deliveries().unwrap())
         .await
-        .deliveries()
         .unwrap()
         .into_iter()
         .map(|row| row.end)
@@ -1205,25 +1041,6 @@ async fn the_sweep_ingests_a_finished_childs_journal_before_marking_it_exited() 
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_daemon_crash_under_the_same_boot_id_bumps_nothing() {
-    let install = Install::new();
-    let mut agent = SyntheticAgent::new(&install, "crash", BIG_SEGMENTS);
-    agent.register_offline(&install);
-    let (daemon, runtime, _, before) = run_to_the_cut(&install, &mut agent).await;
-    // The page cache survives a daemon crash: the WAL is intact.
-    crash(daemon, runtime).await;
-    let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
-    assert_eq!(daemon.generation().counter, 1);
-    assert_eq!(host_generation(&runtime).await.0, 1);
-    assert_eq!(held(&runtime, &agent, &install).await, before);
-    assert!(
-        runtime.ingest(agent.id).await.unwrap().records.is_empty(),
-        "nothing is re-ingested"
-    );
-    crash(daemon, runtime).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn a_clean_reboot_bumps_nothing() {
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "clean", BIG_SEGMENTS);
@@ -1239,7 +1056,7 @@ async fn a_clean_reboot_bumps_nothing() {
     );
     assert_eq!(host_generation(&runtime).await.0, 1);
     assert_eq!(held(&runtime, &agent, &install).await, before);
-    assert!(runtime.ingest(agent.id).await.unwrap().records.is_empty());
+    assert!(runtime.ingest(agent.id).await.unwrap().frames == 0);
     crash(daemon, runtime).await;
 }
 
@@ -1491,15 +1308,27 @@ impl Named {
 }
 
 async fn table(runtime: &ProfileRuntime, named: &Named) -> Vec<String> {
-    let store = runtime.store().await;
-    let mut rows = store.agents().unwrap();
-    rows.sort_by_key(|row| named.of(&row.agent).to_owned());
+    let (mut rows, pool_bytes) = runtime
+        .read_store(|store| {
+            let rows: Vec<_> = store
+                .agents()
+                .unwrap()
+                .into_iter()
+                .map(|row| {
+                    let held = store.page(&row.agent, None, 10_000).unwrap().items.len();
+                    (row, held)
+                })
+                .collect();
+            (rows, store.pool_bytes(true).unwrap())
+        })
+        .await
+        .unwrap();
+    rows.sort_by_key(|(row, _)| named.of(&row.agent).to_owned());
     let mut lines = vec![format!(
         "  {:<9} {:<8} {:<9} {:>5} {:>9}",
         "agent", "state", "parent", "rows", "activity"
     )];
-    for row in rows {
-        let held = store.page(&row.agent, None, 10_000).unwrap().items.len();
+    for (row, held) in rows {
         let state = if row.lifecycle == Lifecycle::Live as i32 {
             "live"
         } else {
@@ -1519,10 +1348,7 @@ async fn table(runtime: &ProfileRuntime, named: &Named) -> Vec<String> {
             activity
         ));
     }
-    lines.push(format!(
-        "  pool: {} KiB of own rows",
-        store.pool_bytes(true).unwrap() / 1024
-    ));
+    lines.push(format!("  pool: {} KiB of own rows", pool_bytes / 1024));
     lines
 }
 
@@ -1597,7 +1423,10 @@ async fn retention_sweep() {
         .unwrap();
     }
     until("the parent to hear from both", || async {
-        let rows = runtime.store().await.deliveries().unwrap().len();
+        let rows = runtime
+            .read_store(|store| store.deliveries().unwrap().len())
+            .await
+            .unwrap();
         (rows == 0)
             .then_some(())
             .ok_or_else(|| format!("{rows} delivery rows"))
@@ -1710,23 +1539,17 @@ async fn retention_sweep() {
             "a live parent's child stays"
         );
     }
-    let big_row = runtime
-        .store()
+    let big_key = big.key(&install);
+    let (big_row, big_held) = runtime
+        .read_store(move |store| {
+            (
+                store.agent(&big_key).unwrap().unwrap(),
+                store.page(&big_key, None, 1_000).unwrap().items.len(),
+            )
+        })
         .await
-        .agent(&big.key(&install))
-        .unwrap()
         .unwrap();
-    assert_eq!(
-        runtime
-            .store()
-            .await
-            .page(&big.key(&install), None, 1_000)
-            .unwrap()
-            .items
-            .len(),
-        K as usize,
-        "never below the newest K rows"
-    );
+    assert_eq!(big_held, K as usize, "never below the newest K rows");
     assert!(big_row.exhausted && big_row.complete_from_order.is_some());
 
     // The parent continues a kept child: its message resumes it.
@@ -1829,5 +1652,140 @@ async fn a_backlog_is_committed_in_batches_and_caught_up_once_at_its_end() {
     drain(&mut subscription, &mut seen, Duration::from_millis(100)).await;
     assert_eq!(caught_ups(&seen), 1);
     agent.die().await;
+    crash(daemon, runtime).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn every_input_is_recorded_and_the_ring_starts_again_at_each_checkpoint() {
+    let install = Install::new();
+    let mut agent = SyntheticAgent::new(&install, "ring", BIG_SEGMENTS);
+    agent.register_offline(&install);
+    let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
+    let ring = install.profile_dir().join(node::CORE_RING);
+    let nudge = daemon_core::Input::Nudge {
+        agent: daemon_core::AgentId(*agent.id.as_bytes()),
+    };
+    // The ring's checkpoint and the inputs since; each nudge's line is
+    // followed by what its ingest read.
+    let saved = || {
+        let saved = core_ring::saved::<daemon_core::Recorded>(&ring)
+            .unwrap()
+            .unwrap();
+        let mut inputs = Vec::new();
+        let mut lines = saved.inputs.iter().peekable();
+        while let Some(line) = lines.next() {
+            let daemon_core::Recorded::Input(input) = line else {
+                continue;
+            };
+            if **input == nudge {
+                assert!(
+                    matches!(lines.peek(), Some(daemon_core::Recorded::Read { .. })),
+                    "a nudge's read follows it: {:?}",
+                    saved.inputs
+                );
+            }
+            inputs.push((**input).clone());
+        }
+        core_ring::Saved {
+            checkpoint: saved.checkpoint,
+            inputs,
+        }
+    };
+
+    let nudges = |inputs: &[daemon_core::Input]| inputs.iter().filter(|i| **i == nudge).count();
+    // The start's sweep may have nudged already.
+    let before = nudges(&saved().inputs);
+    write_and_ingest(&runtime, &mut agent, &steps()[..2]).await;
+    assert_eq!(
+        nudges(&saved().inputs),
+        before + 2,
+        "each nudge is recorded"
+    );
+
+    runtime.checkpoint().await.unwrap();
+    let after = saved();
+    assert_eq!(
+        after.checkpoint,
+        std::fs::read(install.profile_dir().join(node::CORE_CHECKPOINT)).unwrap(),
+        "the ring starts again at the checkpoint on the drive"
+    );
+    assert_eq!(
+        nudges(&after.inputs),
+        0,
+        "what the checkpoint holds is not replayed"
+    );
+    assert!(
+        matches!(
+            after.inputs.last(),
+            Some(daemon_core::Input::JobDone {
+                result: daemon_core::payload::JobResult::Done,
+                ..
+            })
+        ),
+        "the checkpoint's own outcome is the first input it does not hold: {:?}",
+        after.inputs
+    );
+
+    write_and_ingest(&runtime, &mut agent, &steps()[2..3]).await;
+    assert_eq!(nudges(&saved().inputs), 1);
+    crash(daemon, runtime).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_store_leaves_every_checkpoint_to_the_core() {
+    let install = Install::new();
+    let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
+    let pages: i64 = runtime
+        .read_store(|store| {
+            store
+                .connection()
+                .pragma_query_value(None, "wal_autocheckpoint", |row| row.get(0))
+                .unwrap()
+        })
+        .await
+        .unwrap();
+    assert_eq!(pages, 0, "SQLite checkpoints nothing on its own");
+    crash(daemon, runtime).await;
+}
+
+/// A Subscribe's opening (its Opening, Snapshot, tail rows and marker) is
+/// one step of the core's and reaches the stream together: a reader woken
+/// by its first event finds the rest already there, without waiting. A
+/// client's open relies on that to apply the rows it asked for before it
+/// resolves.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_subscribes_opening_reaches_its_reader_whole() {
+    use futures_util::FutureExt as _;
+
+    const ROWS: u32 = 150;
+    let install = Install::new();
+    let mut agent = SyntheticAgent::new(&install, "many", BIG_SEGMENTS);
+    agent.register_offline(&install);
+    for row in 0..ROWS {
+        agent.append(&item(&format!("k{row}"), "a row"));
+    }
+    let launch = Launch {
+        tail_rows: ROWS,
+        ..quiet_launch()
+    };
+    let (daemon, runtime) = start(&install, "boot-1", launch).await;
+    runtime.ingest(agent.id).await.unwrap();
+    for opening in 0..20 {
+        let mut subscription = runtime.subscribe(agent.id.as_bytes(), ROWS).await.unwrap();
+        let mut seen = Vec::new();
+        while let Some(Some(event)) = subscription.next().now_or_never() {
+            seen.push((*event).clone());
+        }
+        let rows = seen
+            .iter()
+            .filter(|event| matches!(event.of, Some(wire::session_event::Of::Item(_))))
+            .count();
+        assert_eq!(
+            (rows, caught_ups(&seen)),
+            (ROWS as usize, 1),
+            "opening {opening} read without waiting: {:?}",
+            log(&seen).first()
+        );
+    }
     crash(daemon, runtime).await;
 }

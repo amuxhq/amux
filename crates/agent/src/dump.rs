@@ -11,11 +11,11 @@
 use std::path::Path;
 use std::{fs, io};
 
+use interpret::ring::Entry;
 use interpret::{Interpreter, RedactTarget};
 use wire::{DumpFile, DumpPart};
 
 use crate::dir;
-use crate::ring::{self, Entry};
 
 /// The name of the file listing what could not be read.
 pub const DUMP_ERRORS: &str = "dump-errors";
@@ -34,7 +34,7 @@ pub(crate) fn part<I: Interpreter>(dir: &Path, dump_id: Vec<u8>) -> DumpPart {
                     Ok(bytes) => files.push(file(name, facts_segment::<I>(&bytes))),
                     Err(error) => errors.push(format!("{name}: {error}")),
                 }
-                let checkpoint = ring::checkpoint_path(&facts, start);
+                let checkpoint = core_ring::checkpoint_path(&facts, start);
                 let name = checkpoint_name;
                 match fs::read(&checkpoint) {
                     Ok(bytes) => match I::redact(RedactTarget::Checkpoint(bytes)) {

@@ -1,0 +1,31 @@
+#!/bin/sh
+# The testnet's stand-in for ssh, first on the PATH of every story. A
+# target is a testnet host's directory, as `Net::ssh_target` names it, and
+# the command after it runs as that host's amux, through the login the net
+# wrote there: `amux relay --profile <id>` joins this process's stdio to
+# the far host's link socket, as sshd would run it on a real machine.
+# Options are skipped, as ssh's own would not change where this lands.
+while [ $# -gt 0 ]; do
+    case $1 in
+        --) shift; break ;;
+        -[bcDEeFIiJLlmOoPpQRSWw]) shift 2 ;;
+        -*) shift ;;
+        *) break ;;
+    esac
+done
+if [ $# -eq 0 ]; then
+    echo "usage: ssh [options] target amux command..." >&2
+    exit 255
+fi
+target=$1
+shift
+if [ ! -x "$target/ssh-login" ]; then
+    echo "ssh: Could not resolve hostname $target: no testnet host there" >&2
+    exit 255
+fi
+if [ "${1-}" != amux ]; then
+    echo "ssh: the testnet's stand-in runs only amux, not ${1-nothing}" >&2
+    exit 255
+fi
+shift
+exec "$target/ssh-login" "$@"

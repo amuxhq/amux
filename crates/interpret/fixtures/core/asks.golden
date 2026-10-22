@@ -44,5 +44,6 @@ item t3 tool final at=600000 text="" Bash TOOL_STATE_RUNNING
 snapshot NEEDS_YOU queue=[] working_on="while asked" at=600000 asks=[a3] model=?
 ## 18 provider_exit {"code":1}
 snapshot STARTING queue=[] working_on="while asked" at=600000 asks=[] model=?
+incarnation_end PROVIDER_EXITED "exit code 1"
 ## 19 input {"answer":{"answer":{"allow":{}},"ask":"a3"},"id":"ans3"}
 effect reply ans3 rejected:CLOSED_ASK

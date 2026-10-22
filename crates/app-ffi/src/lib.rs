@@ -1,7 +1,7 @@
 //! The C ABI the phone calls.
 //!
 //! One [`AmuxRuntime`] hosts the embedded installation, with one profile
-//! per account, on a Rust thread pool of its own. An [`AmuxProfile`] is the
+//! per account. An [`AmuxProfile`] is the
 //! fleet and chats of one of its profiles, opened for as long as it is on
 //! screen; each open chat is an [`AmuxChat`]. View values cross as JSON whose Swift mirrors are generated
 //! from the Rust definitions (`cargo run -p xtask -- swift-types`), so the
@@ -12,26 +12,32 @@
 //! below its oldest, until a change batch says `reloaded`; there is no slot
 //! identity to keep in step.
 //!
-//! Threads: every function may be called from the main thread. Reads return
-//! at once. Acts that wait on the agent take a callback, called once on a
-//! worker thread with a JSON result the callback borrows until it returns.
-//! A profile's wake is called on a worker thread whenever its fleet (chat
-//! id 0) or a chat moved, at most once until the host takes that one's
-//! changes; the host schedules the take on its main thread's next turn and
-//! returns. The runtime's own wake is called with 0 whenever the profile
-//! list moved, and the host reads it again.
+//! Threads: the app owns the loop. The daemon cores step on whichever
+//! queue calls `amux_runtime_step`; links, channels and gRPC run on one
+//! confined Rust thread, which never calls into the app. Whenever
+//! something waits for a step, the descriptor `amux_runtime_wake_fd`
+//! answers becomes readable, and the app steps when it sees it. Reads
+//! return at once. An act that waits on the agent returns a ticket at
+//! once, and its JSON result comes back from a later step under that
+//! ticket; a step also names the fleets (chat 0) and chats whose changes
+//! wait to be taken, and whether the profile list moved. The calls that
+//! block until the cores have done something (start, stop, a profile or
+//! chat opening, the profile list, a lifecycle input) step the cores on
+//! the calling thread while they wait.
 //!
 //! Every returned string is the caller's to free with `amux_string_free`,
 //! and every byte buffer with `amux_bytes_free`. A null return means the
 //! call failed; the reason goes to the log.
 
-use std::collections::HashSet;
-use std::ffi::{CStr, CString, c_char, c_void};
+use std::collections::{BTreeSet, HashSet};
+use std::ffi::{CStr, CString, c_char, c_int};
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use app_embedded::{
-    EdgeOverrides, EmbeddedRuntime, PairRequest, ProfileEvent, ProfileId, StartConfig, UsageEvent,
+    EdgeOverrides, EmbeddedRuntime, PairRequest, Phone, ProfileEvent, ProfileId, StartConfig,
+    UsageEvent,
 };
 use app_runtime::values::{
     ActOutcome, AgentAct, CommandOutcome, Draft, Found, FrozenReview, NewAgent, RowOptions,
@@ -39,20 +45,14 @@ use app_runtime::values::{
 use app_runtime::{AppRuntime, Chat, Wake};
 use model::{AgentKey, Key};
 use node::SourcePolicy;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use tokio::runtime::Handle;
 use ui_view::{Comparison, QuestionResponse, SettingChange};
 
 // The tests drive real agent processes, which run on Unix.
 #[cfg(all(test, unix))]
 mod tests;
-
-/// Called with a chat's id when it moved, or 0 when the fleet did; for the
-/// runtime, with 0 when the profile list did.
-pub type AmuxWake = extern "C" fn(context: *mut c_void, chat: u64);
-
-/// Called once with an act's JSON result, borrowed until it returns.
-pub type AmuxCallback = extern "C" fn(context: *mut c_void, json: *const c_char);
 
 /// Bytes the caller frees with `amux_bytes_free`.
 #[repr(C)]
@@ -61,235 +61,316 @@ pub struct AmuxBytes {
     pub len: usize,
 }
 
+impl AmuxBytes {
+    /// No bytes: a null pointer the caller may still free.
+    fn empty() -> AmuxBytes {
+        AmuxBytes {
+            data: std::ptr::null_mut(),
+            len: 0,
+        }
+    }
+
+    /// A copy of `bytes` the caller owns until it frees them.
+    fn leak(bytes: &[u8]) -> AmuxBytes {
+        let boxed: Box<[u8]> = bytes.into();
+        let len = boxed.len();
+        AmuxBytes {
+            data: Box::into_raw(boxed).cast(),
+            len,
+        }
+    }
+}
+
 /// The embedded installation and every profile it hosts.
 pub struct AmuxRuntime {
-    // Dropped last: every task below runs on it.
-    tokio: Option<tokio::runtime::Runtime>,
-    embedded: Option<Arc<EmbeddedRuntime>>,
+    shared: Arc<Shared>,
     watch: Option<tokio::task::JoinHandle<()>>,
     tail: u32,
+}
+
+/// What the runtime, its profiles and its chats share.
+struct Shared {
+    phone: Phone,
+    outbox: Arc<Outbox>,
 }
 
 /// One profile's fleet and chats.
 pub struct AmuxProfile {
     profile: ProfileId,
-    embedded: Arc<EmbeddedRuntime>,
+    /// The number redraws name this fleet by.
+    fleet: u64,
+    gate: Arc<Gate>,
+    shared: Arc<Shared>,
     app: Arc<AppRuntime>,
-    gate: Arc<WakeGate>,
-    handle: tokio::runtime::Handle,
     tail: u32,
 }
 
 /// One open chat.
 pub struct AmuxChat {
     chat: Arc<Chat>,
-    gate: Arc<WakeGate>,
-    handle: tokio::runtime::Handle,
+    fleet: u64,
+    gate: Arc<Gate>,
+    shared: Arc<Shared>,
 }
 
-/// Where a profile's wake passes, shut by the close that ends it. Acts
-/// still in flight hold the runtime and its chats past their close, and
-/// their watchers go on noticing changes; the host frees the wake's
-/// context as soon as the close returns, so nothing may reach it after.
+/// What of a fleet is closed: nothing closed is named in a redraw again,
+/// however many of its acts are still in flight.
 #[derive(Default)]
-struct WakeGate(Mutex<Shut>);
+struct Gate(Mutex<Shut>);
 
 #[derive(Default)]
 struct Shut {
-    profile: bool,
+    fleet: bool,
     chats: HashSet<u64>,
 }
 
-impl WakeGate {
-    /// Calls the host's wake unless what moved is closed. The call is made
-    /// under the lock, so a close waits for a wake already running.
-    fn pass(&self, moved: Wake, wake: AmuxWake, context: Context) {
-        let shut = self.0.lock().unwrap_or_else(|p| p.into_inner());
-        let chat = match moved {
-            Wake::Fleet => 0,
-            Wake::Chat(id) if shut.chats.contains(&id) => return,
-            Wake::Chat(id) => id,
-        };
-        if !shut.profile {
-            wake(context.0, chat);
-        }
-    }
-
-    fn close(&self) {
-        self.0.lock().unwrap_or_else(|p| p.into_inner()).profile = true;
-    }
-
-    fn close_chat(&self, id: u64) {
-        let mut shut = self.0.lock().unwrap_or_else(|p| p.into_inner());
-        shut.chats.insert(id);
-    }
-}
-
-/// A host context pointer handed back on another thread.
-#[derive(Clone, Copy)]
-struct Context(*mut c_void);
-
-// SAFETY: the pointer is the host's and only ever handed back to the
-// host's own callback, which the host wrote to be called from any thread.
-unsafe impl Send for Context {}
-unsafe impl Sync for Context {}
-
 impl AmuxRuntime {
-    fn handle(&self) -> tokio::runtime::Handle {
-        self.tokio.as_ref().expect("running").handle().clone()
-    }
-
     fn embedded(&self) -> &Arc<EmbeddedRuntime> {
-        self.embedded.as_ref().expect("running")
+        self.shared.embedded()
     }
 
-    /// Runs `act` on the pool and hands its JSON result to the callback.
-    fn spawn<T, F>(&self, callback: AmuxCallback, context: *mut c_void, act: F)
+    fn handle(&self) -> &Handle {
+        self.shared.handle()
+    }
+
+    fn act<T, F>(&self, act: F) -> u64
     where
         T: Serialize,
         F: Future<Output = T> + Send + 'static,
     {
-        spawn_on(&self.handle(), callback, context, act);
+        self.shared.act(act)
     }
 }
 
 impl AmuxProfile {
-    fn spawn<T, F>(&self, callback: AmuxCallback, context: *mut c_void, act: F)
+    fn act<T, F>(&self, act: F) -> u64
     where
         T: Serialize,
         F: Future<Output = T> + Send + 'static,
     {
-        spawn_on(&self.handle, callback, context, act);
+        self.shared.act(act)
     }
 }
 
-fn spawn_on<T, F>(
-    handle: &tokio::runtime::Handle,
-    callback: AmuxCallback,
-    context: *mut c_void,
-    act: F,
-) where
-    T: Serialize,
-    F: Future<Output = T> + Send + 'static,
-{
-    let answering = Answering {
-        context: Context(context),
-        callback,
-        answered: false,
-    };
-    handle.spawn(async move {
-        let result = act.await;
-        let text = json(&result).unwrap_or_else(|| CString::new("null").unwrap());
-        answering.answer(&text);
-    });
+impl Shared {
+    fn embedded(&self) -> &Arc<EmbeddedRuntime> {
+        self.phone.embedded()
+    }
+
+    fn handle(&self) -> &Handle {
+        self.phone.handle()
+    }
+
+    /// Starts `act` on the transport and answers the ticket its result
+    /// comes back under, from a later step.
+    fn act<T, F>(&self, act: F) -> u64
+    where
+        T: Serialize,
+        F: Future<Output = T> + Send + 'static,
+    {
+        self.outbox.act(self.handle(), act)
+    }
 }
 
-/// An act's one callback, owed from the moment the act is spawned. A stop
-/// shuts the pool down and drops the acts still running; the drop answers
-/// for them, so whoever waits on the host side hears that the runtime has
-/// stopped rather than nothing, ever.
-struct Answering {
-    context: Context,
-    callback: AmuxCallback,
+/// What the transport left for the app's next step: which views to
+/// redraw, and the answers to acts it started. Nothing here calls the
+/// app; each change rings the wake descriptor instead.
+struct Outbox {
+    tickets: AtomicU64,
+    fleets: AtomicU64,
+    waiting: Mutex<Stepped>,
+    ring: Box<dyn Fn() + Send + Sync>,
+}
+
+/// What a step hands the app, as JSON.
+#[derive(Default, Serialize)]
+struct Stepped {
+    /// The profile list moved: read it again.
+    profiles: bool,
+    /// The fleets (chat 0) and chats whose changes wait to be taken.
+    redraws: BTreeSet<Redraw>,
+    /// The acts that ended since the last step.
+    answers: Vec<Answer>,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+struct Redraw {
+    fleet: u64,
+    chat: u64,
+}
+
+#[derive(Serialize)]
+struct Answer {
+    ticket: u64,
+    /// The act's result, as JSON text.
+    json: String,
+}
+
+impl Outbox {
+    fn post(&self, post: impl FnOnce(&mut Stepped)) {
+        post(&mut self.waiting.lock().unwrap_or_else(|p| p.into_inner()));
+        (self.ring)();
+    }
+
+    fn take(&self) -> Stepped {
+        std::mem::take(&mut self.waiting.lock().unwrap_or_else(|p| p.into_inner()))
+    }
+
+    /// Names a fleet (chat 0) or chat in the next step, unless it closed;
+    /// the gate is held across, so a close waits for a redraw under way.
+    fn redraw(&self, gate: &Gate, fleet: u64, chat: u64) {
+        let shut = gate.0.lock().unwrap_or_else(|p| p.into_inner());
+        if shut.fleet || shut.chats.contains(&chat) {
+            return;
+        }
+        self.post(|waiting| {
+            waiting.redraws.insert(Redraw { fleet, chat });
+        });
+    }
+
+    /// Closes a fleet, or one chat of it, and forgets what waits for it.
+    fn close(&self, gate: &Gate, fleet: u64, chat: Option<u64>) {
+        let mut shut = gate.0.lock().unwrap_or_else(|p| p.into_inner());
+        match chat {
+            Some(chat) => {
+                shut.chats.insert(chat);
+            }
+            None => shut.fleet = true,
+        }
+        self.waiting
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .redraws
+            .retain(|redraw| redraw.fleet != fleet || chat.is_some_and(|chat| redraw.chat != chat));
+    }
+
+    fn act<T, F>(self: &Arc<Self>, handle: &Handle, act: F) -> u64
+    where
+        T: Serialize,
+        F: Future<Output = T> + Send + 'static,
+    {
+        let ticket = self.tickets.fetch_add(1, Ordering::SeqCst) + 1;
+        let owed = Owed {
+            outbox: self.clone(),
+            ticket,
+            answered: false,
+        };
+        handle.spawn(async move {
+            let result = act.await;
+            owed.answer(serde_json::to_string(&result).unwrap_or_else(|_| "null".to_owned()));
+        });
+        ticket
+    }
+}
+
+/// An act's one answer, owed from the moment the act is started. A stop
+/// drops the acts still running; the drop answers for them, so whoever
+/// waits on the app's side hears that the runtime has stopped rather than
+/// nothing, ever.
+struct Owed {
+    outbox: Arc<Outbox>,
+    ticket: u64,
     answered: bool,
 }
 
-impl Answering {
-    fn answer(mut self, text: &CStr) {
+impl Owed {
+    fn answer(mut self, json: String) {
         self.answered = true;
-        (self.callback)(self.context.0, text.as_ptr());
+        let ticket = self.ticket;
+        self.outbox
+            .post(|waiting| waiting.answers.push(Answer { ticket, json }));
     }
 }
 
-impl Drop for Answering {
+impl Drop for Owed {
     fn drop(&mut self) {
         if !self.answered {
-            (self.callback)(self.context.0, STOPPED.as_ptr());
+            let ticket = self.ticket;
+            self.outbox.post(|waiting| {
+                waiting.answers.push(Answer {
+                    ticket,
+                    json: STOPPED.to_owned(),
+                })
+            });
         }
     }
 }
 
-/// What an act dropped unanswered answers: the error the host's own
+/// What an act dropped unanswered answers: the error the app's own
 /// stopped-runtime path reports.
-const STOPPED: &CStr = c"{\"Err\":\"the runtime has stopped\"}";
+const STOPPED: &str = "{\"Err\":\"the runtime has stopped\"}";
 
-/// Starts the installation with a pool of its own; blocks until every
-/// profile's store is open. `wake` is called with 0 whenever the profile
-/// list moves.
-pub fn start(
-    config: &StartConfig,
-    overrides: EdgeOverrides,
-    wake: AmuxWake,
-    context: *mut c_void,
-) -> Result<Box<AmuxRuntime>, String> {
-    let tokio = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .thread_name("amux")
-        .enable_all()
-        .build()
-        .map_err(|error| format!("starting the runtime's threads: {error}"))?;
-    let context = Context(context);
-    let embedded = tokio.block_on(async {
-        EmbeddedRuntime::start_with(config, overrides, Arc::new(client::SystemClock))
-            .await
-            .map(Arc::new)
-            .map_err(|error| error.to_string())
-    })?;
-    let watching = embedded.clone();
-    let watch = tokio.spawn(async move {
+/// Starts the installation with its transport on a thread of its own and
+/// its cores on the calling thread's queue; blocks, stepping them, until
+/// every profile's store is open.
+pub fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<Box<AmuxRuntime>, String> {
+    let phone = Phone::start(config, overrides, Arc::new(client::SystemClock))
+        .map_err(|error| error.to_string())?;
+    let outbox = Arc::new(Outbox {
+        tickets: AtomicU64::new(0),
+        fleets: AtomicU64::new(0),
+        waiting: Mutex::new(Stepped::default()),
+        ring: Box::new(phone.bell()),
+    });
+    let watching = phone.embedded().clone();
+    let posting = outbox.clone();
+    let watch = phone.handle().spawn(async move {
         // A watch that falls behind ends; the list is read again from a
-        // fresh one, and the host told once it has caught up.
+        // fresh one, and the app told once it has caught up.
         while let Ok(mut events) = watching.watch_profiles().await {
             let mut caught_up = false;
             while let Some(event) = events.next().await {
                 caught_up |= event == ProfileEvent::CaughtUp;
                 if caught_up {
-                    let context = context;
-                    wake(context.0, 0);
+                    posting.post(|waiting| waiting.profiles = true);
                 }
             }
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
     });
     Ok(Box::new(AmuxRuntime {
-        tokio: Some(tokio),
-        embedded: Some(embedded),
+        shared: Arc::new(Shared { phone, outbox }),
         watch: Some(watch),
         tail: config.tail,
     }))
 }
 
-/// Opens a profile's fleet; blocks until it has caught up with the
-/// profile's store.
-pub fn open_profile(
-    runtime: &AmuxRuntime,
-    profile: ProfileId,
-    wake: AmuxWake,
-    context: *mut c_void,
-) -> Result<Box<AmuxProfile>, String> {
-    let context = Context(context);
-    let embedded = runtime.embedded().clone();
-    let handle = runtime.handle();
-    let gate = Arc::new(WakeGate::default());
+/// Opens a profile's fleet; blocks, stepping the cores, until it has
+/// caught up with the profile's store.
+pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<AmuxProfile>, String> {
+    let shared = runtime.shared.clone();
+    let embedded = shared.embedded().clone();
+    let outbox = shared.outbox.clone();
+    let fleet = outbox.fleets.fetch_add(1, Ordering::SeqCst) + 1;
+    let gate = Arc::new(Gate::default());
     let passing = gate.clone();
-    let app = handle.block_on(async {
-        let host_wake = Arc::new(move |moved: Wake| passing.pass(moved, wake, context));
-        let client = embedded
-            .client(profile)
-            .map_err(|error| error.to_string())?;
-        let host = embedded
-            .host_id(profile)
-            .map_err(|error| error.to_string())?;
-        AppRuntime::open(client, embedded.clock(), host, host_wake)
-            .await
-            .map_err(|error| error.to_string())
-    })?;
+    let app = shared
+        .phone
+        .wait(async move {
+            let host_wake = Arc::new(move |moved: Wake| {
+                let chat = match moved {
+                    Wake::Fleet => 0,
+                    Wake::Chat(id) => id,
+                };
+                outbox.redraw(&passing, fleet, chat)
+            });
+            let client = embedded
+                .client(profile)
+                .map_err(|error| error.to_string())?;
+            let host = embedded
+                .host_id(profile)
+                .map_err(|error| error.to_string())?;
+            AppRuntime::open(client, embedded.clock(), host, host_wake)
+                .await
+                .map_err(|error| error.to_string())
+        })
+        .ok_or("the runtime has stopped")??;
     Ok(Box::new(AmuxProfile {
         profile,
-        embedded,
-        app: Arc::new(app),
+        fleet,
         gate,
-        handle,
+        shared,
+        app: Arc::new(app),
         tail: runtime.tail,
     }))
 }
@@ -422,7 +503,7 @@ unsafe fn read<T: Serialize>(chat: *const AmuxChat, read: impl FnOnce(&Chat) -> 
         let Some(open) = (unsafe { held_chat(chat) }) else {
             return std::ptr::null_mut();
         };
-        let _entered = open.handle.enter();
+        let _entered = open.shared.handle().enter();
         owned(&read(&open.chat))
     })
 }
@@ -528,19 +609,17 @@ pub unsafe extern "C" fn amux_form_problems(
     })
 }
 
-/// Starts the installation from a `StartConfig` as JSON. Blocks until every
-/// profile's store is open; `wake` is called with 0 whenever the profile
-/// list moves. Null on failure, with the reason in `error` when it is not
-/// null, which the caller frees.
+/// Starts the installation from a `StartConfig` as JSON, its transport
+/// on a thread of its own and its cores stepped by `amux_runtime_step`.
+/// Blocks, stepping them on the calling thread, until every profile's
+/// store is open. Null on failure, with the reason in `error` when it is
+/// not null, which the caller frees.
 ///
 /// # Safety
-/// `config` is a NUL-terminated string; `error` is null or writable. The
-/// wake may be called from any thread until `amux_runtime_stop` returns.
+/// `config` is a NUL-terminated string; `error` is null or writable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn amux_runtime_start(
     config: *const c_char,
-    wake: AmuxWake,
-    context: *mut c_void,
     error: *mut *mut c_char,
 ) -> *mut AmuxRuntime {
     let started = guard(
@@ -549,7 +628,7 @@ pub unsafe extern "C" fn amux_runtime_start(
             // SAFETY: the caller's contract.
             let config: StartConfig = unsafe { parse(config) }
                 .ok_or_else(|| "the start configuration is not a StartConfig".to_owned())?;
-            start(&config, overrides(&config), wake, context)
+            start(&config, overrides(&config))
         },
     );
     match started {
@@ -560,6 +639,134 @@ pub unsafe extern "C" fn amux_runtime_start(
             std::ptr::null_mut()
         }
     }
+}
+
+/// A descriptor that becomes readable whenever something waits for
+/// `amux_runtime_step`: inputs for the cores, views to redraw, answers to
+/// acts. The app watches it from the queue it steps on; no Rust thread
+/// ever calls into the app. -1 for no runtime.
+///
+/// # Safety
+/// `runtime` is null or from `amux_runtime_start`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_runtime_wake_fd(runtime: *const AmuxRuntime) -> c_int {
+    guard(-1, || {
+        // SAFETY: the caller's contract.
+        unsafe { live_runtime(runtime) }.map_or(-1, |runtime| runtime.shared.phone.wake_fd())
+    })
+}
+
+/// Steps every input waiting for the cores on the calling queue, then
+/// answers what the app must do as JSON: `{"profiles": bool, "redraws":
+/// [{"fleet": n, "chat": n}], "answers": [{"ticket": n, "json": text}]}`.
+/// `profiles` says to read the profile list again; each redraw names a
+/// fleet, by the number `amux_profile_fleet_id` answers, or
+/// one of its chats (chat 0 for the fleet itself) whose changes wait to be
+/// taken; each answer is
+/// an act's result, under the ticket the act returned. Null for no
+/// runtime.
+///
+/// # Safety
+/// `runtime` is null or from `amux_runtime_start`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_runtime_step(runtime: *const AmuxRuntime) -> *mut c_char {
+    guard(std::ptr::null_mut(), || {
+        // SAFETY: the caller's contract.
+        let Some(runtime) = (unsafe { live_runtime(runtime) }) else {
+            return std::ptr::null_mut();
+        };
+        runtime.shared.phone.step();
+        owned(&runtime.shared.outbox.take())
+    })
+}
+
+/// What the app's life feeds the runtime.
+#[derive(Debug, Deserialize)]
+pub enum Lifecycle {
+    /// The app came to the front; counted at most once an hour.
+    Foreground,
+    /// The app is leaving the screen: the analytics waiting are sent.
+    Background,
+    /// The app is about to be suspended: the analytics waiting are sent,
+    /// and every profile's core is checkpointed.
+    ///
+    /// The checkpoint makes the store whole on the drive should the system
+    /// end the app; a relaunch starts from that store, not the checkpoint,
+    /// whose links, calls, jobs and timers belong to the process that ended.
+    Suspending,
+    /// The phone's network changed: every profile's link socket is bound
+    /// afresh and every path machine probes its paths again, which the
+    /// link log's rebind line records.
+    NetworkChanged,
+}
+
+/// Feeds a `Lifecycle` input as JSON; blocks, stepping the cores, until
+/// it is carried out. False on failure, with the reason in `error` when it
+/// is not null, which the caller frees.
+///
+/// # Safety
+/// `runtime` is from `amux_runtime_start`; `input` is a NUL-terminated
+/// string; `error` is null or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_runtime_feed(
+    runtime: *const AmuxRuntime,
+    input: *const c_char,
+    error: *mut *mut c_char,
+) -> bool {
+    let fed = guard(Err("feeding the runtime panicked".to_owned()), || {
+        // SAFETY: the caller's contract.
+        let runtime = unsafe { live_runtime(runtime) }.ok_or("no runtime")?;
+        // SAFETY: the caller's contract.
+        let input: Lifecycle = unsafe { parse(input) }.ok_or("the input is not a Lifecycle")?;
+        feed(runtime, input)
+    });
+    match fed {
+        Ok(()) => true,
+        Err(reason) => {
+            // SAFETY: the caller's contract.
+            unsafe { fail(error, reason) };
+            false
+        }
+    }
+}
+
+fn feed(runtime: &AmuxRuntime, input: Lifecycle) -> Result<(), String> {
+    match input {
+        Lifecycle::Foreground => {
+            let _entered = runtime.handle().enter();
+            runtime.embedded().client_opened();
+        }
+        Lifecycle::Background => {
+            let embedded = runtime.embedded().clone();
+            runtime
+                .shared
+                .phone
+                .wait(async move { embedded.flush_analytics().await })
+                .ok_or("the runtime has stopped")?;
+        }
+        Lifecycle::Suspending => {
+            let embedded = runtime.embedded().clone();
+            runtime
+                .shared
+                .phone
+                .wait(async move {
+                    embedded.flush_analytics().await;
+                    embedded.checkpoint().await
+                })
+                .ok_or("the runtime has stopped")?
+                .map_err(|error| error.to_string())?;
+        }
+        Lifecycle::NetworkChanged => {
+            let embedded = runtime.embedded().clone();
+            runtime
+                .shared
+                .phone
+                .wait(async move { embedded.network_changed().await })
+                .ok_or("the runtime has stopped")?
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
 }
 
 /// Writes a failure's reason where the caller asked for it.
@@ -573,8 +780,8 @@ unsafe fn fail(error: *mut *mut c_char, reason: String) {
     }
 }
 
-/// Stops the installation: flushes every profile's store and joins its
-/// threads. Close every chat and profile first.
+/// Stops the installation: flushes every profile's store and ends its
+/// transport. Close every chat and profile first.
 ///
 /// # Safety
 /// `runtime` is null or from `amux_runtime_start`, and not used again.
@@ -586,19 +793,20 @@ pub unsafe extern "C" fn amux_runtime_stop(runtime: *mut AmuxRuntime) {
     // SAFETY: the caller's contract.
     let mut runtime = unsafe { Box::from_raw(runtime) };
     guard((), || {
-        let tokio = runtime.tokio.take().expect("running");
-        tokio.block_on(async {
-            if let Some(watch) = runtime.watch.take() {
-                watch.abort();
+        // The watch holds the installation until its task is dropped on the
+        // transport, and the phone shuts down only an installation nothing
+        // else holds: wait for the abort to land.
+        if let Some(watch) = runtime.watch.take() {
+            watch.abort();
+            let _ = runtime.shared.phone.wait(async move {
                 let _ = watch.await;
-            }
-            // An act still in flight holds the embedded runtime; dropped
-            // with it, the store is left for the next start's recovery.
-            if let Some(embedded) = runtime.embedded.take().and_then(Arc::into_inner) {
-                let _ = embedded.shutdown().await;
-            }
-        });
-        tokio.shutdown_timeout(std::time::Duration::from_secs(5));
+            });
+        }
+        // A profile or chat left open holds the installation; it stops
+        // once the last of them closes.
+        if let Some(shared) = Arc::into_inner(runtime.shared) {
+            shared.phone.stop();
+        }
     });
 }
 
@@ -623,32 +831,25 @@ impl<T, E: std::fmt::Display> From<Result<T, E>> for Answered<T> {
 /// # Safety
 /// `runtime` is from `amux_runtime_start`; `profile` is a NUL-terminated
 /// string.
-unsafe fn profile_act<T, F, Fut>(
-    runtime: *const AmuxRuntime,
-    profile: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-    act: F,
-) where
+unsafe fn profile_act<T, F, Fut>(runtime: *const AmuxRuntime, profile: *const c_char, act: F) -> u64
+where
     T: Serialize + Send + 'static,
     F: FnOnce(Arc<EmbeddedRuntime>, ProfileId) -> Fut,
     Fut: Future<Output = Answered<T>> + Send + 'static,
 {
-    guard((), || {
+    guard(0, || {
         // SAFETY: the caller's contract.
         let Some(runtime) = (unsafe { live_runtime(runtime) }) else {
-            return;
+            return 0;
         };
         // SAFETY: the caller's contract.
         match unsafe { profile_id(profile) } {
-            Some(profile) => {
-                runtime.spawn(callback, context, act(runtime.embedded().clone(), profile));
+            Some(profile) => runtime.act(act(runtime.embedded().clone(), profile)),
+            None => {
+                runtime.act(async { Answered::<T>::Err("the profile is not a profile id".into()) })
             }
-            None => runtime.spawn(callback, context, async {
-                Answered::<T>::Err("the profile is not a profile id".into())
-            }),
         }
-    });
+    })
 }
 
 // --- the profile registry ------------------------------------------------
@@ -665,39 +866,38 @@ pub unsafe extern "C" fn amux_runtime_profiles(runtime: *const AmuxRuntime) -> *
         let Some(runtime) = (unsafe { live_runtime(runtime) }) else {
             return std::ptr::null_mut();
         };
-        match runtime.handle().block_on(runtime.embedded().profiles()) {
-            Ok(profiles) => owned(&profiles),
-            Err(_) => std::ptr::null_mut(),
+        let embedded = runtime.embedded().clone();
+        match runtime
+            .shared
+            .phone
+            .wait(async move { embedded.profiles().await })
+        {
+            Some(Ok(profiles)) => owned(&profiles),
+            _ => std::ptr::null_mut(),
         }
     })
 }
 
-/// Creates a profile nobody has signed in on; the callback gets
+/// Creates a profile nobody has signed in on; the ticket answers
 /// `{"Ok": ProfileView}` or `{"Err": ..}`.
 ///
 /// # Safety
 /// `runtime` is from `amux_runtime_start`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_runtime_create_profile(
-    runtime: *const AmuxRuntime,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
-    guard((), || {
+pub unsafe extern "C" fn amux_runtime_create_profile(runtime: *const AmuxRuntime) -> u64 {
+    guard(0, || {
         // SAFETY: the caller's contract.
         let Some(runtime) = (unsafe { live_runtime(runtime) }) else {
-            return;
+            return 0;
         };
         let embedded = runtime.embedded().clone();
-        runtime.spawn(callback, context, async move {
-            Answered::from(embedded.create_profile(None).await)
-        });
-    });
+        runtime.act(async move { Answered::from(embedded.create_profile(None).await) })
+    })
 }
 
 /// Deletes a profile, by its id: its key, the machines it trusts and its
-/// store. The installation keeps at least one. Close it first. The callback
-/// gets `{"Ok": null}` or `{"Err": ..}`.
+/// store. The installation keeps at least one. Close it first. The ticket
+/// answers `{"Ok": null}` or `{"Err": ..}`.
 ///
 /// # Safety
 /// `runtime` is from `amux_runtime_start`; `profile` is a NUL-terminated
@@ -706,18 +906,12 @@ pub unsafe extern "C" fn amux_runtime_create_profile(
 pub unsafe extern "C" fn amux_runtime_delete_profile(
     runtime: *const AmuxRuntime,
     profile: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+) -> u64 {
     // SAFETY: the caller's contract.
     unsafe {
-        profile_act(
-            runtime,
-            profile,
-            callback,
-            context,
-            |embedded, profile| async move { Answered::from(embedded.delete_profile(profile).await) },
-        )
+        profile_act(runtime, profile, |embedded, profile| async move {
+            Answered::from(embedded.delete_profile(profile).await)
+        })
     }
 }
 
@@ -726,7 +920,7 @@ pub unsafe extern "C" fn amux_runtime_delete_profile(
 /// there, and the profile alone spends the token. A named `profile` is
 /// adopted even when it paired machines before; null lets the registry pick
 /// the account's own profile, else one that holds nothing, else a new one.
-/// The callback gets `{"Ok": ProfileView}` or `{"Err": ..}`.
+/// The ticket answers `{"Ok": ProfileView}` or `{"Err": ..}`.
 ///
 /// # Safety
 /// `runtime` is from `amux_runtime_start`; `profile` is null or a
@@ -738,13 +932,11 @@ pub unsafe extern "C" fn amux_runtime_bind(
     cloud_url: *const c_char,
     client_id: *const c_char,
     refresh_token: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
-    guard((), || {
+) -> u64 {
+    guard(0, || {
         // SAFETY: the caller's contract.
         let Some(runtime) = (unsafe { live_runtime(runtime) }) else {
-            return;
+            return 0;
         };
         // SAFETY: the caller's contract.
         let named = unsafe { text(profile) }.map(str::to_owned);
@@ -757,19 +949,19 @@ pub unsafe extern "C" fn amux_runtime_bind(
             .unwrap_or_default()
             .to_owned();
         let embedded = runtime.embedded().clone();
-        runtime.spawn(callback, context, async move {
+        runtime.act(async move {
             let profile = match named.map(|named| named.parse::<ProfileId>()) {
                 None => None,
                 Some(Ok(profile)) => Some(profile),
                 Some(Err(_)) => return Answered::Err("the profile is not a profile id".into()),
             };
             Answered::from(embedded.bind(profile, &url, &client, &token).await)
-        });
-    });
+        })
+    })
 }
 
 /// Signs a profile out of its account; it stays tied to the account. The
-/// callback gets `{"Ok": ProfileView}` or `{"Err": ..}`.
+/// ticket answers `{"Ok": ProfileView}` or `{"Err": ..}`.
 ///
 /// # Safety
 /// As for `amux_runtime_delete_profile`.
@@ -777,23 +969,17 @@ pub unsafe extern "C" fn amux_runtime_bind(
 pub unsafe extern "C" fn amux_runtime_sign_out(
     runtime: *const AmuxRuntime,
     profile: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+) -> u64 {
     // SAFETY: the caller's contract.
     unsafe {
-        profile_act(
-            runtime,
-            profile,
-            callback,
-            context,
-            |embedded, profile| async move { Answered::from(embedded.sign_out(profile).await) },
-        )
+        profile_act(runtime, profile, |embedded, profile| async move {
+            Answered::from(embedded.sign_out(profile).await)
+        })
     }
 }
 
 /// Holds a bound profile's relay link down; its direct links and store
-/// stay. The callback gets `{"Ok": ProfileView}` or `{"Err": ..}`.
+/// stay. The ticket answers `{"Ok": ProfileView}` or `{"Err": ..}`.
 ///
 /// # Safety
 /// As for `amux_runtime_delete_profile`.
@@ -801,22 +987,16 @@ pub unsafe extern "C" fn amux_runtime_sign_out(
 pub unsafe extern "C" fn amux_runtime_pause(
     runtime: *const AmuxRuntime,
     profile: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+) -> u64 {
     // SAFETY: the caller's contract.
     unsafe {
-        profile_act(
-            runtime,
-            profile,
-            callback,
-            context,
-            |embedded, profile| async move { Answered::from(embedded.pause(profile).await) },
-        )
+        profile_act(runtime, profile, |embedded, profile| async move {
+            Answered::from(embedded.pause(profile).await)
+        })
     }
 }
 
-/// Lets a paused profile's relay link come up again. The callback gets
+/// Lets a paused profile's relay link come up again. The ticket answers
 /// `{"Ok": ProfileView}` or `{"Err": ..}`.
 ///
 /// # Safety
@@ -825,23 +1005,17 @@ pub unsafe extern "C" fn amux_runtime_pause(
 pub unsafe extern "C" fn amux_runtime_resume(
     runtime: *const AmuxRuntime,
     profile: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+) -> u64 {
     // SAFETY: the caller's contract.
     unsafe {
-        profile_act(
-            runtime,
-            profile,
-            callback,
-            context,
-            |embedded, profile| async move { Answered::from(embedded.resume(profile).await) },
-        )
+        profile_act(runtime, profile, |embedded, profile| async move {
+            Answered::from(embedded.resume(profile).await)
+        })
     }
 }
 
 /// Every profile whose trust store holds a host, by its id as a JSON byte
-/// array, oldest first; the callback gets `{"Ok": ["<profile id>", ..]}` or
+/// array, oldest first; the ticket answers `{"Ok": ["<profile id>", ..]}` or
 /// `{"Err": ..}`.
 ///
 /// # Safety
@@ -851,18 +1025,16 @@ pub unsafe extern "C" fn amux_runtime_resume(
 pub unsafe extern "C" fn amux_runtime_trusting_profiles(
     runtime: *const AmuxRuntime,
     host_id: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
-    guard((), || {
+) -> u64 {
+    guard(0, || {
         // SAFETY: the caller's contract.
         let Some(runtime) = (unsafe { live_runtime(runtime) }) else {
-            return;
+            return 0;
         };
         // SAFETY: the caller's contract.
         let host_id: Option<Vec<u8>> = unsafe { parse(host_id) };
         let embedded = runtime.embedded().clone();
-        runtime.spawn(callback, context, async move {
+        runtime.act(async move {
             let Some(host_id) = host_id else {
                 return Answered::Err("the host id is not a byte array".into());
             };
@@ -872,12 +1044,12 @@ pub unsafe extern "C" fn amux_runtime_trusting_profiles(
                     .map(ProfileId::to_string)
                     .collect::<Vec<_>>()
             }))
-        });
-    });
+        })
+    })
 }
 
 /// Opens pairing mode on a profile and answers the link its QR code would
-/// carry; the callback gets `{"Ok": "amux://pair?.."}` or `{"Err": ..}`. Only
+/// carry; the ticket answers `{"Ok": "amux://pair?.."}` or `{"Err": ..}`. Only
 /// a driving build offers one: the phone shows no pairing code of its own.
 ///
 /// # Safety
@@ -886,23 +1058,15 @@ pub unsafe extern "C" fn amux_runtime_trusting_profiles(
 pub unsafe extern "C" fn amux_runtime_offer_pairing(
     runtime: *const AmuxRuntime,
     profile: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+) -> u64 {
     // SAFETY: the caller's contract.
     unsafe {
-        profile_act(
-            runtime,
-            profile,
-            callback,
-            context,
-            |embedded, profile| async move {
-                if !cfg!(feature = "debug-tools") {
-                    return Answered::Err("only a driving build offers pairing".into());
-                }
-                Answered::from(embedded.offer_pairing(profile).await)
-            },
-        )
+        profile_act(runtime, profile, |embedded, profile| async move {
+            if !cfg!(feature = "debug-tools") {
+                return Answered::Err("only a driving build offers pairing".into());
+            }
+            Answered::from(embedded.offer_pairing(profile).await)
+        })
     }
 }
 
@@ -987,7 +1151,7 @@ pub unsafe extern "C" fn amux_runtime_discovered(
 }
 
 /// A bearer for a profile's account, which the profile refreshes; the
-/// callback gets `{"Ok": Bearer}` or `{"Err": ..}`.
+/// ticket answers `{"Ok": Bearer}` or `{"Err": ..}`.
 ///
 /// # Safety
 /// As for `amux_runtime_delete_profile`.
@@ -995,24 +1159,18 @@ pub unsafe extern "C" fn amux_runtime_discovered(
 pub unsafe extern "C" fn amux_runtime_access_token(
     runtime: *const AmuxRuntime,
     profile: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+) -> u64 {
     // SAFETY: the caller's contract.
     unsafe {
-        profile_act(
-            runtime,
-            profile,
-            callback,
-            context,
-            |embedded, profile| async move { Answered::from(embedded.access_token(profile).await) },
-        )
+        profile_act(runtime, profile, |embedded, profile| async move {
+            Answered::from(embedded.access_token(profile).await)
+        })
     }
 }
 
 /// Asks the account service what a profile's account buys now, over its
-/// relay link, so the relay's tier follows a purchase at once; the callback
-/// gets `{"Ok": null}` or `{"Err": ..}`.
+/// relay link, so the relay's tier follows a purchase at once; the ticket
+/// answers `{"Ok": null}` or `{"Err": ..}`.
 ///
 /// # Safety
 /// As for `amux_runtime_delete_profile`.
@@ -1020,20 +1178,12 @@ pub unsafe extern "C" fn amux_runtime_access_token(
 pub unsafe extern "C" fn amux_runtime_refresh_entitlement(
     runtime: *const AmuxRuntime,
     profile: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+) -> u64 {
     // SAFETY: the caller's contract.
     unsafe {
-        profile_act(
-            runtime,
-            profile,
-            callback,
-            context,
-            |embedded, profile| async move {
-                Answered::from(embedded.refresh_entitlement(profile).await)
-            },
-        )
+        profile_act(runtime, profile, |embedded, profile| async move {
+            Answered::from(embedded.refresh_entitlement(profile).await)
+        })
     }
 }
 
@@ -1051,45 +1201,6 @@ pub unsafe extern "C" fn amux_runtime_set_telemetry(runtime: *const AmuxRuntime,
         if let Some(runtime) = unsafe { live_runtime(runtime) } {
             runtime.embedded().set_telemetry(on);
         }
-    });
-}
-
-/// The app came to the front; counted at most once an hour.
-///
-/// # Safety
-/// `runtime` is from `amux_runtime_start`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_runtime_foreground(runtime: *const AmuxRuntime) {
-    guard((), || {
-        // SAFETY: the caller's contract.
-        if let Some(runtime) = unsafe { live_runtime(runtime) } {
-            let _entered = runtime.handle().enter();
-            runtime.embedded().client_opened();
-        }
-    });
-}
-
-/// The app is leaving the screen: sends the analytics waiting, then calls
-/// the callback with `null`.
-///
-/// # Safety
-/// `runtime` is from `amux_runtime_start`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_runtime_background(
-    runtime: *const AmuxRuntime,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
-    guard((), || {
-        // SAFETY: the caller's contract.
-        let Some(runtime) = (unsafe { live_runtime(runtime) }) else {
-            callback(context, c"null".as_ptr());
-            return;
-        };
-        let embedded = runtime.embedded().clone();
-        runtime.spawn(callback, context, async move {
-            embedded.flush_analytics().await;
-        });
     });
 }
 
@@ -1120,21 +1231,17 @@ pub unsafe extern "C" fn amux_runtime_record(
 
 // --- one profile ---------------------------------------------------------
 
-/// Opens a profile's fleet, by the profile's id; blocks until it has caught
-/// up with the profile's store. Its wake is called with a chat's id when
-/// that chat moved, or 0 when the fleet did. Null on failure, with the
-/// reason in `error` when it is not null.
+/// Opens a profile's fleet, by the profile's id; blocks, stepping the
+/// cores, until it has caught up with the profile's store. Null on failure, with
+/// the reason in `error` when it is not null.
 ///
 /// # Safety
 /// `runtime` is from `amux_runtime_start`; `profile` is a NUL-terminated
-/// string; `error` is null or writable. The wake may be called from any
-/// thread until `amux_profile_close` returns.
+/// string; `error` is null or writable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn amux_profile_open(
     runtime: *const AmuxRuntime,
     profile: *const c_char,
-    wake: AmuxWake,
-    context: *mut c_void,
     error: *mut *mut c_char,
 ) -> *mut AmuxProfile {
     let opened = guard(Err("opening the profile panicked".to_owned()), || {
@@ -1142,7 +1249,7 @@ pub unsafe extern "C" fn amux_profile_open(
         let runtime = unsafe { live_runtime(runtime) }.ok_or("no runtime")?;
         // SAFETY: the caller's contract.
         let profile = unsafe { profile_id(profile) }.ok_or("the profile is not a profile id")?;
-        open_profile(runtime, profile, wake, context)
+        open_profile(runtime, profile)
     });
     match opened {
         Ok(profile) => Box::into_raw(profile),
@@ -1154,8 +1261,8 @@ pub unsafe extern "C" fn amux_profile_open(
     }
 }
 
-/// Closes a profile's fleet. Its wake is never called once this returns,
-/// however many acts are still in flight; their callbacks still run. Close
+/// Closes a profile's fleet. No redraw names it once this returns, however
+/// many acts are still in flight; they are answered all the same. Close
 /// its chats first.
 ///
 /// # Safety
@@ -1165,15 +1272,25 @@ pub unsafe extern "C" fn amux_profile_close(profile: *mut AmuxProfile) {
     if !profile.is_null() {
         // SAFETY: the caller's contract.
         let open = unsafe { Box::from_raw(profile) };
-        open.gate.close();
-        let handle = open.handle.clone();
-        let _entered = handle.enter();
+        open.shared.outbox.close(&open.gate, open.fleet, None);
+        let shared = open.shared.clone();
+        let _entered = shared.handle().enter();
         drop(open);
     }
 }
 
+/// The number redraws name this fleet by.
+///
+/// # Safety
+/// `profile` is null or from `amux_profile_open`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_profile_fleet_id(profile: *const AmuxProfile) -> u64 {
+    // SAFETY: the caller's contract.
+    unsafe { live_profile(profile) }.map_or(0, |open| open.fleet)
+}
+
 /// Writes a dump of the profile with the fleet's and every open chat's
-/// part; the callback gets `{"Ok": "<bundle directory>"}` or `{"Err": ..}`.
+/// part; the ticket answers `{"Ok": "<bundle directory>"}` or `{"Err": ..}`.
 ///
 /// # Safety
 /// `profile` is from `amux_profile_open`; `reason` is a NUL-terminated
@@ -1182,25 +1299,21 @@ pub unsafe extern "C" fn amux_profile_close(profile: *mut AmuxProfile) {
 pub unsafe extern "C" fn amux_profile_dump(
     profile: *const AmuxProfile,
     reason: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
-    guard((), || {
+) -> u64 {
+    guard(0, || {
         // SAFETY: the caller's contract.
         let Some(profile) = (unsafe { live_profile(profile) }) else {
-            return;
+            return 0;
         };
         // SAFETY: the caller's contract.
         let reason = unsafe { text(reason) }.unwrap_or_default().to_owned();
         let app = profile.app.clone();
-        profile.spawn(callback, context, async move {
-            Answered::from(app.dump(&reason).await)
-        });
-    });
+        profile.act(async move { Answered::from(app.dump(&reason).await) })
+    })
 }
 
 /// Reaches and authenticates a machine by a `PairRequest` as JSON; the
-/// callback gets `{"Ok": PendingPair}` or `{"Err": ..}`. Nothing is trusted
+/// ticket answers `{"Ok": PendingPair}` or `{"Err": ..}`. Nothing is trusted
 /// until `amux_profile_confirm_pair`.
 ///
 /// # Safety
@@ -1210,28 +1323,26 @@ pub unsafe extern "C" fn amux_profile_dump(
 pub unsafe extern "C" fn amux_profile_begin_pair(
     profile: *const AmuxProfile,
     request: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
-    guard((), || {
+) -> u64 {
+    guard(0, || {
         // SAFETY: the caller's contract.
         let Some(profile) = (unsafe { live_profile(profile) }) else {
-            return;
+            return 0;
         };
         // SAFETY: the caller's contract.
         let request: Option<PairRequest> = unsafe { parse(request) };
-        let (embedded, id) = (profile.embedded.clone(), profile.profile);
-        profile.spawn(callback, context, async move {
+        let (embedded, id) = (profile.shared.embedded().clone(), profile.profile);
+        profile.act(async move {
             let Some(request) = request else {
                 return Answered::Err("the request is not a PairRequest".into());
             };
             Answered::from(embedded.begin_pair(id, &request).await)
-        });
-    });
+        })
+    })
 }
 
 /// Trusts the machine a pending pairing reached, named by its token as a
-/// JSON byte array; the callback gets `{"Ok": {"host_id": [..], "name":
+/// JSON byte array; the ticket answers `{"Ok": {"host_id": [..], "name":
 /// ..}}` or `{"Err": ..}`.
 ///
 /// # Safety
@@ -1240,23 +1351,21 @@ pub unsafe extern "C" fn amux_profile_begin_pair(
 pub unsafe extern "C" fn amux_profile_confirm_pair(
     profile: *const AmuxProfile,
     token: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+) -> u64 {
     #[derive(Serialize)]
     struct Paired {
         host_id: Vec<u8>,
         name: String,
     }
-    guard((), || {
+    guard(0, || {
         // SAFETY: the caller's contract.
         let Some(profile) = (unsafe { live_profile(profile) }) else {
-            return;
+            return 0;
         };
         // SAFETY: the caller's contract.
         let token: Option<Vec<u8>> = unsafe { parse(token) };
-        let (embedded, id) = (profile.embedded.clone(), profile.profile);
-        profile.spawn(callback, context, async move {
+        let (embedded, id) = (profile.shared.embedded().clone(), profile.profile);
+        profile.act(async move {
             let Some(token) = token else {
                 return Answered::Err("the token is not a byte array".into());
             };
@@ -1264,8 +1373,8 @@ pub unsafe extern "C" fn amux_profile_confirm_pair(
                 host_id: peer.host_id,
                 name: peer.name,
             }))
-        });
-    });
+        })
+    })
 }
 
 /// Turns away the machine a pending pairing reached.
@@ -1276,24 +1385,22 @@ pub unsafe extern "C" fn amux_profile_confirm_pair(
 pub unsafe extern "C" fn amux_profile_abandon_pair(
     profile: *const AmuxProfile,
     token: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
-    guard((), || {
+) -> u64 {
+    guard(0, || {
         // SAFETY: the caller's contract.
         let Some(profile) = (unsafe { live_profile(profile) }) else {
-            return;
+            return 0;
         };
         // SAFETY: the caller's contract.
         let token: Option<Vec<u8>> = unsafe { parse(token) };
-        let (embedded, id) = (profile.embedded.clone(), profile.profile);
-        profile.spawn(callback, context, async move {
+        let (embedded, id) = (profile.shared.embedded().clone(), profile.profile);
+        profile.act(async move {
             let Some(token) = token else {
                 return Answered::Err("the token is not a byte array".into());
             };
             Answered::from(embedded.abandon_pair(id, &token).await)
-        });
-    });
+        })
+    })
 }
 
 /// Stops trusting a paired machine, by its host id as a JSON byte array.
@@ -1304,73 +1411,59 @@ pub unsafe extern "C" fn amux_profile_abandon_pair(
 pub unsafe extern "C" fn amux_profile_unpair(
     profile: *const AmuxProfile,
     host_id: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
-    guard((), || {
+) -> u64 {
+    guard(0, || {
         // SAFETY: the caller's contract.
         let Some(profile) = (unsafe { live_profile(profile) }) else {
-            return;
+            return 0;
         };
         // SAFETY: the caller's contract.
         let host_id: Option<Vec<u8>> = unsafe { parse(host_id) };
-        let (embedded, id) = (profile.embedded.clone(), profile.profile);
-        profile.spawn(callback, context, async move {
+        let (embedded, id) = (profile.shared.embedded().clone(), profile.profile);
+        profile.act(async move {
             let Some(host_id) = host_id else {
                 return Answered::Err("the host id is not a byte array".into());
             };
             Answered::from(embedded.unpair(id, &host_id).await)
-        });
-    });
+        })
+    })
 }
 
-/// The profile's identity and the machines it trusts; the callback gets
+/// The profile's identity and the machines it trusts; the ticket answers
 /// `{"Ok": Roster}` or `{"Err": ..}`.
 ///
 /// # Safety
 /// `profile` is from `amux_profile_open`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_profile_roster(
-    profile: *const AmuxProfile,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
-    guard((), || {
+pub unsafe extern "C" fn amux_profile_roster(profile: *const AmuxProfile) -> u64 {
+    guard(0, || {
         // SAFETY: the caller's contract.
         let Some(profile) = (unsafe { live_profile(profile) }) else {
-            return;
+            return 0;
         };
-        let (embedded, id) = (profile.embedded.clone(), profile.profile);
-        profile.spawn(callback, context, async move {
-            Answered::from(embedded.roster(id).await)
-        });
-    });
+        let (embedded, id) = (profile.shared.embedded().clone(), profile.profile);
+        profile.act(async move { Answered::from(embedded.roster(id).await) })
+    })
 }
 
-/// The account the profile is bound to; the callback gets
+/// The account the profile is bound to; the ticket answers
 /// `{"Ok": AccountView}` or `{"Err": ..}`.
 ///
 /// # Safety
 /// `profile` is from `amux_profile_open`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_profile_account(
-    profile: *const AmuxProfile,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
-    guard((), || {
+pub unsafe extern "C" fn amux_profile_account(profile: *const AmuxProfile) -> u64 {
+    guard(0, || {
         // SAFETY: the caller's contract.
         let Some(profile) = (unsafe { live_profile(profile) }) else {
-            return;
+            return 0;
         };
-        let (embedded, id) = (profile.embedded.clone(), profile.profile);
-        profile.spawn(callback, context, async move {
-            Answered::from(embedded.account(id).await)
-        });
-    });
+        let (embedded, id) = (profile.shared.embedded().clone(), profile.profile);
+        profile.act(async move { Answered::from(embedded.account(id).await) })
+    })
 }
 
-/// Starts an agent from a `NewAgent` as JSON; the callback gets
+/// Starts an agent from a `NewAgent` as JSON; the ticket answers
 /// `{"Ok": AgentKey}` or `{"Err": ..}`.
 ///
 /// # Safety
@@ -1380,29 +1473,27 @@ pub unsafe extern "C" fn amux_profile_account(
 pub unsafe extern "C" fn amux_profile_create_agent(
     profile: *const AmuxProfile,
     agent: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
-    guard((), || {
+) -> u64 {
+    guard(0, || {
         // SAFETY: the caller's contract.
         let Some(profile) = (unsafe { live_profile(profile) }) else {
-            return;
+            return 0;
         };
         // SAFETY: the caller's contract.
         let agent: Option<NewAgent> = unsafe { parse(agent) };
         let app = profile.app.clone();
-        profile.spawn(callback, context, async move {
+        profile.act(async move {
             let Some(agent) = agent else {
                 return Answered::Err("the agent is not a NewAgent".into());
             };
             Answered::from(app.create_agent(&agent).await)
-        });
-    });
+        })
+    })
 }
 
 /// Where a host, by its id as a JSON byte array, offers to start an agent,
 /// matching `query` (or everything when it is null or empty), at most
-/// `limit` of each; the callback gets `{"Ok": Directories}` or
+/// `limit` of each; the ticket answers `{"Ok": Directories}` or
 /// `{"Err": ..}`.
 ///
 /// # Safety
@@ -1414,30 +1505,28 @@ pub unsafe extern "C" fn amux_profile_directories(
     host_id: *const c_char,
     query: *const c_char,
     limit: u32,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
-    guard((), || {
+) -> u64 {
+    guard(0, || {
         // SAFETY: the caller's contract.
         let Some(profile) = (unsafe { live_profile(profile) }) else {
-            return;
+            return 0;
         };
         // SAFETY: the caller's contract.
         let host_id: Option<Vec<u8>> = unsafe { parse(host_id) };
         // SAFETY: the caller's contract.
         let query = unsafe { text(query) }.unwrap_or_default().to_owned();
         let app = profile.app.clone();
-        profile.spawn(callback, context, async move {
+        profile.act(async move {
             let Some(host_id) = host_id else {
                 return Answered::Err("the host id is not a byte array".into());
             };
             Answered::from(app.directories(&host_id, &query, limit).await)
-        });
-    });
+        })
+    })
 }
 
 /// Renames, stops or deletes an agent, named by its `AgentKey`, with an
-/// `AgentAct`, both as JSON; the callback gets `{"Ok": null}` or
+/// `AgentAct`, both as JSON; the ticket answers `{"Ok": null}` or
 /// `{"Err": ..}`.
 ///
 /// # Safety
@@ -1447,31 +1536,29 @@ pub unsafe extern "C" fn amux_profile_agent_act(
     profile: *const AmuxProfile,
     agent: *const c_char,
     act: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
-    guard((), || {
+) -> u64 {
+    guard(0, || {
         // SAFETY: the caller's contract.
         let Some(profile) = (unsafe { live_profile(profile) }) else {
-            return;
+            return 0;
         };
         // SAFETY: the caller's contract.
         let agent: Option<AgentKey> = unsafe { parse(agent) };
         // SAFETY: the caller's contract.
         let act: Option<AgentAct> = unsafe { parse(act) };
         let app = profile.app.clone();
-        profile.spawn(callback, context, async move {
+        profile.act(async move {
             let (Some(agent), Some(act)) = (agent, act) else {
                 return Answered::Err("the agent or the act is not readable".into());
             };
             Answered::from(app.agent_act(&agent, &act).await)
-        });
-    });
+        })
+    })
 }
 
 /// What a provider, as a JSON `Provider` ("Claude" or "Codex"), offers on a
 /// host, by its id as a JSON byte array, with no agent running there; the
-/// callback gets `{"Ok": Catalogue}` or `{"Err": ..}`.
+/// ticket answers `{"Ok": Catalogue}` or `{"Err": ..}`.
 ///
 /// # Safety
 /// `profile` is from `amux_profile_open`; the strings are NUL-terminated.
@@ -1480,20 +1567,18 @@ pub unsafe extern "C" fn amux_profile_host_catalogue(
     profile: *const AmuxProfile,
     host_id: *const c_char,
     provider: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
-    guard((), || {
+) -> u64 {
+    guard(0, || {
         // SAFETY: the caller's contract.
         let Some(profile) = (unsafe { live_profile(profile) }) else {
-            return;
+            return 0;
         };
         // SAFETY: the caller's contract.
         let host_id: Option<Vec<u8>> = unsafe { parse(host_id) };
         // SAFETY: the caller's contract.
         let provider: Option<app_runtime::Provider> = unsafe { parse(provider) };
         let app = profile.app.clone();
-        profile.spawn(callback, context, async move {
+        profile.act(async move {
             let Some(host_id) = host_id else {
                 return Answered::Err("the host id is not a byte array".into());
             };
@@ -1501,8 +1586,8 @@ pub unsafe extern "C" fn amux_profile_host_catalogue(
                 return Answered::Err("the provider is not a Provider".into());
             };
             Answered::from(app.host_catalogue(&host_id, provider).await)
-        });
-    });
+        })
+    })
 }
 
 /// The app leaving (false) or returning to (true) the foreground: every
@@ -1521,7 +1606,7 @@ pub unsafe extern "C" fn amux_profile_set_foreground(
         let Some(profile) = (unsafe { live_profile(profile) }) else {
             return;
         };
-        let _entered = profile.handle.enter();
+        let _entered = profile.shared.handle().enter();
         profile.app.set_foreground(foreground);
     });
 }
@@ -1644,14 +1729,18 @@ pub unsafe extern "C" fn amux_session_open(
         // SAFETY: the caller's contract.
         let agent: AgentKey = unsafe { parse(agent) }.ok_or("the agent is not an AgentKey")?;
         let tail = if tail == 0 { profile.tail } else { tail };
-        let handle = profile.handle.clone();
-        let chat = handle
-            .block_on(profile.app.open_chat(&agent, tail))
+        let app = profile.app.clone();
+        let chat = profile
+            .shared
+            .phone
+            .wait(async move { app.open_chat(&agent, tail).await })
+            .ok_or("the runtime has stopped")?
             .map_err(|error| error.to_string())?;
         Ok(AmuxChat {
             chat,
+            fleet: profile.fleet,
             gate: profile.gate.clone(),
-            handle,
+            shared: profile.shared.clone(),
         })
     });
     match opened {
@@ -1664,7 +1753,7 @@ pub unsafe extern "C" fn amux_session_open(
     }
 }
 
-/// The id the wake names this chat by.
+/// The number redraws name this chat by, within its fleet.
 ///
 /// # Safety
 /// `chat` is from `amux_session_open`.
@@ -1674,8 +1763,8 @@ pub unsafe extern "C" fn amux_session_id(chat: *const AmuxChat) -> u64 {
     unsafe { held_chat(chat) }.map_or(0, |open| open.chat.id())
 }
 
-/// Closes a chat. No wake names it once this returns, however many of its
-/// acts are still in flight; their callbacks still run.
+/// Closes a chat. No redraw names it once this returns, however many of
+/// its acts are still in flight; they are answered all the same.
 ///
 /// # Safety
 /// `chat` is null or from `amux_session_open`, and not used again.
@@ -1684,8 +1773,11 @@ pub unsafe extern "C" fn amux_session_close(chat: *mut AmuxChat) {
     if !chat.is_null() {
         // SAFETY: the caller's contract.
         let open = unsafe { Box::from_raw(chat) };
-        open.gate.close_chat(open.chat.id());
-        let _entered = open.handle.enter();
+        open.shared
+            .outbox
+            .close(&open.gate, open.fleet, Some(open.chat.id()));
+        let shared = open.shared.clone();
+        let _entered = shared.handle().enter();
         drop(open);
     }
 }
@@ -1866,45 +1958,36 @@ pub unsafe extern "C" fn amux_session_take_changes(chat: *const AmuxChat) -> *mu
     unsafe { read(chat, Chat::take_changes) }
 }
 
-/// Runs an act on the chat's pool and hands its JSON result back.
+/// Starts an act on the chat and answers its ticket.
 ///
 /// # Safety
 /// `chat` is from `amux_session_open`.
-unsafe fn act<T, F, Fut>(
-    chat: *const AmuxChat,
-    callback: AmuxCallback,
-    context: *mut c_void,
-    act: F,
-) where
+unsafe fn act<T, F, Fut>(chat: *const AmuxChat, act: F) -> u64
+where
     T: Serialize,
     F: FnOnce(Arc<Chat>) -> Fut,
     Fut: Future<Output = T> + Send + 'static,
 {
-    guard((), || {
+    guard(0, || {
         // SAFETY: the caller's contract.
         let Some(open) = (unsafe { held_chat(chat) }) else {
-            return;
+            return 0;
         };
-        spawn_on(&open.handle, callback, context, act(open.chat.clone()));
-    });
+        open.shared.act(act(open.chat.clone()))
+    })
 }
 
-/// Sends a `Draft` as JSON; the callback gets a `SendOutcome`.
+/// Sends a `Draft` as JSON; the ticket answers a `SendOutcome`.
 ///
 /// # Safety
 /// `chat` is from `amux_session_open`; `draft` is a NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_send(
-    chat: *const AmuxChat,
-    draft: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+pub unsafe extern "C" fn amux_session_send(chat: *const AmuxChat, draft: *const c_char) -> u64 {
     // SAFETY: the caller's contract.
     let draft: Option<Draft> = unsafe { parse(draft) };
     // SAFETY: the caller's contract.
     unsafe {
-        act(chat, callback, context, |chat| async move {
+        act(chat, |chat| async move {
             match draft {
                 Some(draft) => Answered::Ok(chat.send(&draft).await),
                 None => Answered::Err("the draft is not a Draft".into()),
@@ -1915,23 +1998,18 @@ pub unsafe extern "C" fn amux_session_send(
 
 /// Runs a `Draft`, as JSON, that names a command the client handles itself
 /// (`/model`, `/effort`, `/rename`) or one the agent does not run; the
-/// callback gets a `CommandOutcome`, whose `Send` says to send the draft as
+/// ticket answers a `CommandOutcome`, whose `Send` says to send the draft as
 /// typed. A draft that does not parse answers `Acted(Failed)`.
 ///
 /// # Safety
 /// `chat` is from `amux_session_open`; `draft` is a NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_command(
-    chat: *const AmuxChat,
-    draft: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+pub unsafe extern "C" fn amux_session_command(chat: *const AmuxChat, draft: *const c_char) -> u64 {
     // SAFETY: the caller's contract.
     let draft: Option<Draft> = unsafe { parse(draft) };
     // SAFETY: the caller's contract.
     unsafe {
-        act(chat, callback, context, |chat| async move {
+        act(chat, |chat| async move {
             match draft {
                 Some(draft) => chat.command(&draft).await,
                 None => {
@@ -1943,8 +2021,8 @@ pub unsafe extern "C" fn amux_session_command(
 }
 
 /// Answers the head ask, named by its key, with the choice at `index` on
-/// its card; `note` goes back with a choice that takes one. The callback
-/// gets an `ActOutcome`.
+/// its card; `note` goes back with a choice that takes one. The ticket
+/// answers an `ActOutcome`.
 ///
 /// # Safety
 /// `chat` is from `amux_session_open`; the strings are NUL-terminated or
@@ -1955,16 +2033,14 @@ pub unsafe extern "C" fn amux_session_answer(
     ask_key: *const c_char,
     index: u32,
     note: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+) -> u64 {
     // SAFETY: the caller's contract.
     let ask_key = unsafe { text(ask_key) }.unwrap_or_default().to_owned();
     // SAFETY: the caller's contract.
     let note = unsafe { text(note) }.unwrap_or_default().to_owned();
     // SAFETY: the caller's contract.
     unsafe {
-        act(chat, callback, context, move |chat| async move {
+        act(chat, move |chat| async move {
             chat.answer_choice(&ask_key, index as usize, &note).await
         })
     }
@@ -1972,7 +2048,7 @@ pub unsafe extern "C" fn amux_session_answer(
 
 /// Submits the head form ask with the person's values, a JSON array of
 /// `FormValue`, one per field in the form's order; the shared view checks
-/// and encodes them. The callback gets an `ActOutcome`.
+/// and encodes them. The ticket answers an `ActOutcome`.
 ///
 /// # Safety
 /// As for `amux_session_answer`.
@@ -1981,16 +2057,14 @@ pub unsafe extern "C" fn amux_session_answer_form(
     chat: *const AmuxChat,
     ask_key: *const c_char,
     values: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+) -> u64 {
     // SAFETY: the caller's contract.
     let ask_key = unsafe { text(ask_key) }.unwrap_or_default().to_owned();
     // SAFETY: the caller's contract.
     let values: Option<Vec<ui_view::FormValue>> = unsafe { parse(values) };
     // SAFETY: the caller's contract.
     unsafe {
-        act(chat, callback, context, move |chat| async move {
+        act(chat, move |chat| async move {
             match values {
                 Some(values) => chat.answer_form(&ask_key, &values).await,
                 None => ActOutcome::Failed("the values are not a list of FormValue".into()),
@@ -2001,7 +2075,7 @@ pub unsafe extern "C" fn amux_session_answer_form(
 
 /// Answers the head question ask with one `QuestionResponse` per question, as a
 /// JSON array: the pick (no options and no text skips the question) and
-/// the person's note on it. The callback gets an `ActOutcome`.
+/// the person's note on it. The ticket answers an `ActOutcome`.
 ///
 /// # Safety
 /// As for `amux_session_answer`.
@@ -2010,16 +2084,14 @@ pub unsafe extern "C" fn amux_session_answer_questions(
     chat: *const AmuxChat,
     ask_key: *const c_char,
     responses: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+) -> u64 {
     // SAFETY: the caller's contract.
     let ask_key = unsafe { text(ask_key) }.unwrap_or_default().to_owned();
     // SAFETY: the caller's contract.
     let given: Option<Vec<QuestionResponse>> = unsafe { parse(responses) };
     // SAFETY: the caller's contract.
     unsafe {
-        act(chat, callback, context, move |chat| async move {
+        act(chat, move |chat| async move {
             match given {
                 Some(given) => chat.answer_questions(&ask_key, &given).await,
                 None => {
@@ -2032,7 +2104,7 @@ pub unsafe extern "C" fn amux_session_answer_questions(
 
 /// Replies to the head question ask in the person's own words instead of
 /// answering, with what they had answered so far as a JSON array of
-/// `QuestionResponse`, one per question. The callback gets an `ActOutcome`.
+/// `QuestionResponse`, one per question. The ticket answers an `ActOutcome`.
 ///
 /// # Safety
 /// As for `amux_session_answer`.
@@ -2042,9 +2114,7 @@ pub unsafe extern "C" fn amux_session_reply_instead(
     ask_key: *const c_char,
     reply: *const c_char,
     so_far: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+) -> u64 {
     // SAFETY: the caller's contract.
     let ask_key = unsafe { text(ask_key) }.unwrap_or_default().to_owned();
     // SAFETY: the caller's contract.
@@ -2053,7 +2123,7 @@ pub unsafe extern "C" fn amux_session_reply_instead(
     let so_far: Option<Vec<QuestionResponse>> = unsafe { parse(so_far) };
     // SAFETY: the caller's contract.
     unsafe {
-        act(chat, callback, context, move |chat| async move {
+        act(chat, move |chat| async move {
             match so_far {
                 Some(so_far) => chat.reply_instead(&ask_key, &reply, &so_far).await,
                 None => ActOutcome::Failed(
@@ -2065,7 +2135,7 @@ pub unsafe extern "C" fn amux_session_reply_instead(
 }
 
 /// Sends a pick from the settings view, a `SettingChange` as JSON. The
-/// callback gets an `ActOutcome`.
+/// ticket answers an `ActOutcome`.
 ///
 /// # Safety
 /// `chat` is from `amux_session_open`; `change` is a NUL-terminated string.
@@ -2073,14 +2143,12 @@ pub unsafe extern "C" fn amux_session_reply_instead(
 pub unsafe extern "C" fn amux_session_change_setting(
     chat: *const AmuxChat,
     change: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+) -> u64 {
     // SAFETY: the caller's contract.
     let change: Option<SettingChange> = unsafe { parse(change) };
     // SAFETY: the caller's contract.
     unsafe {
-        act(chat, callback, context, move |chat| async move {
+        act(chat, move |chat| async move {
             match change {
                 Some(change) => chat.change_setting(&change).await,
                 None => ActOutcome::Failed("the change is not a SettingChange".into()),
@@ -2098,7 +2166,7 @@ unsafe fn input_id(id: *const c_char) -> Vec<u8> {
     unsafe { parse(id) }.unwrap_or_default()
 }
 
-/// Takes a queued prompt back out of the queue. The callback gets an
+/// Takes a queued prompt back out of the queue. The ticket answers an
 /// `ActOutcome`.
 ///
 /// # Safety
@@ -2108,17 +2176,11 @@ unsafe fn input_id(id: *const c_char) -> Vec<u8> {
 pub unsafe extern "C" fn amux_session_withdraw(
     chat: *const AmuxChat,
     input_id: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+) -> u64 {
     // SAFETY: the caller's contract.
     let id = unsafe { self::input_id(input_id) };
     // SAFETY: the caller's contract.
-    unsafe {
-        act(chat, callback, context, |chat| async move {
-            chat.withdraw(&id).await
-        })
-    }
+    unsafe { act(chat, |chat| async move { chat.withdraw(&id).await }) }
 }
 
 /// Steers a queued prompt into the running turn.
@@ -2129,20 +2191,14 @@ pub unsafe extern "C" fn amux_session_withdraw(
 pub unsafe extern "C" fn amux_session_send_now(
     chat: *const AmuxChat,
     input_id: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+) -> u64 {
     // SAFETY: the caller's contract.
     let id = unsafe { self::input_id(input_id) };
     // SAFETY: the caller's contract.
-    unsafe {
-        act(chat, callback, context, |chat| async move {
-            chat.send_now(&id).await
-        })
-    }
+    unsafe { act(chat, |chat| async move { chat.send_now(&id).await }) }
 }
 
-/// Sends a not-confirmed input again under a new id; the callback gets a
+/// Sends a not-confirmed input again under a new id; the ticket answers a
 /// `SendOutcome`, or null JSON when the input is not held.
 ///
 /// # Safety
@@ -2151,17 +2207,11 @@ pub unsafe extern "C" fn amux_session_send_now(
 pub unsafe extern "C" fn amux_session_resend(
     chat: *const AmuxChat,
     input_id: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+) -> u64 {
     // SAFETY: the caller's contract.
     let id = unsafe { self::input_id(input_id) };
     // SAFETY: the caller's contract.
-    unsafe {
-        act(chat, callback, context, |chat| async move {
-            chat.resend(&id).await
-        })
-    }
+    unsafe { act(chat, |chat| async move { chat.resend(&id).await }) }
 }
 
 /// A queued or sent prompt as the `Draft` it came from, its words and every
@@ -2200,56 +2250,35 @@ pub unsafe extern "C" fn amux_session_discard(chat: *const AmuxChat, input_id: *
 /// # Safety
 /// `chat` is from `amux_session_open`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_interrupt(
-    chat: *const AmuxChat,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+pub unsafe extern "C" fn amux_session_interrupt(chat: *const AmuxChat) -> u64 {
     // SAFETY: the caller's contract.
-    unsafe {
-        act(chat, callback, context, |chat| async move {
-            chat.interrupt().await
-        })
-    }
+    unsafe { act(chat, |chat| async move { chat.interrupt().await }) }
 }
 
 /// Takes terminal Claude's own view back to the agent's conversation
-/// after it switched to another. The callback gets an `ActOutcome`.
+/// after it switched to another. The ticket answers an `ActOutcome`.
 ///
 /// # Safety
 /// `chat` is from `amux_session_open`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_switch_back(
-    chat: *const AmuxChat,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+pub unsafe extern "C" fn amux_session_switch_back(chat: *const AmuxChat) -> u64 {
     // SAFETY: the caller's contract.
-    unsafe {
-        act(chat, callback, context, |chat| async move {
-            chat.switch_back().await
-        })
-    }
+    unsafe { act(chat, |chat| async move { chat.switch_back().await }) }
 }
 
 /// The exited composer's one tap: resumes the agent with a `Draft` as its
-/// first prompt. The callback gets an `ActOutcome`; on anything but Done
+/// first prompt. The ticket answers an `ActOutcome`; on anything but Done
 /// the draft stays the composer's.
 ///
 /// # Safety
 /// As for `amux_session_send`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_resume(
-    chat: *const AmuxChat,
-    draft: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+pub unsafe extern "C" fn amux_session_resume(chat: *const AmuxChat, draft: *const c_char) -> u64 {
     // SAFETY: the caller's contract.
     let draft: Option<Draft> = unsafe { parse(draft) };
     // SAFETY: the caller's contract.
     unsafe {
-        act(chat, callback, context, |chat| async move {
+        act(chat, |chat| async move {
             match draft {
                 Some(draft) => chat.resume_with(&draft).await,
                 None => ActOutcome::Failed("the draft is not a Draft".into()),
@@ -2258,28 +2287,19 @@ pub unsafe extern "C" fn amux_session_resume(
     }
 }
 
-/// Asks for up to `n` rows older than the oldest held; the callback gets a
+/// Asks for up to `n` rows older than the oldest held; the ticket answers a
 /// `PageOutcome`, and the new keys arrive below the oldest.
 ///
 /// # Safety
 /// `chat` is from `amux_session_open`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_page_older(
-    chat: *const AmuxChat,
-    n: u32,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+pub unsafe extern "C" fn amux_session_page_older(chat: *const AmuxChat, n: u32) -> u64 {
     // SAFETY: the caller's contract.
-    unsafe {
-        act(chat, callback, context, move |chat| async move {
-            chat.page_older(n).await
-        })
-    }
+    unsafe { act(chat, move |chat| async move { chat.page_older(n).await }) }
 }
 
 /// Fetches the files changed for `comparison` (a JSON `Comparison`), with
-/// no patch, as the overview opens; the callback gets `{"Ok": Overview}` or
+/// no patch, as the overview opens; the ticket answers `{"Ok": Overview}` or
 /// `{"Err": ..}`.
 ///
 /// # Safety
@@ -2288,14 +2308,12 @@ pub unsafe extern "C" fn amux_session_page_older(
 pub unsafe extern "C" fn amux_session_open_overview(
     chat: *const AmuxChat,
     comparison: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+) -> u64 {
     // SAFETY: the caller's contract.
     let comparison: Comparison = unsafe { parse(comparison) }.unwrap_or_default();
     // SAFETY: the caller's contract.
     unsafe {
-        act(chat, callback, context, move |chat| async move {
+        act(chat, move |chat| async move {
             Answered::from(chat.open_overview(comparison).await)
         })
     }
@@ -2303,7 +2321,7 @@ pub unsafe extern "C" fn amux_session_open_overview(
 
 /// Asks the agent's host for its diff for `comparison` (a JSON
 /// `Comparison`, or null for the uncommitted work) and the patch it names;
-/// the callback gets `{"Ok": FrozenReview}` or `{"Err": ..}`.
+/// the ticket answers `{"Ok": FrozenReview}` or `{"Err": ..}`.
 ///
 /// # Safety
 /// `chat` is from `amux_session_open`; `comparison` is a C string or null.
@@ -2311,14 +2329,12 @@ pub unsafe extern "C" fn amux_session_open_overview(
 pub unsafe extern "C" fn amux_session_review(
     chat: *const AmuxChat,
     comparison: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+) -> u64 {
     // SAFETY: the caller's contract.
     let comparison: Comparison = unsafe { parse(comparison) }.unwrap_or_default();
     // SAFETY: the caller's contract.
     unsafe {
-        act(chat, callback, context, move |chat| async move {
+        act(chat, move |chat| async move {
             Answered::from(chat.review(comparison).await)
         })
     }
@@ -2345,7 +2361,7 @@ pub unsafe extern "C" fn amux_review_doc(
     })
 }
 
-/// Stores bytes to attach to a prompt; the callback gets
+/// Stores bytes to attach to a prompt; the ticket answers
 /// `{"Ok": BlobRef}` or `{"Err": ..}`.
 ///
 /// # Safety
@@ -2358,9 +2374,7 @@ pub unsafe extern "C" fn amux_session_put_blob(
     len: usize,
     name: *const c_char,
     mime: *const c_char,
-    callback: AmuxCallback,
-    context: *mut c_void,
-) {
+) -> u64 {
     let bytes = if data.is_null() {
         Vec::new()
     } else {
@@ -2373,7 +2387,7 @@ pub unsafe extern "C" fn amux_session_put_blob(
     let mime = unsafe { text(mime) }.unwrap_or_default().to_owned();
     // SAFETY: the caller's contract.
     unsafe {
-        act(chat, callback, context, move |chat| async move {
+        act(chat, move |chat| async move {
             Answered::from(chat.put_blob(&name, &mime, bytes).await)
         })
     }
@@ -2390,34 +2404,17 @@ pub unsafe extern "C" fn amux_session_blob(
     chat: *const AmuxChat,
     hash: *const c_char,
 ) -> AmuxBytes {
-    let empty = AmuxBytes {
-        data: std::ptr::null_mut(),
-        len: 0,
-    };
     // SAFETY: the caller's contract.
     let hash: Vec<u8> = unsafe { parse(hash) }.unwrap_or_default();
-    guard(empty, || {
+    guard(AmuxBytes::empty(), || {
         // SAFETY: the caller's contract.
         let Some(open) = (unsafe { held_chat(chat) }) else {
-            return AmuxBytes {
-                data: std::ptr::null_mut(),
-                len: 0,
-            };
+            return AmuxBytes::empty();
         };
-        let _entered = open.handle.enter();
+        let _entered = open.shared.handle().enter();
         match open.chat.blob(&hash) {
-            Some(bytes) => {
-                let boxed: Box<[u8]> = bytes.to_vec().into_boxed_slice();
-                let len = boxed.len();
-                AmuxBytes {
-                    data: Box::into_raw(boxed).cast(),
-                    len,
-                }
-            }
-            None => AmuxBytes {
-                data: std::ptr::null_mut(),
-                len: 0,
-            },
+            Some(bytes) => AmuxBytes::leak(&bytes),
+            None => AmuxBytes::empty(),
         }
     })
 }

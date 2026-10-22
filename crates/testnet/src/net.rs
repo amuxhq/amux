@@ -24,7 +24,7 @@ use node::{
 };
 use provider_fakes::script::{INPUT_LOG_ENV, SCRIPT_ENV, Script, Step};
 use serde::{Deserialize, Serialize};
-use store::{AgentKey, Marker};
+use store::AgentKey;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 use wire::client_service_server::ClientService as _;
@@ -42,9 +42,11 @@ use crate::gate::{Faults, UdpGate};
 use crate::invariant::{self, BlockViolation};
 use crate::lan::{FrontAdvert, Gated, Lan};
 use crate::observe::{self, InventoryObserver, Observer, ObserverOf, PATIENCE, Stuck};
+use crate::probes;
 use crate::process::ProcessHost;
 use crate::providers::{self, Commands, RealTools, SMALL_CLAUDE, SMALL_CODEX};
 use crate::relay::Relay;
+use crate::router::{Router, RouterKind};
 use crate::topology::{
     AccountDecl, AgentDecl, FakeKind, HostDecl, LinkDecl, Provider, RelayDecl, TierDecl, Topology,
     TopologyError, link_key,
@@ -55,6 +57,10 @@ use crate::topology::{
 const INPUT_LOG: &str = "input";
 /// The relay's certificate in the net's root, for process hosts to trust.
 const RELAY_CA: &str = "relay-ca.pem";
+/// How long an imitated router keeps a mapping nothing uses: longer than a
+/// link's keep-alive, so a quiet link keeps its port, as a home router's
+/// half-minute or more does.
+const ROUTER_IDLE: Duration = Duration::from_secs(30);
 
 /// The version a supervised host starts on: older than anything a test
 /// publishes.
@@ -234,6 +240,10 @@ pub enum NetError {
     NoRelay,
     #[error("host {host:?} runs as a process: {why}")]
     Process { host: String, why: String },
+    /// The simulated net broke a rule: a core asked for a dump or an
+    /// invariant failed after a store write. The seed reproduces it.
+    #[error("the simulated net failed under seed {seed}: {failure}")]
+    Simulated { seed: u64, failure: String },
 }
 
 struct Host {
@@ -258,6 +268,9 @@ struct Host {
     running: bool,
     /// The host's `claude` and `codex` commands.
     commands: Commands,
+    /// The router in front of an in-process host's link socket, if a
+    /// story put one there; it stays across restarts.
+    router: Option<RouterKind>,
 }
 
 struct Link {
@@ -376,6 +389,8 @@ impl Net {
     /// returns the net is ready.
     pub async fn start_with(topology: Topology, options: NetOptions) -> Result<Self, NetError> {
         topology.check()?;
+        crate::link_log::install();
+        crate::ssh::install();
         let driven = match options.clock {
             ClockMode::Driven => Some(options.driven.unwrap_or_default()),
             ClockMode::Wall => None,
@@ -773,6 +788,20 @@ impl Net {
             .ok_or_else(|| NetError::NoHost(name.to_owned()))
     }
 
+    /// What `host` has written to the link log, oldest first: each of its
+    /// links coming up, going down or changing path, across restarts.
+    pub fn link_log(&self, host: &str) -> Result<Vec<node::link_log::LinkEvent>, NetError> {
+        let id = self.host(host)?.host_id;
+        Ok(match self.process(host)? {
+            Some(process) => crate::link_log::read(
+                &std::fs::read_to_string(process.data_dir.join(node::DAEMON_LOG))
+                    .unwrap_or_default(),
+                id,
+            ),
+            None => crate::link_log::captured(id),
+        })
+    }
+
     pub fn is_up(&self, name: &str) -> bool {
         self.hosts
             .get(name)
@@ -937,6 +966,11 @@ impl Net {
     pub async fn spawn(&mut self, decl: AgentDecl) -> Result<wire::Agent, NetError> {
         if self.agents.contains_key(&decl.name) {
             return Err(NetError::AgentExists(decl.name));
+        }
+        if decl.journal.is_some() {
+            return Err(NetError::Unsupported(
+                "a recorded journal on a real net, whose agents' providers write their own",
+            ));
         }
         let host = self.host(&decl.host)?.clone();
         let parent = match &decl.parent {
@@ -1469,6 +1503,10 @@ impl Net {
                 .fake(FakeKind::Codex)
                 .to_string_lossy()
                 .into_owned(),
+            step_budget: daemon_core::StepBudget::TEST,
+            // An agent's core gets the daemon's test budget, for the same
+            // reason: a loaded debug-build run stretches ordinary steps.
+            agent_step_budget_micros: daemon_core::StepBudget::TEST.micros,
             ..Launch::default()
         };
         let provider = agent.map_or(own.decl.provider, |(_, _, provider)| provider);
@@ -1518,6 +1556,9 @@ impl Net {
         launch.stop_deadline_ms = 15_000;
         if !own.decl.repositories.is_empty() {
             launch.repository_roots = vec![own.dir.join(REPOSITORIES)];
+        }
+        if let Some(k) = own.decl.tail_rows {
+            launch.tail_rows = k;
         }
         if let Some(hook) = &self.launch_hook {
             hook(&host.name, &mut launch);
@@ -1632,9 +1673,16 @@ impl Net {
                     claude: PathBuf::new(),
                     codex: PathBuf::new(),
                 },
+                router: None,
             },
         );
         let made = (|| {
+            let host = &self.hosts[&decl.name];
+            let amux = host
+                .process
+                .as_ref()
+                .map_or_else(|| self.binaries.amux(), |process| process.amux.clone());
+            crate::ssh::write_login(&host.dir, &amux, &host.info.config)?;
             if decl.provider == Provider::Real {
                 self.ensure_real(&decl.name)?;
             } else {
@@ -1736,7 +1784,7 @@ impl Net {
             host_name: decl.name.clone(),
             kinds: node::local_kinds(),
             lan: decl.lan.then(|| LanOptions {
-                bind: std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
+                bind: SocketAddr::new(loopback(decl), 0),
                 socket: None,
             }),
             discovery: if decl.bonjour && !self.gated_lan {
@@ -1776,11 +1824,23 @@ impl Net {
                 .clone()
                 .unwrap_or_else(|| self.topology.scope.clone()),
             dial: decl.lan,
-            link_socket: false,
+            link_socket: true,
             cloud: node::CloudOptions::default(),
+            // An in-process host is reached on loopback alone, which it
+            // never lists, and has no interfaces of its own to list after
+            // a network change either.
+            interfaces: Some(Vec::new()),
         };
         if let Some(relay) = &self.relay {
             edge.cloud = relay.cloud_options(&self.udp[name]);
+            // The relay tells a host the address it sees its packets come
+            // from, which a peer punches to: behind a router that must be
+            // the router's public port, not the gate's own socket.
+            if host.router.is_some()
+                && let Some(quic) = &mut edge.cloud.relay_quic
+            {
+                quic.addr = relay.quic();
+            }
         }
         if let Some(hook) = &self.edge_hook {
             hook(name, &mut edge);
@@ -1813,6 +1873,9 @@ impl Net {
         host.runtime = Arc::downgrade(&runtime);
         host.daemon = Some(std::sync::Mutex::new(daemon));
         host.lan_handed = handed;
+        if let Some(kind) = host.router {
+            self.put_behind_router(name, kind)?;
+        }
         Ok(())
     }
 
@@ -1887,7 +1950,8 @@ impl Net {
     /// it learn that at once, as the host where a purchase or a
     /// cancellation happened does: an in-process host asks for its
     /// entitlement over its relay link. A process host's daemon offers no
-    /// socket that asks it to, so its profile is paused and resumed, which
+    /// socket that asks it to, so its profile is paused, the relay token it
+    /// keeps between launches forgotten, and the profile resumed, which
     /// dials the relay afresh for a credential of the new tier; its relay
     /// link drops for that moment.
     pub async fn set_tier(&mut self, account: &str, tier: TierDecl) -> Result<Ack, NetError> {
@@ -1947,6 +2011,14 @@ impl Net {
                 door.pause_profile(request.clone())
                     .await
                     .map_err(|status| NetError::Refused(Box::new(status)))?;
+                let kept = node::profile_dir(&self.host(&host)?.data_dir, profile)
+                    .join(node::RELAY_TOKEN_FILE);
+                match std::fs::remove_file(&kept) {
+                    Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                        return Err(NetError::Io(error));
+                    }
+                    _ => {}
+                }
                 door.resume_profile(request)
                     .await
                     .map_err(|status| NetError::Refused(Box::new(status)))?;
@@ -1993,9 +2065,94 @@ impl Net {
             host: host.to_owned(),
             error: "has no LAN listener to gate".to_owned(),
         })?;
+        Ok(self.lan.front(
+            host,
+            Some(SocketAddr::new(loopback(&self.hosts[host].decl), port)),
+        )?)
+    }
+
+    /// Binds `host`'s socket to IPv6 loopback alone from its next start,
+    /// so it reaches and is reached over IPv6 only. In-process hosts only.
+    pub fn bind_ipv6_only(&mut self, host: &str) -> Result<Ack, NetError> {
+        self.in_process(host, "binding IPv6 only")?;
+        self.hosts
+            .get_mut(host)
+            .ok_or_else(|| NetError::NoHost(host.to_owned()))?
+            .decl
+            .ipv6_only = true;
+        Ok(self.ack(format!("{host} binds IPv6 only from its next start")))
+    }
+
+    /// The SSH target that reaches `host`: give it to a peer as its way
+    /// there. The stand-in on the PATH runs the far host's `amux` for it.
+    pub fn ssh_target(&self, host: &str) -> Result<String, NetError> {
+        Ok(self.host(host)?.dir.to_string_lossy().into_owned())
+    }
+
+    /// Puts an imitated router of `kind` in front of `host`'s link socket,
+    /// now if it runs and on every start after; its links migrate onto the
+    /// router's public port. In-process hosts only.
+    pub fn set_router(&mut self, host: &str, kind: RouterKind) -> Result<Ack, NetError> {
+        self.in_process(host, "a router in front of the link socket")?;
+        self.hosts
+            .get_mut(host)
+            .ok_or_else(|| NetError::NoHost(host.to_owned()))?
+            .router = Some(kind);
+        if self.is_up(host) {
+            self.put_behind_router(host, kind)?;
+        }
+        Ok(self.ack(format!("{host} behind a {kind:?} router")))
+    }
+
+    fn put_behind_router(&self, host: &str, kind: RouterKind) -> Result<(), NetError> {
+        let router = Router::new(kind, ROUTER_IDLE)?;
+        self.edge(host)?.rebind(router)?;
+        Ok(())
+    }
+
+    /// Moves `host` onto another network, as a phone leaving Wi-Fi does: its
+    /// link socket is rebound to a fresh port, or behind a fresh router of
+    /// the same kind with new public ports, its links migrate, and its path
+    /// machines are told as a phone's are. In-process hosts that run only.
+    pub fn change_network(&self, host: &str) -> Result<Ack, NetError> {
+        self.in_process(host, "changing the network under the link socket")?;
+        let edge = self.edge(host)?;
+        let own = &self.hosts[host];
+        let substrate: Arc<dyn node::socket::Datagrams> = match own.router {
+            Some(kind) => Router::new(kind, ROUTER_IDLE)?,
+            None => node::socket::LinkSocket::bind_dual_stack(
+                SocketAddr::new(loopback(&own.decl), 0),
+                None,
+            )?,
+        };
+        let to = substrate.local_addr()?;
+        edge.rebind(substrate)?;
+        // As a phone's runtime hears from its path monitor: every path
+        // machine probes its paths again from the new network.
+        let told = edge.network_changed()?;
+        Ok(self.ack(format!(
+            "{host} moved to another network, now at {to}; {} path machines told",
+            told.machines_told
+        )))
+    }
+
+    /// The path carrying `host`'s link to `peer` now, by `host`'s link log:
+    /// the path its last line for the peer names, or none once that line
+    /// says the link went down.
+    pub fn carrying_path(
+        &self,
+        host: &str,
+        peer: &str,
+    ) -> Result<Option<node::link_log::PathKind>, NetError> {
+        let peer = self.host(peer)?.host_id;
         Ok(self
-            .lan
-            .front(host, Some(SocketAddr::from(([127, 0, 0, 1], port))))?)
+            .link_log(host)?
+            .iter()
+            .rev()
+            .find(|event| event.peer == peer)
+            .and_then(|event| {
+                (event.event != node::link_log::LinkTransition::Down).then_some(event.path)
+            }))
     }
 
     /// What the gate in front of `host`'s LAN listener does to each
@@ -2420,7 +2577,7 @@ impl Net {
                 &format!("{name}'s LAN port to be free"),
                 LAN_PORT_PATIENCE,
                 || {
-                    let bound = std::net::UdpSocket::bind(("127.0.0.1", port));
+                    let bound = std::net::UdpSocket::bind((loopback(&host.decl), port));
                     async move { bound.map(|_| ()).map_err(|error| error.to_string()) }
                 },
             )
@@ -2507,15 +2664,21 @@ impl Net {
     pub async fn checkpoint_host(&mut self, host: &str) -> Result<Ack, NetError> {
         self.in_process(host, "a checkpoint of what reached the drive")?;
         let runtime = self.runtime(host)?;
-        let bytes = {
-            // Held so nothing commits between the flush and the read.
-            let store = runtime.store().await;
-            store.flush_to_drive().map_err(|error| NetError::Host {
+        // Read on the core thread, so nothing commits between the flush and
+        // the read.
+        let path = runtime.dir().join(node::STORE);
+        let bytes = runtime
+            .read_store(move |store| {
+                store.flush_to_drive().map_err(|error| error.to_string())?;
+                std::fs::read(path).map_err(|error| error.to_string())
+            })
+            .await
+            .map_err(|error| error.to_string())
+            .flatten()
+            .map_err(|error| NetError::Host {
                 host: host.to_owned(),
-                error: error.to_string(),
+                error,
             })?;
-            std::fs::read(runtime.dir().join(node::STORE))?
-        };
         drop(runtime);
         self.hosts.get_mut(host).expect("the host").checkpoint = Some(bytes);
         Ok(self.ack(format!("{host} checkpointed")))
@@ -2786,22 +2949,20 @@ impl Net {
         )?;
         let agent = self.agent(agent)?.clone();
         let key = agent.key();
-        let replica = {
-            let runtime = self.runtime(host)?;
-            let store = runtime.store().await;
-            invariant::block(&store, &key).map_err(|error| NetError::Host {
-                host: host.to_owned(),
-                error,
-            })?
+        let block = |host: String| {
+            let key = key.clone();
+            async move {
+                let runtime = self.runtime(&host)?;
+                runtime
+                    .read_store(move |store| invariant::block(store, &key))
+                    .await
+                    .map_err(|error| error.to_string())
+                    .flatten()
+                    .map_err(|error| NetError::Host { host, error })
+            }
         };
-        let origin = {
-            let runtime = self.runtime(&agent.host)?;
-            let store = runtime.store().await;
-            invariant::block(&store, &key).map_err(|error| NetError::Host {
-                host: agent.host.clone(),
-                error,
-            })?
-        };
+        let replica = block(host.to_owned()).await?;
+        let origin = block(agent.host.clone()).await?;
         invariant::check(&replica, &origin)?;
         Ok(())
     }
@@ -2821,8 +2982,12 @@ impl Net {
         host: &str,
         what: &str,
         patience: Duration,
-        mut probe: impl FnMut(&store::Sqlite) -> Result<T, String>,
-    ) -> Result<T, NetError> {
+        probe: impl Fn(&store::Sqlite) -> Result<T, String> + Send + Sync + 'static,
+    ) -> Result<T, NetError>
+    where
+        T: Send + 'static,
+    {
+        let probe = std::sync::Arc::new(probe);
         let runtime = self.runtime(host)?;
         let mut writes = runtime.committed();
         let deadline = tokio::time::Instant::now() + patience;
@@ -2830,11 +2995,18 @@ impl Net {
             // Marked seen before the read, so a write landing between the
             // read and the wait is a change the wait returns on.
             writes.borrow_and_update();
-            let seen = match tokio::time::timeout_at(deadline, runtime.store()).await {
-                Ok(store) => match probe(&store) {
-                    Ok(found) => return Ok(found),
-                    Err(seen) => seen,
-                },
+            let probe = probe.clone();
+            let read = runtime.read_store(move |store| probe(store));
+            let seen = match tokio::time::timeout_at(deadline, read).await {
+                Ok(Ok(Ok(found))) => return Ok(found),
+                Ok(Ok(Err(seen))) => seen,
+                Ok(Err(stopped)) => {
+                    return Err(Stuck::Closed {
+                        what: what.to_owned(),
+                        seen: stopped.to_string(),
+                    }
+                    .into());
+                }
                 Err(_) => {
                     return Err(Stuck::Hung {
                         what: what.to_owned(),
@@ -2992,17 +3164,8 @@ impl Net {
                 })
                 .await;
         }
-        self.on_write(host, &what, patience, |store| {
-            let newest = store
-                .last_n(&key, 1)
-                .map_err(|error| error.to_string())?
-                .pop()
-                .map(|item| item.order);
-            match newest {
-                Some(held) if held >= order => Ok(()),
-                Some(held) => Err(format!("newest order {held}")),
-                None => Err("no rows".to_owned()),
-            }
+        self.on_write(host, &what, patience, move |store| {
+            probes::holds_order(store, &key, order)
         })
         .await
     }
@@ -3031,19 +3194,8 @@ impl Net {
                 })
                 .await;
         }
-        self.on_write(&at.host, &what, patience, |store| {
-            let mut ends: Vec<u64> = store
-                .cut(&key, u32::MAX)
-                .map_err(|error| error.to_string())?
-                .held
-                .iter()
-                .filter(|item| item.key.starts_with("turn:"))
-                .map(|item| item.order)
-                .collect();
-            ends.sort_unstable();
-            ends.get(k - 1)
-                .copied()
-                .ok_or_else(|| format!("{} turns ended", ends.len()))
+        self.on_write(&at.host, &what, patience, move |store| {
+            probes::turn_end(store, &key, k)
         })
         .await
     }
@@ -3083,12 +3235,9 @@ impl Net {
                 })
                 .await;
         }
-        self.on_write(&at.host, &what, patience, |store| {
-            store
-                .item_by_input(&key, input_id)
-                .map_err(|error| error.to_string())?
-                .map(|item| item.order)
-                .ok_or_else(|| "no row carries it".to_owned())
+        let input_id = input_id.to_vec();
+        self.on_write(&at.host, &what, patience, move |store| {
+            probes::settled(store, &key, &input_id)
         })
         .await
     }
@@ -3104,30 +3253,19 @@ impl Net {
         observe::until(&what, || async {
             let newest = {
                 let runtime = self.runtime(&at.host).map_err(|error| error.to_string())?;
-                let store = runtime.store().await;
-                store
-                    .agent(&key)
-                    .map_err(|error| error.to_string())?
-                    .map(|row| row.next_revision - 1)
-                    .ok_or_else(|| "no origin row".to_owned())?
+                let key = key.clone();
+                runtime
+                    .read_store(move |store| probes::origin_newest(store, &key))
+                    .await
+                    .map_err(|error| error.to_string())??
             };
-            let (cursor, marker) = {
+            {
                 let runtime = self.runtime(host).map_err(|error| error.to_string())?;
-                let store = runtime.store().await;
-                let row = store
-                    .agent(&key)
-                    .map_err(|error| error.to_string())?
-                    .ok_or_else(|| format!("no replica row; origin newest {newest}"))?;
-                let marker = store
-                    .cut(&key, 0)
-                    .map_err(|error| error.to_string())?
-                    .marker;
-                (row.source_cursor, marker)
-            };
-            if cursor != newest || marker != Some(Marker::CaughtUp) {
-                return Err(format!(
-                    "replica cursor {cursor}, marker {marker:?}; origin newest {newest}"
-                ));
+                let key = key.clone();
+                runtime
+                    .read_store(move |store| probes::replica_current(store, &key, newest))
+                    .await
+                    .map_err(|error| error.to_string())??;
             }
             self.assert_block_invariant(host, agent)
                 .await
@@ -3559,4 +3697,14 @@ fn work_dir(work: &Path, cwd: Option<&str>) -> Result<String, NetError> {
 /// An input id as a failure message shows it.
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// The loopback address a host's socket binds to: IPv6's for a host bound
+/// IPv6 only, IPv4's otherwise.
+fn loopback(decl: &HostDecl) -> std::net::IpAddr {
+    if decl.ipv6_only {
+        std::net::Ipv6Addr::LOCALHOST.into()
+    } else {
+        std::net::Ipv4Addr::LOCALHOST.into()
+    }
 }

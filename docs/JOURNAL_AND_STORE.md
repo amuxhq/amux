@@ -15,7 +15,8 @@ This page covers the three crates on that path:
 | --- | --- |
 | [`journal`](../crates/journal/src/lib.rs) | Segment files, frames, the `Writer` the agent appends with and the `Reader` ingest reads with |
 | [`store`](../crates/store/src/lib.rs) | The schema, the `Sqlite` store the runtime calls, commit for own rows, absorb for replica rows, retention |
-| [`node`](../crates/node/src/runtime.rs) | Ingest (`ProfileRuntime::ingest`), the generation file, fan-out, the retention sweeps, peer sources |
+| [`daemon-core`](../crates/daemon-core/src/ingest.rs) | Ingest and fan-out, as steps of the daemon's core |
+| [`node`](../crates/node/src/runtime.rs) | The watcher that nudges ingest (`ProfileRuntime::ingest`), the generation file, the retention sweeps, peer sources |
 
 How the agent process produces steps is in [the agent process](AGENT_PROCESS.md)
 and [interpreters](INTERPRETERS.md). How the daemon is laid out as a whole is in
@@ -129,42 +130,50 @@ and exits with the write failure as its cause (`Host::write_failed`).
 
 ## Ingest
 
-Ingest lives in [`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs).
-Each live agent has one watcher task. It dials `ctl.sock`, reads the agent's
-`AgentHello`, and calls `ProfileRuntime::ingest` on every `Nudge`. It also
-ingests when it first adopts a connection, when the startup sweep finds an
-agent, and once more when the process is gone, so a journal that ran ahead of
-the daemon is always read to its end.
+Ingest is a step of the profile's core, in
+[`crates/daemon-core/src/ingest.rs`](../crates/daemon-core/src/ingest.rs).
+Each live agent has one watcher task in
+[`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs). It dials
+`ctl.sock`, hands the agent's `AgentHello` to the core, and calls
+`ProfileRuntime::ingest` on every `Nudge`, which feeds the core a `Nudge`
+input and waits until the journal has been read to its end. It also ingests
+when it first adopts a connection, when the startup sweep finds an agent, and
+once more when the process is gone, so a journal that ran ahead of the daemon
+is always read to its end.
 
 ![Revisions are assigned at commit, monotonically per agent. Journal order is item order. The agent never learns its revisions and never needs to.](figures/item-path.svg)
 
-One ingest pass:
+One ingest step:
 
-1. Lock the store and read the agent's `ingest_cursor` from its row.
-2. Read whole frames from that offset with `journal::Reader::read_up_to`, at
+1. If the core is taking a checkpoint, hold the batch until the checkpoint
+   job is done; it is read then.
+2. Read the agent's `ingest_cursor` from its row.
+3. Read whole frames from that offset with `journal::Reader::read_up_to`, at
    most `INGEST_BATCH` (256) frames.
-3. Commit them in one transaction (`Sqlite::commit`), which also writes the
-   advanced cursor.
-4. Still holding the store, broadcast each committed record once on the
-   agent's fan-out channel, and publish the agent's inventory row if a
-   snapshot was committed: it carries the row's phase, `working_on`,
-   since-when and git facts.
-5. Reclaim segments that lie wholly below the committed cursor.
+4. Commit them in one transaction (`Sqlite::commit`), which also writes the
+   advanced cursor, and arm the checkpoint timer if it is not armed.
+5. Answer each committed record once to every stream open on the agent, and
+   the agent's inventory row to every inventory stream if a snapshot was
+   committed: it carries the row's phase, `working_on`, since-when and git
+   facts.
 6. At the end of the journal, the first time after each Hello, set the
-   agent's CaughtUp marker and broadcast `CaughtUp`.
-7. If the batch was full, release the store and go again.
+   agent's CaughtUp marker and answer `CaughtUp`.
+7. If the batch was full, arm a timer for the next one, so every other
+   input is stepped between batches.
 
-Holding the store lock through the broadcast makes commit order the broadcast
-order, and lets a subscriber that opens under the same lock read a cut that is
-wholly before or wholly after a batch. Batching bounds how long a backlog holds
-every other reader and writer off: at the measured cost of tens of
-microseconds a frame, 256 frames hold the store for several milliseconds.
-The agent's fan-out ring holds four batches: a batch's records go out in
-one burst while the lock is held, so a reader's slack is counted in
-batches, and a subscriber that has read everything when a batch lands is
-closed with `Lagged` only after four whole batches arrive without it
-reading any. The ring is sized from the batch; the batch is sized from the
-lock hold alone.
+Answering in the step that commits makes commit order the answer order, and a
+stream's opening, answered in a step of its own, reads a cut that is wholly
+before or wholly after a batch. What the profile's shell still commits itself
+(replica rows, the registry, the host set) it hands to the core before
+letting go of the store, and the core steps those changes before anything
+that reads the store after them. Batching bounds how long a backlog holds
+every other input off: at the measured cost of tens of microseconds a frame,
+256 frames take several milliseconds. Each stream's queue holds four batches
+of live answers: a batch's records go out in one burst, so a reader's slack
+is counted in batches, and a subscriber that has read everything when a batch
+lands is closed with `Lagged` only after four whole batches arrive without it
+reading any. The queue is sized from the batch; the batch is sized from the
+step's length alone.
 
 A torn frame in the newest segment means a write is still under way, so that
 pass is not at the end of the journal and does not announce `CaughtUp`; the
@@ -216,17 +225,45 @@ items: every stream ends with a full item, at every restart boundary too.
 The `deliveries` primary key includes the child's incarnation, kind and turn
 id, and the insert is an upsert, so a turn end committed twice is one row.
 Agent messages are deduplicated by the recipient's daemon against the
-recipient's items by envelope id, using the `items_by_input` index.
+recipient's items by envelope id, using the `items_by_input` index, once
+the acceptance item has committed; a message handed over again before that
+is answered by the recipient's interpreter, which takes each envelope id
+once per incarnation.
 
-### Reclaiming segments
+### Checkpoints and reclaiming segments
 
-A segment is deleted only when it lies entirely below a cursor that has
-reached the drive, so the journal is never the only copy of something the store
-might lose. `ProfileRuntime::reclaim` asks `journal::reclaimable` for segments
-wholly below the committed cursor, keeps the newest `KEPT_SEGMENTS` (2) of
-them for dumps, flushes the store to the drive (`Sqlite::flush_to_drive`), and
-deletes the rest only if that flush succeeded. That costs one full flush per
-segment the agent fills.
+The profile's core checkpoints an interval (`Launch.checkpoint_interval_ms`,
+a minute) after any commit to the store, and when its input ring fills
+first. A checkpoint is two jobs. The step that takes it reads the cursor of
+every agent committed since the last checkpoint and asks for a WAL job: a
+passive WAL checkpoint on a connection to the store of the job's own
+(`Sqlite::checkpoint_wal`), which SQLite syncs, run off the core's thread
+because moving the WAL can take tens of milliseconds. Until that job ends,
+every input that may write (ingest, the registry, deliveries, trust,
+drafts, blobs, replica absorbs) waits in the core in the order it came;
+reads, subscriptions, presence, routing and peers' reads step on. The step
+that hears the WAL job is done serializes the core, with what waits still
+waiting, and asks for a checkpoint job that writes the state durably to
+`core.checkpoint` beside the store; the next step lets what waited through.
+A WAL job that cannot move the whole WAL (a reader held it) lets go of what
+waited at once, and the next checkpoint is tried an interval on.
+
+Every write to the store is the core's, and SQLite's own automatic
+checkpoints are off (`wal_autocheckpoint=0`): the WAL job and the clean
+shutdown's flush are the only times the WAL reaches the main file. So the
+main file holds exactly what was committed before the hold, whatever the
+core commits after it stays in the WAL, and the main file and the state are
+the daemon as of one step. The driver records every input the core steps in
+`core-ring/` before stepping it, and starts a new ring segment at each
+checkpoint: the newest checkpoint and the inputs since rebuild the core.
+
+A segment is deleted only when it lies entirely below an agent's cursor as of
+the last checkpoint that reached the drive, so the journal is never the only
+copy of something the store might lose. When a checkpoint job is done the core
+asks `journal::reclaimable` for the segments wholly below each cursor it
+holds, keeps the newest `KEPT_SEGMENTS` (2) of them for dumps, and deletes the
+rest; a failed checkpoint deletes nothing and the next is tried an interval
+on. Journal therefore waits up to a checkpoint interval to be reclaimed.
 
 ## Durability
 
@@ -234,11 +271,11 @@ segment the agent fills.
 | --- | --- |
 | The agent writes its journal with plain writes and no fsync. | `journal::Writer` |
 | The store runs WAL with `synchronous=NORMAL`: no fsync per commit; SQLite syncs at its checkpoints. | `Sqlite::open` in [`crates/store/src/sqlite.rs`](../crates/store/src/sqlite.rs) |
-| A journal segment is deleted only below a cursor that has reached the drive. | `ProfileRuntime::reclaim` |
+| A journal segment is deleted only below the cursor of the last checkpoint on the drive. | `Daemon::checkpoint_done` in [`crates/daemon-core/src/checkpoints.rs`](../crates/daemon-core/src/checkpoints.rs) |
 | `<data_dir>/generation` holds the boot id seen at the last start, a clean-shutdown flag and a counter. | [`crates/node/src/generation.rs`](../crates/node/src/generation.rs) |
-| At start, before anything is served: if the boot id differs and the flag is clear, bump the counter; then rewrite the file with the current boot id and the flag cleared. | `Generation::start`, called from `node::start` |
+| At start, before anything is served: if the boot id differs and the flag is clear, bump the counter; then rewrite the file with the current boot id and the flag cleared. | `daemon_core::generation::at_start` decides; `Generation::start`, called from `node::start`, writes |
 | At clean shutdown, last: stop links, background work and watchers, flush every store with `fullfsync`, then set the flag. | `Daemon::shutdown` in [`crates/node/src/daemon.rs`](../crates/node/src/daemon.rs) |
-| Both generation writes are temp file, fsync, rename, fsync of the directory. | `write_durably` in [`crates/node/src/install.rs`](../crates/node/src/install.rs) |
+| Both generation writes, and the core's checkpoint, are temp file, fsync, rename, fsync of the directory: the fsync and checkpoint jobs. | `driver::fsync` in [`crates/node/src/driver/mod.rs`](../crates/node/src/driver/mod.rs) |
 
 Why the file exists: revisions are published to other machines, and the store
 commits without syncing. A power cut can roll the store back to before
@@ -425,7 +462,7 @@ only by delete and by retention.
 
 Replica rows are a cache of a paired host's agent. Only `absorb` writes their
 records, copying the origin's revisions and orders as received. Each replica
-agent has one source in [`crates/node/src/sources.rs`](../crates/node/src/sources.rs):
+agent has one source in [`crates/daemon-core/src/sources.rs`](../crates/daemon-core/src/sources.rs):
 one `Subscribe` to the origin. With no block it asks for a tail of K rows; with
 one it asks for what came after its `source_cursor`, capped at K, under its
 `source_generation`, and the origin answers either that delta or `Reset` and a
@@ -520,8 +557,20 @@ The budgets and K are listed in [parameters](PARAMETERS.md).
 
 ## Tests
 
-The claims on this page are held by named tests, mapped in
-[`tests/contracts.toml`](../tests/contracts.toml). The main ones:
+The rules on this page are promises of the daemon core, written once as
+properties in [`crates/models`](../crates/models/README.md) and checked by
+exploring the real core over a real store in memory, under crashes, power
+loss and unclean reboots:
+
+| Machine | Its promises about the journal and the store |
+| --- | --- |
+| single daemon | commit before broadcast; the open is one cut; a segment is reclaimed only below the last checkpoint's cursor; the generation bumps after an unclean reboot, and only then; a checkpoint plus the inputs since reproduces the state |
+| replication | a replica's block is contiguous and agrees with the origin; no row survives from another generation; the cursor is complete |
+
+`cargo run -p models --bin properties` prints each in full. What the models
+do not reach, the files themselves (a torn tail, a frame cut at a byte, a
+migration, the SQLite file on another platform), is held by named tests,
+mapped in [`tests/contracts.toml`](../tests/contracts.toml). The main ones:
 
 | Where | What it holds |
 | --- | --- |

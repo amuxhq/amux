@@ -233,6 +233,88 @@ fn agent_message(envelope: &[u8], text: &str) -> Event {
     })
 }
 
+/// The daemon hands a message over again when it never saw the first
+/// answer: the parent takes it once, and each hand-off is accepted.
+#[test]
+fn a_message_handed_over_twice_is_taken_once() {
+    let mut state = started();
+    let mut injects = 0;
+    let mut items = 0;
+    let mut accepted = 0;
+    let mut hand_over = |state: &mut State| {
+        let stepped = ClaudeSdk::step(state, agent_message(b"env-1", "hello"));
+        injects += stepped
+            .effects
+            .iter()
+            .filter(|effect| matches!(effect, Effect::Inject { .. }))
+            .count();
+        items += stepped.step.items.len();
+        accepted += stepped
+            .effects
+            .iter()
+            .filter(|effect| {
+                matches!(effect, Effect::Reply { input_id, verdict }
+                    if input_id == b"env-1"
+                        && matches!(verdict.of, Some(wire::send_input_response::Of::Accepted(_))))
+            })
+            .count();
+    };
+    hand_over(&mut state);
+    // Again while it is pending, then again once Claude took it.
+    hand_over(&mut state);
+    ClaudeSdk::step(
+        &mut state,
+        stream(
+            json!({"type": "command_lifecycle", "command_uuid": client_uuid(b"env-1"), "state": "started"}),
+        ),
+    );
+    assert!(state.shared().pending_messages().is_empty());
+    hand_over(&mut state);
+    assert_eq!((injects, items, accepted), (1, 1, 3));
+    assert!(state.shared().pending_messages().is_empty());
+}
+
+/// An idle Claude runs a handed agent message as a turn at once, so a stop
+/// that arrives before Claude says the turn started still interrupts it,
+/// and the turn that ends reads stopped.
+#[test]
+fn a_stop_after_a_message_handed_to_an_idle_claude_interrupts_its_turn() {
+    let mut state = started();
+    let handed = ClaudeSdk::step(&mut state, agent_message(b"env-1", "look at the build"));
+    assert!(
+        handed
+            .effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::Inject { .. })),
+        "{:?}",
+        handed.effects
+    );
+    let stopped = ClaudeSdk::step(&mut state, Event::StopRequested);
+    let written: Vec<String> = stopped
+        .effects
+        .iter()
+        .filter_map(|effect| match effect {
+            Effect::ProviderWrite(bytes) => Some(String::from_utf8_lossy(bytes).into_owned()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        written
+            .iter()
+            .any(|line| line.contains("control_request") && line.contains("interrupt")),
+        "the stop interrupts the message's turn: {written:?}"
+    );
+
+    let ended = ClaudeSdk::step(
+        &mut state,
+        stream(json!({"type": "result", "subtype": "success", "uuid": "r", "duration_ms": 10})),
+    );
+    assert_eq!(
+        ended.step.turn_end.map(|end| end.outcome),
+        Some(wire::TurnOutcome::Stopped as i32)
+    );
+}
+
 /// The SDK probe found the uuid on a stdin message echoed on its replay and
 /// lifecycle frames, and found messages written during a turn folding into
 /// it: reflections are matched by that id, not by arrival order.

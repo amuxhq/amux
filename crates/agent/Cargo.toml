@@ -7,12 +7,14 @@ description = "The agent process: hosts one provider, runs its interpreter and w
 publish = false
 
 [dependencies]
+agent-core = { workspace = true }
 agent-dir = { workspace = true }
 attachments = { workspace = true }
 claude = { workspace = true, features = ["pty"] }
 claude-protocol = { workspace = true }
 codex = { workspace = true }
 codex-protocol = { workspace = true }
+core-ring = { workspace = true }
 git-facts = { workspace = true }
 hyper-util = { workspace = true }
 interpret = { workspace = true }
@@ -27,7 +29,7 @@ tokio = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }
 uuid = { workspace = true }
-wire = { workspace = true }
+wire = { workspace = true, features = ["grpc"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }

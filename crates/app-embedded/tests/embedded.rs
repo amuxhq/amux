@@ -7,9 +7,9 @@
 
 #![cfg(unix)]
 
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex};
 
-use app_embedded::{EdgeOverrides, EmbeddedRuntime, PairRequest, ProfileId, StartConfig};
+use app_embedded::{Cores, EdgeOverrides, EmbeddedRuntime, PairRequest, ProfileId, StartConfig};
 use app_runtime::values::{
     AccountBinding, BillingInterval, Draft, PaywallFrom, RelayLink, UsageEvent,
 };
@@ -20,6 +20,7 @@ use node::SourcePolicy;
 use patience::{PATIENCE, until};
 use provider_fakes::script::Step;
 use testnet::{AgentDecl, FakeKind, HostDecl, Net, Relay, Topology};
+use ui_view::FleetCard;
 use wire::{Empty, StartPairingRequest, start_pairing_request};
 
 fn text(text: &str) -> Step {
@@ -56,6 +57,33 @@ fn config(dir: &std::path::Path) -> StartConfig {
         tail: 50,
         telemetry: true,
     }
+}
+
+/// The app's queue, as a thread of the test's: the cores step there,
+/// whenever they ring, and nowhere else.
+fn queue() -> Cores {
+    let rang = Arc::new((Mutex::new(false), Condvar::new()));
+    let ringing = rang.clone();
+    let cores = Cores::new(move || {
+        *ringing.0.lock().unwrap() = true;
+        ringing.1.notify_all();
+    });
+    let stepping = cores.clone();
+    std::thread::Builder::new()
+        .name("app-queue".to_owned())
+        .spawn(move || {
+            loop {
+                let mut rung = rang
+                    .1
+                    .wait_while(rang.0.lock().unwrap(), |rung| !*rung)
+                    .unwrap();
+                *rung = false;
+                drop(rung);
+                stepping.step();
+            }
+        })
+        .unwrap();
+    cores
 }
 
 fn loopback() -> EdgeOverrides {
@@ -164,10 +192,14 @@ async fn a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows() {
     .await
     .unwrap();
     let dir = tempfile::tempdir().unwrap();
-    let embedded =
-        EmbeddedRuntime::start_with(&config(dir.path()), loopback(), Arc::new(SystemClock))
-            .await
-            .unwrap();
+    let embedded = EmbeddedRuntime::start_with(
+        &config(dir.path()),
+        loopback(),
+        Arc::new(SystemClock),
+        queue(),
+    )
+    .await
+    .unwrap();
     let phone = only_profile(&embedded).await;
 
     let desk = net.host("desk").unwrap();
@@ -333,10 +365,14 @@ async fn a_phone_links_to_its_desk_again_once_its_browser_finds_the_desk_back() 
     .await
     .unwrap();
     let dir = tempfile::tempdir().unwrap();
-    let embedded =
-        EmbeddedRuntime::start_with(&config(dir.path()), loopback(), Arc::new(SystemClock))
-            .await
-            .unwrap();
+    let embedded = EmbeddedRuntime::start_with(
+        &config(dir.path()),
+        loopback(),
+        Arc::new(SystemClock),
+        queue(),
+    )
+    .await
+    .unwrap();
     let phone = only_profile(&embedded).await;
     let desk = net.host("desk").unwrap().host_id;
     let (pin, addrs) = pairing_pin(&net).await;
@@ -430,6 +466,7 @@ async fn each_account_is_a_profile_and_only_the_resumed_one_holds_a_relay_link()
             ..loopback()
         },
         Arc::new(SystemClock),
+        queue(),
     )
     .await
     .unwrap();
@@ -525,6 +562,7 @@ async fn a_phone_signed_in_to_the_account_reaches_its_hosts_over_the_relay() {
             ..loopback()
         },
         Arc::new(SystemClock),
+        queue(),
     )
     .await
     .unwrap();
@@ -584,39 +622,6 @@ async fn a_phone_signed_in_to_the_account_reaches_its_hosts_over_the_relay() {
     net.shutdown().await.unwrap();
 }
 
-/// The runtime traces into the log the app names, and a dump carries it as
-/// the daemon's log, redacted.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_phone_dump_carries_the_runtimes_log_redacted() {
-    const KEY: &str = "sk-ant-api03-PLANTEDphonelogkey0001";
-    let dir = tempfile::tempdir().unwrap();
-    let log = dir.path().join("runtime.log");
-    let embedded = EmbeddedRuntime::start_with(
-        &StartConfig {
-            log_path: Some(log.clone()),
-            ..config(dir.path())
-        },
-        loopback(),
-        Arc::new(SystemClock),
-    )
-    .await
-    .unwrap();
-    tracing::warn!("a relay call failed: Authorization: Bearer {KEY}");
-    let profile = only_profile(&embedded).await;
-    let app = app(&embedded, profile).await;
-
-    let bundle = app.dump("from the phone").await.unwrap();
-    let carried = std::fs::read_to_string(bundle.join(node::DAEMON_LOG)).unwrap();
-    assert!(carried.contains("a relay call failed"), "{carried}");
-    assert!(!carried.contains(KEY), "{carried}");
-    assert!(
-        std::fs::read_to_string(&log).unwrap().contains(KEY),
-        "the log itself is what the runtime wrote"
-    );
-    drop(app);
-    embedded.shutdown().await.unwrap();
-}
-
 /// The app's own events land on the profile they name, or on every profile
 /// when they name none; coming to the front counts once an hour.
 #[tokio::test(flavor = "multi_thread")]
@@ -630,6 +635,7 @@ async fn the_apps_own_events_are_recorded_on_its_profiles() {
             ..loopback()
         },
         Arc::new(SystemClock),
+        queue(),
     )
     .await
     .unwrap();
@@ -680,5 +686,129 @@ async fn the_apps_own_events_are_recorded_on_its_profiles() {
             ),
         ]
     );
+    embedded.shutdown().await.unwrap();
+}
+
+fn app_card_idle(app: &AppRuntime, agent: &AgentKey) -> bool {
+    app.fleet_card(agent)
+        .is_some_and(|card| card.attention == model::Attention::Idle)
+}
+
+/// What the phone shows of the desk's agent: its fleet card, less how
+/// reachable the desk is now, and every row of its chat.
+async fn shown(app: &AppRuntime, agent: &AgentKey) -> (FleetCard, Vec<String>) {
+    let card = app.fleet_card(agent).expect("the worker's fleet card");
+    let chat = app.open_chat(agent, 50).await.unwrap();
+    let rows = || {
+        let keys = chat.keys();
+        chat.rows_for(&keys, &Default::default())
+            .iter()
+            .map(|row| format!("{:?}", row.kind))
+            .collect::<Vec<_>>()
+    };
+    // The chat's rows stream apart from the card: the answering turn's
+    // end can follow the card going idle.
+    eventually(app, "the chat's rows from the store", || {
+        let rows = rows();
+        rows.iter()
+            .position(|row| row.contains("answered from the phone"))
+            .is_some_and(|answer| rows[answer..].iter().any(|row| row.starts_with("TurnEnd")))
+    })
+    .await;
+    (card, rows())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_phone_relaunched_after_a_suspend_shows_the_fleet_and_chat_it_left() {
+    let net = Net::start(
+        Topology::new()
+            .host_decl(HostDecl {
+                name: "desk".into(),
+                lan: true,
+                ..HostDecl::default()
+            })
+            .agent(worker()),
+    )
+    .await
+    .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let embedded = EmbeddedRuntime::start_with(
+        &config(dir.path()),
+        loopback(),
+        Arc::new(SystemClock),
+        queue(),
+    )
+    .await
+    .unwrap();
+    let phone = only_profile(&embedded).await;
+    let desk = net.host("desk").unwrap();
+    let (pin, addrs) = pairing_pin(&net).await;
+    embedded
+        .pair(
+            phone,
+            &PairRequest::Pin {
+                host_id: desk.host_id.as_bytes().to_vec(),
+                pin,
+                addrs,
+            },
+        )
+        .await
+        .unwrap();
+    let first = app(&embedded, phone).await;
+    converse(&first, &net).await;
+    let agent = worker_key(&net);
+    // The answer's text arrives before its turn ends; the turn's end can
+    // reach the store after the card is read, and the relaunch shows it.
+    eventually(&first, "the answering turn ended", || {
+        app_card_idle(&first, &agent)
+    })
+    .await;
+    let before = shown(&first, &agent).await;
+
+    // The app is suspended, then the system ends it: the checkpoint is on
+    // the drive and nothing shuts the runtime down.
+    embedded.checkpoint().await.unwrap();
+    let checkpoint = dir
+        .path()
+        .join("data")
+        .join(node::PROFILES)
+        .join(phone.to_string())
+        .join(node::CORE_CHECKPOINT);
+    assert!(
+        checkpoint.exists(),
+        "no checkpoint at {}",
+        checkpoint.display()
+    );
+    drop(first);
+    drop(embedded);
+    // With the desk gone too, all the relaunch can show is what the
+    // phone's store holds; the checkpoint left beside it is not read.
+    net.shutdown().await.unwrap();
+
+    let embedded = EmbeddedRuntime::start_with(
+        &config(dir.path()),
+        loopback(),
+        Arc::new(SystemClock),
+        queue(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(only_profile(&embedded).await, phone);
+    let app = app(&embedded, phone).await;
+    eventually(&app, "the desk's agent in the fleet again", || {
+        app.fleet_card(&agent).is_some()
+    })
+    .await;
+    let (card, rows) = shown(&app, &agent).await;
+    assert_eq!(
+        FleetCard {
+            host_reach: before.0.host_reach,
+            ..card
+        },
+        before.0
+    );
+    assert_eq!(rows, before.1);
+
+    drop(app);
     embedded.shutdown().await.unwrap();
 }

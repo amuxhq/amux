@@ -268,9 +268,6 @@ struct Host {
     running: bool,
     /// The host's `claude` and `codex` commands.
     commands: Commands,
-    /// The router in front of an in-process host's link socket, if a
-    /// story put one there; it stays across restarts.
-    router: Option<RouterKind>,
 }
 
 struct Link {
@@ -1673,7 +1670,6 @@ impl Net {
                     claude: PathBuf::new(),
                     codex: PathBuf::new(),
                 },
-                router: None,
             },
         );
         let made = (|| {
@@ -1836,7 +1832,7 @@ impl Net {
             // The relay tells a host the address it sees its packets come
             // from, which a peer punches to: behind a router that must be
             // the router's public port, not the gate's own socket.
-            if host.router.is_some()
+            if host.decl.router.is_some()
                 && let Some(quic) = &mut edge.cloud.relay_quic
             {
                 quic.addr = relay.quic();
@@ -1873,7 +1869,7 @@ impl Net {
         host.runtime = Arc::downgrade(&runtime);
         host.daemon = Some(std::sync::Mutex::new(daemon));
         host.lan_handed = handed;
-        if let Some(kind) = host.router {
+        if let Some(kind) = host.decl.router {
             self.put_behind_router(name, kind)?;
         }
         Ok(())
@@ -2097,6 +2093,7 @@ impl Net {
         self.hosts
             .get_mut(host)
             .ok_or_else(|| NetError::NoHost(host.to_owned()))?
+            .decl
             .router = Some(kind);
         if self.is_up(host) {
             self.put_behind_router(host, kind)?;
@@ -2118,7 +2115,7 @@ impl Net {
         self.in_process(host, "changing the network under the link socket")?;
         let edge = self.edge(host)?;
         let own = &self.hosts[host];
-        let substrate: Arc<dyn node::socket::Datagrams> = match own.router {
+        let substrate: Arc<dyn node::socket::Datagrams> = match own.decl.router {
             Some(kind) => Router::new(kind, ROUTER_IDLE)?,
             None => node::socket::LinkSocket::bind_dual_stack(
                 SocketAddr::new(loopback(&own.decl), 0),

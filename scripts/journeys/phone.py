@@ -413,7 +413,15 @@ class PhoneJourney:
         browser reports the machines named in `found`, every one of the net's
         when nothing is said. Without `geometry` the app reports what is
         drawn but not where, which a measurement wants: see `geometry()`. A
-        `relay_quic` address is dialled in the relay's place, QUIC only."""
+        `relay_quic` address is dialled in the relay's place, QUIC only.
+        When the topology puts any host behind a router, on a network of its
+        own, the phone dials the relay through the net's gate unless told
+        otherwise: the relay then sees the phone at the gate's socket, which
+        takes datagrams from the relay alone, so no host punches to it."""
+        if relay_quic is None and any(host.get("router") for host in self.topology.get("hosts", [])):
+            reply = self.request({"RelayGate": {}})
+            assert isinstance(reply, dict)
+            relay_quic = reply["addr"]
         scope = self.topology.get("scope", "")
         if found is None:
             found = [host["host_id"] for host in self.ready["hosts"]]

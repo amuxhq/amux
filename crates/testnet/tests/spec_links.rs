@@ -1448,19 +1448,12 @@ async fn token_lapse_within_hour_is_noticed_at_the_hourly_refresh() {
 async fn behind_routers(kind: testnet::RouterKind, said: &str) -> Net {
     let topology = Topology::new()
         .relay(&["ada"])
-        .host_decl(on_the_relay("desk"))
-        .host_decl(on_the_relay("laptop"))
+        .host_decl(on_another_network("desk", kind))
+        .host_decl(on_another_network("laptop", kind))
         .agent(worker_saying(said));
     let mut net = Net::start_with(topology, relay_tcp_unreachable(&["desk", "laptop"]))
         .await
         .unwrap();
-    // A router is in place from the start of a run, so each host reaches
-    // the relay from its router's public port alone.
-    for host in ["desk", "laptop"] {
-        net.set_router(host, kind).unwrap();
-        net.stop_daemon(host).await.unwrap();
-        net.restart_daemon(host).await.unwrap();
-    }
     net.trust("desk", "laptop").await.unwrap();
     net.trust("laptop", "desk").await.unwrap();
     // The link comes up through the relay; behind ordinary routers it may
@@ -1655,6 +1648,82 @@ async fn punch_lapse_drops_the_punched_path() {
             net.carrying_path(host, peer).unwrap(),
             Some(PathKind::Punched),
             "{host} punches {peer} no more while free"
+        );
+    }
+    net.shutdown().await.unwrap();
+}
+
+/// A host on a network of its own, behind a router of `kind` from its
+/// first start, so the relay sees it at the router's public port alone.
+fn on_another_network(name: &str, kind: testnet::RouterKind) -> HostDecl {
+    HostDecl {
+        router: Some(kind),
+        ..on_the_relay(name)
+    }
+}
+
+/// Two paid hosts linked through the relay, each declared on a network of
+/// its own behind a router of `kind`, with nothing else between them.
+async fn linked_from_other_networks(kind: testnet::RouterKind) -> Net {
+    let topology = Topology::new()
+        .relay(&["ada"])
+        .host_decl(on_another_network("desk", kind))
+        .host_decl(on_another_network("laptop", kind));
+    let mut net = Net::start(topology).await.unwrap();
+    net.trust("desk", "laptop").await.unwrap();
+    net.trust("laptop", "desk").await.unwrap();
+    until_via(&net, "laptop", "desk", LiveRoute::Relay).await;
+    for (host, peer) in [("laptop", "desk"), ("desk", "laptop")] {
+        until(&format!("{host}'s link to {peer} up"), || async {
+            net.carrying_path(host, peer)
+                .unwrap()
+                .map(|_| ())
+                .ok_or_else(|| "no link yet".to_owned())
+        })
+        .await
+        .unwrap();
+    }
+    net
+}
+
+/// Hosts the topology puts on other networks behind strict routers are
+/// reached through the relay alone: the relay sees each at a port its
+/// router opened toward the relay, no punch or LAN dial gets through, and
+/// each end's link stays on the relay's UDP forwarding from coming up to
+/// well after every punch has given up.
+#[tokio::test(flavor = "multi_thread")]
+async fn another_network_strict_routers_keep_the_link_on_the_relay() {
+    let net = linked_from_other_networks(testnet::RouterKind::Strict).await;
+    tokio::time::sleep(punch_given_up()).await;
+    for (host, peer) in [("laptop", "desk"), ("desk", "laptop")] {
+        assert_eq!(
+            net.carrying_path(host, peer).unwrap(),
+            Some(PathKind::RelayUdp),
+            "{host}'s link to {peer} stays on the relay"
+        );
+        for path in [PathKind::Punched, PathKind::Lan] {
+            assert!(
+                !ever_carried_by(&net, host, peer, path),
+                "{host}'s link to {peer} was never carried by {path:?}"
+            );
+        }
+        println!("{host}'s link to {peer} stayed on relay_udp");
+    }
+    net.shutdown().await.unwrap();
+}
+
+/// The same declaration with ordinary routers, which let in what comes from
+/// wherever a host sent: the hosts are on other networks a punch crosses,
+/// and each end's link moves off the relay onto the punched path.
+#[tokio::test(flavor = "multi_thread")]
+async fn another_network_ordinary_routers_let_the_link_punch() {
+    let net = linked_from_other_networks(testnet::RouterKind::Ordinary).await;
+    carried_by(&net, "laptop", "desk", PathKind::Punched).await;
+    carried_by(&net, "desk", "laptop", PathKind::Punched).await;
+    for (host, peer) in [("laptop", "desk"), ("desk", "laptop")] {
+        assert!(
+            !ever_carried_by(&net, host, peer, PathKind::Lan),
+            "{host}'s link to {peer} was never carried by the LAN"
         );
     }
     net.shutdown().await.unwrap();

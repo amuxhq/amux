@@ -160,12 +160,14 @@ clients: the journal and the control socket are an agent's only interface.
 ### Each process is a core and its driver
 
 Four of these processes decide what they do in a state-machine core, and
-everything else in them is the core's driver:
+everything else in them is the core's driver. Inside the daemon, and the
+relay, a second kind of core decides one thing per peer:
 
 | Process | Core | Driver | What the driver holds |
 |---|---|---|---|
 | daemon | [`daemon-core`](../crates/daemon-core/README.md), one per profile | [`node::driver`](../crates/node/src/driver/mod.rs) | the profile's sockets, links, channels and calls in flight, its timers and the jobs it runs |
-| relay | [`relay-core`](../crates/relay-core/README.md) | [`node`'s relay server](../crates/node/src/edge/relay_server.rs) and its forwarder | accepted links and the packets forwarded between pairs |
+| relay | [`relay-core`](../crates/relay-core/README.md) | [`node`'s relay server](../crates/node/src/edge/relay_server.rs) and its [forwarder](../crates/node/src/link/forwarder.rs) | accepted links, the pair table and the hold buffer for senders not yet admitted |
+| daemon, per peer | [`path-core`](../crates/path-core/README.md), one per peer of a profile | [`node::link::paths`](../crates/node/src/link/paths.rs) | the profile's one link socket, the probes in flight and the route each peer's packets take |
 | agent process | [`agent-core`](../crates/agent-core/README.md) | [`agent`](../crates/agent/src/lib.rs) | the provider child, the control socket, the journal writer and the hook and tool sockets |
 | supervisor | [`supervisor-core`](../crates/supervisor-core/README.md) | [`node::supervisor`](../crates/node/src/supervisor/mod.rs) | the daemon child, its readiness pipe and exit, the release feed and the binaries on disk |
 
@@ -399,17 +401,32 @@ daemon.
 
 ## Remote hosts and the cloud
 
-Each profile holds links to the hosts it trusts: direct QUIC on the local
-network, SSH (`amux relay` joining the SSH session to the profile's
-`link.sock`), or through a relay. Every link is a QUIC connection carrying
-a control stream and application streams; over SSH and TLS on TCP its
-packets are framed over the byte stream. A link between two hosts, direct
-or over SSH, is itself the pinned handshake, and the streams on it between
-the two paired hosts are plain; inside every stream a relay carries the two
-hosts run a TLS handshake pinned to the keys they exchanged when they
-paired, so a relay never grants authority. Pairing, the
-handshake, routing and the relay's forwarding rule are on
-[the link protocol](PROTOCOL.md) page.
+Each profile holds one link to each host it trusts: one QUIC connection,
+pinned at pairing, carrying a control stream and plain application
+streams. Its handshake is the authority for every call on it, whichever way
+its packets go: direct on the local network or across the internet, through
+the relay over UDP or TLS on TCP, over SSH (`amux relay` joining the SSH
+session to the profile's `link.sock`), or through another paired daemon.
+Every UDP path leaves from the profile's one dual-stack link socket
+([`link/socket.rs`](../crates/node/src/link/socket.rs)), which sits under
+quinn: quinn sends to a stand-in address per peer, and the socket puts each
+packet on that peer's carrying path, behind a header naming the other end
+when a forwarder carries it; byte-stream paths frame the same packets. Which
+path carries a link is the path machine's decision
+([`path-core`](../crates/path-core/README.md), one per peer): it probes the
+candidates, moves the link to a better path that answers, keeps the relay's
+ready while the link is direct, and lets a paid account punch through
+routers to an address the relay observed. A link moved between paths keeps
+its streams. Pairing, the handshake, paths, routing and the forwarding rule
+are on [the link protocol](PROTOCOL.md) page.
+
+A launch costs one round trip to a host it has linked to before. The
+profile keeps a TLS session ticket and an address-validation token from
+each host and from the relay, and its relay token, so its first flight
+resumes every remembered host's link on every candidate path at once with
+the Hello and the inventory and session subscriptions sent as 0-RTT data;
+the relay holds that flight's packets until it has admitted the sender's
+own link.
 
 **Paired daemons are replicas of each other.** A daemon follows each trusted
 host's inventory, keeps replica rows for the agents it lists, and for each
@@ -438,7 +455,8 @@ catch-ups lands first; the inventory's only records the new generation.
 **The relay** is the same binary run as `amux server start --cloud`
 ([`crates/amux/src/relay.rs`](../crates/amux/src/relay.rs)). A signed-in
 profile keeps one cloud link to it, over QUIC with a TLS-over-TCP fallback,
-authenticated by a short-lived token from the account service. Hosts of
+authenticated by a week-long token from the account service that the
+profile keeps across launches and renews hourly. Hosts of
 one account hold links of their own through it, and the relay forwards their
 packets, which it cannot read, per pair of hosts. A link whose account has no
 subscription carries presence and control messages only: the relay forwards
@@ -447,7 +465,9 @@ nothing to or from it. Which pairs it forwards is the relay core's decision
 every account; its driver
 ([`link/forwarder.rs`](../crates/node/src/link/forwarder.rs)) moves the
 packets. Every daemon forwards the same way for its own paired hosts, and a
-link admitted by a pinned key has no tier to check. The account service is a separate
+link admitted by a pinned key has no tier to check: the
+[forwarder](../crates/node/src/link/forwarder.rs) and its core are the same
+code on a daemon, with every link's tier none. The account service is a separate
 deployment; [the phone and amux.sh](CLOUD.md) describes what the app asks of
 it.
 

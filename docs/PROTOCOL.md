@@ -8,8 +8,9 @@ The processes around it are described in [Architecture](ARCHITECTURE.md);
 the session stream a client reads is described in [the wire](WIRE.md); the
 user-facing behaviour is in [How amux works](HOW_IT_WORKS.md).
 
-The driver's code lives in the `node` crate: `crates/node/src/link/` (carriers, link
-runtime, channel pool, relay forwarding), `crates/node/src/routing/`
+The driver's code lives in the `node` crate: `crates/node/src/link/` (the link
+socket and its paths, carriers, the link runtime, the channel pool, the
+forwarder, tickets and early data), `crates/node/src/routing/`
 (adjacency and the routing table), `crates/node/src/pairing/` and
 `crates/node/src/services/pairing.rs` (pairing), `crates/node/src/discovery/`
 (mDNS), `crates/node/src/edge/` (a profile's network edge, the cloud link and
@@ -29,7 +30,8 @@ The decisions this page describes are made in two state-machine cores, and
 trust, presence and routes, replication, families and deliveries; the
 forwarding core ([`crates/relay-core`](../crates/relay-core/README.md))
 decides which pairs of hosts a relay or a daemon forwards packets
-between. The promises are written once, as
+between; the path machine ([`crates/path-core`](../crates/path-core/README.md))
+decides which path each link's packets take. The promises are written once, as
 properties the checker explores over those cores in
 [`crates/models`](../crates/models/README.md), and the sentences there are
 the specification; this page explains them. `cargo run -p models --bin
@@ -40,6 +42,8 @@ properties` lists every one. The main machines:
 | [Presence](#chapter-3-presence), [routing](#chapter-4-routing-and-failover) | presence and routing | presence changes only on a concluded attempt on the preferred route; Away only on payment refusal; offline after failed calls until a channel opens; no flap while another route carries traffic; a refused route stops carrying; a host with a working route eventually reads online |
 | [Replica rows](JOURNAL_AND_STORE.md#own-rows-and-replica-rows) | replication | the block is contiguous; the block agrees with the origin; no row survives from another generation; the cursor is complete; a replica whose origin and link fall quiet becomes current |
 | [The family rule](#the-family-rule) | family and deliveries | no child is deleted by a stale listing; an outbox row is deleted only on accept; each report reaches its parent exactly once; nothing is owed after unpair; every descendant of a stopped parent eventually stops on every reachable host |
+| [Paths](#the-link-socket-and-its-paths) | the path machine | a path carries the link only after a probe on it was answered; the link never leaves a working path for another within the hold-down; the relay path stays ready while the link is direct; after a lapse no packet goes on a path across networks; if any path works the link eventually uses one |
+| [Forwarding](#chapter-6-relay-forwarding-and-entitlement) | forwarding per pair | packets flow between two links only while both are up, on one account and paid, or both pinned; nothing is forwarded for a link not yet admitted, held packets included; a lapse or expiry removes every pair through the link and tells both ends |
 | All of them at once | composed net | several daemons and their agents, every machine's promises judged together under link, crash and loss faults |
 
 A test that restates one of these rules is a second copy and goes; what the
@@ -48,24 +52,32 @@ keeps its tests, listed in [`tests/contracts.toml`](../tests/contracts.toml).
 
 ## The mental model
 
-> **Carriers carry links. Links carry streams. Streams carry channels. One
-> pinned handshake authenticates every channel, whatever carried it.**
+> **Paths carry links. Links carry streams. Streams carry channels. One
+> pinned handshake per link authenticates every channel on it, whatever path
+> carried its packets.**
 
 The layers have separate jobs:
 
-- A **carrier** provides an ordered control stream and independent
-  bidirectional byte streams.
-- A **link** is the live relationship with one adjacent node. Its control
-  stream exchanges identity, protocol version, adjacency and link lifetime.
-- A **stream** is one QUIC stream. Its first message
-  says where it is going; after admission, its bytes are opaque to a relay.
-- A **channel** is the end-to-end call connection inside that stream. Its
-  pinned TLS handshake, not its carrier or route, decides call authority.
+- A **path** is one way a link's packets travel: straight to one of the
+  peer's addresses, punched through the routers in between, through a
+  forwarder (the relay or a paired daemon) behind a header naming the other
+  end, or framed over a byte stream (TLS on TCP to the relay, SSH, an
+  in-process pipe). One path carries a link at a time, and the link moves
+  between paths without its streams noticing.
+- A **link** is one QUIC connection between two hosts, and there is one per
+  pair of hosts that trust each other, end to end whichever path carries
+  it. Its handshake is pinned mutual TLS 1.3 with the keys exchanged at
+  pairing; its control stream exchanges protocol version, adjacency,
+  addresses and link lifetime.
+- A **stream** is one QUIC stream on the link. It carries no preface: it
+  belongs to the host at the other end of its link.
+- A **channel** is one HTTP/2 call connection inside a stream. The link's
+  handshake, not its path or route, decides call authority.
 
-The carrier may also authenticate the adjacent link: direct QUIC uses pinned
-mutual TLS, the cloud carriers use WebPKI TLS plus a token in `Hello`, and SSH
-uses the authenticated SSH channel. That outer admission never stands in for
-the pinned handshake inside an ordinary peer channel.
+A host's link to the relay is a link too, admitted by WebPKI TLS and a
+token in `Hello` rather than a pin; it carries the relay's adjacency and
+forwarding, and the links between hosts travel through it as packets the
+relay cannot read.
 
 ## Chapter 0: Discovery
 
@@ -260,24 +272,19 @@ and so is the host set the inventory carries
 
 ### Carriers
 
-All carriers implement the same link interface
+Every link is a QUIC connection behind the same link interface
 (`crates/node/src/link/carrier.rs`): one control stream, open and accept for
 additional streams, finish and typed reset, and link close.
 
-| Use | Carrier | Link admission | Migration |
-| --- | --- | --- | --- |
-| Direct device link | QUIC/TLS 1.3, ALPN `amux/2` | pinned mutual TLS | yes |
-| Preferred cloud link | QUIC/TLS 1.3, ALPN `amux/2` | WebPKI certificate, then hello token | yes |
-| Cloud fallback | QUIC packets framed inside TLS over TCP | WebPKI certificate, then hello token | no |
-| SSH link | QUIC packets framed over SSH stdio into `link.sock` | pinned mutual TLS | no |
+| Link | Paths it may take | Link admission |
+| --- | --- | --- |
+| Between two paired hosts | direct, punched, through the relay over UDP or TCP, through a paired daemon, SSH | pinned mutual TLS, ALPN `amux/2` |
+| A host's link to the relay | UDP, or framed inside TLS over TCP | WebPKI certificate, then the `Hello` token |
 
-Every link is a QUIC connection. Where it runs over a byte stream (TLS on TCP
-to the relay, an SSH session, the testnet's in-process pipe) each QUIC packet
-crosses the stream behind a two-byte big-endian length, so a frame holds at
-most 65,535 bytes.
-
-Device QUIC has session tickets, resumption and 0-RTT disabled. It permits only
-bidirectional application streams, at most 64 concurrently. The keepalive and
+Device QUIC permits only bidirectional application streams, at most 64
+concurrently. Every endpoint uses 1,200-byte datagrams with path MTU
+discovery off, so a packet fits every path, the forwarding header included,
+and no endpoint offers to grease QUIC's fixed bit. The keepalive and
 idle timeout are 20 and 60 seconds on iOS, 10 and 30 seconds elsewhere, so a
 desktop notices a link that died silently within about forty seconds (the
 shorter timeout of a link's two ends applies).
@@ -299,6 +306,119 @@ SSH session runs, which joins its stdio to the profile's `link.sock`. The QUIC
 handshake through it pins both hosts' keys as a direct one does; the far
 daemon takes the peer from the key it presented and refuses one it does not
 trust.
+
+### The link socket and its paths
+
+A profile has one UDP socket, bound to `[::]` dual-stack (`0.0.0.0` where the
+OS has no IPv6) on the port it had last, and every link it dials or answers
+over UDP is a QUIC connection on it (`crates/node/src/link/socket.rs`). quinn
+never sees the network: it sends to a stand-in address, one per peer in the
+unique-local prefix `fd61:6d75:7800::/48`, and the socket puts each packet on
+the path carrying that peer's link. Arrivals are mapped back to the peer's
+stand-in whichever path brought them, so a path change is invisible to quinn
+and to every stream on the link. A send or receive error on the socket is a
+lost packet, never a dead link.
+
+The socket tells its own datagrams from QUIC by the fixed bit, which QUIC sets
+in every packet's first byte; ours clear it and name their kind there:
+
+| Kind | Datagram | Meaning |
+| --- | --- | --- |
+| QUIC | fixed bit set | a link's packet, for this host |
+| `0x00` Forwarded | kind, the destination's 16-byte host id, a QUIC packet | to a forwarder: send this to that host |
+| `0x01` Probe | kind, the sender's host id, an 8-byte nonce | does this path reach you? |
+| `0x02` Probe answer | kind, the answerer's host id, the nonce | it does |
+| `0x03` Delivered | kind, the sender's host id, a QUIC packet | from a forwarder: this came from that host |
+
+A byte-stream path carries the same datagrams, each behind a two-byte
+big-endian length, so a frame holds at most 65,535 bytes. Each path gathers
+its frames into 64 KiB writes and reads its stream 64 KiB at a time.
+
+Which path carries a link is the path machine's decision, one per peer of the
+profile (`crates/path-core`, driven by `crates/node/src/link/paths.rs`). Its
+candidates are the addresses discovery finds, the addresses the peer lists
+(below), the last address that worked, the address the relay observed the peer
+at, and every forwarding link that reaches the peer. While the link is up the
+machine probes each candidate every five seconds; a probe unanswered within
+two seconds marks the path failed, and only an answered probe lets a path
+carry the link, whose packets arriving on another path only prompt a probe
+there. Among working paths, one that skips the forwarders beats a forwarded
+one, then the lowest round trip, then IPv6 over IPv4. The link moves off a
+working path only to a better kind, from forwarded to direct, and only once
+it has carried for the three-second hold-down, so two working paths never
+trade it back and forth; a path that stops working is left at once. While the
+link is direct the relay's path keeps being probed, so it is ready the moment
+the direct one fails. An address that falls silent is kept and probed until
+the peer stops listing it, so a link returns to it after an outage of any
+length. A move to a path of another kind is told to the daemon core, which
+reads the host by its new route kind.
+
+When the host's network changes (the phone's path monitor reports it, a
+desktop daemon reads its interface addresses every two seconds) the profile
+binds its socket afresh on its port, lists its addresses again and tells
+every path machine, which probes its paths again; the link stays on whatever
+still answers, the relay's path if nothing else, and moves back when a
+better path answers.
+
+**Punching** is for paid accounts. A host on a paid account learns from the
+relay the public address its packets arrive from (`observed_addr`,
+`ObservedAddress`) and passes it to its peers with its addresses; a peer's
+probes to it open the routers on both sides when they allow it, and the
+link goes direct across networks. A host on a free account is told no
+observed address and never probes one. When the account lapses, every
+punched path is dropped at once, an address the peer also lists aside, so
+no packet goes on a path across networks after a lapse. amux never asks a
+router for a port mapping.
+
+### Launch: tickets, tokens and early calls
+
+A launch costs one round trip to a host this profile has linked to before.
+
+**Tickets.** Every listener issues a TLS 1.3 session ticket at each handshake
+from a store kept across restarts (`crates/node/src/link/resumption.rs`): a
+profile's in `profiles/<id>/tickets`, the relay's beside its certificate.
+Each ticket is single-use, honoured for seven days, and sealed under a key
+replaced daily. A client keeps the tickets it is given on disk too, per peer
+and pinned key under `profiles/<id>/client-tickets/` (the relay's per relay
+name), and deletes each from disk before presenting it, so a ticket is never
+offered twice. A ticket from a key the profile no longer pins is never
+offered. Client tickets are written and read through a patched rustls
+([architecture](ARCHITECTURE.md#the-rustls-patch)).
+
+**Tokens.** A listener also gives each client two QUIC address-validation
+tokens, which a client keeps beside its tickets (`client-tokens/`), so a
+relaunch's first packets skip the listener's Retry round trip. The profile
+keeps its relay token across launches and renews it hourly (see
+[the cloud](CLOUD.md)), so a launch does not wait on the account service.
+
+**The first flight.** At launch the profile dials every remembered host at
+once, on every candidate path: the addresses it knows, the forwarders a
+route names and, for a host on the account, the relay, including a relay
+connection that comes up later or is not admitted yet. The socket sends the
+link's opening packets on all of them until a packet from the host arrives
+on one, which then carries the link; a path that joins late is sent the
+first flight's packets again. The dial resumes with the host's ticket, so
+the `Hello` and the calls the profile's core makes of a host as it begins
+following it go as 0-RTT data, and their answers wait until the core makes
+those calls. A dial with no ticket, or one whose resumed handshake has not
+finished, gives up after two seconds.
+
+**The early-call rule.** Only reads go in 0-RTT data, because the far end may
+see early data more than once. The channel pool writes early only calls of
+one type (`EarlyCall` in `crates/node/src/link/channels.rs`):
+`SubscribeInventory`, `Subscribe`, `Fetch`, `GetBlob` and `Diff`. A send, a
+stop or a pairing call has no constructor there, so it cannot be early data.
+If the far end refuses the early data (it lost the ticket, or the ticket was
+spent), the dialler opens the same streams again in the same order, control
+first, and writes the same calls as ordinary data once the handshake
+completes.
+
+**The resumed identity.** A resumed handshake presents no certificate: the
+ticket names the key the host proved when it was issued. The listener holds
+the link's early streams until its daemon core has decided that key is still
+the one pinned for the host the `Hello` names; a host whose pin was removed,
+or is being replaced, is refused with the revocation close (`USER_REVOKED`)
+before any early call is served, and the dialler reads it as the revocation.
 
 ### Link control
 
@@ -459,12 +579,16 @@ pinned; the driver forwards from its table without asking again until the
 core removes the pair (`crates/node/src/link/forwarder.rs`). A link going
 down, a lapse to the free plan or a token's expiry removes every pair
 through it, and both ends are told. Packets from a host whose own link to
-the relay is not admitted yet are held for up to a second and released the
-moment it is. The forwarder reads no packet beyond its header.
+the relay is not admitted yet, as a launch's first flight is, are held for up
+to a second (at most 32 packets or 64 KB per sender, 64 MB in all) and
+released the moment it is; nothing is forwarded for a sender before then. A
+link may send at most 56,000 packets and 64 MiB a second through a
+forwarder; past that its packets are dropped, as a congested router would.
+The forwarder reads no packet beyond its header.
 
 A forwarder that will not carry a pair answers on the sender's control link
 with `ForwardRefused`, naming the destination and why, at most once per
-destination every few seconds: `NO_ROUTE` when it holds no link to the
+destination every five seconds: `NO_ROUTE` when it holds no link to the
 destination, `PAYMENT_REQUIRED` when the account's plan carries no
 connections between hosts, `RATE_LIMITED`, `SHUTTING_DOWN`. The host closes
 its links to that destination through the forwarder before its core hears
@@ -816,8 +940,10 @@ is described in [attachments](ATTACHMENTS.md).
 There are no transitive neighbor advertisements, route lists, source routes,
 hop caps, split horizon, stream prefaces, stream data messages, housekeeping
 acknowledgements, a second pairing protocol, transitive trust, transitive
-presence, or multi-hop forwarding. Link loss closes its streams; callers
-reconnect over the best current route.
+presence, multi-hop forwarding, a handshake inside a stream, router port
+mapping, or multipath: one path carries a link at a time. A path change keeps
+the link and its streams; link loss closes its streams, and callers reconnect
+over the best current route.
 
 That small vocabulary is the point: adjacency chooses where packets may go,
 the link carries them, and its pinned handshake decides who may call.

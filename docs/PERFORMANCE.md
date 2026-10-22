@@ -197,9 +197,11 @@ or reference state, or one recorded before admissions were measured, is refused.
 Before the relay forwarded links' packets it carried the hosts' streams itself, and the baseline on the enrolled Mac
 was recorded then: about 190 MiB/s from 10 connections to 100 and 160 at a thousand, with the median open at 3, 29
 and 294 ms. Forwarded, an open is one round trip between the partners rather than a stream the relay sets up, so the
-median open fell to 0.8, 7 and 69 ms, while throughput fell to 46, 77 and 39 MiB/s: every 1,200-byte packet crosses
-both TCP legs and the relay's forwarder on its own. A change to the relay shows when it adds round trips, packets or
-system calls to a link, or serialises work across links.
+median open fell to 0.8, 7 and 69 ms. Throughput first fell to 46, 77 and 39 MiB/s, because every 1,200-byte packet
+was its own write, a TLS record and a system call on each TCP leg, and the queues behind those writes overflowed on
+QUIC's bursts; with each byte-stream path gathering its frames into 64 KiB writes it rose to about 450, 270 and
+275 MiB/s, above the carried baseline at every level, with admissions and opens unchanged. A change to the relay shows
+when it adds round trips, packets or system calls to a link, or serialises work across links.
 
 ## The phone
 

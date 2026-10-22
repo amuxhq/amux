@@ -260,22 +260,29 @@ shared cache's exports at the host, which a device's loader does not do) and in 
 metadata work, with no function of ours among them; so the budget on the simulator is 650 ms median and 700 worst,
 set from that profile. A device's budget is written when a device is enrolled and measured.
 
-Where reconciliation goes, over a gate that holds each packet 100 ms (a 200 ms round trip, printed by the links'
-own logs as `rtt`): two round trips for the QUIC handshake, since a listener answers an address it has not seen with
-a Retry; one for the link's Hello and HelloAck; then one to each host for its inventory, with the remembered
-sessions' subscriptions in the same flight. A stream to a paired host over a direct link of our own is plain, with
-no handshake inside and no wait to be accepted, so the inventory's first bytes leave with the stream's preface; one
-Session channel per host carries every agent's subscription. That is four round trips, about 760 ms on the pinned
-Mac from 1,986 when each stream waited to be accepted and then handshook inside, and each agent opened a stream of
-its own. The test gate itself passes datagrams in the order they came: held each on its own timer, two sent in the
-same millisecond could swap places, and a packet overtaking the handshake it followed was dropped and counted lost,
-costing a round trip a household network never does.
+Where reconciliation goes, over a gate that holds each packet 100 ms (a 200 ms round trip): one round trip. A
+launch resumes each host's link with the TLS ticket and address-validation token its last process kept, so no Retry
+and no full handshake intervene, and its first flight carries the link's Hello, the inventory subscription and every
+remembered session's subscription as early data, on every remembered path and through the relay at once; the host
+answers with the catch-up beside its handshake. The phone's link log times each host's catch-up 213 to 219 ms after
+the link's first packet, and the reconciliation mark reads a 162 ms median, since the first flight leaves while the
+store is still being read. Before, a launch took four round trips, about 760 ms (797 ms in the run this work started
+from): two for the QUIC handshake, since a listener answers an address it has not seen with a Retry; one for the
+link's Hello and HelloAck; and one for the inventory. A stream to a paired host is plain, with no handshake inside and
+no wait to be accepted, and one Session channel per host carries every agent's subscription. The test gate itself
+passes datagrams in the order they came: held each on its own timer, two sent in the same millisecond could swap
+places, and a packet overtaking the handshake it followed was dropped and counted lost, costing a round trip a
+household network never does.
 
-The relay launch was first gated on the phone's hop alone, which measured about 1,007 ms on the pinned Mac while
-leaving the relay's leg to each machine free; a relayed round trip crosses both legs, so the gate now holds both.
-Under both gates the pinned Mac measured medians of 1,608 and 1,649 ms, and the 2,000 ms budget leaves about the
-room the same-network figure has. A person on mobile data accepts about a second and a half to see a current fleet;
-that is a figure for fewer round trips through the relay to reach, not one the budget can ask for yet.
+Through the relay, with the gate holding both the phone's leg and each machine's (a relayed round trip, 400 ms,
+crosses both), the pinned Mac measured a 355 ms median against 1,608 ms before, each machine's catch-up logged 420
+to 427 ms after the first packet. Both launch budgets are the ungated reconciliation (91.8 ms) plus one gated round
+trip, with 15% over that: 336 ms at home and 566 ms through the relay.
+
+A launch leaves its successor a ticket only once the host sends one, when the phone's handshake finishes: two round
+trips into a resumed link, one after the catch-up. The run keeps each launch open until the next is due, ten
+seconds apart, as a person looking at their fleet does; quit as soon as the fleet reconciled, every other launch
+found no ticket and paid a full handshake (839 ms through the relay).
 
 `--only cold|reconciliation|streaming|idle` takes one group, for working on it; `--baseline` needs a whole run.
 `--describe` says which enrolled machine this is and whether its baseline exists without building or launching

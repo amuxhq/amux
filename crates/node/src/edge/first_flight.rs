@@ -190,7 +190,6 @@ async fn fly(edge: Weak<Edge>, host: HostId, requests: Vec<PeerRequest>) {
     let mut landed = me.first_flights.begin(host);
     let sent = Instant::now();
     let resumed = me.channels.open_resumed(host, early).await;
-    eprintln!("DIAG71 flight me={} host={host} -> {:?}", me.identity.host_id, resumed.as_ref().map(|r| (r.link, r.early_data)).map_err(|e| e.to_string()));
     let resumed = match resumed {
         Ok(resumed) => resumed,
         Err(error) => {

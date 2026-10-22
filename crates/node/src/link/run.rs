@@ -753,7 +753,9 @@ async fn run_established(
                     &link_close(wire::pb::LinkCloseReason::UserRevoked),
                 )
                 .await;
-                registered.leave(wire::pb::LinkCloseReason::UserRevoked).await;
+                registered
+                    .leave(wire::pb::LinkCloseReason::UserRevoked)
+                    .await;
                 carrier.close(wire::pb::LinkCloseReason::UserRevoked);
                 return Ok(());
             }
@@ -773,7 +775,6 @@ async fn run_established(
         first_packet_to_catch_up_ms: None,
     };
     logged.write(ctx.local_host.id());
-    eprintln!("DIAG71 up me={} peer={} dialled={} ctxresumed={} early={:?} link={link:?}", ctx.local_host.id(), peer_host.id, ctx.expected_peer.is_some(), ctx.resumed.is_some(), carrier.early_data());
     if let Some(frame) = peer_frame {
         ctx.report_frame(link, frame);
     }
@@ -1335,8 +1336,8 @@ async fn peer_revoked(ctx: &LinkCtx, link: LinkId, peer: HostId) {
     });
 }
 
-/// A link in the registry, which leaves it, and the core hears it went,
-/// however the link's task ends. A task aborted once its link is
+/// A registered link, taken out of the registry, with the core told it
+/// went, however the link's task ends. A task aborted once its link is
 /// registered (a dial whose caller stopped waiting for it) runs nothing
 /// past the await it was parked at, and a link left registered with no
 /// task serving it stays up to every reader and is waited on by every
@@ -1356,8 +1357,7 @@ impl Registered {
 
 impl Drop for Registered {
     fn drop(&mut self) {
-        let (Some(links), Ok(runtime)) =
-            (self.links.take(), tokio::runtime::Handle::try_current())
+        let (Some(links), Ok(runtime)) = (self.links.take(), tokio::runtime::Handle::try_current())
         else {
             return;
         };
@@ -1762,7 +1762,10 @@ mod tests {
         task.abort();
         let _ = task.await;
         let closed = tokio::time::timeout(Duration::from_secs(5), links.close_peer_links()).await;
-        assert!(closed.is_ok(), "closing every link waited on the aborted one");
+        assert!(
+            closed.is_ok(),
+            "closing every link waited on the aborted one"
+        );
         assert!(links.native_carrier_to_peer(peer.id).await.is_none());
     }
 

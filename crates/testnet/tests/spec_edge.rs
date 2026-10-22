@@ -709,8 +709,10 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
     .await
     .unwrap();
     assert_eq!(relay.connects().len(), 2);
+    // The desk reports the new tier as it sends Reauth, so the relay may
+    // not have read it yet.
     assert_eq!(
-        relay.presented().as_slice(),
+        presented(relay, 2).await,
         ["relay-ada-1", "relay-ada-2"],
         "the relay saw the first credential in Hello and the second in Reauth"
     );

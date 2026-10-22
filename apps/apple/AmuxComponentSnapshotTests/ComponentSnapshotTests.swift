@@ -54,10 +54,6 @@ final class ComponentSnapshotTests: XCTestCase {
     func testComponents() async throws {
         UIView.setAnimationsEnabled(false)
         defer { UIView.setAnimationsEnabled(true) }
-        // A search field holding words draws its clear button on a Mac's
-        // simulator and not on a CI runner's, with nothing in the example
-        // to tell them apart; drawn always, the picture is the same on both.
-        UISearchTextField.appearance().clearButtonMode = .always
         let environment = ProcessInfo.processInfo.environment
         let requested = Self.requestedIDs(environment["AMUX_SNAPSHOT_ONLY"])
         let available = Set(ComponentCatalog.examples.map(\.id))
@@ -92,6 +88,19 @@ final class ComponentSnapshotTests: XCTestCase {
         let suiteStarted = ProcessInfo.processInfo.systemUptime
         if let raw = environment["AMUX_SNAPSHOT_RUNNER_STARTED"], let runnerStarted = Double(raw) {
             print(String(format: "AMUX_SNAPSHOT_TIMING startup=%.3fs", suiteStarted - runnerStarted))
+        }
+
+        // On a CI runner the first search field the process draws holding
+        // words comes without its clear button, however long it is given,
+        // and every later one has it; one drawn and thrown away first makes
+        // the photographed ones alike everywhere.
+        if let searching = ComponentCatalog.examples.first(where: { $0.id == "fleet.no-matches" }) {
+            await showing(searching, appearances[0], reducesTransparency: true, perturbing: false) {
+                controller, _, deadline in
+                _ = await settledPhotograph(
+                    of: controller.view, traits: Self.traits(appearances[0]), deadline: deadline,
+                    name: "search-field-warm-up")
+            }
         }
 
         for example in examples {

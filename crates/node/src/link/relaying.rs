@@ -223,6 +223,7 @@ impl Relaying {
                 host,
                 carrier: Arc::downgrade(&carrier),
                 at: stand_in,
+                forwarded_for: through.is_none(),
             },
         );
         forwarding.forwarder.on_admitted(link, stand_in);
@@ -324,25 +325,46 @@ struct Entry {
     carrier: Weak<dyn LinkCarrier>,
     /// The stand-in the connection was last seen at.
     at: SocketAddr,
+    /// The link is a host's this relay forwards for, not one to a
+    /// forwarder this host sends through: the socket lets the host go
+    /// with its last such link.
+    forwarded_for: bool,
 }
 
 impl RelayLinks {
+    /// The socket is told under the lock, so a link admitted while the
+    /// host's last one is forgotten never leaves the host let go.
     fn admit(&self, link: daemon_core::LinkId, entry: Entry) {
         let mut admitted = lock(&self.admitted);
+        if entry.forwarded_for
+            && let Some(socket) = self.socket.upgrade()
+        {
+            socket.keep(entry.host);
+        }
         admitted.senders.insert(entry.at, link);
         admitted.links.insert(link, entry);
     }
 
     /// The link is gone. The address its host was reached at stays the
-    /// host's: a link to it may still be on its way up there, and a host
-    /// proving itself there later takes it.
+    /// host's for a while: a link to it may still be on its way up there,
+    /// and a host proving itself there later takes it. A host this relay
+    /// forwards for is let go once its last link is gone and it falls
+    /// silent.
     fn forget(&self, link: daemon_core::LinkId) {
-        if let Some(socket) = self.socket.upgrade() {
+        let socket = self.socket.upgrade();
+        if let Some(socket) = &socket {
             socket.remove_forwarding(link);
         }
         let mut admitted = lock(&self.admitted);
-        if admitted.links.remove(&link).is_some() {
-            admitted.senders.retain(|_, sender| *sender != link);
+        let Some(gone) = admitted.links.remove(&link) else {
+            return;
+        };
+        admitted.senders.retain(|_, sender| *sender != link);
+        if gone.forwarded_for
+            && !admitted.links.values().any(|entry| entry.host == gone.host)
+            && let Some(socket) = &socket
+        {
+            socket.let_go(gone.host);
         }
     }
 
@@ -637,6 +659,175 @@ mod tests {
             direct: None,
             advertised: Vec::new(),
         }]);
+    }
+
+    /// A relay with one host that stays, `stayer`, linked at `stayer_lan`
+    /// over `link`.
+    struct Stayed {
+        net: Arc<Net>,
+        socket: Arc<LinkSocket>,
+        relaying: Arc<Relaying>,
+        user: relay_core::UserId,
+        stayer: HostId,
+        stayer_lan: SocketAddr,
+        link: Arc<Dialled>,
+    }
+
+    fn relay_with_a_stayer() -> Stayed {
+        let relay = HostId::new_v4();
+        let net = Arc::new(Net::default());
+        let socket = LinkSocket::bind(net.clone(), relay).unwrap();
+        let relaying = Relaying::new(relay);
+        relaying.forward_on(socket.clone());
+        let user = relay_core::UserId([7; 16]);
+        let stayer = HostId::new_v4();
+        let stayer_lan: SocketAddr = "203.0.113.1:6000".parse().unwrap();
+        let link = Dialled::at(arrive(&net, &socket, stayer_lan, QUIC).unwrap());
+        link_up(&relaying, 1000, stayer, user);
+        let (tx, _rx) = mpsc::channel(8);
+        relaying.admitted(daemon_core::LinkId(1000), tx, stayer, link.clone(), None);
+        Stayed {
+            net,
+            socket,
+            relaying,
+            user,
+            stayer,
+            stayer_lan,
+            link,
+        }
+    }
+
+    /// `secs` pass with the stayer sending every ten seconds: arrivals are
+    /// when the socket sweeps.
+    async fn pass(net: &Net, socket: &LinkSocket, stayer_lan: SocketAddr, secs: u64) {
+        for _ in 0..secs / 10 {
+            tokio::time::advance(Duration::from_secs(10)).await;
+            arrive(net, socket, stayer_lan, QUIC).unwrap();
+        }
+    }
+
+    /// A relay holds nothing for hosts that have gone: a hundred hosts
+    /// link, each rebinds twice (quinn moving its connection, the host
+    /// named at each new stand-in), and their links go. Two minutes on,
+    /// the relay's socket holds what it held before them, and the host
+    /// that stayed is still routed.
+    #[tokio::test(start_paused = true)]
+    async fn relay_socket_lets_go_of_hosts_that_rebound_and_left() {
+        let Stayed {
+            net,
+            socket,
+            relaying,
+            user,
+            stayer,
+            stayer_lan,
+            link: stayer_link,
+        } = relay_with_a_stayer();
+        let baseline = socket.held();
+
+        for n in 0..100u64 {
+            let host = HostId::new_v4();
+            let link = n + 1;
+            let first = SocketAddr::new([192, 0, 2, 1].into(), 10_000 + n as u16);
+            let carrier = Dialled::at(arrive(&net, &socket, first, QUIC).unwrap());
+            link_up(&relaying, link, host, user);
+            let (tx, _rx) = mpsc::channel(8);
+            relaying.admitted(daemon_core::LinkId(link), tx, host, carrier.clone(), None);
+            for rebind in 1..=2u8 {
+                let next = SocketAddr::new([192, 0, 2, 1 + rebind].into(), 10_000 + n as u16);
+                carrier.moved_to(arrive(&net, &socket, next, QUIC).unwrap());
+                arrive(&net, &socket, next, &encode_forwarded(stayer, b"\x40hi"));
+                assert_eq!(socket.address_of(*lock(&carrier.0)), Some(next));
+            }
+            relaying.step([Input::LinkDown {
+                link: daemon_core::LinkId(link),
+            }]);
+        }
+        net.take_sent();
+        let (peers, stand_ins, _, _) = socket.held();
+        assert!(peers >= baseline.0 + 100 && stand_ins >= baseline.1 + 300);
+
+        pass(&net, &socket, stayer_lan, 120).await;
+        assert_eq!(socket.held(), baseline, "nothing of the gone hosts stays");
+        let stayer_at = *lock(&stayer_link.0);
+        assert_eq!(socket.peer_of(stayer_at), Some(stayer));
+        assert_eq!(
+            socket.address_of(stayer_at),
+            Some(stayer_lan),
+            "the host that stayed is still routed"
+        );
+    }
+
+    /// A host whose link goes and that links again within half a minute
+    /// is kept at the stand-in it had, and reached there: as is one whose
+    /// new link is admitted before its old one is forgotten.
+    #[tokio::test(start_paused = true)]
+    async fn relay_socket_keeps_a_host_that_returns() {
+        let Stayed {
+            net,
+            socket,
+            relaying,
+            user,
+            stayer,
+            stayer_lan,
+            link: _stayer_link,
+        } = relay_with_a_stayer();
+        let (desk, phone) = (HostId::new_v4(), HostId::new_v4());
+        let desk_lan: SocketAddr = "203.0.113.10:6000".parse().unwrap();
+        let phone_lan: SocketAddr = "203.0.113.20:6000".parse().unwrap();
+        let desk_at = arrive(&net, &socket, desk_lan, QUIC).unwrap();
+        let phone_at = arrive(&net, &socket, phone_lan, QUIC).unwrap();
+        let mut carriers = Vec::new();
+        for (link, host, at) in [(1, desk, desk_at), (2, phone, phone_at)] {
+            link_up(&relaying, link, host, user);
+            let (tx, _rx) = mpsc::channel(8);
+            carriers.push(Dialled::at(at));
+            relaying.admitted(
+                daemon_core::LinkId(link),
+                tx,
+                host,
+                carriers[carriers.len() - 1].clone(),
+                None,
+            );
+        }
+
+        // The desk's link goes; it is back half a minute later, from the
+        // same address, which still leads to its stand-in.
+        relaying.step([Input::LinkDown {
+            link: daemon_core::LinkId(1),
+        }]);
+        pass(&net, &socket, stayer_lan, 30).await;
+        assert_eq!(arrive(&net, &socket, desk_lan, QUIC), Some(desk_at));
+        link_up(&relaying, 3, desk, user);
+        let (tx, _rx) = mpsc::channel(8);
+        carriers.push(Dialled::at(desk_at));
+        relaying.admitted(daemon_core::LinkId(3), tx, desk, carriers[2].clone(), None);
+
+        // The phone's second link is admitted before the core is told of
+        // it, and so before its first link is displaced.
+        let (tx, _rx) = mpsc::channel(8);
+        carriers.push(Dialled::at(phone_at));
+        relaying.admitted(daemon_core::LinkId(4), tx, phone, carriers[3].clone(), None);
+        link_up(&relaying, 4, phone, user);
+        relaying.step([Input::LinkDown {
+            link: daemon_core::LinkId(2),
+        }]);
+
+        pass(&net, &socket, stayer_lan, 120).await;
+        net.take_sent();
+        for (host, at, lan) in [(desk, desk_at, desk_lan), (phone, phone_at, phone_lan)] {
+            assert_eq!(socket.peer_of(at), Some(host), "kept at its stand-in");
+            arrive(
+                &net,
+                &socket,
+                stayer_lan,
+                &encode_forwarded(host, b"\x40yo"),
+            );
+            assert_eq!(
+                net.take_sent(),
+                vec![(lan, encode_delivered(stayer, b"\x40yo"))],
+                "and reached there"
+            );
+        }
     }
 
     /// The relay keys a sender by its link, not the address it was first

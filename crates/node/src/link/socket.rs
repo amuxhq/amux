@@ -430,8 +430,9 @@ enum Expiry {
     /// dialled, or a sender on a byte stream, which goes with the stream.
     Kept,
     /// Let go after [`UNCLAIMED_PEER_TIMEOUT`] without a packet: an address
-    /// dialled before the handshake says who answers there, and a host
-    /// first heard of in a forwarder's delivery.
+    /// dialled before the handshake says who answers there, a host first
+    /// heard of in a forwarder's delivery, and a host whose last link to
+    /// the relay went.
     Silent,
     /// An unnamed sender that dialled this host: let go when silent, or
     /// when its handshake has not named it [`UNCLAIMED_PEER_TIMEOUT`] after
@@ -987,6 +988,26 @@ impl LinkSocket {
         }
     }
 
+    /// `peer`'s last link to this relay went: it is let go, with every
+    /// stand-in it was known by and its addresses, once it has been silent
+    /// for [`UNCLAIMED_PEER_TIMEOUT`]. Until then a link from it finds its
+    /// stand-in where it was. A relay sees a host at a new stand-in each
+    /// time its NAT rebinds or it relaunches, so a host it never let go of
+    /// would leave one more behind each time, for the life of the relay.
+    pub fn let_go(&self, peer: HostId) {
+        if let Some(held) = self.lock().peers.get_mut(&Peer::Host(peer)) {
+            held.expiry = Expiry::Silent;
+        }
+    }
+
+    /// `peer` holds a link to this relay again: it is kept until it is let
+    /// go.
+    pub fn keep(&self, peer: HostId) {
+        if let Some(held) = self.lock().peers.get_mut(&Peer::Host(peer)) {
+            held.expiry = Expiry::Kept;
+        }
+    }
+
     /// `peer` has a link again: its route is trusted once more.
     pub fn reclaim(&self, peer: HostId) {
         if let Some(held) = self.lock().peers.get_mut(&Peer::Host(peer)) {
@@ -1309,6 +1330,19 @@ impl LinkSocket {
             .map(path_datagram)
             .min()
             .unwrap_or(MAX_DATAGRAM)
+    }
+
+    /// What the socket holds for its peers: their states, stand-ins,
+    /// addresses and forwarding links.
+    #[cfg(test)]
+    pub(crate) fn held(&self) -> (usize, usize, usize, usize) {
+        let state = self.lock();
+        (
+            state.peers.len(),
+            state.by_stand_in.len(),
+            state.by_addr.len(),
+            state.forwarding.len(),
+        )
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
@@ -2275,18 +2309,6 @@ mod tests {
     /// to the new stand-in, its earlier stand-in reaches it at the new
     /// address, and the old address is let go. A host carried through a
     /// forwarder keeps that route.
-    /// What the socket holds for its peers: their states, stand-ins,
-    /// addresses and forwarding links.
-    fn held(socket: &LinkSocket) -> (usize, usize, usize, usize) {
-        let state = socket.lock();
-        (
-            state.peers.len(),
-            state.by_stand_in.len(),
-            state.by_addr.len(),
-            state.forwarding.len(),
-        )
-    }
-
     /// A burst of senders that never finish a handshake, and a forwarder
     /// delivering in the names of hosts no link follows, leave nothing
     /// behind once a minute passes without them: the socket holds what it
@@ -2304,7 +2326,7 @@ mod tests {
         let relay: SocketAddr = "198.51.100.1:443".parse().unwrap();
         let via = socket.stand_in_at(relay);
         socket.add_forwarding(LinkId(1), via, PathKind::RelayUdp);
-        let baseline = held(&socket);
+        let baseline = socket.held();
 
         let flood: IpAddr = "203.0.113.9".parse().unwrap();
         for port in 0..100 {
@@ -2318,7 +2340,7 @@ mod tests {
         let chatty: SocketAddr = "203.0.113.10:4000".parse().unwrap();
         fake.push(chatty, QUIC);
         let (chatty_at, _) = receive(&socket).unwrap();
-        assert_eq!(held(&socket).0, baseline.0 + 121);
+        assert_eq!(socket.held().0, baseline.0 + 121);
 
         // The relay's link and the unnamed sender go on sending.
         for _ in 0..6 {
@@ -2334,7 +2356,7 @@ mod tests {
             "a sender never named is let go, and minted afresh"
         );
         assert_eq!(socket.path_of(chatty_at), None);
-        let (peers, stand_ins, addresses, forwarding) = held(&socket);
+        let (peers, stand_ins, addresses, forwarding) = socket.held();
         assert_eq!(
             (peers - 1, stand_ins - 1, addresses, forwarding),
             baseline,
@@ -2351,18 +2373,18 @@ mod tests {
     #[test]
     fn socket_removing_a_path_forgets_the_senders_known_only_on_it() {
         let (fake, socket, _own) = fake_socket();
-        let baseline = held(&socket);
+        let baseline = socket.held();
         let path = socket.add_framed(Arc::new(Recorded::default()));
         socket.deliver_framed(path, QUIC.to_vec());
         let (on_stream, _) = receive(&socket).unwrap();
         socket.remove_framed(path);
         assert_eq!(socket.path_of(on_stream), None);
-        assert_eq!(held(&socket), baseline);
+        assert_eq!(socket.held(), baseline);
 
         let relay: SocketAddr = "198.51.100.1:443".parse().unwrap();
         let via = socket.stand_in_at(relay);
         socket.add_forwarding(LinkId(1), via, PathKind::RelayUdp);
-        let with_relay = held(&socket);
+        let with_relay = socket.held();
         let dialled = HostId::new_v4();
         socket.set_carrying(dialled, Path::Forwarded(LinkId(1)));
         let dialled_at = socket.stand_in(dialled);
@@ -2373,7 +2395,7 @@ mod tests {
         socket.remove_forwarding(LinkId(1));
         assert_eq!(socket.peer_of(stranger_at), None);
         assert_eq!(socket.peer_of(dialled_at), Some(dialled));
-        let (peers, stand_ins, addresses, _) = held(&socket);
+        let (peers, stand_ins, addresses, _) = socket.held();
         assert_eq!(
             (peers, stand_ins, addresses),
             (with_relay.0 + 1, with_relay.1 + 1, with_relay.2)

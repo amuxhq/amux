@@ -261,6 +261,9 @@ pub struct State {
     flapped: Option<String>,
     /// The core asked for an attempt already in flight.
     doubled: Option<String>,
+    /// The first time a forwarder refused the target's packets and the
+    /// route through it still carried the target's traffic.
+    kept_refused: Option<String>,
     /// The core asked for a dump.
     dumped: Option<String>,
 }
@@ -377,6 +380,7 @@ impl Machine for PresenceRouting {
             unprompted: None,
             flapped: None,
             doubled: None,
+            kept_refused: None,
             dumped: None,
         }
     }
@@ -628,6 +632,12 @@ impl Machine for PresenceRouting {
             }
         };
         self.step(&mut next, input);
+        if let Action::ForwardRefused(via, _) = action
+            && next.view.active == Some(via.route())
+            && next.kept_refused.is_none()
+        {
+            next.kept_refused = Some(format!("{action:?} left {:?} carrying", via.route()));
+        }
         self.judge(s, &mut next, action);
         Some(next)
     }
@@ -654,6 +664,11 @@ impl Machine for PresenceRouting {
                 |_, s: &State| s.flapped.is_none(),
             ),
             Property::always(ONE_ATTEMPT_IN_FLIGHT, |_, s: &State| s.doubled.is_none()),
+            Property::always(
+                "a refused route stops carrying: once a forwarder refuses a host's packets, the \
+                 route through it no longer carries the host's traffic",
+                |_, s: &State| s.kept_refused.is_none(),
+            ),
             Property::always("the core never asks for a dump", |_, s: &State| {
                 s.dumped.is_none()
             }),
@@ -974,6 +989,7 @@ impl fmt::Debug for State {
             ("unprompted", &self.unprompted),
             ("flapped", &self.flapped),
             ("doubled", &self.doubled),
+            ("kept_refused", &self.kept_refused),
             ("dumped", &self.dumped),
         ] {
             if let Some(value) = value {

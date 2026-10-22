@@ -37,7 +37,7 @@ properties` lists every one. The main machines:
 
 | Chapter | Machine | Some of its promises |
 | --- | --- | --- |
-| [Presence](#chapter-3-presence), [routing](#chapter-4-routing-and-failover) | presence and routing | presence changes only on a concluded attempt on the preferred route; Away only on payment refusal; offline after failed calls until a channel opens; no flap while another route carries traffic; a host with a working route eventually reads online |
+| [Presence](#chapter-3-presence), [routing](#chapter-4-routing-and-failover) | presence and routing | presence changes only on a concluded attempt on the preferred route; Away only on payment refusal; offline after failed calls until a channel opens; no flap while another route carries traffic; a refused route stops carrying; a host with a working route eventually reads online |
 | [Replica rows](JOURNAL_AND_STORE.md#own-rows-and-replica-rows) | replication | the block is contiguous; the block agrees with the origin; no row survives from another generation; the cursor is complete; a replica whose origin and link fall quiet becomes current |
 | [The family rule](#the-family-rule) | family and deliveries | no child is deleted by a stale listing; an outbox row is deleted only on accept; each report reaches its parent exactly once; nothing is owed after unpair; every descendant of a stopped parent eventually stops on every reachable host |
 | All of them at once | composed net | several daemons and their agents, every machine's promises judged together under link, crash and loss faults |

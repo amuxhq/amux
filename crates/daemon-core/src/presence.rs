@@ -1187,38 +1187,6 @@ mod tests {
     }
 
     #[test]
-    fn a_forward_refused_for_the_plan_reads_the_host_away_while_nothing_else_carries_it() {
-        let mut daemon = relayed_desk();
-        let out = forward_refused(&mut daemon, 1, DESK, ForwardRefusal::PaymentRequired);
-        assert_eq!(view(&daemon, DESK).presence, Presence::Away);
-        assert_eq!(view(&daemon, DESK).active, None);
-        assert!(out.contains(&Output::DropRoute {
-            host: DESK,
-            route: Route::Via(RELAY)
-        }));
-        assert!(retry_at(&out, DESK).is_some(), "{out:?}");
-        assert!(daemon.presence().retrying(DESK));
-
-        // A channel on its own link brings it back.
-        up(&mut daemon, 2, DESK, CarrierKind::Direct);
-        concluded(&mut daemon, DESK, Route::Direct(LinkId(2)), Tried::Opened);
-        assert_eq!(view(&daemon, DESK).presence, Presence::Online);
-    }
-
-    #[test]
-    fn a_forward_refused_says_nothing_of_a_host_its_own_link_carries() {
-        let mut daemon = relayed_desk();
-        up(&mut daemon, 2, DESK, CarrierKind::Direct);
-        concluded(&mut daemon, DESK, Route::Direct(LinkId(2)), Tried::Opened);
-        for reason in [ForwardRefusal::PaymentRequired, ForwardRefusal::NoRoute] {
-            let out = forward_refused(&mut daemon, 1, DESK, reason);
-            assert_eq!(view(&daemon, DESK).presence, Presence::Online);
-            assert_eq!(view(&daemon, DESK).active, Some(Route::Direct(LinkId(2))));
-            assert!(!daemon.presence().retrying(DESK), "{out:?}");
-        }
-    }
-
-    #[test]
     fn a_forwarder_holding_no_link_to_the_host_reads_it_offline_at_once() {
         let mut daemon = relayed_desk();
         let out = forward_refused(&mut daemon, 1, DESK, ForwardRefusal::NoRoute);

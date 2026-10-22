@@ -345,6 +345,8 @@ observe them:
 - presence's "no flap while another route carries traffic": each host
   reaches the other by one route, their link, with no relay or peer to
   claim another;
+- presence's "a refused route stops carrying": no forwarder in the net
+  refuses a host's packets;
 - every promise of the family model, which needs a parent and a child;
 - every promise of the supervisor, which is outside the net.
 

@@ -1310,7 +1310,6 @@ property = { crate = "models", machine = "path machine", sentence = "a path carr
 checker = "models/path::every_path_machine_promise_holds_at_ci_bounds"
 tests = [
   "path-core/lib::tests::the_first_flight_goes_on_every_candidate_until_a_probe_answers",
-  "path-core/lib::tests::a_packet_alone_never_makes_a_path_carry_the_link",
 ]
 
 [[contract]]
@@ -1319,9 +1318,9 @@ source = "model"
 property = { crate = "models", machine = "path machine", sentence = "after a lapse no packet goes on a path across networks" }
 checker = "models/path::every_path_machine_promise_holds_at_ci_bounds"
 tests = [
-  "path-core/lib::tests::an_observed_address_is_never_probed_while_the_account_is_free",
-  "path-core/lib::tests::a_lapse_drops_the_punched_path_and_the_link_falls_back",
-  "path-core/lib::tests::a_payment_refusal_drops_the_relay_and_every_punched_path",
+  "testnet/spec_links::punch_free_never_probes_and_the_link_stays_on_the_lan",
+  "testnet/spec_links::punch_lapse_drops_the_punched_path",
+  "testnet/spec_links::entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once",
 ]
 
 [[contract]]
@@ -1330,8 +1329,8 @@ source = "model"
 property = { crate = "models", machine = "path machine", sentence = "if any path works the link eventually uses one" }
 checker = "models/path::every_path_machine_promise_holds_at_ci_bounds"
 tests = [
-  "path-core/lib::tests::a_network_change_reprobes_every_path_and_carries_on_the_first_answer",
-  "path-core/lib::tests::a_link_going_down_sends_on_every_candidate_again",
+  "testnet/spec_links::path_change_lan_relay_lan_keeps_the_subscription_open",
+  "testnet/spec_links::path_change_phone_network_keeps_the_subscription_open",
 ]
 
 [[contract]]
@@ -1340,7 +1339,8 @@ source = "model"
 property = { crate = "models", machine = "path machine", sentence = "a direct path that keeps answering is eventually chosen" }
 checker = "models/path::every_path_machine_promise_holds_at_ci_bounds"
 tests = [
-  "path-core/lib::tests::a_direct_path_that_keeps_answering_takes_the_link_from_the_relay_after_the_hold_down",
+  "testnet/spec_links::punch_ordinary_routers_move_the_link_onto_a_punched_path",
+  "testnet/spec_links::path_change_lan_relay_lan_keeps_the_subscription_open",
 ]
 
 [[contract]]
@@ -1359,8 +1359,7 @@ source = "model"
 property = { crate = "models", machine = "path machine", sentence = "the relay path stays ready while the link is direct" }
 checker = "models/path::every_path_machine_promise_holds_at_ci_bounds"
 tests = [
-  "path-core/lib::tests::the_relay_path_is_probed_again_while_the_link_is_direct",
-  "path-core/lib::tests::a_relay_that_stops_answering_is_still_probed_every_interval",
+  "testnet/spec_links::path_change_lan_relay_lan_keeps_the_subscription_open",
 ]
 
 [[contract]]

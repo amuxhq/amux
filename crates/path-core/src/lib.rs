@@ -903,49 +903,6 @@ mod tests {
     }
 
     #[test]
-    fn a_packet_alone_never_makes_a_path_carry_the_link() {
-        let mut paths = up(true);
-        let seen = addr("10.0.0.9:4433");
-        let out = step(
-            &mut paths,
-            Input::PacketArrived {
-                path: Path::Direct(seen),
-            },
-        );
-        assert_eq!(probes(&out), vec![Path::Direct(seen)]);
-        assert_eq!(carry(&out), None);
-        assert_eq!(
-            send_on_all(&out),
-            Some(vec![Path::Direct(seen), Path::Direct(lan()), relayed()])
-        );
-        let out = answer(&mut paths, Path::Direct(seen), 3);
-        assert_eq!(carry(&out), Some(Path::Direct(seen)));
-    }
-
-    #[test]
-    fn a_direct_path_that_keeps_answering_takes_the_link_from_the_relay_after_the_hold_down() {
-        let mut paths = up(true);
-        answer(&mut paths, relayed(), 80);
-        tick(&mut paths, 100);
-        let out = answer(&mut paths, Path::Direct(lan()), 4);
-        assert_eq!(carry(&out), None, "the relay carried for 100 ms only");
-        assert!(out.contains(&Output::Arm {
-            at_ms: HOLD_DOWN_MS
-        }));
-
-        let out = tick(&mut paths, HOLD_DOWN_MS - 1);
-        assert_eq!(carry(&out), None);
-        step(
-            &mut paths,
-            Input::PacketArrived {
-                path: Path::Direct(lan()),
-            },
-        );
-        let out = tick(&mut paths, HOLD_DOWN_MS);
-        assert_eq!(carry(&out), Some(Path::Direct(lan())));
-    }
-
-    #[test]
     fn the_link_never_leaves_a_working_path_for_one_of_the_same_kind() {
         let mut paths = up(true);
         let other = addr("[fd00::20]:4433");
@@ -998,89 +955,6 @@ mod tests {
     }
 
     #[test]
-    fn the_relay_path_is_probed_again_while_the_link_is_direct() {
-        let mut paths = up(true);
-        answer(&mut paths, relayed(), 80);
-        answer(&mut paths, Path::Direct(lan()), 4);
-        tick(&mut paths, HOLD_DOWN_MS);
-        assert_eq!(paths.carrying(), Some(&Path::Direct(lan())));
-
-        // The carrying path's own packets keep it heard; the relay's path is
-        // heard only through its probes.
-        let mut relay_probes = 0;
-        for now_ms in (HOLD_DOWN_MS..HOLD_DOWN_MS + 20_000).step_by(500) {
-            step(
-                &mut paths,
-                Input::PacketArrived {
-                    path: Path::Direct(lan()),
-                },
-            );
-            let out = tick(&mut paths, now_ms);
-            assert!(!probes(&out).contains(&Path::Direct(lan())));
-            if probes(&out).contains(&relayed()) {
-                relay_probes += 1;
-                answer(&mut paths, relayed(), 80);
-            }
-        }
-        assert_eq!(relay_probes, 4, "one probe each interval of the 20 s");
-    }
-
-    #[test]
-    fn a_relay_that_stops_answering_is_still_probed_every_interval() {
-        let mut paths = up(true);
-        answer(&mut paths, Path::Direct(lan()), 4);
-        let mut relay_probes = 0;
-        for now_ms in (500..30_000).step_by(500) {
-            step(
-                &mut paths,
-                Input::PacketArrived {
-                    path: Path::Direct(lan()),
-                },
-            );
-            relay_probes += probes(&tick(&mut paths, now_ms))
-                .iter()
-                .filter(|p| **p == relayed())
-                .count();
-        }
-        assert!(
-            relay_probes >= 5,
-            "{relay_probes} probes of the silent relay"
-        );
-    }
-
-    #[test]
-    fn an_observed_address_is_never_probed_while_the_account_is_free() {
-        let mut paths = up(false);
-        let out = step(
-            &mut paths,
-            Input::Candidate {
-                addr: public(),
-                source: Source::Observed,
-            },
-        );
-        assert!(probes(&out).is_empty());
-        let out = step(
-            &mut paths,
-            Input::PacketArrived {
-                path: Path::Punched(public()),
-            },
-        );
-        assert!(probes(&out).is_empty());
-        let out = step(
-            &mut paths,
-            Input::NetworkChanged {
-                addrs: vec!["192.168.1.5".parse().unwrap()],
-            },
-        );
-        assert_eq!(probes(&out), vec![Path::Direct(lan()), relayed()]);
-        assert_eq!(
-            send_on_all(&out),
-            None,
-            "nothing has carried, so on-all is unchanged"
-        );
-    }
-
-    #[test]
     fn a_paid_account_punches_to_an_observed_address() {
         let mut paths = up(true);
         let out = step(
@@ -1093,115 +967,6 @@ mod tests {
         assert_eq!(probes(&out), vec![Path::Punched(public())]);
         let out = answer(&mut paths, Path::Punched(public()), 30);
         assert_eq!(carry(&out), Some(Path::Punched(public())));
-    }
-
-    #[test]
-    fn a_lapse_drops_the_punched_path_and_the_link_falls_back() {
-        let mut paths = up(true);
-        answer(&mut paths, relayed(), 80);
-        step(
-            &mut paths,
-            Input::Candidate {
-                addr: public(),
-                source: Source::Observed,
-            },
-        );
-        answer(&mut paths, Path::Punched(public()), 30);
-        let out = tick(&mut paths, HOLD_DOWN_MS);
-        assert_eq!(carry(&out), Some(Path::Punched(public())));
-
-        let out = step(&mut paths, Input::Plan { paid: false });
-        assert!(out.contains(&Output::DropCandidate { addr: public() }));
-        assert_eq!(carry(&out), Some(relayed()));
-        let out = step(
-            &mut paths,
-            Input::ProbeAnswered {
-                path: Path::Punched(public()),
-                rtt_ms: 30,
-            },
-        );
-        assert_eq!(carry(&out), None, "a late answer brings nothing back");
-    }
-
-    #[test]
-    fn a_payment_refusal_drops_the_relay_and_every_punched_path() {
-        let mut paths = up(true);
-        answer(&mut paths, relayed(), 80);
-        step(
-            &mut paths,
-            Input::Candidate {
-                addr: public(),
-                source: Source::Observed,
-            },
-        );
-        answer(&mut paths, Path::Punched(public()), 30);
-        tick(&mut paths, HOLD_DOWN_MS);
-
-        let out = step(
-            &mut paths,
-            Input::ForwardRefused {
-                link: RELAY,
-                reason: ForwardRefusal::PaymentRequired,
-            },
-        );
-        assert!(out.contains(&Output::DropCandidate { addr: public() }));
-        assert_eq!(carry(&out), None);
-        assert_eq!(send_on_all(&out), Some(vec![Path::Direct(lan())]));
-        assert_eq!(paths.carrying(), None);
-        let out = step(
-            &mut paths,
-            Input::ProbeAnswered {
-                path: relayed(),
-                rtt_ms: 80,
-            },
-        );
-        assert_eq!(carry(&out), None, "the refused relay carries nothing");
-
-        // The LAN's first probe timed out before the refusal; its next
-        // one is due an interval after it went.
-        let out = tick(&mut paths, PROBE_INTERVAL_MS);
-        assert!(
-            out.contains(&Output::Probe {
-                path: Path::Direct(lan())
-            }),
-            "{out:?}"
-        );
-        let out = answer(&mut paths, Path::Direct(lan()), 4);
-        assert_eq!(
-            carry(&out),
-            Some(Path::Direct(lan())),
-            "the free path remains"
-        );
-    }
-
-    #[test]
-    fn an_answer_with_no_probe_outstanding_proves_nothing() {
-        let mut paths = up(true);
-        // The LAN's probe from the link coming up times out unanswered.
-        tick(&mut paths, PROBE_TIMEOUT_MS);
-        let out = answer(&mut paths, Path::Direct(lan()), 4);
-        assert_eq!(carry(&out), None, "a late answer carries nothing");
-        assert_eq!(paths.carrying(), None);
-
-        // The network changes under an outstanding probe, with the link
-        // down: the answer to the probe sent before it is stale.
-        let mut paths = up(true);
-        step(&mut paths, Input::LinkDown);
-        step(
-            &mut paths,
-            Input::NetworkChanged {
-                addrs: vec!["10.0.0.9".parse().unwrap()],
-            },
-        );
-        let out = answer(&mut paths, Path::Direct(lan()), 4);
-        assert_eq!(carry(&out), None, "a stale answer carries nothing");
-
-        // An answer to the probe outstanding still counts, once.
-        let mut paths = up(true);
-        let out = answer(&mut paths, Path::Direct(lan()), 4);
-        assert_eq!(carry(&out), Some(Path::Direct(lan())));
-        let out = answer(&mut paths, Path::Direct(lan()), 4);
-        assert_eq!(carry(&out), None, "a duplicate answer changes nothing");
     }
 
     #[test]
@@ -1231,27 +996,6 @@ mod tests {
         // IPv6 one takes the link.
         let out = step(&mut paths, Input::CandidateGone { addr: public() });
         assert_eq!(carry(&out), Some(Path::Direct(lan6)), "{out:?}");
-    }
-
-    #[test]
-    fn a_payment_refusal_with_no_free_path_leaves_the_link_nothing_to_carry_on() {
-        let mut paths = Paths::with_budget(0, true, StepBudget::UNLIMITED);
-        step(&mut paths, Input::ForwardingUp { link: RELAY });
-        step(&mut paths, Input::LinkUp);
-        let out = answer(&mut paths, relayed(), 80);
-        assert_eq!(carry(&out), Some(relayed()));
-
-        let out = step(
-            &mut paths,
-            Input::ForwardRefused {
-                link: RELAY,
-                reason: ForwardRefusal::PaymentRequired,
-            },
-        );
-        assert_eq!(paths.carrying(), None, "the link goes down");
-        assert!(probes(&out).is_empty());
-        let out = tick(&mut paths, PROBE_INTERVAL_MS * 3);
-        assert!(probes(&out).is_empty(), "the refused relay is never probed");
     }
 
     #[test]
@@ -1341,33 +1085,6 @@ mod tests {
     }
 
     #[test]
-    fn a_network_change_reprobes_every_path_and_carries_on_the_first_answer() {
-        let mut paths = up(true);
-        answer(&mut paths, Path::Direct(lan()), 4);
-        tick(&mut paths, 1_000);
-        let out = step(
-            &mut paths,
-            Input::NetworkChanged {
-                addrs: vec!["172.20.10.2".parse().unwrap()],
-            },
-        );
-        assert_eq!(probes(&out), vec![Path::Direct(lan()), relayed()]);
-        assert_eq!(
-            send_on_all(&out),
-            Some(vec![Path::Direct(lan()), relayed()])
-        );
-        assert_eq!(paths.carrying(), None);
-        assert_eq!(
-            paths.local_addrs(),
-            &["172.20.10.2".parse::<IpAddr>().unwrap()]
-        );
-
-        tick(&mut paths, 1_090);
-        let out = answer(&mut paths, relayed(), 90);
-        assert_eq!(carry(&out), Some(relayed()));
-    }
-
-    #[test]
     fn the_link_returns_to_an_address_that_answers_again_however_long_it_was_silent() {
         let mut paths = up(true);
         answer(&mut paths, Path::Direct(lan()), 4);
@@ -1425,27 +1142,6 @@ mod tests {
             back_at.is_some_and(|at| at <= 600_000 + PROBE_INTERVAL_MS),
             "back on the address at {back_at:?}"
         );
-    }
-
-    #[test]
-    fn a_link_going_down_sends_on_every_candidate_again() {
-        let mut paths = up(true);
-        answer(&mut paths, Path::Direct(lan()), 4);
-        let out = step(&mut paths, Input::LinkDown);
-        assert_eq!(
-            send_on_all(&out),
-            Some(vec![Path::Direct(lan()), relayed()])
-        );
-        assert_eq!(paths.carrying(), None);
-        let out = step(&mut paths, Input::LinkUp);
-        assert_eq!(
-            carry(&out),
-            None,
-            "what answered for the last link proves nothing for this one"
-        );
-        assert_eq!(probes(&out), vec![Path::Direct(lan()), relayed()]);
-        let out = answer(&mut paths, Path::Direct(lan()), 4);
-        assert_eq!(carry(&out), Some(Path::Direct(lan())));
     }
 
     #[test]

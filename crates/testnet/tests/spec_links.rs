@@ -1442,17 +1442,45 @@ async fn punch_lapse_drops_the_punched_path() {
     let mut net = behind_routers(testnet::RouterKind::Ordinary, said).await;
     carried_by(&net, "laptop", "desk", PathKind::Punched).await;
     carried_by(&net, "desk", "laptop", PathKind::Punched).await;
+    // A host whose relay link is down as the account lapses learns it only
+    // when that link comes back, presenting the paid credential it kept:
+    // wait for both so both learn it now.
+    for host in ["desk", "laptop"] {
+        until(&format!("{host}'s relay link connected"), || async {
+            let id = profile(&net, host);
+            let seen = door(&net, host)
+                .await
+                .list_profiles(wire::Empty {})
+                .await
+                .map_err(|status| status.message().to_owned())?
+                .into_inner()
+                .profiles
+                .into_iter()
+                .find(|info| info.id == id)
+                .map(|info| info.observed());
+            (seen == Some(wire::Observed::Connected))
+                .then_some(())
+                .ok_or_else(|| format!("observed {seen:?}"))
+        })
+        .await
+        .unwrap();
+    }
     let lapsed = net.set_tier("ada", testnet::TierDecl::Free).await.unwrap();
     println!("{lapsed:?}");
+    // A host that stops sending on the punched path with nowhere else to
+    // go writes no new path for its link; the link log next says it went
+    // down, at the link's idle timeout (30 s).
     for (host, peer) in [("laptop", "desk"), ("desk", "laptop")] {
-        until(
+        testnet::observe::until_within(
             &format!("{host}'s link to {peer} to leave the punched path"),
+            std::time::Duration::from_secs(45),
             || async {
                 match net.carrying_path(host, peer) {
                     Ok(Some(PathKind::Punched)) => Err("still punched".to_owned()),
-                    other => Ok(println!(
-                        "{host}'s link to {peer} after the lapse: {other:?}"
-                    )),
+                    other => {
+                        println!("{host}'s link to {peer} after the lapse: {other:?}");
+                        Ok(())
+                    }
                 }
             },
         )
@@ -1649,7 +1677,7 @@ async fn path_change_lan_relay_lan_keeps_the_subscription_open() {
 #[tokio::test(flavor = "multi_thread")]
 async fn path_change_phone_network_keeps_the_subscription_open() {
     let lines = ["said before the change", "said after the change"];
-    let mut net = Net::start(
+    let net = Net::start(
         Topology::new()
             .host_decl(lan_host("desk", "home"))
             .host_decl(lan_host("laptop", "home"))

@@ -300,13 +300,28 @@ impl PathDriver {
                 self.step_all(&mut state, || Input::ForwardingDown { link });
             }
             PathEvent::Arrived { peer, path } => {
-                if state
+                let Some(machine) = state
                     .machines
                     .get(&peer)
-                    .is_some_and(|machine| !machine.links.is_empty())
-                {
-                    self.step(&mut state, peer, vec![Input::PacketArrived { path }]);
-                }
+                    .filter(|machine| !machine.links.is_empty())
+                else {
+                    return;
+                };
+                // The socket names any address a packet came from direct.
+                // One only the relay's observation gave is punched: the
+                // peer may still be sending there after this account
+                // lapsed, and a free machine must not take it back.
+                let path = match path {
+                    Path::Direct(addr)
+                        if machine.candidates.iter().any(|(candidate, source)| {
+                            *source == Source::Observed && same_path(Path::Direct(*candidate), path)
+                        }) =>
+                    {
+                        Path::Punched(addr)
+                    }
+                    path => path,
+                };
+                self.step(&mut state, peer, vec![Input::PacketArrived { path }]);
             }
         }
     }
@@ -385,6 +400,16 @@ impl PathDriver {
                 return;
             };
             machine.paths.step(Input::Tick { now_ms }, &mut out);
+            // A lapse, told by the plan or by the relay refusing for it,
+            // drops every address only the relay's observation gave.
+            let lapsing = matches!(
+                input,
+                Input::Plan { paid: false }
+                    | Input::ForwardRefused {
+                        reason: ForwardRefusal::PaymentRequired,
+                        ..
+                    }
+            );
             machine.paths.step(input, &mut out);
             for output in out.drain(..) {
                 match output {
@@ -426,11 +451,23 @@ impl PathDriver {
                     Output::DropCandidate { addr } => {
                         // An address the relay observed, dropped by a
                         // lapse, is the peer's still: paying again uses it.
-                        if !(machine.candidates.get(&addr) == Some(&Source::Observed) && !paid) {
+                        let observed = machine.candidates.get(&addr) == Some(&Source::Observed);
+                        if !(observed && (lapsing || !paid)) {
                             machine.candidates.remove(&addr);
                         }
                         machine.probes.remove(&Path::Direct(addr));
                         machine.probes.remove(&Path::Punched(addr));
+                        // A free account may not punch, so the link leaves
+                        // that address even with no other path to go to,
+                        // unlike one that only stopped answering.
+                        if lapsing
+                            && self
+                                .socket
+                                .carrying(peer)
+                                .is_some_and(|path| same_path(path, Path::Punched(addr)))
+                        {
+                            self.socket.stop_carrying(peer);
+                        }
                     }
                     Output::Arm { at_ms } => {
                         machine.armed = Some(at_ms);
@@ -1031,6 +1068,40 @@ mod tests {
         assert!(
             matches!(paths.carrying(linked.desk), Some(Path::Direct(_))),
             "the LAN carries the link throughout"
+        );
+    }
+
+    /// A lapse leaves a punched path even when nothing else can carry the
+    /// link: the socket stops sending on it, and the peer's packets still
+    /// arriving there do not put the link back on it.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn entitlement_a_lapse_leaves_a_punched_path_with_nowhere_else_to_go() {
+        let linked = linked(false).await;
+        let paths = &linked.laptop_paths;
+        paths.plan(true);
+        paths.addresses(
+            linked.desk,
+            &[PeerAddress {
+                addr: linked.lan,
+                source: Source::Observed,
+            }],
+        );
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while paths.carrying(linked.desk) != Some(Path::Punched(linked.lan)) {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .expect("the desk's address, known only from the relay, is punched");
+
+        paths.plan(false);
+        assert_eq!(paths.carrying(linked.desk), None);
+        // The desk keeps sending there (keepalives every 500 ms).
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert_eq!(
+            paths.socket.carrying(linked.desk),
+            None,
+            "the socket sends nothing more on the punched path"
         );
     }
 

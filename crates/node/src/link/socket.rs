@@ -1010,6 +1010,16 @@ impl LinkSocket {
         self.lock().set_route(peer, Route::Carrying(path));
     }
 
+    /// Sends none of `peer`'s packets until a path is named again: the one
+    /// carrying them is one this host may no longer use. A packet from the
+    /// peer on it does not bring it back.
+    pub fn stop_carrying(&self, peer: HostId) {
+        if let Some(held) = self.lock().peers.get_mut(&Peer::Host(peer)) {
+            held.route = Route::Unset;
+            held.flight = None;
+        }
+    }
+
     /// Sends each of `peer`'s packets on every one of `paths` until a
     /// packet from the peer arrives on one, which carries the link from
     /// then on: a link's first flight, before anything says which path

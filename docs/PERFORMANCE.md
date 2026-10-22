@@ -161,12 +161,13 @@ without a drift gate. The run fails if any verdict is `FAIL`.
 
 `just relay-curve` measures how the production relay scales with the hosts holding links to it
 (`crates/qualification/src/perf/relay.rs`). At 10, 100 and 1,000 concurrent connections it starts a fresh relay on
-loopback, links that many hosts to it in pairs, one pair to an account, and measures three things: link admissions per
-second, the level's hosts over the time from the first dial to the last link the relay accepted, sixty-four hosts
-dialling at once; stream-open latency, every host opening twenty streams to its partner one after another, all hosts
-at once, each timed from the open to the partner's one-byte answer; and aggregate throughput, every host writing into
-one stream to its partner as fast as the relay takes the bytes, read over a three-second window after a second's
-warm-up. Each level runs five rounds, each waiting a quarter second after the relay has let the last round's links go,
+loopback, links that many hosts to it in pairs, one pair to an account, then links each pair end to end through the
+relay, one host dialling the other through its own link to the relay as a daemon does, and measures three things:
+link admissions per second, the level's hosts over the time from the first dial to the last link the relay accepted,
+sixty-four hosts dialling at once; stream-open latency, every host opening twenty streams to its partner on their
+link one after another, all hosts at once, each timed from the open to the partner's one-byte answer; and aggregate
+throughput, every host writing into one stream on that link as fast as the link takes the bytes, read over a
+three-second window after a second's warm-up. Each level runs five rounds, each waiting a quarter second after the relay has let the last round's links go,
 since their teardown otherwise delays the next round's dials: admissions and throughput are the median round's, and
 the latency percentiles are taken over every round's opens together, so the 99th percentile at ten connections rests
 on a thousand opens.
@@ -178,9 +179,10 @@ just relay-curve --compare    # judge against it; non-zero outside the noise ban
 ```
 
 The hosts link over the relay's TLS-over-TCP listener, the one a deployment runs beside QUIC: the relay admits ten
-new QUIC handshakes a minute from one address, and every host here dials from the same loopback address. They are
-bare links that open raw streams and serve no calls, so the work measured is the relay's and the TLS on both its
-legs, in the same process with the relay on a runtime of its own. The run records the machine model, OS, cores,
+new QUIC handshakes a minute from one address, and every host here dials from the same loopback address. The links
+between partners are QUIC whose packets the relay forwards over those TCP legs. The hosts are bare: a link to the
+relay, a link to the partner and raw streams on it, serving no calls, so the work measured is the relay's forwarding,
+the partners' QUIC and the TLS on the relay's legs, in the same process with the relay on a runtime of its own. The run records the machine model, OS, cores,
 reference state (the flood's busy core) and the load average before and after; the binary refuses a debug build
 and a machine that is not enrolled.
 
@@ -192,11 +194,12 @@ past double. Admissions moved by up to 10% at every level over three runs with t
 is 25%, like the median open's; more admissions per second is better. A baseline from another model, profile, carrier
 or reference state, or one recorded before admissions were measured, is refused.
 
-On macOS the curve is bounded by the kernel's loopback, not by the relay's own code: the process spends about four
-times as long in the kernel as in user code with every core partly idle, the relay completes about 3,300 stream
-opens a second whatever the number of connections, so open latency grows with the number of hosts opening at once,
-and throughput stays near 190 MiB/s from 10 connections to 100. A change to the relay shows when it adds round
-trips, packets or system calls to a stream, or serialises work that the kernel's limit would otherwise hide.
+Before the relay forwarded links' packets it carried the hosts' streams itself, and the baseline on the enrolled Mac
+was recorded then: about 190 MiB/s from 10 connections to 100 and 160 at a thousand, with the median open at 3, 29
+and 294 ms. Forwarded, an open is one round trip between the partners rather than a stream the relay sets up, so the
+median open fell to 0.8, 7 and 69 ms, while throughput fell to 46, 77 and 39 MiB/s: every 1,200-byte packet crosses
+both TCP legs and the relay's forwarder on its own. A change to the relay shows when it adds round trips, packets or
+system calls to a link, or serialises work across links.
 
 ## The phone
 

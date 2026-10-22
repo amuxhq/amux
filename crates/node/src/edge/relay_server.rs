@@ -1160,4 +1160,52 @@ mod tests {
         /// Past the relay's next look at where its hosts are.
         const OBSERVED_PATIENCE: Duration = Duration::from_millis(4_500);
     }
+
+    /// Two of the relay curve's hosts on one paid account, each linked over
+    /// TCP: one dials the other through its link to the relay, and a stream
+    /// on that end-to-end link carries bytes both ways.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn relay_hosts_reach_each_other_on_a_link_the_relay_forwards() {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+        let relay = relay().await;
+        let account = Uuid::new_v4();
+        let mut hosts = Vec::new();
+        for _ in 0..2 {
+            let tcp = TcpStream::connect(relay.tcp).await.unwrap();
+            hosts.push(
+                crate::link::relay_host::RelayHost::connect(
+                    tcp,
+                    relay.client.clone(),
+                    NAME,
+                    format!("{account}/pro"),
+                    SystemTime::now() + Duration::from_secs(3600),
+                )
+                .await
+                .unwrap(),
+            );
+        }
+        hosts[0].trust(&hosts[1]).unwrap();
+        hosts[1].trust(&hosts[0]).unwrap();
+        tokio::time::timeout(Duration::from_secs(10), hosts[0].link_to(hosts[1].id()))
+            .await
+            .expect("the link through the relay came up in time")
+            .unwrap();
+
+        let mut opened = hosts[1].open(hosts[0].id()).await.unwrap();
+        opened.write_all(b"ping").await.unwrap();
+        opened.flush().await.unwrap();
+        let mut accepted = tokio::time::timeout(Duration::from_secs(10), hosts[0].accept())
+            .await
+            .expect("the stream arrived in time")
+            .unwrap();
+        let mut read = [0_u8; 4];
+        accepted.read_exact(&mut read).await.unwrap();
+        assert_eq!(&read, b"ping");
+        accepted.write_all(b"pong").await.unwrap();
+        accepted.flush().await.unwrap();
+        opened.read_exact(&mut read).await.unwrap();
+        assert_eq!(&read, b"pong");
+        relay.serving.close();
+    }
 }

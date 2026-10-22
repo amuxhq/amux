@@ -1,7 +1,7 @@
 //! The relay's scaling curve: the production relay on loopback, held by 10,
 //! 100 and 1,000 hosts at once, measured for how fast it admits their links,
-//! for the bytes it carries between them and for how long a new stream
-//! through it takes to answer.
+//! for the bytes it forwards between them and for how long a new stream on
+//! a link it forwards takes to answer.
 //!
 //! Each level starts a fresh relay serving its TLS-over-TCP carrier, the
 //! listener a deployment runs beside QUIC. QUIC is not used: the relay
@@ -12,16 +12,20 @@
 //! - links to the relay, all hosts dialling at once up to
 //!   [`DIAL_CONCURRENCY`]; the level's hosts over the time from the first
 //!   dial to the last link the relay accepted is the admission rate;
-//! - opens [`CurveOptions::opens_per_host`] streams to its partner one after
-//!   another, all hosts at once, each timed from the open to the partner's
-//!   one-byte answer (stream-open latency);
+//! - pins its partner's key, and one host of each pair dials the other
+//!   through its link to the relay: an end-to-end QUIC link whose packets
+//!   the relay forwards, as two daemons' links through it are;
+//! - opens [`CurveOptions::opens_per_host`] streams to its partner on that
+//!   link one after another, all hosts at once, each timed from the open to
+//!   the partner's one-byte answer (stream-open latency);
 //! - then opens one stream to its partner and writes into it as fast as the
-//!   relay takes the bytes; what every partner reads over a fixed window is
+//!   link takes the bytes; what every partner reads over a fixed window is
 //!   the aggregate throughput.
 //!
-//! The hosts are bare: one link to the relay and raw streams, with no
-//! handshake inside a stream, so the work measured is the relay's and the
-//! two carriers' TLS. They share the process and its cores with the relay.
+//! The hosts are bare: a link to the relay, one to the partner and raw
+//! streams on it, with no handshake inside a stream, so the work measured
+//! is the relay's forwarding, the links' QUIC and the carriers' TLS. They
+//! share the process and its cores with the relay.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -86,9 +90,7 @@ pub struct CurveOptions {
     /// latencies of every round are pooled, so the 99th percentile at ten
     /// connections rests on a thousand opens rather than two hundred.
     pub rounds: usize,
-    /// Streams each host opens for the latency sample. With the bulk
-    /// stream it stays under the relay's thirty stream opens a minute per
-    /// link.
+    /// Streams each host opens for the latency sample.
     pub opens_per_host: usize,
     pub warm_up: Duration,
     pub window: Duration,
@@ -394,6 +396,9 @@ async fn measure(
     tokio::time::timeout(PHASE_TIMEOUT, relay.wait_for_pairs(&accounts))
         .await
         .map_err(|_| anyhow!("the relay never held both hosts of every account"))?;
+    tokio::time::timeout(PHASE_TIMEOUT, link_pairs(&hosts))
+        .await
+        .map_err(|_| anyhow!("the pairs' links through the relay did not all come up"))??;
 
     let received = Arc::new(AtomicU64::new(0));
     let mut serving = JoinSet::new();
@@ -481,6 +486,32 @@ async fn measure(
         throughput_mib_s: (to - from) as f64 / (1024.0 * 1024.0) / elapsed.as_secs_f64(),
         latencies,
     })
+}
+
+/// Pins each pair's keys to each other and dials the link between them
+/// through the relay, [`DIAL_CONCURRENCY`] at once: hosts 2k and 2k+1 are a
+/// pair, and 2k dials.
+async fn link_pairs(hosts: &[Arc<RelayHost>]) -> Result<()> {
+    for pair in hosts.chunks_exact(2) {
+        pair[0].trust(&pair[1])?;
+        pair[1].trust(&pair[0])?;
+    }
+    let slots = Arc::new(Semaphore::new(DIAL_CONCURRENCY));
+    let mut dialling = JoinSet::new();
+    for pair in hosts.chunks_exact(2) {
+        let (near, far) = (pair[0].clone(), pair[1].id());
+        let slots = slots.clone();
+        dialling.spawn(async move {
+            let _slot = slots.acquire_owned().await?;
+            near.link_to(far)
+                .await
+                .context("link to the partner through the relay")
+        });
+    }
+    while let Some(linked) = dialling.join_next().await {
+        linked??;
+    }
+    Ok(())
 }
 
 /// What one round measured: its admission rate, its aggregate throughput

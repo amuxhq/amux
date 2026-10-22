@@ -116,7 +116,7 @@ impl StreamEndpoint {
 }
 
 /// The substrate under a stream's endpoint: no datagrams, only the stream.
-struct StreamOnly;
+pub(crate) struct StreamOnly;
 
 impl Datagrams for StreamOnly {
     fn send_to(&self, _: &[u8], _: SocketAddr) -> io::Result<()> {

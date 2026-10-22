@@ -94,7 +94,13 @@ impl DeviceIdentity {
 
     #[cfg(test)]
     pub(crate) fn for_test(host_id: HostId) -> Self {
-        Self::from_parts(host_id, generate_ed25519_pkcs8_v1().unwrap()).unwrap()
+        Self::generated(host_id).unwrap()
+    }
+
+    /// A fresh key for `host_id`, kept nowhere: an identity that lasts as
+    /// long as the process holding it.
+    pub(crate) fn generated(host_id: HostId) -> Result<Self, IdentityError> {
+        Self::from_parts(host_id, generate_ed25519_pkcs8_v1()?)
     }
 
     fn from_parts(host_id: HostId, private_key_pkcs8: Vec<u8>) -> Result<Self, IdentityError> {

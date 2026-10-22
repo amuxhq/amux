@@ -385,6 +385,12 @@ impl CloudLinkServer {
         self.inner.admission.retries_sent()
     }
 
+    /// How many handshakes the relay's per-source limit dropped.
+    #[doc(hidden)]
+    pub fn handshakes_limited(&self) -> u64 {
+        self.inner.admission.limited()
+    }
+
     async fn link_ctx_for_user(&self, user_id: Uuid) -> LinkCtx {
         let inner = &self.inner;
         if let Some(ctx) = inner
@@ -701,6 +707,17 @@ mod tests {
         carrier: Arc<QuicCarrier>,
         token: &str,
     ) -> (JoinHandle<Result<(), tonic::Status>>, watch::Sender<bool>) {
+        link_in(Arc::new(LinkRegistry::new(id)), id, carrier, token).await
+    }
+
+    /// Links host `id` to the relay as [`link`] does, its links kept in
+    /// `registry`.
+    async fn link_in(
+        registry: Arc<LinkRegistry>,
+        id: HostId,
+        carrier: Arc<QuicCarrier>,
+        token: &str,
+    ) -> (JoinHandle<Result<(), tonic::Status>>, watch::Sender<bool>) {
         let host = local_host(
             id,
             "test-host",
@@ -710,7 +727,7 @@ mod tests {
             },
             true,
         );
-        let ctx = LinkCtx::new_live(LiveLocalHost::new(host), Arc::new(LinkRegistry::new(id)));
+        let ctx = LinkCtx::new_live(LiveLocalHost::new(host), registry);
         let auth = LinkConnectorAuth::with_free_refresh_interval(
             LinkConnectorToken {
                 token: token.to_owned(),
@@ -794,7 +811,8 @@ mod tests {
     }
 
     /// A free account's hosts reach the relay, and nothing one sends the
-    /// other through it arrives.
+    /// other through it arrives: the sender is told the plan carries no
+    /// connections between them.
     #[tokio::test(flavor = "multi_thread")]
     async fn the_relay_forwards_nothing_between_hosts_of_a_free_account() {
         let relay = relay().await;
@@ -802,8 +820,11 @@ mod tests {
         let udp_addr = relay.serving.udp_addr().unwrap();
         let mut hosts = Vec::new();
         let mut links = Vec::new();
+        let mut refusals = None;
         for _ in 0..2 {
             let id = HostId::new_v4();
+            let registry = Arc::new(LinkRegistry::new(id));
+            refusals.get_or_insert_with(|| registry.forward_refusals());
             let endpoint = LinkEndpoint::bind("127.0.0.1:0".parse().unwrap(), None).unwrap();
             let carrier = Arc::new(
                 QuicCarrier::connect_relay_with_config(
@@ -815,7 +836,7 @@ mod tests {
                 .await
                 .unwrap(),
             );
-            links.push(link(id, carrier, &format!("{account}/free")).await);
+            links.push(link_in(registry, id, carrier, &format!("{account}/free")).await);
             let via = endpoint.socket.stand_in_at(udp_addr);
             endpoint.socket.add_forwarding(
                 LinkId(1),
@@ -825,6 +846,7 @@ mod tests {
             hosts.push((id, endpoint));
         }
         let mut answers = hosts[0].1.socket.probe_answers();
+        let mut refusals = refusals.unwrap();
         for nonce in 0..10 {
             hosts[0]
                 .1
@@ -832,11 +854,17 @@ mod tests {
                 .probe(hosts[1].0, Path::Forwarded(LinkId(1)), nonce)
                 .unwrap();
         }
+        let refused = tokio::time::timeout(Duration::from_secs(10), refusals.recv())
+            .await
+            .expect("the relay told the sender in time")
+            .unwrap();
+        assert_eq!(
+            refused,
+            (hosts[1].0, wire::pb::ForwardRefusal::PaymentRequired)
+        );
         assert!(
-            tokio::time::timeout(Duration::from_millis(500), answers.recv())
-                .await
-                .is_err(),
-            "no probe crossed the relay"
+            answers.try_recv().is_err(),
+            "no probe crossed the relay before its refusal"
         );
         relay.serving.close();
     }
@@ -1011,12 +1039,22 @@ mod tests {
         let third = endpoint
             .connect_with(relay.client.clone(), udp_addr, NAME)
             .unwrap();
-        assert!(
-            tokio::time::timeout(Duration::from_secs(1), third)
-                .await
-                .is_err(),
-            "a third attempt from the source is not taken on"
+        patience::until("the relay to drop the third attempt", || {
+            let limited = relay.server.handshakes_limited();
+            async move {
+                (limited >= 1)
+                    .then_some(())
+                    .ok_or_else(|| format!("{limited} dropped"))
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            relay.server.handshakes_limited(),
+            1,
+            "only the third attempt from the source is not taken on"
         );
+        drop(third);
         assert_eq!(
             relay.server.retries_sent(),
             1,

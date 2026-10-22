@@ -408,13 +408,23 @@ mod tests {
         router.send_to(b"out", peer_addr).unwrap();
         let before = router.public_addr_for(inner, peer_addr).unwrap();
 
-        tokio::time::sleep(idle + Duration::from_millis(100)).await;
+        // The router's clock is tokio's: the idle window passes at once,
+        // and the sockets go on in real time after it.
+        tokio::time::pause();
+        tokio::time::advance(idle + Duration::from_millis(1)).await;
+        tokio::time::resume();
         assert_eq!(router.public_addr_for(inner, peer_addr), None);
         peer.send_to(b"too late", before).await.unwrap();
-        assert_eq!(recv(&router, Duration::from_millis(300)).await, None);
 
         router.send_to(b"again", peer_addr).unwrap();
         let after = router.public_addr_for(inner, peer_addr).unwrap();
         assert_ne!(before, after);
+        // What the peer sends the new mapping is the first thing in: the
+        // packet to the expired one, sent before it, never arrived.
+        peer.send_to(b"to the new port", after).await.unwrap();
+        assert_eq!(
+            recv(&router, Duration::from_secs(5)).await,
+            Some((b"to the new port".to_vec(), peer_addr))
+        );
     }
 }

@@ -471,9 +471,14 @@ impl Paths {
         }
     }
 
+    /// A probe's answer proves the path works only while that probe is
+    /// outstanding: an answer to one that timed out, or sent before the
+    /// network changed under the path, says nothing about the path now.
     fn answered(&mut self, key: Key, rtt_ms: u32) {
         let now_ms = self.now_ms;
-        if let Some(state) = self.paths.get_mut(&key) {
+        if let Some(state) = self.paths.get_mut(&key)
+            && state.probe_deadline_ms.is_some()
+        {
             state.heard_ms = Some(now_ms);
             state.rtt_ms = Some(rtt_ms);
             state.probe_deadline_ms = None;
@@ -1152,12 +1157,51 @@ mod tests {
         );
         assert_eq!(carry(&out), None, "the refused relay carries nothing");
 
+        // The LAN's first probe timed out before the refusal; its next
+        // one is due an interval after it went.
+        let out = tick(&mut paths, PROBE_INTERVAL_MS);
+        assert!(
+            out.contains(&Output::Probe {
+                path: Path::Direct(lan())
+            }),
+            "{out:?}"
+        );
         let out = answer(&mut paths, Path::Direct(lan()), 4);
         assert_eq!(
             carry(&out),
             Some(Path::Direct(lan())),
             "the free path remains"
         );
+    }
+
+    #[test]
+    fn an_answer_with_no_probe_outstanding_proves_nothing() {
+        let mut paths = up(true);
+        // The LAN's probe from the link coming up times out unanswered.
+        tick(&mut paths, PROBE_TIMEOUT_MS);
+        let out = answer(&mut paths, Path::Direct(lan()), 4);
+        assert_eq!(carry(&out), None, "a late answer carries nothing");
+        assert_eq!(paths.carrying(), None);
+
+        // The network changes under an outstanding probe, with the link
+        // down: the answer to the probe sent before it is stale.
+        let mut paths = up(true);
+        step(&mut paths, Input::LinkDown);
+        step(
+            &mut paths,
+            Input::NetworkChanged {
+                addrs: vec!["10.0.0.9".parse().unwrap()],
+            },
+        );
+        let out = answer(&mut paths, Path::Direct(lan()), 4);
+        assert_eq!(carry(&out), None, "a stale answer carries nothing");
+
+        // An answer to the probe outstanding still counts, once.
+        let mut paths = up(true);
+        let out = answer(&mut paths, Path::Direct(lan()), 4);
+        assert_eq!(carry(&out), Some(Path::Direct(lan())));
+        let out = answer(&mut paths, Path::Direct(lan()), 4);
+        assert_eq!(carry(&out), None, "a duplicate answer changes nothing");
     }
 
     #[test]

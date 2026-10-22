@@ -414,10 +414,24 @@ async fn entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once()
         .await
         .unwrap();
 
-    let mut told = [
+    // Each refusal an end hears, with when it heard it.
+    let told = [
         ("desk", laptop, edge(&net, "desk").forward_refusals()),
         ("laptop", desk, edge(&net, "laptop").forward_refusals()),
-    ];
+    ]
+    .map(|(host, peer, mut refusals)| {
+        let heard = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recording = heard.clone();
+        tokio::spawn(async move {
+            while let Ok(refusal) = refusals.recv().await {
+                recording
+                    .lock()
+                    .unwrap()
+                    .push((tokio::time::Instant::now(), refusal));
+            }
+        });
+        (host, peer, heard)
+    });
     let mut fleets = [
         ("desk", laptop, net.observe_inventory("desk").await.unwrap()),
         (
@@ -454,16 +468,25 @@ async fn entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once()
     println!("lapsed: the desk and the laptop each read the other away, their link down");
 
     // Each end was told once, within the interval a forwarder waits before
-    // it repeats a refusal, though both kept trying to reach the other.
-    tokio::time::sleep(std::time::Duration::from_millis(
-        node::forwarder::REFUSAL_REPEAT_MS - 1_000,
-    ))
-    .await;
-    for (host, peer, refusals) in &mut told {
-        let mut heard = Vec::new();
-        while let Ok(refusal) = refusals.try_recv() {
-            heard.push(refusal);
-        }
+    // it repeats a refusal, counted from the first refusal it heard, though
+    // both kept trying to reach the other.
+    for (host, peer, heard) in &told {
+        let first = heard
+            .lock()
+            .unwrap()
+            .first()
+            .map(|(at, _)| *at)
+            .expect("each end heard a refusal before its link went");
+        tokio::time::sleep_until(
+            first + std::time::Duration::from_millis(node::forwarder::REFUSAL_REPEAT_MS - 1_000),
+        )
+        .await;
+        let heard: Vec<_> = heard
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_, refusal)| *refusal)
+            .collect();
         assert_eq!(
             heard,
             vec![(*peer, wire::pb::ForwardRefusal::PaymentRequired)],

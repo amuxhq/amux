@@ -32,6 +32,7 @@ pub(crate) struct HandshakeAdmission {
     retries: Mutex<RetryAdmission<IpAddr, quinn::ConnectionId>>,
     slots: Arc<Semaphore>,
     retries_sent: AtomicU64,
+    limited: AtomicU64,
 }
 
 impl Default for HandshakeAdmission {
@@ -50,6 +51,7 @@ impl HandshakeAdmission {
             )),
             slots: Arc::new(Semaphore::new(concurrency)),
             retries_sent: AtomicU64::new(0),
+            limited: AtomicU64::new(0),
         }
     }
 
@@ -75,6 +77,7 @@ impl HandshakeAdmission {
                     }
                     Admission::Refused => {
                         tracing::warn!(peer = %source, "QUIC handshake rate limit exceeded");
+                        self.limited.fetch_add(1, Ordering::Relaxed);
                         incoming.ignore();
                         return None;
                     }
@@ -90,6 +93,7 @@ impl HandshakeAdmission {
             }
             if !retries.admit_validated(source.ip(), attempt) {
                 tracing::warn!(peer = %source, "QUIC handshake rate limit exceeded");
+                self.limited.fetch_add(1, Ordering::Relaxed);
                 incoming.ignore();
                 return None;
             }
@@ -107,6 +111,11 @@ impl HandshakeAdmission {
     /// How many Retries unvalidated Initials were answered with.
     pub(crate) fn retries_sent(&self) -> u64 {
         self.retries_sent.load(Ordering::Relaxed)
+    }
+
+    /// How many handshakes the per-source rate limit dropped.
+    pub(crate) fn limited(&self) -> u64 {
+        self.limited.load(Ordering::Relaxed)
     }
 }
 

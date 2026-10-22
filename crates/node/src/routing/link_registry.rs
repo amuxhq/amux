@@ -620,7 +620,8 @@ impl LinkRegistry {
                 .iter()
                 .filter(|(_, writer)| writer.role == LinkRole::Peer)
                 .map(|(link, writer)| {
-                    let _ = writer.close_tx.try_send(LinkCloseRequest::TrustReplaced);
+                    let sent = writer.close_tx.try_send(LinkCloseRequest::TrustReplaced);
+                    eprintln!("T72 close_peer_links {link:?} peer={:?} sent={:?}", writer.host.id, sent.as_ref().map_err(|e| e.to_string()));
                     (*link, writer.closed.clone())
                 })
                 .collect::<Vec<_>>()
@@ -631,8 +632,10 @@ impl LinkRegistry {
                 if !self.state.read().await.writers.contains_key(link) {
                     break;
                 }
+                eprintln!("T72 close_peer_links waiting {link:?}");
                 notified.await;
             }
+            eprintln!("T72 close_peer_links closed {link:?}");
         }
         closing.into_iter().map(|(link, _)| link).collect()
     }

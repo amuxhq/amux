@@ -711,6 +711,10 @@ async fn run_established(
         carrier.close(wire::pb::LinkCloseReason::UserShutdown);
         return Ok(());
     };
+    let registered = Registered {
+        links: Some(ctx.links.clone()),
+        link,
+    };
     // The core hears of the link once it is registered, so a route it
     // lists finds the link's carrier, and of the hosts its peer reaches as
     // the peer said them. Nothing picks a link to open a channel on but
@@ -749,7 +753,7 @@ async fn run_established(
                     &link_close(wire::pb::LinkCloseReason::UserRevoked),
                 )
                 .await;
-                cleanup_link(&ctx, link, wire::pb::LinkCloseReason::UserRevoked).await;
+                registered.leave(wire::pb::LinkCloseReason::UserRevoked).await;
                 carrier.close(wire::pb::LinkCloseReason::UserRevoked);
                 return Ok(());
             }
@@ -769,6 +773,7 @@ async fn run_established(
         first_packet_to_catch_up_ms: None,
     };
     logged.write(ctx.local_host.id());
+    eprintln!("DIAG71 up me={} peer={} dialled={} ctxresumed={} early={:?} link={link:?}", ctx.local_host.id(), peer_host.id, ctx.expected_peer.is_some(), ctx.resumed.is_some(), carrier.early_data());
     if let Some(frame) = peer_frame {
         ctx.report_frame(link, frame);
     }
@@ -957,7 +962,7 @@ async fn run_established(
     while let Ok(message) = out_rx.try_recv() {
         let _ = write_message(&mut sink, &message).await;
     }
-    cleanup_link(&ctx, link, close_reason).await;
+    registered.leave(close_reason).await;
     carrier.close(close_reason);
     LinkEvent {
         event: LinkTransition::Down,
@@ -1330,12 +1335,47 @@ async fn peer_revoked(ctx: &LinkCtx, link: LinkId, peer: HostId) {
     });
 }
 
-async fn cleanup_link(ctx: &LinkCtx, link: LinkId, reason: wire::pb::LinkCloseReason) {
-    ctx.report(daemon_core::Input::LinkDown {
-        link: link.core(),
-        reason,
-    });
-    ctx.links.remove(&link).await;
+/// A link in the registry, which leaves it, and the core hears it went,
+/// however the link's task ends. A task aborted once its link is
+/// registered (a dial whose caller stopped waiting for it) runs nothing
+/// past the await it was parked at, and a link left registered with no
+/// task serving it stays up to every reader and is waited on by every
+/// close.
+struct Registered {
+    links: Option<Arc<LinkRegistry>>,
+    link: LinkId,
+}
+
+impl Registered {
+    async fn leave(mut self, reason: wire::pb::LinkCloseReason) {
+        if let Some(links) = self.links.take() {
+            leave(&links, self.link, reason).await;
+        }
+    }
+}
+
+impl Drop for Registered {
+    fn drop(&mut self) {
+        let (Some(links), Ok(runtime)) =
+            (self.links.take(), tokio::runtime::Handle::try_current())
+        else {
+            return;
+        };
+        let link = self.link;
+        runtime.spawn(async move {
+            leave(&links, link, wire::pb::LinkCloseReason::Unspecified).await;
+        });
+    }
+}
+
+async fn leave(links: &LinkRegistry, link: LinkId, reason: wire::pb::LinkCloseReason) {
+    if let Some(core) = links.core() {
+        core.report(daemon_core::Input::LinkDown {
+            link: link.core(),
+            reason,
+        });
+    }
+    links.remove(&link).await;
 }
 
 async fn receive_refresh_request(
@@ -1665,6 +1705,65 @@ mod tests {
             ..up
         };
         assert_eq!(traces.link_log(local.id), [up, down]);
+    }
+
+    /// A link's task aborted once its link is registered, as a dial whose
+    /// caller stops waiting aborts it, still takes the link out of the
+    /// registry: closing every link waits for nothing.
+    #[tokio::test]
+    async fn an_aborted_link_task_leaves_the_registry() {
+        use crate::identity::DeviceIdentity;
+        use crate::link::LinkEndpoint;
+        use crate::link_log::PathKind;
+
+        let dialler = DeviceIdentity::for_test(HostId::new_v4());
+        let listener = DeviceIdentity::for_test(HostId::new_v4());
+        let server = LinkEndpoint::bind(
+            "127.0.0.1:0".parse().unwrap(),
+            Some(
+                listener
+                    .quic_server_config(
+                        trust_for(&dialler),
+                        &crate::link::resumption::SessionTickets::in_memory(16),
+                    )
+                    .unwrap(),
+            ),
+        )
+        .unwrap();
+        let client = LinkEndpoint::bind("127.0.0.1:0".parse().unwrap(), None).unwrap();
+        let accept = async {
+            let connection = server.endpoint.accept().await.unwrap().await.unwrap();
+            let from = server.address_of(connection.remote_address());
+            QuicCarrier::from_accepted(connection).with_path(PathKind::of_addr(from))
+        };
+        let dial = QuicCarrier::connect_direct(
+            &client,
+            server.local_addr().unwrap(),
+            &dialler,
+            trust_for(&listener),
+            listener.host_id,
+        );
+        let (accepted, dialled) = tokio::join!(accept, dial);
+        let dialled = dialled.unwrap();
+
+        let (local, peer) = (host_for(&listener), host_for(&dialler));
+        let links = Arc::new(LinkRegistry::new(local.id));
+        let ctx = LinkCtx::new(local.clone(), links.clone()).with_authenticated_peer(peer.id);
+        let task = tokio::spawn(run_link(
+            ctx,
+            Arc::new(accepted),
+            crate::routing::ConnectRole::Acceptor,
+        ));
+        let (mut sink, mut source) = dialled.control();
+        send_hello(&mut sink, &peer, None).await;
+        expect_accepted(&mut source).await;
+        assert!(links.native_carrier_to_peer(peer.id).await.is_some());
+
+        task.abort();
+        let _ = task.await;
+        let closed = tokio::time::timeout(Duration::from_secs(5), links.close_peer_links()).await;
+        assert!(closed.is_ok(), "closing every link waited on the aborted one");
+        assert!(links.native_carrier_to_peer(peer.id).await.is_none());
     }
 
     fn host_for(identity: &crate::identity::DeviceIdentity) -> Host {

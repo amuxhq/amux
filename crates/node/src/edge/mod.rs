@@ -1054,17 +1054,24 @@ impl Edge {
     }
 
     pub(crate) async fn stop(&self, reason: wire::LinkCloseReason) {
+        let me = self.identity.host_id;
+        eprintln!("T72 {me} edge stop: closes");
         self.discovery.withdraw();
         self.channels
             .link_registry()
             .send_link_close_to_all(reason)
             .await;
+        eprintln!("T72 {me} edge stop: flush");
         tokio::time::sleep(LINK_CLOSE_FLUSH).await;
         self.shutdown.send_replace(true);
+        eprintln!("T72 {me} edge stop: close direct");
         self.reachability.close_direct_links().await;
+        eprintln!("T72 {me} edge stop: cloud lock");
         if let Some(link) = self.cloud.lock().await.take() {
+            eprintln!("T72 {me} edge stop: cloud stop");
             link.stop().await;
         }
+        eprintln!("T72 {me} edge stop: tasks");
         self.quic_endpoint
             .close(quinn::VarInt::from_u32(0), b"profile stopping");
         let tasks = std::mem::take(&mut *self.tasks.lock().unwrap());
@@ -1074,6 +1081,7 @@ impl Edge {
         for task in tasks {
             let _ = task.await;
         }
+        eprintln!("T72 {me} edge stop: done");
     }
 }
 

@@ -707,14 +707,19 @@ async fn carried_by(net: &Net, host: &str, peer: &str, path: PathKind) {
 async fn streams_live(net: &Net, hosts: &[&str], agent: &str, said: &str) {
     let mut chats = Vec::new();
     for host in hosts {
+        eprintln!("T72S current {host}");
         net.current(host, agent).await.unwrap();
+        eprintln!("T72S observe {host}");
         let mut chat = net.observe(host, agent, 10).await.unwrap();
+        eprintln!("T72S observing {host}");
         chat.observe_until(observe::caught_up, PATIENCE)
             .await
             .unwrap();
         chats.push((host, chat));
     }
+    eprintln!("T72S send");
     net.send(agent, "go").await.unwrap();
+    eprintln!("T72S sent");
     for (host, chat) in &mut chats {
         chat.observe_until(|events| says(events, said), PATIENCE)
             .await
@@ -969,10 +974,11 @@ async fn resume_after_host_restart_still_resumes() {
     let mark = net.link_log("laptop").unwrap().len();
     net.restart_daemon("laptop").await.unwrap();
 
-    let up = logged(&net, "laptop", "desk", LinkTransition::Up, mark).await;
-    assert!(up.resumed, "{up:?}");
-    assert_eq!(up.early_data, node::link_log::EarlyData::Accepted);
+    // The desk redials the laptop as it comes back, so the first link up
+    // may be the desk's; the first flight's own line is its catch-up.
     let caught_up = logged(&net, "laptop", "desk", LinkTransition::CaughtUp, mark).await;
+    assert!(caught_up.resumed, "{caught_up:?}");
+    assert_eq!(caught_up.early_data, node::link_log::EarlyData::Accepted);
     println!(
         "the desk restarted; the laptop's launch resumed and caught up {:?} ms after the first packet",
         caught_up.first_packet_to_catch_up_ms
@@ -1056,12 +1062,16 @@ async fn linked_through_the_relay(ttl: std::time::Duration) -> Net {
     )
     .await
     .unwrap();
+    eprintln!("T72S net up");
     net.relay().unwrap().set_credential_ttl(ttl);
     net.sign_in("desk", "ada").await.unwrap();
     net.sign_in("laptop", "ada").await.unwrap();
+    eprintln!("T72S signed in");
     pair_through_the_relay(&net).await;
+    eprintln!("T72S paired");
     carried_by(&net, "laptop", "desk", PathKind::RelayUdp).await;
     carried_by(&net, "desk", "laptop", PathKind::RelayUdp).await;
+    eprintln!("T72S carried laptop={} desk={}", host_id(&net, "laptop"), host_id(&net, "desk"));
     holds_a_ticket(&net, "laptop", "desk").await;
     net
 }
@@ -1140,12 +1150,17 @@ const HOUR: std::time::Duration = std::time::Duration::from_secs(3600);
 #[tokio::test(flavor = "multi_thread")]
 async fn hold_buffer_released_on_admission_carries_the_first_flight() {
     let mut net = linked_through_the_relay(WEEK).await;
+    eprintln!("T72S linked");
     let before = net.relay().unwrap().forward_counts();
     let mark = relaunch(&mut net, "laptop").await;
+    eprintln!("T72S relaunched");
 
-    let up = logged(&net, "laptop", "desk", LinkTransition::Up, mark).await;
-    assert_eq!(up.path, PathKind::RelayUdp);
-    assert!(up.resumed, "{up:?}");
+    // The desk redials the laptop as it comes back, so the first link up
+    // may be the desk's; the first flight's own line is its catch-up.
+    let caught_up = logged(&net, "laptop", "desk", LinkTransition::CaughtUp, mark).await;
+    eprintln!("T72S logged");
+    assert_eq!(caught_up.path, PathKind::RelayUdp);
+    assert!(caught_up.resumed, "{caught_up:?}");
     let after = net.relay().unwrap().forward_counts();
     println!("the relay's forwarder before the relaunch {before:?}, after {after:?}");
     assert!(after.held > before.held, "the first flight was held");
@@ -1154,7 +1169,9 @@ async fn hold_buffer_released_on_admission_carries_the_first_flight() {
         "and let through on admission"
     );
     streams_live(&net, &["laptop"], "worker", "said through the relay").await;
+    eprintln!("T72S streamed");
     net.shutdown().await.unwrap();
+    eprintln!("T72S shut");
 }
 
 /// The laptop relaunches holding a credential the relay no longer takes,

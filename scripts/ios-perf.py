@@ -282,10 +282,15 @@ class Run:
             )
 
     def marked_launch(self, attempt: int, named: str) -> dict[str, float]:
-        """One launch, terminated and spaced from the last, read back to its
-        reconciliation, with every mark a cold launch needs."""
-        self.journey.quit()
+        """One launch, spaced from the last, read back to its reconciliation,
+        with every mark a cold launch needs. The last launch stays open until
+        the spacing is up, as a person looking at their fleet keeps the app
+        open: a machine sends a resumed link's next ticket once the phone's
+        handshake finishes, two round trips in, and an app quit at its
+        reconciliation, one round trip in, would keep none and make every
+        other launch a full handshake."""
         self.space_launches()
+        self.journey.quit()
         self.journey.relaunch(geometry=False, relay_quic=self.relay_gate)
         marks = self.await_reconciled(120)
         for needed in ("firstCachedFrame", "storeReadBegan", "nodeStarted", "fleetOpenBegan", "storeReadEnded"):

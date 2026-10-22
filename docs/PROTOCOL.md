@@ -382,7 +382,10 @@ replaced daily. A client keeps the tickets it is given on disk too, per peer
 and pinned key under `profiles/<id>/client-tickets/` (the relay's per relay
 name), and deletes each from disk before presenting it, so a ticket is never
 offered twice. A ticket from a key the profile no longer pins is never
-offered. Client tickets are written and read through a patched rustls
+offered. The listener sends a link's ticket once the client's Finished
+reaches it: two round trips into a resumed link, one after its early calls
+are answered. A process that ends sooner keeps no ticket, and its next
+launch does a full handshake. Client tickets are written and read through a patched rustls
 ([architecture](ARCHITECTURE.md#the-rustls-patch)).
 
 **Tokens.** A listener also gives each client two QUIC address-validation

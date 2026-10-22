@@ -944,6 +944,89 @@ async fn resume_accepted_catches_up_within_one_round_trip() {
     net.shutdown().await.unwrap();
 }
 
+/// Every relaunch resumes, not every other one: a resumed link leaves the
+/// laptop a ticket of its own, which the next process loads and resumes
+/// with. The desk sends that ticket once the laptop's Finished reaches it,
+/// two round trips into the link, so each launch is kept open until the
+/// ticket is on disk, as a person looking at their fleet keeps the app
+/// open.
+#[tokio::test(flavor = "multi_thread")]
+async fn resume_every_relaunch_with_the_ticket_the_last_one_kept() {
+    let mut net = linked_through_a_slow_network().await;
+    let round_trip = 2 * ONE_WAY.as_millis();
+    for relaunch in 1..=2 {
+        until_the_laptop_keeps_a_ticket_from_the_desk(&net).await;
+        net.stop_daemon("laptop").await.unwrap();
+        // The laptop comes back on another port, so the desk, redialling it,
+        // cannot cross the laptop's first flight with a link of its own.
+        let laptop = net.host("laptop").unwrap().clone();
+        std::fs::remove_file(
+            node::profile_dir(&laptop.data_dir, laptop.profile).join(node::LAN_PORT_FILE),
+        )
+        .unwrap();
+        let mark = net.link_log("laptop").unwrap().len();
+        net.restart_daemon("laptop").await.unwrap();
+
+        let caught_up = logged(&net, "laptop", "desk", LinkTransition::CaughtUp, mark).await;
+        assert!(caught_up.resumed, "relaunch {relaunch}: {caught_up:?}");
+        assert_eq!(
+            caught_up.early_data,
+            node::link_log::EarlyData::Accepted,
+            "relaunch {relaunch}"
+        );
+        let ms = caught_up
+            .first_packet_to_catch_up_ms
+            .expect("the catch-up timed");
+        println!(
+            "relaunch {relaunch}: resumed, caught up {ms} ms after the first packet, one round trip {round_trip} ms"
+        );
+        assert!(
+            u128::from(ms) < 2 * round_trip,
+            "relaunch {relaunch} within one round trip of the first packet: {ms} ms"
+        );
+    }
+    streams_live(&net, &["laptop"], "worker", "said after the launch").await;
+    net.shutdown().await.unwrap();
+}
+
+/// Waits until a ticket the desk gave the laptop is on the laptop's disk.
+async fn until_the_laptop_keeps_a_ticket_from_the_desk(net: &Net) {
+    let laptop = net.host("laptop").unwrap().clone();
+    let desk_tickets = node::profile_dir(&laptop.data_dir, laptop.profile)
+        .join(node::CLIENT_TICKETS_DIR)
+        .join(host_id(net, "desk").to_string());
+    until("the laptop to keep a ticket from the desk", || {
+        let kept = tickets_beneath(&desk_tickets);
+        async move {
+            if kept > 0 {
+                Ok(())
+            } else {
+                Err("no ticket on disk".to_owned())
+            }
+        }
+    })
+    .await
+    .unwrap();
+}
+
+/// How many ticket files are anywhere beneath `dir`.
+fn tickets_beneath(dir: &std::path::Path) -> usize {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| {
+            let path = entry.path();
+            if path.is_dir() {
+                tickets_beneath(&path)
+            } else {
+                usize::from(path.extension().is_some_and(|ext| ext == "ticket"))
+            }
+        })
+        .sum()
+}
+
 /// The desk loses the tickets it issued while it is down, as a host whose
 /// store was wiped does: the laptop's relaunch offers its ticket and its
 /// calls as 0-RTT data, the desk can resume nothing and refuses the early

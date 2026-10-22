@@ -1801,6 +1801,68 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn every_relaunch_resumes_from_the_ticket_the_last_process_kept() {
+        use crate::link::client_tickets::saved;
+
+        let server_identity = DeviceIdentity::for_test(HostId::new_v4());
+        let profile = tempfile::tempdir().unwrap();
+        let identity = DeviceIdentity::for_test(HostId::new_v4());
+        // A new process: a new slow endpoint, its configurations and
+        // ticket store built afresh from the same directory.
+        let client = || TicketClient {
+            endpoint: slow_arrivals_endpoint(Duration::from_millis(200)).keeping(profile.path()),
+            identity: identity.clone(),
+            trust: trust_for(&server_identity),
+            peer: server_identity.host_id,
+        };
+        let tickets = SessionTickets::in_memory(HOST_TICKETS);
+        let server = ticket_server(
+            &server_identity,
+            &identity,
+            &tickets,
+            ANY_PORT.parse().unwrap(),
+        )
+        .await;
+        let peer_dir = profile
+            .path()
+            .join("client-tickets")
+            .join(server_identity.host_id.to_string())
+            .join(super::super::resumption::hex(server_identity.public_key()));
+        // The host sends a link's ticket once the client's Finished reaches
+        // it: two round trips into a resumed link, one after its early
+        // calls are answered. A process ending sooner keeps no ticket.
+        let kept_its_ticket = || async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while saved(&peer_dir) == 0 {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .expect("the link's ticket reaches the disk");
+        };
+
+        let launch = client();
+        let (_, (carrier, first)) =
+            tokio::join!(read_link(&server, 2), resumed_call(&launch, &server));
+        assert_eq!(first, EarlyData::None, "the first link has no ticket");
+        kept_its_ticket().await;
+        carrier.close(pb::LinkCloseReason::UserShutdown);
+        for relaunch in 1..=2 {
+            let relaunched = client();
+            let (_, (carrier, early)) =
+                tokio::join!(read_link(&server, 2), resumed_call(&relaunched, &server));
+            assert_eq!(
+                early,
+                EarlyData::Accepted,
+                "relaunch {relaunch} resumes with its early data taken"
+            );
+            assert_eq!(tickets.redeemed(), relaunch);
+            kept_its_ticket().await;
+            carrier.close(pb::LinkCloseReason::UserShutdown);
+        }
+    }
+
+    #[tokio::test]
     async fn a_ticket_issued_eight_days_ago_gets_a_full_handshake() {
         let dir = tempfile::tempdir().unwrap();
         let clock = crate::link::resumption::TestClock::new();
@@ -1915,6 +1977,16 @@ mod tests {
     /// control frame and one call before the handshake can have finished,
     /// and reads the call's answer. What became of the early data.
     async fn resume_and_call(client: &TicketClient, server: &LinkEndpoint) -> EarlyData {
+        let (carrier, early) = resumed_call(client, server).await;
+        carrier.close(pb::LinkCloseReason::UserShutdown);
+        early
+    }
+
+    /// [`resume_and_call`]'s link, left open.
+    async fn resumed_call(
+        client: &TicketClient,
+        server: &LinkEndpoint,
+    ) -> (QuicCarrier, EarlyData) {
         let carrier = QuicCarrier::resume_direct(
             &client.endpoint,
             server.local_addr().unwrap(),
@@ -1936,8 +2008,7 @@ mod tests {
         assert_eq!(answer, b"answered", "the call's answer arrives either way");
         let early = carrier.handshake().await.expect("the handshake");
         assert_eq!(carrier.early_data(), early);
-        carrier.close(pb::LinkCloseReason::UserShutdown);
-        early
+        (carrier, early)
     }
 
     fn hello_frame() -> pb::Message {

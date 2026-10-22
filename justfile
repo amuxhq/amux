@@ -179,6 +179,14 @@ wire-size RECORDING:
 tui-evidence *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1800 scripts/tui-evidence "$@"
 
+# The world comes up in ~/.local/state/amux-env/<tree>/NAME with the
+# clients its file declares and is held, with the simulator when it has a
+# phone, until Ctrl-C; drive it from that folder with `testnet ctl`.
+# Interactive, so only its steps are bounded.
+# Start a named world of real agents from environments/NAME.json (docs/TESTNET.md).
+env NAME:
+    scripts/py -B scripts/env.py {{NAME}}
+
 # Serve a declared world from journeys/sets on real daemons and the fake
 # providers, and run the real terminal client on it in this terminal; the
 # door's address is in target/tui-set/NAME/door.json. `--frames KEYS

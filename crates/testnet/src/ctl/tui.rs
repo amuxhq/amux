@@ -92,6 +92,9 @@ pub enum TuiCommand {
     /// sized like PANE, against the host the agent runs on. Prints the new
     /// pane's name. Detach with C-a d.
     Attach { pane: String, agent: String },
+    /// Watch a pane and use the client in it from this terminal, as a
+    /// person at it would. Detach with tmux's C-b d; the pane stays open.
+    Watch { pane: String },
     /// Close a pane and the client in it.
     Close { pane: String },
     /// The open panes.
@@ -155,7 +158,7 @@ fn save_panes(folder: &Folder, panes: &BTreeMap<String, Pane>) -> Result<(), Str
 const TMUX_CONF: &str = include_str!("tmux.conf");
 
 /// tmux on the session's own server, so its panes are apart from anyone's.
-fn tmux(folder: &Folder, args: &[&str]) -> Result<String, String> {
+fn tmux_command(folder: &Folder) -> Result<std::process::Command, String> {
     // The server reads the net's own configuration rather than the
     // operator's: keys must reach the client the same way on every machine.
     let conf = folder.net_dir().join("tmux.conf");
@@ -167,14 +170,16 @@ fn tmux(folder: &Folder, args: &[&str]) -> Result<String, String> {
     // A tmux server of this folder's own, named rather than placed: a
     // socket path under a deep folder overruns the length a Unix socket's
     // path may have.
-    let output = std::process::Command::new("tmux")
-        .arg("-f")
-        .arg(&conf)
-        .arg("-L")
-        .arg(format!(
-            "testnet-{}",
-            super::session::folder_hash(&folder.dir)
-        ))
+    let mut command = std::process::Command::new("tmux");
+    command.arg("-f").arg(&conf).arg("-L").arg(format!(
+        "testnet-{}",
+        super::session::folder_hash(&folder.dir)
+    ));
+    Ok(command)
+}
+
+fn tmux(folder: &Folder, args: &[&str]) -> Result<String, String> {
+    let output = tmux_command(folder)?
         .args(args)
         .output()
         .map_err(|error| format!("running tmux: {error}"))?;
@@ -316,6 +321,21 @@ pub(crate) fn run(folder: &Folder, command: TuiCommand) -> Result<Outcome, Strin
             ))
         }
         TuiCommand::Attach { pane, agent } => attach(folder, &pane, &agent),
+        TuiCommand::Watch { pane } => {
+            known(folder, &pane)?;
+            let status = tmux_command(folder)?
+                .args(["attach-session", "-t", &pane])
+                .status()
+                .map_err(|error| format!("running tmux: {error}"))?;
+            if status.success() {
+                Ok(Outcome::new(
+                    format!("left {pane}"),
+                    json!({"watched": pane}),
+                ))
+            } else {
+                Err(format!("tmux could not attach to {pane}: {status}"))
+            }
+        }
         TuiCommand::Close { pane } => {
             known(folder, &pane)?;
             let _ = tmux(folder, &["kill-session", "-t", &pane]);

@@ -266,6 +266,10 @@ pub(crate) fn up(folder: &Folder, topology: Option<&Path>) -> Result<Outcome, St
         }
         None => json!({"hosts": []}),
     };
+    // The clients a world comes with are ctl's to open, not the net's.
+    if let Some(declared) = declared.as_object_mut() {
+        declared.remove("clients");
+    }
     let scope = declared["scope"]
         .as_str()
         .filter(|scope| !scope.is_empty())

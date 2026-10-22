@@ -1,0 +1,15 @@
+{
+  "hosts": [
+    {"name": "studio", "lan": true, "bonjour": true, "provider": "real"},
+    {"name": "laptop", "lan": true, "bonjour": true, "provider": "real"}
+  ],
+  "agents": [
+    {
+      "name": "greeter", "host": "studio", "kind": "claude_sdk",
+      "prompt": "Say hello and name the folder you are working in."
+    }
+  ],
+  "clients": {
+    "phone": {"paired": []}
+  }
+}

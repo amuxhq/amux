@@ -1,0 +1,54 @@
+{
+  "hosts": [
+    {
+      "name": "studio", "lan": true, "bonjour": true, "provider": "real",
+      "repositories": ["amux"],
+      "files": {
+        "amux/README.md": "# amux\n\nRun coding agents on your own machines and follow them from anywhere.\n",
+        "amux/src/main.rs": "fn main() {\n    println!(\"amux\");\n}\n"
+      }
+    },
+    {
+      "name": "laptop", "lan": true, "bonjour": true, "provider": "real",
+      "repositories": ["site"],
+      "files": {
+        "site/index.html": "<!doctype html>\n<title>amux</title>\n<h1>amux</h1>\n<p>Agents on your machines.</p>\n",
+        "site/style.css": "body { font-family: system-ui; margin: 2rem; }\n"
+      }
+    },
+    {"name": "pi", "lan": true, "bonjour": true, "provider": "real"},
+    {"name": "nas", "lan": true, "bonjour": true, "provider": "real"}
+  ],
+  "links": [{"a": "studio", "b": "laptop"}],
+  "agents": [
+    {
+      "name": "readme", "host": "studio", "kind": "claude_sdk", "repository": "amux",
+      "permission": "acceptEdits",
+      "prompt": "Read README.md and add a short Getting started section to it."
+    },
+    {
+      "name": "tide-pools", "host": "studio", "kind": "claude_sdk", "permission": "acceptEdits",
+      "prompt": "Write a poem of thirty short stanzas about tide pools into poem.md. Add one stanza at a time, each with its own edit, rereading the file before each one."
+    },
+    {
+      "name": "site-summary", "host": "laptop", "kind": "codex", "repository": "site",
+      "prompt": "Look through this repository and say in three sentences what it is."
+    },
+    {
+      "name": "notes", "host": "laptop", "kind": "claude_pty",
+      "prompt": "Create notes.md with a one-line summary of this folder."
+    },
+    {
+      "name": "sensor-logger", "host": "pi", "kind": "claude_sdk",
+      "prompt": "Say hello and name the folder you are working in."
+    },
+    {
+      "name": "backups", "host": "nas", "kind": "claude_sdk",
+      "prompt": "List the files in this folder and say how many there are."
+    }
+  ],
+  "clients": {
+    "phone": {"paired": ["studio", "laptop", "pi"]},
+    "terminal": {"host": "studio"}
+  }
+}

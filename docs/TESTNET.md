@@ -583,7 +583,7 @@ what holds the port.
 | Agents | `spawn NAME --host H [--kind claude-sdk\|claude-pty\|codex] [--provider real\|fake] [--script FILE] [--prompt P] [--model M] [--permission P] [--mode M] [--parent A] [--cwd D] [--wait] [--timeout S]`, `send AGENT TEXT [--wait]`, `wait AGENT`, `stop-agent AGENT`, `resume AGENT [TEXT]`, `gate open NAME` |
 | A host's own record | `fleet HOST` (its own agents and its trusted peers', as its clients show them; rows a host it no longer trusts left behind are listed apart), `chat HOST AGENT` (each item with what its body decodes as, and the asks waiting on a person), `block HOST AGENT`, `provider-input AGENT` |
 | The real CLI | `amux HOST -- ARGS…`, with standard input passed through; bare `pair` runs in the background and prints its PIN and address, and `pair ADDRESS` naming one of the net's hosts goes through the pair's gate |
-| Terminal client | `tui open HOST [--size COLSxROWS] [--theme light\|dark] [--name N]`, `tui keys PANE KEY…`, `tui type PANE TEXT`, `tui paste PANE TEXT\|--file FILE\|--file -`, `tui clip PANE FILE [--image]`, `tui screen PANE`, `tui shot PANE`, `tui resize PANE COLSxROWS`, `tui attach PANE AGENT`, `tui close PANE`, `tui list` |
+| Terminal client | `tui open HOST [--size COLSxROWS] [--theme light\|dark] [--name N]`, `tui keys PANE KEY…`, `tui type PANE TEXT`, `tui paste PANE TEXT\|--file FILE\|--file -`, `tui clip PANE FILE [--image]`, `tui screen PANE`, `tui shot PANE`, `tui resize PANE COLSxROWS`, `tui attach PANE AGENT`, `tui watch PANE`, `tui close PANE`, `tui list` |
 | Phone | `phone open [--host H] [--relay]`, `phone pair HOST`, `phone connect ACCOUNT`, `phone tap ID`, `phone choose LABEL` (an item of the dialog or menu that is open), `phone type TEXT --into ID`, `phone search TEXT`, `phone scroll DIRECTION [--in ID]`, `phone query`, `phone shot`, `phone appearance light\|dark`, `phone text-size SIZE`, `phone attach AGENT FILE [--image]`, `phone settle` |
 | Evidence | `capture NAME [--note TEXT]`, `log [--tail N]`, `dump show BUNDLE [--agent A]` |
 | Files to test with | `make-file NAME SIZE [--fill zero\|random\|text]`: a file below the folder (no `..`), up to 2g |
@@ -603,6 +603,8 @@ line endings arrive as written, and a paste of any size goes through. `tui shot`
 (`.frame.json`) and draws that to PNG with `crates/shot`; the exact text sits beside it (`.txt`). Background colour a
 program paints by clearing to the end of a line is not kept, and the font has no CJK or emoji glyphs. `tui attach`
 opens `amux attach` for an agent in a second pane: Claude's own interface for terminal Claude, Codex's own for Codex.
+`tui watch` attaches this terminal to a pane, to watch and use the client in it by hand; tmux's C-b d leaves it
+open.
 `tui clip` attaches as a person does in the terminal client: it puts a file's path (or, with `--image`, a PNG as
 picture data) on the Mac's clipboard and presses Ctrl+V in the pane. The clipboard is the machine's own, so `clip`
 holds a lock across every session for the moment the client reads it and then puts back the text the clipboard held;
@@ -642,7 +644,40 @@ pane and of the phone plus every earlier shot (`screens/`), and the net's and ea
 Anything it could not take is named in `errors.txt`. `dump show` prints a captured dump bundle as text with the
 `dump-show` binary from `crates/replay-support`, which must be built beside `testnet`. The ledger commands are
 for a [QA](QA.md) run and need its `AMUX_QA_RUN`. Inside such a run agents are real only: `host add` defaults to
-`--provider real`, and `host add` and `spawn` refuse `--provider fake` and `--script`.
+`--provider real`, `host add` and `spawn` refuse `--provider fake` and `--script`, and `up` takes a topology file
+only when every host in it declares `"provider": "real"` and no agent plays a script or journal.
+
+### Environments
+
+An environment is a named world of real agents to use the product in: `environments/NAME.json`, an ordinary topology
+file with a `clients` section saying which clients come with it.
+
+```json
+"clients": {
+  "phone": {"paired": ["studio", "laptop"], "account": "ada"},
+  "terminal": {"host": "studio"}
+}
+```
+
+`ctl up` opens what the section declares once the net is ready: the phone, paired with each listed host through the
+real pairing flow (each needs `lan` and `bonjour`) and then signed in to the account if one is named, and the
+terminal client in a pane against its host. A world with no `phone` never touches the simulator. The section is
+ctl's alone; the net is served the file without it, and `ctl up` names a client that cannot be opened (a host that
+is not declared, an account the relay does not know) before anything starts.
+
+`just env NAME` builds what the world needs and starts it in its own session folder,
+`~/.local/state/amux-env/<tree>/NAME`, taking down whatever an earlier start left there first. The folder is outside
+the checkout, as a QA run's are: inside it, git would find the repository above every agent's folder. It stays in the foreground holding the net, and the simulator lease
+when the world has a phone, until Ctrl-C takes the net down: a lease given back while the app still runs would let
+another tree take that simulator. Everything else is `testnet ctl` from that folder in another terminal, the world
+being only where a session starts: add a host, spawn an agent, sever a link, pair the phone with another host, `tui
+watch` the terminal pane. Every environment is real throughout, so a QA run may start from one too.
+
+| Environment | What it is |
+| --- | --- |
+| `busy` | Four hosts with six agents between them: two at work editing, one Codex reading a repository, a terminal Claude waiting on a permission, and quick ones that come to rest. The phone is paired with three hosts; `nas` stays discoverable for pairing by hand. The terminal client runs on `studio`. |
+| `asks` | One host whose agents stop to ask: a Claude permission for a new file, a Claude plan, a Claude question, a terminal Claude's permission and a Codex approval. The phone is paired with it and the terminal client runs on it. |
+| `first-run` | Two hosts on the network, neither paired: the empty fleet, discovery and the pairing flow, on the phone only. |
 
 ## The harness's own tests
 

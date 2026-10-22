@@ -641,13 +641,9 @@ impl Daemon {
         for hosted in hosted.values() {
             // Before the watchers stop: a dump in flight still gets its
             // agents' parts until its time is up.
-            eprintln!("T72 {} dumps", hosted.runtime.host());
             hosted.runtime.finish_dumps().await;
-            eprintln!("T72 {} background", hosted.runtime.host());
             hosted.runtime.stop_background().await;
-            eprintln!("T72 {} watching", hosted.runtime.host());
             hosted.runtime.stop_watching().await;
-            eprintln!("T72 {} flush", hosted.runtime.host());
         }
         for hosted in hosted.values() {
             hosted

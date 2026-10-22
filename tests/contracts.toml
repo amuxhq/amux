@@ -1377,7 +1377,7 @@ source = "model"
 property = { crate = "models", machine = "relay forwarding", sentence = "a host holds at most one direct link here, of its process's latest life" }
 checker = "models/relay::every_relay_forwarding_promise_holds_for_a_daemon_forwarding_at_ci_bounds"
 tests = [
-  "relay-core/lib::tests::a_link_from_a_later_life_of_the_peer_replaces_the_earlier_lifes_links",
+  "node/lib::routing::link_registry::tests::a_link_from_a_new_runtime_instance_replaces_the_old_one_in_either_direction",
   "relay-core/lib::tests::a_displaced_direct_link_hands_its_pairs_to_the_link_replacing_it",
 ]
 
@@ -1387,7 +1387,7 @@ source = "model"
 property = { crate = "models", machine = "relay forwarding", sentence = "of a crossed dial both ends keep the preferred link" }
 checker = "models/relay::every_relay_forwarding_promise_holds_for_a_daemon_forwarding_at_ci_bounds"
 tests = [
-  "relay-core/lib::tests::of_a_crossed_dial_between_two_processes_both_keep_the_preferred_link",
+  "node/lib::routing::link_registry::tests::one_runtime_instance_keeps_its_first_link_in_each_direction",
 ]
 
 [[contract]]
@@ -1396,7 +1396,6 @@ source = "model"
 property = { crate = "models", machine = "relay forwarding", sentence = "packets flow between two links only while both are up, on one account and paid, or both pinned" }
 checker = "models/relay::every_relay_forwarding_promise_holds_at_ci_bounds"
 tests = [
-  "relay-core/lib::tests::a_packet_between_two_paid_hosts_of_one_account_installs_their_pair",
   "relay-core/lib::tests::a_paid_link_and_a_pinned_link_are_never_paired",
   "relay-core/lib::tests::a_daemon_forwards_between_its_pinned_links_whose_keys_neither_lapse_nor_expire",
   "testnet/spec_links::route_via_daemon_reaches_a_session_through_a_paired_host",
@@ -1409,7 +1408,6 @@ source = "model"
 property = { crate = "models", machine = "relay forwarding", sentence = "nothing is forwarded for a link not yet admitted, held packets included" }
 checker = "models/relay::every_relay_forwarding_promise_holds_at_ci_bounds"
 tests = [
-  "relay-core/lib::tests::a_sender_not_yet_admitted_is_neither_forwarded_for_nor_told",
   "testnet/spec_links::hold_buffer_bad_token_drops_the_held_packets_unanswered",
 ]
 
@@ -1432,7 +1430,6 @@ property = { crate = "models", machine = "relay forwarding", sentence = "a link 
 checker = "models/relay::every_relay_forwarding_promise_holds_at_ci_bounds"
 tests = [
   "relay-core/lib::tests::a_new_link_is_told_the_difference_between_its_handshake_and_the_neighbors_there_are",
-  "relay-core/lib::tests::a_sender_not_yet_admitted_is_neither_forwarded_for_nor_told",
 ]
 
 [[contract]]

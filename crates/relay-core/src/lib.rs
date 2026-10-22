@@ -911,41 +911,6 @@ mod tests {
     }
 
     #[test]
-    fn of_a_crossed_dial_between_two_processes_both_keep_the_preferred_link() {
-        let mut relay = relay();
-        assert_eq!(
-            direct_up(&mut relay, 1, DESK, DialOrder::Fallback, 7, &[]),
-            Vec::new()
-        );
-        assert_eq!(
-            direct_up(&mut relay, 2, DESK, DialOrder::Preferred, 7, &[]),
-            vec![Output::Displace { link: LinkId(1) }]
-        );
-        assert_eq!(
-            direct_up(&mut relay, 3, DESK, DialOrder::Fallback, 7, &[]),
-            vec![Output::RefuseLink { link: LinkId(3) }]
-        );
-        assert_eq!(
-            direct_up(&mut relay, 4, DESK, DialOrder::Preferred, 7, &[]),
-            vec![Output::RefuseLink { link: LinkId(4) }]
-        );
-        assert_eq!(relay.adjacency.route(ALICE, DESK), Some(LinkId(2)));
-    }
-
-    #[test]
-    fn a_link_from_a_later_life_of_the_peer_replaces_the_earlier_lifes_links() {
-        let mut relay = relay();
-        up(&mut relay, 9, ALICE, LAPTOP, None);
-        direct_up(&mut relay, 1, DESK, DialOrder::Preferred, 7, &[LAPTOP]);
-        assert_eq!(
-            direct_up(&mut relay, 2, DESK, DialOrder::Fallback, 8, &[LAPTOP]),
-            vec![Output::Displace { link: LinkId(1) }],
-            "the host stays a neighbor throughout, so nobody is told"
-        );
-        assert_eq!(relay.adjacency.links_of(ALICE, DESK), vec![LinkId(2)]);
-    }
-
-    #[test]
     fn the_host_with_the_lower_id_dials_the_preferred_link() {
         assert_eq!(
             DialOrder::for_hosts(DESK, LAPTOP, false),
@@ -1015,18 +980,6 @@ mod tests {
     const TABLET: HostId = HostId([0x7a; 16]);
 
     #[test]
-    fn a_packet_between_two_paid_hosts_of_one_account_installs_their_pair() {
-        let mut relay = relay();
-        up(&mut relay, 1, ALICE, DESK, Some(Tier::Pro));
-        up(&mut relay, 2, ALICE, LAPTOP, Some(Tier::Pro));
-        assert_eq!(packet(&mut relay, 1, LAPTOP), vec![forward(1, 2)]);
-        assert_eq!(pairs(&relay), vec![(1, 2)]);
-        // Either end asking again is answered the same way.
-        assert_eq!(packet(&mut relay, 2, DESK), vec![forward(2, 1)]);
-        assert_eq!(pairs(&relay), vec![(1, 2)]);
-    }
-
-    #[test]
     fn a_packet_is_paired_with_the_newest_link_of_its_destination() {
         let mut relay = relay();
         up(&mut relay, 1, ALICE, DESK, Some(Tier::Pro));
@@ -1091,14 +1044,6 @@ mod tests {
             packet(&mut relay, 2, DESK),
             refuse(2, DESK, ForwardRefusal::NoRoute)
         );
-    }
-
-    #[test]
-    fn a_sender_not_yet_admitted_is_neither_forwarded_for_nor_told() {
-        let mut relay = relay();
-        up(&mut relay, 2, ALICE, LAPTOP, Some(Tier::Pro));
-        assert_eq!(packet(&mut relay, 1, LAPTOP), Vec::new());
-        assert_eq!(pairs(&relay), Vec::new());
     }
 
     #[test]

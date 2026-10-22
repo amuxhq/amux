@@ -62,7 +62,8 @@ impl RelayHost {
     where
         IO: AsyncRead + AsyncWrite + Send + 'static,
     {
-        let unavailable = |error: &dyn std::fmt::Display| tonic::Status::unavailable(error.to_string());
+        let unavailable =
+            |error: &dyn std::fmt::Display| tonic::Status::unavailable(error.to_string());
         let id = HostId::new_v4();
         let identity = DeviceIdentity::generated(id).map_err(|error| unavailable(&error))?;
         let trust: SharedTrustStore = Arc::new(std::sync::RwLock::new(TrustStore::default()));

@@ -492,14 +492,15 @@ async fn measure(
 /// through the relay, [`DIAL_CONCURRENCY`] at once: hosts 2k and 2k+1 are a
 /// pair, and 2k dials.
 async fn link_pairs(hosts: &[Arc<RelayHost>]) -> Result<()> {
-    for pair in hosts.chunks_exact(2) {
-        pair[0].trust(&pair[1])?;
-        pair[1].trust(&pair[0])?;
+    let (pairs, _) = hosts.as_chunks::<2>();
+    for [near, far] in pairs {
+        near.trust(far)?;
+        far.trust(near)?;
     }
     let slots = Arc::new(Semaphore::new(DIAL_CONCURRENCY));
     let mut dialling = JoinSet::new();
-    for pair in hosts.chunks_exact(2) {
-        let (near, far) = (pair[0].clone(), pair[1].id());
+    for [near, far] in pairs {
+        let (near, far) = (near.clone(), far.id());
         let slots = slots.clone();
         dialling.spawn(async move {
             let _slot = slots.acquire_owned().await?;

@@ -371,6 +371,7 @@ impl ReachabilityLinkConnector {
             .link_registry()
             .close_peer_links()
             .await;
+        eprintln!("T72 close_direct_links: tasks");
         let tasks = inner
             .retained_tasks
             .lock()
@@ -382,6 +383,7 @@ impl ReachabilityLinkConnector {
         for task in tasks {
             let _ = task.await;
         }
+        eprintln!("T72 close_direct_links: done");
         inner.dialing.lock().unwrap().clear();
         inner.queued_found.lock().unwrap().clear();
     }

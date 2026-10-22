@@ -1857,8 +1857,10 @@ impl Net {
             edge,
             analytics: self.analytics.clone().unwrap_or(node::Telemetry::Off),
         };
+        eprintln!("T72 start {name} begin");
         let daemon = node::start(options, None)
             .await
+            .inspect(|_| eprintln!("T72 start {name} started"))
             .map_err(|error| NetError::Start {
                 host: name.to_owned(),
                 error: error.to_string(),
@@ -2262,11 +2264,13 @@ impl Net {
         }
         let runs: Vec<Weak<ProfileRuntime>> =
             daemon.profiles().iter().map(Arc::downgrade).collect();
+        eprintln!("T72 take_down {name} begin");
         if clean {
             daemon.shutdown().await?;
         } else {
             drop(daemon);
         }
+        eprintln!("T72 take_down {name} shut");
         observe::until(&format!("{name}'s runtime to be gone"), || {
             let live = runs.iter().filter(|run| run.upgrade().is_some()).count();
             async move {

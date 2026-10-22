@@ -1039,7 +1039,8 @@ async fn revoked_ticket_refused_with_the_revocation() {
 
 /// A desk and a laptop on the paid account `ada` with no way to each other
 /// but the relay, over UDP, linked through it; the laptop remembers the
-/// desk as reached through the relay. On the driven clock, signed in once
+/// desk as reached through the relay and holds a session ticket from it,
+/// so its next launch can resume. On the driven clock, signed in once
 /// `ttl` is the credentials' lifetime.
 async fn linked_through_the_relay(ttl: std::time::Duration) -> Net {
     let net = Net::start_with(
@@ -1061,7 +1062,45 @@ async fn linked_through_the_relay(ttl: std::time::Duration) -> Net {
     pair_through_the_relay(&net).await;
     carried_by(&net, "laptop", "desk", PathKind::RelayUdp).await;
     carried_by(&net, "desk", "laptop", PathKind::RelayUdp).await;
+    holds_a_ticket(&net, "laptop", "desk").await;
     net
+}
+
+/// Waits until `host` keeps on disk a session ticket `peer` gave it. Only a
+/// link `host` dialled brings one, and the link both ends read as carried
+/// may be the one `peer` dialled while `host`'s own dial is still on its
+/// way; a host stopped before its dial lands relaunches with nothing to
+/// resume with.
+async fn holds_a_ticket(net: &Net, host: &str, peer: &str) {
+    let info = net.host(host).unwrap().clone();
+    let tickets = node::profile_dir(&info.data_dir, info.profile)
+        .join(node::CLIENT_TICKETS_DIR)
+        .join(host_id(net, peer).to_string());
+    until(&format!("{host} to keep a ticket from {peer}"), || async {
+        let kept = tickets_under(&tickets);
+        (kept > 0)
+            .then_some(())
+            .ok_or_else(|| format!("no ticket under {}", tickets.display()))
+    })
+    .await
+    .unwrap();
+}
+
+/// How many tickets lie anywhere under `dir`.
+fn tickets_under(dir: &std::path::Path) -> usize {
+    std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| {
+            let path = entry.path();
+            if path.is_dir() {
+                tickets_under(&path)
+            } else {
+                usize::from(path.extension().is_some_and(|ext| ext == "ticket"))
+            }
+        })
+        .sum()
 }
 
 /// The laptop pairs with the desk through the relay, and so remembers the

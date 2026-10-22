@@ -1442,7 +1442,8 @@ async fn punch_lapse_drops_the_punched_path() {
     let mut net = behind_routers(testnet::RouterKind::Ordinary, said).await;
     carried_by(&net, "laptop", "desk", PathKind::Punched).await;
     carried_by(&net, "desk", "laptop", PathKind::Punched).await;
-    net.set_tier("ada", testnet::TierDecl::Free).await.unwrap();
+    let lapsed = net.set_tier("ada", testnet::TierDecl::Free).await.unwrap();
+    println!("{lapsed:?}");
     for (host, peer) in [("laptop", "desk"), ("desk", "laptop")] {
         until(
             &format!("{host}'s link to {peer} to leave the punched path"),

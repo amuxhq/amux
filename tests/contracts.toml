@@ -687,6 +687,28 @@ tests = [
 ]
 
 [[contract]]
+id = "links-punching"
+source = "testing page"
+section = "Boundaries"
+claim = "Many daemons: two paid hosts behind ordinary imitated routers, with nothing between them but the relay, move their link from the relay onto a punched path to the address the relay saw each at; behind strict routers every probe is dropped and the link stays on the relay; hosts on a free account never learn where the relay sees each other, so nothing is punched; a lapse takes the punched path away. Each host's link log names the path at each step."
+tests = [
+  "testnet/spec_links::punch_ordinary_routers_move_the_link_onto_a_punched_path",
+  "testnet/spec_links::punch_strict_routers_keep_the_link_on_the_relay",
+  "testnet/spec_links::punch_free_never_probes_and_the_link_stays_on_the_lan",
+  "testnet/spec_links::punch_lapse_drops_the_punched_path",
+]
+
+[[contract]]
+id = "links-survive-path-changes"
+source = "testing page"
+section = "Boundaries"
+claim = "Many daemons: one subscription stays open while its link moves from the same network to the relay and back, and while a host's network changes under it, reading every line once with one opening and no reset, lag or detach, and the link never goes down; each host's link log names the path at each step."
+tests = [
+  "testnet/spec_links::path_change_lan_relay_lan_keeps_the_subscription_open",
+  "testnet/spec_links::path_change_phone_network_keeps_the_subscription_open",
+]
+
+[[contract]]
 id = "boundary-client-model"
 source = "testing page"
 section = "Boundaries"

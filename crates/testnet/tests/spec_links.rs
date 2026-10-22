@@ -1301,10 +1301,26 @@ async fn behind_routers(kind: testnet::RouterKind, said: &str) -> Net {
     }
     net.trust("desk", "laptop").await.unwrap();
     net.trust("laptop", "desk").await.unwrap();
-    until_via(&net, "laptop", "desk", LiveRoute::Relay).await;
-    carried_by(&net, "laptop", "desk", PathKind::RelayUdp).await;
-    carried_by(&net, "desk", "laptop", PathKind::RelayUdp).await;
-    println!("behind {kind:?} routers: the link comes up through the relay");
+    // The link comes up through the relay; behind ordinary routers it may
+    // be punched by the time anyone looks, so read its Up line.
+    for (host, peer) in [("laptop", "desk"), ("desk", "laptop")] {
+        let id = host_id(&net, peer);
+        until(
+            &format!("{host}'s link to {peer} up on relay_udp"),
+            || async {
+                let log = net.link_log(host).unwrap();
+                log.iter()
+                    .find(|line| line.peer == id && line.event == LinkTransition::Up)
+                    .map(|line| line.path)
+                    .filter(|path| *path == PathKind::RelayUdp)
+                    .map(|_| ())
+                    .ok_or_else(|| format!("{log:?}"))
+            },
+        )
+        .await
+        .unwrap();
+    }
+    println!("behind {kind:?} routers: the link came up through the relay");
     net
 }
 
@@ -1485,4 +1501,180 @@ fn observed_addresses(net: &Net, host: &str, peer: &str) -> Vec<String> {
         .filter(|address| address["source"] == "observed")
         .filter_map(|address| address["addr"].as_str().map(str::to_owned))
         .collect()
+}
+
+/// An agent on the desk that says one line after each named gate opens:
+/// a session whose items the story releases one step at a time.
+fn worker_gated(lines: &[(&str, &str)]) -> AgentDecl {
+    let mut steps = Vec::new();
+    for (gate, said) in lines {
+        steps.push(Step::WaitFor {
+            path: (*gate).into(),
+        });
+        steps.push(Step::Text {
+            chunks: vec![(*said).to_owned()],
+        });
+    }
+    steps.push(Step::TurnEnd);
+    AgentDecl::new("worker", "desk")
+        .prompt("Keep me posted.")
+        .steps(steps)
+}
+
+/// Opens `gate` and waits until `chat` reads `said`.
+async fn released(net: &Net, chat: &mut testnet::Observer, gate: &str, said: &str) {
+    net.open_gate(gate).unwrap();
+    chat.observe_until(|events| says(events, said), PATIENCE)
+        .await
+        .unwrap();
+    println!("the laptop's open subscription read {said:?}");
+}
+
+/// The subscription `chat` held throughout read every line once, in order,
+/// with one opening and no reset, lag or detach, and `host`'s link to
+/// `peer` came up once and never went down: the link moved, it was not
+/// replaced.
+fn no_gap(net: &Net, chat: &mut testnet::Observer, host: &str, peer: &str, lines: &[&str]) {
+    let marks = observe::marks(chat.events());
+    let openings = marks
+        .iter()
+        .filter(|mark| matches!(mark, observe::Mark::Opening(_)))
+        .count();
+    assert_eq!(openings, 1, "one subscription throughout: {marks:?}");
+    assert!(
+        !marks.iter().any(|mark| matches!(
+            mark,
+            observe::Mark::Reset | observe::Mark::Lagged | observe::Mark::Detached
+        )),
+        "no reset, lag or detach: {marks:?}"
+    );
+    let read: Vec<&str> = chat
+        .events()
+        .iter()
+        .filter_map(|event| match &event.of {
+            Some(wire::session_event::Of::Item(item)) if lines.contains(&item.text.as_str()) => {
+                Some(item.text.as_str())
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(read, lines, "every line once, in order");
+    let id = host_id(net, peer);
+    let log: Vec<_> = net
+        .link_log(host)
+        .unwrap()
+        .into_iter()
+        .filter(|line| line.peer == id)
+        .collect();
+    let ups = log
+        .iter()
+        .filter(|line| line.event == LinkTransition::Up)
+        .count();
+    assert_eq!(ups, 1, "{host}'s link to {peer} came up once: {log:?}");
+    assert!(
+        !log.iter().any(|line| line.event == LinkTransition::Down),
+        "{host}'s link to {peer} never went down: {log:?}"
+    );
+    println!(
+        "{host}'s link to {peer}, by its link log: {:?}",
+        log.iter()
+            .map(|line| format!("{:?} {}", line.event, line.path))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// Two paid hosts on one network, also signed in to the relay: the laptop
+/// holds the desk's session open while the network between them is cut,
+/// so the link moves onto the relay, and restored, so it moves back. The
+/// one subscription reads every line said on each path with no reset,
+/// resubscribe or gap, and the link never goes down.
+#[tokio::test(flavor = "multi_thread")]
+async fn path_change_lan_relay_lan_keeps_the_subscription_open() {
+    let lines = [
+        "said on the LAN",
+        "said on the relay",
+        "said back on the LAN",
+    ];
+    let mut net = Net::start_with(
+        Topology::new()
+            .relay(&["ada"])
+            .host_decl(lan_host("desk", "home"))
+            .host_decl(lan_host("laptop", "home"))
+            .agent(worker_gated(&[
+                ("lan", lines[0]),
+                ("relay", lines[1]),
+                ("back", lines[2]),
+            ])),
+        testnet::NetOptions {
+            gated_lan: true,
+            ..relay_tcp_unreachable(&["desk", "laptop"])
+        },
+    )
+    .await
+    .unwrap();
+    pair(&net, "laptop", "desk").await;
+    carried_by(&net, "laptop", "desk", PathKind::Lan).await;
+    carried_by(&net, "desk", "laptop", PathKind::Lan).await;
+    // Signed in once linked, so the relay's forwarding is a second path
+    // to the link the LAN already carries rather than a link of its own.
+    net.sign_in("desk", "ada").await.unwrap();
+    net.sign_in("laptop", "ada").await.unwrap();
+    net.current("laptop", "worker").await.unwrap();
+    let mut chat = net.observe("laptop", "worker", 10).await.unwrap();
+    chat.observe_until(observe::caught_up, PATIENCE)
+        .await
+        .unwrap();
+    released(&net, &mut chat, "lan", lines[0]).await;
+
+    net.sever_link("desk", "laptop").unwrap();
+    carried_by(&net, "laptop", "desk", PathKind::RelayUdp).await;
+    carried_by(&net, "desk", "laptop", PathKind::RelayUdp).await;
+    released(&net, &mut chat, "relay", lines[1]).await;
+
+    net.restore_link("desk", "laptop").await.unwrap();
+    carried_by(&net, "laptop", "desk", PathKind::Lan).await;
+    carried_by(&net, "desk", "laptop", PathKind::Lan).await;
+    released(&net, &mut chat, "back", lines[2]).await;
+
+    no_gap(&net, &mut chat, "laptop", "desk", &lines);
+    no_gap(&net, &mut chat, "desk", "laptop", &lines);
+    net.shutdown().await.unwrap();
+}
+
+/// A host's network changes under it mid-stream, as a phone's does leaving
+/// Wi-Fi: its socket is bound afresh, its path machines are told, and the
+/// link carries on from the new address with the subscription reading
+/// every line, no gap, and the link never down.
+#[tokio::test(flavor = "multi_thread")]
+async fn path_change_phone_network_keeps_the_subscription_open() {
+    let lines = ["said before the change", "said after the change"];
+    let mut net = Net::start(
+        Topology::new()
+            .host_decl(lan_host("desk", "home"))
+            .host_decl(lan_host("laptop", "home"))
+            .agent(worker_gated(&[("before", lines[0]), ("after", lines[1])])),
+    )
+    .await
+    .unwrap();
+    pair(&net, "laptop", "desk").await;
+    carried_by(&net, "laptop", "desk", PathKind::Lan).await;
+    carried_by(&net, "desk", "laptop", PathKind::Lan).await;
+    net.current("laptop", "worker").await.unwrap();
+    let mut chat = net.observe("laptop", "worker", 10).await.unwrap();
+    chat.observe_until(observe::caught_up, PATIENCE)
+        .await
+        .unwrap();
+    released(&net, &mut chat, "before", lines[0]).await;
+
+    let moved = net.change_network("laptop").unwrap();
+    println!("{moved:?}");
+    let rebinds = testnet::link_log::rebinds(host_id(&net, "laptop"));
+    println!("the laptop's rebind lines: {rebinds:?}");
+    released(&net, &mut chat, "after", lines[1]).await;
+    carried_by(&net, "laptop", "desk", PathKind::Lan).await;
+    carried_by(&net, "desk", "laptop", PathKind::Lan).await;
+
+    no_gap(&net, &mut chat, "laptop", "desk", &lines);
+    no_gap(&net, &mut chat, "desk", "laptop", &lines);
+    net.shutdown().await.unwrap();
 }

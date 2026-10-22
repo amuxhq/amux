@@ -283,9 +283,20 @@ on `World`, and a simulated net, which has no sockets, refuses them:
 
 | Verb | Effect |
 | --- | --- |
-| `set_router(host, kind)` | Put a router of that kind in front of the host's link socket, now if it runs and on every start after. Its links migrate onto the router's public port; a mapping idle for 30 seconds expires. |
-| `change_network(host)` | Move a running host onto another network, as a phone leaving Wi-Fi does: its link socket rebinds to a fresh port, or behind a fresh router of the same kind with new public ports, and its links migrate without going down. |
+| `set_router(host, kind)` | Put a router of that kind in front of the host's link socket, now if it runs and on every start after. Its links migrate onto the router's public port; a mapping idle for 30 seconds expires. A host started behind a router reaches the relay's QUIC listener straight from its public port, not through the net's gate, so the relay sees and reports the router's port. |
+| `change_network(host)` | Move a running host onto another network, as a phone leaving Wi-Fi does: its link socket rebinds to a fresh port, or behind a fresh router of the same kind with new public ports, its links migrate without going down, and its path machines are told as the phone's runtime tells them. |
 | `bind_ipv6_only(host)` | Bind the host's socket to IPv6 loopback alone from its next start. |
+
+The router stories in `spec_links.rs` put two paid hosts behind routers with nothing between them but the relay:
+
+| Story | What it shows |
+| --- | --- |
+| `punch_ordinary_routers_…` | Behind `Ordinary` routers each host probes the address the relay saw the other at, both routers open, and the link moves from `relay_udp` to `punched` with the session streaming. |
+| `punch_strict_routers_…` | Behind `Strict` routers both hosts learn the other's observed address, every probe is dropped, and the link stays on `relay_udp`. |
+| `punch_free_never_…` | Two hosts on one free account on the same network: neither learns where the relay sees the other, so neither has anything to punch to, and the link stays on `lan`. |
+| `punch_lapse_drops_…` | A lapse takes the punched path away: the link leaves `punched`, and with no free path between the routers goes down. |
+| `path_change_lan_relay_lan_…` | One subscription stays open while the LAN between two signed-in hosts is cut (the link moves to `relay_udp`) and restored (back to `lan`): every line once, one opening, no reset, lag or detach, and the link never goes down. |
+| `path_change_phone_network_…` | `change_network` under a host mid-stream: the same subscription reads on with no gap and the link stays up. |
 
 ### Which path carries a link
 

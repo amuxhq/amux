@@ -1827,8 +1827,9 @@ impl Net {
             link_socket: true,
             cloud: node::CloudOptions::default(),
             // An in-process host is reached on loopback alone, which it
-            // never lists.
-            interfaces: None,
+            // never lists, and has no interfaces of its own to list after
+            // a network change either.
+            interfaces: Some(Vec::new()),
         };
         if let Some(relay) = &self.relay {
             edge.cloud = relay.cloud_options(&self.udp[name]);
@@ -2111,8 +2112,8 @@ impl Net {
 
     /// Moves `host` onto another network, as a phone leaving Wi-Fi does: its
     /// link socket is rebound to a fresh port, or behind a fresh router of
-    /// the same kind with new public ports, and its links migrate. In-process
-    /// hosts that run only.
+    /// the same kind with new public ports, its links migrate, and its path
+    /// machines are told as a phone's are. In-process hosts that run only.
     pub fn change_network(&self, host: &str) -> Result<Ack, NetError> {
         self.in_process(host, "changing the network under the link socket")?;
         let edge = self.edge(host)?;
@@ -2126,7 +2127,13 @@ impl Net {
         };
         let to = substrate.local_addr()?;
         edge.rebind(substrate)?;
-        Ok(self.ack(format!("{host} moved to another network, now at {to}")))
+        // As a phone's runtime hears from its path monitor: every path
+        // machine probes its paths again from the new network.
+        let told = edge.network_changed()?;
+        Ok(self.ack(format!(
+            "{host} moved to another network, now at {to}; {} path machines told",
+            told.machines_told
+        )))
     }
 
     /// The path carrying `host`'s link to `peer` now, by `host`'s link log:

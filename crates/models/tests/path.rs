@@ -5,9 +5,9 @@ use models::{Bounds, PathModel, check, walk};
 
 /// How long the exhaustive run may take under `just test`. No CI runner
 /// figure yet, so it is sized by the README's rule from the four-thread Mac
-/// time: 6.7 s, times 4.7, doubled and rounded up to a whole minute. A run
+/// time: 21.2 s, times 4.7, doubled and rounded up to a whole minute. A run
 /// past it says the bounds have outgrown their place.
-const BUDGET_SECONDS: f64 = 120.0;
+const BUDGET_SECONDS: f64 = 240.0;
 
 #[test]
 fn every_path_machine_promise_holds_at_ci_bounds() {

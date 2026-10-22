@@ -21,6 +21,10 @@
 //! - While the link is direct, every forwarding path is kept ready: probed
 //!   again whenever it has not been heard from for [`PROBE_INTERVAL_MS`],
 //!   so falling back costs no round trip of validation.
+//! - An address stays a candidate however long it goes unanswered: it is
+//!   probed again every [`PROBE_INTERVAL_MS`], so a link that left it for
+//!   the relay returns once it answers. Only the peer no longer listing it
+//!   forgets it, or a lapse, for an address reached by punching.
 //! - An address learned only from the relay's observation of the peer is
 //!   reached by punching, which is paid: it is never probed or carried
 //!   while the account is free, and a lapse drops it.
@@ -50,11 +54,8 @@ pub const HOLD_DOWN_MS: u64 = 3_000;
 /// How long a probe waits for its answer before the path counts as failed.
 pub const PROBE_TIMEOUT_MS: u64 = 2_000;
 /// How long a path may go unheard while the link is up before it is probed
-/// again.
+/// again, whether it answered last or not.
 pub const PROBE_INTERVAL_MS: u64 = 5_000;
-/// How many probes in a row an address may leave unanswered before it is
-/// dropped as stale.
-pub const MAX_PROBE_FAILURES: u32 = 3;
 
 /// A byte-stream path (SSH, a framed TCP connection, an in-process pipe),
 /// named by the driver as it registers it.
@@ -152,7 +153,7 @@ pub enum Output {
     SendOnAll {
         paths: Vec<Path>,
     },
-    /// Forget the address: it is stale or no longer allowed.
+    /// Forget the address: a lapse no longer allows punching to it.
     DropCandidate {
         addr: SocketAddr,
     },
@@ -209,8 +210,6 @@ struct PathState {
     failed: bool,
     /// The network changed since it was last heard.
     stale: bool,
-    /// Probes in a row left unanswered.
-    failures: u32,
 }
 
 impl PathState {
@@ -301,7 +300,7 @@ impl Paths {
                 self.paths.remove(&Key::Addr(addr));
             }
             Input::ProbeAnswered { path, rtt_ms } => self.answered(path.into(), rtt_ms),
-            Input::ProbeTimedOut { path } => self.timed_out(path.into(), out),
+            Input::ProbeTimedOut { path } => self.timed_out(path.into()),
             Input::PacketArrived { path } => self.arrived(path, out),
             Input::ForwardingUp { link } => {
                 self.refused.remove(&link);
@@ -339,7 +338,7 @@ impl Paths {
             }
             Input::Tick { now_ms } => self.now_ms = self.now_ms.max(now_ms),
         }
-        self.expire_probes(out);
+        self.expire_probes();
         self.keep_probing(out);
         self.select(out);
         self.arm(out);
@@ -480,23 +479,15 @@ impl Paths {
             state.probe_deadline_ms = None;
             state.failed = false;
             state.stale = false;
-            state.failures = 0;
         }
     }
 
-    fn timed_out(&mut self, key: Key, out: &mut Vec<Output>) {
-        let Some(state) = self.paths.get_mut(&key) else {
-            return;
-        };
-        state.probe_deadline_ms = None;
-        state.failed = true;
-        state.failures += 1;
-        if let Key::Addr(addr) = key
-            && state.failures >= MAX_PROBE_FAILURES
-        {
-            self.paths.remove(&key);
-            self.sources.remove(&addr);
-            out.push(Output::DropCandidate { addr });
+    /// A probe went unanswered. The path stays, to be probed again after
+    /// the interval: an outage of any length ends with the path back.
+    fn timed_out(&mut self, key: Key) {
+        if let Some(state) = self.paths.get_mut(&key) {
+            state.probe_deadline_ms = None;
+            state.failed = true;
         }
     }
 
@@ -595,7 +586,7 @@ impl Paths {
     }
 
     /// Times out every probe whose deadline has passed.
-    fn expire_probes(&mut self, out: &mut Vec<Output>) {
+    fn expire_probes(&mut self) {
         let expired: Vec<Key> = self
             .paths
             .iter()
@@ -603,7 +594,7 @@ impl Paths {
             .map(|(key, _)| *key)
             .collect();
         for key in expired {
-            self.timed_out(key, out);
+            self.timed_out(key);
         }
     }
 
@@ -1304,22 +1295,63 @@ mod tests {
     }
 
     #[test]
-    fn a_stale_address_is_dropped_after_its_probes_go_unanswered() {
+    fn the_link_returns_to_an_address_that_answers_again_however_long_it_was_silent() {
         let mut paths = up(true);
+        answer(&mut paths, Path::Direct(lan()), 4);
+        tick(&mut paths, 1_000);
         answer(&mut paths, relayed(), 80);
-        let mut dropped = None;
-        for now_ms in (0..60_000).step_by(250) {
+        assert_eq!(paths.carrying(), Some(&Path::Direct(lan())));
+
+        // The address stops answering for ten minutes; the relay answers.
+        let mut lan_probes = 0;
+        let mut on_relay_at = None;
+        for now_ms in (1_250..600_000).step_by(250) {
             let out = tick(&mut paths, now_ms);
-            if out.contains(&Output::DropCandidate { addr: lan() }) {
-                dropped = Some(now_ms);
-                break;
+            assert!(
+                !out.iter()
+                    .any(|o| matches!(o, Output::DropCandidate { .. })),
+                "the silent address was dropped at {now_ms} ms"
+            );
+            if carry(&out) == Some(relayed()) {
+                on_relay_at = Some(now_ms);
+            }
+            lan_probes += probes(&out)
+                .iter()
+                .filter(|p| **p == Path::Direct(lan()))
+                .count();
+            if probes(&out).contains(&relayed()) {
+                answer(&mut paths, relayed(), 80);
+            }
+        }
+        assert!(
+            on_relay_at.is_some(),
+            "the link never left the silent address"
+        );
+        assert_eq!(paths.carrying(), Some(&relayed()));
+        assert!(
+            lan_probes >= 100,
+            "{lan_probes} probes of the silent address in ten minutes"
+        );
+
+        // It answers again: the next probe on it moves the link back.
+        let mut back_at = None;
+        for now_ms in (600_000..620_000).step_by(250) {
+            let out = tick(&mut paths, now_ms);
+            if probes(&out).contains(&Path::Direct(lan())) {
+                let out = answer(&mut paths, Path::Direct(lan()), 4);
+                if carry(&out) == Some(Path::Direct(lan())) {
+                    back_at = Some(now_ms);
+                    break;
+                }
             }
             if probes(&out).contains(&relayed()) {
                 answer(&mut paths, relayed(), 80);
             }
         }
-        // Timed out at 2 s, then probed at 5 s and 10 s, each timing out.
-        assert_eq!(dropped, Some(12_000));
+        assert!(
+            back_at.is_some_and(|at| at <= 600_000 + PROBE_INTERVAL_MS),
+            "back on the address at {back_at:?}"
+        );
     }
 
     #[test]

@@ -8,7 +8,9 @@
 //! forwards while it is up and the plan is paid. A fourth address, one that
 //! worked on a network this host has left, never answers. The machine
 //! learns the addresses late, one at a time; its probes are answered by
-//! whichever path works, or lost; the network changes; the relay link goes
+//! whichever path works, or lost; the peer's address on the local network
+//! stops answering for long enough that several probes on it go unanswered,
+//! and answers again; the network changes; the relay link goes
 //! down and comes back; the plan lapses and is bought again, and the relay
 //! refuses a lapsed plan's packets once it sees them; the link comes up once
 //! the first flight reaches the peer and goes when no path works; and time
@@ -46,6 +48,13 @@ const STALE: SocketAddr = addr([10, 9, 9, 20]);
 /// a lost probe to time out, its path to be probed again after the
 /// interval, and the hold-down to pass.
 const REST_TICKS: u8 = 8;
+/// How many times time may pass while the local address is silent: enough
+/// for [`LONG_OUTAGE_PROBES`] probes on it to time out with the relay's
+/// probes between them.
+const OUTAGE_TICKS: u8 = 6;
+/// Unanswered probes in a row that make an outage long: past them a machine
+/// that gave up on the address would never come back to it.
+const LONG_OUTAGE_PROBES: u8 = 3;
 
 const fn addr(ip: [u8; 4]) -> SocketAddr {
     SocketAddr::new(IpAddr::V4(Ipv4Addr::new(ip[0], ip[1], ip[2], ip[3])), 7000)
@@ -64,6 +73,8 @@ pub struct PathModel {
     pub ticks: u8,
     /// Times the relay link goes down.
     pub forwarding_drops: u8,
+    /// Times the peer's local address goes silent and answers again.
+    pub outages: u8,
 }
 
 impl PathModel {
@@ -76,6 +87,7 @@ impl PathModel {
             lapses: 1,
             ticks: 2,
             forwarding_drops: 1,
+            outages: 1,
         }
     }
 
@@ -88,6 +100,7 @@ impl PathModel {
             lapses: 2,
             ticks: 3,
             forwarding_drops: 1,
+            outages: 1,
         }
     }
 }
@@ -138,6 +151,12 @@ pub enum Action {
     ForwardingDown,
     /// The relay link comes back.
     ForwardingUp,
+    /// The peer's local address stops answering, this host staying on its
+    /// network.
+    LanSilent,
+    /// The peer's local address answers again, and the world stops
+    /// changing.
+    LanBack,
     /// The plan lapses, or is bought again.
     Plan { paid: bool },
     /// The relay refuses the link's packets for the lapsed plan.
@@ -160,6 +179,8 @@ struct Used {
     ticks: u8,
     forwarding_drops: u8,
     rest_ticks: u8,
+    outages: u8,
+    outage_ticks: u8,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -188,6 +209,14 @@ pub struct State {
     failed: BTreeSet<PathKey>,
     /// This host is on the peer's local network.
     on_lan: bool,
+    /// The peer's local address is silent though this host is on its
+    /// network.
+    lan_silent: bool,
+    /// Probes on the local address lost or timed out in a row during the
+    /// outage, up to [`LONG_OUTAGE_PROBES`].
+    outage_misses: u8,
+    /// The link came back to the local address after a long outage.
+    returned: bool,
     /// This host's network has changed since the relay saw the peer, so
     /// the punched address no longer reaches it.
     moved: bool,
@@ -236,7 +265,9 @@ impl State {
     /// Whether the path carries packets to the peer in the world now.
     fn works(&self, path: Path) -> bool {
         match path {
-            Path::Direct(addr) | Path::Punched(addr) if addr == LAN => self.on_lan,
+            Path::Direct(addr) | Path::Punched(addr) if addr == LAN => {
+                self.on_lan && !self.lan_silent
+            }
             Path::Direct(addr) | Path::Punched(addr) if addr == PUNCH => !self.moved,
             Path::Forwarded(link) => link == RELAY && self.relay_up && self.paid,
             Path::Direct(_) | Path::Punched(_) | Path::Framed(_) => false,
@@ -288,6 +319,14 @@ impl State {
         held && self.answered.contains(&key) && !self.failed.contains(&key) && !self.crosses(path)
     }
 
+    /// A probe on `path` was lost or timed out.
+    fn missed(&mut self, path: Path) {
+        self.failed.insert(path.into());
+        if self.lan_silent && PathKey::from(path) == PathKey::Addr(LAN) {
+            self.outage_misses = (self.outage_misses + 1).min(LONG_OUTAGE_PROBES);
+        }
+    }
+
     /// Whether the machine has put the link's packets on the relay since the
     /// plan lapsed: what makes the relay refuse.
     fn sent_on_relay(&self) -> bool {
@@ -308,6 +347,7 @@ impl fmt::Debug for State {
             .field("answered", &self.answered)
             .field("learned", &self.learned)
             .field("on_lan", &self.on_lan)
+            .field("lan_silent", &self.lan_silent)
             .field("moved", &self.moved)
             .field("relay_up", &self.relay_up)
             .field("paid", &self.paid)
@@ -349,11 +389,23 @@ impl PathModel {
                     } else {
                         s.chose_direct = true;
                     }
+                    if PathKey::from(path) == PathKey::Addr(LAN)
+                        && !s.lan_silent
+                        && s.outage_misses >= LONG_OUTAGE_PROBES
+                    {
+                        s.returned = true;
+                    }
                     s.on_all.clear();
                 }
                 Output::SendOnAll { paths } => s.on_all = paths,
+                // The world still knows an address the machine forgot: only
+                // a lapse may take one away, and only one reached by
+                // punching. Any other drop leaves the address usable, so a
+                // machine that gave up on it fails to come back to it.
                 Output::DropCandidate { addr } => {
-                    s.learned.retain(|candidate| candidate.addr() != addr);
+                    if addr == PUNCH && !s.paid {
+                        s.learned.remove(&Candidate::Punch);
+                    }
                     s.answered.remove(&PathKey::Addr(addr));
                 }
                 Output::Arm { at_ms } => s.armed = Some(at_ms),
@@ -398,7 +450,7 @@ impl PathModel {
         let left = if s.rested {
             s.used.rest_ticks < REST_TICKS
         } else {
-            s.used.ticks < self.ticks
+            s.used.ticks < self.ticks || (s.lan_silent && s.used.outage_ticks < OUTAGE_TICKS)
         };
         // An answer comes within its round trip: time passing a working
         // path's probe deadline would lose the probe without the fault.
@@ -430,6 +482,9 @@ impl Machine for PathModel {
             since: None,
             failed: BTreeSet::new(),
             on_lan: true,
+            lan_silent: false,
+            outage_misses: 0,
+            returned: false,
             moved: false,
             relay_up: true,
             paid: true,
@@ -449,7 +504,14 @@ impl Machine for PathModel {
     }
 
     fn actions(&self, s: &State, out: &mut Vec<Action>) {
-        let world = !s.rested;
+        // While the local address is silent nothing else changes, and once
+        // it answers again the world rests, so the outage's many ticks do
+        // not multiply every other schedule.
+        let world = !s.rested && !s.lan_silent;
+        if s.lan_silent && !s.rested {
+            out.push(Action::Rest);
+            out.push(Action::LanBack);
+        }
         if world {
             out.push(Action::Rest);
             if s.used.candidates < self.candidates {
@@ -469,6 +531,9 @@ impl Machine for PathModel {
             }
             if s.relay_up && s.used.forwarding_drops < self.forwarding_drops {
                 out.push(Action::ForwardingDown);
+            }
+            if s.carrying() == Some(Path::Direct(LAN)) && s.used.outages < self.outages {
+                out.push(Action::LanSilent);
             }
             if s.used.lapses < self.lapses {
                 out.push(Action::Plan { paid: !s.paid });
@@ -539,13 +604,15 @@ impl Machine for PathModel {
             Action::Fault(Fault::Lose(MsgIndex(index))) => {
                 let path = *next.in_flight.keys().nth(*index)?;
                 next.in_flight.remove(&path);
-                next.failed.insert(path.into());
+                next.missed(path);
                 next.used.probes_lost += 1;
                 return Some(next);
             }
             Action::Fault(Fault::Tick { ms }) => {
                 if next.rested {
                     next.used.rest_ticks += 1;
+                } else if next.lan_silent && next.used.outage_ticks < OUTAGE_TICKS {
+                    next.used.outage_ticks += 1;
                 } else {
                     next.used.ticks += 1;
                 }
@@ -559,7 +626,7 @@ impl Machine for PathModel {
                     .collect();
                 for path in expired {
                     next.in_flight.remove(&path);
-                    next.failed.insert(path.into());
+                    next.missed(path);
                 }
                 Input::Tick { now_ms: now }
             }
@@ -591,6 +658,17 @@ impl Machine for PathModel {
                 next.relay_up = true;
                 Input::ForwardingUp { link: RELAY }
             }
+            // Nothing tells the machine: it learns only from its probes.
+            Action::LanSilent => {
+                next.used.outages += 1;
+                next.lan_silent = true;
+                return Some(next);
+            }
+            Action::LanBack => {
+                next.lan_silent = false;
+                next.rested = true;
+                return Some(next);
+            }
             Action::Plan { paid } => {
                 next.used.lapses += 1;
                 next.paid = *paid;
@@ -612,8 +690,11 @@ impl Machine for PathModel {
                 next.link_up = true;
                 Input::LinkUp
             }
+            // The machine stops waiting on its probes; the next link probes
+            // afresh.
             Action::LinkDown => {
                 next.link_up = false;
+                next.in_flight.clear();
                 Input::LinkDown
             }
         };
@@ -665,6 +746,10 @@ impl Machine for PathModel {
             Property::sometimes(
                 "direct and relayed are each sometimes chosen",
                 |_, s: &State| s.chose_direct && s.chose_relayed,
+            ),
+            Property::sometimes(
+                "the link sometimes returns to an address after three probes in a row on it went unanswered",
+                |_, s: &State| s.returned,
             ),
         ]
     }

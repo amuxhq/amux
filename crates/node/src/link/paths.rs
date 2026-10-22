@@ -392,7 +392,6 @@ impl PathDriver {
     fn step(&self, state: &mut State, peer: HostId, inputs: Vec<Input>) {
         let mut queue = std::collections::VecDeque::from(inputs);
         let now_ms = self.now_ms();
-        let paid = state.paid;
         let mut out = Vec::new();
         while let Some(input) = queue.pop_front() {
             let next_nonce = &mut state.next_nonce;
@@ -400,16 +399,6 @@ impl PathDriver {
                 return;
             };
             machine.paths.step(Input::Tick { now_ms }, &mut out);
-            // A lapse, told by the plan or by the relay refusing for it,
-            // drops every address only the relay's observation gave.
-            let lapsing = matches!(
-                input,
-                Input::Plan { paid: false }
-                    | Input::ForwardRefused {
-                        reason: ForwardRefusal::PaymentRequired,
-                        ..
-                    }
-            );
             machine.paths.step(input, &mut out);
             for output in out.drain(..) {
                 match output {
@@ -449,22 +438,18 @@ impl PathDriver {
                         }
                     }
                     Output::DropCandidate { addr } => {
-                        // An address the relay observed, dropped by a
-                        // lapse, is the peer's still: paying again uses it.
-                        let observed = machine.candidates.get(&addr) == Some(&Source::Observed);
-                        if !(observed && (lapsing || !paid)) {
-                            machine.candidates.remove(&addr);
-                        }
+                        // Only a lapse drops an address: one the relay
+                        // observed, which stays among the peer's candidates
+                        // so paying again punches to it. A free account may
+                        // not punch, so the link leaves that address even
+                        // with no other path to go to, unlike one that only
+                        // stopped answering.
                         machine.probes.remove(&Path::Direct(addr));
                         machine.probes.remove(&Path::Punched(addr));
-                        // A free account may not punch, so the link leaves
-                        // that address even with no other path to go to,
-                        // unlike one that only stopped answering.
-                        if lapsing
-                            && self
-                                .socket
-                                .carrying(peer)
-                                .is_some_and(|path| same_path(path, Path::Punched(addr)))
+                        if self
+                            .socket
+                            .carrying(peer)
+                            .is_some_and(|path| same_path(path, Path::Punched(addr)))
                         {
                             self.socket.stop_carrying(peer);
                         }

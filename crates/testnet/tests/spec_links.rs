@@ -733,6 +733,8 @@ fn says(events: &[wire::SessionEvent], said: &str) -> bool {
 /// How long the gate in front of the laptop holds each datagram, each way:
 /// one round trip between the laptop and the desk is twice this.
 const ONE_WAY: std::time::Duration = std::time::Duration::from_millis(150);
+/// How long a story keeps a path cut for an outage rather than a blip.
+const LONG_OUTAGE: std::time::Duration = std::time::Duration::from_secs(20);
 
 /// A desk and a laptop on one network whose every datagram between them
 /// crosses a gate holding it [`ONE_WAY`], paired at the gate's address and
@@ -1615,8 +1617,10 @@ fn no_gap(net: &Net, chat: &mut testnet::Observer, host: &str, peer: &str, lines
 /// Two paid hosts on one network, also signed in to the relay: the laptop
 /// holds the desk's session open while the network between them is cut,
 /// so the link moves onto the relay, and restored, so it moves back. The
-/// one subscription reads every line said on each path with no reset,
-/// resubscribe or gap, and the link never goes down.
+/// cut lasts long enough for many probes on the LAN address to go
+/// unanswered, and the link still comes back. The one subscription reads
+/// every line said on each path with no reset, resubscribe or gap, and the
+/// link never goes down.
 #[tokio::test(flavor = "multi_thread")]
 async fn path_change_lan_relay_lan_keeps_the_subscription_open() {
     let lines = [
@@ -1656,10 +1660,18 @@ async fn path_change_lan_relay_lan_keeps_the_subscription_open() {
     released(&net, &mut chat, "lan", lines[0]).await;
 
     net.sever_link("desk", "laptop").unwrap();
+    let severed = std::time::Instant::now();
     carried_by(&net, "laptop", "desk", PathKind::RelayUdp).await;
     carried_by(&net, "desk", "laptop", PathKind::RelayUdp).await;
     released(&net, &mut chat, "relay", lines[1]).await;
 
+    // A LAN probe goes every 5 s and times out after 2, so in 20 s four in
+    // a row go unanswered: an outage, not a lost packet.
+    tokio::time::sleep(LONG_OUTAGE.saturating_sub(severed.elapsed())).await;
+    println!(
+        "the LAN between them cut for {} ms",
+        severed.elapsed().as_millis()
+    );
     net.restore_link("desk", "laptop").await.unwrap();
     carried_by(&net, "laptop", "desk", PathKind::Lan).await;
     carried_by(&net, "desk", "laptop", PathKind::Lan).await;

@@ -680,10 +680,17 @@ early. The workspace takes rustls from a fork,
 [`jordanwebster/rustls`](https://github.com/jordanwebster/rustls), through
 one `[patch.crates-io]` line in `Cargo.toml`. The maintained diff is the
 branch `amux/<version>`: the rustls release named in its `.amux-base` file
-plus one commit, the save-and-load half of upstream's serializable client
-session (`Tls13ClientSessionValue::encode` and `from_slice`, the loaded
-value bound to the configuration it will resume under, since 0.23 ties a
-session to its configuration's verifier rather than to the peer).
+plus two commits:
+
+- the save-and-load half of upstream's serializable client session
+  (`Tls13ClientSessionValue::encode` and `from_slice`, the loaded value
+  bound to the configuration it will resume under, since 0.23 ties a
+  session to its configuration's verifier rather than to the peer);
+- `StoresServerSessions::lifetime`, so a server keeping its own sessions
+  advertises how long it keeps them. rustls advertises a day on every such
+  ticket, and clients drop a ticket once that passes; hosts keep tickets
+  for a week (`TICKET_LIFETIME`), so without it a phone not opened for a
+  day would begin with a full handshake.
 
 Two scheduled jobs keep it current. The fork's `follow.yml` replays the
 patch onto each newer `v/0.23.*` release, runs rustls's tests and pushes

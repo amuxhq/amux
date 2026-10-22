@@ -1,8 +1,8 @@
 {
   "relay": {"accounts": [{"name": "ada"}]},
   "hosts": [
-    {"name": "desk", "account": "ada"},
-    {"name": "laptop", "account": "ada"}
+    {"name": "desk", "account": "ada", "router": "strict"},
+    {"name": "laptop", "account": "ada", "router": "strict"}
   ],
   "agents": [
     {

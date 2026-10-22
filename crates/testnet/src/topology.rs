@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 use provider_fakes::script::{Script, Step};
 use serde::{Deserialize, Serialize};
 
+use crate::router::RouterKind;
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Topology {
@@ -117,6 +119,12 @@ pub struct HostDecl {
     /// has runs over IPv6. In-process hosts only.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ipv6_only: bool,
+    /// An imitated router in front of the host's link socket from its
+    /// first start, putting it on a network of its own: the relay sees it
+    /// at the router's public port, and whether a peer's punch gets
+    /// through is the router kind's to say. In-process hosts only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub router: Option<RouterKind>,
 }
 
 /// What an agent's provider is.
@@ -326,6 +334,10 @@ pub enum TopologyError {
         "host {0:?} runs as a process; the net announces it on the discovery bus at its LAN listener, so discovery needs lan"
     )]
     ProcessDiscovery(String),
+    #[error(
+        "host {0:?} runs as a process, and a router stands only in front of an in-process host's link socket"
+    )]
+    ProcessRouter(String),
     #[error("hosts {a:?} and {b:?} pair for real, as a process host must, which needs lan on both")]
     ProcessLink { a: String, b: String },
     #[error("agent {0:?} has both an inline script and a script file")]
@@ -459,6 +471,9 @@ impl Topology {
             }
             if host.runs_as_process() && host.discovery && !host.lan {
                 return Err(TopologyError::ProcessDiscovery(host.name.clone()));
+            }
+            if host.runs_as_process() && host.router.is_some() {
+                return Err(TopologyError::ProcessRouter(host.name.clone()));
             }
             for path in host.files.keys() {
                 if host.repository_of(path).is_none() {

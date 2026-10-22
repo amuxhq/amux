@@ -66,6 +66,7 @@ pub(crate) fn local_pairing_addrs(port: u16) -> Vec<SocketAddr> {
     addrs
 }
 
+#[cfg(not(target_os = "ios"))]
 fn is_ipv6_link_local(ip: std::net::IpAddr) -> bool {
     matches!(ip, std::net::IpAddr::V6(ip) if ip.segments()[0] & 0xffc0 == 0xfe80)
 }

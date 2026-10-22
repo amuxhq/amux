@@ -4019,7 +4019,7 @@ dependencies = [
 [[package]]
 name = "rustls"
 version = "0.23.46"
-source = "git+https://github.com/jordanwebster/rustls?rev=222873dc0a3753af770548d595524ed3f6f8febe#222873dc0a3753af770548d595524ed3f6f8febe"
+source = "git+https://github.com/jordanwebster/rustls?rev=ad62be4607107d24c73c9c746dcc9edf57daaaea#ad62be4607107d24c73c9c746dcc9edf57daaaea"
 dependencies = [
  "once_cell",
  "ring",

@@ -71,6 +71,15 @@ fn a_topology_rejects_unknown_and_duplicate_names_before_anything_starts() {
             two().agent(AgentDecl::new("x", "a").cwd("/tmp").branch("feature")),
             "names a branch",
         ),
+        (
+            Topology::new().host_decl(HostDecl {
+                name: "a".to_owned(),
+                process: true,
+                router: Some(testnet::RouterKind::Strict),
+                ..HostDecl::default()
+            }),
+            "a router stands only in front of an in-process host",
+        ),
     ];
     for (topology, expected) in cases {
         let error = topology.validate().expect_err(expected).to_string();
@@ -106,6 +115,11 @@ fn a_topology_rejects_unknown_and_duplicate_names_before_anything_starts() {
     assert_eq!(
         loaded.agents[0].script.as_ref().unwrap().steps,
         vec![text("hello"), Step::TurnEnd]
+    );
+    std::fs::write(&path, r#"{"hosts": [{"name": "a", "router": "strict"}]}"#).unwrap();
+    assert_eq!(
+        Topology::load(&path).unwrap().hosts[0].router,
+        Some(testnet::RouterKind::Strict)
     );
     std::fs::write(&path, r#"{"hosts": [{"name": "a", "colour": "red"}]}"#).unwrap();
     assert!(matches!(

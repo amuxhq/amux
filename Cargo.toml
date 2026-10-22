@@ -241,4 +241,4 @@ debug = false
 # ("The rustls patch") says what the patch holds, the jobs that keep it on
 # rustls's newest 0.23 release, and how to drop it.
 [patch.crates-io]
-rustls = { git = "https://github.com/jordanwebster/rustls", rev = "222873dc0a3753af770548d595524ed3f6f8febe" }
+rustls = { git = "https://github.com/jordanwebster/rustls", rev = "ad62be4607107d24c73c9c746dcc9edf57daaaea" }

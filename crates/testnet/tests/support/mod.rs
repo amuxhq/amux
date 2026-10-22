@@ -80,6 +80,23 @@ pub async fn until_via(net: &Net, a: &str, b: &str, via: LiveRoute) {
     .unwrap();
 }
 
+/// Asserts that each end of the link between `a` and `b` is carried
+/// through the relay still: a story on the relay alone that finished before
+/// a punch or a LAN dial could move its link would pass for the wrong
+/// reason.
+pub fn still_relayed(net: &Net, a: &str, b: &str) {
+    for (host, peer) in [(a, b), (b, a)] {
+        let path = net.carrying_path(host, peer).unwrap();
+        assert!(
+            matches!(
+                path,
+                Some(node::link_log::PathKind::RelayUdp | node::link_log::PathKind::RelayTcp)
+            ),
+            "{host}'s link to {peer} is carried by {path:?}, not the relay"
+        );
+    }
+}
+
 /// The carrier the host's relay link rides, once it is connected.
 pub fn carrier(net: &Net, host: &str) -> Option<RelayCarrier> {
     match edge(net, host).observed() {

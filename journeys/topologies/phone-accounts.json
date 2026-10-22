@@ -2,7 +2,7 @@
   "scope": "phone-accounts",
   "relay": {"accounts": [{"name": "ada"}]},
   "hosts": [
-    {"name": "desk", "account": "ada"}
+    {"name": "desk", "account": "ada", "router": "strict"}
   ],
   "agents": [
     {

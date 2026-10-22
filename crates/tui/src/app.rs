@@ -298,7 +298,8 @@ pub struct App {
     /// agent; one that fails leaves here unkept and is made again.
     held_saving: HashMap<AgentKey, Vec<ui_state::InputId>>,
     /// By agent, the prompts last seen on their way back to its draft:
-    /// held for an unreachable host, or refused while its chat was closed.
+    /// held for an unreachable host, resent from held and not yet answered,
+    /// or refused while its chat was closed.
     /// When the fleet drops the session holding them (its agent exited or
     /// left), their words go into the agent's draft here.
     returning: HashMap<AgentKey, Vec<(ui_state::InputId, String, Vec<Attachment>)>>,
@@ -805,6 +806,12 @@ impl App {
         for (_, text, attachments) in held_prompts(&chat.session.state()) {
             kept.restore(&text, attachments);
         }
+        // They are on their way back to the draft from now: the fleet may
+        // drop the session (its agent exiting) before the next look at it.
+        let returning = returning_prompts(&chat.session.state(), true);
+        if !returning.is_empty() {
+            self.returning.insert(chat.agent.clone(), returning);
+        }
         let draft = composer_draft(&kept);
         let client = self.client.clone();
         let agent_id = chat.agent.agent.clone();
@@ -866,12 +873,27 @@ impl App {
             // A refused prompt comes back into an open chat's composer at
             // once; a closed chat's waits for it to open, in the draft.
             let held = returning_prompts(&state, open.as_ref() != Some(&key));
+            // A held prompt resent once its host is back is still on its
+            // way to the draft until the host answers: the fleet drops the
+            // session of an agent that exited meanwhile before the refusal
+            // arrives, and the prompt would be lost with it. One the host
+            // took just before its agent exited comes back too, which is
+            // the lesser harm.
+            let resent: Vec<_> = self
+                .returning
+                .get(&key)
+                .into_iter()
+                .flatten()
+                .filter(|(id, ..)| state.input_state(id) == Some(ui_state::InputState::Sent))
+                .cloned()
+                .collect();
             drop(state);
             seen.insert(key.clone());
-            if held.is_empty() {
+            let returning: Vec<_> = held.iter().cloned().chain(resent).collect();
+            if returning.is_empty() {
                 self.returning.remove(&key);
             } else {
-                self.returning.insert(key.clone(), held.clone());
+                self.returning.insert(key.clone(), returning);
             }
             let ids: Vec<ui_state::InputId> = held.iter().map(|(id, ..)| id.clone()).collect();
             if self

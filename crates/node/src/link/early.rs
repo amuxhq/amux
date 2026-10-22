@@ -53,6 +53,8 @@ struct State {
     /// control stream first.
     opened: Vec<Weak<Reopened>>,
     waiting: Vec<Waker>,
+    /// Why the connection failed, once it has.
+    failure: Option<quinn::ConnectionError>,
 }
 
 /// What a stream wrote in early data, and the stream it continues on if
@@ -82,6 +84,7 @@ impl Early {
                 phase: Phase::Pending,
                 opened: Vec::new(),
                 waiting: Vec::new(),
+                failure: None,
             }),
             settled,
         });
@@ -101,12 +104,12 @@ impl Early {
                     early
                         .connection
                         .close(0_u32.into(), b"the handshake did not finish in time");
-                    early.settle(Phase::Failed);
+                    early.fail(quinn::ConnectionError::TimedOut);
                 }
                 // The far end refused the early data, or the handshake
                 // failed: only a failure leaves the connection closed.
-                Ok(false) if early.connection.close_reason().is_some() => {
-                    early.settle(Phase::Failed);
+                Ok(false) if let Some(reason) = early.connection.close_reason() => {
+                    early.fail(reason);
                 }
                 Ok(false) => {
                     early.reopen(None).await;
@@ -138,11 +141,25 @@ impl Early {
         match phase {
             Phase::Accepted => Ok(EarlyData::Accepted),
             Phase::Rejected => Ok(EarlyData::Rejected),
-            Phase::Pending | Phase::Failed => Err(self
-                .connection
-                .close_reason()
-                .unwrap_or(quinn::ConnectionError::TimedOut)),
+            Phase::Pending | Phase::Failed => Err(self.failure()),
         }
+    }
+
+    /// Why the connection failed. A stream opened in early data must say
+    /// this itself: quinn reports any such stream on a connection whose
+    /// handshake did not finish as refused early data.
+    fn failure(&self) -> quinn::ConnectionError {
+        let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        state
+            .failure
+            .clone()
+            .or_else(|| self.connection.close_reason())
+            .unwrap_or(quinn::ConnectionError::TimedOut)
+    }
+
+    fn fail(&self, error: quinn::ConnectionError) {
+        self.state.lock().unwrap_or_else(|p| p.into_inner()).failure = Some(error);
+        self.settle(Phase::Failed);
     }
 
     /// Opens a stream on the connection: one in early data while the
@@ -228,8 +245,8 @@ impl Early {
                 Some(stream) => stream,
                 None => match self.connection.open_bi().await {
                     Ok(stream) => stream,
-                    Err(_) => {
-                        self.settle(Phase::Failed);
+                    Err(error) => {
+                        self.fail(error);
                         return None;
                     }
                 },
@@ -315,8 +332,9 @@ impl EarlySend {
     }
 
     /// Whether the stream no longer depends on early data, moving onto
-    /// the stream opened in its place where the far end refused it. While
-    /// the outcome is unknown, `cx` is woken once it is.
+    /// the stream opened in its place where the far end refused it, or why
+    /// the connection failed first. While the outcome is unknown, `cx` is
+    /// woken once it is.
     fn settled(&mut self, cx: Option<&Context<'_>>) -> io::Result<bool> {
         let Some((early, reopened)) = &self.replay else {
             return Ok(true);
@@ -327,7 +345,8 @@ impl EarlySend {
         };
         match phase {
             Phase::Pending => return Ok(false),
-            Phase::Accepted | Phase::Failed => {}
+            Phase::Failed => return Err(early.failure().into()),
+            Phase::Accepted => {}
             Phase::Rejected => {
                 let reopened = reopened
                     .send
@@ -480,6 +499,7 @@ impl AsyncRead for EarlyRecv {
         if let Some((early, reopened)) = &self.replay {
             match early.poll_phase(cx) {
                 Phase::Pending => return Poll::Pending,
+                Phase::Failed => return Poll::Ready(Err(early.failure().into())),
                 Phase::Rejected => {
                     let reopened = reopened
                         .recv
@@ -490,7 +510,7 @@ impl AsyncRead for EarlyRecv {
                         self.recv = reopened;
                     }
                 }
-                Phase::Accepted | Phase::Failed => {}
+                Phase::Accepted => {}
             }
             self.replay = None;
         }

@@ -25,9 +25,20 @@ use wire::client_service_server::ClientService as _;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn hosts_on_one_account_reach_each_other_through_the_relay_over_quic_or_tcp() {
-    let mut net = Net::start(Topology::new().relay(&["ada"]).host("desk").host("phone"))
-        .await
-        .unwrap();
+    // The desk is on a network of its own; the phone's network is its gate
+    // to the relay, which a router would take it past.
+    let mut net = Net::start(
+        Topology::new()
+            .relay(&["ada"])
+            .host_decl(testnet::HostDecl {
+                name: "desk".to_owned(),
+                router: Some(testnet::RouterKind::Strict),
+                ..testnet::HostDecl::default()
+            })
+            .host("phone"),
+    )
+    .await
+    .unwrap();
     net.trust("desk", "phone").await.unwrap();
     net.trust("phone", "desk").await.unwrap();
     let (desk, phone) = (host_id(&net, "desk"), host_id(&net, "phone"));
@@ -1049,11 +1060,7 @@ async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_t
                 account: Some("ada".to_owned()),
                 ..lan_host("phone", "home")
             })
-            .host_decl(testnet::HostDecl {
-                name: "tablet".to_owned(),
-                account: Some("ada".to_owned()),
-                ..testnet::HostDecl::default()
-            })
+            .host_decl(relay_host("tablet", "ada"))
             .agent(
                 testnet::AgentDecl::new("worker", "desk")
                     .prompt("Watch the build.")
@@ -1435,11 +1442,13 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     net.shutdown().await.unwrap();
 }
 
-/// A host on the relay alone: no listener, no discovery.
+/// A host on the relay alone: on a network of its own behind a strict
+/// router, with no listener and no discovery.
 fn relay_host(name: &str, account: &str) -> testnet::HostDecl {
     testnet::HostDecl {
         name: name.to_owned(),
         account: Some(account.to_owned()),
+        router: Some(testnet::RouterKind::Strict),
         ..testnet::HostDecl::default()
     }
 }
@@ -3115,5 +3124,6 @@ async fn a_host_behind_the_relay_rebinds_mid_stream_and_its_session_carries_on()
     assert_eq!(edge(&net, "laptop").via(desk).await, LiveRoute::Relay);
     println!("the desk moved under an open session; the relay carried it on");
 
+    still_relayed(&net, "laptop", "desk");
     net.shutdown().await.unwrap();
 }

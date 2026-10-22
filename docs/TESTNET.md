@@ -113,6 +113,7 @@ The same network as JSON, as `testnet serve` reads it:
 | `hosts[].process` | Run the host as a real `amux` daemon process with its own installation config. |
 | `hosts[].supervised` | Run it under `amux supervise`, taking releases from the net's feed; implies `process`. |
 | `hosts[].ipv6_only` | Bind the host's socket to IPv6 loopback alone, so every link it has runs over IPv6; `Net::bind_ipv6_only` sets it from the host's next start. In-process hosts only. |
+| `hosts[].router` | `open`, `ordinary` or `strict`: put the host on a network of its own, behind an imitated router of that kind from its first start, as `set_router` does (below). In-process hosts only. |
 | `links[]` | `{"a", "b"}`: two hosts that trust each other and are linked at start. |
 | `relay.accounts[]` | `{"name", "tier"}`, tier `pro` (the default: relayed tunnels) or `free` (hosts are listed; the relay opens no tunnels). |
 | `settle` | Start each declared agent only once the one before it has settled (see `settle(name)` below), so agents that come to rest in the same standing are listed in declaration order, the last declared as most recently active. Every declared agent must come to rest. Without it the agents start together and which first turn ends last is a race. |
@@ -287,6 +288,15 @@ on `World`, and a simulated net, which has no sockets, refuses them:
 | `change_network(host)` | Move a running host onto another network, as a phone leaving Wi-Fi does: its link socket rebinds to a fresh port, or behind a fresh router of the same kind with new public ports, its links migrate without going down, and its path machines are told as the phone's runtime tells them. |
 | `bind_ipv6_only(host)` | Bind the host's socket to IPv6 loopback alone from its next start. |
 
+Without a router an in-process host reaches the relay's QUIC listener through a gate of its own, whose socket toward
+the relay takes datagrams from the relay alone, so the address the relay reports for it is one no peer can punch to.
+A story or journey that means hosts on different networks says so with the router instead: `strict` for hosts reached
+through the relay alone, whose ports take datagrams only from where they were opened toward, and `ordinary` for
+networks a punch crosses. A routed host reaches the relay from its router's public port, not through its gate, so the
+gate's verbs (`block_udp`) do not reach it. A phone launched against a net dials the relay from its own socket, which
+a host's probe reaches; a phone journey whose topology routes any host launches the app against the net's relay gate
+(`RelayGate`) instead, so the phone too is seen at a socket that takes datagrams from the relay alone.
+
 The router stories in `spec_links.rs` put two paid hosts behind routers with nothing between them but the relay:
 
 | Story | What it shows |
@@ -294,6 +304,8 @@ The router stories in `spec_links.rs` put two paid hosts behind routers with not
 | `punch_ordinary_routers_…` | Behind `Ordinary` routers each host probes the address the relay saw the other at, both routers open, and the link moves from `relay_udp` to `punched` with the session streaming. |
 | `punch_strict_routers_…` | Behind `Strict` routers both hosts learn the other's observed address, every probe is dropped, and the link stays on `relay_udp`. |
 | `punch_free_never_…` | Two hosts on one free account on the same network: neither learns where the relay sees the other, so neither has anything to punch to, and the link stays on `lan`. |
+| `another_network_strict_routers_…` | Two paid hosts declared behind `strict` routers: each end's link stays on `relay_udp` after every punch has given up, never `punched` or `lan`. |
+| `another_network_ordinary_routers_…` | The same declaration with `ordinary` routers: the link moves onto `punched`. |
 | `punch_lapse_drops_…` | A lapse takes the punched path away: the link leaves `punched`, and with no free path between the routers goes down. |
 | `path_change_lan_relay_lan_…` | One subscription stays open while the LAN between two signed-in hosts is cut (the link moves to `relay_udp`) and restored (back to `lan`): every line once, one opening, no reset, lag or detach, and the link never goes down. |
 | `path_change_phone_network_…` | `change_network` under a host mid-stream: the same subscription reads on with no gap and the link stays up. |
@@ -690,5 +702,10 @@ just test -- --test spec_edge --test spec_families --test spec_inventory --test 
 The `spec_*` targets are the many-daemon specifications: pairing, trust, discovery, routing, relay carriers,
 credential refresh, revocation, account isolation, the inventory, replication and agent families across hosts.
 `spec_links` holds one story per route a link takes (the same network, SSH, IPv6 alone), each reaching an agent's
-session, streaming it live and naming the carrying path from the link log.
+session, streaming it live and naming the carrying path from the link log. A story on the relay alone puts every
+host on a network of its own behind a `strict` router and ends by asserting, with `still_relayed`, that each end's
+link is still carried through the relay, so it cannot pass by finishing before a punch or a LAN dial moves the link.
+Signing out takes only what the relay does: `route_relay_signing_out_…` closes a link the relay alone carried, while
+`route_lan_signing_out_…` keeps a direct link between two hosts on one network up on `lan`, and the signed-out laptop
+still reaches the desk's session over it.
 Each reads top to bottom as a description of one behaviour, with its assertions in the test body.

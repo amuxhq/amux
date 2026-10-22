@@ -1,11 +1,13 @@
 //! A host reduced to its links, for measuring the relay: it links to the
-//! relay over the relay's TCP carrier presenting a connection token, dials
+//! relay over QUIC on UDP or over the relay's TCP carrier, presenting a
+//! connection token, dials
 //! the account's other hosts through that link as a daemon does, and opens
 //! raw streams on those end-to-end links. It runs no handshake inside a
 //! stream and serves no calls, so what a measurement through it sees is
 //! the relay's forwarding and the links' own QUIC.
 
 use std::collections::HashMap;
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -18,6 +20,7 @@ use super::framed::{FramedKind, StreamOnly};
 use super::quic::LinkEndpoint;
 use super::resumption::SessionTickets;
 use super::run::spawn_connector_with_auth_establishment_and_shutdown;
+use super::socket::LinkSocket;
 use super::{ByteStream, LinkCarrier, LinkCtx, QuicCarrier};
 use crate::identity::DeviceIdentity;
 use crate::routing::{
@@ -62,23 +65,71 @@ impl RelayHost {
     where
         IO: AsyncRead + AsyncWrite + Send + 'static,
     {
-        let unavailable =
-            |error: &dyn std::fmt::Display| tonic::Status::unavailable(error.to_string());
-        let id = HostId::new_v4();
-        let identity = DeviceIdentity::generated(id).map_err(|error| unavailable(&error))?;
+        let (identity, trust, server) = Self::identity()?;
+        // Every packet goes through the relay: the socket's only path is
+        // the byte stream to it.
+        let endpoint = LinkEndpoint::new(Arc::new(StreamOnly), identity.host_id, Some(server))
+            .map_err(|error| unavailable(&error))?;
+        let relay =
+            QuicCarrier::connect_framed(&endpoint, io, FramedKind::RelayTcp, quic, server_name)
+                .await
+                .map_err(|error| unavailable(&error))?;
+        Self::link(identity, trust, endpoint, relay, token, expires_at).await
+    }
+
+    /// Links to a relay at `relay` over QUIC on a UDP socket of the host's
+    /// own, as a deployed host does, and returns once the relay has
+    /// accepted the link.
+    pub async fn connect_udp(
+        relay: SocketAddr,
+        quic: quinn::ClientConfig,
+        server_name: &str,
+        token: String,
+        expires_at: SystemTime,
+    ) -> Result<Self, tonic::Status> {
+        let (identity, trust, server) = Self::identity()?;
+        let bind = SocketAddr::new(
+            match relay {
+                SocketAddr::V4(_) => Ipv4Addr::UNSPECIFIED.into(),
+                SocketAddr::V6(_) => Ipv6Addr::UNSPECIFIED.into(),
+            },
+            0,
+        );
+        let udp = std::net::UdpSocket::bind(bind).map_err(|error| unavailable(&error))?;
+        let substrate = LinkSocket::on_udp(udp).map_err(|error| unavailable(&error))?;
+        let endpoint = LinkEndpoint::new(substrate, identity.host_id, Some(server))
+            .map_err(|error| unavailable(&error))?;
+        let relay = QuicCarrier::connect_relay_with_config(&endpoint, relay, server_name, quic)
+            .await
+            .map_err(|error| unavailable(&error))?;
+        Self::link(identity, trust, endpoint, relay, token, expires_at).await
+    }
+
+    /// A fresh identity, the trust store its peers are pinned in, and the
+    /// configuration it answers their links with.
+    fn identity() -> Result<(DeviceIdentity, SharedTrustStore, quinn::ServerConfig), tonic::Status>
+    {
+        let identity =
+            DeviceIdentity::generated(HostId::new_v4()).map_err(|error| unavailable(&error))?;
         let trust: SharedTrustStore = Arc::new(std::sync::RwLock::new(TrustStore::default()));
         let server = identity
             .quic_server_config(trust.clone(), &SessionTickets::in_memory(TICKETS))
             .map_err(|error| unavailable(&error))?;
-        // Every packet goes through the relay: the socket's only path is
-        // the byte stream to it.
-        let endpoint = LinkEndpoint::new(Arc::new(StreamOnly), id, Some(server))
-            .map_err(|error| unavailable(&error))?;
-        let relay = Arc::new(
-            QuicCarrier::connect_framed(&endpoint, io, FramedKind::RelayTcp, quic, server_name)
-                .await
-                .map_err(|error| unavailable(&error))?,
-        );
+        Ok((identity, trust, server))
+    }
+
+    /// Presents `token` on `relay`, the QUIC connection to the relay, and
+    /// returns once the relay has accepted the link.
+    async fn link(
+        identity: DeviceIdentity,
+        trust: SharedTrustStore,
+        endpoint: LinkEndpoint,
+        relay: QuicCarrier,
+        token: String,
+        expires_at: SystemTime,
+    ) -> Result<Self, tonic::Status> {
+        let id = identity.host_id;
+        let relay = Arc::new(relay);
         let through = crate::routing::LinkId::new(id).core();
         let via = relay
             .remote_address()
@@ -272,4 +323,8 @@ impl LinkConnectorTokenRefresher for NoRefresh {
     async fn refresh_routing_token(&self) -> Result<LinkConnectorToken, tonic::Status> {
         Err(tonic::Status::unavailable("a relay host does not refresh"))
     }
+}
+
+fn unavailable(error: &dyn std::fmt::Display) -> tonic::Status {
+    tonic::Status::unavailable(error.to_string())
 }

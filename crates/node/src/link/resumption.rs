@@ -441,6 +441,12 @@ impl rustls::server::StoresServerSessions for SessionTickets {
     fn can_cache(&self) -> bool {
         true
     }
+
+    /// Clients drop a ticket once its advertised lifetime passes, so it is
+    /// the week the store honours it; rustls would otherwise say a day.
+    fn lifetime(&self) -> u32 {
+        TICKET_LIFETIME.as_secs() as u32
+    }
 }
 
 fn honoured(issued_secs: u64, now_secs: u64) -> bool {
@@ -673,6 +679,14 @@ mod tests {
         drop(reopened);
         let again = SessionTickets::open(dir.path(), HOST_TICKETS).unwrap();
         assert_eq!(again.take(b"id"), None, "a taken ticket leaves the disk");
+    }
+
+    #[test]
+    fn a_ticket_is_advertised_for_the_week_it_is_honoured() {
+        let tickets = SessionTickets::in_memory(HOST_TICKETS);
+        let advertised = rustls::server::StoresServerSessions::lifetime(&*tickets);
+        assert_eq!(u64::from(advertised), TICKET_LIFETIME.as_secs());
+        assert_eq!(advertised, 7 * 24 * 60 * 60, "the most TLS 1.3 allows");
     }
 
     #[test]

@@ -706,10 +706,13 @@ async fn shown(app: &AppRuntime, agent: &AgentKey) -> (FleetCard, Vec<String>) {
             .map(|row| format!("{:?}", row.kind))
             .collect::<Vec<_>>()
     };
+    // The chat's rows stream apart from the card: the answering turn's
+    // end can follow the card going idle.
     eventually(app, "the chat's rows from the store", || {
-        rows()
-            .iter()
-            .any(|row| row.contains("answered from the phone"))
+        let rows = rows();
+        rows.iter()
+            .position(|row| row.contains("answered from the phone"))
+            .is_some_and(|answer| rows[answer..].iter().any(|row| row.starts_with("TurnEnd")))
     })
     .await;
     (card, rows())

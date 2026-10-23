@@ -1010,9 +1010,11 @@ mod tests {
                         agent_id: vec![5; 16],
                         name: "notes.txt".into(),
                         mime: "text/plain".into(),
-                        bytes: b"notes".to_vec(),
+                        bytes: Vec::new(),
                     },
                     hash: vec![9; 32],
+                    // Recorded as a length: zero bytes read back as written.
+                    bytes: vec![0; 5],
                 },
             },
             Input::ClientCall {
@@ -1020,7 +1022,7 @@ mod tests {
                 request: ClientRequest::KeepBlob {
                     agent_id: vec![5; 16],
                     hash: vec![9; 32],
-                    bytes: b"notes".to_vec(),
+                    bytes: vec![0; 5],
                 },
             },
             Input::ClientCall {
@@ -1055,6 +1057,51 @@ mod tests {
             let line = serde_json::to_string(&input).expect("an input writes");
             let read: Input = serde_json::from_str(&line).expect("an input reads back");
             assert_eq!(read, input, "{line}");
+        }
+    }
+
+    #[test]
+    fn an_upload_is_recorded_as_its_length_not_its_bytes() {
+        let bytes = vec![0x5a; 3 << 20];
+        let upload = Input::ClientCall {
+            call: CallId(15),
+            request: ClientRequest::PutBlob {
+                request: wire::PutBlobRequest {
+                    agent_id: vec![5; 16],
+                    name: "big.bin".into(),
+                    mime: "application/octet-stream".into(),
+                    bytes: Vec::new(),
+                },
+                hash: vec![9; 32],
+                bytes: bytes.clone(),
+            },
+        };
+        let kept = Input::ClientCall {
+            call: CallId(16),
+            request: ClientRequest::KeepBlob {
+                agent_id: vec![5; 16],
+                hash: vec![9; 32],
+                bytes,
+            },
+        };
+        for input in [upload, kept] {
+            let line = serde_json::to_string(&input).unwrap();
+            assert!(
+                line.len() < 512,
+                "{} bytes recorded for a 3 MiB blob",
+                line.len()
+            );
+            let read: Input = serde_json::from_str(&line).unwrap();
+            let Input::ClientCall { request, .. } = read else {
+                panic!("a call reads back as one");
+            };
+            let len = match request {
+                ClientRequest::PutBlob { bytes, .. } | ClientRequest::KeepBlob { bytes, .. } => {
+                    bytes.len()
+                }
+                other => panic!("{other:?}"),
+            };
+            assert_eq!(len, 3 << 20, "the length is what the step needs");
         }
     }
 }

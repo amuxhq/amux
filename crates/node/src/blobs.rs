@@ -118,11 +118,16 @@ fn answered_with(answer: impl std::fmt::Debug) -> BlobError {
 impl ProfileRuntime {
     /// Writes a person's attachment into the named own agent's directory
     /// and returns its reference. The same bytes twice are one file.
-    pub async fn put_blob(&self, request: PutBlobRequest) -> Result<BlobRef, BlobError> {
+    pub async fn put_blob(&self, mut request: PutBlobRequest) -> Result<BlobRef, BlobError> {
         within_limit(&request)?;
-        let hash = Sha256::digest(&request.bytes).to_vec();
+        let bytes = std::mem::take(&mut request.bytes);
+        let hash = Sha256::digest(&bytes).to_vec();
         match self
-            .blob_call(ClientRequest::PutBlob { request, hash })
+            .blob_call(ClientRequest::PutBlob {
+                request,
+                hash,
+                bytes,
+            })
             .await?
         {
             Some(Response::Peer(reply)) => match *reply {

@@ -208,17 +208,20 @@ pub enum ClientRequest {
         name: String,
     },
     /// A client's upload into one of this host's agents, with the hash of
-    /// its bytes.
+    /// its bytes. The bytes travel apart from the request, which carries
+    /// none, so the record keeps their length and not a copy.
     PutBlob {
         #[serde(with = "codec::message")]
         request: wire::PutBlobRequest,
         hash: Vec<u8>,
+        #[serde(with = "codec::sized")]
+        bytes: Vec<u8>,
     },
     /// A replica's blob its origin sent, kept for the next reader.
     KeepBlob {
         agent_id: Vec<u8>,
         hash: Vec<u8>,
-        #[serde(with = "codec::content")]
+        #[serde(with = "codec::sized")]
         bytes: Vec<u8>,
     },
     GetBlob(#[serde(with = "codec::message")] wire::GetBlobRequest),

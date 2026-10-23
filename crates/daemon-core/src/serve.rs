@@ -150,7 +150,11 @@ impl Daemon {
                 self.rename(call, agent, name, out);
                 Ok(())
             }
-            ClientRequest::PutBlob { request, hash } => self.put_blob(call, request, hash, out),
+            ClientRequest::PutBlob {
+                request,
+                hash,
+                bytes,
+            } => self.put_blob(call, request, hash, bytes, out),
             ClientRequest::KeepBlob {
                 agent_id,
                 hash,

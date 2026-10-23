@@ -102,12 +102,14 @@ impl Daemon {
         self.store.agent_by_id(agent_id)?.ok_or(CallError::NoAgent)
     }
 
-    /// A client uploads a blob into one of this host's agents.
+    /// A client uploads a blob into one of this host's agents; the bytes
+    /// come beside the request, which carries none.
     pub(crate) fn put_blob(
         &mut self,
         call: CallId,
         request: PutBlobRequest,
         hash: Vec<u8>,
+        bytes: Vec<u8>,
         out: &mut Vec<Output>,
     ) -> Result<(), CallError> {
         let row = self.blob_owner(&request.agent_id)?;
@@ -115,13 +117,13 @@ impl Daemon {
             return Err(CallError::Blob(BlobRefusal::NotOwn));
         }
         let blob = BlobRef {
-            size: request.bytes.len() as u64,
+            size: bytes.len() as u64,
             hash: hash.clone(),
             name: request.name,
             mime: request.mime,
         };
         let dir = self.files_of(&row).join(BLOBS);
-        self.write_blob(Writing::Put { call, blob }, dir, hash, request.bytes, out);
+        self.write_blob(Writing::Put { call, blob }, dir, hash, bytes, out);
         Ok(())
     }
 

@@ -83,6 +83,26 @@ pub(crate) mod content {
     }
 }
 
+/// Bytes the core only sizes and hands on, such as an upload's: recorded
+/// as their length, so a blob is not copied into the ring beside the file
+/// a job writes, and read back as that many zero bytes. The step depends
+/// on the length and the hash, which travel beside, and a replay carries
+/// out no job.
+pub(crate) mod sized {
+    use super::*;
+
+    pub(crate) fn serialize<S: Serializer>(bytes: &[u8], to: S) -> Result<S::Ok, S::Error> {
+        to.serialize_u64(bytes.len() as u64)
+    }
+
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(from: D) -> Result<Vec<u8>, D::Error> {
+        let len = u64::deserialize(from)?;
+        usize::try_from(len)
+            .map(|len| vec![0; len])
+            .map_err(|_| D::Error::custom("a length past this machine"))
+    }
+}
+
 fn decode<'de, T: prost::Message + Default, D: Deserializer<'de>>(
     text: &str,
 ) -> Result<T, D::Error> {

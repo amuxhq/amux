@@ -593,20 +593,10 @@ mod tests {
 
     #[test]
     fn a_kept_blob_and_a_patch_are_redacted_as_text_and_binary_content_is_kept() {
-        use crate::payload::{ClientRequest, JobResult, Patch};
-        use crate::{CallId, JobId};
+        use crate::payload::{JobResult, Patch};
+        use crate::JobId;
 
         let redactor = Swap::default();
-        let keep = |bytes: &[u8]| {
-            Recorded::Input(Box::new(Input::ClientCall {
-                call: CallId(3),
-                request: ClientRequest::KeepBlob {
-                    agent_id: vec![5; 16],
-                    hash: vec![9; 32],
-                    bytes: bytes.to_vec(),
-                },
-            }))
-        };
         let compared = |bytes: &[u8]| {
             Recorded::Input(Box::new(Input::JobDone {
                 job: JobId(4),
@@ -619,13 +609,10 @@ mod tests {
                 },
             }))
         };
-        for (planted, removed) in [
-            (keep(b"the key is PLANTED"), keep(b"the key is REMOVED")),
-            (
-                compared(b"+token = PLANTED\n"),
-                compared(b"+token = REMOVED\n"),
-            ),
-        ] {
+        for (planted, removed) in [(
+            compared(b"+token = PLANTED\n"),
+            compared(b"+token = REMOVED\n"),
+        )] {
             let in_hex = hex(PLANTED);
             let carries = |line: &Recorded| serde_json::to_string(line).unwrap().contains(&in_hex);
             assert!(carries(&planted), "the line carries the content in hex");
@@ -636,8 +623,8 @@ mod tests {
 
         let binary = [0xff, 0xfe, b'P', b'L', b'A', b'N', b'T', b'E', b'D'];
         assert_eq!(
-            keep(&binary).redacted(&redactor),
-            keep(&binary),
+            compared(&binary).redacted(&redactor),
+            compared(&binary),
             "content that is not text is kept as it is"
         );
     }

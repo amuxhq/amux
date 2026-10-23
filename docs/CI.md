@@ -183,7 +183,7 @@ comparisons and the shipped-scope audit directory to the run, whether it
 passed or not.
 
 `just ios verify` is the whole sequence a developer runs before pushing a
-phone change: the workspace's `fmt-check`, `lint`, `test` and `spec`, then the
+phone change: the workspace's `fmt-check`, `lint` and `test` (which runs the spec suites), then the
 gate, then the captures (`ios goldens`, `ios goldens-perturb`,
 `test-store-ios`, `ios journey`, `ios accessibility`), then the
 shipping stages (`ios package`, `ios scope-audit`). It refuses to start if

@@ -13,10 +13,12 @@ use std::thread::JoinHandle;
 ///
 /// Someone running one command before pushing wants these first, because a
 /// bridge built from a workspace that does not compile is not worth
-/// photographing. Continuous integration already runs every one of them as
-/// its own job (the phone's target graphs in the iOS target check), so it
-/// asks for the phone stages alone rather than paying for a second copy.
-const WORKSPACE: &[&str] = &["fmt-check", "lint", "test", "spec", "mobile-check"];
+/// photographing. `test` runs the whole workspace's test targets, the spec
+/// suites among them, so `spec` is not run again. Continuous integration
+/// already runs every one of them as its own job (the phone's target graphs
+/// in the iOS target check), so it asks for the phone stages alone rather
+/// than paying for a second copy.
+const WORKSPACE: &[&str] = &["fmt-check", "lint", "test", "mobile-check"];
 
 /// Everything about the phone that building it can settle.
 ///

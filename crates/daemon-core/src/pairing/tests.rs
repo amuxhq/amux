@@ -361,7 +361,7 @@ fn a_conversation_past_its_deadline_ends_and_frees_its_attempt() {
     assert_eq!(
         events(&out)[0].outcome,
         Outcome::Failed {
-            audit: "PAIRING_TIMEOUT".into(),
+            reason: "PAIRING_TIMEOUT".into(),
             counted: Some(Failure::TimedOut),
         }
     );

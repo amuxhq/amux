@@ -22,9 +22,9 @@ use rustls::{
     DistinguishedName as TlsDistinguishedName, Error as TlsError, ServerConfig, SignatureScheme,
 };
 
+use crate::HostId;
 use crate::link::resumption::SessionTickets;
 use crate::trust::{SharedTrustStore, TrustStore};
-use crate::{HostId, audit};
 
 const DEVICE_KEY_FILE: &str = "device.key";
 const HOST_ID_FILE: &str = "host_id";
@@ -330,12 +330,12 @@ pub(crate) fn host_id_for_certificate(
     Ok(trust_store.host_id_for_pubkey(&pubkey))
 }
 
-fn emit_mtls_audit(reason: impl fmt::Display) {
-    audit::auth_mtls_handshake_failure(reason);
+fn refuse_certificate(reason: impl fmt::Display) {
+    tracing::warn!(reason = %reason, "a peer's certificate was refused");
 }
 
-fn emit_mtls_audit_for_host(host_id: HostId, reason: impl fmt::Display) {
-    audit::auth_mtls_handshake_failure_for_host(host_id, reason);
+fn refuse_certificate_of(host_id: HostId, reason: impl fmt::Display) {
+    tracing::warn!(host_id = %host_id, reason = %reason, "a peer's certificate was refused");
 }
 
 #[derive(Clone)]
@@ -381,7 +381,7 @@ impl ClientCertVerifier for PinnedClientCertVerifier {
         _now: UnixTime,
     ) -> Result<ClientCertVerified, TlsError> {
         let pubkey = ed25519_public_key_from_certificate(end_entity).map_err(|_| {
-            emit_mtls_audit("client certificate pubkey decode failed");
+            refuse_certificate("client certificate pubkey decode failed");
             TlsError::InvalidCertificate(CertificateError::BadEncoding)
         })?;
         let trust_store = self
@@ -397,7 +397,7 @@ impl ClientCertVerifier for PinnedClientCertVerifier {
             // certificate_revoked alert closing its handshake as that, on
             // any route, which is how a host revoked while its link was
             // down learns it.
-            emit_mtls_audit("client certificate pubkey is not trusted");
+            refuse_certificate("client certificate pubkey is not trusted");
             Err(TlsError::InvalidCertificate(CertificateError::Revoked))
         }
     }
@@ -462,7 +462,7 @@ impl ServerCertVerifier for PinnedServerCertVerifier {
         _now: UnixTime,
     ) -> Result<ServerCertVerified, TlsError> {
         let pubkey = ed25519_public_key_from_certificate(end_entity).map_err(|_| {
-            emit_mtls_audit_for_host(
+            refuse_certificate_of(
                 self.expected_host_id,
                 "server certificate pubkey decode failed",
             );
@@ -477,14 +477,14 @@ impl ServerCertVerifier for PinnedServerCertVerifier {
         match expected {
             Some(expected) if expected == pubkey.as_slice() => Ok(ServerCertVerified::assertion()),
             Some(_) => {
-                emit_mtls_audit_for_host(
+                refuse_certificate_of(
                     self.expected_host_id,
                     "server certificate pubkey does not match trust store",
                 );
                 Err(TlsError::InvalidCertificate(CertificateError::BadSignature))
             }
             None => {
-                emit_mtls_audit_for_host(
+                refuse_certificate_of(
                     self.expected_host_id,
                     "server certificate host is not trusted",
                 );
@@ -769,7 +769,8 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::trust::{Reachability, TrustEntry, TrustStorePairingUpdate};
+    use crate::trust::{Reachability, TrustEntry};
+    use daemon_core::trust::PairingUpdate;
 
     fn temp_data_dir() -> TempDir {
         tempfile::tempdir().unwrap()
@@ -945,7 +946,7 @@ mod tests {
                     DateTime::<Utc>::from_timestamp(300, 0).unwrap(),
                 )
                 .unwrap(),
-            TrustStorePairingUpdate::PubkeyReplacementRequired
+            PairingUpdate::PubkeyReplacementRequired
         );
         assert!(
             verifier

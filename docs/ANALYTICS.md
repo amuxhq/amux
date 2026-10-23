@@ -116,9 +116,9 @@ before that is not counted.
 - Your IP address beyond what is needed to find a country, as described
   above.
 
-amux keeps a separate audit log on each machine for its own security
-records. That log names machines and gives reasons in words; it never
-leaves the machine and has nothing to do with these events.
+The daemon's own log on each machine names machines and gives reasons in
+words; it leaves the machine only inside a report you send, redacted, and
+has nothing to do with these events.
 
 ## For developers
 

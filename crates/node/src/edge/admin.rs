@@ -8,7 +8,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::Utc;
 use daemon_core::pairing::{
     Initiate, Method as CoreMethod, PairFailure, WindowMethod, WindowSecret,
 };
@@ -25,13 +24,13 @@ use wire::{
 
 use super::Edge;
 use super::account::AccountRecord;
+use crate::HostId;
 use crate::auth::AccessToken;
 use crate::driver::pairing::status as pairing_status;
 use crate::pairing::PAIR_MODE_TTL;
 use crate::runtime::ProfileRuntime;
 use crate::services::LocalPairingIdentity;
 use crate::trust::{Reachability, TrustEntry, TrustStore};
-use crate::{HostId, audit};
 
 const PUBKEY_LEN: usize = 32;
 const MAX_PAIRING_NAME_BYTES: usize = 256;
@@ -224,12 +223,7 @@ impl Edge {
                 method,
                 ttl_ms: u64::try_from(ttl.as_millis()).unwrap_or(u64::MAX),
             })
-            .await
-            .inspect_err(|error| {
-                if label == "demo" {
-                    audit::pairing_failure("demo", error);
-                }
-            })?;
+            .await?;
         let secret = match opened {
             Some(Response::PairingWindow(WindowSecret::Pin(pin))) => Secret::Pin(pin),
             Some(Response::PairingWindow(WindowSecret::Qr(secret))) => Secret::QrSecret(secret),
@@ -241,7 +235,6 @@ impl Edge {
                 "demo pairing active: a reusable fixed PIN pairs any device that presents it"
             );
         }
-        audit::pairing_start(label);
         self.analytics.record(analytics::Event::PairingStarted {
             role: analytics::Role::Offerer,
             method: match label {
@@ -283,9 +276,7 @@ impl Edge {
     pub async fn cancel_pairing(&self) -> Result<(), Status> {
         if let Some(Response::PairingCancelled { was_active: true }) =
             self.ask(ClientRequest::CancelPairing).await?
-        {
-            audit::pairing_cancel("admin");
-        }
+        {}
         Ok(())
     }
 
@@ -479,12 +470,6 @@ impl Edge {
         let host = Uuid::from_bytes(host.0);
         // Secret-based pairing reaches its peer directly or through the
         // relay; SSH pairings commit through `trust_ssh_peer`.
-        let label = match reachability {
-            Some(Reachability::Cloud) => "cloud",
-            _ => "direct_pin",
-        };
-        audit::pairing_start(label);
-        audit::pairing_success(label, host);
         if let Some(reachability) = reachability {
             self.reachability.spawn_pair_time_link(host, reachability);
         }
@@ -535,7 +520,6 @@ impl Edge {
                 })
             })
             .transpose()?;
-        audit::pairing_start("ssh");
         self.ask(ClientRequest::PairOverSsh {
             local: LocalPairingIdentity::from_device_identity(&self.identity)
                 .named(&self.host_name),
@@ -543,7 +527,6 @@ impl Edge {
             reachability: reachability.clone(),
         })
         .await?;
-        audit::pairing_success("ssh", host);
         if let Some(reachability) = reachability {
             self.reachability.spawn_pair_time_link(host, reachability);
         }
@@ -558,7 +541,6 @@ impl Edge {
         if peer.host_id() == self.host_id() || peer.public_key() == self.public_key() {
             return Err(Status::invalid_argument("SELF_PAIRING"));
         }
-        audit::pairing_start("harness");
         self.ask(ClientRequest::ChangeTrust(TrustChange::Pair {
             host: peer.host_id(),
             pubkey: peer.public_key().to_vec(),
@@ -566,7 +548,6 @@ impl Edge {
             reachability: None,
         }))
         .await?;
-        audit::pairing_success("harness", peer.host_id());
         Ok(())
     }
 
@@ -602,11 +583,9 @@ impl Edge {
 
     /// Forgets a paired host: its key leaves the trust store, its links
     /// close with USER_REVOKED, and every connection it holds here ends.
-    pub async fn unpair(&self, peer: HostRef, reason: String) -> Result<PeerEntry, Status> {
-        let reason = match reason.trim() {
-            "" => "user".to_owned(),
-            reason => reason.to_owned(),
-        };
+    pub async fn unpair(&self, peer: HostRef, _reason: String) -> Result<PeerEntry, Status> {
+        // The reason the client gave stays on the wire for a client that
+        // may show it; nothing here records it.
         let host = {
             let store = self
                 .trust
@@ -622,7 +601,6 @@ impl Edge {
             other => return Err(Status::internal(format!("the core unpaired {other:?}"))),
         };
         self.connections.close_host_access(host).await;
-        audit::trust_remove(host, &removed.name, removed.paired_at, Utc::now(), &reason);
         Ok(peer_entry_to_wire(host, &removed))
     }
 

@@ -8,11 +8,11 @@ use std::sync::Weak;
 use futures_util::{Stream, StreamExt as _};
 use tonic::Status;
 
+use crate::HostId;
 use crate::identity::DeviceIdentity;
 use crate::runtime::ProfileRuntime;
 use crate::transport::{BoxedGrpcAuth, BoxedGrpcConnectInfo, PreTrustPairingReachability};
 use crate::trust::Reachability;
-use crate::{HostId, audit};
 
 const MAX_PAIRING_NAME_BYTES: usize = 256;
 
@@ -74,10 +74,7 @@ impl wire::pairing_service_server::PairingService for PairingService {
         &self,
         request: tonic::Request<tonic::Streaming<wire::pb::PairMessage>>,
     ) -> Result<tonic::Response<Self::PairStream>, Status> {
-        audit::pairing_start("spake2");
-        let reachability = pairing_request_reachability(&request).inspect_err(|error| {
-            audit::pairing_failure("spake2", error);
-        })?;
+        let reachability = pairing_request_reachability(&request)?;
         if self.host_name.len() > MAX_PAIRING_NAME_BYTES {
             return Err(Status::invalid_argument(
                 "PROTOCOL_VIOLATION: name is too long",

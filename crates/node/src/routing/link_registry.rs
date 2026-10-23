@@ -25,7 +25,7 @@ use crate::link::relaying::Relaying;
 use crate::routing::types::{LinkId, core_host, host_from_core};
 use crate::routing::wire::{neighbor_down_message, neighbor_up_message};
 use crate::routing::{ConnectRole, Host, RuntimeInstance};
-use crate::{HostId, Tier, audit};
+use crate::{HostId, Tier};
 
 pub(crate) type LinkOutputTx = mpsc::Sender<pb::Message>;
 
@@ -347,10 +347,8 @@ impl LinkRegistry {
             drop(state);
             if let Some(old) = old {
                 old.closed.notify_waiters();
-                audit::link_down(old.host.id, &link, "replaced");
             }
             self.path_up(&link, host.id, role, carrier_for_paths.as_ref());
-            audit::link_up(host.id, &link, role);
             return Some(Registration { close_rx });
         }
         // The forwarding core settles which of two direct links to one peer
@@ -435,17 +433,14 @@ impl LinkRegistry {
             },
         );
         drop(state);
-        for (id, writer) in displaced {
+        for (_, writer) in displaced {
             let _ = writer.close_tx.try_send(LinkCloseRequest::Superseded);
             writer.closed.notify_waiters();
-            audit::link_down(writer.host.id, &id, "superseded");
         }
         if let Some(old) = old {
             old.closed.notify_waiters();
-            audit::link_down(old.host.id, &link, "replaced");
         }
         self.path_up(&link, host.id, role, carrier_for_paths.as_ref());
-        audit::link_up(host.id, &link, role);
         Some(Registration { close_rx })
     }
 
@@ -469,13 +464,11 @@ impl LinkRegistry {
         }) {
             let _ = carried.close_tx.try_send(LinkCloseRequest::ForwarderGone);
         }
-        let peer = writer.host.id;
         drop(state);
         if let Some(paths) = self.paths() {
             paths.link_down(link.core());
         }
         writer.closed.notify_waiters();
-        audit::link_down(peer, link, "removed");
     }
 
     /// `host` said on `told` that it no longer trusts this host: its other

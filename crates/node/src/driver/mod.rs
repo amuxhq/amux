@@ -1456,7 +1456,6 @@ impl CoreThread {
         let TrustChanged::Paired(update) = changed else {
             return;
         };
-        crate::audit::trust_pairing_update(host, &update);
         let Some(connections) = self.connections() else {
             return;
         };

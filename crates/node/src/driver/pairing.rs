@@ -284,7 +284,8 @@ impl Driver {
     }
 }
 
-/// Records what a pairing did in the audit log and analytics.
+/// Records what a pairing did: one line in the daemon's log, and the
+/// analytics events.
 pub(crate) fn record(event: &PairingEvent, analytics: &analytics::Analytics) {
     use daemon_core::pairing::{Failure, Method, Outcome, Role};
 
@@ -297,16 +298,14 @@ pub(crate) fn record(event: &PairingEvent, analytics: &analytics::Analytics) {
         Role::Offerer => analytics::Role::Offerer,
         Role::Joiner => analytics::Role::Joiner,
     };
-    let label = match (event.method, event.role) {
-        (Method::Ssh, _) => "ssh",
-        (_, Role::Offerer) => "spake2",
-        (_, Role::Joiner) => "direct_pin",
-    };
     match &event.outcome {
-        Outcome::Failed { audit, counted } => {
-            if event.role == Role::Offerer {
-                crate::audit::pairing_failure(label, audit);
-            }
+        Outcome::Failed { reason, counted } => {
+            tracing::warn!(
+                role = ?event.role,
+                method = ?event.method,
+                reason = %reason,
+                "a pairing failed"
+            );
             if let Some(counted) = counted {
                 analytics.record(analytics::Event::PairingFailed {
                     role,
@@ -324,9 +323,12 @@ pub(crate) fn record(event: &PairingEvent, analytics: &analytics::Analytics) {
         }
         Outcome::Succeeded { host } => {
             let remote_host = uuid::Uuid::from_bytes(host.0);
-            if event.role == Role::Offerer {
-                crate::audit::pairing_success(label, remote_host);
-            }
+            tracing::info!(
+                role = ?event.role,
+                method = ?event.method,
+                host = %remote_host,
+                "paired"
+            );
             // SSH pairings reach the daemon only once the exchange worked,
             // so a start and its success are counted together.
             if event.method == Method::Ssh {

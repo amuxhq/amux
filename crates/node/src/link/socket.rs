@@ -1828,7 +1828,8 @@ mod tests {
 
     use super::*;
     use crate::identity::DeviceIdentity;
-    use crate::trust::{SharedTrustStore, TrustStore, TrustStorePairingUpdate};
+    use crate::trust::{SharedTrustStore, TrustStore};
+    use daemon_core::trust::PairingUpdate;
 
     /// An in-memory substrate: what was sent, and what to receive next.
     #[derive(Default)]
@@ -2896,7 +2897,7 @@ mod tests {
                     chrono::Utc::now(),
                 )
                 .unwrap(),
-            TrustStorePairingUpdate::Inserted
+            PairingUpdate::Inserted
         );
         Arc::new(std::sync::RwLock::new(trust))
     }

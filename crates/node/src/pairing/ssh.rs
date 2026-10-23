@@ -13,7 +13,7 @@ use tokio::io::{ReadBuf, copy_bidirectional};
 
 use super::PairingAdmin;
 use crate::identity::{DeviceIdentity, IdentityError, load_or_create_device_identity_in};
-use crate::{HostId, ProfileId, audit};
+use crate::{HostId, ProfileId};
 
 /// A device on the far end of an SSH pairing, as it described itself.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -79,11 +79,8 @@ where
 {
     let target = target.into();
     validate_ssh_target(&target)?;
-    let io = crate::transport::spawn_ssh_pair_recv(&target).map_err(|error| {
-        audit::pairing_start("ssh");
-        audit::pairing_failure("ssh", &error);
-        SshPairingError::Transport(error.to_string())
-    })?;
+    let io = crate::transport::spawn_ssh_pair_recv(&target)
+        .map_err(|error| SshPairingError::Transport(error.to_string()))?;
     pair_via_ssh_initiator(io, data_dir, local_name, target, client).await
 }
 
@@ -108,11 +105,7 @@ where
         local_name.as_ref(),
         client.profile_id(),
     )
-    .await
-    .inspect_err(|error| {
-        audit::pairing_start("ssh");
-        audit::pairing_failure("ssh", error);
-    })?;
+    .await?;
     client
         .pair_ssh_peer(
             peer.identity.clone(),
@@ -122,10 +115,7 @@ where
             }),
         )
         .await
-        .map_err(|error| {
-            audit::pairing_failure("ssh", &error);
-            SshPairingError::Client(error.to_string())
-        })?;
+        .map_err(|error| SshPairingError::Client(error.to_string()))?;
 
     Ok(peer)
 }
@@ -147,23 +137,12 @@ where
         local_name.as_ref(),
         client.profile_id(),
     )
-    .await
-    .inspect_err(|error| {
-        audit::pairing_start("ssh");
-        audit::pairing_failure("ssh", error);
-    })?;
+    .await?;
     client
         .pair_ssh_peer(peer.identity.clone(), None)
         .await
-        .map_err(|error| {
-            audit::pairing_failure("ssh", &error);
-            SshPairingError::Client(error.to_string())
-        })?;
-    write_identity(&mut io, &local_peer)
-        .await
-        .inspect_err(|error| {
-            audit::pairing_failure("ssh", error);
-        })?;
+        .map_err(|error| SshPairingError::Client(error.to_string()))?;
+    write_identity(&mut io, &local_peer).await?;
 
     Ok(peer)
 }

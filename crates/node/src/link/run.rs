@@ -26,7 +26,7 @@ use crate::routing::{
     neighbor_down_from_wire, neighbor_up_from_wire, protocol_error_hello_ack,
     protocol_error_link_close, validate_remote_host,
 };
-use crate::{Clock, HostId, audit};
+use crate::{Clock, HostId};
 
 const LINK_CONNECT_HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -489,7 +489,7 @@ pub async fn run_link(
             let mut session = match authenticate_hello(&ctx, &hello).await {
                 Ok(session) => session,
                 Err(status) => {
-                    audit::auth_jwt_failure(&status);
+                    tracing::warn!(%status, "the link's hello was refused");
                     write_message(&mut sink, &auth_expired_link_close()).await?;
                     carrier.close(wire::pb::LinkCloseReason::AuthExpired);
                     return Ok(());
@@ -879,7 +879,7 @@ async fn run_established(
                 spawn_inbound_dispatch(ctx.clone(), peer_host.id, stream);
             }
             _ = maybe_policy_sleep(auth_expiry), if acceptor_auth.is_some() => {
-                audit::auth_jwt_failure("link authorization expired");
+                tracing::warn!("the link's authorization expired");
                 // The pairs through the link end and both ends are told
                 // before the link itself goes.
                 ctx.links.expire(&link).await;
@@ -906,8 +906,8 @@ async fn run_established(
                         if failed { break; }
                     }
                     Err(status) => {
-                        if should_audit_auth_refresh_failure(&status) {
-                            audit::auth_jwt_failure(&status);
+                        if refresh_refusal_is_worth_a_line(&status) {
+                            tracing::warn!(%status, "the link's credential refresh was refused");
                         }
                         let _ = request.response.send(Err(clone_status(&status)));
                         close_status = Some(status);
@@ -1079,7 +1079,6 @@ async fn handle_control_body(
                         ControlAction::Continue
                     }
                     Err(error) => {
-                        audit::auth_jwt_failure("link reauth user mismatch");
                         tracing::warn!(
                             original_user_id = %error.original_user_id,
                             reauth_user_id = %error.reauth_user_id,
@@ -1092,7 +1091,7 @@ async fn handle_control_body(
                     }
                 },
                 Err(status) => {
-                    audit::auth_jwt_failure(&status);
+                    tracing::warn!(%status, "the link's reauthentication was refused");
                     ControlAction::ReplyAndClose(
                         Box::new(auth_expired_link_close()),
                         wire::pb::LinkCloseReason::AuthExpired,
@@ -1323,7 +1322,8 @@ fn link_close_status(close: &wire::pb::LinkClose) -> Option<tonic::Status> {
         .then(|| tonic::Status::failed_precondition("the other machine needs updating"))
 }
 
-fn should_audit_auth_refresh_failure(status: &tonic::Status) -> bool {
+/// A refresh refused for want of payment is the plan's word, not a fault.
+fn refresh_refusal_is_worth_a_line(status: &tonic::Status) -> bool {
     net_error::code_of(status) != Some(wire::ErrorCode::PaymentRequired)
 }
 

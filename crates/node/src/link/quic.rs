@@ -1327,7 +1327,8 @@ mod tests {
 
     use super::*;
     use crate::link::resumption::{HOST_TICKETS, SessionTickets};
-    use crate::trust::{TrustStore, TrustStorePairingUpdate};
+    use crate::trust::TrustStore;
+    use daemon_core::trust::PairingUpdate;
 
     struct LoopbackPair {
         _client_endpoint: LinkEndpoint,
@@ -1399,7 +1400,7 @@ mod tests {
                     Utc::now(),
                 )
                 .unwrap(),
-            TrustStorePairingUpdate::Inserted
+            PairingUpdate::Inserted
         );
         Arc::new(std::sync::RwLock::new(trust))
     }

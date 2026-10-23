@@ -19,6 +19,7 @@ use uuid::Uuid;
 
 use super::status::{Observed, RelayCarrier, RuntimeStatus};
 use super::token::{StoredToken, forget_token, load_token, store_token};
+use crate::Clock;
 use crate::auth::CredentialProvider;
 use crate::auth::cloud::{
     CloudError, CloudRoutingConnectionDetails, fetch_routing_connection_details,
@@ -31,7 +32,6 @@ use crate::routing::{
     spawn_connector_with_auth_establishment_and_shutdown,
 };
 use crate::transport::tls_connect_stream;
-use crate::{Clock, audit};
 
 const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
 const MAX_BACKOFF: Duration = Duration::from_secs(300);
@@ -399,7 +399,7 @@ async fn prepare_cloud_connection(
     .await
     .map_err(|error| {
         if matches!(error, CloudError::NotAuthenticated | CloudError::Auth(_)) {
-            audit::auth_jwt_failure("cloud routing credentials were rejected");
+            tracing::warn!("the relay rejected this profile's credentials");
         }
         cloud_connection_error_from_fetch(error, &ctx.status)
     })?;
@@ -808,7 +808,7 @@ async fn cloud_connection_error_from_status(
     }
     if status.code() == tonic::Code::Unauthenticated {
         observed.report(Observed::AuthenticationRequired);
-        audit::auth_jwt_failure(&status);
+        tracing::warn!(%status, "the relay refused this profile's credentials");
         return CloudConnectionError::NonRetriable(
             "the relay refused this profile's credentials; sign in again".to_string(),
         );

@@ -356,11 +356,22 @@ pub struct Batch {
     pub seen: u64,
 }
 
-/// Reads whole frames from a cursor onwards.
+/// Reads whole frames from a cursor onwards, keeping the segment the
+/// cursor lies in open between reads.
 #[derive(Debug)]
 pub struct Reader {
     dir: PathBuf,
     cursor: u64,
+    held: Option<Held>,
+}
+
+/// The open segment the cursor lies in.
+#[derive(Debug)]
+struct Held {
+    start: u64,
+    /// The segment after this one, once one exists: this one is then final.
+    next: Option<u64>,
+    file: File,
 }
 
 impl Reader {
@@ -368,6 +379,7 @@ impl Reader {
         Self {
             dir: dir.into(),
             cursor,
+            held: None,
         }
     }
 
@@ -395,34 +407,26 @@ impl Reader {
     pub fn read_up_to(&mut self, limit: usize) -> io::Result<Batch> {
         let mut batch = Batch::default();
         loop {
-            let starts = segments(&self.dir)?;
-            let Some(position) = starts.iter().rposition(|&start| start <= self.cursor) else {
-                // Nothing at or below the cursor: nothing written yet, or the
-                // cursor predates the oldest segment and the next one is
-                // where the journal resumes.
-                match starts.first() {
-                    Some(&first) if first > self.cursor => {
-                        self.cursor = first;
-                        continue;
-                    }
-                    _ => return Ok(batch),
+            let reuse = matches!(
+                &self.held,
+                Some(held) if held.start <= self.cursor && held.next.is_none_or(|next| self.cursor < next)
+            );
+            if !reuse {
+                self.held = None;
+                match self.open_segment()? {
+                    Some(held) => self.held = Some(held),
+                    None => return Ok(batch),
                 }
-            };
-            let start = starts[position];
-            let next = starts.get(position + 1).copied();
-            let mut file = match File::open(segment_path(&self.dir, start)) {
-                Ok(file) => file,
-                // Reclaimed between listing and opening: list again.
-                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-                Err(error) => return Err(error),
-            };
+            }
+            let held = self.held.as_mut().expect("held above");
+            let start = held.start;
             // The segment's length, not the bytes read: a cursor past the
             // segment's end reads nothing, and the consumer needs to know
             // the journal ends below it without decoding the segment.
-            let len = file.metadata()?.len();
-            file.seek(SeekFrom::Start(self.cursor - start))?;
+            let len = held.file.metadata()?.len();
+            held.file.seek(SeekFrom::Start(self.cursor - start))?;
             let mut bytes = Vec::new();
-            file.read_to_end(&mut bytes)?;
+            held.file.read_to_end(&mut bytes)?;
             let extent = if bytes.is_empty() {
                 start + len
             } else {
@@ -440,7 +444,23 @@ impl Reader {
                 batch.frames.push((self.cursor, *step));
             }
             let torn = at < bytes.len();
-            match next {
+            if held.next.is_none() {
+                // The newest segment when it was opened; a writer may have
+                // rotated past it since. A rotation happens at a frame
+                // boundary and names the new segment by the offset this one
+                // ended at, so one look for that name says; torn bytes at
+                // the end mean no rotation followed them, unless the
+                // journal was cut by hand, which the listing settles.
+                held.next = if torn {
+                    segments(&self.dir)?.into_iter().find(|&s| s > start)
+                } else if extent > start && fs::metadata(segment_path(&self.dir, extent)).is_ok()
+                {
+                    Some(extent)
+                } else {
+                    None
+                };
+            }
+            match held.next {
                 // The newest segment: whatever follows may still be written.
                 None => {
                     if torn {
@@ -460,7 +480,37 @@ impl Reader {
                         });
                     }
                     self.cursor = next;
+                    self.held = None;
                 }
+            }
+        }
+    }
+
+    /// Opens the segment the cursor lies in, moving the cursor up to the
+    /// first segment when it predates them all. None when nothing is
+    /// written yet.
+    fn open_segment(&mut self) -> io::Result<Option<Held>> {
+        loop {
+            let starts = segments(&self.dir)?;
+            let Some(position) = starts.iter().rposition(|&start| start <= self.cursor) else {
+                // Nothing at or below the cursor: nothing written yet, or the
+                // cursor predates the oldest segment and the next one is
+                // where the journal resumes.
+                match starts.first() {
+                    Some(&first) if first > self.cursor => {
+                        self.cursor = first;
+                        continue;
+                    }
+                    _ => return Ok(None),
+                }
+            };
+            let start = starts[position];
+            let next = starts.get(position + 1).copied();
+            match File::open(segment_path(&self.dir, start)) {
+                Ok(file) => return Ok(Some(Held { start, next, file })),
+                // Reclaimed between listing and opening: list again.
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
             }
         }
     }

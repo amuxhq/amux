@@ -10,6 +10,7 @@
 
 #![forbid(unsafe_code)]
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -81,6 +82,10 @@ pub struct Daemon {
     trust: trust::Trust,
     answers: Answers,
     journals: Journals,
+    /// One open reader per agent journal this core has read, so a step
+    /// neither lists the directory nor reopens the segment. Not state: a
+    /// restored core opens them again as it reads.
+    journal_readers: BTreeMap<AgentId, journal::Reader>,
     checkpoints: Checkpoints,
     notifications: Notifications,
     blobs: Blobs,
@@ -134,6 +139,7 @@ impl Daemon {
             trust: trust::Trust::default(),
             answers: Answers::default(),
             journals: Journals::default(),
+            journal_readers: BTreeMap::new(),
             checkpoints: Checkpoints::default(),
             notifications: Notifications::default(),
             blobs: Blobs::default(),

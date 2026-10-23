@@ -128,34 +128,16 @@ impl Daemon {
         let key = AgentKey::new(self.store.own_host(), agent.0);
         let dir = self.journal_dir(agent);
         let cursor = self.store.cursor(&key)?;
-        let mut reader = journal::Reader::new(&dir, cursor);
-        let mut batch = reader.read_up_to(INGEST_BATCH)?;
-        *seen = batch.seen;
-        if batch.frames.is_empty() && (batch.seen < cursor || batch.torn.is_some()) {
-            // The journal ending below the cursor, or torn bytes at it, may
-            // mean the cursor is past the journal's last whole frame: the
-            // store reached the drive after committing frames the unsynced
-            // journal then lost to a power cut, which cuts the file short or
-            // leaves it zero-filled. The agent re-derives from the last
-            // whole frame, so that is where the cursor goes; revisions keep
-            // counting up, so what it writes again is new to every
-            // subscriber. Finding that frame decodes the newest segment, so
-            // it is done only on these signs and not on every empty read.
-            let end = journal::end(&dir)?;
-            if end < cursor {
-                tracing::warn!(
-                    ?agent,
-                    cursor,
-                    end,
-                    "the journal ends below the cursor; rewinding"
-                );
-                self.store.rewind_cursor(&key, end)?;
-                self.rewound(agent, end);
-                reader.seek(end);
-                batch = reader.read_up_to(INGEST_BATCH)?;
-                *seen = (*seen).max(end).max(batch.seen);
-            }
-        }
+        // The row's cursor rules: a commit the store refused left the
+        // reader past it.
+        let mut reader = self
+            .journal_readers
+            .remove(&agent)
+            .unwrap_or_else(|| journal::Reader::new(&dir, cursor));
+        reader.seek(cursor);
+        let read = self.read_batch(&mut reader, agent, &key, &dir, cursor, seen);
+        self.journal_readers.insert(agent, reader);
+        let batch = read?;
         // A torn frame in the newest segment is a write still under way:
         // the journal has not ended yet, and its Nudge will come.
         let at_end =
@@ -215,6 +197,47 @@ impl Daemon {
             self.announce_caught_up(&key, out)?;
         }
         Ok(report)
+    }
+
+    /// One batch from the cursor, rewinding the row's cursor first when
+    /// the journal shows it lost its tail.
+    fn read_batch(
+        &mut self,
+        reader: &mut journal::Reader,
+        agent: AgentId,
+        key: &AgentKey,
+        dir: &Path,
+        cursor: u64,
+        seen: &mut u64,
+    ) -> Result<journal::Batch, IngestError> {
+        let mut batch = reader.read_up_to(INGEST_BATCH)?;
+        *seen = batch.seen;
+        if batch.frames.is_empty() && (batch.seen < cursor || batch.torn.is_some()) {
+            // The journal ending below the cursor, or torn bytes at it, may
+            // mean the cursor is past the journal's last whole frame: the
+            // store reached the drive after committing frames the unsynced
+            // journal then lost to a power cut, which cuts the file short or
+            // leaves it zero-filled. The agent re-derives from the last
+            // whole frame, so that is where the cursor goes; revisions keep
+            // counting up, so what it writes again is new to every
+            // subscriber. Finding that frame decodes the newest segment, so
+            // it is done only on these signs and not on every empty read.
+            let end = journal::end(dir)?;
+            if end < cursor {
+                tracing::warn!(
+                    ?agent,
+                    cursor,
+                    end,
+                    "the journal ends below the cursor; rewinding"
+                );
+                self.store.rewind_cursor(key, end)?;
+                self.rewound(agent, end);
+                reader.seek(end);
+                batch = reader.read_up_to(INGEST_BATCH)?;
+                *seen = (*seen).max(end).max(batch.seen);
+            }
+        }
+        Ok(batch)
     }
 
     /// Sets the agent's CaughtUp marker and answers it to the agent's

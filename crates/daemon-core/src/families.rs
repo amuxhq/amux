@@ -807,6 +807,7 @@ impl Daemon {
             self.unmute_published(&key, out);
             return Err(error.into());
         }
+        self.journal_readers.remove(&agent);
         let job = self.pending.mint();
         out.push(Output::Job {
             id: job,

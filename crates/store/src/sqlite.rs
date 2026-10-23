@@ -81,6 +81,9 @@ impl Sqlite {
     ) -> Result<Self, OpenError> {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
+        // Every statement the rows run is one of a few dozen fixed texts;
+        // kept prepared, a commit skips parsing them again for each frame.
+        conn.set_prepared_statement_cache_capacity(64);
         migrate(&mut conn, name)?;
         Ok(Self {
             conn,

@@ -274,7 +274,7 @@ impl Rows<'_> {
         condition: &str,
         params: impl rusqlite::Params,
     ) -> Result<Vec<AgentRow>, StoreError> {
-        let mut statement = self.conn.prepare(&format!(
+        let mut statement = self.conn.prepare_cached(&format!(
             "SELECT {AGENT_COLUMNS} FROM agents WHERE {condition} ORDER BY origin_host, agent_id"
         ))?;
         let rows = statement
@@ -298,7 +298,7 @@ impl Rows<'_> {
 
     /// The row an agent id names, this host's own first.
     pub(crate) fn agent_by_id(&self, agent_id: &[u8]) -> Result<Option<AgentRow>, StoreError> {
-        let mut statement = self.conn.prepare(&format!(
+        let mut statement = self.conn.prepare_cached(&format!(
             "SELECT {AGENT_COLUMNS} FROM agents WHERE agent_id = ?1 \
              ORDER BY origin_host = ?2 DESC, origin_host LIMIT 1"
         ))?;
@@ -324,7 +324,7 @@ impl Rows<'_> {
     pub(crate) fn incarnation(&self, agent: &AgentKey) -> Result<Option<u32>, StoreError> {
         Ok(self
             .conn
-            .prepare("SELECT incarnation FROM agents WHERE origin_host = ?1 AND agent_id = ?2")?
+            .prepare_cached("SELECT incarnation FROM agents WHERE origin_host = ?1 AND agent_id = ?2")?
             .query_row(params![agent.host, agent.agent], |row| row.get(0))
             .optional()?)
     }
@@ -333,7 +333,7 @@ impl Rows<'_> {
     /// over the held one.
     pub(crate) fn upsert_agent(&self, row: &AgentRow, update: &str) -> Result<(), StoreError> {
         self.conn
-            .prepare(&format!(
+            .prepare_cached(&format!(
                 "INSERT INTO agents ({AGENT_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, \
                  ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, \
                  ?25, ?26, ?27) ON CONFLICT (origin_host, agent_id) DO UPDATE SET {update}"
@@ -435,7 +435,7 @@ impl Rows<'_> {
         condition: &str,
         params: &[&dyn rusqlite::ToSql],
     ) -> Result<Vec<Item>, StoreError> {
-        let mut statement = self.conn.prepare(&format!(
+        let mut statement = self.conn.prepare_cached(&format!(
             "SELECT {ITEM_COLUMNS} FROM items WHERE origin_host = ?1 AND agent_id = ?2 {condition}"
         ))?;
         let mut all: Vec<&dyn rusqlite::ToSql> = vec![&agent.host, &agent.agent];
@@ -465,7 +465,7 @@ impl Rows<'_> {
     pub(crate) fn item_text(&self, agent: &AgentKey, key: &str) -> Result<String, StoreError> {
         Ok(self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT text FROM items WHERE origin_host = ?1 AND agent_id = ?2 AND key = ?3",
             )?
             .query_row(params![agent.host, agent.agent, key], |row| row.get(0))
@@ -477,7 +477,7 @@ impl Rows<'_> {
     pub(crate) fn newest_text(&self, agent: &AgentKey) -> Result<String, StoreError> {
         Ok(self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT text FROM items WHERE origin_host = ?1 AND agent_id = ?2 \
                  ORDER BY position DESC LIMIT 1",
             )?
@@ -496,7 +496,7 @@ impl Rows<'_> {
     ) -> Result<u64, StoreError> {
         let position: i64 = self
             .conn
-            .prepare(&format!(
+            .prepare_cached(&format!(
                 "INSERT INTO items (origin_host, agent_id, {ITEM_COLUMNS}) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) \
                  ON CONFLICT (origin_host, agent_id, key) DO UPDATE SET \
@@ -518,7 +518,7 @@ impl Rows<'_> {
     pub(crate) fn absorb_item(&self, agent: &AgentKey, item: &Item) -> Result<bool, StoreError> {
         let changed = self
             .conn
-            .prepare(&format!(
+            .prepare_cached(&format!(
                 "INSERT INTO items (origin_host, agent_id, {ITEM_COLUMNS}) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) \
                  ON CONFLICT (origin_host, agent_id, key) DO UPDATE SET \
@@ -547,7 +547,7 @@ impl Rows<'_> {
     ) -> Result<Option<u64>, StoreError> {
         let held: Option<(i64, i64)> = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT position, revision FROM items \
                  WHERE origin_host = ?1 AND agent_id = ?2 AND key = ?3",
             )?
@@ -566,7 +566,7 @@ impl Rows<'_> {
         // its conflict and only the update runs; its values fill the
         // columns an insert would need and are never stored.
         self.conn
-            .prepare(
+            .prepare_cached(
                 "INSERT INTO items (origin_host, agent_id, key, position, revision, at_ms, \
                  producer_version, text, kind, body) \
                  VALUES (?1, ?2, ?3, ?4, ?5, 0, '', ?6, 0, x'') \
@@ -587,7 +587,7 @@ impl Rows<'_> {
     pub(crate) fn max_position(&self, agent: &AgentKey) -> Result<Option<u64>, StoreError> {
         let max: Option<i64> = self
             .conn
-            .prepare("SELECT MAX(position) FROM items WHERE origin_host = ?1 AND agent_id = ?2")?
+            .prepare_cached("SELECT MAX(position) FROM items WHERE origin_host = ?1 AND agent_id = ?2")?
             .query_row(params![agent.host, agent.agent], |row| row.get(0))?;
         Ok(max.map(|position| position as u64))
     }
@@ -629,7 +629,7 @@ impl Rows<'_> {
             End::Exited(exited) => (None, exited.ended.clone(), None, false),
         };
         self.conn
-            .prepare(
+            .prepare_cached(
                 "INSERT OR REPLACE INTO deliveries (child_id, incarnation, turn_id, parent_host, \
                  parent_id, parent_incarnation, exited, text, exit_cause, exit_detail, outcome, \
                  last) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
@@ -652,7 +652,7 @@ impl Rows<'_> {
     }
 
     pub(crate) fn deliveries(&self) -> Result<Vec<Delivery>, StoreError> {
-        let mut statement = self.conn.prepare(
+        let mut statement = self.conn.prepare_cached(
             "SELECT child_id, incarnation, turn_id, parent_host, parent_id, parent_incarnation, \
              exited, text, exit_cause, exit_detail, outcome, last FROM deliveries \
              ORDER BY child_id, incarnation, exited, turn_id",
@@ -679,7 +679,7 @@ impl Rows<'_> {
 
     pub(crate) fn put_notification(&self, notification: &Notification) -> Result<(), StoreError> {
         self.conn
-            .prepare(
+            .prepare_cached(
                 "INSERT OR REPLACE INTO notifications (agent_id, revision, due_at_ms, name, \
                  working_on, text) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             )?
@@ -695,7 +695,7 @@ impl Rows<'_> {
     }
 
     pub(crate) fn notifications(&self) -> Result<Vec<Notification>, StoreError> {
-        let mut statement = self.conn.prepare(
+        let mut statement = self.conn.prepare_cached(
             "SELECT agent_id, revision, due_at_ms, name, working_on, text FROM notifications \
              ORDER BY agent_id, revision",
         )?;
@@ -754,7 +754,7 @@ impl Rows<'_> {
     pub(crate) fn pool_bytes(&self, own: bool) -> Result<u64, StoreError> {
         let bytes: i64 = self
             .conn
-            .prepare(&format!(
+            .prepare_cached(&format!(
                 "SELECT IFNULL(SUM({ITEM_BYTES}), 0) FROM items WHERE (origin_host = ?1) = ?2"
             ))?
             .query_row(params![self.own_host, own], |row| row.get(0))?;
@@ -765,7 +765,7 @@ impl Rows<'_> {
     pub(crate) fn agent_bytes(&self, agent: &AgentKey) -> Result<(u64, u64), StoreError> {
         let (bytes, rows): (i64, i64) = self
             .conn
-            .prepare(&format!(
+            .prepare_cached(&format!(
                 "SELECT IFNULL(SUM({ITEM_BYTES}), 0), COUNT(*) FROM items \
                  WHERE origin_host = ?1 AND agent_id = ?2"
             ))?
@@ -782,7 +782,7 @@ impl Rows<'_> {
         agent: &AgentKey,
         limit: u32,
     ) -> Result<Vec<(u64, u64)>, StoreError> {
-        let mut statement = self.conn.prepare(&format!(
+        let mut statement = self.conn.prepare_cached(&format!(
             "SELECT position, {ITEM_BYTES} FROM items WHERE origin_host = ?1 AND agent_id = ?2 \
              ORDER BY position LIMIT ?3"
         ))?;

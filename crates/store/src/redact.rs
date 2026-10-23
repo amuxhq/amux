@@ -5,7 +5,8 @@
 //! The store decodes no agent's bodies and knows no redaction rules, so the
 //! caller brings a [`Redactor`]; the store only says which values are
 //! which. Ids, cursors, revisions, orders and enumerations are kept, so the
-//! copy reads, and serves, as the original does.
+//! copy reads, and serves, as the original does. The daemon's core walks
+//! its own checkpoint and recorded inputs through the same redactor.
 
 use std::path::Path;
 
@@ -14,10 +15,13 @@ use rusqlite::{Connection, OptionalExtension as _, params};
 
 use crate::{AgentKey, Item, Snapshot, Step, StoreError, decode_attachments, encode_attachments};
 
-/// What a dump's redaction does to a store's values.
+/// What a dump's redaction does to a store's and a core's values.
 pub trait Redactor {
     /// Free text.
     fn text(&self, text: &str) -> String;
+    /// An encoded protocol message, by its full name (`amux.v1.Item`),
+    /// redacted and encoded again.
+    fn message(&self, name: &str, bytes: &[u8]) -> Vec<u8>;
     /// An agent's row fields of its kind, as one `wire.Agent`.
     fn agent(&self, kind: i32, agent: wire::Agent) -> wire::Agent;
     /// Items or a snapshot of an agent of `kind`, as one `wire.Step`.

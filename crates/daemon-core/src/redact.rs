@@ -4,7 +4,7 @@
 //! replays as the original does.
 //!
 //! The core decodes no agent's bodies and knows no redaction rules, so the
-//! caller brings a [`Redactor`]. The values are walked by serialization: a
+//! caller brings the store's [`Redactor`]. The values are walked by serialization: a
 //! protocol message is written by `codec` as its encoding in hex, and says
 //! so on its way through, so the redactor sees it whole and by name;
 //! content bytes, such as a kept blob or a diff's patch, are written as hex
@@ -18,17 +18,10 @@ use serde::ser::{
     SerializeTuple, SerializeTupleStruct, SerializeTupleVariant, Serializer,
 };
 
+pub use store::redact::Redactor;
+
 use crate::io::{Input, Recorded};
 use crate::{Checkpoint, RestoreError};
-
-/// What a dump's redaction does to the core's values.
-pub trait Redactor {
-    /// An encoded protocol message, by its full name (`amux.v1.Item`),
-    /// redacted and encoded again.
-    fn message(&self, name: &str, bytes: &[u8]) -> Vec<u8>;
-    /// Free text, redacted.
-    fn text(&self, text: &str) -> String;
-}
 
 /// What the next string written is, when it is not free text.
 #[derive(Clone, Copy)]
@@ -500,6 +493,12 @@ mod tests {
         }
         fn text(&self, text: &str) -> String {
             String::from_utf8(swap(text.as_bytes())).expect("still text")
+        }
+        fn agent(&self, _: i32, agent: wire::Agent) -> wire::Agent {
+            agent
+        }
+        fn step(&self, _: i32, step: store::Step) -> store::Step {
+            step
         }
     }
 

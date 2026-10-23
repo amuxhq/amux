@@ -821,19 +821,13 @@ fn write_core(captured: &Captured, scratch: &Path, out: &Path) -> Result<CoreDum
 /// and items by its kind's own redactor.
 struct Redact;
 
-impl daemon_core::Redactor for Redact {
-    fn message(&self, name: &str, bytes: &[u8]) -> Vec<u8> {
-        interpret::redact_message(name, bytes)
-    }
-
-    fn text(&self, text: &str) -> String {
-        interpret::redact_text(text)
-    }
-}
-
 impl store::redact::Redactor for Redact {
     fn text(&self, text: &str) -> String {
         interpret::redact_text(text)
+    }
+
+    fn message(&self, name: &str, bytes: &[u8]) -> Vec<u8> {
+        interpret::redact_message(name, bytes)
     }
 
     fn agent(&self, kind: i32, agent: wire::Agent) -> wire::Agent {

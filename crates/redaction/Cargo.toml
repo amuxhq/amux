@@ -7,6 +7,7 @@ description = "Structured diagnostic redaction shared by amux reporting and capt
 publish = false
 
 [dependencies]
+gethostname.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 unicode-width = "0.2"

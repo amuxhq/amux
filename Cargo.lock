@@ -3771,6 +3771,7 @@ dependencies = [
 name = "redaction"
 version = "0.1.0"
 dependencies = [
+ "gethostname",
  "serde",
  "serde_json",
  "unicode-width 0.2.2",

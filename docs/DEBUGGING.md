@@ -327,7 +327,7 @@ The bundle holds:
 | `report.json` | Build and git revision, time, note, marks in points with the frame's size and scale, and every part declared present or absent with a reason |
 | `frame.png` | The frozen screen, without the status bar |
 | `trace.jsonl` | The view-state trace, in builds with the driving tools only; a shipping build declares it absent |
-| `log.txt` | The last 64 KiB of the runtime's log |
+| `log` | Declared absent: the runtime's log rides in the dump below, redacted |
 | `dump/…` | The profile's dump, as above, with the app runtime's client parts |
 
 What the account service does with reports is on [Cloud](CLOUD.md); the report screen itself is on [the iPhone

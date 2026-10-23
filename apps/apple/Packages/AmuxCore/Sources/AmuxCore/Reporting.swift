@@ -290,8 +290,7 @@ public final class ReportStore {
     /// not work leaves somebody pressing it and waiting.
     public func send(
         with cloud: any CloudService, as account: AccountId?,
-        build: String, gitSHA: String = "", log: Result<String, PartAbsent>,
-        now: Date = Date()
+        build: String, gitSHA: String = "", now: Date = Date()
     ) async {
         guard capture != nil else { return }
         switch sending {
@@ -303,7 +302,7 @@ public final class ReportStore {
                 "Sign in to the account this report is about, then send it again.")
             return
         }
-        guard let bundle = await assembled(build: build, gitSHA: gitSHA, log: log, now: now)
+        guard let bundle = await assembled(build: build, gitSHA: gitSHA, now: now)
         else { return }
         uploadBundle = bundle
         let identity = captureID
@@ -334,14 +333,13 @@ public final class ReportStore {
     /// What would be sent right now. The screen shows what a report declares
     /// before anybody presses anything, and a test reads the same thing.
     public func assembled(
-        build: String, gitSHA: String = "", log: Result<String, PartAbsent>,
-        now: Date = Date()
+        build: String, gitSHA: String = "", now: Date = Date()
     ) async -> ReportBundle? {
         if let uploadBundle { return uploadBundle }
         guard let capture else { return nil }
         let dump = await ReportAssembly.dumpParts(capture.dump)
         return ReportAssembly.bundle(
             from: capture, draft: draft, build: build, gitSHA: gitSHA,
-            createdAt: now, log: log, dump: dump)
+            createdAt: now, dump: dump)
     }
 }

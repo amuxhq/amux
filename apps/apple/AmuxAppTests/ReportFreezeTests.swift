@@ -36,7 +36,7 @@ final class ReportFreezeTests: XCTestCase {
         let dump = await ReportAssembly.dumpParts(capture.dump)
         let bundle = ReportAssembly.bundle(
             from: capture, draft: ReportDraft(note: "wrong"), build: "amux-ios/test",
-            log: .failure(PartAbsent("no log")), dump: dump)
+            dump: dump)
         XCTAssertEqual(bundle.part(ReportAssembly.frameFile)?.present, true)
         XCTAssertEqual(
             bundle.part(ReportAssembly.traceFile)?.absenceReason,

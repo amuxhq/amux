@@ -312,9 +312,9 @@ top, a sheet included: the app hands them down as `ReportLayers`, every
 surface that can be on top carries `surface()`, and the last of those to
 appear draws them. A report is a bundle (`ReportAssembly`): `report.json` at
 `schema_version` 2 declares each part present or absent with a reason,
-beside the frozen `frame.png`, the view-state `trace.jsonl`, the tail of the
-installation's `runtime.log` as `log.txt`, and the profile's dump under
-`dump/`. Only a build with the driving tools records the trace, so a
+beside the frozen `frame.png`, the view-state `trace.jsonl` and the
+profile's dump under `dump/`, which carries the tail of the installation's
+`runtime.log` redacted; the `log` part is declared absent for that reason. Only a build with the driving tools records the trace, so a
 Release report declares it absent. The build stamps its checkout revision
 into the app, and each report carries it as `git_sha`.
 

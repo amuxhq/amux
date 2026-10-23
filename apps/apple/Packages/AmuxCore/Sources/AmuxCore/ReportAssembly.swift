@@ -19,7 +19,10 @@ public enum ReportAssembly {
     /// Where the runtime's dump goes in a report: each of its files under this
     /// directory, by its path inside the dump.
     public static let dumpDirectory = "dump"
-    public static let logFile = "log.txt"
+    /// Why no log rides beside the dump: the dump already carries the
+    /// runtime's log, redacted, and a copy read raw off the file would not
+    /// be.
+    static let logAbsent = "the runtime's log is in the dump, redacted"
 
     /// Everything a report is, ready to go.
     ///
@@ -33,7 +36,6 @@ public enum ReportAssembly {
         build: String,
         gitSHA: String = "",
         createdAt: Date = Date(),
-        log: Result<String, PartAbsent>,
         dump: Result<[ReportPart], PartAbsent>
     ) -> ReportBundle {
         var parts: [ReportPart] = []
@@ -41,11 +43,6 @@ public enum ReportAssembly {
         parts.append(part(
             traceFile, capture.trace.map { Data($0.utf8) },
             absent: capture.traceAbsent ?? "the view-state recording was not captured"))
-        switch log {
-        case .success(let text): parts.append(ReportPart(name: logFile, data: Data(text.utf8)))
-        case .failure(let absent):
-            parts.append(ReportPart(name: logFile, absenceReason: absent.why))
-        }
         let dumped: String?
         switch dump {
         case .success(let files):
@@ -120,7 +117,7 @@ public enum ReportAssembly {
             "frame": declared(frameFile),
             "trace": declared(traceFile),
             "dump": dumpAbsent.map { ["absent": ["reason": $0]] as Any } ?? "present",
-            "log": declared(logFile),
+            "log": ["absent": ["reason": logAbsent]],
         ]
         // The recorder that made the trace, named only when there is a trace
         // to name it for. What made it decides where it can be replayed: this

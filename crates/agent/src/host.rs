@@ -383,15 +383,21 @@ impl<I: Interpreter> Driver<I> {
     }
 
     /// Every timer that is due, in the order of their ids.
+    /// Steps the timers due, soonest first, one at a time: a step may
+    /// cancel or re-arm the next (a grace period ending cancels the drain
+    /// and arms the provider's stop), so the map is read again after each.
     async fn on_timers(&mut self) {
-        let now = now_ms(self.clock.as_ref());
-        let due: Vec<TimerId> = self
-            .timers
-            .iter()
-            .filter(|(_, at)| **at <= now)
-            .map(|(id, _)| *id)
-            .collect();
-        for id in due {
+        loop {
+            let now = now_ms(self.clock.as_ref());
+            let due = self
+                .timers
+                .iter()
+                .filter(|(_, at)| **at <= now)
+                .map(|(id, at)| (*at, *id))
+                .min();
+            let Some((_, id)) = due else {
+                return;
+            };
             self.timers.remove(&id);
             self.feed(Input::Timer(id)).await;
         }

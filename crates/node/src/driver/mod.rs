@@ -30,7 +30,7 @@ pub(crate) mod pairing;
 mod stepped;
 mod streams;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
@@ -156,38 +156,15 @@ pub(crate) enum Fed {
         store: PathBuf,
         done: oneshot::Sender<Result<Captured, String>>,
     },
-    /// A timer the core armed fired.
-    Fired(Fired),
-    /// Reports are queued.
+    /// Reports are queued, or a timer is due.
     Wake,
     /// The profile is gone.
     Stop,
 }
 
-/// A timer's firing, with the arm it fired for. One whose arm the core
-/// cancelled or replaced while it waited to be stepped is dropped, so the
-/// core only hears of the arm it last asked for.
-#[derive(Debug)]
-pub(crate) struct Fired {
-    id: TimerId,
-    arm: u64,
-}
-
-/// What a link, channel or timer reported, stepped ahead of the shell's
-/// inputs.
-#[expect(
-    clippy::large_enum_variant,
-    reason = "nearly every report is an input, which boxing would allocate for"
-)]
+/// What a link or channel reported, stepped ahead of the shell's inputs.
 pub(crate) enum Report {
     Input(Input),
-    Fired(Fired),
-}
-
-/// A timer under way, by the arm it carries out.
-struct Armed {
-    arm: u64,
-    task: AbortHandle,
 }
 
 /// A client call as it arrives. What the request also carries from the
@@ -310,8 +287,8 @@ impl Driver {
             calls: calls.clone(),
             connections: connections.clone(),
             outgoing: outgoing.clone(),
-            timers: HashMap::new(),
-            arms: 0,
+            timers: BTreeMap::new(),
+            alarm: None,
             waiting: HashMap::new(),
             ticked: None,
             dumps: DumpLimit::new(dump_interval_ms),
@@ -658,9 +635,12 @@ pub(crate) struct CoreThread {
     calls: Arc<CallTable>,
     connections: Arc<Mutex<Weak<ConnectionManager>>>,
     outgoing: Outgoing,
-    timers: HashMap<TimerId, Armed>,
-    /// The arms given out so far.
-    arms: u64,
+    /// The timers the core armed, by their deadline on the profile's clock.
+    /// The map is the truth: a timer the core cancelled or re-armed is not
+    /// in it, or is in it at its new deadline, when a turn looks.
+    timers: BTreeMap<TimerId, u64>,
+    /// The one alarm, set to the soonest deadline, which wakes the loop.
+    alarm: Option<(u64, AbortHandle)>,
     waiting: HashMap<daemon_core::AgentId, Vec<Waiting>>,
     /// The clock as last told to the core.
     ticked: Option<u64>,
@@ -817,13 +797,8 @@ impl CoreThread {
         self.tick(&runtime, &mut out);
         let reports = std::mem::take(&mut *self.reports.lock().unwrap());
         for report in reports {
-            let input = match report {
-                Report::Input(input) => Some(input),
-                Report::Fired(fired) => self.fired(fired),
-            };
-            if let Some(input) = input {
-                self.step(&runtime, input, &mut out);
-            }
+            let Report::Input(input) = report;
+            self.step(&runtime, input, &mut out);
         }
         let fed = match fed {
             Fed::Channel { want, reply } => {
@@ -859,17 +834,15 @@ impl CoreThread {
                 self.step(&runtime, Input::ClientCall { call, request }, &mut out);
                 return true;
             }
-            Fed::Wake => return true,
+            Fed::Wake => {
+                self.fire_due(&runtime, &mut out);
+                return true;
+            }
             fed => fed,
         };
         let mut call = None;
-        let mut fired = None;
         let input = match fed {
             Fed::Input(input) => Some(input),
-            Fed::Fired(firing) => {
-                fired = Some(firing);
-                None
-            }
             Fed::Call { call: id, ask } => {
                 call = Some(Arriving::Client(id, ask));
                 None
@@ -969,9 +942,7 @@ impl CoreThread {
                     request,
                 })
             }
-            // Judged as it is stepped: a step before it may have cancelled
-            // or replaced its arm.
-            None => input.or_else(|| fired.and_then(|fired| self.fired(fired))),
+            None => input,
         };
         if let Some(input) = input {
             self.step(&runtime, input, &mut out);
@@ -980,15 +951,56 @@ impl CoreThread {
         true
     }
 
-    /// The input a timer's firing is stepped as, or `None` when the core
-    /// cancelled or replaced its arm since.
-    fn fired(&mut self, fired: Fired) -> Option<Input> {
-        let armed = self.timers.get(&fired.id)?;
-        if armed.arm != fired.arm {
-            return None;
+    /// The alarm rang: steps the soonest timer due, judged against the map
+    /// as it stands, and sets the alarm again for the next. One firing a
+    /// wake, so a core re-arming the same timer at once (ingest's next
+    /// batch) takes its turns in the channel's order with every other
+    /// input.
+    fn fire_due(&mut self, runtime: &Arc<ProfileRuntime>, out: &mut Vec<Output>) {
+        let now = runtime.clock_now().max(0) as u64;
+        let due = self
+            .timers
+            .iter()
+            .filter(|(_, at)| **at <= now)
+            .map(|(id, at)| (*at, *id))
+            .min();
+        if let Some((_, id)) = due {
+            self.timers.remove(&id);
+            self.step(runtime, Input::Timer { id }, out);
         }
-        self.timers.remove(&fired.id);
-        Some(Input::Timer { id: fired.id })
+        self.alarm = None;
+        self.set_alarm(runtime);
+    }
+
+    /// Sets the one alarm to the soonest deadline, on the profile's clock;
+    /// it wakes the loop, which steps the soonest timer due by then. A
+    /// deadline already passed rings at once, and the wake queues behind
+    /// the inputs already waiting. An alarm at or past now may have rung
+    /// already, so it is set afresh.
+    fn set_alarm(&mut self, runtime: &Arc<ProfileRuntime>) {
+        let now = runtime.clock_now().max(0) as u64;
+        let next = self.timers.values().copied().min();
+        if self.alarm.as_ref().is_some_and(|(at, _)| *at <= now) {
+            self.alarm = None;
+        }
+        if self.alarm.as_ref().map(|(at, _)| *at) == next {
+            return;
+        }
+        if let Some((_, task)) = self.alarm.take() {
+            task.abort();
+        }
+        let Some(at) = next else {
+            return;
+        };
+        let due = runtime.clock().sleep_until(at.min(i64::MAX as u64) as i64);
+        let inputs = self.inputs.clone();
+        let task = tokio::spawn(async move {
+            due.await;
+            if let Some(inputs) = inputs.upgrade() {
+                let _ = inputs.send(Fed::Wake).await;
+            }
+        });
+        self.alarm = Some((at, task.abort_handle()));
     }
 
     /// Tells the core the time, when it moved.
@@ -1159,76 +1171,23 @@ impl CoreThread {
                 }
             }
             Output::ArmTimer { id, at_ms } => {
+                // Every timer keeps to the profile's clock, the one the
+                // core reckons on. A follower or source due now is stepped
+                // next, with the store; anything else due now rings the
+                // alarm and queues behind the inputs already waiting.
                 let now = runtime.clock_now().max(0) as u64;
-                // A follower or source keeps to the profile's clock, the
-                // one its backoff is reckoned on; one due now is stepped
-                // next, with the store.
                 let sourcing = matches!(id, TimerId::Follow(_) | TimerId::Source(..));
-                // An agent's start and stop deadlines keep to it too, and
-                // so do notifications, whose due times it stamped, the
-                // outbox's retries, and the pairing window and its
-                // conversations, whose expiries the peers read.
-                let registry = matches!(
-                    id,
-                    TimerId::Start(_)
-                        | TimerId::Exit(_)
-                        | TimerId::Notifications
-                        | TimerId::Deliveries
-                        | TimerId::PairWindow
-                        | TimerId::Pairing(_)
-                );
                 if sourcing && at_ms <= now {
-                    if let Some(armed) = self.timers.remove(&id) {
-                        armed.task.abort();
-                    }
+                    self.timers.remove(&id);
                     self.again.push_back(Input::Timer { id });
-                    return;
-                }
-                let wait = at_ms.saturating_sub(now);
-                let inputs = self.inputs.clone();
-                // A host's retry and a link's refresh read no store, so
-                // they fire as links report, ahead of the shell's writes.
-                let reports = matches!(id, TimerId::Retry(_) | TimerId::Refresh(_))
-                    .then(|| self.reports.clone());
-                // A credential's refresh keeps to the profile's clock, the
-                // one the relay judges the credential's expiry by.
-                let refresh =
-                    (sourcing || registry || matches!(id, TimerId::Refresh(_))).then(|| {
-                        runtime
-                            .clock()
-                            .sleep_until(at_ms.min(i64::MAX as u64) as i64)
-                    });
-                self.arms += 1;
-                let arm = self.arms;
-                let task = tokio::spawn(async move {
-                    match refresh {
-                        Some(due) => due.await,
-                        None => tokio::time::sleep(Duration::from_millis(wait)).await,
-                    }
-                    let fired = Fired { id, arm };
-                    match reports {
-                        Some(reports) => {
-                            reports.lock().unwrap().push_back(Report::Fired(fired));
-                            if let Some(inputs) = inputs.upgrade() {
-                                let _ = inputs.try_send(Fed::Wake);
-                            }
-                        }
-                        None => {
-                            if let Some(inputs) = inputs.upgrade() {
-                                let _ = inputs.send(Fed::Fired(fired)).await;
-                            }
-                        }
-                    }
-                });
-                let task = task.abort_handle();
-                if let Some(armed) = self.timers.insert(id, Armed { arm, task }) {
-                    armed.task.abort();
+                } else {
+                    self.timers.insert(id, at_ms);
+                    self.set_alarm(runtime);
                 }
             }
             Output::CancelTimer { id } => {
-                if let Some(armed) = self.timers.remove(&id) {
-                    armed.task.abort();
-                }
+                self.timers.remove(&id);
+                self.set_alarm(runtime);
             }
             Output::Checkpoint { state } => {
                 // The inputs after this step are the ones this checkpoint

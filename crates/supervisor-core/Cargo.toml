@@ -7,6 +7,7 @@ description = "The supervisor's update decisions as one function of its state an
 publish = false
 
 [dependencies]
+core-ring = { workspace = true }
 release = { workspace = true }
 semver = { workspace = true }
 uuid = { workspace = true }

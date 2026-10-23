@@ -48,7 +48,7 @@ use child::Child;
 pub use child::Inherited;
 use control::Asked;
 pub use control::{Request, SUPERVISOR_SOCKET, ask};
-use core_ring::{DumpKind, DumpLimit};
+use core_ring::DumpLimit;
 pub use files::{FileId, Files, SUPERVISOR_LOCK};
 pub use keep_awake::{KeepAwake, REASON as KEEP_AWAKE_REASON};
 use semver::Version;
@@ -333,24 +333,7 @@ impl Dumps {
     /// The reason to report for `reason` asked for at `now_ms`, or `None`
     /// when it is held back.
     fn reason(&mut self, reason: &core::DumpReason, now_ms: u64) -> Option<String> {
-        let (kind, why) = match reason {
-            core::DumpReason::Violation(violation) => (
-                DumpKind::Violation(violation.invariant.into()),
-                format!("an invariant failed: {violation}"),
-            ),
-            core::DumpReason::OverBudget { micros, budget } => (
-                DumpKind::OverBudget,
-                format!(
-                    "a step took {micros} µs, over its budget of {} µs",
-                    budget.micros
-                ),
-            ),
-        };
-        let suppressed = self.limit.admit(kind, now_ms)?;
-        Some(core_ring::with_suppressed(
-            format!("{SUPERVISOR_CORE_DUMP}{why}"),
-            suppressed,
-        ))
+        self.limit.reason(SUPERVISOR_CORE_DUMP, reason, now_ms)
     }
 }
 

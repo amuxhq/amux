@@ -838,7 +838,7 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
     asking.ask_for_dump(&violation, INVARIANT).await;
     asking
         .ask_for_dump(
-            "the agent core: a step took 12 µs against its budget of 0 µs",
+            "the agent core: a step took 12 µs, over its budget of 0 µs",
             "",
         )
         .await;
@@ -935,7 +935,7 @@ async fn an_agents_step_over_its_budget_leaves_a_bundle_of_that_agent() {
             .any(|reason| reason.starts_with(node::AGENT_DUMP)
                 && !reason.starts_with(node::AGENT_VIOLATION_DUMP)
                 && reason.contains(&id_text)
-                && reason.contains("against its budget of 1 µs")),
+                && reason.contains("over its budget of 1 µs")),
         "{reasons:#?}"
     );
     let bundles: Vec<PathBuf> = std::fs::read_dir(install.data_dir.join(node::REPORTS))

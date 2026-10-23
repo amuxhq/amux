@@ -37,7 +37,7 @@ use std::time::Duration;
 
 pub(crate) use calls::{Answers, Delivered};
 use calls::{CallTable, Carried};
-use core_ring::{DumpKind, DumpLimit, Ring};
+use core_ring::{DumpLimit, Ring};
 use daemon_core::payload::{
     Answer, BlobRefusal, CallError, ChannelClass, ChannelError, ClientRequest, JobResult,
     PeerFailure, PeerReply, PeerRequest, PublicKey, Response, Status,
@@ -669,17 +669,7 @@ fn limited_dump_reason(
     reason: &daemon_core::DumpReason,
     now_ms: u64,
 ) -> Option<String> {
-    let (kind, why) = match reason {
-        daemon_core::DumpReason::Violation(violation) => (
-            DumpKind::Violation(violation.invariant.into()),
-            format!("{CORE_VIOLATION_DUMP}{violation}"),
-        ),
-        daemon_core::DumpReason::OverBudget { .. } => {
-            (DumpKind::OverBudget, format!("{CORE_DUMP}{reason}"))
-        }
-    };
-    let suppressed = limit.admit(kind, now_ms)?;
-    Some(core_ring::with_suppressed(why, suppressed))
+    limit.reason(CORE_DUMP, reason, now_ms)
 }
 
 /// Fresh randomness for the core to draw from.

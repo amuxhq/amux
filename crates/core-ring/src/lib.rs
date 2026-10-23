@@ -11,6 +11,7 @@
 //! so recording one costs one bounded write.
 
 mod limit;
+mod step;
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write as _};
@@ -20,6 +21,7 @@ use std::path::{Path, PathBuf};
 pub use limit::{DumpKind, DumpLimit, with_suppressed};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+pub use step::{DumpReason, StepBudget, Violation};
 
 /// Segments kept.
 const KEEP: usize = 2;

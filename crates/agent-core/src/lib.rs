@@ -1199,44 +1199,7 @@ fn sender_id(envelope: &wire::Envelope) -> &[u8] {
     }
 }
 
-/// How long one step may take before it is reported with a dump.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct StepBudget {
-    pub micros: u64,
-}
-
-impl StepBudget {
-    /// The agent process's: a step stands between the provider and its
-    /// journal.
-    pub const AGENT: StepBudget = StepBudget { micros: 10_000 };
-    /// A budget no step runs over, for a run that must be a function of
-    /// its inputs alone: a model's, or a simulated net's.
-    pub const UNLIMITED: StepBudget = StepBudget { micros: u64::MAX };
-}
-
-/// A cheap invariant that failed: which one, and what it saw.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Violation {
-    /// The invariant, as the sentence it checks.
-    pub invariant: &'static str,
-    /// The values that broke it.
-    pub detail: String,
-}
-
-impl fmt::Display for Violation {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.invariant, self.detail)
-    }
-}
-
-/// Why the core asked for a dump.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum DumpReason {
-    /// A cheap invariant failed at the end of a step.
-    Violation(Violation),
-    /// A step took longer than its budget.
-    OverBudget { micros: u64, budget: StepBudget },
-}
+pub use core_ring::{DumpReason, StepBudget, Violation};
 
 /// The core's state as of one step, serialized, under the layout it was
 /// written with.

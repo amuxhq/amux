@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, Weak};
 use std::time::Instant;
 
-use core_ring::{DumpKind, DumpLimit};
+use core_ring::DumpLimit;
 use daemon_core::DumpReason;
 use daemon_core::payload::ForwardRefusal;
 use relay_core::{Input, Output, Relay};
@@ -68,15 +68,7 @@ impl Dumps {
     /// The reason to report for `reason` asked for at `now_ms`, or `None`
     /// when it is held back.
     fn reason(&mut self, reason: &DumpReason, now_ms: u64) -> Option<String> {
-        let kind = match reason {
-            DumpReason::Violation(violation) => DumpKind::Violation(violation.invariant.into()),
-            DumpReason::OverBudget { .. } => DumpKind::OverBudget,
-        };
-        let suppressed = self.0.admit(kind, now_ms)?;
-        Some(core_ring::with_suppressed(
-            format!("{RELAY_CORE_DUMP}{reason}"),
-            suppressed,
-        ))
+        self.0.reason(RELAY_CORE_DUMP, reason, now_ms)
     }
 }
 

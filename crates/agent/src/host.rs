@@ -23,7 +23,7 @@ use std::sync::Arc;
 use agent_core::{
     Agent, AgentJob, ConnId, DumpReason, Input, JobId, JobResult, Output, Resumed, TimerId,
 };
-use core_ring::{DumpKind, DumpLimit, Ring};
+use core_ring::{DumpLimit, Ring};
 use interpret::Interpreter;
 use interpret::ring::Entry;
 use tokio::io::AsyncReadExt;
@@ -626,24 +626,7 @@ fn write_failed(why: String) -> Input {
 /// `None` when the limit holds it back: a provider stuck in a loop meets
 /// the same broken invariant with every event.
 fn limited_dump_reason(limit: &mut DumpLimit, reason: &DumpReason, now_ms: u64) -> Option<String> {
-    let (kind, why) = match reason {
-        DumpReason::Violation(violation) => (
-            DumpKind::Violation(violation.invariant.into()),
-            violation.to_string(),
-        ),
-        DumpReason::OverBudget { micros, budget } => (
-            DumpKind::OverBudget,
-            format!(
-                "a step took {micros} µs against its budget of {} µs",
-                budget.micros
-            ),
-        ),
-    };
-    let suppressed = limit.admit(kind, now_ms)?;
-    Some(core_ring::with_suppressed(
-        format!("{AGENT_CORE_DUMP}{why}"),
-        suppressed,
-    ))
+    limit.reason(AGENT_CORE_DUMP, reason, now_ms)
 }
 
 /// The clock, as the core counts it: milliseconds, never before the epoch.

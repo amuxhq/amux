@@ -23,6 +23,27 @@ pub enum DumpKind {
     OverBudget,
 }
 
+impl DumpLimit {
+    /// The reason a dump a core asked for at `now_ms` is written with, or
+    /// `None` when the limit holds it back: a provider stuck in a loop, or
+    /// a busy relay, meets the same broken invariant with every event.
+    /// `whose` names the core ("the daemon core: ") in front of the reason
+    /// in its own words.
+    pub fn reason(
+        &mut self,
+        whose: &str,
+        reason: &crate::DumpReason,
+        now_ms: u64,
+    ) -> Option<String> {
+        let kind = match reason {
+            crate::DumpReason::Violation(broken) => DumpKind::Violation(broken.invariant.into()),
+            crate::DumpReason::OverBudget { .. } => DumpKind::OverBudget,
+        };
+        let suppressed = self.admit(kind, now_ms)?;
+        Some(with_suppressed(format!("{whose}{reason}"), suppressed))
+    }
+}
+
 /// The dumps a driver has written, by kind, and those it held back since.
 #[derive(Debug)]
 pub struct DumpLimit {

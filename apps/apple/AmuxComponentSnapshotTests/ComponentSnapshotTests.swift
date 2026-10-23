@@ -90,20 +90,21 @@ final class ComponentSnapshotTests: XCTestCase {
             print(String(format: "AMUX_SNAPSHOT_TIMING startup=%.3fs", suiteStarted - runnerStarted))
         }
 
-        // On a CI runner the first search field the process draws holding
-        // words comes without its clear button, however long it is given,
-        // and every later one has it; one drawn and thrown away first makes
-        // the photographed ones alike everywhere.
-        if let searching = ComponentCatalog.examples.first(where: { $0.id == "fleet.no-matches" }) {
-            await showing(searching, appearances[0], reducesTransparency: true, perturbing: false) {
-                controller, _, deadline in
-                _ = await settledPhotograph(
-                    of: controller.view, traits: Self.traits(appearances[0]), deadline: deadline,
-                    name: "search-field-warm-up")
-            }
-        }
-
         for example in examples {
+            // On a CI runner the first search field the process draws holding
+            // words comes without its clear button, however long it is given,
+            // and every later one has it. One drawn and thrown away just
+            // before makes the photographed ones alike everywhere; drawn at
+            // the start of the run instead, it moved the title of every sheet
+            // drawn after it.
+            if example.id == "fleet.no-matches" {
+                await showing(example, appearances[0], reducesTransparency: true, perturbing: false) {
+                    controller, _, deadline in
+                    _ = await settledPhotograph(
+                        of: controller.view, traits: Self.traits(appearances[0]), deadline: deadline,
+                        name: "search-field-warm-up")
+                }
+            }
             for appearance in appearances {
                 let started = ProcessInfo.processInfo.systemUptime
                 if let review {

@@ -453,8 +453,7 @@ impl Reader {
                 // journal was cut by hand, which the listing settles.
                 held.next = if torn {
                     segments(&self.dir)?.into_iter().find(|&s| s > start)
-                } else if extent > start && fs::metadata(segment_path(&self.dir, extent)).is_ok()
-                {
+                } else if extent > start && fs::metadata(segment_path(&self.dir, extent)).is_ok() {
                     Some(extent)
                 } else {
                     None

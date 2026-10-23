@@ -324,7 +324,9 @@ impl Rows<'_> {
     pub(crate) fn incarnation(&self, agent: &AgentKey) -> Result<Option<u32>, StoreError> {
         Ok(self
             .conn
-            .prepare_cached("SELECT incarnation FROM agents WHERE origin_host = ?1 AND agent_id = ?2")?
+            .prepare_cached(
+                "SELECT incarnation FROM agents WHERE origin_host = ?1 AND agent_id = ?2",
+            )?
             .query_row(params![agent.host, agent.agent], |row| row.get(0))
             .optional()?)
     }
@@ -587,7 +589,9 @@ impl Rows<'_> {
     pub(crate) fn max_position(&self, agent: &AgentKey) -> Result<Option<u64>, StoreError> {
         let max: Option<i64> = self
             .conn
-            .prepare_cached("SELECT MAX(position) FROM items WHERE origin_host = ?1 AND agent_id = ?2")?
+            .prepare_cached(
+                "SELECT MAX(position) FROM items WHERE origin_host = ?1 AND agent_id = ?2",
+            )?
             .query_row(params![agent.host, agent.agent], |row| row.get(0))?;
         Ok(max.map(|position| position as u64))
     }

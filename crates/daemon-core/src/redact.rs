@@ -593,8 +593,8 @@ mod tests {
 
     #[test]
     fn a_kept_blob_and_a_patch_are_redacted_as_text_and_binary_content_is_kept() {
-        use crate::payload::{JobResult, Patch};
         use crate::JobId;
+        use crate::payload::{JobResult, Patch};
 
         let redactor = Swap::default();
         let compared = |bytes: &[u8]| {

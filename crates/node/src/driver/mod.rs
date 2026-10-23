@@ -57,7 +57,7 @@ use tokio::task::AbortHandle;
 use wire::{FetchRequest, GetRequest};
 
 use crate::connection::ConnectionManager;
-use crate::install::{CORE_CHECKPOINT, CORE_RING, STORE, write_durably};
+use crate::install::{CORE_RING, STORE, write_durably};
 use crate::runtime::ProfileRuntime;
 
 /// How the reason of a dump the core asked for begins.
@@ -1008,15 +1008,20 @@ impl CoreThread {
             Input::ClientCall { call, .. } | Input::AnswerLagged { call } => Some(*call),
             _ => None,
         };
-        // A checkpoint's WAL job done starts its write job; either job's
-        // end with no job after it ends the checkpoint.
+        // A checkpoint's WAL job done has the core hand over its state,
+        // and the Checkpointed fed back for it ends the checkpoint; the
+        // job failing ends it at once.
         let checkpointed = match &input {
-            Input::JobDone { job, result } if Some(*job) == self.checkpointing => {
+            Input::JobDone { job, result } if Some(*job) == self.checkpointing => match result {
+                JobResult::Done => None,
+                other => {
+                    self.checkpointing = None;
+                    Some(Err(format!("{other:?}")))
+                }
+            },
+            Input::Checkpointed => {
                 self.checkpointing = None;
-                Some(match result {
-                    JobResult::Done => Ok(()),
-                    other => Err(format!("{other:?}")),
-                })
+                Some(Ok(()))
             }
             _ => None,
         };
@@ -1225,12 +1230,9 @@ impl CoreThread {
                     armed.task.abort();
                 }
             }
-            Output::Job {
-                id,
-                op: Job::Checkpoint { state },
-            } => {
+            Output::Checkpoint { state } => {
                 // The inputs after this step are the ones this checkpoint
-                // does not hold.
+                // does not hold; the first of them tells the core so.
                 if let Some(ring) = self.ring.as_mut()
                     && let Err(error) = ring.rotate(&state)
                 {
@@ -1238,13 +1240,7 @@ impl CoreThread {
                 }
                 // Its WAL job moved every commit into the main file.
                 self.store_at_checkpoint = true;
-                self.checkpointing = Some(id);
-                tokio::spawn(run_job(
-                    Arc::downgrade(runtime),
-                    id,
-                    Job::Checkpoint { state },
-                    self.inputs.clone(),
-                ));
+                self.again.push_back(Input::Checkpointed);
             }
             Output::Job {
                 id,
@@ -1529,12 +1525,6 @@ async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: Wea
             })
             .await
         }
-        Job::Checkpoint { state } => {
-            let Some(dir) = runtime.upgrade().map(|runtime| runtime.dir().to_path_buf()) else {
-                return;
-            };
-            blocking(move || checkpoint(&dir, &state)).await
-        }
         Job::RefreshToken { link } => {
             let Some(edge) = runtime.upgrade().and_then(|runtime| runtime.edge()) else {
                 return;
@@ -1710,14 +1700,6 @@ async fn call_peer(
 /// it promises durable outside any profile's core.
 pub(crate) async fn fsync(path: PathBuf, bytes: Vec<u8>) -> JobResult {
     blocking(move || write_durably(&path, &bytes)).await
-}
-
-/// The checkpoint job: the core's state as of the step that heard its WAL
-/// job was done, beside the store's main file, which that job brought up to
-/// it. A crash before the write leaves the previous checkpoint, which the
-/// main file is past.
-fn checkpoint(dir: &Path, state: &[u8]) -> std::io::Result<()> {
-    write_durably(&dir.join(CORE_CHECKPOINT), state)
 }
 
 async fn blocking(work: impl FnOnce() -> std::io::Result<()> + Send + 'static) -> JobResult {

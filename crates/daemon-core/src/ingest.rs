@@ -615,15 +615,10 @@ mod tests {
         assert_eq!(dumps_in(&out), Vec::<&crate::DumpReason>::new());
     }
 
-    /// The checkpoint's write job a step asked for.
-    fn checkpoint_job(out: &[Output]) -> Option<crate::JobId> {
-        out.iter().find_map(|output| match output {
-            Output::Job {
-                id,
-                op: crate::Job::Checkpoint { .. },
-            } => Some(*id),
-            _ => None,
-        })
+    /// Whether a step handed the driver the serialized core.
+    fn serialized(out: &[Output]) -> bool {
+        out.iter()
+            .any(|output| matches!(output, Output::Checkpoint { .. }))
     }
 
     /// The checkpoint's WAL job a step asked for.
@@ -651,7 +646,7 @@ mod tests {
     }
 
     #[test]
-    fn an_ingest_waits_out_the_wal_job_and_commits_go_ahead_while_the_state_is_written() {
+    fn an_ingest_waits_out_the_wal_job_and_lands_at_the_drivers_word() {
         let mut rig = rig();
         let call = CallId(1);
         subscribed(&mut rig.daemon, call);
@@ -692,17 +687,22 @@ mod tests {
                 result: crate::payload::JobResult::Done,
             },
         );
-        let job = checkpoint_job(&copied).expect("the WAL job's end serializes the core");
+        assert!(serialized(&copied), "the WAL job's end serializes the core");
         assert_eq!(answered(&copied, call), Vec::<String>::new());
+        assert!(
+            rig.daemon.checkpoints().taking(),
+            "until the driver says its ring starts at that state"
+        );
 
-        // It lands at the next step, and commits go ahead while the state
-        // is written, making the next checkpoint due.
-        let landed = step(&mut rig.daemon, Input::Tick { now_ms: 1 });
+        // It lands at the driver's word, the next step, and the commit
+        // makes the next checkpoint due; commits go ahead from there.
+        let landed = step(&mut rig.daemon, Input::Checkpointed);
         assert_eq!(answered(&landed, call), vec!["k001"]);
+        assert!(!rig.daemon.checkpoints().taking());
         assert!(
             landed.contains(&Output::ArmTimer {
                 id: TimerId::Checkpoint,
-                at_ms: 1 + interval,
+                at_ms: interval,
             }),
             "the commit makes the next checkpoint due: {landed:?}"
         );
@@ -711,29 +711,6 @@ mod tests {
             .expect("the journal takes a step");
         let during = step(&mut rig.daemon, Input::Nudge { agent: AGENT });
         assert_eq!(answered(&during, call), vec!["k002"]);
-        let again = step(
-            &mut rig.daemon,
-            Input::Timer {
-                id: TimerId::Checkpoint,
-            },
-        );
-        assert_eq!(wal_job(&again), None, "one checkpoint at a time");
-        assert!(
-            again.contains(&Output::ArmTimer {
-                id: TimerId::Checkpoint,
-                at_ms: 1 + interval,
-            }),
-            "the next waits an interval on: {again:?}"
-        );
-
-        step(
-            &mut rig.daemon,
-            Input::JobDone {
-                job,
-                result: crate::payload::JobResult::Done,
-            },
-        );
-        assert!(!rig.daemon.checkpoints().taking());
         assert_eq!(dumps_in(&during), Vec::<&crate::DumpReason>::new());
     }
 }

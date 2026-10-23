@@ -873,24 +873,33 @@ fn the_profile_registry_through_the_c_abi() {
 )]
 fn a_suspending_input_checkpoints_every_profile_before_it_returns() {
     let phone = Phone::start();
-    let checkpoint = phone
+    let ring = phone
         .dir
         .path()
         .join("data")
         .join(node::PROFILES)
         .join(phone.id.to_str().unwrap())
-        .join(node::CORE_CHECKPOINT);
-    assert!(
-        !checkpoint.exists(),
-        "a fresh profile has no checkpoint yet"
-    );
+        .join(node::CORE_RING);
+    // Each ring segment is headed by the checkpoint it starts at; the
+    // start wrote the first.
+    let checkpoints = |ring: &std::path::Path| {
+        std::fs::read_dir(ring)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .filter(|entry| entry.file_name().to_string_lossy().ends_with(".checkpoint"))
+                    .count()
+            })
+            .unwrap_or(0)
+    };
+    let before = checkpoints(&ring);
     let mut error = std::ptr::null_mut();
     // SAFETY: the runtime is live; the strings live for the call.
     assert!(unsafe { amux_runtime_feed(phone.runtime, c"\"Suspending\"".as_ptr(), &mut error) });
     assert!(
-        std::fs::metadata(&checkpoint).is_ok_and(|file| file.len() > 0),
-        "no checkpoint at {}",
-        checkpoint.display()
+        checkpoints(&ring) > before,
+        "no new segment headed by a checkpoint in {}",
+        ring.display()
     );
     // SAFETY: as above.
     assert!(unsafe { amux_runtime_feed(phone.runtime, c"\"Foreground\"".as_ptr(), &mut error) });

@@ -208,18 +208,6 @@ struct Record {
     counter: u64,
 }
 
-/// The checkpoint's job the driver runs for the core: first the passive
-/// WAL checkpoint, then the write of the core's state.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum CheckpointJob {
-    Copying(JobId),
-    Writing {
-        id: JobId,
-        /// The core's state is on the drive beside the store's main file.
-        written: bool,
-    },
-}
-
 /// A client's Subscribe stream on the agent, as the client reads it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Subscriber {
@@ -249,7 +237,11 @@ struct Run {
     /// The machine restarted under a run that had not shut down cleanly
     /// since the run before this one started.
     owed: bool,
-    job: Option<CheckpointJob>,
+    /// The checkpoint's WAL job the driver runs for the core.
+    job: Option<JobId>,
+    /// The core handed the driver its checkpoint; the driver's word that
+    /// the ring started there is owed.
+    landing: bool,
     /// Inputs the core holds until its WAL checkpoint ends.
     held: usize,
     /// The timer for the agent's next ingest batch is armed.
@@ -425,14 +417,9 @@ pub enum Action {
     /// The WAL job could not move the whole WAL: a reader held it, or the
     /// drive refused.
     WalBusy,
-    /// The driver's checkpoint job puts the core's state on the drive,
-    /// beside the store's main file the WAL job synced.
-    CheckpointWritten,
-    /// The checkpoint job reports it is done, and the core lets go of the
-    /// journal below it.
+    /// The driver started its ring at the checkpoint and says so; the core
+    /// lets go of the journal below it.
     Reclaim,
-    /// The checkpoint job reports it failed before writing anything.
-    CheckpointFails,
     /// A client opens a Subscribe stream on the agent.
     SubscriberOpen,
     /// The subscriber's queue overflows: the driver reports it lagging.
@@ -527,17 +514,13 @@ impl Machine for SingleDaemon {
             out.push(Action::IngestAgain);
         }
         match &run.job {
+            None if run.landing => out.push(Action::Reclaim),
             None if s.used.checkpoints < self.checkpoints => out.push(Action::Checkpoint),
             None => {}
-            Some(CheckpointJob::Copying(_)) => {
+            Some(_) => {
                 out.push(Action::WalDone);
                 out.push(Action::WalBusy);
             }
-            Some(CheckpointJob::Writing { written: false, .. }) => {
-                out.push(Action::CheckpointWritten);
-                out.push(Action::CheckpointFails);
-            }
-            Some(CheckpointJob::Writing { written: true, .. }) => out.push(Action::Reclaim),
         }
         match &run.subscriber {
             Some(subscriber) if subscriber.open() => {
@@ -608,17 +591,16 @@ impl Machine for SingleDaemon {
                     false,
                 );
             }
-            Action::CheckpointWritten => {
+            Action::Reclaim => {
                 let run = next
                     .run
                     .as_mut()
-                    .expect("a job runs only while the daemon does");
-                let Some(CheckpointJob::Writing { written, .. }) = run.job.as_mut() else {
-                    unreachable!("a checkpoint to write");
-                };
-                *written = true;
+                    .expect("the driver answers only while the daemon runs");
+                assert!(run.landing, "a checkpoint to answer");
+                run.landing = false;
+                self.step(&mut next, Input::Checkpointed, false);
             }
-            Action::WalDone | Action::WalBusy | Action::Reclaim | Action::CheckpointFails => {
+            Action::WalDone | Action::WalBusy => {
                 if *action == Action::WalDone {
                     // The core holds every write while the job runs, so the
                     // store the process has is what was committed before it.
@@ -629,13 +611,10 @@ impl Machine for SingleDaemon {
                     .run
                     .as_mut()
                     .expect("a job runs only while the daemon does");
-                let job = match run.job.take().expect("a job to end") {
-                    CheckpointJob::Copying(id) | CheckpointJob::Writing { id, .. } => id,
-                };
+                let job = run.job.take().expect("a job to end");
                 let result = match action {
-                    Action::WalDone | Action::Reclaim => JobResult::Done,
-                    Action::WalBusy => JobResult::Failed("the WAL was busy".into()),
-                    _ => JobResult::Failed(REFUSAL.into()),
+                    Action::WalDone => JobResult::Done,
+                    _ => JobResult::Failed("the WAL was busy".into()),
                 };
                 self.step(&mut next, Input::JobDone { job, result }, false);
             }
@@ -979,19 +958,13 @@ impl SingleDaemon {
                 Output::Job {
                     id,
                     op: Job::CheckpointWal,
-                } => run.job = Some(CheckpointJob::Copying(*id)),
+                } => run.job = Some(*id),
                 Output::Job {
                     id,
                     op: Job::Fsync { .. },
                 } => run.trust_job = Some(*id),
-                Output::Job {
-                    id,
-                    op: Job::Checkpoint { state },
-                } => {
-                    run.job = Some(CheckpointJob::Writing {
-                        id: *id,
-                        written: false,
-                    });
+                Output::Checkpoint { state } => {
+                    run.landing = true;
                     // The driver's ring starts again at this checkpoint.
                     next.ring = Ring {
                         base: Some((state.clone(), next.store.clone(), next.journal.clone())),
@@ -1082,6 +1055,7 @@ fn start(next: &mut State) {
         previous: next.last_generation,
         owed: next.owed,
         job: None,
+        landing: false,
         held: 0,
         ingest_armed: false,
         subscriber: None,

@@ -2020,6 +2020,11 @@ impl Transition<'_> {
                 Output::Job { id, op } => {
                     self.push(Lane::Job(h, id), Delivery::Job(h, id, Dbg(op)));
                 }
+                // The driver's ring starts at the state; its word follows
+                // at once, as the driver feeds it to its own core.
+                Output::Checkpoint { .. } => {
+                    self.push(Lane::Local(h), host(h, Input::Checkpointed));
+                }
                 Output::Dump { reason } => {
                     let name = self.name(h).to_owned();
                     self.fail(Failure::Dump(format!(
@@ -2128,11 +2133,10 @@ impl Transition<'_> {
             Job::Compare { .. } => JobResult::CompareFailed(GitRefusal::NotARepository),
             Job::MakeWorktree { .. } => JobResult::Failed("no repository here".to_owned()),
             // Nothing reads back what these write: the trust file, the
-            // store's main file, the core's checkpoint, blobs and drafts.
+            // store's main file, blobs and drafts.
             Job::Fsync { .. }
             | Job::WriteBlob { .. }
             | Job::CheckpointWal
-            | Job::Checkpoint { .. }
             | Job::TeardownHost { .. }
             | Job::RefreshToken { .. }
             | Job::SendPush(_)
@@ -2562,14 +2566,8 @@ fn rehome(output: Output, scratch: &Path, home: &Path) -> Output {
             spec,
         },
         // The core's checkpoint names the directory it was taken in, and
-        // nothing here reads the file back.
-        Output::Job {
-            id,
-            op: Job::Checkpoint { .. },
-        } => Output::Job {
-            id,
-            op: Job::Checkpoint { state: Vec::new() },
-        },
+        // nothing here reads the state back.
+        Output::Checkpoint { .. } => Output::Checkpoint { state: Vec::new() },
         other => other,
     }
 }
@@ -2758,7 +2756,6 @@ fn job_kind(job: &Job) -> &'static str {
         Job::Fsync { .. } => "Fsync",
         Job::TeardownHost { .. } => "TeardownHost",
         Job::CheckpointWal => "CheckpointWal",
-        Job::Checkpoint { .. } => "Checkpoint",
         Job::WriteBlob { .. } => "WriteBlob",
         Job::RefreshToken { .. } => "RefreshToken",
         Job::SendPush(_) => "SendPush",

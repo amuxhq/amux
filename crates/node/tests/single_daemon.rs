@@ -1704,25 +1704,16 @@ async fn every_input_is_recorded_and_the_ring_starts_again_at_each_checkpoint() 
 
     runtime.checkpoint().await.unwrap();
     let after = saved();
-    assert_eq!(
-        after.checkpoint,
-        std::fs::read(install.profile_dir().join(node::CORE_CHECKPOINT)).unwrap(),
-        "the ring starts again at the checkpoint on the drive"
-    );
+    daemon_core::Checkpoint::from_bytes(&after.checkpoint)
+        .expect("the ring starts again at a checkpoint that reads");
     assert_eq!(
         nudges(&after.inputs),
         0,
         "what the checkpoint holds is not replayed"
     );
     assert!(
-        matches!(
-            after.inputs.last(),
-            Some(daemon_core::Input::JobDone {
-                result: daemon_core::payload::JobResult::Done,
-                ..
-            })
-        ),
-        "the checkpoint's own outcome is the first input it does not hold: {:?}",
+        matches!(after.inputs.last(), Some(daemon_core::Input::Checkpointed)),
+        "the driver's word that the ring started here is the first input the checkpoint does not hold: {:?}",
         after.inputs
     );
 

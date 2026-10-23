@@ -234,7 +234,7 @@ once per incarnation.
 
 The profile's core checkpoints an interval (`Launch.checkpoint_interval_ms`,
 a minute) after any commit to the store, and when its input ring fills
-first. A checkpoint is two jobs. The step that takes it reads the cursor of
+first. A checkpoint is one job. The step that takes it reads the cursor of
 every agent committed since the last checkpoint and asks for a WAL job: a
 passive WAL checkpoint on a connection to the store of the job's own
 (`Sqlite::checkpoint_wal`), which SQLite syncs, run off the core's thread
@@ -243,9 +243,10 @@ every input that may write (ingest, the registry, deliveries, trust,
 drafts, blobs, replica absorbs) waits in the core in the order it came;
 reads, subscriptions, presence, routing and peers' reads step on. The step
 that hears the WAL job is done serializes the core, with what waits still
-waiting, and asks for a checkpoint job that writes the state durably to
-`core.checkpoint` beside the store; the next step lets what waited through.
-A WAL job that cannot move the whole WAL (a reader held it) lets go of what
+waiting, and hands the state to the driver, which starts a ring segment at
+it and feeds one input back; that step lets what waited through, so the
+new segment records it, and marks the checkpoint's cursors durable. A WAL
+job that cannot move the whole WAL (a reader held it) lets go of what
 waited at once, and the next checkpoint is tried an interval on.
 
 Every write to the store is the core's, and SQLite's own automatic

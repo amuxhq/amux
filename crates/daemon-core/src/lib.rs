@@ -169,7 +169,8 @@ impl Daemon {
         }
         // A failed WAL checkpoint lets go of what waited at once; one that
         // is done serialized the core with it waiting, so it waits for the
-        // next step.
+        // next step, the driver's Checkpointed, which the ring segment
+        // started at that state records.
         if !self.touched.serialized {
             self.release_held(out);
         }
@@ -245,6 +246,7 @@ impl Daemon {
                 self.deliveries_due();
                 self.drain_notifications(out);
             }
+            Input::Checkpointed => self.checkpointed(),
             Input::Verdict {
                 agent,
                 input_id,

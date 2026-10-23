@@ -765,19 +765,28 @@ async fn a_phone_relaunched_after_a_suspend_shows_the_fleet_and_chat_it_left() {
     .await;
     let before = shown(&first, &agent).await;
 
-    // The app is suspended, then the system ends it: the checkpoint is on
-    // the drive and nothing shuts the runtime down.
+    // The app is suspended, then the system ends it: the store's main
+    // file is at a checkpoint, the ring starts at it, and nothing shuts
+    // the runtime down.
     embedded.checkpoint().await.unwrap();
-    let checkpoint = dir
+    let ring = dir
         .path()
         .join("data")
         .join(node::PROFILES)
         .join(phone.to_string())
-        .join(node::CORE_CHECKPOINT);
+        .join(node::CORE_RING);
+    let checkpoints = std::fs::read_dir(&ring)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|entry| entry.file_name().to_string_lossy().ends_with(".checkpoint"))
+                .count()
+        })
+        .unwrap_or(0);
     assert!(
-        checkpoint.exists(),
-        "no checkpoint at {}",
-        checkpoint.display()
+        checkpoints > 0,
+        "no checkpoint heads a segment in {}",
+        ring.display()
     );
     drop(first);
     drop(embedded);

@@ -216,6 +216,10 @@ pub enum Input {
     },
     /// The start's sweep has reported every agent it found.
     Swept,
+    /// The driver started a ring segment at the state the core handed it
+    /// with [`Output::Checkpoint`]: the cursors that checkpoint took are
+    /// on the drive, and what waited for the WAL move lands from this step.
+    Checkpointed,
     /// Keep the store under its budgets now: the retention sweeps.
     Retain(crate::retention::Retain),
     /// A call by a client of this profile: its socket, an agent's tools
@@ -298,6 +302,7 @@ impl Input {
             Input::Exiting { .. } => "Exiting",
             Input::Verdict { .. } => "Verdict",
             Input::Swept => "Swept",
+            Input::Checkpointed => "Checkpointed",
             Input::Retain(_) => "Retain",
             Input::ClientCall { .. } => "ClientCall",
             Input::CallCancelled { .. } => "CallCancelled",
@@ -415,6 +420,14 @@ pub enum Output {
     },
     CancelTimer {
         id: TimerId,
+    },
+    /// The core serialized at the end of this step, paired with the store's
+    /// main file, which holds every commit before the WAL move this
+    /// checkpoint began and nothing since. The driver starts a ring
+    /// segment here and then feeds [`Input::Checkpointed`], so what waited
+    /// for the move lands in a step the new segment records.
+    Checkpoint {
+        state: Vec<u8>,
     },
     /// Open a channel to `peer` over `link`, handshaking against `pin`,
     /// and report it as [`Input::ChannelOpened`] or
@@ -709,10 +722,6 @@ pub enum Job {
     /// of the job's own, so the store's main file holds every commit; one
     /// that cannot move the whole WAL fails.
     CheckpointWal,
-    /// Write the serialized core beside the store's passive WAL checkpoint.
-    Checkpoint {
-        state: Vec<u8>,
-    },
     /// Write `bytes` into `dir` under their hash, `hash`, unless a file of
     /// that name is there; answered as [`JobResult::Refused`] when the
     /// drive is full.

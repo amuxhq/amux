@@ -80,8 +80,8 @@ pub use generation::{Generation, boot_id};
 pub use grpc::{ClientApi, status};
 pub use identity::{quic_endpoint, quic_endpoint_config};
 pub use install::{
-    AGENTS, CORE_CHECKPOINT, CORE_RING, GENERATION, HOST_ID, INSTALLATION_LOCK, InstallationLock,
-    LockError, PROFILES, REGISTRY, REPLICAS, REPORTS, STORE, write_durably,
+    AGENTS, CORE_RING, GENERATION, HOST_ID, INSTALLATION_LOCK, InstallationLock, LockError,
+    PROFILES, REGISTRY, REPLICAS, REPORTS, STORE, write_durably,
 };
 pub use link::{
     Cursor, EarlyAnswer, EarlyCall, EarlyReply, PeerChannel, PeerClient, ResumedLink,

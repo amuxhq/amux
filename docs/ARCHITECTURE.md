@@ -273,8 +273,8 @@ a live stream.
 After a restart both are rebuilt: agent handles from the directories on
 disk and the store's rows, call queues from clients reconnecting. The core
 starts from the store, the drafts file, the trust store, the settings and
-the generation; its checkpoint (`core.checkpoint` beside the store) is what
-a dump and a replay start from.
+the generation; its newest checkpoint, at the head of its input ring beside
+the store, is what a dump and a replay start from.
 
 ## The agent directory is the contract
 

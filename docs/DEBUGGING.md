@@ -85,9 +85,9 @@ For terminal Claude and Codex the provider's own transcript is also a complete r
 adds what that transcript lacks (hooks, inputs, ticks). For headless Claude the ring is the only record.
 
 **The daemon** keeps each agent's journal and its rows in the store. Each profile's core takes a checkpoint a
-minute after any step that changed a row: its state, written to `core.checkpoint` beside the store once the store's
-WAL is in its main file. Its driver records every input the core steps in `core-ring/` beside them, and starts the
-ring afresh at each checkpoint, so the checkpoint and the ring together are the core's state now. The daemon keeps
+minute after any step that changed a row: its state, serialized once the store's WAL is in its main file. Its
+driver records every input the core steps in `core-ring/` beside the store, and starts the ring afresh at each
+checkpoint, which heads the segment, so the checkpoint and the ring together are the core's state now. The daemon keeps
 every agent's journal from the newest checkpoint's cursor on, and at least the last two segments, so a dump always
 has the records behind the newest rows and every frame the recorded inputs read.
 

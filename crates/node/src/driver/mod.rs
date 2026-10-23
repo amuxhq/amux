@@ -198,11 +198,12 @@ pub(crate) struct Driver {
     connections: Arc<Mutex<Weak<ConnectionManager>>>,
     /// The calls the core made of peers that are still out.
     outgoing: Outgoing,
-    /// The core thread, once started: the store closes when it ends.
-    thread: std::sync::OnceLock<std::thread::JoinHandle<()>>,
-    /// Where the caller steps the core instead, when it has no thread.
-    cores: Option<Cores>,
-    /// The core as held for its caller to step, once started.
+    /// Where the core is held for stepping: the caller's cores, or this
+    /// profile's own with a thread that steps them.
+    cores: Cores,
+    /// The thread stepping `cores` when the caller has none of its own.
+    stepper: Option<stepped::Stepper>,
+    /// The core as held for stepping, once started.
     slot: std::sync::OnceLock<Arc<stepped::Slot>>,
     /// The trust store as the core last published it.
     trust: crate::trust::SharedTrustStore,
@@ -230,7 +231,14 @@ impl Driver {
         cores: Option<Cores>,
     ) -> (Self, CoreThread) {
         let (inputs, fed) = mpsc::channel(INPUT_ROOM);
-        let inputs = Feed::new(inputs, cores.as_ref().map(Cores::bell));
+        let (cores, stepper) = match cores {
+            Some(cores) => (cores, None),
+            None => {
+                let (cores, stepper) = stepped::Stepper::start();
+                (cores, Some(stepper))
+            }
+        };
+        let inputs = Feed::new(inputs, Some(cores.bell()));
         let calls = Arc::new(CallTable::default());
         let reports = Arc::new(Mutex::new(VecDeque::new()));
         let connections = Arc::new(Mutex::new(Weak::new()));
@@ -304,8 +312,8 @@ impl Driver {
             calls,
             connections,
             outgoing,
-            thread: std::sync::OnceLock::new(),
             cores,
+            stepper,
             slot: std::sync::OnceLock::new(),
             trust,
             window,
@@ -564,12 +572,10 @@ impl Drop for Driver {
         let _ = self.inputs.try_send(Fed::Stop);
         // The profile is gone only once its store is closed: a store closed
         // later would checkpoint its WAL into a file someone may already
-        // be replacing. The thread itself, letting go of the profile in a
-        // read, ends on its own.
-        if let Some(thread) = self.thread.take()
-            && thread.thread().id() != std::thread::current().id()
-        {
-            let _ = thread.join();
+        // be replacing. The stepper, letting go of the profile in a read,
+        // ends on its own.
+        if let Some(stepper) = self.stepper.take() {
+            stepper.stop();
         }
         if let Some(slot) = self.slot.get() {
             slot.end();
@@ -700,42 +706,13 @@ fn opens_pairing(input: &Input) -> bool {
 }
 
 impl CoreThread {
-    /// Starts the thread for `driver`, on the runtime it is called from,
-    /// or holds the core for its caller to step when the driver has no
-    /// thread for it.
+    /// Holds the core in `driver`'s cores, on the runtime it is called
+    /// from, for whoever steps them.
     pub(crate) fn start(self, driver: &Driver) {
-        if let Some(cores) = &driver.cores {
-            let _ = driver.slot.set(cores.hold(self));
-            return;
-        }
-        let handle = Handle::current();
-        let thread = std::thread::Builder::new()
-            .name("amux-core".to_owned())
-            .spawn(move || {
-                let _entered = handle.enter();
-                self.run();
-            })
-            .expect("the core thread starts");
-        let _ = driver.thread.set(thread);
+        let _ = driver.slot.set(driver.cores.hold(self));
     }
 
-    fn run(mut self) {
-        loop {
-            let fed = match self.again.pop_front() {
-                Some(input) => Fed::Input(input),
-                None => match self.fed.blocking_recv() {
-                    Some(fed) => fed,
-                    None => return,
-                },
-            };
-            if !self.turn(fed) {
-                return;
-            }
-        }
-    }
-
-    /// Steps at most `most` of the inputs waiting, on the calling thread,
-    /// for a caller that steps the core instead of a thread of its own.
+    /// Steps at most `most` of the inputs waiting, on the calling thread.
     fn step_waiting(&mut self, most: usize) -> stepped::Turn {
         let mut turn = stepped::Turn {
             stepped: 0,

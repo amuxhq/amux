@@ -350,7 +350,9 @@ pub struct Batch {
     pub more: bool,
     /// The global offset just past the last byte the read found, whole
     /// frame or not: the journal as this read saw it ends here, so a
-    /// journal cut at this offset reads the same again.
+    /// journal cut at this offset reads the same again. Below the cursor
+    /// when the newest segment is shorter than the cursor: the journal lost
+    /// its tail after the consumer stored that cursor.
     pub seen: u64,
 }
 
@@ -414,10 +416,19 @@ impl Reader {
                 Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
                 Err(error) => return Err(error),
             };
+            // The segment's length, not the bytes read: a cursor past the
+            // segment's end reads nothing, and the consumer needs to know
+            // the journal ends below it without decoding the segment.
+            let len = file.metadata()?.len();
             file.seek(SeekFrom::Start(self.cursor - start))?;
             let mut bytes = Vec::new();
             file.read_to_end(&mut bytes)?;
-            batch.seen = batch.seen.max(self.cursor + bytes.len() as u64);
+            let extent = if bytes.is_empty() {
+                start + len
+            } else {
+                self.cursor + bytes.len() as u64
+            };
+            batch.seen = batch.seen.max(extent);
             let mut at = 0;
             while let Frame::Whole(step, len) = decode_frame(&bytes[at..]) {
                 if batch.frames.len() == limit {

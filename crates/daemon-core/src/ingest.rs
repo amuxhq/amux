@@ -131,13 +131,16 @@ impl Daemon {
         let mut reader = journal::Reader::new(&dir, cursor);
         let mut batch = reader.read_up_to(INGEST_BATCH)?;
         *seen = batch.seen;
-        if batch.frames.is_empty() {
-            // Nothing past the cursor may mean the cursor is past the
-            // journal: the store reached the drive after committing frames
-            // the unsynced journal then lost to a power cut. The agent
-            // re-derives from the last whole frame, so that is where the
-            // cursor goes; revisions keep counting up, so what it writes
-            // again is new to every subscriber.
+        if batch.frames.is_empty() && (batch.seen < cursor || batch.torn.is_some()) {
+            // The journal ending below the cursor, or torn bytes at it, may
+            // mean the cursor is past the journal's last whole frame: the
+            // store reached the drive after committing frames the unsynced
+            // journal then lost to a power cut, which cuts the file short or
+            // leaves it zero-filled. The agent re-derives from the last
+            // whole frame, so that is where the cursor goes; revisions keep
+            // counting up, so what it writes again is new to every
+            // subscriber. Finding that frame decodes the newest segment, so
+            // it is done only on these signs and not on every empty read.
             let end = journal::end(&dir)?;
             if end < cursor {
                 tracing::warn!(

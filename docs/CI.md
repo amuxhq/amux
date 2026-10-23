@@ -117,7 +117,9 @@ tests-check` fails when a protocol-models test target is missing from the
 job's matrix. Linux minutes cost a public repository nothing, and each job
 stays far inside the run's wall time, which the iOS gate sets.
 
-A model's budget is sized to that runner. CI run
+A model's bounds are sized to that runner; its test asserts the state count
+those bounds explore, not the time (a run that hangs is the job guard's).
+CI run
 [39185561814](https://github.com/jordanwebster/amux/actions/runs/39185561814)
 measured the models there at their CI bounds: the runner took 2.1 to 4.2 times
 the enrolled Mac's four-thread time, and replication, the model heaviest on

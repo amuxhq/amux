@@ -363,10 +363,14 @@ model is the testnet's simulated mode. The properties are in
 ## Cost, bounds and budget
 
 A model explores real stores, so a state costs a store transaction or two
-rather than a few instructions, and its bounds are sized to a time budget.
-Every model's test prints its measured cost as `states`, `seconds` and
-`states_per_second`, and fails when the exhaustive run outlasts its budget
-under `just test`.
+rather than a few instructions, and its bounds are sized so a run fits the
+CI runner's time. Every model's test prints its measured cost as `states`,
+`seconds` and `states_per_second`. The tests that assert a budget assert
+it on the state count, which the bounds decide and the machine does not:
+the count at the CI bounds with two percent over, since it moves by a few
+dozen states with the threads. A run past its count says the bounds have
+outgrown their place; a run that hangs is the test harness's bound to
+catch, not a verdict the model gives.
 
 | Model | CI bounds | States | 12 threads | 4 threads | Four-core runner | Budget | Nightly bounds | Nightly, 12 threads |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -438,13 +442,12 @@ up and the third down were cut. The nightly job's runner is projected from a
 twelve-thread Mac time by the slowest ratio of four threads to twelve in the
 table (2.4) and the runner's 4.7 on four: presence's 140 s comes to about
 1,600 s, inside the nightly recipe's 4,800 s.
-Each budget is sized to the slowest of a model's figures at its current
-bounds.
+The time budgets in the table size the bounds, not the tests.
 
-Each model runs in CI as a job of its own on that runner, and its budget is
-sized to it: **a model's budget is at least twice its measured time on the
-four-core runner at its CI bounds, rounded up to the next full minute, and no
-budget is above 600 s.** A model with no runner figure yet is sized from its
+Each model runs in CI as a job of its own on that runner, and its bounds are
+sized to it: **a model's time budget is at least twice its measured time on
+the four-core runner at its CI bounds, rounded up to the next full minute,
+and no budget is above 600 s.** A model with no runner figure yet is sized from its
 four-thread Mac time times 4.7, the slowest runner-to-Mac ratio measured (the
 runner took 2.1 to 4.7 times the Mac's four-thread time; presence, at 339.9 s
 against 73 s on four of the Mac's threads at the same bounds, was the

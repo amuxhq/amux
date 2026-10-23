@@ -61,13 +61,14 @@ property in each: an always must hold everywhere, a sometimes must be reached, a
 path that ends. A failure prints the shortest path to the state that broke it.
 
 ```sh
-just test-crate models                     # every machine at its CI bounds, within its budget
+just test-crate models                     # every machine at its CI bounds, within its state count
 just test-crate models -- --test family    # one machine
 just models-nightly [machine..]            # the larger nightly bounds, one machine after another
 cargo run -p models --bin properties       # every property's sentence, by machine
 ```
 
-Each machine's CI bounds are sized to finish within a stated budget on a four-core runner, and its nightly bounds
+Each machine's CI bounds are sized to finish within a stated time on a four-core runner, its test asserts the
+state count those bounds explore rather than the time, and its nightly bounds
 explore more keys, faults and steps. The Model boundary owns rules; the other boundaries own what the cores do not
 decide: a driver's sockets and deadlines, a real process, a provider's bytes, what a screen draws. A test that
 restates a rule a property holds is a second copy of the rule, so it goes.

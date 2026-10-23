@@ -94,7 +94,10 @@ app's life as a `Lifecycle`: `"Foreground"` says the app came to the front,
 counted at most once an hour; `"Background"` sends what is waiting, for a
 few seconds at most, before it returns; `"Suspending"` does too, then
 checkpoints every profile's core at a passive WAL checkpoint of its store and
-returns once each checkpoint is on the drive. `amux_runtime_record(rt, profile, event_json)` records a
+returns once each checkpoint is on the drive; `"NetworkChanged"` binds every
+profile's link socket afresh, so its links move to the new network with
+their QUIC connections, tells every path machine to probe its paths again,
+and writes a `rebind` line to the link log saying so. `amux_runtime_record(rt, profile, event_json)` records a
 `UsageEvent` (the paywall opening, a purchase starting) on that profile, or on
 every profile when `profile` is null. Only a published build sends; every
 other build records nothing unless `AMUX_ANALYTICS_URL` names a server.
@@ -106,7 +109,7 @@ Reads return at once: `amux_session_keys`, `amux_session_rows_for`,
 `amux_session_frame`, `amux_session_toggle_run` and
 `amux_session_keep_open_runs` (a folding view's open set, opened or closed on
 one run, and re-held on each open run's newest step before rows are read),
-`amux_fleet_view` (home's sections), `amux_fleet_card`, `amux_fleet_family`, `amux_fleet_hosts`,
+`amux_fleet_view` (home's sections, narrowed by a `FleetFilter`), `amux_fleet_card`, `amux_fleet_family`, `amux_fleet_hosts`,
 `amux_runtime_profiles`, `amux_runtime_source_policy_listed`. Some reads need
 no handle, because they are the shared rules applied to values the phone
 already holds: `amux_agent_name_problem` (why a name cannot name an agent),

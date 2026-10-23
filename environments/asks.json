@@ -1,0 +1,40 @@
+{
+  "hosts": [
+    {
+      "name": "studio", "lan": true, "bonjour": true, "provider": "real",
+      "repositories": ["app"],
+      "files": {
+        "app/README.md": "# app\n\nA small command-line tool.\n",
+        "app/main.py": "print('hello')\n"
+      }
+    }
+  ],
+  "agents": [
+    {
+      "name": "changelog", "host": "studio", "kind": "claude_sdk", "repository": "app",
+      "prompt": "Create CHANGELOG.md with a single Unreleased heading."
+    },
+    {
+      "name": "licence-plan", "host": "studio", "kind": "claude_sdk", "repository": "app",
+      "permission": "plan",
+      "prompt": "Plan how you would add an MIT licence file and a licence section in the README. MIT is decided; ask me nothing, and present the plan."
+    },
+    {
+      "name": "licence-choice", "host": "studio", "kind": "claude_sdk", "repository": "app",
+      "prompt": "Before doing anything else, use your AskUserQuestion tool to ask me whether this project should be MIT or Apache-2.0 licensed. Do nothing more until I answer."
+    },
+    {
+      "name": "todo", "host": "studio", "kind": "claude_pty", "repository": "app",
+      "prompt": "Create TODO.md listing three things this tool could do next."
+    },
+    {
+      "name": "hello-file", "host": "studio", "kind": "codex", "repository": "app",
+      "permission": "read-only",
+      "prompt": "Create a file named hello.txt containing the word hello."
+    }
+  ],
+  "clients": {
+    "phone": {"paired": ["studio"]},
+    "terminal": {"host": "studio"}
+  }
+}

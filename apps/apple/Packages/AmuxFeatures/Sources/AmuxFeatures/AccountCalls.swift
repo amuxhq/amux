@@ -92,35 +92,6 @@ public struct SubscribeCallToAction: View {
     private var detail: String { SubscribeCopy.detail(host: host) }
 }
 
-/// Finding your machines when you are not on their network.
-///
-/// Offered under whatever the person came for rather than in front of it, and
-/// only where something is actually out of reach: a phone that can see every
-/// machine it owns is not missing an account.
-public struct SignInCallToAction: View {
-    @Environment(\.design) private var design
-    private let identifier: String
-    private let signIn: @MainActor () -> Void
-
-    public init(identifier: String, signIn: @escaping @MainActor () -> Void) {
-        self.identifier = identifier
-        self.signIn = signIn
-    }
-
-    public var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button(action: signIn) {
-                ActionLabel("Sign In", kind: .outline, fill: true)
-            }
-            .buttonStyle(.amuxControl)
-            .accessibilityLabel("Sign In")
-            .identified(identifier, label: "Sign In")
-            Explain(SignInCopy.caption)
-                .identified("\(identifier).caption")
-        }
-    }
-}
-
 /// What an account adds, in the one sentence the command line prints for the
 /// same thing. Apart from the view for the same reason the subscribe words
 /// are: the home's one line above the list says it too.

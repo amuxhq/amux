@@ -271,14 +271,21 @@ impl Daemon {
             Input::Configure(settings) => self.settings = settings,
             Input::Drafts { drafts } => self.drafts_read(drafts),
             Input::FromShell(change) => self.shell_changed(change, out),
-            Input::LinkUp { link, peer, kind } => self.link_up(link, peer, kind, out),
+            Input::LinkUp {
+                link,
+                peer,
+                kind,
+                resumed,
+            } => self.link_up(link, peer, kind, resumed.as_ref(), out),
             Input::LinkDown { link, .. } => self.link_down(link, out),
+            Input::LinkCarried { link, kind } => self.link_carried(link, kind),
             Input::LinkControl { link, frame } => self.link_control(link, frame, out),
             Input::Credential {
                 link,
                 expires_at_ms,
+                fetched_at_ms,
                 free_every_ms,
-            } => self.credential(link, expires_at_ms, free_every_ms, out),
+            } => self.credential(link, expires_at_ms, fetched_at_ms, free_every_ms, out),
             Input::Timer {
                 id: TimerId::Refresh(link),
             } => self.refresh_due(link, out),
@@ -308,7 +315,10 @@ impl Daemon {
             Input::TrustRead { store } => self.trust_read(store, out),
             Input::ChangeTrust(change) => self.change_trust(change, None, out),
             Input::Policy(policy) => self.set_policy(policy, out),
-            Input::HostForgotten { host } => self.forget_host(host, out),
+            Input::HostForgotten { host } => {
+                self.forget_addresses(host);
+                self.forget_host(host, out)
+            }
             Input::Discovered { found } => self.discovered(found, out),
             Input::PairingOpened { session, opened } => self.pairing_opened(session, opened, out),
             Input::PairingMessage { session, message } => {
@@ -689,6 +699,12 @@ pub struct RoutingState {
     catalogue: catalogue::Catalogue,
     /// Each attempt under way, by host and route, counted.
     attempts: std::collections::BTreeMap<(HostId, Route), u32>,
+    /// The addresses each trusted host last listed for itself, each with
+    /// where it came from: the trust file's, until the host says them
+    /// again.
+    addresses: std::collections::BTreeMap<HostId, Vec<payload::PeerAddress>>,
+    /// The address the relay last saw this host's packets come from.
+    observed: Option<std::net::SocketAddr>,
 }
 
 /// The clock as last told and the timers armed.

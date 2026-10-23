@@ -70,6 +70,7 @@ private struct ComposedShell: View {
             StoreFailureScreen(message: failure) {
                 composition.runtime.relaunch()
             }
+            .surface()
         } else {
             Shell(
                 router: composition.router,

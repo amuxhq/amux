@@ -456,14 +456,14 @@ fn a_held_stop_reads_on_its_row_and_x_cancels_it() {
 }
 
 /// Decided: the stop window names what a stop will cut. An agent that is
-/// working says so, and one with sub-agents counts them (background jobs
+/// working says so, and one with subagents counts them (background jobs
 /// join the sentence once the fleet row carries them), as in "alpha is
 /// working … Stop anyway?"; today every stop reads "Stop alpha? It can be
 /// resumed later."
 #[test]
-fn the_stop_window_names_the_turn_and_the_sub_agents_a_stop_cuts() {
+fn the_stop_window_names_the_turn_and_the_subagents_a_stop_cuts() {
     let fleet = home_fleet();
-    for (name, words) in [("alpha", "working"), ("planner", "1 sub-agent")] {
+    for (name, words) in [("alpha", "working"), ("planner", "1 subagent")] {
         let mut home = crate::home::Home::default();
         home_at(&mut home, &fleet, W, H);
         focus(&mut home, &fleet, name);

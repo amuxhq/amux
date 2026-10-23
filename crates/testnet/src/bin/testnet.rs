@@ -70,10 +70,20 @@ fn main() -> ExitCode {
 
 #[tokio::main]
 async fn serve() -> Result<()> {
-    if std::env::var_os("RUST_LOG").is_some() {
-        tracing_subscriber::fmt()
-            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-            .with_writer(std::io::stderr)
+    {
+        use tracing_subscriber::Layer as _;
+        use tracing_subscriber::layer::SubscriberExt as _;
+        use tracing_subscriber::util::SubscriberInitExt as _;
+        // The link log is captured whatever RUST_LOG says, so the door can
+        // answer for it; the rest is printed only when RUST_LOG asks.
+        let printed = std::env::var_os("RUST_LOG").is_some().then(|| {
+            tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stderr)
+                .with_filter(tracing_subscriber::EnvFilter::from_default_env())
+        });
+        tracing_subscriber::registry()
+            .with(printed)
+            .with(testnet::link_log::layer())
             .init();
     }
     let Command::Serve {

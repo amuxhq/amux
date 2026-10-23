@@ -1,29 +1,29 @@
 shell |  | agents | 0,62,402,778
-chat |  | limited | 0,62,402,778
-chat.row.boundary | Started |  | 18,132,366,34
-chat.row.prompt | Rewrite the pricing page's FAQ. |  | 18,166,366,40
-chat.row.prose | The FAQ is rewritten. | final | 18,217,366,20
-chat.prose.render |  | rendered | 18,217,366,20
-chat.row.turn-end | Worked <t> · $0.00 |  | 48,245,130,16
-chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
-chat.back | Back |  | 16,68,42,46
-chat.title | limited | limited | 51,72,156,38
-chat.more | More |  | 344,69,44,44
+chat |  | limited | 0,116,402,724
+chat.row.boundary | Started |  | 16,124,370,34
+chat.row.prompt | Rewrite the pricing page's FAQ. |  | 16,158,370,40
+chat.row.prose | The FAQ is rewritten. | final | 16,210,370,20
+chat.prose.render |  | rendered | 16,210,370,20
+chat.row.turn-end | Worked <t> · $0.00 |  | 16,237,116,16
 chat.strip | <volatile>
 chat.field | Message limited |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
-chat.model | claude-fake-1 · medium |  | 71,779,139,44
+chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
- | Back |  | 16,68,42,46
- | limited, /t/a/n/d/work · desk |  | 51,72,156,38
- | More |  | 344,69,44,44
+chat.more | More |  | 342,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
+chat.title | limited | limited | 96,66,160,36
  | 5-hour limit reached · resets <time> |  | 12,698,378,30
  | Attach |  | 23,779,44,44
- | claude-fake-1 |  | 71,779,139,44
+ | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44 (disabled)
- | Started |  | 18,132,366,34
- | Rewrite the pricing page's FAQ. |  | 18,166,366,40
- | The FAQ is rewritten. |  | 18,217,366,20
- | Worked <t> · $0.00 |  | 48,245,130,16
+ | Started |  | 16,124,370,34
+ | Rewrite the pricing page's FAQ. |  | 16,158,370,40
+ | The FAQ is rewritten. |  | 16,210,370,20
+ | Worked <t> · $0.00 |  | 16,237,116,16
+ | Back |  | 20,66,56,36
+ | limited, /t/a/n/d/work · desk |  | 96,66,160,36
+ | More |  | 342,66,36,36

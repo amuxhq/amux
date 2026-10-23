@@ -1,31 +1,31 @@
 shell |  | agents | 0,62,402,778
-chat |  | helper | 0,62,402,778
-chat.row.boundary | Started |  | 18,132,366,34
-chat.row.prompt | Say hello. |  | 18,166,366,40
-chat.row.prose | Ready when you are. | final | 18,217,366,20
-chat.prose.render |  | rendered | 18,217,366,20
-chat.row.turn-end | Worked <t> · $0.00 |  | 48,245,130,16
-chat.row.boundary | Ended · stopped |  | 18,275,366,34
-chat.header | Exited | live | 18,64,103,54
-chat.back | Back |  | 16,68,42,46
-chat.title | helper | helper | 51,72,58,38
-chat.more | More |  | 344,69,44,44
+chat |  | helper | 0,116,402,724
+chat.row.boundary | Started |  | 16,124,370,34
+chat.row.prompt | Say hello. |  | 16,158,370,40
+chat.row.prose | Ready when you are. | final | 16,210,370,20
+chat.prose.render |  | rendered | 16,210,370,20
+chat.row.turn-end | Worked <t> · $0.00 |  | 16,237,116,16
+chat.row.boundary | Ended · stopped |  | 16,267,370,34
 chat.exited | Exited | desk | 28,720,346,20
 chat.field | helper has exited · a message resumes it |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
-chat.model | claude-fake-1 · medium |  | 71,779,139,44
+chat.model | claude-fake-1 · medium |  | 71,779,117,44
 chat.dictate | Dictate | idle | 228,779,44,44
 chat.resume | Resume |  | 276,779,103,44 (disabled)
- | Back |  | 16,68,42,46
- | helper, Exited |  | 51,72,58,38
- | More |  | 344,69,44,44
+chat.more | More |  | 342,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | Exited | live | 96,66,93,36
+chat.title | helper | helper | 96,66,93,36
  | Exited, desk |  | 29,720,345,20
  | Attach |  | 23,779,44,44
- | claude-fake-1 |  | 71,779,139,44
+ | claude-fake-1 |  | 71,779,117,44
  | Dictate |  | 228,779,44,44
  | Resume |  | 276,779,103,44 (disabled)
- | Started |  | 18,132,366,34
- | Say hello. |  | 18,166,366,40
- | Ready when you are. |  | 18,217,366,20
- | Worked <t> · $0.00 |  | 48,245,130,16
- | Ended · stopped |  | 18,275,366,34
+ | Started |  | 16,124,370,34
+ | Say hello. |  | 16,158,370,40
+ | Ready when you are. |  | 16,210,370,20
+ | Worked <t> · $0.00 |  | 16,237,116,16
+ | Ended · stopped |  | 16,267,370,34
+ | Back |  | 20,66,56,36
+ | helper, Exited |  | 96,66,93,36
+ | More |  | 342,66,36,36

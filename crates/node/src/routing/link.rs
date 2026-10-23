@@ -187,6 +187,9 @@ fn body_name(body: &pb::message::Body) -> &'static str {
         pb::message::Body::NeighborDown(_) => "neighbor_down",
         pb::message::Body::Reauth(_) => "reauth",
         pb::message::Body::LinkClose(_) => "link_close",
+        pb::message::Body::Addresses(_) => "addresses",
+        pb::message::Body::ObservedAddress(_) => "observed_address",
+        pb::message::Body::ForwardRefused(_) => "forward_refused",
     }
 }
 
@@ -222,6 +225,8 @@ mod tests {
             neighbors: Vec::new(),
             auth_token: None,
             runtime_instance_id: Vec::new(),
+            addrs: Vec::new(),
+            public_addr: None,
         }))
     }
 
@@ -232,6 +237,9 @@ mod tests {
                 host: None,
                 neighbors: Vec::new(),
                 runtime_instance_id: Vec::new(),
+                addrs: Vec::new(),
+                observed_addr: None,
+                public_addr: None,
             })),
         }))
     }
@@ -280,6 +288,8 @@ mod tests {
                 neighbors: Vec::new(),
                 auth_token: None,
                 runtime_instance_id: Vec::new(),
+                addrs: Vec::new(),
+                public_addr: None,
             })
         );
         assert!(!handshake.is_established());

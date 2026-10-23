@@ -91,6 +91,20 @@ final class ComponentSnapshotTests: XCTestCase {
         }
 
         for example in examples {
+            // On a CI runner the first search field the process draws holding
+            // words comes without its clear button, however long it is given,
+            // and every later one has it. One drawn and thrown away just
+            // before makes the photographed ones alike everywhere; drawn at
+            // the start of the run instead, it moved the title of every sheet
+            // drawn after it.
+            if example.id == "fleet.no-matches" {
+                await showing(example, appearances[0], reducesTransparency: true, perturbing: false) {
+                    controller, _, deadline in
+                    _ = await settledPhotograph(
+                        of: controller.view, traits: Self.traits(appearances[0]), deadline: deadline,
+                        name: "search-field-warm-up")
+                }
+            }
             for appearance in appearances {
                 let started = ProcessInfo.processInfo.systemUptime
                 if let review {
@@ -276,6 +290,11 @@ final class ComponentSnapshotTests: XCTestCase {
             didChange: { readiness.elements = $0 }
         ))
         controller.overrideUserInterfaceStyle = appearance.interfaceStyle
+        // The text size as the phone's own setting reaches a screen: a trait.
+        // The example's environment value stops where UIKit hosts a piece of
+        // it again, the system bar's items among them, which read the size
+        // from their traits.
+        controller.traitOverrides.preferredContentSizeCategory = UIContentSizeCategory(example.dynamicTypeSize)
         // The component is drawn without the window's safe area (the status
         // bar) and photographed where it stands, on screen, as a person sees
         // it; SnapshotTesting's own answer moves the view far off screen just
@@ -413,6 +432,9 @@ final class ComponentSnapshotTests: XCTestCase {
     /// itself. A backdrop a UIKit view owns is left out: a list's scroll edge
     /// effect samples what is behind it too, and is no frosted surface.
     private static func frostedLayers(in layer: CALayer) -> Int {
+        // A hidden layer is not in the picture: the tab bar keeps its glass
+        // under a pushed page.
+        guard !layer.isHidden, layer.opacity > 0 else { return 0 }
         let glass = (layer.filters ?? []).contains {
             ($0 as? NSObject)?.value(forKey: "name") as? String == "glassBackground"
         }
@@ -457,8 +479,9 @@ final class ComponentSnapshotTests: XCTestCase {
     }
 
     /// At an accessibility text size, no piece of text is drawn over
-    /// another and every control is whole on the canvas: what an example
-    /// that wraps, stacks or scrolls instead of overprinting shows.
+    /// another and every control is whole on the canvas, or where its scroll
+    /// view can bring it: what an example that wraps, stacks or scrolls
+    /// instead of overprinting shows.
     private static func assertReadable(_ name: String, in window: UIWindow) async {
         var drawn: [ReadElement] = []
         for _ in 0..<50 {
@@ -469,8 +492,8 @@ final class ComponentSnapshotTests: XCTestCase {
         XCTAssertFalse(drawn.isEmpty, "\(name): nothing could be read from the accessibility tree")
         // A control's touch target reaches past what it draws, by up to the
         // slack that makes it a thumb's size; only past that is it off.
-        let canvas = window.bounds.insetBy(dx: -12, dy: -12)
         for control in drawn where control.control {
+            let canvas = control.reach.insetBy(dx: -12, dy: -12)
             XCTAssertTrue(
                 canvas.contains(control.frame),
                 "\(name): the control \"\(control.label)\" is not whole on the canvas: \(control.frame)")
@@ -536,13 +559,31 @@ private struct ReadElement {
     let label: String
     let frame: CGRect
     let control: Bool
+    /// Where the element can be brought into view: the canvas, or, inside a
+    /// scroll view, everything it can scroll to as well. A row below the fold
+    /// or a chip past the end of a sideways strip is whole there.
+    let reach: CGRect
 
     static func all(in window: UIWindow) -> [ReadElement] {
         var found: [ReadElement] = []
         var seen = Set<ObjectIdentifier>()
-        func visit(_ node: NSObject) {
+        func visit(_ node: NSObject, reach: CGRect) {
             guard seen.insert(ObjectIdentifier(node)).inserted else { return }
             if let view = node as? UIView, view.isHidden || view.alpha == 0 { return }
+            var reach = reach
+            if let scroller = node as? UIScrollView {
+                // A lazy stack reports a content size from the rows it has
+                // laid out, and places the rest at estimates past it, so
+                // whatever lies below the fold of a vertical scroller counts
+                // as within reach.
+                var size = scroller.contentSize
+                if size.height > scroller.bounds.height { size.height = 1_000_000 }
+                let content = CGRect(origin: .zero, size: size)
+                    .inset(by: UIEdgeInsets(
+                        top: -scroller.adjustedContentInset.top, left: -scroller.adjustedContentInset.left,
+                        bottom: -scroller.adjustedContentInset.bottom, right: -scroller.adjustedContentInset.right))
+                reach = reach.union(scroller.convert(content, to: window))
+            }
             if node.isAccessibilityElement {
                 let frame = window.convert(node.accessibilityFrame, from: nil)
                 let traits = node.accessibilityTraits
@@ -550,22 +591,22 @@ private struct ReadElement {
                     || node is UIControl || node is UITextField || node is UITextView
                 if frame.width > 0, frame.height > 0 {
                     found.append(ReadElement(
-                        label: node.accessibilityLabel ?? "", frame: frame, control: control))
+                        label: node.accessibilityLabel ?? "", frame: frame, control: control, reach: reach))
                 }
             }
             if let listed = node.accessibilityElements as? [NSObject] {
-                listed.forEach(visit)
+                listed.forEach { visit($0, reach: reach) }
             } else {
                 let count = node.accessibilityElementCount()
                 if count != NSNotFound, count > 0 {
                     for index in 0..<count {
-                        if let child = node.accessibilityElement(at: index) as? NSObject { visit(child) }
+                        if let child = node.accessibilityElement(at: index) as? NSObject { visit(child, reach: reach) }
                     }
                 }
             }
-            if let view = node as? UIView { view.subviews.forEach(visit) }
+            if let view = node as? UIView { view.subviews.forEach { visit($0, reach: reach) } }
         }
-        visit(window)
+        visit(window, reach: window.bounds)
         return found
     }
 }

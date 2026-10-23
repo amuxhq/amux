@@ -11,10 +11,31 @@ import UIKit
 /// pocket shakes all day.
 struct ReportTools: ViewModifier {
     let composition: Composition
+    @State private var layers: ReportLayers
+
+    init(composition: Composition) {
+        self.composition = composition
+        _layers = State(initialValue: ReportLayers { ReportLayer(composition: composition) })
+    }
 
     func body(content: Content) -> some View {
-        let reports = composition.reports
         content
+            .environment(\.reportLayers, layers)
+            .onReceive(NotificationCenter.default.publisher(
+                for: UIApplication.userDidTakeScreenshotNotification)
+            ) { _ in
+                composition.reports.offer(composition.freezer)
+            }
+    }
+}
+
+/// The offer and the report, as the top surface on screen draws them.
+private struct ReportLayer: View {
+    let composition: Composition
+
+    var body: some View {
+        let reports = composition.reports
+        Color.clear
             .reportOffer(
                 reports.offering,
                 take: { reports.accept() },
@@ -31,11 +52,6 @@ struct ReportTools: ViewModifier {
                         }
                     }
                 }
-            }
-            .onReceive(NotificationCenter.default.publisher(
-                for: UIApplication.userDidTakeScreenshotNotification)
-            ) { _ in
-                reports.offer(composition.freezer)
             }
     }
 }

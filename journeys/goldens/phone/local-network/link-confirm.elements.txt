@@ -1,15 +1,35 @@
-shell |  | hosts | 0,62,402,778
-pair-confirm |  | desk | 0,62,402,778
-pair-confirm.title |  | Pair with desk? | 18,62,179,58
-pair-confirm.name | Host | desk | 32,201,338,38
-pair-confirm.fingerprint | <volatile>
+shell |  | agents | 0,62,402,778
+pair-confirm |  | desk | 0,132,402,708
+pair-confirm.title |  | Pair with desk? | 16,148,179,32
+pair-confirm.name |  | desk | 16,180,113,26
 pair-confirm.expiry | <volatile>
-pair-confirm.trust | Pair |  | 18,708,366,44
-pair-confirm.abandon | Not Now |  | 18,762,366,44
- | Pair with desk? |  | 18,88,179,32
- | Pair only with a machine you started pairing on. This is its key. |  | 18,126,346,39
- | HOST, desk |  | 32,201,39,38
- | FINGERPRINT, <key> |  | 32,252,336,54
- | This invitation expires in <t>. |  | 18,332,194,18
- | Pair |  | 18,708,366,44
- | Not Now |  | 18,762,366,44
+pair-confirm.fingerprint | <volatile>
+pair-confirm.trust | Pair |  | 16,726,370,44
+pair-confirm.abandon | Not Now |  | 16,780,370,44
+pair.close | Close |  | 20,82,56,36
+ | Pair your first host |  | 16,204,214,32
+ | amux runs agents on your computers. Pair one and its agents appear here. |  | 16,244,368,37
+ | desk is nearby, Pair it to see its agents here, Pair |  | 16,305,370,60
+ | Have an amux account? |  | 16,389,164,18
+ | Sign In |  | 184,376,48,44
+ | Switch account |  | 24,66,37,36
+ | Agents |  | 16,127,116,42
+ | Agents |  | 111,795,94,54
+ | Agents |  | 140,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 229,830,29,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 230,830,29,12
+ | Pair with desk? |  | 16,148,179,32
+ | on this network |  | 16,186,113,20
+ | Its agents will be on this phone, and you can start new ones on it. This invitation expires in <t>. |  | 16,220,367,37
+ | Fingerprint, <key> |  | 16,652,351,56
+ | Pair |  | 16,726,370,44
+ | Not Now |  | 16,780,370,44
+ | Close |  | 20,82,56,36
+ | Pair desk |  | 165,82,73,21
+ | On this network |  | 159,103,84,14
+ | Agents | selected | 111,795,94,54
+ | Hosts |  | 197,795,94,54

@@ -1193,7 +1193,7 @@ async fn a_child_deleted_mid_turn_tells_its_parent_it_was_stopped() {
 /// The fleet's agent row counts what a stop would cut: live descendants
 /// on every host the agent's host knows, and background jobs. Both
 /// clients' stop and delete confirms name them ("lead is working and has
-/// 1 background job and 2 sub-agents. Stop anyway?"); the phone, which
+/// 1 background job and 2 subagents. Stop anyway?"); the phone, which
 /// sees only its paired host's agents, cannot count them itself. QA: a
 /// delete removed a child on another host and nothing said so.
 #[tokio::test(flavor = "multi_thread")]
@@ -1263,7 +1263,7 @@ async fn the_agent_row_counts_live_descendants_and_background_jobs() {
     println!("lead's row: {shown}");
     assert!(
         shown.contains("descendants: 2"),
-        "lead's row does not count its two live sub-agents: {shown}"
+        "lead's row does not count its two live subagents: {shown}"
     );
     assert!(
         shown.contains("background_jobs: 1"),

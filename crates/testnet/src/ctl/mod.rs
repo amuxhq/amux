@@ -15,6 +15,7 @@ mod files;
 mod phone;
 mod session;
 mod tui;
+mod world;
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -48,10 +49,12 @@ pub enum Command {
     /// its own discovery scope, facts rings large enough to keep each
     /// agent's whole life, and its LAN routed through gates so any pair of
     /// hosts can be cut. Real agents' provider traffic is recorded under
-    /// providers/ here. Prints the hosts once the net is ready.
+    /// providers/ here. Prints the hosts once the net is ready, then opens
+    /// the clients the file's `clients` section declares: the phone paired
+    /// with its hosts, the terminal client in a pane.
     Up {
         /// A topology JSON file (see the TestNet docs); none starts empty.
-        /// Not in a QA run, whose agents are real only.
+        /// In a QA run its hosts and agents must all be real.
         topology: Option<PathBuf>,
     },
     /// Shut the net down: every agent and daemon stopped, panes closed.
@@ -511,12 +514,22 @@ pub fn main(arguments: Vec<String>) -> std::process::ExitCode {
 
 fn run(folder: &Folder, command: Command) -> Result<Outcome, String> {
     match command {
-        // A topology file could declare fake hosts or scripted agents; a
-        // tester's net is built with `host add`, which checks.
-        Command::Up { topology: Some(_) } if in_qa_run() => Err(format!(
-            "{REAL_ONLY}; start an empty net with `ctl up` and add hosts with `ctl host add`"
-        )),
-        Command::Up { topology } => session::up(folder, topology.as_deref()),
+        Command::Up { topology } => {
+            let clients = match topology.as_deref() {
+                Some(path) => {
+                    if in_qa_run() {
+                        world::real_only(path).map_err(|unreal| {
+                            format!("a QA tester uses real agents only, as a person meets them: {unreal}")
+                        })?;
+                    }
+                    world::clients(path)?
+                }
+                None => world::Clients::default(),
+            };
+            let mut outcome = session::up(folder, topology.as_deref())?;
+            world::open(folder, &clients, &mut outcome)?;
+            Ok(outcome)
+        }
         Command::Down => session::down(folder),
         Command::Status => {
             let status = folder.call(json!({"Status": {}}))?;

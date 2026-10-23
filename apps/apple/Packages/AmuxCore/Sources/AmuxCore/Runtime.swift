@@ -21,6 +21,10 @@ public enum Lifecycle: String, Sendable {
     /// and every profile's store is made whole on the drive, should the
     /// system end the app while it is suspended.
     case suspending = "Suspending"
+    /// The phone's network changed: every profile's link socket is bound
+    /// afresh, so its links move to the new network with their
+    /// connections, and every path to every host is tried again.
+    case networkChanged = "NetworkChanged"
 }
 
 /// The shared Rust runtime: this phone's installation, hosted in the app's
@@ -331,11 +335,13 @@ public final class Profile: @unchecked Sendable {
 
     /// Home's sections, each family placed by its loudest member, with the
     /// members of the families whose root agent ids `expanding` names
-    /// under their heads.
-    public func fleetView(expanding: [[UInt8]] = []) -> FleetView {
+    /// under their heads, listing the agents `filter` keeps.
+    public func fleetView(expanding: [[UInt8]] = [], filter: FleetFilter? = nil) -> FleetView {
         call(FleetView(sections: [], needYou: 0, working: 0)) { live in
-            Bridge.json(expanding).withCString {
-                Bridge.read(FleetView.self, amux_fleet_view(live, $0))
+            Bridge.json(expanding).withCString { expand in
+                Bridge.json(filter).withCString {
+                    Bridge.read(FleetView.self, amux_fleet_view(live, expand, $0))
+                }
             } ?? FleetView(sections: [], needYou: 0, working: 0)
         }
     }

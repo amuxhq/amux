@@ -1,27 +1,27 @@
 shell |  | agents | 0,62,402,778
-chat |  | backups | 0,62,402,778
-chat.away | cabin is away. This chat fills in when it is back. | plain | 18,132,366,54
-chat.header | cabin · away | detached | 18,64,155,54
-chat.back | Back |  | 16,68,42,46
-chat.title | backups | backups | 51,72,109,38
-chat.more | More |  | 344,69,44,44
+chat |  | backups | 0,116,402,724
+chat.away | cabin is away. This chat fills in when it is back. | plain | 16,124,370,54
 chat.dock |  | folded | 12,668,378,60
 chat.underway.0 | Check last night's backup. | held · sends when cabin is back | 12,668,378,60
 chat.underway.0.cancel | Cancel |  | 344,676,40,44
 chat.field | cabin is out of reach · sends when back |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
-chat.model | claude-fake-1 · medium |  | 71,779,139,44
+chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
- | Back |  | 16,68,42,46
- | backups, cabin · away |  | 51,72,109,38
- | More |  | 344,69,44,44
+chat.more | More |  | 342,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | cabin · away | detached | 96,66,131,36
+chat.title | backups | backups | 96,66,131,36
  | Clock |  | 30,691,14,14
  | Check last night's backup. |  | 58,679,189,20
- | held · sends when cabin is back |  | 58,701,223,16
+ | held · sends when cabin is back |  | 58,701,182,16
  | Cancel |  | 344,676,40,44
  | Attach |  | 23,779,44,44
- | claude-fake-1 |  | 71,779,139,44
+ | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44 (disabled)
- | cabin is away. This chat fills in when it is back. |  | 18,132,366,54
+ | cabin is away. This chat fills in when it is back. |  | 16,124,370,54
+ | Back |  | 20,66,56,36
+ | backups, cabin · away |  | 96,66,131,36
+ | More |  | 342,66,36,36

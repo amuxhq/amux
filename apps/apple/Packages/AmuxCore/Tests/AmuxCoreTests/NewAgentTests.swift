@@ -67,6 +67,22 @@ final class NewAgentTests: XCTestCase {
         XCTAssertEqual(store.request?.kind, .codex)
     }
 
+    func testTheAgentStartsAsTheKindMostRecentlyAtWorkUntilOneIsPicked() {
+        let store = NewAgentStore()
+        store.open(on: Cards.desk)
+        store.remember([
+            AgentRow(row: Cards.row(1, "old", minutesAgo: 30, kind: .claudeSdk), unread: false),
+            AgentRow(row: Cards.row(2, "new", minutesAgo: 2, kind: .codex), unread: false),
+        ])
+        XCTAssertEqual(store.provider, .codex)
+        store.choose(provider: .claude)
+        store.remember([AgentRow(row: Cards.row(3, "newer", minutesAgo: 1, kind: .codex), unread: false)])
+        XCTAssertEqual(store.provider, .claude, "the fleet arriving does not undo a pick")
+        store.open(on: Cards.desk)
+        store.remember([])
+        XCTAssertEqual(store.provider, .claude, "with no agents, Claude")
+    }
+
     func testAnEmptyNameBlocksStartingAndARefusalIsSaid() {
         let store = NewAgentStore()
         store.open(on: Cards.desk)

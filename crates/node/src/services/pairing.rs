@@ -110,7 +110,6 @@ fn pairing_request_reachability<T>(
                 PreTrustPairingReachability::Direct(addr) => {
                     Some(Reachability::Direct { addrs: vec![*addr] })
                 }
-                PreTrustPairingReachability::NoReusableReachability => None,
             }),
             BoxedGrpcAuth::Trusted { .. } => None,
         })

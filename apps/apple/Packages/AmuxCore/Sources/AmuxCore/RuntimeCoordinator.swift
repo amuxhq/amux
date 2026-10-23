@@ -12,6 +12,10 @@ import Observation
 /// other bound profile is paused. Switching account never stops the
 /// installation. Starting reads this phone's own store before any network is
 /// dialled, so the first frame after a launch is what the phone last held.
+///
+/// While the runtime runs, the coordinator watches the phone's network and
+/// tells the runtime of every change, so each link moves to the new network
+/// rather than waiting for its old path to time out.
 @MainActor
 @Observable
 public final class RuntimeCoordinator {
@@ -85,6 +89,14 @@ public final class RuntimeCoordinator {
     @ObservationIgnored private let support: URL
     @ObservationIgnored private let options: Options
     @ObservationIgnored private let starter: Starter
+    @ObservationIgnored private let networkWatch: NetworkPathWatching
+    #if DEBUG
+    /// Every moment of the app's life fed to a runtime, in order, for the
+    /// tests; nil outside test builds.
+    @ObservationIgnored public private(set) var fedLifecycles: [Lifecycle]? = []
+    #else
+    public var fedLifecycles: [Lifecycle]? { nil }
+    #endif
     /// Whether the published app sends product analytics, as the person
     /// set it; a running installation follows a change at once.
     public var shareUsage = true {
@@ -116,6 +128,7 @@ public final class RuntimeCoordinator {
     public init(
         registry: AccountRegistry, support: URL, deviceName: String,
         signedOut: StoreBundle, options: Options = Options(),
+        networkWatch: NetworkPathWatching = SystemNetworkWatch(),
         starter: @escaping Starter = { config, profilesMoved throws(RuntimeFailure) in
             try Runtime.start(config, profilesMoved: profilesMoved)
         }
@@ -126,6 +139,7 @@ public final class RuntimeCoordinator {
         self.signedOutStores = signedOut
         self.options = options
         self.starter = starter
+        self.networkWatch = networkWatch
         shown = registry.stores ?? signedOut
         registry.switching = { [weak self] _ in self?.switched() }
     }
@@ -194,7 +208,10 @@ public final class RuntimeCoordinator {
             storeFailure = nil
             // The setting may have moved while the runtime was starting.
             runtime.setTelemetry(shareUsage)
-            if active { Task { await runtime.feed(.foreground) } }
+            if active { feed(runtime, .foreground) }
+            networkWatch.start { [weak self] in
+                Task { @MainActor in self?.networkChanged() }
+            }
             if !found.isEmpty { runtime.discovered(found.map(\.found)) }
             profilesMoved()
             answer(runtime)
@@ -203,6 +220,24 @@ public final class RuntimeCoordinator {
             storeFailure = reason.description
             answer(nil)
         }
+    }
+
+    /// Tells the runtime of a moment of the app's life, without waiting.
+    private func feed(_ runtime: Runtime, _ input: Lifecycle) {
+        remember(input)
+        Task { await runtime.feed(input) }
+    }
+
+    private func remember(_ input: Lifecycle) {
+        #if DEBUG
+        fedLifecycles?.append(input)
+        #endif
+    }
+
+    /// The phone's network changed: a running runtime moves its links.
+    private func networkChanged() {
+        guard let runtime else { return }
+        feed(runtime, .networkChanged)
     }
 
     private func answer(_ runtime: Runtime?) {
@@ -417,6 +452,7 @@ public final class RuntimeCoordinator {
         answer(nil)
         steering?.cancel()
         steering = nil
+        networkWatch.stop()
         runtime?.stop()
         runtime = nil
         profiles = []
@@ -438,11 +474,11 @@ public final class RuntimeCoordinator {
         steer()
         if active {
             discovery?.start()
-            if let runtime { Task { await runtime.feed(.foreground) } }
+            if let runtime { feed(runtime, .foreground) }
             start()
         } else {
             discovery?.stop()
-            if let runtime { Task { await runtime.feed(.background) } }
+            if let runtime { feed(runtime, .background) }
         }
     }
 
@@ -450,7 +486,9 @@ public final class RuntimeCoordinator {
     /// and every profile's store is made whole on the drive before this
     /// returns, should the system end the app while it is suspended.
     public func suspending() async {
-        await runtime?.feed(.suspending)
+        guard let runtime else { return }
+        remember(.suspending)
+        await runtime.feed(.suspending)
     }
 
     /// Records what only the app sees, on the account on screen.

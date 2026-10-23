@@ -249,6 +249,89 @@ const HOME_HEIGHT: u16 = 48;
 /// Home over an authored fleet: one agent in each state, with what its
 /// session says for its second line.
 fn home_rows(theme: Theme) -> Buffer {
+    let mut scene = authored_home();
+    let mut terminal = Terminal::new(TestBackend::new(WIDTH, HOME_HEIGHT)).expect("test terminal");
+    terminal
+        .draw(|frame| scene.draw(frame, frame.area(), theme))
+        .expect("draw");
+    terminal.backend().buffer().clone()
+}
+
+/// Home as the person sees it, over the fleet it is drawn from.
+pub struct HomeScene {
+    pub home: crate::home::Home,
+    pub fleet: ui_state::FleetState,
+    pub lines: std::collections::HashMap<ui_state::AgentKey, ui_view::SessionLine>,
+    pub now: i64,
+    pub chat_in: crate::setup::ChatIn,
+}
+
+/// What a new agent starts with on the authored desk, as a person's
+/// settings would say.
+static DEFAULTS: std::sync::LazyLock<crate::setup::Defaults> = std::sync::LazyLock::new(|| {
+    let of = |model: &str, effort: &str| crate::setup::AgentDefaults {
+        model: model.into(),
+        effort: effort.into(),
+        permission: "default".into(),
+    };
+    crate::setup::Defaults {
+        claude: of("opus", "high"),
+        codex: of("gpt-6.1-sol", "medium"),
+    }
+});
+
+impl HomeScene {
+    fn place(&self) -> crate::home::Place<'static> {
+        crate::home::Place {
+            local_host: b"desk",
+            version: "",
+            working_dir: "~/src/amux",
+            attach: false,
+            chat_in: self.chat_in,
+            defaults: &DEFAULTS,
+        }
+    }
+
+    pub fn draw(
+        &mut self,
+        frame: &mut ratatui::Frame<'_>,
+        area: ratatui::layout::Rect,
+        theme: Theme,
+    ) {
+        let place = self.place();
+        self.home.draw(
+            frame,
+            area,
+            &self.fleet,
+            &self.lines,
+            None,
+            self.now,
+            theme,
+            &place,
+        );
+    }
+
+    /// The open new-agent composer told what the desk offers its agent.
+    pub fn offer(&mut self, provider: wire::Provider, catalogue: &wire::Catalogue) {
+        let place = self.place();
+        if let Some(setup) = self.home.open_setup(&place) {
+            setup.offer(b"desk", provider, &[1; 32], catalogue);
+        }
+    }
+
+    /// A key pressed on home, as the person would press it.
+    pub fn key(&mut self, code: crossterm::event::KeyCode) {
+        let _ = self
+            .home
+            .key(&self.fleet, crossterm::event::KeyEvent::from(code), false);
+    }
+}
+
+/// Home over the authored fleet: two hosts, one of them away, and a dozen
+/// agents in every standing, with families, branches and what each
+/// session says for its second line. The exited fold is open and the
+/// highlight on the first agent.
+pub fn authored_home() -> HomeScene {
     use std::collections::HashMap;
 
     use ui_state::{Activity, ActivityKind, Connection, FleetMsg, FleetState};
@@ -492,15 +575,6 @@ fn home_rows(theme: Theme) -> Buffer {
     event(Of::CaughtUp(wire::CaughtUp { revision: 0 }));
     fleet.update(FleetMsg::Connection(Connection::Live));
 
-    let defaults = crate::setup::Defaults::default();
-    let place = crate::home::Place {
-        local_host: b"desk",
-        version: "",
-        working_dir: "~/src/amux",
-        attach: false,
-        chat_in: crate::setup::ChatIn::Amux,
-        defaults: &defaults,
-    };
     let mut home = crate::home::Home::default();
     // Exited unfolded, as the person would open it; the highlight back on
     // the first agent.
@@ -508,17 +582,30 @@ fn home_rows(theme: Theme) -> Buffer {
     home.key(&fleet, key(crossterm::event::KeyCode::End), false);
     home.key(&fleet, key(crossterm::event::KeyCode::Enter), false);
     home.select(ui_state::agent_key(fleet.find(b"planner").expect("listed")));
-    let mut terminal = Terminal::new(TestBackend::new(WIDTH, HOME_HEIGHT)).expect("test terminal");
+    HomeScene {
+        home,
+        fleet,
+        lines,
+        now: NOW,
+        chat_in: crate::setup::ChatIn::Amux,
+    }
+}
+
+fn review_page(theme: Theme) -> Buffer {
+    let mut page = commented_review();
+    let mut terminal = Terminal::new(TestBackend::new(WIDTH, PAGE_HEIGHT)).expect("test terminal");
     terminal
         .draw(|frame| {
             let area = frame.area();
-            home.draw(frame, area, &fleet, &lines, None, NOW, theme, &place);
+            page.draw(frame, area, None, theme);
         })
         .expect("draw");
     terminal.backend().buffer().clone()
 }
 
-fn review_page(theme: Theme) -> Buffer {
+/// The review page over a two-file working-tree diff, with a comment on
+/// one line and a second being written on the next.
+pub fn commented_review() -> ReviewPage {
     let patch = "\
 diff --git a/src/sum.rs b/src/sum.rs
 index 1111111..2222222 100644
@@ -585,14 +672,7 @@ index 0000000..3333333
     for c in "and c".chars() {
         page.key(key(KeyCode::Char(c)));
     }
-    let mut terminal = Terminal::new(TestBackend::new(WIDTH, PAGE_HEIGHT)).expect("test terminal");
-    terminal
-        .draw(|frame| {
-            let area = frame.area();
-            page.draw(frame, area, None, theme);
-        })
-        .expect("draw");
-    terminal.backend().buffer().clone()
+    page
 }
 
 // --- rows ------------------------------------------------------------------
@@ -2045,6 +2125,42 @@ fn composers() -> Vec<(&'static str, &'static str, Composer, Reach, &'static str
 /// and the background jobs, and the overview's usage windows for each
 /// provider.
 fn chat_surroundings(theme: Theme) -> Vec<(&'static str, &'static str, Buffer)> {
+    surroundings()
+        .into_iter()
+        .map(|(name, shows, mut scene)| {
+            let (width, height) = CHAT_SIZE;
+            let mut terminal =
+                Terminal::new(TestBackend::new(width, height)).expect("test terminal");
+            terminal
+                .draw(|frame| scene.draw(frame, frame.area(), theme))
+                .expect("draw");
+            (name, shows, terminal.backend().buffer().clone())
+        })
+        .collect()
+}
+
+/// A chat as the person sees it, over the session it is drawn from.
+pub struct ChatScene {
+    pub view: crate::chat::ChatView,
+    pub state: ui_state::SessionState,
+    pub now: i64,
+}
+
+impl ChatScene {
+    pub fn draw(
+        &mut self,
+        frame: &mut ratatui::Frame<'_>,
+        area: ratatui::layout::Rect,
+        theme: Theme,
+    ) {
+        self.view
+            .draw(frame, area, &self.state, None, None, self.now, theme);
+    }
+}
+
+/// Chats with the overview open beside them: changes uncommitted and on
+/// the branch, and Claude and Codex near a usage limit.
+pub fn surroundings() -> Vec<(&'static str, &'static str, ChatScene)> {
     use prost::Message as _;
     use ui_state::{Connection, Msg, SessionState};
     use wire::{Kind, session_event};
@@ -2239,7 +2355,7 @@ fn chat_surroundings(theme: Theme) -> Vec<(&'static str, &'static str, Buffer)> 
         })));
         state
     };
-    let draw = |state: &SessionState, comparison: Comparison, diff: Option<&wire::Diff>| {
+    let scene = |state: &SessionState, comparison: Comparison, diff: Option<&wire::Diff>| {
         let mut view = ChatView::new(b"agent".to_vec(), now, false);
         view.pane_open = true;
         view.comparison = comparison;
@@ -2252,15 +2368,11 @@ fn chat_surroundings(theme: Theme) -> Vec<(&'static str, &'static str, Buffer)> 
                 diff.clone(),
             );
         }
-        let (width, height) = CHAT_SIZE;
-        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("test terminal");
-        terminal
-            .draw(|frame| {
-                let area = frame.area();
-                view.draw(frame, area, state, None, None, now, theme);
-            })
-            .expect("draw");
-        terminal.backend().buffer().clone()
+        ChatScene {
+            view,
+            state: state.clone(),
+            now,
+        }
     };
 
     let claude_working = wire::ClaudeSdkSnapshot {
@@ -2299,22 +2411,22 @@ fn chat_surroundings(theme: Theme) -> Vec<(&'static str, &'static str, Buffer)> 
         (
             "chat_changes_uncommitted",
             "A chat counting uncommitted changes: the header's [Diff +42 −7] from the agent's row, and the overview open beside it with the two background jobs, each command with how long it has run, and the four changed files under their folders, root files first, each with its lines added and removed.",
-            draw(&changes, Comparison::Uncommitted, Some(&uncommitted)),
+            scene(&changes, Comparison::Uncommitted, Some(&uncommitted)),
         ),
         (
             "chat_changes_on_branch",
             "The same chat counting everything on its branch: the header's [Diff vs main +120 −30], and the overview listing the branch's six changed files by folder, a created and a deleted file among them.",
-            draw(&changes, Comparison::OnBranch, Some(&on_branch)),
+            scene(&changes, Comparison::OnBranch, Some(&on_branch)),
         ),
         (
             "chat_usage_claude",
             "A Claude chat near a usage limit, the overview listing every window with its name, how full it is, its state and when it resets: the 5-hour limit near, the weekly limit fine, and Fable's own weekly limit near.",
-            draw(&claude, Comparison::Uncommitted, None),
+            scene(&claude, Comparison::Uncommitted, None),
         ),
         (
             "chat_usage_codex",
             "A Codex chat near a usage limit, the overview listing its 5-hour limit near and its weekly limit fine, each with its fullness and reset time, and the credits left.",
-            draw(&codex, Comparison::Uncommitted, None),
+            scene(&codex, Comparison::Uncommitted, None),
         ),
     ]
 }

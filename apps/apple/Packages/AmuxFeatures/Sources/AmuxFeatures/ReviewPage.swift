@@ -9,33 +9,42 @@ public enum ReviewAction: Equatable, Sendable {
     case attach
 }
 
-/// An agent's uncommitted changes, read and written about with a finger.
+/// An agent's changes, uncommitted or on its branch, read and written about
+/// with a finger.
 ///
 /// The files come in the order the host's patch lists them, each under a
-/// heading that folds it. Holding a line for a moment and dragging selects
-/// lines; a comment goes on the line the selection ends on and is drawn
-/// under it. The edge wheel down the right jumps between files, and "All
-/// Files" lists them. Attaching puts the whole review into the chat's draft
-/// as one token that sends with the reference to the patch it was written
-/// against.
+/// heading that stays pinned while its file is read and that folds it.
+/// Holding a line for a moment and dragging selects lines; a comment goes
+/// on the line the selection ends on and is drawn under it, and tapping it
+/// edits or deletes it. The edge wheel down the right jumps between files,
+/// and the bar's file menu lists them. Attaching puts the whole review into
+/// the chat's draft as one token that sends with the reference to the patch
+/// it was written against.
 public struct ReviewPage: View {
     @Environment(\.design) private var design
+    @Environment(\.reducesTransparency) private var reducesTransparency
     let model: ReviewModel
-    let agent: String
+    /// What the changes are counted against, as the overview words it:
+    /// "Uncommitted", "vs main".
+    let against: String?
     let actions: (ReviewAction) -> Void
-    @State private var listing = false
     @State private var writing = false
+    /// The comment being edited, as its index in the model's comments.
+    @State private var editing: Int?
     @State private var note = ""
     @State private var target: Int?
     @State private var frames: [ReviewLine: CGRect] = [:]
+    /// Files with lines on screen, so the wheel can mark the one being read.
+    @State private var visible: Set<Int> = []
 
-    public init(model: ReviewModel, agent: String, writing: Bool = false, listing: Bool = false,
-                actions: @escaping (ReviewAction) -> Void) {
+    public init(model: ReviewModel, against: String? = nil, writing: Bool = false,
+                editing: Int? = nil, actions: @escaping (ReviewAction) -> Void) {
         self.model = model
-        self.agent = agent
+        self.against = against
         self.actions = actions
         _writing = State(initialValue: writing)
-        _listing = State(initialValue: listing)
+        _editing = State(initialValue: editing)
+        _note = State(initialValue: editing.flatMap { model.comments.indices.contains($0) ? model.comments[$0].text : nil } ?? "")
     }
 
     public var body: some View {
@@ -43,9 +52,13 @@ public struct ReviewPage: View {
             ZStack(alignment: .bottom) {
                 Ground()
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
+                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                         ForEach(model.doc.files.indices, id: \.self) { index in
-                            file(index)
+                            Section {
+                                file(index)
+                            } header: {
+                                heading(index)
+                            }
                         }
                     }
                     .padding(.bottom, 96)
@@ -55,11 +68,16 @@ public struct ReviewPage: View {
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .overlay(alignment: .trailing) {
-                    EdgeWheel(model: model) { proxy.scrollTo(Self.fileId($0), anchor: .top) }
-                        .padding(.vertical, 8)
+                    EdgeWheel(model: model, current: visible.min()) {
+                        proxy.scrollTo(Self.fileId($0), anchor: .top)
+                    }
+                    // Clear of the pinned heading above and the page's
+                    // button below.
+                    .padding(.top, 52)
+                    .padding(.bottom, model.selection != nil || model.canAttach ? 76 : 12)
                 }
                 footer
-                if writing { commentSheet(proxy) }
+                if writing || editing != nil { commentSheet(proxy) }
             }
             .onChange(of: target) { _, file in
                 guard let file else { return }
@@ -67,15 +85,9 @@ public struct ReviewPage: View {
                 target = nil
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) { header }
-        .toolbar(.hidden, for: .navigationBar)
-        .sheet(isPresented: $listing) {
-            ReviewFileList(model: model) { index in
-                listing = false
-                target = index
-            }
-            .presentationDetents([.medium, .large])
-        }
+        .navigationBarBackButtonHidden(true)
+        .toolbarTitleDisplayMode(.inline)
+        .toolbar { bar }
         .accessibilityElement(children: .contain)
         .reported("review", value: "\(model.count)")
     }
@@ -83,98 +95,176 @@ public struct ReviewPage: View {
     static let space = "review"
     static func fileId(_ index: Int) -> String { "review.file.\(index)" }
 
-    // MARK: - The header
+    // MARK: - The bar
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            BackLink(agent, identifier: "review.back") { actions(.back) }
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text("Review")
-                    .designFont(.screenTitle, design)
-                    .foregroundStyle(design.ink.color)
-                if model.count > 0 {
-                    Text(verbatim: "\(model.count)")
-                        .designFont(.caption, design)
-                        .foregroundStyle(design.onAccent.color)
-                        .padding(.horizontal, 7)
-                        .frame(minWidth: 20, minHeight: 20)
-                        .background(Capsule().fill(design.accent.color))
-                        .accessibilityLabel(ChatWords.comments(model.count))
-                        .identified("review.count", value: "\(model.count)")
-                }
-                Spacer(minLength: 0)
-            }
-            Counts(files: model.doc.files.count, added: model.doc.added, removed: model.doc.removed)
-                .identified("review.summary", label: ChatWords.changes(
-                    files: model.doc.files.count, added: model.doc.added, removed: model.doc.removed))
+    /// The system's bar as the chat draws it: the way back in a circle,
+    /// what the page is in a pill beside it, and the file menu at the
+    /// trailing edge.
+    @ToolbarContentBuilder
+    private var bar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            BarBack(identifier: "review.back") { actions(.back) }
         }
-        .padding(.horizontal, design.metrics.gutter)
-        .padding(.top, 2)
-        .padding(.bottom, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frosted(Rectangle(), as: .glass)
+        .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
+        ToolbarSpacer(.fixed, placement: .topBarLeading)
+        ToolbarItem(placement: .topBarLeading) {
+            title
+        }
+        .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
+        ToolbarItem(placement: .topBarTrailing) {
+            files
+        }
+        .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
+    }
+
+    /// "Review" over "+7 −4 · Uncommitted"; the files are counted in the
+    /// menu beside it. Tapping it goes back
+    /// to the first file, as tapping a bar goes back to the top.
+    private var title: some View {
+        Button {
+            target = 0
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Review")
+                    .designFont(.bodyEmphasis, design)
+                    .foregroundStyle(design.ink.color)
+                    .lineLimit(1)
+                HStack(spacing: Space.xs) {
+                    Delta(added: model.doc.added, removed: model.doc.removed)
+                    if let against {
+                        Text(verbatim: "·").foregroundStyle(design.inkFaint.color)
+                        Text(verbatim: against)
+                            .foregroundStyle(design.inkMuted.color)
+                            .identified("review.against", label: against)
+                    }
+                }
+                .designFont(.caption, design)
+                .monospacedDigit()
+                .lineLimit(1)
+            }
+            // The bar does not grow with the text: past the largest ordinary
+            // size the pill would no longer fit it.
+            .dynamicTypeSize(...DynamicTypeSize.xLarge)
+            .padding(.horizontal, Space.m)
+            .frame(maxWidth: 220, alignment: .leading)
+            .frame(height: 36)
+            .barItemSurface()
+        }
+        .accessibilityLabel(ChatWords.changes(
+            files: model.doc.files.count, added: model.doc.added, removed: model.doc.removed))
+        .accessibilityHint("Goes to the first file")
+        .identified("review.summary", label: ChatWords.changes(
+            files: model.doc.files.count, added: model.doc.added, removed: model.doc.removed))
+    }
+
+    /// Every file, to jump to one: its name, what it changed and how many
+    /// comments it has. The one being read is ticked.
+    private var files: some View {
+        MenuButton(
+            name: String(localized: "Files"), identifier: "review.files",
+            items: model.doc.files.indices.map { index in
+                MenuItem(
+                    title: model.label(ofFile: index), subtitle: summary(ofFile: index),
+                    chosen: index == visible.min()
+                ) { target = index }
+            }
+        ) {
+            Image(systemName: "list.bullet")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(design.ink.color)
+                .frame(width: 36, height: 36)
+                .barItemSurface()
+        }
+    }
+
+    /// "+3 −4 · 1 comment", leaving out what is nothing.
+    private func summary(ofFile index: Int) -> String {
+        let file = model.doc.files[index]
+        var parts: [String] = []
+        let delta = [file.added > 0 ? "+\(file.added)" : nil, file.removed > 0 ? "\u{2212}\(file.removed)" : nil]
+            .compactMap { $0 }.joined(separator: " ")
+        if !delta.isEmpty { parts.append(delta) }
+        if file.binary { parts.append(String(localized: "Binary file")) }
+        let comments = model.count(inFile: index)
+        if comments > 0 { parts.append(ChatWords.comments(comments)) }
+        return parts.joined(separator: " · ")
     }
 
     // MARK: - A file
 
-    /// One file as one stacked section: its heading and, unless folded, its
-    /// hunks. The list is lazy by file, not by line.
-    private func file(_ index: Int) -> some View {
+    private func heading(_ index: Int) -> some View {
         let file = model.doc.files[index]
         let folded = model.folded.contains(index)
-        return VStack(alignment: .leading, spacing: 0) {
-            section(index, file: file, folded: folded)
+        return FileHeading(
+            label: model.label(ofFile: index), path: file.path, added: file.added,
+            removed: file.removed, comments: model.count(inFile: index), folded: folded,
+            toggle: { model.toggle(file: index) }
+        )
+        .id(Self.fileId(index))
+        .identified("review.file.\(index)", label: file.path, value: folded ? "folded" : "open")
+    }
+
+    /// One file's lines under its heading, unless folded. The list is lazy
+    /// by file, not by line.
+    @ViewBuilder
+    private func file(_ index: Int) -> some View {
+        let file = model.doc.files[index]
+        if !model.folded.contains(index) {
+            VStack(alignment: .leading, spacing: 0) {
+                threads(CommentPlace(file: index, line: nil))
+                if file.binary {
+                    Text("Binary file")
+                        .designFont(.caption, design)
+                        .foregroundStyle(design.inkFaint.color)
+                        .padding(.horizontal, design.metrics.gutter)
+                        .padding(.vertical, 8)
+                }
+                ForEach(file.hunks.indices, id: \.self) { hunk in
+                    // Lines the patch leaves out between two hunks.
+                    if hunk > 0 {
+                        Rectangle().fill(design.sunken.color).frame(height: 10)
+                            .accessibilityHidden(true)
+                    }
+                    ForEach(file.hunks[hunk].lines.indices, id: \.self) { line in
+                        self.line(ReviewLine(file: index, hunk: hunk, line: line))
+                    }
+                }
+            }
+            .onScrollVisibilityChange(threshold: 0.01) { shown in
+                if shown { visible.insert(index) } else { visible.remove(index) }
+            }
         }
     }
 
     @ViewBuilder
-    private func section(_ index: Int, file: ReviewFile, folded: Bool) -> some View {
-        FileHeading(
-            label: model.label(ofFile: index), path: file.path, added: file.added,
-            removed: file.removed, comments: model.count(inFile: index), folded: folded,
-            toggle: { model.toggle(file: index) }, list: { listing = true }
-        )
-        .id(Self.fileId(index))
-        .identified("review.file.\(index)", label: file.path, value: folded ? "folded" : "open")
-        if !folded {
-            ForEach(file.comments.indices, id: \.self) { comment in
-                CommentThread(text: file.comments[comment])
+    private func line(_ at: ReviewLine) -> some View {
+        let diff = model.doc.files[at.file].hunks[at.hunk].lines[at.line]
+        DiffLineRow(line: diff, selected: model.isSelected(at))
+            .background(GeometryReader { geometry in
+                Color.clear.preference(
+                    key: LineFrames.self,
+                    value: [at: geometry.frame(in: .named(Self.space))])
+            })
+            .id(at)
+            .accessibilityAction(named: Text("Select line")) { select(at) }
+            .identified(
+                "review.line.\(at.file).\(at.hunk).\(at.line)", label: diff.text,
+                value: model.isSelected(at) ? "selected" : nil)
+        if !diff.comments.isEmpty { threads(CommentPlace(file: at.file, line: at)) }
+    }
+
+    /// The comments drawn at one place; tapping one edits it.
+    private func threads(_ place: CommentPlace) -> some View {
+        ForEach(model.placed[place] ?? [], id: \.self) { index in
+            Button {
+                note = model.comments[index].text
+                editing = index
+            } label: {
+                CommentThread(text: model.comments[index].text)
             }
-            if file.binary {
-                Text("Binary file")
-                    .designFont(.caption, design)
-                    .foregroundStyle(design.inkFaint.color)
-                    .padding(.horizontal, design.metrics.gutter)
-                    .padding(.vertical, 8)
-            }
-            ForEach(file.hunks.indices, id: \.self) { hunk in
-                Text(verbatim: file.hunks[hunk].header)
-                    .designFont(.monoSmall, design)
-                    .foregroundStyle(design.inkFaint.color)
-                    .lineLimit(1)
-                    .padding(.horizontal, design.metrics.gutter)
-                    .padding(.vertical, 6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(design.raised.color.opacity(0.5))
-                ForEach(file.hunks[hunk].lines.indices, id: \.self) { line in
-                    let at = ReviewLine(file: index, hunk: hunk, line: line)
-                    let diff = file.hunks[hunk].lines[line]
-                    DiffLineRow(line: diff, selected: model.isSelected(at))
-                        .background(GeometryReader { geometry in
-                            Color.clear.preference(
-                                key: LineFrames.self,
-                                value: [at: geometry.frame(in: .named(Self.space))])
-                        })
-                        .id(at)
-                        .accessibilityAction(named: Text("Select line")) { select(at) }
-                        .identified(
-                            "review.line.\(index).\(hunk).\(line)", label: diff.text,
-                            value: model.isSelected(at) ? "selected" : nil)
-                    ForEach(diff.comments.indices, id: \.self) { comment in
-                        CommentThread(text: diff.comments[comment])
-                    }
-                }
-            }
+            .buttonStyle(.amuxPush)
+            .accessibilityHint("Edits the comment")
+            .identified("review.comment.thread", label: model.comments[index].text)
         }
     }
 
@@ -277,23 +367,44 @@ public struct ReviewPage: View {
         ZStack(alignment: .bottom) {
             Color.black.opacity(0.25)
                 .ignoresSafeArea()
-                .onTapGesture { writing = false }
+                .onTapGesture { close() }
                 .accessibilityHidden(true)
-            CommentSheet(
-                title: model.selection.map { ChatWords.commentOn(lines: lines(in: $0)) } ?? "",
-                note: $note,
-                cancel: { writing = false },
-                add: {
-                    if model.comment(note) {
-                        note = ""
-                        writing = false
-                    }
-                })
+            if let editing {
+                CommentSheet(
+                    title: String(localized: "Edit Comment"), action: String(localized: "Save"),
+                    actionId: "review.save", note: $note, cancel: close,
+                    add: { if model.rewrite(editing, as: note) { close() } },
+                    remove: {
+                        model.remove(editing)
+                        close()
+                    })
+            } else {
+                CommentSheet(
+                    title: model.selection.map { ChatWords.commentOn(lines: lines(in: $0)) } ?? "",
+                    action: String(localized: "Add to Review"), actionId: "review.add",
+                    note: $note, cancel: close,
+                    add: { if model.comment(note) { close() } })
+            }
         }
         .onAppear {
             // The lines being written about stay in sight above the sheet.
-            if let last = model.selection?.upperBound { proxy.scrollTo(last, anchor: .init(x: 0.5, y: 0.3)) }
+            if let editing, let line = place(of: editing) {
+                proxy.scrollTo(line, anchor: .init(x: 0.5, y: 0.3))
+            } else if let last = model.selection?.upperBound {
+                proxy.scrollTo(last, anchor: .init(x: 0.5, y: 0.3))
+            }
         }
+    }
+
+    private func close() {
+        note = ""
+        writing = false
+        editing = nil
+    }
+
+    /// The line a comment is drawn under, if it is on a line.
+    private func place(of comment: Int) -> ReviewLine? {
+        model.placed.first { $0.value.contains(comment) }?.key.line
     }
 }
 
@@ -306,29 +417,24 @@ private struct LineFrames: PreferenceKey {
     }
 }
 
-/// "4 files · +18 −28", in the diff's own green and red.
-struct Counts: View {
+/// "+18 −28" in the diff's own green and red, leaving out a side that
+/// changed nothing.
+struct Delta: View {
     @Environment(\.design) private var design
-    let files: Int
     let added: UInt32
     let removed: UInt32
 
     var body: some View {
-        HStack(spacing: 6) {
-            Text(ChatWords.files(files))
-                .foregroundStyle(design.inkMuted.color)
-            Text(verbatim: "·").foregroundStyle(design.inkFaint.color)
-            Text(verbatim: "+\(added)").foregroundStyle(design.added.color)
-            Text(verbatim: "−\(removed)").foregroundStyle(design.removed.color)
+        HStack(spacing: 4) {
+            if added > 0 { Text(verbatim: "+\(added)").foregroundStyle(design.added.color) }
+            if removed > 0 { Text(verbatim: "\u{2212}\(removed)").foregroundStyle(design.removed.color) }
         }
-        .designFont(.monoSmall, design)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(ChatWords.changes(files: files, added: added, removed: removed))
+        .fixedSize()
     }
 }
 
-/// A file's heading: the fold, its name, the way to every file, how many
-/// comments it has and what it changed.
+/// A file's heading: the fold, its name, how many comments it has and what
+/// it changed. Pinned at the top while its file is read.
 private struct FileHeading: View {
     @Environment(\.design) private var design
     let label: String
@@ -338,84 +444,73 @@ private struct FileHeading: View {
     let comments: Int
     let folded: Bool
     let toggle: () -> Void
-    let list: () -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
-            Button(action: toggle) {
-                HStack(spacing: 8) {
-                    Image(systemName: folded ? "chevron.right" : "chevron.down")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(design.inkFaint.color)
-                        .frame(width: 14)
-                    Text(verbatim: label)
-                        .designFont(.identifier, design)
-                        .foregroundStyle(design.ink.color)
-                        .lineLimit(2)
-                        .truncationMode(.head)
-                        .layoutPriority(1)
-                    if comments > 0 {
-                        Label {
-                            Text(verbatim: "\(comments)")
-                        } icon: {
-                            Image(systemName: "text.bubble")
-                        }
-                        .labelStyle(.titleAndIcon)
-                        .designFont(.caption, design)
-                        .foregroundStyle(design.accent.color)
-                        .accessibilityLabel(ChatWords.comments(comments))
+        Button(action: toggle) {
+            HStack(spacing: 8) {
+                Image(systemName: folded ? "chevron.right" : "chevron.down")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(design.inkFaint.color)
+                    .frame(width: 14)
+                Text(verbatim: label)
+                    .designFont(.identifier, design)
+                    .foregroundStyle(design.ink.color)
+                    .lineLimit(2)
+                    .truncationMode(.head)
+                    .layoutPriority(1)
+                if comments > 0 {
+                    Label {
+                        Text(verbatim: "\(comments)")
+                    } icon: {
+                        Image(systemName: "text.bubble")
                     }
-                    Spacer(minLength: 4)
-                    Text(verbatim: "+\(added)").foregroundStyle(design.added.color)
-                        .designFont(.monoSmall, design)
-                        .fixedSize()
-                    Text(verbatim: "−\(removed)").foregroundStyle(design.removed.color)
-                        .designFont(.monoSmall, design)
-                        .fixedSize()
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.amuxControl)
-            .accessibilityLabel(path)
-            .accessibilityValue(folded ? String(localized: "Folded") : String(localized: "Open"))
-            Button(action: list) {
-                Text("All Files")
+                    .labelStyle(.titleAndIcon)
                     .designFont(.caption, design)
                     .foregroundStyle(design.accent.color)
-                    .fixedSize()
-                    .thumbTarget(x: 6, y: 12)
+                    .accessibilityLabel(ChatWords.comments(comments))
+                }
+                Spacer(minLength: 4)
+                Delta(added: added, removed: removed)
+                    .designFont(.monoSmall, design)
             }
-            .buttonStyle(.amuxControl)
-            .identified("review.files", label: String(localized: "All Files"))
-            .reclaimingThumbTarget(x: 6, y: 12)
+            .padding(.horizontal, design.metrics.gutter)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, design.metrics.gutter)
-        .padding(.trailing, 14)
-        .padding(.vertical, 10)
+        .buttonStyle(.amuxPush)
+        .accessibilityLabel(path)
+        .accessibilityValue(folded ? String(localized: "Folded") : String(localized: "Open"))
         .background(design.ground.color)
         .overlay(alignment: .bottom) { Rectangle().fill(design.hairline.color).frame(height: 0.5) }
     }
 }
 
-/// One line of the patch: its old and new numbers, and its text on the
-/// diff's green or red.
+/// One line of the patch: its number, its mark and its text on the diff's
+/// green or red. A removed line is numbered on the old side, every other
+/// on the new. A long line wraps under its own text, not under the mark.
 private struct DiffLineRow: View {
     @Environment(\.design) private var design
     let line: DiffLine
     let selected: Bool
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            number(line.oldLine)
-            number(line.newLine)
-            Text(verbatim: mark + line.text)
-                .designFont(.monoSmall, design)
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text(verbatim: (line.newLine ?? line.oldLine).map(String.init) ?? "")
+                .foregroundStyle(design.inkFaint.color)
+                .frame(width: 32, alignment: .trailing)
+                .padding(.trailing, 8)
+                .accessibilityHidden(true)
+            Text(verbatim: mark)
+                .foregroundStyle(markColor)
+                .frame(width: 12, alignment: .leading)
+            Text(verbatim: line.text)
                 .foregroundStyle(design.ink.color)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.leading, 8)
-        .padding(.trailing, 26)
+        .designFont(.monoSmall, design)
+        .padding(.leading, 4)
+        .padding(.trailing, 22)
         .padding(.vertical, 1)
         .background(tint)
         .overlay(alignment: .leading) {
@@ -429,8 +524,16 @@ private struct DiffLineRow: View {
     private var mark: String {
         switch line.kind {
         case .added: "+"
-        case .removed: "−"
-        case .context: " "
+        case .removed: "\u{2212}"
+        case .context: ""
+        }
+    }
+
+    private var markColor: Color {
+        switch line.kind {
+        case .added: design.added.color
+        case .removed: design.removed.color
+        case .context: .clear
         }
     }
 
@@ -441,14 +544,6 @@ private struct DiffLineRow: View {
         case .removed: design.removed.color.opacity(0.12)
         case .context: line.comments.isEmpty ? .clear : design.sunken.color
         }
-    }
-
-    private func number(_ value: UInt32?) -> some View {
-        Text(verbatim: value.map(String.init) ?? "")
-            .designFont(.monoSmall, design)
-            .foregroundStyle(design.inkFaint.color)
-            .frame(width: 30, alignment: .trailing)
-            .accessibilityHidden(true)
     }
 }
 
@@ -469,20 +564,23 @@ private struct CommentThread: View {
                 .padding(.vertical, 8)
         }
         .padding(.leading, design.metrics.gutter)
-        .padding(.trailing, 26)
+        .padding(.trailing, 22)
         .background(design.raised.color)
-        .identified("review.comment.thread", label: text)
+        .contentShape(Rectangle())
     }
 }
 
-/// The comment being written, in the page over a scrim so the lines it is
-/// about stay in sight.
+/// A comment being written or edited, in the page over a scrim so the lines
+/// it is about stay in sight. Editing adds the way to delete it.
 private struct CommentSheet: View {
     @Environment(\.design) private var design
     let title: String
+    let action: String
+    let actionId: String
     @Binding var note: String
     let cancel: () -> Void
     let add: () -> Void
+    var remove: (() -> Void)?
     @FocusState private var focused: Bool
 
     private var blank: Bool { note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -498,7 +596,18 @@ private struct CommentSheet: View {
                 .foregroundStyle(design.ink.color)
                 .focused($focused)
                 .identified("review.note", label: String(localized: "Comment"), value: note)
-            HStack {
+            HStack(spacing: 16) {
+                if let remove {
+                    Button(action: remove) {
+                        Text("Delete")
+                            .designFont(.body, design)
+                            .foregroundStyle(design.removed.color)
+                            .frame(height: 44)
+                    }
+                    .buttonStyle(.amuxControl)
+                    .identified("review.delete", label: String(localized: "Delete"))
+                    Spacer()
+                }
                 Button(action: cancel) {
                     Text("Cancel")
                         .designFont(.body, design)
@@ -507,9 +616,9 @@ private struct CommentSheet: View {
                 }
                 .buttonStyle(.amuxControl)
                 .identified("review.cancel", label: String(localized: "Cancel"))
-                Spacer()
+                if remove == nil { Spacer() }
                 Button(action: add) {
-                    Text("Add to Review")
+                    Text(verbatim: action)
                         .designFont(.bodyEmphasis, design)
                         .foregroundStyle(design.ground.color)
                         .padding(.horizontal, 18)
@@ -518,7 +627,7 @@ private struct CommentSheet: View {
                 }
                 .buttonStyle(.amuxControl)
                 .disabled(blank)
-                .identified("review.add", label: String(localized: "Add to Review"), enabled: !blank)
+                .identified(actionId, label: action, enabled: !blank)
             }
         }
         .padding(16)
@@ -529,56 +638,14 @@ private struct CommentSheet: View {
     }
 }
 
-/// Every file, to jump to one: path, comments and what it changed.
-public struct ReviewFileList: View {
-    @Environment(\.design) private var design
-    let model: ReviewModel
-    let open: (Int) -> Void
-
-    public init(model: ReviewModel, open: @escaping (Int) -> Void) {
-        self.model = model
-        self.open = open
-    }
-
-    public var body: some View {
-        NavigationStack {
-            List(model.doc.files.indices, id: \.self) { index in
-                let file = model.doc.files[index]
-                Button { open(index) } label: {
-                    HStack(spacing: 8) {
-                        Text(verbatim: file.path)
-                            .designFont(.monoSmall, design)
-                            .foregroundStyle(design.ink.color)
-                            .lineLimit(2)
-                            .truncationMode(.head)
-                        Spacer(minLength: 4)
-                        if model.count(inFile: index) > 0 {
-                            Text(verbatim: "\(model.count(inFile: index))")
-                                .designFont(.caption, design)
-                                .foregroundStyle(design.accent.color)
-                                .accessibilityLabel(ChatWords.comments(model.count(inFile: index)))
-                        }
-                        Text(verbatim: "+\(file.added)").foregroundStyle(design.added.color)
-                            .designFont(.monoSmall, design)
-                        Text(verbatim: "−\(file.removed)").foregroundStyle(design.removed.color)
-                            .designFont(.monoSmall, design)
-                    }
-                }
-                .identified("review.list.\(index)", label: file.path)
-            }
-            .navigationTitle(String(localized: "Files"))
-            .navigationBarTitleDisplayMode(.inline)
-        }
-    }
-}
-
-/// A bar per file down the right edge, as tall as its share of the change,
-/// with a dot where the reader has commented. Dragging it jumps between
-/// files and names the one under the finger. VoiceOver reads the headings
-/// and the file list instead.
+/// A bar per file down the right edge, as tall as its share of the change.
+/// The file being read is drawn darker and a file with comments in the
+/// accent. Dragging it jumps between files and names the one under the
+/// finger. VoiceOver reads the headings and the file menu instead.
 private struct EdgeWheel: View {
     @Environment(\.design) private var design
     let model: ReviewModel
+    let current: Int?
     let jump: (Int) -> Void
     @State private var touched: Int?
 
@@ -588,25 +655,25 @@ private struct EdgeWheel: View {
             ZStack(alignment: .topTrailing) {
                 ForEach(spans.indices, id: \.self) { index in
                     let span = spans[index]
-                    RoundedRectangle(cornerRadius: 1.5)
-                        .fill(touched == index ? design.accent.color : design.inkFaint.color.opacity(0.5))
-                        .frame(width: 3, height: max(span.height - 3, 2))
+                    Capsule()
+                        .fill(color(index))
+                        .frame(width: touched == index ? 4 : 2, height: max(span.height - 4, 2))
                         .offset(x: -8, y: span.minY)
-                    if model.count(inFile: index) > 0 {
-                        Circle().fill(design.accent.color)
-                            .frame(width: 5, height: 5)
-                            .offset(x: -15, y: span.minY)
-                    }
                 }
                 if let touched, spans.indices.contains(touched) {
-                    Text(verbatim: model.label(ofFile: touched))
-                        .designFont(.caption, design)
-                        .foregroundStyle(design.ink.color)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .frosted(Capsule(), as: .glass)
-                        .fixedSize()
-                        .offset(x: -28, y: max(spans[touched].midY - 12, 0))
+                    HStack(spacing: 8) {
+                        Text(verbatim: model.label(ofFile: touched))
+                            .designFont(.caption, design)
+                            .foregroundStyle(design.ink.color)
+                        Delta(added: model.doc.files[touched].added, removed: model.doc.files[touched].removed)
+                            .designFont(.caption, design)
+                            .monospacedDigit()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .frosted(Capsule(), as: .glass)
+                    .fixedSize()
+                    .offset(x: -24, y: max(spans[touched].midY - 14, 0))
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topTrailing)
@@ -623,6 +690,13 @@ private struct EdgeWheel: View {
         }
         .frame(width: 22)
         .accessibilityHidden(true)
+    }
+
+    private func color(_ index: Int) -> Color {
+        let commented = model.count(inFile: index) > 0
+        let lit = touched == index || (touched == nil && current == index)
+        if commented { return design.accent.color.opacity(lit ? 1 : 0.55) }
+        return lit ? design.inkMuted.color : design.inkFaint.color.opacity(0.4)
     }
 
     /// Each file's stretch of the edge, sized by lines changed with a floor

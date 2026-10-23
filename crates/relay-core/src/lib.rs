@@ -1,15 +1,20 @@
-//! The relay's admission and splice decisions as one function of its state
-//! and an input.
+//! The relay's admission and forwarding decisions as one function of its
+//! state and an input.
 //!
-//! The driver verifies a token's signature and decodes a stream's preface
-//! before the core sees either; [`Relay::step`] judges the claims, the tier
-//! and the adjacency, and answers with a refusal or a splice. The driver
-//! copies the bytes of a spliced stream; no byte enters the core. Every
-//! step ends by checking the cheap invariants, and a violation is reported
-//! as [`Output::Dump`]. See the principles in `docs/ARCHITECTURE.md`.
+//! The driver verifies a token's signature before the core sees a link, and
+//! reads only the header of a forwarded packet: [`Relay::step`] judges the
+//! claims, the tier and the adjacency, and answers with a pair of links to
+//! forward between or a refusal. The driver forwards from its table of pairs
+//! without asking again until the core removes the pair; no byte of a packet
+//! enters the core. Every step ends by checking the cheap invariants, and a
+//! violation is reported as [`Output::Dump`]. See the principles in
+//! `docs/ARCHITECTURE.md`.
 //!
-//! A daemon forwarding a stream between two of its links is a relay with
-//! one account, so its driver asks this core too.
+//! A pair is installed only between two links that are up on one account,
+//! both on a paid plan or both admitted by a pinned key, and it lasts until
+//! a link of it goes down, lapses to the free plan or its token expires.
+//! A daemon forwarding between its own paired hosts is a relay with one
+//! account whose links are all pinned, so its driver asks this core too.
 //!
 //! The core also keeps the adjacency discipline every host's links follow:
 //! it says which of two links between the same pair of processes both
@@ -22,10 +27,11 @@
 
 #![forbid(unsafe_code)]
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
+use std::hash::{Hash, Hasher};
 use std::time::Instant;
 
-use daemon_core::payload::{StreamPreface, StreamRefusal};
+use daemon_core::payload::ForwardRefusal;
 use daemon_core::{DumpReason, HostId, LinkId, StepBudget, Violation};
 
 /// An account, by the id its tokens carry. A daemon's links are all one
@@ -33,24 +39,19 @@ use daemon_core::{DumpReason, HostId, LinkId, StepBudget, Violation};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct UserId(pub [u8; 16]);
 
-/// One stream a host opened over its link, named by the driver as it
-/// accepts it; the driver never names two streams alike.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct StreamId(pub u64);
-
 /// What an account's plan lets its hosts do through the relay.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Tier {
-    /// Hosts reach the relay but carry no streams between each other.
+    /// Hosts reach the relay, but no packet is forwarded between them.
     Free,
-    /// Streams between the account's hosts are carried.
+    /// Packets between the account's hosts are forwarded.
     Pro,
 }
 
-/// How many streams one link may open within [`RATE_WINDOW_MS`].
-pub const RATE_LIMIT: usize = 30;
-/// The sliding window [`RATE_LIMIT`] counts over.
-pub const RATE_WINDOW_MS: u64 = 60_000;
+/// How long a refusal to one destination stays unrepeated on a sender's
+/// link: a host keeps sending until it is told, and it is told again after
+/// this long if it still sends.
+pub const REFUSAL_REPEAT_MS: u64 = 5_000;
 
 /// Which of the two links a crossed dial makes both sides keep: each pair
 /// of hosts agrees on it from their ids alone.
@@ -99,48 +100,50 @@ pub enum Input {
         direct: Option<Direct>,
         advertised: Vec<HostId>,
     },
-    /// The link is gone. The streams spliced through it end with its
-    /// transport; the core forgets them at once.
+    /// The link is gone. Its pairs end with it, or move to another link
+    /// its host still holds here.
     LinkDown { link: LinkId },
-    /// A host opened a stream over `link` with this preface.
-    StreamOpened {
-        stream: StreamId,
-        link: LinkId,
-        preface: StreamPreface,
-    },
-    /// The driver is done with the stream: its copy ended, or it was reset
-    /// after the core refused it.
-    StreamEnded { stream: StreamId },
+    /// A packet arrived on `from` naming `dst`. The driver asks once per
+    /// pair it has not been told about, and holds or drops the packet
+    /// itself until it is.
+    Packet { from: LinkId, dst: HostId },
     /// A token-authenticated link presented a fresh token with this plan.
     TierChanged { link: LinkId, tier: Tier },
-    /// The clock, as an input: the rate window is measured by it.
+    /// A token-authenticated link's token expired before a fresh one came:
+    /// nothing is forwarded for it until one does.
+    Expired { link: LinkId },
+    /// The clock, as an input: the refusal repeat is measured by it.
     Tick { now_ms: u64 },
 }
 
 /// Everything the relay wants done.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Output {
-    /// Refuse the stream before any byte of it is copied. The driver resets
-    /// it and then reports it ended.
-    Refuse {
-        stream: StreamId,
-        reason: StreamRefusal,
+    /// Forward packets between `a`, the link that sent the packet asked
+    /// about, and `b` until [`Output::Unforward`] names the pair.
+    Forward { a: LinkId, b: LinkId },
+    /// Stop forwarding between `a` and `b`. With `tell_both`, every end
+    /// still up is told on its control link that the other end's host is
+    /// refused for `reason`; without it the pair moved to another link of
+    /// the same host, which the next output installs, and nobody is told.
+    Unforward {
+        a: LinkId,
+        b: LinkId,
+        reason: ForwardRefusal,
+        tell_both: bool,
     },
-    /// Copy the stream both ways to a new stream on `to_link`, and report
-    /// it ended when the copy ends.
-    Splice { stream: StreamId, to_link: LinkId },
-    /// Stop a spliced stream now, opened or still opening: the plan of a
-    /// link it runs through no longer carries it. The core has forgotten it.
-    Cut {
-        stream: StreamId,
-        reason: StreamRefusal,
+    /// Tell `link` on its control link that packets for `dst` are refused.
+    Refuse {
+        link: LinkId,
+        dst: HostId,
+        reason: ForwardRefusal,
     },
     /// Do not keep the link that just came up: the same process of its
     /// peer holds a link that wins against it. The core never held it.
     RefuseLink { link: LinkId },
     /// Close the link as superseded: a link that came up replaces it. The
-    /// core has forgotten it and the streams through it, and tells no
-    /// neighbor, since its host is still here.
+    /// core has forgotten it and its pairs, which move to the link
+    /// replacing it, and tells no neighbor, since its host is still here.
     Displace { link: LinkId },
     /// Tell `to` that `host` now holds a link here (`up`) or holds none.
     Neighbor { to: LinkId, host: HostId, up: bool },
@@ -150,34 +153,40 @@ pub enum Output {
 
 /// The invariants [`Relay::check_step_invariants`] asserts, as the
 /// sentences a violation names.
-pub const SPLICED_BETWEEN_LIVE_LINKS: &str =
-    "a stream is spliced only between two links that are up";
-pub const SPLICED_ONCE: &str = "no stream is spliced twice";
-pub const REFUSED_NEVER_SPLICED: &str = "a stream is never both refused and spliced";
 pub const TOLD_ONLY_OF_ITS_NEIGHBORS: &str =
     "a link that is up is told only of other hosts on its own account";
+pub const FORWARDS_ONLY_PAID_PAIRS: &str = "packets flow between two links only while both are up, on one account and paid, or both pinned";
+pub const NOTHING_BEFORE_ADMISSION: &str =
+    "nothing is forwarded for a link not yet admitted, held packets included";
+pub const LAPSE_TELLS_BOTH: &str =
+    "a lapse or expiry removes every pair through the link and tells both ends";
 
 /// One link that is up.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct RelayLink {
     user: UserId,
     host: HostId,
     tier: Option<Tier>,
     direct: Option<Direct>,
-    /// When each stream it opened within the rate window was opened.
-    opened_ms: VecDeque<u64>,
+    /// Its token expired and no fresh one has come.
+    expired: bool,
 }
 
-/// What the core holds of a stream until the driver reports it ended.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Held {
-    Refused,
-    Spliced { from: LinkId, to: LinkId },
+impl RelayLink {
+    /// What it may be paired as: `Some(true)` paid, `Some(false)` pinned,
+    /// `None` when nothing may be forwarded for it.
+    fn forwards_as(&self) -> Option<bool> {
+        match (self.tier, self.expired) {
+            (None, _) => Some(false),
+            (Some(Tier::Pro), false) => Some(true),
+            (Some(Tier::Free), _) | (Some(Tier::Pro), true) => None,
+        }
+    }
 }
 
-/// Which links each account's streams may be spliced between: per
+/// Which links each account's packets may be forwarded between: per
 /// account, per host, the links that host holds here.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Adjacency {
     hosts: BTreeMap<UserId, BTreeMap<HostId, BTreeSet<LinkId>>>,
 }
@@ -207,8 +216,8 @@ impl Adjacency {
         }
     }
 
-    /// The link a stream to `host` on `user`'s account is spliced onto: its
-    /// newest, since a second link to a host replaces the first.
+    /// The link packets for `host` on `user`'s account are forwarded onto:
+    /// its newest, since a second link to a host replaces the first.
     fn route(&self, user: UserId, host: HostId) -> Option<LinkId> {
         self.hosts.get(&user)?.get(&host)?.last().copied()
     }
@@ -256,24 +265,18 @@ struct Arrival {
     direct: Option<Direct>,
 }
 
-/// What one step decided about a stream, against what the core held of
-/// it before, for the invariants to judge.
-#[derive(Clone, Copy, Debug)]
-struct Decided {
-    stream: StreamId,
-    before: Option<Held>,
-    spliced: bool,
-}
-
 /// What the current step touched; cleared as each step begins.
 #[derive(Clone, Debug, Default)]
 struct Touched {
-    streams: Vec<StreamId>,
     links: Vec<LinkId>,
-    decided: Vec<Decided>,
     /// Each neighbor told this step: the link told, and the host it was
     /// told of with that host's account.
     told: Vec<Told>,
+    /// Each pair installed this step.
+    forwarded: Vec<(LinkId, LinkId)>,
+    /// Each link that lapsed or expired this step, with every pair removed
+    /// through it and whether both ends were told.
+    lapsed: Vec<(LinkId, Vec<(LinkId, bool)>)>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -284,21 +287,50 @@ struct Told {
 }
 
 /// The relay's whole state: the links up, which hosts of one account may
-/// reach each other, the streams decided and not yet ended, and its step
-/// budget. Cloned and printed by a driver keeping its recent history for a
-/// dump.
+/// reach each other, the pairs forwarded between, the refusals recently
+/// told, and its step budget. Cloned and printed by a driver keeping its
+/// recent history for a dump.
 #[derive(Clone, Debug)]
 pub struct Relay {
-    /// The relay's own host: a stream addressed to it has nothing to reach.
+    /// The relay's own host: a packet addressed to it has nothing to reach.
     own: HostId,
     links: BTreeMap<LinkId, RelayLink>,
     adjacency: Adjacency,
-    streams: BTreeMap<StreamId, Held>,
-    /// The spliced streams through each link, either end.
-    through: BTreeMap<LinkId, BTreeSet<StreamId>>,
+    /// The pairs forwarded between, by each link of them: symmetric.
+    pairs: BTreeMap<LinkId, BTreeSet<LinkId>>,
+    /// When each sender's link was last told a destination is refused.
+    refused: BTreeMap<(LinkId, HostId), u64>,
     now_ms: u64,
     touched: Touched,
     budget: StepBudget,
+}
+
+/// Two relays are equal when they hold the same links, pairs and refusals
+/// at the same time: what the last step touched and the step budget are not
+/// the relay's state, so a model exploring the core sees one state where the
+/// same decisions were reached by different steps.
+impl PartialEq for Relay {
+    fn eq(&self, other: &Self) -> bool {
+        self.own == other.own
+            && self.links == other.links
+            && self.adjacency == other.adjacency
+            && self.pairs == other.pairs
+            && self.refused == other.refused
+            && self.now_ms == other.now_ms
+    }
+}
+
+impl Eq for Relay {}
+
+impl Hash for Relay {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.own.hash(state);
+        self.links.hash(state);
+        self.adjacency.hash(state);
+        self.pairs.hash(state);
+        self.refused.hash(state);
+        self.now_ms.hash(state);
+    }
 }
 
 impl Relay {
@@ -317,8 +349,8 @@ impl Relay {
             own,
             links: BTreeMap::new(),
             adjacency: Adjacency::default(),
-            streams: BTreeMap::new(),
-            through: BTreeMap::new(),
+            pairs: BTreeMap::new(),
+            refused: BTreeMap::new(),
             now_ms: 0,
             touched: Touched::default(),
             budget,
@@ -351,13 +383,9 @@ impl Relay {
                 out,
             ),
             Input::LinkDown { link } => self.link_down(link, out),
-            Input::StreamOpened {
-                stream,
-                link,
-                preface,
-            } => self.stream_opened(stream, link, &preface, out),
-            Input::StreamEnded { stream } => self.stream_ended(stream),
+            Input::Packet { from, dst } => self.packet(from, dst, out),
             Input::TierChanged { link, tier } => self.tier_changed(link, tier, out),
+            Input::Expired { link } => self.expired(link, out),
             Input::Tick { now_ms } => self.now_ms = self.now_ms.max(now_ms),
         }
         if let Err(violation) = self.check_step_invariants() {
@@ -394,7 +422,11 @@ impl Relay {
             direct,
         } = arrival;
         let first = !self.adjacency.holds(user, host);
-        self.forget_link(link);
+        // The pairs of the links this one replaces, with the host each was.
+        let mut orphaned: Vec<(UserId, HostId, LinkId, BTreeSet<LinkId>)> = Vec::new();
+        if let Some((again, partners)) = self.forget_link(link) {
+            orphaned.push((again.user, again.host, link, partners));
+        }
         if let Some(direct) = direct {
             let duplicates: Vec<(LinkId, Direct)> = self
                 .adjacency
@@ -407,10 +439,15 @@ impl Relay {
                     && (held.order == DialOrder::Preferred || held.order == direct.order)
             }) {
                 out.push(Output::RefuseLink { link });
+                for (user, host, gone, partners) in orphaned {
+                    self.relink(user, host, gone, partners, out);
+                }
                 return;
             }
             for (displaced, _) in duplicates {
-                self.forget_link(displaced);
+                if let Some((gone, partners)) = self.forget_link(displaced) {
+                    orphaned.push((gone.user, gone.host, displaced, partners));
+                }
                 out.push(Output::Displace { link: displaced });
             }
         }
@@ -439,18 +476,22 @@ impl Relay {
                 host,
                 tier,
                 direct,
-                opened_ms: VecDeque::new(),
+                expired: false,
             },
         );
         self.adjacency.add(user, host, link);
+        for (user, host, gone, partners) in orphaned {
+            self.relink(user, host, gone, partners, out);
+        }
     }
 
     /// A link went down: when it was its host's last, every other link on
     /// the account is told the host is gone.
     fn link_down(&mut self, link: LinkId, out: &mut Vec<Output>) {
-        let Some(gone) = self.forget_link(link) else {
+        let Some((gone, partners)) = self.forget_link(link) else {
             return;
         };
+        self.relink(gone.user, gone.host, link, partners, out);
         if !self.adjacency.holds(gone.user, gone.host) {
             for (other, _) in self.adjacency.others(gone.user, gone.host) {
                 self.tell(other, gone.user, gone.host, false, out);
@@ -458,15 +499,165 @@ impl Relay {
         }
     }
 
-    /// Drops a link and the streams through it, telling nobody.
-    fn forget_link(&mut self, link: LinkId) -> Option<RelayLink> {
+    /// Drops a link and its pairs, telling nobody; returns the link and
+    /// the partners of its pairs.
+    fn forget_link(&mut self, link: LinkId) -> Option<(RelayLink, BTreeSet<LinkId>)> {
         let gone = self.links.remove(&link)?;
         self.touched.links.push(link);
         self.adjacency.remove(gone.user, gone.host, link);
-        for stream in self.through.remove(&link).unwrap_or_default() {
-            self.forget(stream);
+        self.refused.retain(|(sender, _), _| *sender != link);
+        let partners = self.unpair_all(link);
+        Some((gone, partners))
+    }
+
+    /// Removes every pair through `link` from the table, returning the
+    /// other end of each.
+    fn unpair_all(&mut self, link: LinkId) -> BTreeSet<LinkId> {
+        let partners = self.pairs.remove(&link).unwrap_or_default();
+        for partner in &partners {
+            if let Some(theirs) = self.pairs.get_mut(partner) {
+                theirs.remove(&link);
+                if theirs.is_empty() {
+                    self.pairs.remove(partner);
+                }
+            }
         }
-        Some(gone)
+        partners
+    }
+
+    /// The pairs `gone`, a link of `host`, was in: each moves to the link
+    /// `host` still holds here when that link may be paired with the
+    /// partner, telling nobody; the rest end and the partner is told the
+    /// host is out of reach.
+    fn relink(
+        &mut self,
+        user: UserId,
+        host: HostId,
+        gone: LinkId,
+        partners: BTreeSet<LinkId>,
+        out: &mut Vec<Output>,
+    ) {
+        for partner in partners {
+            let moved = self
+                .adjacency
+                .route(user, host)
+                .filter(|to| self.may_pair(partner, *to).is_ok());
+            out.push(Output::Unforward {
+                a: partner,
+                b: gone,
+                reason: ForwardRefusal::NoRoute,
+                tell_both: moved.is_none(),
+            });
+            match moved {
+                Some(to) => self.pair(partner, to, out),
+                None => self.mark_refused(partner, host),
+            }
+        }
+    }
+
+    /// Installs the pair and says so.
+    fn pair(&mut self, a: LinkId, b: LinkId, out: &mut Vec<Output>) {
+        self.pairs.entry(a).or_default().insert(b);
+        self.pairs.entry(b).or_default().insert(a);
+        self.touched.links.extend([a, b]);
+        self.touched.forwarded.push((a, b));
+        out.push(Output::Forward { a, b });
+    }
+
+    fn mark_refused(&mut self, sender: LinkId, dst: HostId) {
+        self.refused.insert((sender, dst), self.now_ms);
+    }
+
+    /// Whether packets may flow between two links: both up, on one account,
+    /// and both paid or both pinned.
+    fn may_pair(&self, a: LinkId, b: LinkId) -> Result<(), ForwardRefusal> {
+        let (Some(from), Some(to)) = (self.links.get(&a), self.links.get(&b)) else {
+            return Err(ForwardRefusal::NoRoute);
+        };
+        if a == b || from.user != to.user || from.host == to.host {
+            return Err(ForwardRefusal::NoRoute);
+        }
+        if from.tier == Some(Tier::Free) || to.tier == Some(Tier::Free) {
+            return Err(ForwardRefusal::PaymentRequired);
+        }
+        match (from.forwards_as(), to.forwards_as()) {
+            (Some(paid), Some(other)) if paid == other => Ok(()),
+            _ => Err(ForwardRefusal::NoRoute),
+        }
+    }
+
+    /// A packet for a pair the driver has not been told about. A sender not
+    /// up is not admitted, so it is told nothing; one already told of this
+    /// destination within [`REFUSAL_REPEAT_MS`] is not told again.
+    fn packet(&mut self, from: LinkId, dst: HostId, out: &mut Vec<Output>) {
+        let Some(sender) = self.links.get(&from) else {
+            return;
+        };
+        self.touched.links.push(from);
+        let verdict = if dst == self.own {
+            Err(ForwardRefusal::NoRoute)
+        } else {
+            match self.adjacency.route(sender.user, dst) {
+                Some(to) => self.may_pair(from, to).map(|()| to),
+                None => Err(ForwardRefusal::NoRoute),
+            }
+        };
+        match verdict {
+            Ok(to) => self.pair(from, to, out),
+            Err(reason) => {
+                if self
+                    .refused
+                    .get(&(from, dst))
+                    .is_some_and(|at| self.now_ms < at.saturating_add(REFUSAL_REPEAT_MS))
+                {
+                    return;
+                }
+                self.mark_refused(from, dst);
+                out.push(Output::Refuse {
+                    link: from,
+                    dst,
+                    reason,
+                });
+            }
+        }
+    }
+
+    /// Ends every pair through a link that may no longer be forwarded for,
+    /// telling both ends: a lapse or an expiry.
+    fn lapse(&mut self, link: LinkId, reason: ForwardRefusal, out: &mut Vec<Output>) {
+        let Some(host) = self.links.get(&link).map(|lapsed| lapsed.host) else {
+            return;
+        };
+        self.touched.links.push(link);
+        let mut removed = Vec::new();
+        for partner in self.unpair_all(link) {
+            out.push(Output::Unforward {
+                a: partner,
+                b: link,
+                reason,
+                tell_both: true,
+            });
+            if let Some(partner_host) = self.links.get(&partner).map(|other| other.host) {
+                self.mark_refused(link, partner_host);
+            }
+            self.mark_refused(partner, host);
+            removed.push((partner, true));
+        }
+        self.touched.lapsed.push((link, removed));
+    }
+
+    /// A token link's token ran out: nothing is forwarded for it until a
+    /// fresh token comes, and its host is out of reach meanwhile. A pinned
+    /// key does not expire.
+    fn expired(&mut self, link: LinkId, out: &mut Vec<Output>) {
+        let Some(expired) = self.links.get_mut(&link) else {
+            return;
+        };
+        if expired.tier.is_none() {
+            return;
+        }
+        expired.expired = true;
+        self.lapse(link, ForwardRefusal::NoRoute, out);
     }
 
     fn tell(&mut self, to: LinkId, user: UserId, host: HostId, up: bool, out: &mut Vec<Output>) {
@@ -480,84 +671,8 @@ impl Relay {
         self.adjacency.neighbors(user)
     }
 
-    /// Admission, in the order the cheapest refusal is found: a preface
-    /// naming no other host, an origin gone or on the free plan, an origin
-    /// opening too fast, then a destination with no link here or on the
-    /// free plan.
-    fn stream_opened(
-        &mut self,
-        stream: StreamId,
-        origin: LinkId,
-        preface: &StreamPreface,
-        out: &mut Vec<Output>,
-    ) {
-        self.touched.streams.push(stream);
-        let before = self.streams.get(&stream).copied();
-        let verdict = self.admit(origin, preface);
-        self.touched.decided.push(Decided {
-            stream,
-            before,
-            spliced: verdict.is_ok(),
-        });
-        match verdict {
-            Ok(to) => {
-                self.streams
-                    .insert(stream, Held::Spliced { from: origin, to });
-                self.through.entry(origin).or_default().insert(stream);
-                self.through.entry(to).or_default().insert(stream);
-                out.push(Output::Splice {
-                    stream,
-                    to_link: to,
-                });
-            }
-            Err(reason) => {
-                self.streams.insert(stream, Held::Refused);
-                out.push(Output::Refuse { stream, reason });
-            }
-        }
-    }
-
-    fn admit(&mut self, origin: LinkId, preface: &StreamPreface) -> Result<LinkId, StreamRefusal> {
-        let destination = match HostId::from_slice(&preface.dst) {
-            Some(destination) if destination != self.own => destination,
-            _ => return Err(StreamRefusal::NotAdjacent),
-        };
-        let now_ms = self.now_ms;
-        let Some(from) = self.links.get_mut(&origin) else {
-            return Err(StreamRefusal::NoRoute);
-        };
-        if from.tier == Some(Tier::Free) {
-            return Err(StreamRefusal::PaymentRequired);
-        }
-        while from
-            .opened_ms
-            .front()
-            .is_some_and(|at| at.saturating_add(RATE_WINDOW_MS) <= now_ms)
-        {
-            from.opened_ms.pop_front();
-        }
-        if from.opened_ms.len() >= RATE_LIMIT {
-            return Err(StreamRefusal::RateLimited);
-        }
-        from.opened_ms.push_back(now_ms);
-        let user = from.user;
-        let Some(to) = self.adjacency.route(user, destination) else {
-            return Err(StreamRefusal::NoRoute);
-        };
-        if self.links.get(&to).and_then(|link| link.tier) == Some(Tier::Free) {
-            return Err(StreamRefusal::PaymentRequired);
-        }
-        Ok(to)
-    }
-
-    fn stream_ended(&mut self, stream: StreamId) {
-        self.touched.streams.push(stream);
-        self.forget(stream);
-    }
-
-    /// A lapse to the free plan stops every stream through the link, not
-    /// only those it opens next: what it opened while paid for does not
-    /// carry on unpaid.
+    /// A fresh token: it ends an expiry. A lapse to the free plan ends
+    /// every pair through the link and tells both ends.
     fn tier_changed(&mut self, link: LinkId, tier: Tier, out: &mut Vec<Output>) {
         let Some(changed) = self.links.get_mut(&link) else {
             return;
@@ -566,75 +681,17 @@ impl Relay {
             return;
         }
         changed.tier = Some(tier);
+        changed.expired = false;
         self.touched.links.push(link);
         if tier != Tier::Free {
             return;
         }
-        for stream in self.through.remove(&link).unwrap_or_default() {
-            self.touched.streams.push(stream);
-            self.forget(stream);
-            out.push(Output::Cut {
-                stream,
-                reason: StreamRefusal::PaymentRequired,
-            });
-        }
-    }
-
-    /// Drops the stream and its place in the links it runs through.
-    fn forget(&mut self, stream: StreamId) {
-        if let Some(Held::Spliced { from, to }) = self.streams.remove(&stream) {
-            for link in [from, to] {
-                if let Some(streams) = self.through.get_mut(&link) {
-                    streams.remove(&stream);
-                    if streams.is_empty() {
-                        self.through.remove(&link);
-                    }
-                }
-            }
-        }
+        self.lapse(link, ForwardRefusal::PaymentRequired, out);
     }
 
     /// The cheap predicates checked after every step, each in constant time
-    /// per link or stream the step touched.
+    /// per link the step touched.
     pub fn check_step_invariants(&self) -> Result<(), Violation> {
-        for decided in &self.touched.decided {
-            match (decided.before, decided.spliced) {
-                (Some(Held::Spliced { .. }), true) => {
-                    return Err(Violation {
-                        invariant: SPLICED_ONCE,
-                        detail: format!("stream {} was spliced already", decided.stream.0),
-                    });
-                }
-                (Some(Held::Refused), true) => {
-                    return Err(Violation {
-                        invariant: REFUSED_NEVER_SPLICED,
-                        detail: format!("stream {} was refused, then spliced", decided.stream.0),
-                    });
-                }
-                (Some(Held::Spliced { .. }), false) => {
-                    return Err(Violation {
-                        invariant: REFUSED_NEVER_SPLICED,
-                        detail: format!("stream {} was spliced, then refused", decided.stream.0),
-                    });
-                }
-                (Some(Held::Refused) | None, false) | (None, true) => {}
-            }
-        }
-        for stream in &self.touched.streams {
-            if let Some(Held::Spliced { from, to }) = self.streams.get(stream) {
-                for link in [from, to] {
-                    if !self.links.contains_key(link) {
-                        return Err(Violation {
-                            invariant: SPLICED_BETWEEN_LIVE_LINKS,
-                            detail: format!(
-                                "stream {} runs through link {}, which is down",
-                                stream.0, link.0
-                            ),
-                        });
-                    }
-                }
-            }
-        }
         for told in &self.touched.told {
             let fits = self
                 .links
@@ -650,20 +707,60 @@ impl Relay {
                 });
             }
         }
+        for (a, b) in &self.touched.forwarded {
+            for link in [a, b] {
+                if !self.links.contains_key(link) {
+                    return Err(Violation {
+                        invariant: NOTHING_BEFORE_ADMISSION,
+                        detail: format!("link {} was paired before it was admitted", link.0),
+                    });
+                }
+            }
+        }
         for link in &self.touched.links {
-            if !self.links.contains_key(link)
-                && let Some(stream) = self.through.get(link).and_then(|s| s.first())
-            {
+            for partner in self.pairs.get(link).into_iter().flatten() {
+                let installed_back = self
+                    .pairs
+                    .get(partner)
+                    .is_some_and(|theirs| theirs.contains(link));
+                if !installed_back || self.may_pair(*link, *partner).is_err() {
+                    return Err(Violation {
+                        invariant: FORWARDS_ONLY_PAID_PAIRS,
+                        detail: format!(
+                            "links {} and {} are paired while one is down, unpaid, expired or on another account",
+                            link.0, partner.0
+                        ),
+                    });
+                }
+            }
+        }
+        for (link, removed) in &self.touched.lapsed {
+            if self.pairs.contains_key(link) || removed.iter().any(|(_, told)| !told) {
                 return Err(Violation {
-                    invariant: SPLICED_BETWEEN_LIVE_LINKS,
+                    invariant: LAPSE_TELLS_BOTH,
                     detail: format!(
-                        "link {} went down with stream {} still spliced through it",
-                        link.0, stream.0
+                        "link {} lapsed or expired with a pair left through it or an end untold",
+                        link.0
                     ),
                 });
             }
         }
         Ok(())
+    }
+
+    /// Every pair forwarded between, each once, the lower link first.
+    pub fn pairs(&self) -> impl Iterator<Item = (LinkId, LinkId)> + '_ {
+        self.pairs.iter().flat_map(|(a, partners)| {
+            partners
+                .iter()
+                .filter(move |b| *a < **b)
+                .map(move |b| (*a, *b))
+        })
+    }
+
+    /// The host a link that is up belongs to.
+    pub fn host_of(&self, link: LinkId) -> Option<HostId> {
+        self.links.get(&link).map(|up| up.host)
     }
 
     /// How long one step may take before it is reported.
@@ -814,41 +911,6 @@ mod tests {
     }
 
     #[test]
-    fn of_a_crossed_dial_between_two_processes_both_keep_the_preferred_link() {
-        let mut relay = relay();
-        assert_eq!(
-            direct_up(&mut relay, 1, DESK, DialOrder::Fallback, 7, &[]),
-            Vec::new()
-        );
-        assert_eq!(
-            direct_up(&mut relay, 2, DESK, DialOrder::Preferred, 7, &[]),
-            vec![Output::Displace { link: LinkId(1) }]
-        );
-        assert_eq!(
-            direct_up(&mut relay, 3, DESK, DialOrder::Fallback, 7, &[]),
-            vec![Output::RefuseLink { link: LinkId(3) }]
-        );
-        assert_eq!(
-            direct_up(&mut relay, 4, DESK, DialOrder::Preferred, 7, &[]),
-            vec![Output::RefuseLink { link: LinkId(4) }]
-        );
-        assert_eq!(relay.adjacency.route(ALICE, DESK), Some(LinkId(2)));
-    }
-
-    #[test]
-    fn a_link_from_a_later_life_of_the_peer_replaces_the_earlier_lifes_links() {
-        let mut relay = relay();
-        up(&mut relay, 9, ALICE, LAPTOP, None);
-        direct_up(&mut relay, 1, DESK, DialOrder::Preferred, 7, &[LAPTOP]);
-        assert_eq!(
-            direct_up(&mut relay, 2, DESK, DialOrder::Fallback, 8, &[LAPTOP]),
-            vec![Output::Displace { link: LinkId(1) }],
-            "the host stays a neighbor throughout, so nobody is told"
-        );
-        assert_eq!(relay.adjacency.links_of(ALICE, DESK), vec![LinkId(2)]);
-    }
-
-    #[test]
     fn the_host_with_the_lower_id_dials_the_preferred_link() {
         assert_eq!(
             DialOrder::for_hosts(DESK, LAPTOP, false),
@@ -868,34 +930,6 @@ mod tests {
         );
     }
 
-    fn open(relay: &mut Relay, stream: u64, link: u64, to: HostId) -> Vec<Output> {
-        step(
-            relay,
-            Input::StreamOpened {
-                stream: StreamId(stream),
-                link: LinkId(link),
-                preface: StreamPreface {
-                    dst: to.0.to_vec(),
-                    plain: false,
-                },
-            },
-        )
-    }
-
-    fn refused(stream: u64, reason: StreamRefusal) -> Vec<Output> {
-        vec![Output::Refuse {
-            stream: StreamId(stream),
-            reason,
-        }]
-    }
-
-    fn spliced(stream: u64, to_link: u64) -> Vec<Output> {
-        vec![Output::Splice {
-            stream: StreamId(stream),
-            to_link: LinkId(to_link),
-        }]
-    }
-
     fn violation(out: &[Output]) -> Option<&'static str> {
         out.iter().find_map(|output| match output {
             Output::Dump {
@@ -905,144 +939,282 @@ mod tests {
         })
     }
 
+    fn packet(relay: &mut Relay, from: u64, dst: HostId) -> Vec<Output> {
+        step(
+            relay,
+            Input::Packet {
+                from: LinkId(from),
+                dst,
+            },
+        )
+    }
+
+    fn forward(a: u64, b: u64) -> Output {
+        Output::Forward {
+            a: LinkId(a),
+            b: LinkId(b),
+        }
+    }
+
+    fn unforward(a: u64, b: u64, reason: ForwardRefusal, tell_both: bool) -> Output {
+        Output::Unforward {
+            a: LinkId(a),
+            b: LinkId(b),
+            reason,
+            tell_both,
+        }
+    }
+
+    fn refuse(link: u64, dst: HostId, reason: ForwardRefusal) -> Vec<Output> {
+        vec![Output::Refuse {
+            link: LinkId(link),
+            dst,
+            reason,
+        }]
+    }
+
+    fn pairs(relay: &Relay) -> Vec<(u64, u64)> {
+        relay.pairs().map(|(a, b)| (a.0, b.0)).collect()
+    }
+
+    const TABLET: HostId = HostId([0x7a; 16]);
+
     #[test]
-    fn a_stream_is_spliced_to_the_newest_link_of_its_destination_on_the_same_account() {
+    fn a_packet_is_paired_with_the_newest_link_of_its_destination() {
         let mut relay = relay();
         up(&mut relay, 1, ALICE, DESK, Some(Tier::Pro));
         up(&mut relay, 2, ALICE, LAPTOP, Some(Tier::Pro));
         up(&mut relay, 3, ALICE, LAPTOP, Some(Tier::Pro));
-        assert_eq!(open(&mut relay, 1, 1, LAPTOP), spliced(1, 3));
+        assert_eq!(packet(&mut relay, 1, LAPTOP), vec![forward(1, 3)]);
     }
 
     #[test]
-    fn accounts_never_reach_each_other() {
-        let mut relay = relay();
-        up(&mut relay, 1, ALICE, DESK, Some(Tier::Pro));
-        up(&mut relay, 2, BOB, LAPTOP, Some(Tier::Pro));
-        assert_eq!(
-            open(&mut relay, 1, 1, LAPTOP),
-            refused(1, StreamRefusal::NoRoute)
-        );
-    }
-
-    #[test]
-    fn a_preface_naming_the_relay_or_no_host_is_not_adjacent() {
-        let mut relay = relay();
-        up(&mut relay, 1, ALICE, DESK, None);
-        assert_eq!(
-            open(&mut relay, 1, 1, RELAY),
-            refused(1, StreamRefusal::NotAdjacent)
-        );
-        let out = step(
-            &mut relay,
-            Input::StreamOpened {
-                stream: StreamId(2),
-                link: LinkId(1),
-                preface: StreamPreface {
-                    dst: vec![1, 2, 3],
-                    plain: false,
-                },
-            },
-        );
-        assert_eq!(out, refused(2, StreamRefusal::NotAdjacent));
-    }
-
-    #[test]
-    fn the_free_plan_carries_no_stream_from_or_to_its_hosts() {
+    fn a_free_end_of_either_side_is_refused_for_payment() {
         let mut relay = relay();
         up(&mut relay, 1, ALICE, DESK, Some(Tier::Free));
         up(&mut relay, 2, ALICE, LAPTOP, Some(Tier::Pro));
         assert_eq!(
-            open(&mut relay, 1, 1, LAPTOP),
-            refused(1, StreamRefusal::PaymentRequired)
+            packet(&mut relay, 1, LAPTOP),
+            refuse(1, LAPTOP, ForwardRefusal::PaymentRequired)
         );
         assert_eq!(
-            open(&mut relay, 2, 2, DESK),
-            refused(2, StreamRefusal::PaymentRequired)
+            packet(&mut relay, 2, DESK),
+            refuse(2, DESK, ForwardRefusal::PaymentRequired)
+        );
+        assert_eq!(pairs(&relay), Vec::new());
+    }
+
+    #[test]
+    fn hosts_out_of_reach_are_refused_as_no_route() {
+        let mut relay = relay();
+        up(&mut relay, 1, ALICE, DESK, Some(Tier::Pro));
+        up(&mut relay, 2, BOB, LAPTOP, Some(Tier::Pro));
+        assert_eq!(
+            packet(&mut relay, 1, LAPTOP),
+            refuse(1, LAPTOP, ForwardRefusal::NoRoute),
+            "another account's host"
+        );
+        assert_eq!(
+            packet(&mut relay, 1, PHONE),
+            refuse(1, PHONE, ForwardRefusal::NoRoute),
+            "a host with no link here"
+        );
+        assert_eq!(
+            packet(&mut relay, 1, RELAY),
+            refuse(1, RELAY, ForwardRefusal::NoRoute),
+            "the relay itself"
+        );
+        assert_eq!(
+            packet(&mut relay, 1, DESK),
+            refuse(1, DESK, ForwardRefusal::NoRoute),
+            "the sender itself"
         );
     }
 
     #[test]
-    fn a_link_opening_too_fast_is_refused_until_its_window_moves_on() {
+    fn a_paid_link_and_a_pinned_link_are_never_paired() {
         let mut relay = relay();
-        up(&mut relay, 1, ALICE, DESK, None);
-        for stream in 0..RATE_LIMIT as u64 {
-            assert_eq!(
-                open(&mut relay, stream, 1, LAPTOP),
-                refused(stream, StreamRefusal::NoRoute)
-            );
-        }
+        up(&mut relay, 1, ALICE, DESK, Some(Tier::Pro));
+        up(&mut relay, 2, ALICE, LAPTOP, None);
         assert_eq!(
-            open(&mut relay, 100, 1, LAPTOP),
-            refused(100, StreamRefusal::RateLimited)
+            packet(&mut relay, 1, LAPTOP),
+            refuse(1, LAPTOP, ForwardRefusal::NoRoute)
+        );
+        assert_eq!(
+            packet(&mut relay, 2, DESK),
+            refuse(2, DESK, ForwardRefusal::NoRoute)
+        );
+    }
+
+    #[test]
+    fn a_refusal_repeats_at_most_once_a_window_per_destination() {
+        let mut relay = relay();
+        up(&mut relay, 1, ALICE, DESK, Some(Tier::Pro));
+        assert_eq!(
+            packet(&mut relay, 1, LAPTOP),
+            refuse(1, LAPTOP, ForwardRefusal::NoRoute)
+        );
+        assert_eq!(packet(&mut relay, 1, LAPTOP), Vec::new());
+        assert_eq!(
+            packet(&mut relay, 1, PHONE),
+            refuse(1, PHONE, ForwardRefusal::NoRoute),
+            "another destination is told at once"
         );
         step(
             &mut relay,
             Input::Tick {
-                now_ms: RATE_WINDOW_MS,
+                now_ms: REFUSAL_REPEAT_MS - 1,
+            },
+        );
+        assert_eq!(packet(&mut relay, 1, LAPTOP), Vec::new());
+        step(
+            &mut relay,
+            Input::Tick {
+                now_ms: REFUSAL_REPEAT_MS,
             },
         );
         assert_eq!(
-            open(&mut relay, 101, 1, LAPTOP),
-            refused(101, StreamRefusal::NoRoute)
+            packet(&mut relay, 1, LAPTOP),
+            refuse(1, LAPTOP, ForwardRefusal::NoRoute)
+        );
+        // Once the destination arrives, the pair is installed at once.
+        up(&mut relay, 2, ALICE, LAPTOP, Some(Tier::Pro));
+        assert_eq!(packet(&mut relay, 1, LAPTOP), vec![forward(1, 2)]);
+    }
+
+    #[test]
+    fn a_link_going_down_ends_its_pairs_and_tells_the_ends_still_up() {
+        let mut relay = relay();
+        up(&mut relay, 1, ALICE, DESK, Some(Tier::Pro));
+        up(&mut relay, 2, ALICE, LAPTOP, Some(Tier::Pro));
+        up(&mut relay, 3, ALICE, TABLET, Some(Tier::Pro));
+        packet(&mut relay, 1, LAPTOP);
+        packet(&mut relay, 3, LAPTOP);
+        assert_eq!(pairs(&relay), vec![(1, 2), (2, 3)]);
+        assert_eq!(
+            step(&mut relay, Input::LinkDown { link: LinkId(2) }),
+            vec![
+                unforward(1, 2, ForwardRefusal::NoRoute, true),
+                unforward(3, 2, ForwardRefusal::NoRoute, true),
+                told(3, LAPTOP, false),
+                told(1, LAPTOP, false),
+            ]
+        );
+        assert_eq!(pairs(&relay), Vec::new());
+        assert_eq!(
+            packet(&mut relay, 1, LAPTOP),
+            Vec::new(),
+            "the end told counts as refused"
         );
     }
 
     #[test]
-    fn a_lapse_to_free_cuts_every_stream_through_the_link_and_a_renewal_cuts_none() {
+    fn a_pair_moves_to_the_other_link_of_a_host_whose_link_went_down() {
         let mut relay = relay();
         up(&mut relay, 1, ALICE, DESK, Some(Tier::Pro));
         up(&mut relay, 2, ALICE, LAPTOP, Some(Tier::Pro));
-        assert_eq!(open(&mut relay, 1, 1, LAPTOP), spliced(1, 2));
-        assert_eq!(open(&mut relay, 2, 2, DESK), spliced(2, 1));
+        up(&mut relay, 3, ALICE, LAPTOP, Some(Tier::Pro));
+        assert_eq!(packet(&mut relay, 1, LAPTOP), vec![forward(1, 3)]);
+        assert_eq!(
+            step(&mut relay, Input::LinkDown { link: LinkId(3) }),
+            vec![
+                unforward(1, 3, ForwardRefusal::NoRoute, false),
+                forward(1, 2)
+            ]
+        );
+        assert_eq!(pairs(&relay), vec![(1, 2)]);
+    }
+
+    #[test]
+    fn a_lapse_to_free_ends_every_pair_through_the_link_and_tells_both_ends() {
+        let mut relay = relay();
+        up(&mut relay, 1, ALICE, DESK, Some(Tier::Pro));
+        up(&mut relay, 2, ALICE, LAPTOP, Some(Tier::Pro));
+        up(&mut relay, 3, ALICE, TABLET, Some(Tier::Pro));
+        packet(&mut relay, 2, DESK);
+        packet(&mut relay, 2, TABLET);
+        packet(&mut relay, 1, TABLET);
         assert_eq!(
             step(
                 &mut relay,
                 Input::TierChanged {
-                    link: LinkId(1),
+                    link: LinkId(2),
                     tier: Tier::Pro,
                 },
             ),
-            Vec::new()
+            Vec::new(),
+            "a renewal ends nothing"
         );
-        let out = step(
-            &mut relay,
-            Input::TierChanged {
-                link: LinkId(2),
-                tier: Tier::Free,
-            },
-        );
-        assert_eq!(
-            out,
-            vec![
-                Output::Cut {
-                    stream: StreamId(1),
-                    reason: StreamRefusal::PaymentRequired,
-                },
-                Output::Cut {
-                    stream: StreamId(2),
-                    reason: StreamRefusal::PaymentRequired,
-                },
-            ]
-        );
-        // The copies the driver stops report their end; nothing is held.
         assert_eq!(
             step(
                 &mut relay,
-                Input::StreamEnded {
-                    stream: StreamId(1)
-                }
+                Input::TierChanged {
+                    link: LinkId(2),
+                    tier: Tier::Free,
+                },
             ),
-            Vec::new()
+            vec![
+                unforward(1, 2, ForwardRefusal::PaymentRequired, true),
+                unforward(3, 2, ForwardRefusal::PaymentRequired, true),
+            ]
+        );
+        assert_eq!(pairs(&relay), vec![(1, 3)], "pairs not through it stay");
+        assert_eq!(
+            packet(&mut relay, 1, LAPTOP),
+            Vec::new(),
+            "both ends were told already"
+        );
+        assert_eq!(packet(&mut relay, 2, DESK), Vec::new());
+        step(
+            &mut relay,
+            Input::Tick {
+                now_ms: REFUSAL_REPEAT_MS,
+            },
+        );
+        assert_eq!(
+            packet(&mut relay, 1, LAPTOP),
+            refuse(1, LAPTOP, ForwardRefusal::PaymentRequired)
         );
     }
 
     #[test]
-    fn a_pinned_key_link_has_no_plan_to_lapse() {
+    fn an_expired_token_ends_every_pair_through_the_link_until_a_fresh_one_comes() {
+        let mut relay = relay();
+        up(&mut relay, 1, ALICE, DESK, Some(Tier::Pro));
+        up(&mut relay, 2, ALICE, LAPTOP, Some(Tier::Pro));
+        packet(&mut relay, 1, LAPTOP);
+        assert_eq!(
+            step(&mut relay, Input::Expired { link: LinkId(2) }),
+            vec![unforward(1, 2, ForwardRefusal::NoRoute, true)]
+        );
+        assert_eq!(pairs(&relay), Vec::new());
+        step(
+            &mut relay,
+            Input::Tick {
+                now_ms: REFUSAL_REPEAT_MS,
+            },
+        );
+        assert_eq!(
+            packet(&mut relay, 2, DESK),
+            refuse(2, DESK, ForwardRefusal::NoRoute),
+            "nothing is forwarded for an expired link"
+        );
+        step(
+            &mut relay,
+            Input::TierChanged {
+                link: LinkId(2),
+                tier: Tier::Pro,
+            },
+        );
+        assert_eq!(packet(&mut relay, 1, LAPTOP), vec![forward(1, 2)]);
+    }
+
+    #[test]
+    fn a_daemon_forwards_between_its_pinned_links_whose_keys_neither_lapse_nor_expire() {
         let mut relay = relay();
         up(&mut relay, 1, ALICE, DESK, None);
         up(&mut relay, 2, ALICE, LAPTOP, None);
-        assert_eq!(open(&mut relay, 1, 1, LAPTOP), spliced(1, 2));
+        assert_eq!(packet(&mut relay, 1, LAPTOP), vec![forward(1, 2)]);
         assert_eq!(
             step(
                 &mut relay,
@@ -1053,86 +1225,67 @@ mod tests {
             ),
             Vec::new()
         );
-        assert_eq!(open(&mut relay, 2, 1, LAPTOP), spliced(2, 2));
-    }
-
-    #[test]
-    fn a_link_going_down_takes_its_streams_with_it_and_its_host_out_of_reach() {
-        let mut relay = relay();
-        up(&mut relay, 1, ALICE, DESK, None);
-        up(&mut relay, 2, ALICE, LAPTOP, None);
-        assert_eq!(open(&mut relay, 1, 1, LAPTOP), spliced(1, 2));
         assert_eq!(
-            step(&mut relay, Input::LinkDown { link: LinkId(2) }),
-            vec![told(1, LAPTOP, false)]
-        );
-        assert_eq!(
-            open(&mut relay, 2, 1, LAPTOP),
-            refused(2, StreamRefusal::NoRoute)
-        );
-        assert_eq!(
-            step(
-                &mut relay,
-                Input::StreamEnded {
-                    stream: StreamId(1)
-                }
-            ),
+            step(&mut relay, Input::Expired { link: LinkId(1) }),
             Vec::new()
         );
-    }
-
-    #[test]
-    fn a_stream_named_twice_and_spliced_twice_asks_for_a_dump() {
-        let mut relay = relay();
-        up(&mut relay, 1, ALICE, DESK, None);
-        up(&mut relay, 2, ALICE, LAPTOP, None);
-        assert_eq!(open(&mut relay, 7, 1, LAPTOP), spliced(7, 2));
-        let out = open(&mut relay, 7, 1, LAPTOP);
-        assert_eq!(violation(&out), Some(SPLICED_ONCE), "{out:?}");
-    }
-
-    #[test]
-    fn a_refused_stream_named_again_and_spliced_asks_for_a_dump() {
-        let mut relay = relay();
-        up(&mut relay, 1, ALICE, DESK, None);
+        assert_eq!(pairs(&relay), vec![(1, 2)]);
         assert_eq!(
-            open(&mut relay, 7, 1, LAPTOP),
-            refused(7, StreamRefusal::NoRoute)
+            step(&mut relay, Input::LinkDown { link: LinkId(1) }),
+            vec![
+                unforward(2, 1, ForwardRefusal::NoRoute, true),
+                told(2, DESK, false)
+            ]
         );
-        up(&mut relay, 2, ALICE, LAPTOP, None);
-        let out = open(&mut relay, 7, 1, LAPTOP);
-        assert_eq!(violation(&out), Some(REFUSED_NEVER_SPLICED), "{out:?}");
-
-        // Reported ended, the name is free again.
-        let mut relay = relay_with_both_up();
-        assert_eq!(
-            open(&mut relay, 7, 1, RELAY),
-            refused(7, StreamRefusal::NotAdjacent)
-        );
-        step(
-            &mut relay,
-            Input::StreamEnded {
-                stream: StreamId(7),
-            },
-        );
-        assert_eq!(open(&mut relay, 7, 1, LAPTOP), spliced(7, 2));
-    }
-
-    fn relay_with_both_up() -> Relay {
-        let mut relay = relay();
-        up(&mut relay, 1, ALICE, DESK, None);
-        up(&mut relay, 2, ALICE, LAPTOP, None);
-        relay
     }
 
     #[test]
-    fn a_splice_onto_a_link_that_is_down_asks_for_a_dump() {
+    fn a_displaced_direct_link_hands_its_pairs_to_the_link_replacing_it() {
         let mut relay = relay();
-        up(&mut relay, 1, ALICE, DESK, None);
+        up(&mut relay, 9, ALICE, LAPTOP, None);
+        direct_up(&mut relay, 1, DESK, DialOrder::Fallback, 7, &[LAPTOP]);
+        assert_eq!(packet(&mut relay, 9, DESK), vec![forward(9, 1)]);
+        assert_eq!(
+            direct_up(&mut relay, 2, DESK, DialOrder::Preferred, 7, &[LAPTOP]),
+            vec![
+                Output::Displace { link: LinkId(1) },
+                unforward(9, 1, ForwardRefusal::NoRoute, false),
+                forward(9, 2),
+            ]
+        );
+        assert_eq!(pairs(&relay), vec![(2, 9)]);
+    }
+
+    #[test]
+    fn a_pair_through_a_free_link_asks_for_a_dump() {
+        let mut relay = relay();
+        up(&mut relay, 1, ALICE, DESK, Some(Tier::Pro));
+        up(&mut relay, 2, ALICE, LAPTOP, Some(Tier::Free));
+        // A bug that installs a pair without asking whether it may.
+        relay.pairs.entry(LinkId(1)).or_default().insert(LinkId(2));
+        relay.pairs.entry(LinkId(2)).or_default().insert(LinkId(1));
+        let out = step(&mut relay, Input::Expired { link: LinkId(9) });
+        assert_eq!(
+            violation(&out),
+            None,
+            "a step touching neither link checks neither"
+        );
+        let out = packet(&mut relay, 1, LAPTOP);
+        assert_eq!(violation(&out), Some(FORWARDS_ONLY_PAID_PAIRS), "{out:?}");
+    }
+
+    #[test]
+    fn a_pair_onto_a_link_that_is_down_asks_for_a_dump() {
+        let mut relay = relay();
+        up(&mut relay, 1, ALICE, DESK, Some(Tier::Pro));
         // A bug that leaves a link in the account's adjacency after it went.
         relay.adjacency.add(ALICE, LAPTOP, LinkId(9));
-        let out = open(&mut relay, 1, 1, LAPTOP);
-        assert_eq!(violation(&out), Some(SPLICED_BETWEEN_LIVE_LINKS), "{out:?}");
+        let mut out = Vec::new();
+        relay.pair(LinkId(1), LinkId(9), &mut out);
+        assert_eq!(
+            relay.check_step_invariants().map_err(|v| v.invariant),
+            Err(NOTHING_BEFORE_ADMISSION)
+        );
     }
 
     #[test]

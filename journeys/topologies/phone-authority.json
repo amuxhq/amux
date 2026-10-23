@@ -2,7 +2,7 @@
   "scope": "phone-authority",
   "relay": {"accounts": [{"name": "ada"}, {"name": "bob"}]},
   "hosts": [
-    {"name": "desk", "account": "ada"}
+    {"name": "desk", "account": "ada", "router": "strict"}
   ],
   "agents": [
     {

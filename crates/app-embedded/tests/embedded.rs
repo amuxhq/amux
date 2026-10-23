@@ -622,40 +622,6 @@ async fn a_phone_signed_in_to_the_account_reaches_its_hosts_over_the_relay() {
     net.shutdown().await.unwrap();
 }
 
-/// The runtime traces into the log the app names, and a dump carries it as
-/// the daemon's log, redacted.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_phone_dump_carries_the_runtimes_log_redacted() {
-    const KEY: &str = "sk-ant-api03-PLANTEDphonelogkey0001";
-    let dir = tempfile::tempdir().unwrap();
-    let log = dir.path().join("runtime.log");
-    let embedded = EmbeddedRuntime::start_with(
-        &StartConfig {
-            log_path: Some(log.clone()),
-            ..config(dir.path())
-        },
-        loopback(),
-        Arc::new(SystemClock),
-        queue(),
-    )
-    .await
-    .unwrap();
-    tracing::warn!("a relay call failed: Authorization: Bearer {KEY}");
-    let profile = only_profile(&embedded).await;
-    let app = app(&embedded, profile).await;
-
-    let bundle = app.dump("from the phone").await.unwrap();
-    let carried = std::fs::read_to_string(bundle.join(node::DAEMON_LOG)).unwrap();
-    assert!(carried.contains("a relay call failed"), "{carried}");
-    assert!(!carried.contains(KEY), "{carried}");
-    assert!(
-        std::fs::read_to_string(&log).unwrap().contains(KEY),
-        "the log itself is what the runtime wrote"
-    );
-    drop(app);
-    embedded.shutdown().await.unwrap();
-}
-
 /// The app's own events land on the profile they name, or on every profile
 /// when they name none; coming to the front counts once an hour.
 #[tokio::test(flavor = "multi_thread")]
@@ -740,10 +706,13 @@ async fn shown(app: &AppRuntime, agent: &AgentKey) -> (FleetCard, Vec<String>) {
             .map(|row| format!("{:?}", row.kind))
             .collect::<Vec<_>>()
     };
+    // The chat's rows stream apart from the card: the answering turn's
+    // end can follow the card going idle.
     eventually(app, "the chat's rows from the store", || {
-        rows()
-            .iter()
-            .any(|row| row.contains("answered from the phone"))
+        let rows = rows();
+        rows.iter()
+            .position(|row| row.contains("answered from the phone"))
+            .is_some_and(|answer| rows[answer..].iter().any(|row| row.starts_with("TurnEnd")))
     })
     .await;
     (card, rows())

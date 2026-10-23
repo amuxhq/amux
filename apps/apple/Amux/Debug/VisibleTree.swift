@@ -75,6 +75,28 @@ enum VisibleTree {
         return said?.0 ?? best?.0
     }
 
+    /// The one accessibility element on show saying exactly `label` that a
+    /// touch at its middle reaches. A bar's button is rebuilt off screen when
+    /// the bar changes, and the frame it last reported can be where it was
+    /// then rather than where it is drawn; what it says still finds it.
+    @MainActor
+    static func element(saying label: String, in window: UIWindow) -> NSObject? {
+        var saying: [NSObject] = []
+        var seen = Set<ObjectIdentifier>()
+        func visit(_ node: NSObject) {
+            guard seen.insert(ObjectIdentifier(node)).inserted else { return }
+            if let view = node as? UIView, view.isHidden || view.alpha == 0 { return }
+            if node.isAccessibilityElement, node.accessibilityLabel == label { saying.append(node) }
+            for child in children(of: node) { visit(child) }
+        }
+        visit(window)
+        let reached = saying.filter { node in
+            let frame = window.convert(node.accessibilityFrame, from: nil)
+            return element(at: CGPoint(x: frame.midX, y: frame.midY), in: window, saying: label) === node
+        }
+        return reached.count == 1 ? reached.first : nil
+    }
+
     /// The list a swipe would move: of the lists that scroll up and down and
     /// that a touch at their middle reaches, the one drawn last, which is the
     /// card or sheet on top. With none, the list under the middle of the
@@ -107,6 +129,23 @@ enum VisibleTree {
         func visit(_ view: UIView) {
             if let list = view as? UIScrollView, !(list is UITextView), !list.isHidden,
                scrollsVertically(list), reached(list, in: window),
+               list.convert(CGRect(origin: .zero, size: list.contentSize), to: window).contains(point) {
+                found = list
+            }
+            for subview in view.subviews { visit(subview) }
+        }
+        visit(window)
+        return found
+    }
+
+    /// The innermost scrolling view on show, in either direction, whose
+    /// content holds `point`: a strip of cards scrolls sideways.
+    @MainActor
+    static func scroller(holding point: CGPoint, in window: UIWindow) -> UIScrollView? {
+        var found: UIScrollView?
+        func visit(_ view: UIView) {
+            if let list = view as? UIScrollView, !(list is UITextView), !list.isHidden,
+               reached(list, in: window),
                list.convert(CGRect(origin: .zero, size: list.contentSize), to: window).contains(point) {
                 found = list
             }

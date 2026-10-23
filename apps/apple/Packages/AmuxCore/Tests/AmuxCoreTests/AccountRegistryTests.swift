@@ -14,7 +14,7 @@ final class AccountRegistryTests: XCTestCase {
             id: id, label: subject.isEmpty ? "default" : subject, subject: subject,
             account: AccountView(
                 binding: subject.isEmpty ? .unbound : binding,
-                email: subject.isEmpty ? "" : "\(subject)@example.com", name: subject,
+                email: subject.isEmpty ? "" : "\(subject)@example.com", name: subject, picture: "",
                 relay: .off, pro: nil))
     }
 
@@ -124,7 +124,7 @@ final class AccountRegistryTests: XCTestCase {
         registry.entitlement(.active(grant: .purchased(.web), renews: nil), for: AccountId("ada"))
         XCTAssertEqual(registry.gate, .ready)
         registry.stores?.hosts.show(AccountView(
-            binding: .signedIn, email: "", name: "", relay: .connected, pro: false))
+            binding: .signedIn, email: "", name: "", picture: "", relay: .connected, pro: false))
         XCTAssertEqual(registry.gate, .unsubscribed, "the link's word outranks the saved one")
         registry.show([profile("p0", "ada", .signedOut)])
         XCTAssertEqual(registry.gate, .signedOut)

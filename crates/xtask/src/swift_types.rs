@@ -49,6 +49,7 @@ pub fn definitions() -> Map<String, Value> {
         ui_view::SentPrompt,
         ui_view::RefusedPrompt,
         ui_view::FleetView,
+        ui_view::FleetFilter,
         ui_view::FleetRow,
         ui_view::FleetCard,
         ui_view::FamilyHeader,

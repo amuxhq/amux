@@ -670,7 +670,7 @@ private struct AskBodyView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .tint(design.ink.color)
+            .tint(design.accent.color)
             .oneSwitch(
                 String(localized: "\(title), As the work starts"),
                 isOn: $autoAccept)
@@ -1056,7 +1056,7 @@ private struct FormFieldView: View {
             Toggle(isOn: on) {
                 Text(entry.title).designFont(.body, design)
             }
-            .tint(design.ink.color)
+            .tint(design.accent.color)
             .oneSwitch(entry.title, isOn: on)
             .identified("ask.field.\(entry.name)", value: entry.reading)
         case .choice(let options):
@@ -1083,7 +1083,7 @@ private struct FormFieldView: View {
                     Toggle(isOn: picked) {
                         Text(options[index]).designFont(.body, design)
                     }
-                    .tint(design.ink.color)
+                    .tint(design.accent.color)
                     .oneSwitch(options[index], isOn: picked)
                 }
             }

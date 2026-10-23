@@ -8,6 +8,8 @@ public struct ChatSubject: Equatable, Sendable {
     public let name: String
     public let host: String
     public let directory: String
+    /// The branch its directory has checked out, when it is in a repository.
+    public let branch: String?
     /// How this phone reaches the agent's host.
     public let reach: Reach
     /// Live agents below this one on every host its host knows of, as its
@@ -21,12 +23,13 @@ public struct ChatSubject: Equatable, Sendable {
     public let stopHeld: Bool
 
     public init(
-        name: String, host: String, directory: String, reach: Reach, descendants: Int = 0,
-        backgroundJobs: Int = 0, stopHeld: Bool = false
+        name: String, host: String, directory: String, branch: String? = nil, reach: Reach,
+        descendants: Int = 0, backgroundJobs: Int = 0, stopHeld: Bool = false
     ) {
         self.name = name
         self.host = host
         self.directory = directory
+        self.branch = branch
         self.reach = reach
         self.descendants = descendants
         self.backgroundJobs = backgroundJobs
@@ -100,18 +103,21 @@ public struct ChatScreen: View {
     @Environment(\.design) private var design
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.photographed) private var photographed
+    @Environment(\.reducesTransparency) private var reducesTransparency
     let model: ChatModel
     let subject: ChatSubject
     let family: FamilyHeader?
     let actions: (ChatAction) -> Void
     @State private var showing: ChatOverlay?
-    @State private var placeOpen = false
     @State private var overviewOpen = false
     /// Bumped to put the keyboard down.
     @State private var putDown = 0
     /// The screen's height and its header's, which bound how tall a docked
     /// card may grow.
     @State private var screenHeight: CGFloat?
+    @State private var screenWidth: CGFloat?
+    /// How wide the bar's trailing pill is, which the title gives way to.
+    @State private var trailingWidth: CGFloat = 44
     @State private var headerHeight: CGFloat = 0
 
     public init(
@@ -167,7 +173,14 @@ public struct ChatScreen: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            header.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
+            Group {
+                if let parent = family?.parent {
+                    FamilyLine(parent: parent) { actions(.open($0)) }
+                        .padding(.horizontal, Space.margin)
+                        .padding(.bottom, Space.s)
+                }
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ChatStanding(
@@ -176,26 +189,47 @@ public struct ChatScreen: View {
                 askRoom: screenHeight.map { max(0, $0 - headerHeight - Self.feedGlimpse) },
                 openOverview: { overviewOpen = true }, actions: actions)
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { screenHeight = $0 }
-        .toolbar(.hidden, for: .navigationBar)
+        .onGeometryChange(for: CGSize.self) { $0.size } action: {
+            screenHeight = $0.height
+            screenWidth = $0.width
+        }
+        .navigationBarBackButtonHidden(true)
+        .toolbarTitleDisplayMode(.inline)
+        .toolbar { bar }
         .accessibilityElement(children: .contain)
         .reported("chat", value: subject.name)
         .sheet(isPresented: $overviewOpen) {
-            ChatOverview(model: model, now: Date()) {
+            ChatOverview(model: model, subject: subject, now: Date()) {
                 overviewOpen = false
                 actions(.review)
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
-        }
-        .sheet(isPresented: $placeOpen) {
-            PlaceSheet(subject: subject)
-                .presentationDetents([.height(280)])
-                .presentationDragIndicator(.visible)
+            .surface()
         }
     }
 
     // MARK: - The header
+
+    /// The title pill's width at most: what the bar has left once the way
+    /// back and the trailing pill are drawn, and never more than 220.
+    ///
+    /// The bar does not shrink an item to fit. Given items wider than
+    /// itself, it folds every one of them into its own overflow menu, the
+    /// way back with them, so a long name or a long exit reason took the
+    /// way back off the screen. It spaces its items further apart when
+    /// their shared glass is hidden, as it is with less transparency, so
+    /// what it spends besides the pills is counted for that case.
+    private var titleWidth: CGFloat {
+        guard let screenWidth else { return Self.widestTitle }
+        return min(Self.widestTitle, max(Self.narrowestTitle, screenWidth - trailingWidth - Self.barSpends))
+    }
+
+    private static let widestTitle: CGFloat = 220
+    private static let narrowestTitle: CGFloat = 96
+    /// The bar's margins, the way back and the gaps between the three
+    /// pieces, measured on a 402-point phone with less transparency.
+    private static let barSpends: CGFloat = 160
 
     private var detached: Bool { model.frame?.waiting == .detached }
 
@@ -208,131 +242,114 @@ public struct ChatScreen: View {
     /// The place line is a path unless it states why the chat cannot be reached; a path keeps
     /// its ends and a sentence keeps its opening words.
     private var placeIsPath: Bool {
-        if detached, subject.reachable { return false }
+        if !subject.reachable { return false }
+        if detached { return false }
         if case .exited? = model.frame?.phase { return false }
         return true
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 8) {
-                HStack(spacing: 8) {
-                    Button {
-                        putDown += 1
-                        actions(.back)
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(design.inkMuted.color)
-                            .thumbTarget(x: 15, y: 15)
-                    }
-                    .buttonStyle(.amuxControl)
-                    .accessibilityLabel("Back")
-                    .identified("chat.back", label: "Back")
-                    .reclaimingThumbTarget(x: 15, y: 15)
-                    Button {
-                        putDown += 1
-                        placeOpen = true
-                    } label: {
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text(subject.name)
-                                .designFont(.identifier, design)
-                                .foregroundStyle(design.ink.color)
-                                .lineLimit(1)
-                            HStack(spacing: 5) {
-                                if detached || !subject.reachable {
-                                    Image(systemName: "circle.dashed")
-                                        .font(.system(size: 9, weight: .bold))
-                                        .foregroundStyle(design.inkFaint.color)
-                                }
-                                Text(placeLine)
-                                    .designFont(.monoSmall, design)
-                                    .foregroundStyle(design.inkFaint.color)
-                                    .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
-                                    .truncationMode(placeIsPath ? .middle : .tail)
-                            }
-                        }
-                    }
-                    .buttonStyle(.amuxControl)
-                    .accessibilityLabel("\(subject.name), \(placeLine)")
-                    .accessibilityHint("Shows the host, directory and address in full")
-                    .identified("chat.title", label: subject.name, value: subject.name)
-                }
-                .padding(.horizontal, 13)
-                .padding(.vertical, 8)
-                // A bar over the chat, sized as the system sizes its own bars:
-                // past the largest ordinary size it stops growing, so at an
-                // accessibility size it does not cover the rows it heads.
-                // Tapping it shows the place in full at any size.
-                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-                .frosted(Capsule(), as: .glass)
-                .identified(
-                    "chat.header", label: placeLine,
-                    value: detached ? "detached" : (subject.reachable ? "live" : "away"))
-                // The pill keeps its own width but may grow up to the buttons' ordinary
-                // spacing, so a long place line loses as little as it can.
-                .frame(maxWidth: .infinity, alignment: .leading)
-                if let changes = model.changes {
-                    let against = model.comparison == .onBranch ? model.base : nil
-                    Button {
-                        putDown += 1
-                        actions(.review)
-                    } label: {
-                        HStack(spacing: 5) {
-                            if let against {
-                                Text(verbatim: ChatWords.comparison(.onBranch, base: against))
-                                    .foregroundStyle(design.inkMuted.color)
-                            }
-                            Text(verbatim: "+\(changes.added)").foregroundStyle(design.added.color)
-                            Text(verbatim: "\u{2212}\(changes.removed)").foregroundStyle(design.removed.color)
-                        }
-                        .designFont(.monoSmall, design)
-                        .padding(.horizontal, 12)
-                        .frame(height: 36)
-                        .frosted(Capsule(), as: .glass)
-                    }
-                    .buttonStyle(.amuxControl)
-                    .accessibilityLabel(ChatWords.changes(
-                        files: Int(changes.files), added: changes.added, removed: changes.removed))
-                    .accessibilityHint("Opens the review")
-                    .identified(
-                        "chat.changes", label: "+\(changes.added) \u{2212}\(changes.removed)",
-                        value: model.comparison.rawValue)
-                }
+    /// The system's bar, as Slack and Messages use it: the way back in a
+    /// circle, who the chat is with in a pill beside it, and the chat's own
+    /// actions — its changes when it has any, and the menu — sharing one
+    /// pill at the trailing edge. Every pill is the bar's height.
+    @ToolbarContentBuilder
+    private var bar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            BarBack(identifier: "chat.back") {
+                putDown += 1
+                actions(.back)
+            }
+        }
+        .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
+        // The way back is a circle of its own; the bar would otherwise set
+        // it and the title on one piece of glass.
+        ToolbarSpacer(.fixed, placement: .topBarLeading)
+        ToolbarItem(placement: .topBarLeading) {
+            title
+        }
+        .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
+        ToolbarItem(placement: .topBarTrailing) {
+            HStack(spacing: 0) {
+                if let changes = model.changes { changesButton(changes) }
                 overflow
             }
-            if let parent = family?.parent {
-                FamilyLine(parent: parent) { actions(.open($0)) }
-            }
+            .barItemSurface()
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { trailingWidth = $0 }
         }
-        .padding(.horizontal, design.metrics.gutter)
-        .padding(.top, 2)
-        .padding(.bottom, Self.headerBelowPill)
-        // Rows scrolled up go under solid ground down to the pill's foot and fade into
-        // it from there, instead of showing crisp beside the pill. The pill's
-        // glass then always sits over the ground: over a row's large bright words, as at
-        // an accessibility text size, glass turns light in the dark appearance and its
-        // faint place line all but vanishes. A drawn fade rather than a safe-area bar's
-        // scroll edge effect: that blur is not drawn the same way twice.
-        .background {
-            // Negative padding carries the fade past the header's foot.
-            VStack(spacing: 0) {
-                design.ground.color
-                LinearGradient(
-                    colors: [design.ground.color, design.ground.color.opacity(0)],
-                    startPoint: .top, endPoint: .bottom)
-                .frame(height: Self.headerFade)
-            }
-            .padding(.bottom, Self.headerBelowPill - Self.headerFade)
-            .ignoresSafeArea(edges: .top)
-            .allowsHitTesting(false)
-        }
+        .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
     }
 
-    /// The header's room under its pill, where the rows begin to fade.
-    static let headerBelowPill: CGFloat = 6
-    /// How far below the pill's foot the rows fade into the ground.
-    static let headerFade: CGFloat = 14
+    /// The agent's name over where it runs; tapping it opens the agent's
+    /// overview, as tapping a name in a chat app opens its page.
+    private var title: some View {
+        Button {
+            putDown += 1
+            overviewOpen = true
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(subject.name)
+                    .designFont(.bodyEmphasis, design)
+                    .foregroundStyle(design.ink.color)
+                    .lineLimit(1)
+                HStack(spacing: Space.xs) {
+                    if detached || !subject.reachable {
+                        Image(systemName: "circle.dashed")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(design.inkFaint.color)
+                    }
+                    Text(placeLine)
+                        .designFont(.caption, design)
+                        .foregroundStyle(design.inkMuted.color)
+                        .lineLimit(1)
+                        .truncationMode(placeIsPath ? .middle : .tail)
+                }
+            }
+            // The bar does not grow with the text: past the largest ordinary
+            // size the pill would no longer fit it.
+            .dynamicTypeSize(...DynamicTypeSize.xLarge)
+            .padding(.horizontal, Space.m)
+            .modifier(Capped(width: titleWidth))
+            .frame(height: 36)
+            .barItemSurface()
+        }
+        .accessibilityLabel("\(subject.name), \(placeLine)")
+        .accessibilityHint("Opens the overview")
+        .identified("chat.title", label: subject.name, value: subject.name)
+        .identified(
+            "chat.header", label: placeLine,
+            value: detached ? "detached" : (subject.reachable ? "live" : "away"))
+    }
+
+    /// "+42 −7", which opens the review. What the counts are against is said
+    /// on the review page rather than here: a branch's name squeezed the
+    /// pill until neither read.
+    private func changesButton(_ changes: ChangeTotals) -> some View {
+        Button {
+            putDown += 1
+            actions(.review)
+        } label: {
+            HStack(spacing: Space.xs) {
+                Text(verbatim: "+\(changes.added)").foregroundStyle(design.added.color)
+                Text(verbatim: "\u{2212}\(changes.removed)").foregroundStyle(design.removed.color)
+            }
+            .designFont(.caption, design)
+            .monospacedDigit()
+            .dynamicTypeSize(...DynamicTypeSize.xLarge)
+            // Counts never break across lines: on a narrow phone the title
+            // beside them gives way instead.
+            .fixedSize()
+            .padding(.leading, Space.m)
+            .padding(.trailing, Space.xs)
+            .frame(height: 36)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(ChatWords.changes(
+            files: Int(changes.files), added: changes.added, removed: changes.removed))
+        .accessibilityHint("Opens the review")
+        .identified(
+            "chat.changes", label: "+\(changes.added) \u{2212}\(changes.removed)",
+            value: model.comparison.rawValue)
+    }
 
     private var overflow: some View {
         let running = model.frame.map({ if case .exited = $0.phase { false } else { true } }) ?? false
@@ -364,10 +381,11 @@ public struct ChatScreen: View {
             name: String(localized: "More"), identifier: "chat.more", items: items,
             opened: { putDown += 1 }
         ) {
-            GlassIcon(glyph: "ellipsis", size: 36)
-                .thumbTarget(x: 4, y: 4)
+            Image(systemName: "ellipsis")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(design.ink.color)
+                .frame(width: 36, height: 36)
         }
-        .reclaimingThumbTarget(x: 4, y: 4)
     }
 
     // MARK: - The rows
@@ -567,9 +585,11 @@ public struct ChatStanding: View {
             if subject.stopHeld { heldStop }
             if model.frame?.composer.switchedAway == true { switchedAway }
             if let notice = model.notice {
+                // Every notice is something that did not happen, so it reads in
+                // the failure ink rather than the accent kept for asks.
                 Text(notice)
                     .designFont(.detail, design)
-                    .foregroundStyle(design.accent.color)
+                    .foregroundStyle(design.removed.color)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 6)
                     .identified("chat.notice", label: notice)
@@ -746,7 +766,11 @@ struct RowCellView: View {
             ChatRowView(
                 row: row, expanded: model.isExpanded(row.id),
                 rail: RailJoin.of(row, next: model.row(below: row.id)),
-                bytes: model.bytes(of:), toggle: { model.toggle(row.id) })
+                placement: RunPlacement.of(
+                    row, open: row.run.map(model.isOpen) ?? false,
+                    counts: { row.run.flatMap(model.counts(of:)) }),
+                bytes: model.bytes(of:), toggle: { model.toggle(row.id) },
+                toggleRun: { if let run = row.run { model.toggleRun(run) } })
         } else {
             Color.clear.frame(height: 0)
         }
@@ -849,7 +873,7 @@ private struct RenameCard: View {
 }
 
 /// Stopping the agent: a stop is always now, so when it cuts a turn,
-/// background jobs or sub-agents the confirm says which, and otherwise asks
+/// background jobs or subagents the confirm says which, and otherwise asks
 /// plainly.
 private struct StopCard: View {
     @Environment(\.design) private var design
@@ -900,9 +924,9 @@ private struct DeleteCard: View {
             Consequence("checkmark", kept: true, String(localized: "Its edits stay. Nothing is reverted."))
             Consequence("xmark", kept: false, String(localized: "The chat is deleted on every device."))
             if descendants == 1 {
-                Consequence("xmark", kept: false, String(localized: "Its child agent is deleted too."))
+                Consequence("xmark", kept: false, String(localized: "Its subagent is deleted too."))
             } else if descendants > 1 {
-                Consequence("xmark", kept: false, String(localized: "Its \(descendants) child agents are deleted too."))
+                Consequence("xmark", kept: false, String(localized: "Its \(descendants) subagents are deleted too."))
             }
             ButtonPair {
                 choiceButton(String(localized: "Cancel"), kind: .outline, id: "chat.delete.cancel", action: cancel)
@@ -913,39 +937,6 @@ private struct DeleteCard: View {
         .frosted(RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous))
     }
 
-}
-
-/// The host, directory and address in full, to read or copy.
-private struct PlaceSheet: View {
-    @Environment(\.design) private var design
-    let subject: ChatSubject
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(subject.name)
-                .designFont(.screenTitle, design)
-                .foregroundStyle(design.ink.color)
-            if !subject.host.isEmpty { fact(String(localized: "Host"), subject.host) }
-            if !subject.directory.isEmpty { fact(String(localized: "Directory"), subject.directory) }
-            fact(String(localized: "Address"), subject.address)
-            Spacer(minLength: 0)
-        }
-        .padding(24)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .identified("chat.place", label: subject.address)
-    }
-
-    private func fact(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .designFont(.caption, design)
-                .foregroundStyle(design.inkFaint.color)
-            Text(value)
-                .designFont(.mono, design)
-                .foregroundStyle(design.ink.color)
-                .textSelection(.enabled)
-        }
-    }
 }
 
 /// Lays its one subview out at its own height, never taller than `cap`.
@@ -968,5 +959,33 @@ struct HeightCap: Layout {
     private func capped(_ proposal: ProposedViewSize) -> ProposedViewSize {
         guard let cap else { return proposal }
         return ProposedViewSize(width: proposal.width, height: min(proposal.height ?? cap, cap))
+    }
+}
+
+/// Lays its one subview out at its own width, never wider than `cap`.
+/// The system's bar asks an item how wide it would like to be without
+/// offering a width, and a frame with a maximum width passes that question
+/// straight to what it holds, so a pill capped by a frame still reported
+/// the full width of its longest line.
+struct WidthCap: Layout {
+    let cap: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let subview = subviews.first else { return .zero }
+        let wanted = proposal.width ?? subview.sizeThatFits(.unspecified).width
+        return subview.sizeThatFits(ProposedViewSize(width: min(wanted, cap), height: proposal.height))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
+    }
+}
+
+/// `WidthCap` as a modifier.
+struct Capped: ViewModifier {
+    let width: CGFloat
+
+    func body(content: Content) -> some View {
+        WidthCap(cap: width) { content }
     }
 }

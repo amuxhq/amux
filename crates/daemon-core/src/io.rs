@@ -1,5 +1,6 @@
 //! The daemon's inputs, outputs and jobs.
 
+use std::net::SocketAddr;
 use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -29,10 +30,14 @@ pub enum Input {
     Timer {
         id: TimerId,
     },
+    /// A link came up. `resumed` is the key a resumed handshake's ticket
+    /// names, which no certificate proved this time: the core decides it
+    /// before the driver serves any call the peer sent early.
     LinkUp {
         link: LinkId,
         peer: HostId,
         kind: CarrierKind,
+        resumed: Option<PublicKey>,
     },
     LinkDown {
         link: LinkId,
@@ -50,6 +55,9 @@ pub enum Input {
         link: LinkId,
         /// When the relay stops honouring it, on the core's clock.
         expires_at_ms: u64,
+        /// When the account service issued it, on the core's clock: a
+        /// credential kept across launches may be hours old.
+        fetched_at_ms: u64,
         /// The free plan's refresh interval, when the account is on it and
         /// one is set: a purchase then reaches the link within it.
         free_every_ms: Option<u64>,
@@ -241,6 +249,13 @@ pub enum Input {
     /// subscribers. Each kind goes as the write behind it moves into the
     /// core.
     FromShell(FromShell),
+    /// A link up moved onto a path of another kind: its packets now go
+    /// straight to the peer or through a forwarder. Calls take the same
+    /// link; how the host reads says the new path.
+    LinkCarried {
+        link: LinkId,
+        kind: CarrierKind,
+    },
 }
 
 impl Input {
@@ -292,6 +307,7 @@ impl Input {
             Input::Configure(_) => "Configure",
             Input::Drafts { .. } => "Drafts",
             Input::FromShell(_) => "FromShell",
+            Input::LinkCarried { .. } => "LinkCarried",
         }
     }
 }
@@ -375,6 +391,24 @@ pub enum FromShell {
 /// spawns and writes; it decides nothing.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Output {
+    /// Refuse the resumed link with the revocation alert: its ticket names
+    /// a key no longer pinned for its peer. The driver resets the streams
+    /// it held back; the core never took the link up.
+    RefuseResumed {
+        link: LinkId,
+    },
+    /// The addresses a trusted host last listed for itself changed: every
+    /// one it can be reached at, in its order, each with where it came
+    /// from.
+    PeerAddresses {
+        host: HostId,
+        addrs: Vec<crate::payload::PeerAddress>,
+    },
+    /// The relay saw this host's packets come from a new address, which
+    /// this host lists for itself from now on.
+    ObservedAddress {
+        addr: SocketAddr,
+    },
     ArmTimer {
         id: TimerId,
         at_ms: u64,
@@ -741,7 +775,7 @@ pub enum Job {
 mod tests {
     use super::*;
     use crate::payload::{
-        Answer, ClientRequest, JobResult, PeerFailure, PeerReply, PeerRequest, StreamRefusal,
+        Answer, ClientRequest, ForwardRefusal, JobResult, PeerFailure, PeerReply, PeerRequest,
     };
 
     #[test]
@@ -756,6 +790,7 @@ mod tests {
                 link: LinkId(1),
                 peer: HostId([1; 16]),
                 kind: CarrierKind::Direct,
+                resumed: Some(PublicKey(vec![7; 32])),
             },
             Input::LinkControl {
                 link: LinkId(1),
@@ -779,7 +814,7 @@ mod tests {
             },
             Input::ChannelClosed {
                 channel: ChannelId(4),
-                reason: ChannelError::Refused(StreamRefusal::PaymentRequired),
+                reason: ChannelError::Refused(ForwardRefusal::PaymentRequired),
             },
             Input::LinkDown {
                 link: LinkId(1),
@@ -788,7 +823,7 @@ mod tests {
             Input::AttemptConcluded {
                 host: HostId([1; 16]),
                 route: Route::Via(HostId([2; 16])),
-                tried: Tried::Failed(ChannelError::Refused(StreamRefusal::PaymentRequired)),
+                tried: Tried::Failed(ChannelError::Refused(ForwardRefusal::PaymentRequired)),
             },
             Input::Timer {
                 id: TimerId::Retry(HostId([1; 16])),
@@ -796,6 +831,7 @@ mod tests {
             Input::Credential {
                 link: LinkId(1),
                 expires_at_ms: 900_000,
+                fetched_at_ms: 300_000,
                 free_every_ms: Some(60_000),
             },
             Input::PlanChanged,

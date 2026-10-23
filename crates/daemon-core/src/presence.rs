@@ -1,9 +1,10 @@
 //! What each host reads as, decided from how attempts to reach it went.
 //!
 //! A host reads online once a channel to it opened on a route still
-//! listed, away while the relay refuses channels to it because the
-//! account's plan carries no connection between hosts, and offline
-//! otherwise. A route coming up changes nothing until an attempt on it
+//! listed, away while the relay refuses channels or forwarding to it
+//! because the account's plan carries no connection between hosts and no
+//! other route carries it, and offline otherwise: a forwarder saying it
+//! holds no link to the host reads it offline at once. A route coming up changes nothing until an attempt on it
 //! concludes, and a failure counts only on the route a fresh call would
 //! take first: a route the listing no longer prefers says nothing, since
 //! the route that replaced it is tried on its own. A failure because the
@@ -19,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::Daemon;
 use crate::ids::{HostId, LinkId, TimerId};
 use crate::io::Output;
-use crate::payload::{ChannelError, StreamRefusal};
+use crate::payload::{ChannelError, ForwardRefusal};
 
 /// How long after a failed try the next one is made, doubling after each
 /// failure up to [`RETRY_MAX_MS`].
@@ -195,8 +196,11 @@ impl Daemon {
             .hosts
             .get(&host)
             .and_then(|known| known.active);
+        let links = &self.routing.links;
         match route {
-            Route::Direct(_) if !active.is_some_and(|active| active.is_direct()) => {
+            Route::Direct(_)
+                if active.is_none_or(|active| links.rank(route) < links.rank(active)) =>
+            {
                 self.start_attempt(host, route, out);
             }
             Route::Via(_) if active.is_some() => {}
@@ -251,10 +255,23 @@ impl Daemon {
                 known.refused_for_plan = false;
                 known.retry = None;
                 let old = known.active;
-                // A direct route carrying the host's traffic stays the one
-                // that does when a channel opens through a relay.
+                // A route carrying the host's traffic stays the one that
+                // does when a channel opens on a farther one: a link of
+                // the host's own over a link a forwarder carries, either
+                // over a route through a peer or the relay.
+                let links = &self.routing.links;
                 known.active = match old {
-                    Some(active) if active.is_direct() && !route.is_direct() => Some(active),
+                    Some(active) if links.rank(active) < links.rank(route) => Some(active),
+                    // Two links of one rank to the host are a crossed dial:
+                    // the one carrying its traffic keeps it, so a channel
+                    // opening on the other drops none already open.
+                    Some(active)
+                        if active.is_direct()
+                            && links.rank(active) == links.rank(route)
+                            && routes.contains(&active) =>
+                    {
+                        Some(active)
+                    }
                     _ => Some(route),
                 };
                 let now_active = known.active;
@@ -287,7 +304,7 @@ impl Daemon {
                     known.active = None;
                 }
                 if known.active.is_none() {
-                    if *error == ChannelError::Refused(StreamRefusal::PaymentRequired) {
+                    if *error == ChannelError::Refused(ForwardRefusal::PaymentRequired) {
                         known.reached = Some(Reached::Away);
                         known.refused_for_plan = true;
                     } else {
@@ -472,7 +489,7 @@ impl Daemon {
         out: &mut Vec<Output>,
     ) {
         self.touched.host(host);
-        if *error == ChannelError::Refused(StreamRefusal::PaymentRequired)
+        if *error == ChannelError::Refused(ForwardRefusal::PaymentRequired)
             || self.attempt_barred(host, false)
         {
             return;
@@ -520,6 +537,55 @@ impl Daemon {
             })
             .flatten();
         out.push(Output::NextRoute { host, route: next });
+    }
+
+    /// The peer at the other end of `link`, a relay or a daemon forwarding
+    /// for its paired hosts, refused to forward to `host`. The route
+    /// through it carries the host no longer. While no other route carries
+    /// the host, it reads away when the refusal is for the plan and offline
+    /// at once when the forwarder holds no link to it, and is tried again
+    /// in the background. A refusal for the rate or a shutdown says
+    /// nothing of the host, and neither does one for a route no longer
+    /// listed: the forwarder already said it no longer reaches the host,
+    /// and what it refused was sent before that.
+    pub(crate) fn forward_refused(
+        &mut self,
+        link: LinkId,
+        host: HostId,
+        reason: ForwardRefusal,
+        out: &mut Vec<Output>,
+    ) {
+        let Some(forwarder) = self.routing.links.link(link).map(|link| link.peer) else {
+            return;
+        };
+        if !self
+            .routing
+            .links
+            .routes_to(host)
+            .contains(&Route::Via(forwarder))
+        {
+            return;
+        }
+        let away = match reason {
+            ForwardRefusal::PaymentRequired => true,
+            ForwardRefusal::NoRoute => false,
+            ForwardRefusal::RateLimited
+            | ForwardRefusal::ShuttingDown
+            | ForwardRefusal::Unspecified => return,
+        };
+        self.touched.host(host);
+        let route = Route::Via(forwarder);
+        let known = self.presence.hosts.entry(host).or_default();
+        if known.active == Some(route) {
+            known.active = None;
+            out.push(Output::DropRoute { host, route });
+        }
+        if known.active.is_some() {
+            return;
+        }
+        known.reached = away.then_some(Reached::Away);
+        known.refused_for_plan = away;
+        self.retry(host, false, out);
     }
 
     /// Someone asked for `host` to be tried now.
@@ -687,6 +753,7 @@ mod tests {
                 link: LinkId(link),
                 peer,
                 kind,
+                resumed: None,
             },
         )
     }
@@ -769,7 +836,7 @@ mod tests {
         })
     }
 
-    fn refused(refusal: StreamRefusal) -> Tried {
+    fn refused(refusal: ForwardRefusal) -> Tried {
         Tried::Failed(ChannelError::Refused(refusal))
     }
 
@@ -837,6 +904,70 @@ mod tests {
     }
 
     #[test]
+    fn a_hosts_link_on_a_path_of_its_own_takes_its_traffic_from_one_a_forwarder_carries() {
+        let mut daemon = daemon();
+        step(
+            &mut daemon,
+            Input::TrustRead {
+                store: crate::trust::TrustStore::of_hosts(vec![DESK]),
+            },
+        );
+        let (forwarded, own) = (Route::Direct(LinkId(1)), Route::Direct(LinkId(2)));
+        let out = up(&mut daemon, 1, DESK, CarrierKind::Forwarded);
+        assert_eq!(attempts(&out), vec![(DESK, forwarded)]);
+        concluded(&mut daemon, DESK, forwarded, Tried::Opened);
+        assert_eq!(view(&daemon, DESK).active, Some(forwarded));
+
+        // The newer link, on the same network, is listed first, is tried
+        // although the forwarded one carries the host, and takes over.
+        let out = up(&mut daemon, 2, DESK, CarrierKind::Direct);
+        assert_eq!(attempts(&out), vec![(DESK, own)]);
+        assert_eq!(view(&daemon, DESK).routes, vec![own, forwarded]);
+        let out = concluded(&mut daemon, DESK, own, Tried::Opened);
+        assert_eq!(view(&daemon, DESK).active, Some(own));
+        assert!(out.contains(&Output::DropRoute {
+            host: DESK,
+            route: forwarded
+        }));
+
+        // A forwarded link coming up later is listed after it, is not
+        // tried, and a channel opening on it takes nothing over.
+        let later = Route::Direct(LinkId(3));
+        let out = up(&mut daemon, 3, DESK, CarrierKind::Forwarded);
+        assert_eq!(attempts(&out), Vec::new());
+        assert_eq!(view(&daemon, DESK).routes, vec![own, later, forwarded]);
+        concluded(&mut daemon, DESK, later, Tried::Opened);
+        assert_eq!(view(&daemon, DESK).active, Some(own));
+    }
+
+    #[test]
+    fn a_channel_opening_on_a_crossed_link_drops_none_open_on_the_one_carrying_the_host() {
+        let mut daemon = daemon();
+        step(
+            &mut daemon,
+            Input::TrustRead {
+                store: crate::trust::TrustStore::of_hosts(vec![DESK]),
+            },
+        );
+        let (first, crossed) = (Route::Direct(LinkId(1)), Route::Direct(LinkId(2)));
+        up(&mut daemon, 1, DESK, CarrierKind::Forwarded);
+        concluded(&mut daemon, DESK, first, Tried::Opened);
+        up(&mut daemon, 2, DESK, CarrierKind::Forwarded);
+        let out = concluded(&mut daemon, DESK, crossed, Tried::Opened);
+        assert_eq!(view(&daemon, DESK).active, Some(first));
+        assert!(
+            !out.iter()
+                .any(|output| matches!(output, Output::DropRoute { .. })),
+            "{out:?}"
+        );
+
+        // Once it goes, the crossed link carries the host.
+        down(&mut daemon, 1);
+        concluded(&mut daemon, DESK, crossed, Tried::Opened);
+        assert_eq!(view(&daemon, DESK).active, Some(crossed));
+    }
+
+    #[test]
     fn a_relay_is_never_a_route_nor_tried() {
         let mut daemon = daemon();
         let out = up(&mut daemon, 1, RELAY, CarrierKind::Relay);
@@ -901,7 +1032,7 @@ mod tests {
         up(&mut daemon, 1, DESK, CarrierKind::Direct);
         let direct = Route::Direct(LinkId(1));
         tick(&mut daemon, 0);
-        let out = concluded(&mut daemon, DESK, direct, refused(StreamRefusal::NoRoute));
+        let out = concluded(&mut daemon, DESK, direct, refused(ForwardRefusal::NoRoute));
         assert_eq!(retry_at(&out, DESK), Some(RETRY_FIRST_MS));
 
         let mut now = RETRY_FIRST_MS;
@@ -910,7 +1041,7 @@ mod tests {
             tick(&mut daemon, now);
             let out = fire(&mut daemon, DESK);
             assert_eq!(attempts(&out), vec![(DESK, direct)]);
-            let out = concluded(&mut daemon, DESK, direct, refused(StreamRefusal::NoRoute));
+            let out = concluded(&mut daemon, DESK, direct, refused(ForwardRefusal::NoRoute));
             let at = retry_at(&out, DESK).expect("the next try is armed");
             pauses.push(at - now);
             now = at;
@@ -927,7 +1058,7 @@ mod tests {
         assert_eq!(retry_at(&out, DESK), Some(now));
         let out = fire(&mut daemon, DESK);
         assert_eq!(attempts(&out), vec![(DESK, direct)]);
-        let out = concluded(&mut daemon, DESK, direct, refused(StreamRefusal::NoRoute));
+        let out = concluded(&mut daemon, DESK, direct, refused(ForwardRefusal::NoRoute));
         assert_eq!(retry_at(&out, DESK), Some(now + RETRY_FIRST_MS));
 
         // A channel opening ends the retry and its timer.
@@ -968,7 +1099,7 @@ mod tests {
             &mut daemon,
             LAPTOP,
             Route::Direct(LinkId(2)),
-            refused(StreamRefusal::NoRoute),
+            refused(ForwardRefusal::NoRoute),
         );
         down(&mut daemon, 2);
         assert_eq!(attempts(&fire(&mut daemon, LAPTOP)), Vec::new());
@@ -1014,7 +1145,7 @@ mod tests {
             &mut daemon,
             LAPTOP,
             via,
-            refused(StreamRefusal::PaymentRequired),
+            refused(ForwardRefusal::PaymentRequired),
         );
         tick(&mut daemon, 10);
 
@@ -1027,6 +1158,73 @@ mod tests {
         assert_eq!(retry_at(&out, LAPTOP), Some(10));
         assert_eq!(view(&daemon, DESK).presence, Presence::Online);
         assert_eq!(view(&daemon, LAPTOP).presence, Presence::Away);
+    }
+
+    fn forward_refused(
+        daemon: &mut Daemon,
+        link: u64,
+        dst: HostId,
+        reason: ForwardRefusal,
+    ) -> Vec<Output> {
+        frame(
+            daemon,
+            link,
+            Body::ForwardRefused(wire::ForwardRefused {
+                dst: dst.0.to_vec(),
+                reason: reason as i32,
+            }),
+        )
+    }
+
+    /// A host the relay carries, reading online through it.
+    fn relayed_desk() -> Daemon {
+        let mut daemon = daemon();
+        up(&mut daemon, 1, RELAY, CarrierKind::Relay);
+        claims(&mut daemon, 1, &[DESK]);
+        concluded(&mut daemon, DESK, Route::Via(RELAY), Tried::Opened);
+        assert_eq!(view(&daemon, DESK).presence, Presence::Online);
+        daemon
+    }
+
+    #[test]
+    fn a_forwarder_holding_no_link_to_the_host_reads_it_offline_at_once() {
+        let mut daemon = relayed_desk();
+        let out = forward_refused(&mut daemon, 1, DESK, ForwardRefusal::NoRoute);
+        assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
+        assert!(out.contains(&Output::DropRoute {
+            host: DESK,
+            route: Route::Via(RELAY)
+        }));
+        assert!(daemon.presence().retrying(DESK));
+    }
+
+    #[test]
+    fn a_forward_refused_after_the_forwarder_let_the_host_go_says_nothing() {
+        let mut daemon = relayed_desk();
+        frame(
+            &mut daemon,
+            1,
+            Body::NeighborDown(wire::NeighborDown {
+                host_id: DESK.0.to_vec(),
+            }),
+        );
+        assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
+        let out = forward_refused(&mut daemon, 1, DESK, ForwardRefusal::PaymentRequired);
+        assert_eq!(out, Vec::new());
+
+        // Its own link coming up is tried, and it reads offline meanwhile,
+        // not away for what the relay refused before it let the host go.
+        up(&mut daemon, 2, DESK, CarrierKind::Direct);
+        assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
+    }
+
+    #[test]
+    fn a_forward_refused_for_the_rate_or_a_shutdown_says_nothing_of_the_host() {
+        let mut daemon = relayed_desk();
+        for reason in [ForwardRefusal::RateLimited, ForwardRefusal::ShuttingDown] {
+            assert_eq!(forward_refused(&mut daemon, 1, DESK, reason), Vec::new());
+            assert_eq!(view(&daemon, DESK).presence, Presence::Online);
+        }
     }
 
     #[test]
@@ -1124,13 +1322,13 @@ mod tests {
             &mut daemon,
             DESK,
             Route::Via(RELAY),
-            refused(StreamRefusal::PaymentRequired),
+            refused(ForwardRefusal::PaymentRequired),
         );
         let out = step(
             &mut daemon,
             Input::CallsFailed {
                 host: DESK,
-                error: ChannelError::Refused(StreamRefusal::PaymentRequired),
+                error: ChannelError::Refused(ForwardRefusal::PaymentRequired),
             },
         );
         assert_eq!(out, Vec::new(), "the host already reads away");
@@ -1237,6 +1435,32 @@ mod tests {
         );
         down(&mut daemon, 1);
         assert_eq!(daemon.route_kind(DESK), wire::RouteKind::Unspecified);
+    }
+
+    #[test]
+    fn a_host_reads_by_the_path_now_carrying_its_link() {
+        let mut daemon = daemon();
+        up(&mut daemon, 1, DESK, CarrierKind::Direct);
+        concluded(&mut daemon, DESK, Route::Direct(LinkId(1)), Tried::Opened);
+        let carried = |daemon: &mut Daemon, kind| {
+            step(
+                daemon,
+                Input::LinkCarried {
+                    link: LinkId(1),
+                    kind,
+                },
+            )
+        };
+        carried(&mut daemon, CarrierKind::Forwarded);
+        assert_eq!(
+            daemon.reads(DESK),
+            (wire::Presence::Online, wire::RouteKind::Relay)
+        );
+        carried(&mut daemon, CarrierKind::Direct);
+        assert_eq!(
+            daemon.reads(DESK),
+            (wire::Presence::Online, wire::RouteKind::Direct)
+        );
     }
 
     #[test]

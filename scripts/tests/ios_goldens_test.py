@@ -107,7 +107,7 @@ class CoveredTests(unittest.TestCase):
 
     def test_a_pushed_page_hides_the_tab_roots_beneath_it(self):
         drawn = [self.element(name) for name in (
-            "shell", "home", "home.row.a", "hosts", "hosts.row.b", "you", "you.identity",
+            "shell", "home", "home.row.a", "hosts", "hosts.row.b",
             "chat", "chat.back", "tab.agents", "",
         )]
         kept = [element["identifier"] for element in phone.uncovered(drawn)]

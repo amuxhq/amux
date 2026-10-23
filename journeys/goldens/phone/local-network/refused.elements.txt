@@ -1,37 +1,21 @@
 shell |  | hosts | 0,62,402,778
-home |  | signed-out | 0,62,402,778
-home.title | Agents, switch account | Agents | 60,65,104,46
-home.subtitle |  | Nothing paired yet | 60,105,130,16
-home.empty.firstRun |  | No agents yet | 18,161,162,32
-home.empty.explain |  |  | 18,201,291,18
-home.empty.howToPair |  |  | 18,237,360,37
-home.empty.signIn | Sign In |  | 18,292,366,44
-home.empty.signIn.caption |  |  | 18,344,296,18
-hosts |  | 0 reachable | 0,62,402,778
-hosts.title |  | Hosts | 18,72,69,32
-hosts.subtitle |  | 0 reachable | 18,105,79,16
-hosts.localNetwork.refused |  | amux cannot see this network | 18,137,366,139
-hosts.localNetwork.settings | Open Settings |  | 18,231,141,44
-hosts.empty |  | No hosts yet | 18,293,360,113
-hosts.empty.howToPair |  |  | 18,370,360,37
-hosts.fact.identity | <volatile>
-hosts.fact.paired-devices | Paired Devices, 0 | 0 | 18,493,366,46
-hosts.caption.devices |  |  | 18,547,320,18
-tab.agents | Agents | not selected | 50,777,99,57
-tab.hosts | Hosts | selected | 151,777,99,57
-tab.you | You | not selected | 253,777,99,57
- | Agents |  | 50,777,99,57
- | Hosts |  | 151,777,99,57
- | You |  | 253,777,99,57
- | Hosts |  | 18,72,69,32
- | 0 reachable |  | 18,105,79,16
- | amux cannot see this network |  | 18,137,226,20
- | Nobody let amux look at the network this phone is on, so no host on it can be found. Turn on Local Network for amux in Settings. |  | 18,166,366,55
- | Open Settings |  | 18,231,141,44
- | No hosts yet |  | 18,293,93,20
- | Run amux on a computer on this network and it appears here. |  | 18,323,325,37
- | Run amux pair on a host on this network, or scan the code from amux pair --qr with the camera. |  | 18,370,360,37
- | THIS PHONE |  | 20,425,70,14
- | Identity, amux-iphone-1 · <key> |  | 18,447,366,46
- | Paired Devices, 0 |  | 18,493,366,46
- | Revoking a device ends its access immediately. |  | 18,547,320,18
+home |  | signed-out | 0,174,402,617
+hosts |  |  | 0,174,402,617
+hosts.localNetwork.refused |  | amux can’t see this network | 17,204,368,151
+hosts.localNetwork.settings | Open Settings |  | 17,311,141,44
+hosts.empty.howToPair |  |  | 17,373,360,37
+ | amux can’t see this network |  | 17,204,329,32
+ | Nobody let amux look at the network this phone is on, so no host on it can be found. Turn on Local Network for amux in Settings. |  | 17,246,368,55
+ | Open Settings |  | 17,311,141,44
+ | Run amux pair on a host on this network, or scan the code from amux pair --qr with the camera. |  | 17,373,360,37
+ | Hosts |  | 16,127,93,42
+ | Agents |  | 111,795,94,54
+ | Agents |  | 140,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 229,830,29,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 230,830,29,12
+ | Agents |  | 111,795,94,54
+ | Hosts | selected | 197,795,94,54

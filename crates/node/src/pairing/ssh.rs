@@ -226,7 +226,9 @@ where
     P: AsRef<Path>,
 {
     let mut stdio = SplitIo::new(tokio::io::stdin(), tokio::io::stdout());
-    let mut socket = tokio::net::UnixStream::connect(socket_path.as_ref()).await?;
+    // Through the short link a long path is bound under, as the listener
+    // bound it.
+    let mut socket = agent_dir::local_socket::connect(socket_path.as_ref()).await?;
     copy_bidirectional(&mut stdio, &mut socket).await?;
     Ok(())
 }

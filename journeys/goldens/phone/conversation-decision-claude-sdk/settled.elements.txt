@@ -1,30 +1,29 @@
 shell |  | agents | 0,62,402,778
-chat |  | decision-sdk | 0,62,402,778
-chat.row.boundary | Started |  | 18,132,366,34
-chat.row.prompt | Check the deployment once. |  | 18,166,366,40
-chat.row.command | Allowed, deploy --check, <t> |  | 18,217,366,40
-chat.row.meta.volatile | <volatile>
-chat.row.prose | The deploy check passed. | final | 18,271,366,20
-chat.prose.render |  | rendered | 18,271,366,20
+chat |  | decision-sdk | 0,116,402,724
+chat.row.boundary | Started |  | 16,124,370,34
+chat.row.prompt | Check the deployment once. |  | 16,158,370,40
+chat.row.run | 1 command | folded | 16,198,370,44
+chat.row.prose | The deploy check passed. | final | 16,244,370,20
+chat.prose.render |  | rendered | 16,244,370,20
 chat.row.turn-end | <volatile>
-chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
-chat.back | Back |  | 16,68,42,46
-chat.title | decision-sdk | decision-sdk | 51,72,156,38
-chat.more | More |  | 344,69,44,44
 chat.field | Message decision-sdk |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
-chat.model | claude-fake-1 · medium |  | 71,779,139,44
+chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
- | Back |  | 16,68,42,46
- | decision-sdk, /t/a/n/d/work · desk |  | 51,72,156,38
- | More |  | 344,69,44,44
+chat.more | More |  | 342,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
+chat.title | decision-sdk | decision-sdk | 96,66,160,36
  | Attach |  | 23,779,44,44
- | claude-fake-1 |  | 71,779,139,44
+ | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44 (disabled)
- | Started |  | 18,132,366,34
- | Check the deployment once. |  | 18,166,366,40
- | Allowed, deploy --check, <t>, deploy check: ok |  | 18,217,366,40
- | The deploy check passed. |  | 18,271,366,20
- | Worked <t> · $0.00 |  | 48,299,130,16
+ | Started |  | 16,124,370,34
+ | Check the deployment once. |  | 16,158,370,40
+ | 1 command |  | 16,198,370,44
+ | The deploy check passed. |  | 16,244,370,20
+ | Worked <t> · $0.00 |  | 16,271,116,16
+ | Back |  | 20,66,56,36
+ | decision-sdk, /t/a/n/d/work · desk |  | 96,66,160,36
+ | More |  | 342,66,36,36

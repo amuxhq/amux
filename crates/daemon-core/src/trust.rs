@@ -25,7 +25,7 @@ use uuid::Uuid;
 use crate::Daemon;
 use crate::ids::{CallId, HostId, JobId, PairingId};
 use crate::io::{Job, Output, ShellWork};
-use crate::payload::{CallError, JobResult, Response, Status};
+use crate::payload::{CallError, JobResult, PeerAddress, Response, Status};
 use crate::serve::answered;
 
 /// The length of an Ed25519 public key, the only key a host pins.
@@ -49,6 +49,9 @@ pub struct TrustEntry {
     pub signed_in: Option<bool>,
     /// What kind of machine the peer announced itself as, last it said.
     pub platform: Option<String>,
+    /// Every address the peer last listed for itself, with where each came
+    /// from. The address it last answered at is its `Direct` reachability.
+    pub listed: Vec<PeerAddress>,
 }
 
 /// The trust file's shapes, which are JSON's: a reachability tagged by
@@ -121,6 +124,8 @@ mod forms {
         signed_in: Option<bool>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         platform: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        listed: Vec<PeerAddress>,
     }
 
     #[derive(Serialize, Deserialize)]
@@ -131,6 +136,7 @@ mod forms {
         reachabilities: Vec<Reachability>,
         signed_in: Option<bool>,
         platform: Option<String>,
+        listed: Vec<PeerAddress>,
     }
 
     macro_rules! entry {
@@ -144,6 +150,7 @@ mod forms {
                         reachabilities: entry.reachabilities,
                         signed_in: entry.signed_in,
                         platform: entry.platform,
+                        listed: entry.listed,
                     }
                 }
             }
@@ -275,6 +282,7 @@ impl TrustStore {
                         reachabilities: Vec::new(),
                         signed_in: None,
                         platform: None,
+                        listed: Vec::new(),
                     },
                 )
             })
@@ -367,6 +375,7 @@ impl TrustStore {
                         reachabilities: reachability.into_iter().collect(),
                         signed_in: None,
                         platform: None,
+                        listed: Vec::new(),
                     },
                 );
                 Ok(PairingUpdate::Inserted)
@@ -404,6 +413,7 @@ impl TrustStore {
                 entry.reachabilities = reachability.into_iter().collect();
                 entry.signed_in = None;
                 entry.platform = None;
+                entry.listed.clear();
                 Ok(PairingUpdate::ReplacedPubkey)
             }
             None => {
@@ -416,6 +426,7 @@ impl TrustStore {
                         reachabilities: reachability.into_iter().collect(),
                         signed_in: None,
                         platform: None,
+                        listed: Vec::new(),
                     },
                 );
                 Ok(PairingUpdate::Inserted)
@@ -445,6 +456,32 @@ impl TrustStore {
             .reachabilities
             .retain(|reachability| !matches!(reachability, Reachability::Direct { .. }));
         entry.reachabilities.push(direct);
+        true
+    }
+
+    /// Replaces what `host_id` listed for itself; false when it is not
+    /// trusted or listed the same.
+    pub fn replace_listed(&mut self, host_id: Uuid, listed: Vec<PeerAddress>) -> bool {
+        let Some(entry) = self.entries.get_mut(&host_id) else {
+            return false;
+        };
+        if entry.listed == listed {
+            return false;
+        }
+        entry.listed = listed;
+        true
+    }
+
+    /// Keeps that `host_id` can be reached through the relay; false when it
+    /// is not trusted or already could.
+    pub fn remember_on_the_account(&mut self, host_id: Uuid) -> bool {
+        let Some(entry) = self.entries.get_mut(&host_id) else {
+            return false;
+        };
+        if entry.reachabilities.contains(&Reachability::Cloud) {
+            return false;
+        }
+        entry.reachabilities.push(Reachability::Cloud);
         true
     }
 
@@ -524,6 +561,12 @@ pub enum TrustChange {
     Remove { host: Uuid },
     /// `host` answered at `addrs`: they replace the direct addresses kept.
     DirectAddrs { host: Uuid, addrs: Vec<SocketAddr> },
+    /// `host` listed itself at `listed`, which replaces what it listed
+    /// before.
+    Listed {
+        host: Uuid,
+        listed: Vec<PeerAddress>,
+    },
     /// What `host` last said of itself.
     Remember {
         host: Uuid,
@@ -535,6 +578,9 @@ pub enum TrustChange {
         host: Uuid,
         entry: Option<TrustEntry>,
     },
+    /// The relay said `host` is on this profile's account, so a launch
+    /// may reach it through the relay.
+    OnTheAccount { host: Uuid },
 }
 
 impl TrustChange {
@@ -543,8 +589,10 @@ impl TrustChange {
             TrustChange::Pair { host, .. }
             | TrustChange::Remove { host }
             | TrustChange::DirectAddrs { host, .. }
+            | TrustChange::Listed { host, .. }
             | TrustChange::Remember { host, .. }
-            | TrustChange::Restore { host, .. } => *host,
+            | TrustChange::Restore { host, .. }
+            | TrustChange::OnTheAccount { host } => *host,
         }
     }
 }
@@ -633,12 +681,21 @@ impl Daemon {
     /// holds, so nothing of it is written again.
     pub(crate) fn trust_read(&mut self, store: TrustStore, out: &mut Vec<Output>) {
         self.trust.store = store;
+        self.remember_addresses();
         self.trust_published(None, out);
     }
 
     /// The trust store the core serves.
     pub fn trust(&self) -> &TrustStore {
         &self.trust.store
+    }
+
+    /// Whether the removal of `host` is being written.
+    pub(crate) fn trust_removing(&self, host: Uuid) -> bool {
+        self.trust.changing.as_ref().is_some_and(|changing| {
+            changing.stage == Stage::Writing
+                && changing.queued.change == TrustChange::Remove { host }
+        })
     }
 
     /// A change asked for by a call, answered once it is on the drive.
@@ -700,6 +757,13 @@ impl Daemon {
                     TrustChanged::Unchanged
                 })
             }
+            TrustChange::Listed { host, listed } => {
+                Ok(if staged.replace_listed(*host, listed.clone()) {
+                    TrustChanged::Remembered
+                } else {
+                    TrustChanged::Unchanged
+                })
+            }
             TrustChange::Remember {
                 host,
                 signed_in,
@@ -713,6 +777,11 @@ impl Daemon {
                     TrustChanged::Unchanged
                 })
             }
+            TrustChange::OnTheAccount { host } => Ok(if staged.remember_on_the_account(*host) {
+                TrustChanged::Remembered
+            } else {
+                TrustChanged::Unchanged
+            }),
             TrustChange::Restore { host, entry } => {
                 staged.replacement_pending.remove(host);
                 match entry {

@@ -159,7 +159,7 @@ public final class StoreBundle {
         guard let profile else { return }
         owed = false
         let views = profile.hosts()
-        fleet.show(profile.fleetView(expanding: Array(fleet.expanded)), hosts: views)
+        fleet.show(profile.fleetView(expanding: Array(fleet.expanded), filter: fleet.filter), hosts: views)
         hosts.show(views)
         if !markedReconciled {
             let trusted = views.filter { $0.trusted && !$0.local }
@@ -174,7 +174,7 @@ public final class StoreBundle {
         keepSessions()
         if hostsMoved {
             Task { await refreshAccount() }
-            if hosts.readingDevices || hosts.roster == nil { Task { await refreshRoster() } }
+            if hosts.rosterBehind { Task { await refreshRoster() } }
         }
     }
 
@@ -200,6 +200,12 @@ public final class StoreBundle {
     public func refreshRoster() async {
         guard let profile, case .success(let roster) = await profile.roster() else { return }
         hosts.show(roster)
+    }
+
+    /// Narrows the list to what `filter` keeps.
+    public func filterFleet(_ filter: FleetFilter) {
+        fleet.filter = filter
+        read(hostsMoved: false)
     }
 
     /// Lists or folds a family's members.

@@ -12,6 +12,7 @@ use store::AgentKey;
 use wire::Empty;
 
 use super::feed;
+use crate::link::EarlyAnswer;
 use crate::replicas::SourceVerdict;
 use crate::routing::host_from_core;
 use crate::runtime::ProfileRuntime;
@@ -60,13 +61,32 @@ async fn session<F: Future<Output = ()>>(
     let Some(edge) = edge else {
         return Answer::Failed(PeerFailure::NotSent);
     };
-    let mut client = match edge.session_peer(host_from_core(host)).await {
-        Ok(client) => client,
-        Err(_) => return Answer::Failed(PeerFailure::NotSent),
+    let peer = host_from_core(host);
+    let early = edge
+        .first_flights()
+        .take(peer, &PeerRequest::Subscribe(request.clone()))
+        .await;
+    let opened = match early {
+        // The launch's first flight carried this call.
+        Some(taken) => match taken.reply.await {
+            Ok(EarlyAnswer::Session(stream)) => Ok(stream),
+            Ok(_) => Err(tonic::Status::internal("a Subscribe answered otherwise")),
+            Err(status) => Err(status),
+        },
+        None => {
+            let mut client = match edge.session_peer(peer).await {
+                Ok(client) => client,
+                Err(_) => return Answer::Failed(PeerFailure::NotSent),
+            };
+            drop(edge);
+            client
+                .subscribe(request)
+                .await
+                .map(|response| response.into_inner())
+        }
     };
-    drop(edge);
-    let mut stream = match client.subscribe(request).await {
-        Ok(response) => response.into_inner(),
+    let mut stream = match opened {
+        Ok(stream) => stream,
         Err(status) => return refused(&status),
     };
     loop {
@@ -97,16 +117,42 @@ async fn inventory<F: Future<Output = ()>>(
     let Some(edge) = runtime.upgrade().and_then(|me| me.edge()) else {
         return Answer::Failed(PeerFailure::NotSent);
     };
-    let mut client = match edge.peer(peer).await {
-        Ok(client) => client,
-        Err(error) => {
-            tracing::debug!(%peer, %error, "no channel for the host's inventory");
-            return Answer::Failed(PeerFailure::NotSent);
+    let early = edge
+        .first_flights()
+        .take(peer, &PeerRequest::SubscribeInventory)
+        .await;
+    let (opened, mut catch_up) = match early {
+        // The launch's first flight carried this call.
+        Some(taken) => (
+            match taken.reply.await {
+                Ok(EarlyAnswer::Inventory(stream)) => Ok(stream),
+                Ok(_) => Err(tonic::Status::internal(
+                    "a SubscribeInventory answered otherwise",
+                )),
+                Err(status) => Err(status),
+            },
+            taken.catch_up,
+        ),
+        None => {
+            let mut client = match edge.peer(peer).await {
+                Ok(client) => client,
+                Err(error) => {
+                    tracing::debug!(%peer, %error, "no channel for the host's inventory");
+                    return Answer::Failed(PeerFailure::NotSent);
+                }
+            };
+            drop(edge);
+            (
+                client
+                    .subscribe_inventory(Empty {})
+                    .await
+                    .map(|response| response.into_inner()),
+                None,
+            )
         }
     };
-    drop(edge);
-    let mut stream = match client.subscribe_inventory(Empty {}).await {
-        Ok(response) => response.into_inner(),
+    let mut stream = match opened {
+        Ok(stream) => stream,
         Err(status) => {
             tracing::debug!(%peer, %status, "the host refused its inventory");
             return refused(&status);
@@ -119,6 +165,11 @@ async fn inventory<F: Future<Output = ()>>(
             Ok(None) => return Answer::Ended,
             Err(_) => return Answer::Failed(PeerFailure::Uncertain),
         };
+        if matches!(event.of, Some(wire::inventory_event::Of::CaughtUp(_)))
+            && let Some(caught_up) = catch_up.take()
+        {
+            caught_up.arrived();
+        }
         let hook = runtime
             .upgrade()
             .and_then(|me| me.replicas.lock().unwrap().inventory_hook.clone());

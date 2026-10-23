@@ -1,38 +1,18 @@
 shell |  | hosts | 0,62,402,778
-home |  | signed-out | 0,62,402,778
-home.newAgent | New Agent |  | 345,67,44,44
-home.title | Agents, switch account | Agents | 18,105,165,68
-home.subtitle |  | 2 need you · 4 agents | 18,172,186,81
-home.row.<dialog> | dialog, Needs you, Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent., desk, /tmp/amux-phone-journey/net/desk/work, <age> | needs-you | 18,316,366,236
-home.row.<dialog>.age.volatile | <volatile>
-home.row.<dialog>.second |  |  | 31,376,325,78
-home.row.<dialog>.detail.volatile | <volatile>
-home.row.<asker> | asker, Needs you, Which changes should the release notes keep?, desk, /tmp/amux-phone-journey/net/desk/work, <age> | needs-you | 18,552,366,236
-home.row.<asker>.age.volatile | <volatile>
-home.row.<asker>.second |  |  | 31,612,340,78
-home.row.<asker>.detail.volatile | <volatile>
-home.row.<keeper> | keeper, Idle, The recovery state is safely stored., desk, /tmp/amux-phone-journey/net/desk/work, <age>, unread | idle | 18,855,366,236
-home.row.<keeper>.age.volatile | <volatile>
-home.row.<keeper>.second |  |  | 31,915,308,78
-home.row.<keeper>.detail.volatile | <volatile>
-hosts |  | 1 reachable | 0,62,402,778
-hosts.title |  | Hosts | 18,72,118,54
-hosts.subtitle |  | 1 reachable | 18,127,205,40
-hosts.row.<desk> | desk, macOS, reachable on this network | on-this-network | 18,230,366,108
-hosts.fact.identity | <volatile>
-hosts.fact.paired-devices | Paired Devices, 1 | 1 | 18,556,366,114
-hosts.caption.devices |  |  | 18,678,347,78
-tab.agents | Agents | not selected | 50,777,99,57
-tab.hosts | Hosts | selected | 151,777,99,57
-tab.you | You | not selected | 253,777,99,57
- | Agents |  | 50,777,99,57
- | Hosts |  | 151,777,99,57
- | You |  | 253,777,99,57
- | Hosts |  | 18,72,118,54
- | 1 reachable |  | 18,127,205,40
- | ON THIS NETWORK |  | 20,183,276,39
- | desk, macOS, reachable on this network |  | 18,230,366,108
- | THIS PHONE |  | 20,356,184,39
- | Identity, amux-iphone-1 · <key> |  | 18,403,366,152
- | Paired Devices, 1 |  | 18,556,366,114
- | Revoking a device ends its access immediately. |  | 18,678,347,78
+home |  | signed-out | 0,116,402,675
+hosts |  | 1 reachable | 0,221,402,570
+hosts.row.<desk> | desk, macOS, reachable on this network | on-this-network | 16,227,370,111
+hosts.subtitle |  | 1 reachable | 16,179,370,34
+ | desk, macOS, reachable on this network |  | 16,227,370,111
+ | Hosts |  | 16,124,139,62
+ | 1 reachable |  | 16,191,92,22
+ | Agents |  | 111,795,94,54
+ | Agents |  | 140,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 229,830,29,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 230,830,29,12
+ | Agents |  | 111,795,94,54
+ | Hosts | selected | 197,795,94,54

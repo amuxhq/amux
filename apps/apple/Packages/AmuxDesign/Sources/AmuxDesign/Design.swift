@@ -5,18 +5,19 @@ import SwiftUI
 /// One rule outranks the rest: colour means attention. An agent with nothing
 /// to say is drawn achromatically, so the eye lands on the one that does
 /// without anyone hunting for a badge — which is why there is a single
-/// chromatic accent and every other token is a step on the neutral ramp.
+/// chromatic accent and every other token is a neutral grey.
 public struct Design: Sendable, Equatable {
     public let name: String
 
-    // Ground and surfaces, all distances along `Neutral`.
+    // Ground and surfaces: plain neutral greys with no tint, so the one
+    // colour on the screen is the accent.
     public let ground: Ramp
     public let raised: Ramp
     public let sunken: Ramp
     public let hairline: Ramp
 
     // Ink. Neither pole is absolute: pure black on white is heavy and pure
-    // white on black glares, so both back off a step.
+    // white on black glares, so both back off a step from their ground.
     public let ink: Ramp
     public let inkMuted: Ramp
     public let inkFaint: Ramp
@@ -27,8 +28,8 @@ public struct Design: Sendable, Equatable {
 
     /// What a change added and what it took away.
     ///
-    /// The only colours in the design that are not the accent or a step on the
-    /// neutral ramp, and the exception is deliberate: green and red are a
+    /// The only colours in the design that are not the accent or a neutral
+    /// grey, and the exception is deliberate: green and red are a
     /// convention about what changed, while the accent is this app's one word
     /// for "something is waiting for you". A diff is not that, so it must not
     /// borrow the word. Both are muted well below a signal green and red so
@@ -112,8 +113,8 @@ public struct Design: Sendable, Equatable {
     public enum Prominence: Sendable { case subject, plain }
 
     public struct Typography: Sendable, Equatable {
-        /// Agent and host names. Mono reads as "an identifier you might type",
-        /// which is what they are.
+        /// Agent and host names in the mono face. Off: a name is what a person
+        /// reads a list by, and mono makes a chat list read as a terminal.
         public let identifierIsMono: Bool
         public let titleWeight: Font.Weight
         /// How big a screen's own name is.
@@ -134,20 +135,21 @@ public struct Design: Sendable, Equatable {
     }
 
     /// The app's one skin: type-led, rules instead of containers, and mono
-    /// kept for the things that are literally identifiers.
+    /// kept for code: commands, paths and diffs.
     public static let app = Design(
         name: "Studio",
-        ground: Neutral.pair(light: 2, dark: 12),
-        raised: Neutral.pair(light: 0, dark: 10),
+        // White, and the system's true black: the clean ground of the chat
+        // apps people already know, which the system's glass bars are drawn
+        // to sit on.
+        ground: Ramp(0xFFFFFF, 0x000000),
+        raised: Ramp(0xFFFFFF, 0x1C1C1E),
         // Light recesses by going darker; dark cannot, because its ground is
-        // already near-black, so on dark a well is a step up.
-        sunken: Neutral.pair(light: 3, dark: 11),
-        // Borders need a touch more separation on dark than on light to read
-        // at the same strength: three steps against two.
-        hairline: Neutral.pair(light: 4, dark: 9),
-        ink: Neutral.pair(light: 13, dark: 1),
-        inkMuted: Neutral.pair(light: 8, dark: 6),
-        inkFaint: Neutral.pair(light: 6, dark: 7),
+        // already black, so on dark a well is a step up.
+        sunken: Ramp(0xF2F2F4, 0x161618),
+        hairline: Ramp(0xDCDCE0, 0x38383A),
+        ink: Ramp(0x1D1C1F, 0xF5F5F7),
+        inkMuted: Ramp(0x5E5E66, 0x98989F),
+        inkFaint: Ramp(0x8A8A93, 0x6E6E73),
         // Petrol: cool enough to stay calm, far enough round the wheel from
         // the indigo every AI product wears to read as instrument, not brand.
         accent: Ramp(0x0E5F6E, 0x4FBACD),
@@ -160,10 +162,10 @@ public struct Design: Sendable, Equatable {
         faces: .instrument,
         metrics: Metrics(
             cardRadius: 16, controlRadius: 12, floatRadius: 26,
-            rowPadding: 14, gutter: 18, feedGap: 16,
+            rowPadding: 12, gutter: 16, feedGap: 16,
             hairline: 0.5),
         type: Typography(
-            identifierIsMono: true, titleWeight: .semibold,
+            identifierIsMono: false, titleWeight: .semibold,
             titleSize: 26, bodySize: 16, tightTracking: -0.4),
         surfaces: Surfaces(separation: .rule, graduated: false))
 

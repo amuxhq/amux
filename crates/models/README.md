@@ -63,8 +63,12 @@ keys, trims its oldest row and reboots uncleanly, losing its newest commit
 and minting those revisions again under the next generation. Two states
 are one when their stores, the link and the replica's source stand alike;
 the cores' checkpoints ride along, since what else differs between them is
-the numbering of their calls and the length of a backoff. The properties
-are in `src/replication.rs`, each a sentence over the two stores.
+the numbering of their calls and the length of a backoff. The replica's
+link to the origin is resumed, so the opening it asks for after the origin
+reboots rides it as early data, which the origin's driver serves only once
+its core has taken the link; and that opening may be replayed on a
+connection of its own, whose answers go to whoever replayed it. The
+properties are in `src/replication.rs`, each a sentence over the two stores.
 
 ## Single daemon under crash
 
@@ -84,21 +88,36 @@ checkpoint and the journal back to its last writeback.
 Every step is also replayed the way a dump will be: the core restored from
 the newest checkpoint the driver's input ring holds, over the store it was
 taken beside, stepped through every input since against the journal as each
-step found it, must come out as the live core, store and journal. The
-properties are in `src/single_daemon.rs`.
+step found it, must come out as the live core, store and journal.
+
+A paired peer comes back on resumed links, each carrying an early read of
+the agent that the driver serves only once the core has taken the link;
+anyone holding those packets may replay them on a connection of their own;
+and someone may ask this host to remove the peer's pin, which the core
+writes through the driver before the driver closes the peer's link. The
+peer has bounds of its own, small around the journal, explored beside the
+journal's in the same test. The properties are in `src/single_daemon.rs`.
 
 ## Presence and routing
 
-`PresenceRouting` follows what one host reads as on a real daemon core
-whose links to the account's relay and to one peer are already up. The
-host's own links come up and go, the peer and the relay start and stop
-claiming to reach it, each attempt the core asks for opens a channel, is
+`PresenceRouting` follows what one host reads as on a real daemon core at
+launch: its links to the account's relay and to one peer are up, and
+neither has said anything of the host, which this daemon remembers and
+dials at once on every path. So the host's own links may come up before
+any claim of it, whether their packets go on the network or through the
+relay end to end (to the core both are the host's own link), every other
+one over SSH; they go, the peer and the relay start and stop claiming to
+reach it, the relay refuses the host's packets for the plan while it
+lapses (and, at the nightly bounds, for no route while its claim lingers),
+each attempt the core asks for opens a channel, is
 refused, times out, is refused by the relay for the account's plan or
 fails because its route went, a call opens a channel of its own on the
 first route (its direct link may go under it, and the call then tries the
 route the core names next), a call finds no channel within its patience
 (the core may close the host's own links for it), the plan is bought and
-lapses, the retry timer fires, and at any point the world may stop
+lapses (the relay enforces the change at once and this daemon hears of it
+later, so the relay may refuse the host's packets while its route still
+carries them), the retry timer fires, and at any point the world may stop
 changing. The relay
 refuses for the plan for as long as the plan lapses; the model bounds how
 many such refusals come in a row so that a path retrying only the relay
@@ -202,6 +221,66 @@ text. The properties are in `src/client.rs`. Seeded walks of this model
 are also the traces the phone's chat model replays: `just client-traces`
 records them (`crates/app-runtime/src/traces.rs`).
 
+## The path machine
+
+`PathModel` runs the real `path_core::Paths` for one link to a peer the
+world can reach three ways: at its address on the local network, which
+works while this host is on that network; at the address the relay saw it
+at, by punching, which works until this host's network changes; and through
+the relay, which forwards while its link is up and the plan is paid. A
+fourth address, one that worked on a network this host has left, never
+answers. The machine learns the addresses late and one at a time; each probe
+it sends is answered by a path that works or is lost, and a probe with no
+answer times out as the clock reaches it; while the link is on the local
+address, that address may go silent for long enough that three probes on it
+in a row go unanswered, nothing else changing meanwhile, and the world rests
+once it answers again; this host's network changes; the
+relay link goes down and comes back; the plan lapses or is bought again, and
+the relay refuses the lapsed plan's packets once it sees them; the link
+comes up once the first flight reaches the peer on a path that works and
+idles out when none does; and the clock moves to whatever wake the machine
+asked for. Router mappings expiring play out as lost probes on the punched
+path. At any point the world may stop changing; the clock still moves a
+bounded number of times so the machine settles, and its liveness is judged
+there.
+
+Two more worlds add what the peer and the relay say beside the probes,
+each on a smaller world so that it fits its budget. In the first, one of
+the link's packets arrives, on a path the machine sends on or on a byte
+stream it has not heard on, and a paired daemon's forwarding link comes up
+and goes, while the network stays put, the relay link stays up and the
+local address keeps answering. In the second, an answer arrives for a path
+with no probe of it outstanding (late, duplicated, or from before the
+network changed; never on a path whose probe the machine still waits on,
+since the driver passes only the outstanding probe's answer), the relay
+refuses for no route, the rate limit or shutting down, the peer stops
+listing an address, and the peer lists an IPv6 address as near as its IPv4
+one, while the relay link stays up and the local address keeps answering.
+The properties read the world's own record of what the machine asked for
+against what the world knows of each path, and are in `src/path.rs`.
+
+## The relay's forwarding
+
+`RelayModel` runs the real `relay_core::Relay` for three hosts reaching the
+relay: a desk and a laptop on one account and a phone on another. A host's
+link connects and waits for its token to check out, or gives up first;
+packets arriving while it waits are held, and once it is admitted the core
+is asked about each. A host may connect again while its first link is still
+up, as one does after its network changes. Admitted links send packets for
+any host whenever the driver has no pair that carries them; an account's
+plan lapses or is bought again, and each link learns of it when it presents
+its next token; a token expires before a fresh one comes. Each link's
+handshake lists the neighbors its host was told of, and a host forgets them
+once it holds no link here. At any point the world may stop changing, and
+the lapse's promise is judged there. The same machine with every link
+admitted by a pinned key, all on one account, is a daemon forwarding
+between its paired hosts; its links are the daemon's own network links to
+them, dialled by either end, so both ends may dial at once, and a host's
+process may restart, leaving the links of its earlier life to be found
+dead. The properties read the driver's table of pairs,
+built only from what the core told it, against the world's record of each
+link, and are in `src/relay.rs`.
+
 ## The composed net
 
 `ComposedNet` takes a topology (hosts, the links between them and the
@@ -266,6 +345,8 @@ observe them:
 - presence's "no flap while another route carries traffic": each host
   reaches the other by one route, their link, with no relay or peer to
   claim another;
+- presence's "a refused route stops carrying": no forwarder in the net
+  refuses a host's packets;
 - every promise of the family model, which needs a parent and a child;
 - every promise of the supervisor, which is outside the net.
 
@@ -289,22 +370,32 @@ under `just test`.
 
 | Model | CI bounds | States | 12 threads | 4 threads | Four-core runner | Budget | Nightly bounds | Nightly, 12 threads |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Replication | 2 keys, cap 1, revisions up to 4, 2 generations, 2 in flight, 1 loss in a row | 81,268 | 13 s | 25 s | 87, 102, 72, 103, 50 and 101 s | 240 s | 3 keys, cap 2, revisions up to 5, 3 in flight | 493 s |
-| Single daemon | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag | 207,594 | 51 s | 68 s | 81, 161, 161, 77, 113 and 135 s | 360 s | 2 crashes, power losses or reboots, 1 refused commit | 527 s |
+| Replication | 2 keys, cap 1, revisions up to 4, 2 generations, 2 in flight, 1 loss in a row, the opening replayed once | 157,789 | not measured | 50 s | none yet at these bounds (about 233 s projected); at 81,268 states, before the resumed link: 87, 102, 72, 103, 50 and 101 s | 480 s | 3 keys, cap 2, revisions up to 5, 3 in flight | 1,062 s (6,424,651 states, load 45 falling to 16) |
+| Single daemon, and its peer | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag; the peer: 2 frames, 1 checkpoint, 1 crash, power loss or reboot, 1 resumed link, 1 replay, its pin removed | 207,594 and 50,633 | 51 s and 16 s | 74 s and 21 s | 81, 161, 161, 77, 113 and 135 s for the journal; none yet for the peer (about 100 s projected) | 540 s for both | 2 crashes, power losses or reboots, 1 refused commit; the peer around the CI bounds' journal and subscriber | 557 s (2,018,569 states), load about 30; the peer past 4,000 s (not finished at 12 threads, load about 55) |
 | Family and deliveries | 1 turn end, 1 link down, 1 crash, 1 wait | 219,380 | 23 s | 47 s | 178 and 128 s (about 191 s projected); at 396,826 states with the parent's spontaneous exit: 161, 299, 222, 313, 310 and 155 s (the first at 391,552 states, before the first listing predated the parent) | 420 s | the parent's and the child's spontaneous exits, 2 links down, 2 waits | 757 s |
-| Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts or calls finding no channel, 1 call opening its own channel, 2 plan changes, 1 refusal for the plan before anything else happens | 1,040,570 | 27 s | 61 s | 289, 288, 120, 290 and 287 s (339.9 s at 1,233,958 states with 2 refusals for the plan in a row) | 600 s | 4 up, 3 down, 3 failures, 2 refusals for the plan in a row | 431 s |
+| Presence and routing | 3 links or claims up, 2 down, 1 refused or timed-out attempt or call finding no channel, 1 call opening its own channel, 2 plan changes, each heard by this daemon after the relay enforces it, 1 refusal for the plan, of a channel or of the host's packets, before anything else happens | 900,130 | not measured | 51 s | none yet at these bounds (about 238 s projected); at 1,040,570 states, before the relay refused packets: 289, 288, 120, 290 and 287 s (339.9 s at 1,233,958 states with 2 refusals for the plan in a row) | 480 s | 3 failures, 2 refusals for the plan in a row, the relay refusing for no route | 140 s (4,352,714 states, the Mac busy at load 18 to 56) |
 | Agent lifecycle, one-shot child and parentless agent | 3 daemon connections, 3 inputs, 2 messages, 2 asks, 1 unasked provider exit, 2 stops or kills | 1,296,718 and 71,250 | 9 s | 18 s | 45, 28, 44, 29, 41 and 45 s for both | 120 s each | 4 connections, 3 messages, 2 unasked exits | 81 s |
 | Supervisor update, both platforms' swaps | 2 releases, 2 supervisor crashes, 2 daemon crashes, 1 failed start, 5 timers firing, 1 `amux update` | 5,819,060 and 4,850,638 | 7 s | 8 s | 17, 27, 25, 27, 27 and 28 s for both | 60 s each | 3 releases, 2 failed starts, 6 timers firing | 124 s |
 | One open chat | 2 writes, 1 lag, 1 reset, 2 pages over a three-item opening, a tail of 2, pages of 1 | 1,217,819 | 10 s | 24 s | 51, 109, 116, 105, 105 and 107 s | 240 s | 3 writes | 343 s |
+| Path machine, in three worlds | 2 of the 3 addresses learned, 1 lost probe, 1 network change, 1 plan change, 2 ticks, 1 relay link drop, 1 silence of the local address; the same with no network change, relay link drop or silence, and 1 of the peer's packets arriving, a byte stream and 1 paired daemon's forwarding link; the first with no relay link drop or silence, and 1 answer with no probe outstanding, 1 refusal for another reason than the plan, 1 address forgotten and an IPv6 address | 12,929,251, 11,118,688 and 12,701,530 | 15 s, 14 s and 17 s | 30 s, 28 s and 34 s | none yet | 300 s, 300 s and 360 s | the first with all 3 addresses, 2 plan changes and 3 ticks; the second with a network change; the third with a relay link drop | the first not re-measured since it was 90,308,562 states in 405 s; the second 60,146,859 states in 89 s and the third 59,820,884 in 106 s (load about 13, about 19 GB each) |
+| Relay's forwarding, as the relay and as a daemon | 3 links connecting, 3 packets asked about, 1 plan change, 1 expiry; the daemon's links dialled by either end, and 1 restart of a host's process | 694,420 and 719,032 | 4 s and 4 s | 3 s and 3 s | none yet | 60 s each | the relay with 4 links; the daemon with 4 links | 41 s; the daemon's 18,625,784 states in 43 s (load about 13) |
 | Composed net: a reset while presence flips, lost messages, a person's calls through a crash | 1 sever and 1 unclean reboot; 1 reordering, 1 lost message and 1 advance; 1 kill, 1 prompt and 1 stop | 33,025, 9,559 and 216,320 | 27 s | 51 s | 151, 105, 204, 207, 139 and 180 s for all three | 420 s for all three | every fault but a kill, with 1 reordering; the calls through a crash with 1 lost message | 184 s |
 
 Measured on 2026-10-18 and 2026-10-19 on the enrolled Mac (Mac14,6, 12
-cores), the family model's on 2026-10-20, with the development profile,
+cores), the family model's on 2026-10-20, the relay's forwarding on
+2026-10-21 and the path machine's and the relay daemon's on 2026-10-22 (the
+relay's first with the Mac busy, load about 20, the path machine's at load
+about 5 to 13;
+presence's again that day at load about 15, and presence, the single
+daemon's peer and replication again that night at load about 8, and the
+nightly bounds of presence, replication and the single daemon the next
+morning at load 16 to 56), with the
+development profile,
 which optimises SQLite, the store and the models; `MODELS_THREADS=4` gives
 the four-thread figure. The checker runs on every core the machine has; the
 verdict and the state count do not depend on the number of threads (the
-family model's count aside, below), only which of several equally short
-counterexamples is printed.
+family model's and replication's counts aside, below), only which of several
+equally short counterexamples is printed.
 
 The four-core runner column is each model's test binary's time at its CI
 bounds on CI's four-core Linux runner, measured by CI runs
@@ -330,9 +421,23 @@ enrolled Mac, back to back, and the budget is sized to the slowest run
 scaled by that; the first two CI runs at the cut bounds, 39459686545 and
 39489610899, took 178 s and 128 s. Its state count varies by under 1% from run to run
 (218,332 to 219,506 at these bounds), so one of its values is not yet
-printed the same way for the same state. Presence's earlier figure
+printed the same way for the same state. Replication's count varies by a
+few dozen states on several threads (157,539 to 157,789 at these bounds) and
+not on one: a state keeps the cores' checkpoints the first path to reach it
+left, and which path is first depends on the threads. Presence's earlier figure
 is at bounds that allowed two refusals for the plan in a row: twice it passed
 600 s, so the CI bounds allow one and the second moved to the nightly bounds.
+Once the relay refused the host's packets and the plan reached this daemon
+after the relay, presence at two failures projected past the cap before any
+runner timed it, so the CI bounds allow one failure and the second is the
+nightly bounds' (which allow three). Presence's nightly bounds keep the CI
+bounds' links up and down: with a fourth up and a third down they explored
+30,391,426 states in 1,170 s on the Mac's twelve threads at load about 50,
+which projects past the nightly job's 100 minutes on the runner, so the fourth
+up and the third down were cut. The nightly job's runner is projected from a
+twelve-thread Mac time by the slowest ratio of four threads to twelve in the
+table (2.4) and the runner's 4.7 on four: presence's 140 s comes to about
+1,600 s, inside the nightly recipe's 4,800 s.
 Each budget is sized to the slowest of a model's figures at its current
 bounds.
 

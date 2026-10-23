@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWED_LOCAL = {
@@ -44,7 +45,7 @@ ALLOWED_LOCAL = {
     # provider in its graph.
     # interpret only for the dump path's per-kind redactor: the one stated
     # exception to "the daemon interprets nothing".
-    "node": {"agent-dir", "analytics", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "relay-core", "release", "settings", "store", "supervisor-core", "version-stamp", "wire"},
+    "node": {"agent-dir", "analytics", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "path-core", "relay-core", "release", "settings", "store", "supervisor-core", "version-stamp", "wire"},
     "amux": {"agent", "agent-dir", "analytics", "claude", "client", "node", "settings", "store", "tui", "wire"},
     # The version stamp a release tool can rewrite in a built binary, and the
     # release manifest the tool signs and the daemon verifies; the xtask
@@ -79,10 +80,12 @@ ALLOWED_LOCAL = {
 # store, reads journals, speaks the message types and records its inputs in
 # the ring; the relay's is built from the daemon's link and routing state;
 # the agent's wraps the interpreter; the supervisor's reads release
-# manifests and version stamps.
+# manifests and version stamps; the path machine names links and reports
+# dumps as the daemon's does.
 CORES_ALLOWED_LOCAL = {
     "daemon-core": {"core-ring", "journal", "store", "wire"},
     "relay-core": {"daemon-core"},
+    "path-core": {"daemon-core"},
     "agent-core": {"core-ring", "interpret", "journal", "wire"},
     "supervisor-core": {"release", "version-stamp"},
 }
@@ -110,7 +113,6 @@ TEST_SUPPORT = {
     "provider-fakes",
     "fake-amux",
     "shot",
-    "tui-set",
     "models",
     "replay-support",
 }
@@ -140,11 +142,10 @@ SUPPORT_ALLOWED_LOCAL = {
     # A stand-in amux binary that runs the real supervisor, so the
     # supervisor tests exec and roll back the shipped code.
     "fake-amux": {"agent-dir", "node"},
-    # Renders the terminal client's named states to PNG for review.
-    "shot": {"tui"},
-    # Serves a declared world with `testnet serve` and runs the terminal
-    # client on it, or draws it headlessly through `shot`.
-    "tui-set": {"agent-dir", "client", "settings", "shot", "tui", "ui-runtime", "wire"},
+    # Renders the terminal client's named states to PNG for review, and
+    # its storybook, whose chats are recorded sessions replayed through the
+    # interpreters.
+    "shot": {"interpret", "tui", "ui-state", "ui-view", "wire"},
     # Replays a dump bundle's stages with the models' properties judged at
     # every step: facts through the interpreter (the journal for
     # comparison), the daemon core from its checkpoint over its store,
@@ -158,8 +159,28 @@ SUPPORT_ALLOWED_LOCAL = {
     # The protocol's properties, explored over the real code: the store, the
     # journal and the message types, each state-machine core, and the
     # clients' session state.
-    "models": {"agent-core", "daemon-core", "interpret", "journal", "provider-fakes", "release", "store", "supervisor-core", "ui-state", "wire"},
+    "models": {"agent-core", "daemon-core", "interpret", "journal", "path-core", "provider-fakes", "relay-core", "release", "store", "supervisor-core", "ui-state", "wire"},
 }
+
+# Every dependency comes from crates.io but rustls, which comes from the
+# fork carrying the amux patch (docs/ARCHITECTURE.md, "The rustls patch")
+# at whatever commit the lockfile pins.
+CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
+GIT_SOURCES = {"rustls": "git+https://github.com/jordanwebster/rustls?rev="}
+
+
+def source_failures() -> list[str]:
+    lock = tomllib.loads((ROOT / "Cargo.lock").read_text())
+    failures = []
+    for package in lock["package"]:
+        source = package.get("source")
+        if source is None or source == CRATES_IO:
+            continue
+        allowed = GIT_SOURCES.get(package["name"])
+        if allowed is None or not source.startswith(allowed):
+            failures.append(f"{package['name']} {package['version']}: comes from {source}")
+    return failures
+
 
 def local_edges(package: dict[str, object]) -> set[str]:
     return {
@@ -183,7 +204,7 @@ def main() -> int:
         for package in metadata["packages"]
         if package["id"] in members
     }
-    failures = []
+    failures = source_failures()
 
     for name, allowed in (ALLOWED_LOCAL | SUPPORT_ALLOWED_LOCAL).items():
         package = packages.get(name)

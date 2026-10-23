@@ -2,7 +2,7 @@
 //!
 //! The relay accepts every host of an account over QUIC and a TLS-over-TCP
 //! fallback, checks each host's connection token against the cloud's
-//! signing keys, and forwards streams between the account's hosts. It is
+//! signing keys, and forwards packets between the account's paid hosts. It is
 //! not an installation: it has no profiles, no agents, no supervisor and no
 //! updater, and it runs in the foreground under whatever service manager
 //! started it.
@@ -18,8 +18,9 @@
 //! ```
 //!
 //! The certificate and key are PEM files named by `AMUX_TLS_CERT` and
-//! `AMUX_TLS_KEY`, or by `tls_cert` and `tls_key` in the file. Other keys an
-//! older relay configuration carried are ignored. A dump the relay's core
+//! `AMUX_TLS_KEY`, or by `tls_cert` and `tls_key` in the file. The session
+//! tickets the relay issues are kept in `tickets` beside the certificate.
+//! Other keys an older relay configuration carried are ignored. A dump the relay's core
 //! asks for (a broken invariant, a step over its budget) is a text file in
 //! `reports_dir`; the default is `reports` in the configuration file's
 //! directory.
@@ -67,12 +68,15 @@ fn config_path(path: Option<&Path>) -> Result<PathBuf> {
     })
 }
 
-fn pem(env: &str, configured: Option<&Path>, what: &str) -> Result<Vec<u8>> {
-    let path = std::env::var_os(env)
+fn pem_path(env: &str, configured: Option<&Path>, what: &str) -> Result<PathBuf> {
+    std::env::var_os(env)
         .map(PathBuf::from)
         .or_else(|| configured.map(Path::to_owned))
-        .ok_or_else(|| anyhow!("the relay needs its TLS {what}: set {env}"))?;
-    std::fs::read(&path).with_context(|| format!("reading the TLS {what} {}", path.display()))
+        .ok_or_else(|| anyhow!("the relay needs its TLS {what}: set {env}"))
+}
+
+fn read_pem(path: &Path, what: &str) -> Result<Vec<u8>> {
+    std::fs::read(path).with_context(|| format!("reading the TLS {what} {}", path.display()))
 }
 
 /// The log file: `AMUX_LOG`, else the per-user state directory.
@@ -96,14 +100,32 @@ pub fn run(config: Option<&Path>) -> Result<()> {
     if config.host_name.is_empty() {
         bail!("{}: host_name must name the relay", path.display());
     }
-    let cert = pem(CERT_ENV, config.tls_cert.as_deref(), "certificate")?;
-    let key = pem(KEY_ENV, config.tls_key.as_deref(), "key")?;
+    let cert_path = pem_path(CERT_ENV, config.tls_cert.as_deref(), "certificate")?;
+    let cert = read_pem(&cert_path, "certificate")?;
+    let key = read_pem(&pem_path(KEY_ENV, config.tls_key.as_deref(), "key")?, "key")?;
     crate::server::log_to(&log_path())?;
+    // The session tickets the relay issued live beside its certificate,
+    // so a restarted relay still resumes the hosts that held them. A
+    // directory the relay cannot write costs each host one full handshake
+    // after a restart, not the relay.
+    let tickets_dir = cert_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(node::TICKETS_DIR);
+    let tickets =
+        node::SessionTickets::open(&tickets_dir, node::RELAY_TICKETS).unwrap_or_else(|error| {
+            tracing::warn!(
+                %error,
+                dir = %tickets_dir.display(),
+                "session tickets will not outlive this run"
+            );
+            node::SessionTickets::in_memory(node::RELAY_TICKETS)
+        });
     let reports = reports_dir(&path, config.reports_dir.as_deref());
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
-    runtime.block_on(serve(config, reports, cert, key))
+    runtime.block_on(serve(config, reports, cert, key, tickets))
 }
 
 /// Where the relay writes the dumps its core asks for: the configured
@@ -120,10 +142,16 @@ fn reports_dir(config: &Path, configured: Option<&Path>) -> PathBuf {
     )
 }
 
-async fn serve(config: RelayConfig, reports: PathBuf, cert: Vec<u8>, key: Vec<u8>) -> Result<()> {
+async fn serve(
+    config: RelayConfig,
+    reports: PathBuf,
+    cert: Vec<u8>,
+    key: Vec<u8>,
+    tickets: Arc<node::SessionTickets>,
+) -> Result<()> {
     let tls = node::create_tls_acceptor(&cert, &key).context("loading the TLS certificate")?;
-    let quic =
-        node::relay_quic_server_config(&cert, &key).context("loading the TLS certificate")?;
+    let quic = node::relay_quic_server_config(&cert, &key, &tickets)
+        .context("loading the TLS certificate")?;
     let clock: Arc<dyn node::Clock> = Arc::new(agent_dir::SystemClock);
     let server = CloudLinkServer::new(
         RelayIdentity {
@@ -145,24 +173,23 @@ async fn serve(config: RelayConfig, reports: PathBuf, cert: Vec<u8>, key: Vec<u8
         .with_context(|| format!("listening on TCP {tcp_addr}"))?;
     tracing::info!(addr = %tcp_addr, "listening for cloud TLS carriers");
     let udp_addr = SocketAddr::from(([0, 0, 0, 0], config.udp_port.unwrap_or(config.tcp_port)));
-    let endpoint = quinn::Endpoint::server(quic, udp_addr)
+    let udp = std::net::UdpSocket::bind(udp_addr)
         .with_context(|| format!("listening on UDP {udp_addr}"))?;
     tracing::info!(addr = %udp_addr, "listening for cloud QUIC carriers");
     println!(
         "amux relay {} listening on TCP {tcp_addr} and UDP {udp_addr}, tokens from {}",
         config.host_name, config.cloud_url
     );
-    let tcp_task = server.serve_on_tls_tcp_listener(listener, tls, HANDSHAKE_TIMEOUT);
-    let quic_task = server.serve_on_quic_endpoint(endpoint.clone(), HANDSHAKE_TIMEOUT);
+    let serving = server
+        .serve_tls(udp, listener, tls, quic, HANDSHAKE_TIMEOUT)
+        .context("serving the relay")?;
     crate::server::terminated().await;
     tracing::info!("relay stopping");
     server
         .send_link_close_to_all(wire::pb::LinkCloseReason::UserShutdown)
         .await;
     tokio::time::sleep(CLOSE_FLUSH).await;
-    endpoint.close(quinn::VarInt::from_u32(0), b"relay shutting down");
-    tcp_task.abort();
-    quic_task.abort();
+    serving.close();
     Ok(())
 }
 

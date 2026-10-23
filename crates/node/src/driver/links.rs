@@ -28,6 +28,16 @@ impl CoreLinks {
         }
     }
 
+    /// Tells the core a link resuming with a ticket came up, and waits for
+    /// whether it takes the identity the ticket names. A profile gone takes
+    /// nothing.
+    pub(crate) async fn resumed(&self, up: Input) -> bool {
+        let Some(runtime) = self.0.upgrade() else {
+            return false;
+        };
+        runtime.driver().resumed(up).await
+    }
+
     /// Asks the core for a channel to `peer` over `link`, with the key the
     /// shell pinned for the peer: the id and key to open it under, or why
     /// it is not opened.
@@ -116,6 +126,7 @@ pub(crate) fn core_error(error: &ChannelError) -> payload::ChannelError {
         ChannelError::CloudPairingUnavailable
         | ChannelError::Handshake(_)
         | ChannelError::Identity(_)
-        | ChannelError::Tls(_) => payload::ChannelError::Handshake(error.to_string()),
+        | ChannelError::Tls(_)
+        | ChannelError::Revoked => payload::ChannelError::Handshake(error.to_string()),
     }
 }

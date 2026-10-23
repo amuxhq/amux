@@ -140,6 +140,13 @@ pub(crate) enum Fed {
         failed: Input,
         reply: oneshot::Sender<Option<daemon_core::Route>>,
     },
+    /// A link resuming with a ticket came up, and holds what its peer sent
+    /// early until the core says whether it takes the identity the ticket
+    /// names: true when it does.
+    Resumed {
+        up: Input,
+        reply: oneshot::Sender<bool>,
+    },
     /// A look at what the core decided, between steps.
     Look(Box<dyn FnOnce(&Daemon) + Send>),
     /// The core as a dump carries it, between steps: its newest checkpoint
@@ -197,11 +204,10 @@ pub(crate) enum Ask {
     Ready(ClientRequest),
 }
 
-/// A channel the core said to open, under the id it gave, handshaking
-/// against the key it gave.
+/// A channel the core said to open, under the id it gave. The link it
+/// rides already pinned the peer's key.
 pub(crate) struct Opened {
     pub(crate) channel: ChannelId,
-    pub(crate) pin: PublicKey,
 }
 
 /// A profile's core thread, from the shell's side.
@@ -287,6 +293,7 @@ impl Driver {
             reports: reports.clone(),
             channel_reply: None,
             route_reply: None,
+            resumed_reply: None,
             // The drafts and the trust the profile's files hold, and fresh
             // randomness, are the first things the core is told.
             again: [
@@ -521,6 +528,17 @@ impl Driver {
         word.await.ok().flatten()
     }
 
+    /// Tells the core a link resuming with a ticket came up and waits for
+    /// its word: whether it takes the identity the ticket names. Anything
+    /// reported before is stepped first.
+    pub(crate) async fn resumed(&self, up: Input) -> bool {
+        let (reply, word) = oneshot::channel();
+        if self.inputs.send(Fed::Resumed { up, reply }).await.is_err() {
+            return false;
+        }
+        word.await.unwrap_or(false)
+    }
+
     /// For tests: writes the store beneath the core, between steps.
     pub(crate) async fn beneath<T: Send + 'static>(
         &self,
@@ -629,6 +647,9 @@ pub(crate) struct CoreThread {
     channel_reply: Option<oneshot::Sender<Result<Opened, ChannelError>>>,
     /// Whoever waits for the core to name the route a call tries next.
     route_reply: Option<oneshot::Sender<Option<daemon_core::Route>>>,
+    /// Whoever holds a resumed link's early streams until the core decides
+    /// the step under way: told false if it refuses the link.
+    resumed_reply: Option<oneshot::Sender<bool>>,
     /// Inputs the driver raised itself while carrying out a step, stepped
     /// before anything newer.
     again: VecDeque<Input>,
@@ -817,6 +838,15 @@ impl CoreThread {
                 self.route_reply = None;
                 return true;
             }
+            Fed::Resumed { up, reply } => {
+                self.resumed_reply = Some(reply);
+                self.step(&runtime, up, &mut out);
+                // Not refused: taken up.
+                if let Some(reply) = self.resumed_reply.take() {
+                    let _ = reply.send(true);
+                }
+                return true;
+            }
             Fed::Forward {
                 call,
                 host,
@@ -889,6 +919,7 @@ impl CoreThread {
             | Fed::Stop
             | Fed::Channel { .. }
             | Fed::Route { .. }
+            | Fed::Resumed { .. }
             | Fed::Forward { .. }
             | Fed::Look(_)
             | Fed::Read(_)
@@ -917,11 +948,27 @@ impl CoreThread {
                 call,
                 request: runtime.client_request(self.daemon.store(), ask),
             }),
-            Some(Arriving::Peer(from, call, request)) => Some(Input::PeerCall {
-                from,
-                call,
-                request: runtime.peer_request(*request),
-            }),
+            Some(Arriving::Peer(from, call, request)) => {
+                let request = runtime.peer_request(*request);
+                let stream = match &request {
+                    PeerRequest::SubscribeInventory => Some("inventory"),
+                    PeerRequest::Subscribe(_) => Some("session"),
+                    _ => None,
+                };
+                if let Some(stream) = stream {
+                    tracing::debug!(
+                        host = %runtime.host(),
+                        peer = %crate::routing::host_from_core(from),
+                        stream,
+                        "a peer opened a stream"
+                    );
+                }
+                Some(Input::PeerCall {
+                    from,
+                    call,
+                    request,
+                })
+            }
             // Judged as it is stepped: a step before it may have cancelled
             // or replaced its arm.
             None => input.or_else(|| fired.and_then(|fired| self.fired(fired))),
@@ -1230,9 +1277,9 @@ impl CoreThread {
                 };
                 runtime.dump_unasked(Vec::new(), reason, "the daemon core");
             }
-            Output::OpenChannel { channel, pin, .. } => match self.channel_reply.take() {
+            Output::OpenChannel { channel, .. } => match self.channel_reply.take() {
                 Some(reply) => {
-                    if reply.send(Ok(Opened { channel, pin })).is_err() {
+                    if reply.send(Ok(Opened { channel })).is_err() {
                         // Nobody waits to open it: it never opened.
                         self.again.push_back(Input::ChannelClosed {
                             channel,
@@ -1352,6 +1399,26 @@ impl CoreThread {
                 peer,
             } => self.pairings.pending(session, token, peer),
             Output::PairEnded { session, failure } => self.pairings.end(session, failure),
+            // The peer's path machine probes what it lists.
+            Output::PeerAddresses { host, addrs } => {
+                if let Some(edge) = runtime.edge() {
+                    edge.paths()
+                        .addresses(uuid::Uuid::from_bytes(host.0), &addrs);
+                }
+            }
+            // Every link tells its peer where the relay sees this host.
+            Output::ObservedAddress { addr } => {
+                if let Some(edge) = runtime.edge() {
+                    edge.seen_at(addr);
+                }
+            }
+            // The link holding the early streams resets them, saying the
+            // peer is revoked.
+            Output::RefuseResumed { .. } => {
+                if let Some(reply) = self.resumed_reply.take() {
+                    let _ = reply.send(false);
+                }
+            }
             output @ (Output::CloseChannel { .. } | Output::LinkControl { .. }) => {
                 tracing::error!(
                     ?output,

@@ -26,7 +26,7 @@ every command goes through `just ios <recipe>` (`just --list ios`).
 | `AmuxCore/LaunchClock` | The one piece of C in the app: an image initialiser that marks the end of dynamic loading for the cold-start split |
 | `AmuxDesign` | Light and dark tokens, bundled faces, type scaling, glass, motion and thumb-target geometry |
 | `AmuxFeatures` | The screens, as functions of the state and actions they are handed, plus the registered UIKit leaves |
-| `AmuxShell` | Tabs (Agents, Hosts, You), routes, deep links, web sign-in and speech dictation |
+| `AmuxShell` | Tabs (Agents, Hosts) and the Settings sheet, routes, deep links, web sign-in and speech dictation |
 | `AmuxTestSupport` | The driving door's protocol, scripted account, App Store and chat stand-ins, and the view-state trace |
 | `apps/apple/Amux` | The app target: entry point, `Composition` (which assembles every store and service), report capture, and under `Debug/` the door server and the component catalogue |
 
@@ -45,7 +45,7 @@ The shell draws the tab somebody is looking at. A tab is built when it is
 first reached for and kept from then on, so coming back finds it as it was
 left; the home's rows, grouped in `RowGroup`, are built as they come near
 the screen. Both are what a cold launch's first frame is made of, and
-building all three tabs and every row for a launch that showed one tab and
+building both tabs and every row for a launch that showed one tab and
 ten rows was most of its time.
 
 `Composition` builds one `RuntimeCoordinator` per process. The coordinator
@@ -165,8 +165,9 @@ profile registry creates, binds, signs out, pauses and deletes them.
   while the app is in the background, opens sources only for the chats that
   ask.
 
-Remove from This Phone (an account's section on You, or the menu on any
-account row) takes an account off the phone and leaves it on amux.sh. The
+Remove from This Phone (an account's section in Settings, or the menu on
+any account row) asks first in the system's dialog, pointing at the row it
+was asked from, then takes an account off the phone and leaves it on amux.sh. The
 registry deletes the account's profile: its key, its trust store, the hosts
 it paired and its store. The installation keeps at least one profile, so
 removing the last account first creates a fresh unbound one. The hosts keep
@@ -181,9 +182,16 @@ exist, their addresses and whether they are signed in are the registry's to
 say. A profile alone holds and spends its account's refresh token; the app
 borrows a bearer from it for its own calls to amux.sh.
 
+The account disc at the top left of the Agents list opens a menu of the
+accounts, Add Account and Settings, a sheet with its own navigation stack.
+The disc shows the account's profile picture: amux.sh names it in the
+`picture` claim of its userinfo answer, the daemon keeps it with the account
+when it binds the profile, and `ProfileInfo.account_picture` carries it to
+the app. Initials stand in until it loads, and where there is none.
+
 What the account buys changes away from the phone: bought on amux.sh,
 cancelled in the App Store, lapsed. `EntitlementWatch` asks amux.sh again as
-the app comes to the front and as You comes on screen, no more than once in
+the app comes to the front and as Settings opens, no more than once in
 any 30 seconds, and at once after a purchase. When the answer changed, or
 disagrees with what the relay link last said, the profile's relay link is
 asked to read it too, rather than carrying the old answer until its
@@ -222,14 +230,27 @@ local-network permission as "amux finds hosts on your network so this phone
 can pair and connect to them directly." When access is denied, the Hosts tab
 says so, lists no machine and offers the Settings route.
 
-Tapping a host on the Hosts tab opens its page: how the phone reaches it,
-its platform, version, providers and addresses, that its last dial failed
-while it is offline (in words, not the dial's raw error), and its key's
-fingerprint in full. A host that no longer trusts this phone offers Pair
-Again, which opens pairing with that host. The page and the Devices sheet
-both offer Revoke, and both ask first, saying the phone stops reaching the
-machine and only pairing again brings it back. Every route the shell can
-push has a built page; `RoutePagesTests` opens each one.
+The Hosts tab is one list of paired machines, reachable first, each saying
+how the phone reaches it; machines found and not yet paired are offered as
+cards above it. Tapping a host opens its page: how the phone reaches it and,
+when it is away or offline, what that means for its agents; its platform,
+version, providers and addresses; that its last dial failed while it is
+offline (in words, not the dial's raw error); and its key's fingerprint in
+full. A host that no longer trusts this phone offers Pair Again, which opens
+pairing with that host.
+
+Pairing is a sheet raised over whichever tab asked for it. By code, it takes
+the six digits `amux pair` printed in the system's number pad (a code pasted
+as "418 207" fills all six) and tries them once the sixth lands; by link, it
+opens straight onto checking the invitation. Either way the machine's name
+and how it would be reached are shown before anything is trusted, with its
+key's fingerprint underneath, and the sheet closes itself once the machine
+is trusted. Signing in or subscribing from it opens on the tab beneath, and
+the sheet comes back with its pairing where it was when that is put away. Revoking is the page's last row and asks first,
+saying the phone stops reaching the machine and only pairing again brings it
+back. This phone's own name and fingerprint are in Settings, under This
+phone. Every route the shell can push has a built page; `RoutePagesTests`
+opens each one.
 
 ## Foreground, background and pushes
 
@@ -252,7 +273,7 @@ runtime keeps and sends: coming to the front counts the app as opened (at
 most once an hour), and going to the back sends what is waiting before the
 system may suspend the app. The paywall opening and a purchase starting are
 seen only by the app, which records them on the account on screen
-(`RuntimeCoordinator.record`). **Share Usage** under **You** turns it off; the
+(`RuntimeCoordinator.record`). **Share Usage** in **Settings** turns it off; the
 choice is kept in the app's defaults and handed to the runtime at start and
 on every change. Only the App Store build sends.
 
@@ -286,7 +307,10 @@ installation again.
 Reporting is in every build, Release included. After a system screenshot,
 or from Report a Problem, the app freezes its own frame and opens a report
 over it; the person can mark rectangles and write a note. There is no shake
-gesture. A report is a bundle (`ReportAssembly`): `report.json` at
+gesture. The offer and the report are drawn over whichever surface is on
+top, a sheet included: the app hands them down as `ReportLayers`, every
+surface that can be on top carries `surface()`, and the last of those to
+appear draws them. A report is a bundle (`ReportAssembly`): `report.json` at
 `schema_version` 2 declares each part present or absent with a reason,
 beside the frozen `frame.png`, the view-state `trace.jsonl`, the tail of the
 installation's `runtime.log` as `log.txt`, and the profile's dump under
@@ -343,10 +367,16 @@ door drives the running app itself. It never opens a screen with invented
 state behind it; every picture it takes is of the app. `query` returns what
 is drawn, with accessibility identifiers, labels, values, frames and enabled
 states; `tap`, `type`, `paste` and `scroll` act the way a finger does;
+`search` makes the system search field on show hold some text, since that
+field takes no name from the screen; `choose` picks an item by its title
+from a dialog or a menu the system drew, whose items carry no names;
+`perform` runs an element's named accessibility action, which is how a hold
+or a drag that has one is driven;
 `pairByCode` and `pair` pair with a machine by the code or link it printed;
 `appearance`, `dynamicType` and `assist` change how the app draws; `geometry`
 says whether identified elements report their frames, which a tap needs and a
-measurement leaves off; `settle` waits for the screen to stop moving;
+measurement leaves off; `settle` waits for the app to stop drawing and for
+the system to finish moving a sheet, a page or the keyboard;
 `capture` photographs it. `connect`
 signs the app into a served relay, and `cloud` and `store` script what the
 account service and the App Store answer, for journeys about accounts and
@@ -364,6 +394,16 @@ timeout 120 target/debug/xtask door --simulator golden \
   '{"kind":"settle"}' '{"kind":"query"}' \
   '{"kind":"capture","path":"/tmp/amux-home.png"}'
 ```
+
+A sheet is a presentation of its own, and SwiftUI hands what a sheet's
+views declare up only as far as the sheet. So every surface that can be on
+top, the tabs and each sheet, carries `surface()`, which hands its
+elements to the door as well as drawing the report over the top one; a
+named element is looked for on the top surface first.
+
+Three gestures have no in-process way in: drawing a box on a report,
+scrubbing the review page's file strip, and swiping back from the screen's
+edge. They have no accessibility action either, so they are checked by eye.
 
 `open` goes where a person would tap to: a tab (`home`, `hosts`, `you`), or
 a page (`conversation`, `pin`, `new-agent`, ...) about a machine or agent the
@@ -624,10 +664,12 @@ At accessibility text sizes the phone reflows rather than cuts:
 - The Agents header puts the account disc and New Agent on a line above the
   title, with the subtitle's facts one to a line. A row's second line keeps
   two lines, and its place keeps one line and loses its middle.
-- New Agent puts the back link above the title, and its last row always
+- New Agent is a sheet with the system's bar, so its title and Cancel need
+  nothing of their own; its rows are settings rows, and its last row always
   scrolls clear of the Start bar, whose height it measures.
 - The chat header pill stops growing at the largest ordinary size, as the
-  system's own bars do. A tap shows the place in full. The composer's model
+  system's own bars do. A tap opens the overview, which gives the place in
+  full. The composer's model
   chip gets a line of its own and wraps.
 - A step row stacks its verb, its subject (two lines, cut in the middle) and
   its counts, so a file keeps its name.
@@ -641,15 +683,20 @@ includes its affected light and dark goldens.
 
 ## The app icon
 
-The icon is the one published on the App Store, committed as
-`apps/apple/Amux/Assets.xcassets/AppIcon.appiconset/AppIcon.png`. Nothing in
-the build draws, scales or regenerates it: one 1024×1024 image is the whole
-set, and the asset catalogue compiler derives every size. Replacing the icon
-means replacing that file.
+The icon is the amux mark from [the logo's master](BRAND.md), committed in
+`apps/apple/Amux/Assets.xcassets/AppIcon.appiconset/` as three 1024×1024
+images, one per home-screen appearance: `AppIcon.png` on black,
+`AppIcon-Dark.png` with a transparent ground for the system's dark backdrop,
+and `AppIcon-Tinted.png`, the white silhouette the system recolours. The
+asset catalogue compiler derives every size from them, and nothing in the
+build regenerates them. `just logo` writes all three to `target/brand/` as
+`app-icon.png`, `app-icon-dark.png` and `app-icon-tinted.png`; changing the
+icon means re-exporting and copying those over the committed files.
 
 The App Store enforces three rules that a simulator build never shows:
 
-- **No alpha channel.** An icon with one is rejected outright.
+- **No alpha channel** in the default icon. An icon with one is rejected
+  outright; the dark and tinted icons keep theirs.
 - **A 120×120 iPhone icon in the bundle.** The catalogue compiler writes
   `AppIcon60x60@2x.png`; an upload without it fails with code 90022.
 - **A top-level `CFBundleIconName`.** `apps/apple/project.yml` declares it.
@@ -826,8 +873,8 @@ frames under a finger.
 
 ### Menus are presented by a UIKit button
 
-Every control that opens a menu, the chat's More and the ask card's More, is
-a `MenuButton`. SwiftUI's `Menu` presents through a UIKit button it lays over
+Every control that opens a menu, the chat's More, the ask card's More and the
+review page's file list, is a `MenuButton`. SwiftUI's `Menu` presents through a UIKit button it lays over
 its own label, and that button is what VoiceOver and XCUITest reach. The name
 and identifier given to the `Menu` stay on SwiftUI's side and never reach it,
 so the accessibility audit read those controls as buttons with nothing to

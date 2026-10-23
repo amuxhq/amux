@@ -267,8 +267,10 @@ terminal and the phone enact the same story each in their own way.
 The shared stories are `reach-host`, `conversation-decision-claude-pty`, `conversation-decision-claude-sdk`,
 `conversation-decision-codex`, `leave-and-recover`, `manage-agent`, `attachment-or-review` and `keep-authority`.
 The phone has its own besides (`account-sign-in`, `purchase-restore`, `report`, `accessibility`,
-`local-network`, `push-wake`; `just ios journey -- --native` runs them), and `survive-daemon` is the system
-journey on the built binaries.
+`local-network`, `push-wake`, `resume`; `just ios journey -- --native` runs them), and `survive-daemon` is the
+system journey on the built binaries. `resume` launches one installation three times (the first launch ever, a
+relaunch, and a launch after a machine restarted) and keeps each launch's link log in
+`target/ios/journey/resume/<launch>.log`.
 
 The phone journeys written before these stories are listed under `retired_phone_journeys`: each of their claims
 either names the story step that carries it (`story/screen`, a screen that story photographs) or is listed as

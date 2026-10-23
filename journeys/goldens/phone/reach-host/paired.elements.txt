@@ -1,7 +1,18 @@
 shell |  | hosts | 0,62,402,778
-pair-confirm |  | trusted desk | 0,62,402,778
-pair-confirm.trusted |  | desk | 91,88,102,20
-pair-confirm.done | Done |  | 91,146,73,44
- | desk is paired |  | 91,88,102,20
- | Its agents are on the Agents tab. |  | 91,118,220,18
- | Done |  | 91,146,73,44
+home |  | signed-out | 0,174,402,617
+hosts |  | 1 reachable | 0,174,402,617
+hosts.row.<desk> | desk, macOS, reachable on this network | on-this-network | 16,180,370,65
+hosts.subtitle |  | 1 reachable | 16,144,370,22
+ | desk, macOS, reachable on this network |  | 16,180,370,65
+ | Hosts |  | 16,105,93,42
+ | 1 reachable |  | 16,148,77,18
+ | Agents |  | 111,795,94,54
+ | Agents |  | 140,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 229,830,29,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 230,830,29,12
+ | Agents |  | 111,795,94,54
+ | Hosts | selected | 197,795,94,54

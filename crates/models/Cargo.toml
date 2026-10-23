@@ -11,8 +11,10 @@ agent-core = { workspace = true }
 daemon-core = { workspace = true }
 interpret = { workspace = true, features = ["testkind"] }
 journal = { workspace = true }
+path-core = { workspace = true }
 prost = { workspace = true }
 provider-fakes = { workspace = true }
+relay-core = { workspace = true }
 release = { workspace = true }
 rusqlite = { workspace = true }
 serde_json = { workspace = true }
@@ -21,6 +23,7 @@ store = { workspace = true }
 supervisor-core = { workspace = true }
 tempfile = { workspace = true }
 ui-state = { workspace = true }
+uuid = { workspace = true }
 wire = { workspace = true }
 
 [[bin]]

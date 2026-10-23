@@ -62,11 +62,11 @@ final class DeepLinkTests: XCTestCase {
             return XCTFail("expected a pairing invitation, got \(parsed)")
         }
 
-        // The link lands on a page that names the machine and waits. Trust is
+        // The link raises a sheet that names the machine and waits. Trust is
         // committed by the person looking at the fingerprint, never by the
         // arrival of a URL anybody could send.
-        XCTAssertEqual(router.tab, .hosts)
-        XCTAssertEqual(router.path, [.pairConfirmation(invitation)])
+        XCTAssertEqual(router.pairing, .link(invitation))
+        XCTAssertEqual(router.path, [])
     }
 
     func testAnInvitationDoesNotPrintItsSecret() {
@@ -137,7 +137,7 @@ final class DeepLinkTests: XCTestCase {
 
     /// A link handed over during a cold start, before this phone has signed in.
     ///
-    /// The route is pushed straight away — the page has to be there for the
+    /// The sheet is raised straight away — it has to be there for the
     /// launch to land on — and it pairs with nobody, because arriving is not
     /// confirming. The invitation keeps the whole offer the machine wrote,
     /// which is what the runtime reads to authenticate; an offer rebuilt from
@@ -150,7 +150,7 @@ final class DeepLinkTests: XCTestCase {
             return XCTFail("expected a pairing invitation, got \(parsed)")
         }
 
-        XCTAssertEqual(router.path, [.pairConfirmation(invitation)])
+        XCTAssertEqual(router.pairing, .link(invitation))
         let encoded = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false)?
             .queryItems?.first(where: { $0.name == "payload" })?.value)
         XCTAssertEqual(

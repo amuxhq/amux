@@ -1,10 +1,12 @@
 //! Measures the relay's scaling curve on this machine and prints it.
 //! `--baseline` records it as this machine's baseline; `--compare` judges
-//! it against that baseline and fails outside the noise bands.
+//! it against that baseline and fails outside the noise bands. Hosts link
+//! over TLS on TCP, or over QUIC on UDP with `--udp`, each carrier with a
+//! baseline of its own.
 
 use anyhow::{Context, Result, bail};
 use qualification::perf::Machine;
-use qualification::perf::relay::{self, Curve, CurveOptions};
+use qualification::perf::relay::{self, Carrier, Curve, CurveOptions};
 use qualification::perf::warmer::{CLUSTER_WARMER_ARG, ClusterWarmer, run_cluster_warmer};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -22,19 +24,22 @@ fn main() -> Result<()> {
     if cfg!(debug_assertions) {
         bail!("the relay curve must run with the release profile");
     }
-    let mode = match arguments
-        .iter()
-        .map(String::as_str)
-        .collect::<Vec<_>>()
-        .as_slice()
-    {
+    let mut arguments = arguments.iter().map(String::as_str).collect::<Vec<_>>();
+    let carrier = match arguments.iter().position(|argument| *argument == "--udp") {
+        Some(at) => {
+            arguments.remove(at);
+            Carrier::QuicOverUdp
+        }
+        None => Carrier::TlsOverTcp,
+    };
+    let mode = match arguments.as_slice() {
         [] => Mode::Print,
         ["--baseline"] => Mode::Baseline,
         ["--compare"] => Mode::Compare,
-        _ => bail!("the relay curve accepts --baseline or --compare"),
+        _ => bail!("the relay curve accepts --udp, and --baseline or --compare"),
     };
     let machine = Machine::detect()?;
-    let path = Curve::baseline_path(&machine);
+    let path = Curve::baseline_path(&machine, carrier);
     let baseline = match mode {
         Mode::Compare => Some(Curve::read(&path)?),
         Mode::Print | Mode::Baseline => None,
@@ -54,7 +59,7 @@ fn main() -> Result<()> {
         .context("start the hosts' runtime")?
         .block_on(relay::run(
             &machine,
-            &CurveOptions::full(),
+            &CurveOptions::full(carrier),
             relay_runtime.handle(),
         ));
     let stopped = warmer.stop();

@@ -75,22 +75,25 @@ public enum ChatWords {
 
     // MARK: - Rows
 
-    /// "4 reads · 2 searches", with "+" when the run continues below what
-    /// this phone holds.
-    public static func run(_ run: Run) -> String {
+    /// "3 commands · 2 edits · 4 reads", in the terminal's order, with "+"
+    /// when the run continues below what this phone holds.
+    public static func run(_ run: Run, counts: RunCounts?) -> String {
         let plus = run.openBelow ? "+" : ""
-        let reads = run.counts?.reads ?? 0
-        let searches = run.counts?.searches ?? 0
-        var parts: [String] = []
-        if reads > 0 {
-            parts.append("\(reads)\(plus) " + plural(reads, "read", "reads"))
+        let counts = counts ?? RunCounts(commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0)
+        let parts: [String] = [
+            (counts.commands, "command", "commands"), (counts.edits, "edit", "edits"),
+            (counts.reads, "read", "reads"), (counts.searches, "search", "searches"),
+            (counts.subagents, "subagent", "subagents"), (counts.other, "call", "calls"),
+        ].compactMap { count, one, many in
+            count > 0 ? "\(count)\(plus) " + plural(count, one, many) : nil
         }
-        if searches > 0 {
-            parts.append("\(searches)\(plus) " + plural(searches, "search", "searches"))
-        }
-        let other = run.steps > reads + searches ? run.steps - reads - searches : 0
-        if other > 0 || parts.isEmpty { parts.append("\(other)\(plus) more") }
-        return parts.joined(separator: " · ")
+        guard parts.isEmpty else { return parts.joined(separator: " · ") }
+        return "\(run.steps)\(plus) " + plural(run.steps, "step", "steps")
+    }
+
+    /// "5 earlier steps": what a live run keeps folded above its newest.
+    public static func earlier(_ steps: UInt32) -> String {
+        "\(steps) earlier " + plural(steps, "step", "steps")
     }
 
     public static func explore(_ verb: ExploreVerb) -> String {
@@ -564,7 +567,7 @@ public enum ChatWords {
     }
 
     /// What stopping an agent cuts, as the stop confirm asks it: "desk-1 is
-    /// working and has 2 background jobs and 1 sub-agent. Stop anyway?" Nil
+    /// working and has 2 background jobs and 1 subagent. Stop anyway?" Nil
     /// when a stop cuts nothing under way, for the plain confirm.
     public static func stopCuts(name: String, phase: PhaseView?, jobs: Int, subAgents: Int) -> String? {
         var held: [String] = []
@@ -572,7 +575,7 @@ public enum ChatWords {
             held.append(jobs == 1 ? String(localized: "1 background job") : String(localized: "\(jobs) background jobs"))
         }
         if subAgents > 0 {
-            held.append(subAgents == 1 ? String(localized: "1 sub-agent") : String(localized: "\(subAgents) sub-agents"))
+            held.append(subAgents == 1 ? String(localized: "1 subagent") : String(localized: "\(subAgents) subagents"))
         }
         let has = held.joined(separator: String(localized: " and "))
         switch phase {

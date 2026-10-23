@@ -1,13 +1,9 @@
 shell |  | agents | 0,62,402,778
-chat |  | filer | 0,62,402,778
-chat.row.boundary | Started |  | 18,132,366,34
-chat.row.prompt | File the reconnect flake. |  | 18,166,366,40
-chat.row.tool | Using, linear · ask |  | 18,217,366,20
-chat.row.form | linear needs details | folded | 18,235,366,44
-chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
-chat.back | Back |  | 16,68,42,46
-chat.title | filer | filer | 51,72,156,38
-chat.more | More |  | 344,69,44,44
+chat |  | filer | 0,116,402,724
+chat.row.boundary | Started |  | 16,124,370,34
+chat.row.prompt | File the reconnect flake. |  | 16,158,370,40
+chat.row.run | 1 call | folded | 16,198,370,44
+chat.row.form | linear needs details | folded | 16,228,370,44
 ask | linear needs details | open | 12,468,378,362
 ask.more | More |  | 338,476,44,44
 ask.field.title |  | Reconnect flake in e2e | 28,595,346,41
@@ -15,9 +11,10 @@ ask.field.team |  | FOX | 301,648,73,34
 ask.field.estimate |  | 3 | 28,717,346,41
 ask.submit | Submit |  | 28,770,169,44
 ask.choice.1 | Decline |  | 205,770,169,44
- | Back |  | 16,68,42,46
- | filer, /t/a/n/d/work · desk |  | 51,72,156,38
- | More |  | 344,69,44,44
+chat.more | More |  | 342,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
+chat.title | filer | filer | 96,66,160,36
  | linear needs details |  | 62,488,145,20
  | More |  | 338,476,44,44
  | Linear needs a few details before it can create the issue. |  | 28,524,313,37
@@ -28,7 +25,10 @@ ask.choice.1 | Decline |  | 205,770,169,44
  | Estimate |  | 28,694,61,18
  | Submit |  | 28,770,169,44
  | Decline |  | 205,770,169,44
- | Started |  | 18,132,366,34
- | File the reconnect flake. |  | 18,166,366,40
- | Using, linear · ask |  | 18,217,366,30
- | linear needs details |  | 18,235,366,44
+ | Started |  | 16,124,370,34
+ | File the reconnect flake. |  | 16,158,370,40
+ | 1 call |  | 16,198,370,44
+ | linear needs details |  | 16,228,370,44
+ | Back |  | 20,66,56,36
+ | filer, /t/a/n/d/work · desk |  | 96,66,160,36
+ | More |  | 342,66,36,36

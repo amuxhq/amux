@@ -19,6 +19,9 @@ message Message {
     NeighborDown neighbor_down = 4;
     Reauth reauth = 5;
     LinkClose link_close = 6;
+    Addresses addresses = 7;
+    ObservedAddress observed_address = 8;
+    ForwardRefused forward_refused = 9;
   }
 }
 
@@ -34,6 +37,13 @@ message Hello {
   // an earlier link from the same host proves that earlier link belongs to
   // a process that no longer exists, however healthy it still looks.
   bytes runtime_instance_id = 5;
+  // Every interface address the sender can be reached at, with its
+  // listener's port, as host:port; never loopback or link-local.
+  repeated string addrs = 6;
+  // The address the relay last told the sender its packets come from, as
+  // host:port. Only a paid host is told one: it is the candidate hole
+  // punching works from, so a receiver keeps it apart from `addrs`.
+  optional string public_addr = 7;
 }
 
 message HelloAck {
@@ -49,6 +59,14 @@ message HelloAccepted {
   repeated Host neighbors = 3;
   // The acceptor's; see `Hello.runtime_instance_id`.
   bytes runtime_instance_id = 4;
+  // The acceptor's; see `Hello.addrs`.
+  repeated string addrs = 5;
+  // The address the relay saw the sender's packets come from, as host:port.
+  // Only a relay sets it, and only for a paid host: it is the candidate
+  // hole punching works from.
+  optional string observed_addr = 6;
+  // The acceptor's; see `Hello.public_addr`.
+  optional string public_addr = 7;
 }
 
 // The one break-glass error: the peers share no protocol version.
@@ -68,26 +86,32 @@ message NeighborDown {
   bytes host_id = 1;
 }
 
-// Written by the opener as the first bytes of every non-control stream. The
-// destination is routing information only; the pinned handshake inside the
-// stream establishes the caller's authority, unless the stream is `plain`.
-message StreamPreface {
-  bytes dst = 1;
-  // The stream carries no handshake of its own: the opener is the host at
-  // the near end of the link it arrived on, already authenticated by that
-  // link, and the stream's bytes start at once. Honoured only on a direct
-  // link to a paired host; a relay never forwards a plain stream as plain.
-  bool plain = 2;
+// The sender's address list changed; the whole new list, replacing the one
+// its Hello or an earlier Addresses carried.
+message Addresses {
+  repeated string addrs = 1;
+  optional string public_addr = 2;
 }
 
-// A stream reset before acceptance carries one of these refusal reasons.
-enum StreamRefusal {
-  STREAM_REFUSAL_UNSPECIFIED = 0;
-  STREAM_REFUSAL_NO_ROUTE = 1;
-  STREAM_REFUSAL_PAYMENT_REQUIRED = 2;
-  STREAM_REFUSAL_RATE_LIMITED = 3;
-  STREAM_REFUSAL_NOT_ADJACENT = 4;
-  STREAM_REFUSAL_SHUTTING_DOWN = 5;
+// The relay's view of where the sender's packets now come from, sent to a
+// paid host when it changes after the handshake.
+message ObservedAddress {
+  string addr = 1;
+}
+
+// A forwarder could not deliver packets naming `dst`, sent on the control
+// link they arrived on. The packets themselves are dropped, never answered.
+message ForwardRefused {
+  bytes dst = 1;
+  ForwardRefusal reason = 2;
+}
+
+enum ForwardRefusal {
+  FORWARD_REFUSAL_UNSPECIFIED = 0;
+  FORWARD_REFUSAL_NO_ROUTE = 1;
+  FORWARD_REFUSAL_PAYMENT_REQUIRED = 2;
+  FORWARD_REFUSAL_RATE_LIMITED = 3;
+  FORWARD_REFUSAL_SHUTTING_DOWN = 4;
 }
 
 // Fire-and-forget credential refresh on the cloud link, sent before the

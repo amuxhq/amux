@@ -97,6 +97,8 @@ public final class FleetStore {
     public private(set) var expanded: Set<[UInt8]> = []
     /// The sections opened or folded against their default.
     public private(set) var flipped: Set<SectionKind> = []
+    /// What the list is narrowed to; the owner reads the rows again with it.
+    public var filter = FleetFilter(words: "", only: nil)
     /// The clock ages are read against: moved on by the screen while the
     /// list is on it, so ages count, and never behind the newest row it
     /// shows, so no age reads less than nothing.

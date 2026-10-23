@@ -470,6 +470,178 @@ async fn trusted_edges_link_in_process_until_the_link_is_severed() {
     net.shutdown().await.unwrap();
 }
 
+/// A week, as the account service issues relay credentials.
+const WEEK: Duration = Duration::from_secs(7 * 24 * 3600);
+/// How old a kept credential grows before the link refreshes it.
+const HOUR: Duration = Duration::from_secs(3600);
+
+/// A net with one Pro account and a signed-out desk on the driven clock,
+/// whose cloud mints credentials that live `ttl`.
+async fn pro_desk(ttl: Duration) -> Net {
+    let net = Net::start_with(
+        Topology::new()
+            .relay(&["ada"])
+            .host_decl(lan_host("desk", SCOPE)),
+        NetOptions {
+            clock: ClockMode::Driven,
+            ..NetOptions::default()
+        },
+    )
+    .await
+    .unwrap();
+    net.relay().unwrap().set_credential_ttl(ttl);
+    net
+}
+
+/// Binds the desk to Ada and waits for its relay link.
+async fn sign_in_desk(net: &Net) {
+    door(net, "desk")
+        .await
+        .bind_profile(BindProfileRequest {
+            profile_id: Some(id(net, "desk")),
+            cloud_url: net.relay().unwrap().url().to_owned(),
+            staged_refresh_token: Relay::login("ada"),
+            ..BindProfileRequest::default()
+        })
+        .await
+        .expect("the profile binds to the account");
+    relay_link_up(net).await;
+}
+
+/// Waits for the desk's relay link, as the desk and the relay see it.
+async fn relay_link_up(net: &Net) {
+    let relay = net.relay().unwrap();
+    until("the desk's relay link", || async {
+        let observed = info(net, "desk").await.observed;
+        let links = relay.links("ada").await;
+        (observed == wire::Observed::Connected as i32 && links.len() == 1)
+            .then_some(())
+            .ok_or_else(|| format!("observed {observed}, ada's links {links:?}"))
+    })
+    .await
+    .unwrap();
+}
+
+/// Waits until the relay has been shown `count` credentials.
+async fn presented(relay: &Relay, count: usize) -> Vec<String> {
+    until("the relay to see the credential", || async {
+        let presented = relay.presented();
+        (presented.len() >= count)
+            .then(|| presented.clone())
+            .ok_or_else(|| format!("presented: {presented:?}"))
+    })
+    .await
+    .unwrap()
+}
+
+/// Restarts the desk's daemon, as a relaunch does.
+async fn relaunch_desk(net: &mut Net) {
+    net.stop_daemon("desk").await.unwrap();
+    net.restart_daemon("desk").await.unwrap();
+}
+
+#[tokio::test]
+async fn a_relaunch_presents_its_kept_relay_credential_without_calling_the_cloud() {
+    let mut net = pro_desk(WEEK).await;
+    sign_in_desk(&net).await;
+    assert_eq!(net.relay().unwrap().connects().len(), 1);
+    println!("signed in: the cloud issued relay-ada-1, a week long");
+
+    relaunch_desk(&mut net).await;
+    relay_link_up(&net).await;
+    assert_eq!(
+        presented(net.relay().unwrap(), 2).await,
+        ["relay-ada-1", "relay-ada-1"],
+        "the relaunch presented the kept credential in Hello"
+    );
+    assert_eq!(
+        net.relay().unwrap().connects().len(),
+        1,
+        "the relaunch made no call to the account service"
+    );
+    // The credential is not an hour old: its refresh waits for that.
+    armed(&net, net.now_ms() + HOUR.as_millis() as i64).await;
+    assert_eq!(net.relay().unwrap().connects().len(), 1);
+    println!("relaunched: relay-ada-1 presented again; the cloud's connects stayed at 1");
+
+    net.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_kept_relay_credential_over_an_hour_old_is_refreshed_at_once_and_then_hourly() {
+    let mut net = pro_desk(WEEK).await;
+    sign_in_desk(&net).await;
+    armed(&net, net.now_ms() + HOUR.as_millis() as i64).await;
+    net.stop_daemon("desk").await.unwrap();
+    net.advance(2 * HOUR).unwrap();
+    net.restart_daemon("desk").await.unwrap();
+    relay_link_up(&net).await;
+    assert_eq!(
+        presented(net.relay().unwrap(), 3).await,
+        ["relay-ada-1", "relay-ada-1", "relay-ada-2"],
+        "the two-hour-old credential opened the link and a fresh one followed in Reauth"
+    );
+    assert_eq!(net.relay().unwrap().connects().len(), 2);
+    println!("relaunched two hours later: Hello with relay-ada-1, Reauth with relay-ada-2");
+
+    // Connected, the link refreshes every hour.
+    for (count, token) in [(4, "relay-ada-3"), (5, "relay-ada-4")] {
+        armed(&net, net.now_ms() + HOUR.as_millis() as i64).await;
+        net.advance(HOUR).unwrap();
+        assert_eq!(
+            presented(net.relay().unwrap(), count).await.last().unwrap(),
+            token
+        );
+        println!("clock +1h: Reauth with {token}");
+    }
+    assert_eq!(net.relay().unwrap().links("ada").await.len(), 1);
+
+    net.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn an_expired_kept_relay_credential_is_never_presented() {
+    let mut net = pro_desk(testnet::CREDENTIAL_TTL).await;
+    sign_in_desk(&net).await;
+    net.stop_daemon("desk").await.unwrap();
+    net.advance(testnet::CREDENTIAL_TTL).unwrap();
+    net.restart_daemon("desk").await.unwrap();
+    relay_link_up(&net).await;
+    assert_eq!(
+        presented(net.relay().unwrap(), 2).await,
+        ["relay-ada-1", "relay-ada-2"],
+        "the expired credential stayed home; a fresh one opened the link"
+    );
+    assert_eq!(net.relay().unwrap().connects().len(), 2);
+    println!("relaunched past the expiry: relay-ada-1 never presented, relay-ada-2 fetched");
+
+    net.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_kept_relay_credential_the_relay_refuses_is_replaced_by_a_fresh_one() {
+    let mut net = pro_desk(testnet::CREDENTIAL_TTL).await;
+    // The relay's clock runs nine minutes ahead: the credential the desk
+    // keeps lapses at the relay a minute after it is minted, while the
+    // desk still reads nine minutes left on it.
+    net.relay().unwrap().run_ahead(Duration::from_secs(9 * 60));
+    sign_in_desk(&net).await;
+    net.relay().unwrap().run_ahead(Duration::ZERO);
+    net.stop_daemon("desk").await.unwrap();
+    net.advance(Duration::from_secs(2 * 60)).unwrap();
+    net.restart_daemon("desk").await.unwrap();
+    relay_link_up(&net).await;
+    assert_eq!(
+        presented(net.relay().unwrap(), 3).await,
+        ["relay-ada-1", "relay-ada-1", "relay-ada-2"],
+        "the refused credential was forgotten and a fresh one fetched"
+    );
+    assert_eq!(net.relay().unwrap().connects().len(), 2);
+    println!("the relay refused the kept relay-ada-1; relay-ada-2 opened the link");
+
+    net.shutdown().await.unwrap();
+}
+
 #[tokio::test]
 async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock() {
     let mut topology = Topology::new()
@@ -537,8 +709,10 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
     .await
     .unwrap();
     assert_eq!(relay.connects().len(), 2);
+    // The desk reports the new tier as it sends Reauth, so the relay may
+    // not have read it yet.
     assert_eq!(
-        relay.presented().as_slice(),
+        presented(relay, 2).await,
         ["relay-ada-1", "relay-ada-2"],
         "the relay saw the first credential in Hello and the second in Reauth"
     );

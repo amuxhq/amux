@@ -1,27 +1,27 @@
 shell |  | agents | 0,62,402,778
-chat |  | decision-sdk | 0,62,402,778
-chat.row.boundary | Started |  | 18,144,366,58
-chat.row.prompt | Check the deployment once. |  | 18,202,366,106
-chat.row.command | Wants to run, deploy --check |  | 18,320,366,80
-chat.header | /t/a/n/d/work · desk | live | 18,64,262,66
-chat.back | Back |  | 16,74,42,46
-chat.title | decision-sdk | decision-sdk | 51,72,216,50
-chat.more | More |  | 344,75,44,44
+chat |  | decision-sdk | 0,116,402,724
+chat.row.boundary | Started |  | 16,124,370,54
+chat.row.prompt | Check the deployment once. |  | 16,178,370,106
+chat.row.command | Wants to run, deploy --check |  | 16,295,370,80
 ask | Wants to run a command | open | 12,324,378,506
 ask.more | More |  | 338,361,44,44
 ask.subject | deploy --check |  | 28,438,346,62
 ask.choice.1 | Always allow Bash In this project, from now on |  | 28,512,346,225
 ask.choice.0 | Allow |  | 28,749,169,65
 ask.deny | Deny… |  | 205,749,169,65
- | Back |  | 16,74,42,46
- | decision-sdk, /t/a/n/d/work · desk |  | 51,72,216,50
- | More |  | 344,75,44,44
+chat.more | More |  | 342,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | /t/a/n/d/work · desk | live | 96,66,169,36
+chat.title | decision-sdk | decision-sdk | 96,66,169,36
  | Wants to run a command |  | 62,340,218,86
  | More |  | 338,361,44,44
  | deploy --check |  | 28,438,346,62
  | Always allow Bash, In this project, from now on |  | 28,512,346,225
  | Allow |  | 28,749,169,65
  | Deny… |  | 205,749,169,65
- | Started |  | 18,144,366,58
- | Check the deployment once. |  | 18,202,366,106
- | Wants to run, deploy --check |  | 18,320,366,80
+ | Check the deployment once. |  | 16,178,370,106
+ | Wants to run, deploy --check |  | 16,295,370,80
+ | Started |  | 16,124,370,54
+ | Back |  | 20,66,56,36
+ | decision-sdk, /t/a/n/d/work · desk |  | 96,66,169,36
+ | More |  | 342,66,36,36

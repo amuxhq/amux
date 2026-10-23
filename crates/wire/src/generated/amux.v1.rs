@@ -1018,7 +1018,7 @@ impl DiffFileChange {
 /// Host-to-host control envelope exchanged on the link's control stream.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Message {
-    #[prost(oneof = "message::Body", tags = "1, 2, 3, 4, 5, 6")]
+    #[prost(oneof = "message::Body", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
     pub body: ::core::option::Option<message::Body>,
 }
 /// Nested message and enum types in `Message`.
@@ -1037,6 +1037,12 @@ pub mod message {
         Reauth(super::Reauth),
         #[prost(message, tag = "6")]
         LinkClose(super::LinkClose),
+        #[prost(message, tag = "7")]
+        Addresses(super::Addresses),
+        #[prost(message, tag = "8")]
+        ObservedAddress(super::ObservedAddress),
+        #[prost(message, tag = "9")]
+        ForwardRefused(super::ForwardRefused),
     }
 }
 impl ::prost::Name for Message {
@@ -1067,6 +1073,15 @@ pub struct Hello {
     /// a process that no longer exists, however healthy it still looks.
     #[prost(bytes = "vec", tag = "5")]
     pub runtime_instance_id: ::prost::alloc::vec::Vec<u8>,
+    /// Every interface address the sender can be reached at, with its
+    /// listener's port, as host:port; never loopback or link-local.
+    #[prost(string, repeated, tag = "6")]
+    pub addrs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The address the relay last told the sender its packets come from, as
+    /// host:port. Only a paid host is told one: it is the candidate hole
+    /// punching works from, so a receiver keeps it apart from `addrs`.
+    #[prost(string, optional, tag = "7")]
+    pub public_addr: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for Hello {
     const NAME: &'static str = "Hello";
@@ -1114,6 +1129,17 @@ pub struct HelloAccepted {
     /// The acceptor's; see `Hello.runtime_instance_id`.
     #[prost(bytes = "vec", tag = "4")]
     pub runtime_instance_id: ::prost::alloc::vec::Vec<u8>,
+    /// The acceptor's; see `Hello.addrs`.
+    #[prost(string, repeated, tag = "5")]
+    pub addrs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The address the relay saw the sender's packets come from, as host:port.
+    /// Only a relay sets it, and only for a paid host: it is the candidate
+    /// hole punching works from.
+    #[prost(string, optional, tag = "6")]
+    pub observed_addr: ::core::option::Option<::prost::alloc::string::String>,
+    /// The acceptor's; see `Hello.public_addr`.
+    #[prost(string, optional, tag = "7")]
+    pub public_addr: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for HelloAccepted {
     const NAME: &'static str = "HelloAccepted";
@@ -1176,28 +1202,59 @@ impl ::prost::Name for NeighborDown {
         "/amux.v1.NeighborDown".into()
     }
 }
-/// Written by the opener as the first bytes of every non-control stream. The
-/// destination is routing information only; the pinned handshake inside the
-/// stream establishes the caller's authority, unless the stream is `plain`.
+/// The sender's address list changed; the whole new list, replacing the one
+/// its Hello or an earlier Addresses carried.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct StreamPreface {
-    #[prost(bytes = "vec", tag = "1")]
-    pub dst: ::prost::alloc::vec::Vec<u8>,
-    /// The stream carries no handshake of its own: the opener is the host at
-    /// the near end of the link it arrived on, already authenticated by that
-    /// link, and the stream's bytes start at once. Honoured only on a direct
-    /// link to a paired host; a relay never forwards a plain stream as plain.
-    #[prost(bool, tag = "2")]
-    pub plain: bool,
+pub struct Addresses {
+    #[prost(string, repeated, tag = "1")]
+    pub addrs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "2")]
+    pub public_addr: ::core::option::Option<::prost::alloc::string::String>,
 }
-impl ::prost::Name for StreamPreface {
-    const NAME: &'static str = "StreamPreface";
+impl ::prost::Name for Addresses {
+    const NAME: &'static str = "Addresses";
     const PACKAGE: &'static str = "amux.v1";
     fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.StreamPreface".into()
+        "amux.v1.Addresses".into()
     }
     fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.StreamPreface".into()
+        "/amux.v1.Addresses".into()
+    }
+}
+/// The relay's view of where the sender's packets now come from, sent to a
+/// paid host when it changes after the handshake.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ObservedAddress {
+    #[prost(string, tag = "1")]
+    pub addr: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ObservedAddress {
+    const NAME: &'static str = "ObservedAddress";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ObservedAddress".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ObservedAddress".into()
+    }
+}
+/// A forwarder could not deliver packets naming `dst`, sent on the control
+/// link they arrived on. The packets themselves are dropped, never answered.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ForwardRefused {
+    #[prost(bytes = "vec", tag = "1")]
+    pub dst: ::prost::alloc::vec::Vec<u8>,
+    #[prost(enumeration = "ForwardRefusal", tag = "2")]
+    pub reason: i32,
+}
+impl ::prost::Name for ForwardRefused {
+    const NAME: &'static str = "ForwardRefused";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ForwardRefused".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ForwardRefused".into()
     }
 }
 /// Fire-and-forget credential refresh on the cloud link, sent before the
@@ -1286,41 +1343,37 @@ impl ::prost::Name for Host {
         "/amux.v1.Host".into()
     }
 }
-/// A stream reset before acceptance carries one of these refusal reasons.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
-pub enum StreamRefusal {
+pub enum ForwardRefusal {
     Unspecified = 0,
     NoRoute = 1,
     PaymentRequired = 2,
     RateLimited = 3,
-    NotAdjacent = 4,
-    ShuttingDown = 5,
+    ShuttingDown = 4,
 }
-impl StreamRefusal {
+impl ForwardRefusal {
     /// String value of the enum field names used in the ProtoBuf definition.
     ///
     /// The values are not transformed in any way and thus are considered stable
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            Self::Unspecified => "STREAM_REFUSAL_UNSPECIFIED",
-            Self::NoRoute => "STREAM_REFUSAL_NO_ROUTE",
-            Self::PaymentRequired => "STREAM_REFUSAL_PAYMENT_REQUIRED",
-            Self::RateLimited => "STREAM_REFUSAL_RATE_LIMITED",
-            Self::NotAdjacent => "STREAM_REFUSAL_NOT_ADJACENT",
-            Self::ShuttingDown => "STREAM_REFUSAL_SHUTTING_DOWN",
+            Self::Unspecified => "FORWARD_REFUSAL_UNSPECIFIED",
+            Self::NoRoute => "FORWARD_REFUSAL_NO_ROUTE",
+            Self::PaymentRequired => "FORWARD_REFUSAL_PAYMENT_REQUIRED",
+            Self::RateLimited => "FORWARD_REFUSAL_RATE_LIMITED",
+            Self::ShuttingDown => "FORWARD_REFUSAL_SHUTTING_DOWN",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "STREAM_REFUSAL_UNSPECIFIED" => Some(Self::Unspecified),
-            "STREAM_REFUSAL_NO_ROUTE" => Some(Self::NoRoute),
-            "STREAM_REFUSAL_PAYMENT_REQUIRED" => Some(Self::PaymentRequired),
-            "STREAM_REFUSAL_RATE_LIMITED" => Some(Self::RateLimited),
-            "STREAM_REFUSAL_NOT_ADJACENT" => Some(Self::NotAdjacent),
-            "STREAM_REFUSAL_SHUTTING_DOWN" => Some(Self::ShuttingDown),
+            "FORWARD_REFUSAL_UNSPECIFIED" => Some(Self::Unspecified),
+            "FORWARD_REFUSAL_NO_ROUTE" => Some(Self::NoRoute),
+            "FORWARD_REFUSAL_PAYMENT_REQUIRED" => Some(Self::PaymentRequired),
+            "FORWARD_REFUSAL_RATE_LIMITED" => Some(Self::RateLimited),
+            "FORWARD_REFUSAL_SHUTTING_DOWN" => Some(Self::ShuttingDown),
             _ => None,
         }
     }
@@ -3875,7 +3928,7 @@ pub enum BackgroundKind {
     Unspecified = 0,
     /// A shell command.
     Shell = 1,
-    /// A sub-agent the provider runs itself.
+    /// A subagent the provider runs itself.
     Subagent = 2,
     /// A watch the provider keeps on something.
     Monitor = 3,
@@ -10386,6 +10439,10 @@ pub struct ProfileInfo {
     /// sign-out; empty when unbound. What tells two profiles' accounts apart.
     #[prost(string, tag = "12")]
     pub account_subject: ::prost::alloc::string::String,
+    /// Where the bound account's profile picture is, as its service said at
+    /// sign-in; empty when it has none or the profile is unbound.
+    #[prost(string, tag = "13")]
+    pub account_picture: ::prost::alloc::string::String,
 }
 impl ::prost::Name for ProfileInfo {
     const NAME: &'static str = "ProfileInfo";

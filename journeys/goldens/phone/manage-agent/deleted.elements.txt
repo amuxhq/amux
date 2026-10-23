@@ -1,43 +1,41 @@
 shell |  | agents | 0,62,402,778
-home |  | signed-out | 0,62,402,778
-home.title | Agents, switch account | Agents | 60,65,104,46
-home.subtitle |  | Nothing needs you · 0 working | 60,105,209,16
-home.newAgent | New Agent |  | 345,74,44,44
-home.row.<decision-pty> | decision-pty, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 18,159,366,70
+home |  | signed-out | 0,174,402,617
+home.chip.all | All | on | 16,172,44,44
+home.chip.needsYou | Needs you | off | 68,172,87,44
+home.chip.working | Working | off | 163,172,76,44
+home.row.<decision-pty> | decision-pty, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,218,370,64
 home.row.<decision-pty>.age.volatile | <volatile>
-home.row.<decision-pty>.detail.volatile | <volatile>
-home.row.<reviewer> | reviewer, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 18,229,366,70
+home.row.<reviewer> | reviewer, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,282,370,64
 home.row.<reviewer>.age.volatile | <volatile>
-home.row.<reviewer>.detail.volatile | <volatile>
-home.row.<keeper> | keeper, Idle, The recovery state is safely stored., desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 18,300,366,91
+home.row.<keeper> | keeper, Idle, The recovery state is safely stored., desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,347,370,65
 home.row.<keeper>.age.volatile | <volatile>
-home.row.<keeper>.second |  |  | 31,338,236,18
-home.row.<keeper>.detail.volatile | <volatile>
-home.row.<decision-codex> | decision-codex, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 18,392,366,70
+home.row.<keeper>.second |  |  | 40,382,236,18
+home.row.<decision-codex> | decision-codex, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,413,370,64
 home.row.<decision-codex>.age.volatile | <volatile>
-home.row.<decision-codex>.detail.volatile | <volatile>
-home.row.<decision-sdk> | decision-sdk, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 18,462,366,70
+home.row.<decision-sdk> | decision-sdk, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,477,370,64
 home.row.<decision-sdk>.age.volatile | <volatile>
-home.row.<decision-sdk>.detail.volatile | <volatile>
-hosts |  | 1 reachable | 0,62,402,778
-hosts.title |  | Hosts | 18,72,69,32
-hosts.subtitle |  | 1 reachable | 18,105,79,16
-hosts.row.<desk> | desk, macOS, reachable on this network | on-this-network | 18,159,366,64
-hosts.fact.identity | <volatile>
-hosts.fact.paired-devices | Paired Devices, 1 | 1 | 18,310,366,46
-hosts.caption.devices |  |  | 18,363,320,18
-tab.agents | Agents | selected | 50,777,99,57
-tab.hosts | Hosts | not selected | 151,777,99,57
-tab.you | You | not selected | 253,777,99,57
- | Agents |  | 50,777,99,57
- | Hosts |  | 151,777,99,57
- | You |  | 253,777,99,57
- | Agents, switch account |  | 60,65,104,46
- | Nothing needs you · 0 working |  | 60,105,209,16
- | New Agent |  | 345,74,44,44
- | LIVE |  | 20,137,28,14
- | decision-pty, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 18,159,366,70
- | reviewer, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 18,230,366,70
- | keeper, Idle, The recovery state is safely stored., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 18,300,366,91
- | decision-codex, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 18,392,366,70
- | decision-sdk, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 18,462,366,70
+home.newAgent | New Agent |  | 338,62,44,44
+home.accounts | Switch account |  | 24,66,36,36
+hosts |  | 1 reachable | 0,174,402,617
+ | All |  | 16,172,44,44
+ | Needs you |  | 68,172,87,44
+ | Working |  | 163,172,76,44
+ | decision-pty, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,218,370,64
+ | reviewer, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,283,370,64
+ | keeper, Idle, The recovery state is safely stored., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,347,370,65
+ | decision-codex, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,413,370,64
+ | decision-sdk, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,477,370,64
+ | Agents |  | 16,127,116,42
+ | Switch account |  | 24,66,37,36
+ | New Agent |  | 338,62,44,44
+ | Search |  | 16,175,370,0
+ | Agents |  | 111,795,94,54
+ | Agents |  | 140,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 229,830,29,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 230,830,29,12
+ | Agents | selected | 111,795,94,54
+ | Hosts |  | 197,795,94,54

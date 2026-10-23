@@ -1,17 +1,14 @@
-shell |  | hosts | 0,62,402,778
-pair-confirm |  | needs subscription | 0,62,402,778
-pair-confirm.subscribe | Reach your agents from anywhere | The relay can see this host and cannot carry agents to it on this account. A subscription opens the tunnel. Hosts on this network never need one. | 18,88,366,126
-pair-confirm.subscribe.buy | Subscribe |  | 18,170,366,44
-pair-confirm.notNow | Not Now |  | 18,228,366,44
-paywall |  | entitled by App Store | 0,62,402,778
-paywall.back | Back to Hosts |  | 17,57,59,46
-paywall.title |  | Reach your agents anywhere | 18,106,218,64
-paywall.explanation |  | A subscription reaches your hosts from anywhere. Hosts on this network work without one. | 18,175,366,39
-paywall.subscribed |  | App Store | 18,237,366,98
-paywall.buy | Done | entitled by App Store | 26,774,350,44
- | Back to Hosts |  | 17,57,59,46
+shell |  | agents | 0,62,402,778
+home |  | ready | 0,174,402,617
+paywall |  | entitled by App Store | 0,116,402,724
+paywall.title |  | Reach your agents anywhere | 16,124,218,64
+paywall.explanation |  | A subscription reaches your hosts from anywhere. Hosts on this network work without one. | 16,194,367,39
+paywall.subscribed |  | App Store | 16,255,370,98
+paywall.manage | Manage Subscription |  | 26,774,350,44
+paywall.back | Back |  | 20,66,56,36
  | Reach your agents
-anywhere |  | 18,106,218,64
- | A subscription reaches your hosts from anywhere. Hosts on this network work without one. |  | 18,175,366,39
- | Subscribed in the App Store, Manage your subscription in the App Store., Your other devices follow within a few minutes. |  | 18,251,319,70
- | Done |  | 26,774,350,44
+anywhere |  | 16,124,218,64
+ | A subscription reaches your hosts from anywhere. Hosts on this network work without one. |  | 16,194,367,39
+ | Subscribed in the App Store, Manage your subscription in the App Store., Your other devices follow within a few minutes. |  | 16,269,319,70
+ | Manage Subscription |  | 26,774,350,44
+ | Back |  | 20,66,56,36

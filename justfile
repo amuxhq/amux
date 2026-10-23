@@ -14,6 +14,10 @@ desktop_features := "--features bundled"
 default:
     @just --list
 
+# Export the editable logo and render its visual review sheet.
+logo *ARGS:
+    {{bounded}} 120 uv run --script scripts/logo.py "$@"
+
 # The iPhone app's recipes: `just ios build`, `just ios verify`, ... (`just --list ios`).
 mod ios 'apps/apple/justfile'
 
@@ -136,6 +140,18 @@ full-debug:
 shot *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 600 cargo run --locked --quiet -p shot --bin amux-shot -- "$@"
 
+# Interactive, so only the build and a capture are bounded; `just storybook
+# capture --out DIR` draws every story to text and PNG (docs/TERMINAL.md).
+# Step through the terminal client's named screens, rebuilding on save.
+storybook *ARGS:
+    #!/usr/bin/env sh
+    set -eu
+    {{bounded}} 900 cargo build --locked -q -p shot --bin amux-storybook
+    case "${1-}" in
+    capture) exec {{bounded}} 600 target/debug/amux-storybook "$@" ;;
+    *) exec target/debug/amux-storybook --watch "$@" ;;
+    esac
+
 # Run one declared journey through its real client. System journeys are the
 # built binaries on the fakes, printing their transcripts. `just journey
 # terminal all` runs every terminal story, keeps going after a failure,
@@ -175,20 +191,13 @@ wire-size RECORDING:
 tui-evidence *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1800 scripts/tui-evidence "$@"
 
-# Serve a declared world from journeys/sets on real daemons and the fake
-# providers, and run the real terminal client on it in this terminal; the
-# door's address is in target/tui-set/NAME/door.json. `--frames KEYS
-# [--size WxH]...` draws the client headlessly to text and PNG instead.
-# `just tui-set list` lists the sets. The session is interactive, so only
-# the build and frames are bounded.
-tui-set NAME *ARGS:
-    #!/usr/bin/env sh
-    set -eu
-    {{bounded}} 900 cargo build --locked -p amux -p provider-fakes -p testnet -p tui-set --bins {{desktop_features}}
-    case " $* " in
-    *" --frames"*) exec {{bounded}} 600 target/debug/tui-set "$@" ;;
-    *) exec target/debug/tui-set "$@" ;;
-    esac
+# The world comes up in ~/.local/state/amux-env/<tree>/NAME with the
+# clients its file declares and is held, with the simulator when it has a
+# phone, until Ctrl-C; drive it from that folder with `testnet ctl`.
+# Interactive, so only its steps are bounded.
+# Start a named world of real agents from environments/NAME.json (docs/TESTNET.md).
+env NAME:
+    scripts/py -B scripts/env.py {{NAME}}
 
 # Fuzz the code that reads bytes amux did not write (the Claude and Codex
 # decoders, the journal's frames and reader, redaction) for 30 seconds a
@@ -232,9 +241,11 @@ parked-check:
 
 # Check the protocol models at their nightly bounds: each model's ignored
 # test, one test binary after another, every core each. Names of test
-# targets (`just models-nightly family`) narrow it to those models. The whole
-# run takes about 50 minutes on a quiet twelve-core Mac; the bound leaves room
-# for a machine busy with other work, which slows every model by a third.
+# targets (`just models-nightly family`) narrow it to those models. On a
+# twelve-core Mac the models that finish take 3,362 s together (the README's
+# table) and the single daemon's peer runs past 4,000 s, so the whole run
+# takes over two hours: replication and the single daemon push it past the
+# bound, which leaves room for the rest on a machine busy with other work.
 models-nightly *TARGETS:
     if [ "${1-}" = -- ]; then shift; fi; targets=--tests; [ $# -eq 0 ] || targets=$(printf -- '--test %s ' "$@"); {{bounded}} 4800 cargo test --locked -p models $targets -- --ignored --nocapture
 

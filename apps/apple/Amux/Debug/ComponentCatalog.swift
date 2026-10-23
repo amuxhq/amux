@@ -18,6 +18,11 @@ struct ComponentExample: Identifiable {
         case composer = "Composer"
         case chat = "Chat"
         case review = "Review"
+        case fleet = "Fleet"
+        case hosts = "Hosts"
+        case pairing = "Pairing"
+        case settings = "Settings"
+        case report = "Report"
     }
 
     let id: String
@@ -31,7 +36,7 @@ struct ComponentExample: Identifiable {
     /// appearing), so its picture has to wait for the screen to stop
     /// changing. Every other example is final once it reports ready.
     let settlesLate: Bool
-    fileprivate let build: @MainActor () -> AnyView
+    let build: @MainActor () -> AnyView
 
     init(
         id: String,
@@ -58,7 +63,7 @@ struct ComponentExample: Identifiable {
 /// row kind, every ask card, the composer's states and the chat's own.
 @MainActor
 enum ComponentCatalog {
-    static let examples: [ComponentExample] = rows + asks + composer + chat + overview + review + newAgent
+    static let examples: [ComponentExample] = rows + asks + composer + chat + overview + review + newAgent + fleet + hosts + pairing + settings + report
 
     static func example(id: String) -> ComponentExample? {
         examples.first { $0.id == id }
@@ -539,19 +544,24 @@ enum ComponentCatalog {
     private static func chat(
         _ id: String, height: CGFloat = 844, readiness: (String, String)? = nil,
         chat: @escaping @MainActor () -> ScriptedChat, subject: ChatSubject = CatalogFixtures.subject,
-        family: FamilyHeader? = nil, showing: ChatOverlay? = nil, settlesLate: Bool = false,
+        family: FamilyHeader? = nil, showing: ChatOverlay? = nil,
         size: DynamicTypeSize = .large,
         setUp: @escaping @MainActor (ChatModel, ScriptedChat) -> Void = { _, _ in }
     ) -> ComponentExample {
         ComponentExample(
             id: "chat.\(id)", family: .chat, canvas: CGSize(width: 390, height: height),
             dynamicTypeSize: size,
-            readinessIdentifier: readiness?.0, readinessValue: readiness?.1, settlesLate: settlesLate
+            // The system bar lays its items out a frame after the chat.
+            readinessIdentifier: readiness?.0, readinessValue: readiness?.1, settlesLate: true
         ) {
             let source = chat()
-            CatalogChat(source: source) { model in
-                ChatScreen(model: model, subject: subject, family: family, showing: showing) { _ in }
-                    .onAppear { setUp(model, source) }
+            // In a navigation stack, as the app pushes it, so its bar is the
+            // system's.
+            NavigationStack {
+                CatalogChat(source: source) { model in
+                    ChatScreen(model: model, subject: subject, family: family, showing: showing) { _ in }
+                        .onAppear { setUp(model, source) }
+                }
             }
         }
     }
@@ -560,6 +570,19 @@ enum ComponentCatalog {
         typealias F = CatalogFixtures
         return [
             chat("conversation", chat: { ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(phase: .idle), strip: ScriptedChat.strip(model: "opus 4.6")) }),
+            chat("working", chat: {
+                ScriptedChat(
+                    rows: F.working,
+                    frame: ScriptedChat.frame(
+                        phase: .working,
+                        activity: Activity(kind: .running(key: "w06"), sinceMs: 0, elapsedMs: 33_000)),
+                    strip: ScriptedChat.strip(model: "opus 4.6"))
+            }),
+            chat("run-open", chat: {
+                ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(phase: .idle), strip: ScriptedChat.strip(model: "opus 4.6"))
+            }) { model, _ in
+                if let run = model.cell(for: "c14").row?.run { model.toggleRun(run) }
+            },
             // The header pill stops growing past the largest ordinary size;
             // the step rows stack their verb, file and counts.
             chat("conversation-large-text", chat: {
@@ -624,7 +647,7 @@ enum ComponentCatalog {
                     ]))
             }),
             chat("rename", chat: { ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame()) },
-                 showing: .rename, settlesLate: true),
+                 showing: .rename),
             chat("stop", chat: { ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame()) }, showing: .stop),
             chat("stop-cuts", chat: {
                 ScriptedChat(
@@ -643,8 +666,26 @@ enum ComponentCatalog {
                     strip: ScriptedChat.strip(model: "claude-sonnet-5", effort: "high", mode: "acceptEdits"),
                     settings: F.settingsClaudePty)
             }, showing: .settings),
+            placeholder("chat.opening", family: .chat, .waiting("Opening this chat"), identifier: "chat"),
+            placeholder(
+                "chat.not-opened", family: .chat,
+                .failed(title: "Couldn’t open this chat", reason: "desk did not answer"), identifier: "chat"),
         ]
     }()
+
+    /// A pushed page standing in for one that is not here, in a navigation
+    /// stack as the app pushes it, so its bar is the system's.
+    fileprivate static func placeholder(
+        _ id: String, family: ComponentExample.Family, _ showing: PagePlaceholder.Showing, identifier: String
+    ) -> ComponentExample {
+        ComponentExample(
+            id: id, family: family, canvas: CGSize(width: 390, height: 844),
+            // The system bar lays its items out a frame after the page.
+            settlesLate: true
+        ) {
+            NavigationStack { PagePlaceholder(showing, identifier: identifier) {} }
+        }
+    }
 }
 
 extension ComponentCatalog {
@@ -672,7 +713,7 @@ extension ComponentCatalog {
                 rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: .working),
                 strip: strip())
             ) { model in
-                ChatOverview(model: model, now: CatalogFixtures.now) {}
+                ChatOverview(model: model, subject: CatalogFixtures.subject, now: CatalogFixtures.now) {}
                     .onAppear { model.compare(comparison) }
             }
         }
@@ -683,15 +724,20 @@ extension ComponentCatalog {
     // MARK: - Review
 
     private static func review(
-        _ id: String, height: CGFloat = 844, writing: Bool = false, settlesLate: Bool = false,
+        _ id: String, height: CGFloat = 844, writing: Bool = false, editing: Int? = nil,
         setUp: @escaping @MainActor (ReviewModel) -> Void = { _ in }
     ) -> ComponentExample {
         ComponentExample(
             id: "review.\(id)", family: .review, canvas: CGSize(width: 390, height: height),
-            settlesLate: settlesLate
+            // The system bar lays its items out a frame after the page.
+            settlesLate: true
         ) {
-            CatalogReview(setUp: setUp) { model in
-                ReviewPage(model: model, agent: "refactor-auth", writing: writing) { _ in }
+            // In a navigation stack, as the app pushes it, so its bar is the
+            // system's.
+            NavigationStack {
+                CatalogReview(setUp: setUp) { model in
+                    ReviewPage(model: model, against: "Uncommitted", writing: writing, editing: editing) { _ in }
+                }
             }
         }
     }
@@ -699,23 +745,30 @@ extension ComponentCatalog {
     fileprivate static let review: [ComponentExample] = {
         typealias F = CatalogFixtures
         return [
-            review("page", settlesLate: true) { F.comment($0) },
+            review("page") { F.comment($0) },
             review("selection") { model in
                 model.begin(at: ReviewLine(file: 0, hunk: 0, line: 2))
                 model.extend(to: ReviewLine(file: 0, hunk: 0, line: 4))
             },
-            review("comment", writing: true, settlesLate: true) { model in
+            review("comment", writing: true) { model in
                 model.begin(at: ReviewLine(file: 0, hunk: 0, line: 2))
                 model.extend(to: ReviewLine(file: 0, hunk: 0, line: 4))
             },
+            review("editing", editing: 0) { F.comment($0) },
             review("folded") { model in
                 F.comment(model)
                 model.toggle(file: 0)
                 model.toggle(file: 1)
             },
-            ComponentExample(id: "review.files", family: .review, canvas: CGSize(width: 390, height: 420)) {
-                CatalogReview(setUp: F.comment) { model in ReviewFileList(model: model) { _ in } }
-            },
+            placeholder("review.reading", family: .review, .waiting("Reading the changes"), identifier: "review"),
+            placeholder(
+                "review.no-changes", family: .review,
+                .empty(title: "No changes", detail: "This agent has no uncommitted changes."),
+                identifier: "review"),
+            placeholder(
+                "review.not-read", family: .review,
+                .failed(title: "Couldn’t read the changes", reason: "desk did not answer"),
+                identifier: "review"),
         ]
     }()
 }
@@ -767,7 +820,7 @@ enum CatalogFixtures {
                 ModelChoice(value: "sonnet", displayName: "Sonnet", description: "Sonnet 5 · Best for everyday tasks", efforts: efforts, current: false, unlisted: false, defaultEffort: "high"),
                 ModelChoice(value: "haiku", displayName: "Haiku", description: "Haiku 4.5 · Fastest for quick answers", efforts: [], current: false, unlisted: false, defaultEffort: nil),
             ],
-            efforts: [EffortChoice(value: "low", current: true, default: false, unlisted: false)],
+            efforts: efforts.map { EffortChoice(value: $0, current: $0 == "high", default: $0 == "high", unlisted: false) },
             permissions: claudeModes.map {
                 PermissionChoice(
                     value: $0, displayName: claudeModeNames[$0] ?? $0, custom: false, current: $0 == mode,
@@ -951,7 +1004,8 @@ enum CatalogFixtures {
     static func bytes(_ blob: BlobRef) -> Data? { images[blob.hash] }
 
     static let subject = ChatSubject(
-        name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", reach: .online(.direct))
+        name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", branch: "ada/refactor-auth",
+        reach: .online(.direct))
     static let awaySubject = ChatSubject(
         name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", reach: .away)
 
@@ -1111,29 +1165,61 @@ enum CatalogFixtures {
         command: "cargo test -p amux-ui", state: .asking, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [],
         durationMs: nil, exitCode: nil), attention: true)
 
+    /// A finished turn: the prompt, one run of steps the agent took (a
+    /// failed check it fixed, a lint it left failing, a command the person
+    /// refused) and its answer.
     static let conversation: [Row] = {
         func r(
             _ id: String, _ order: UInt64, _ kind: RowKind, attention: Bool = false,
-            decision: Decision? = nil, run: Run? = nil, parent: String? = nil
+            decision: Decision? = nil
         ) -> Row {
-            ScriptedChat.row(id, order, kind, attention: attention, decision: decision, run: run, parent: parent)
+            ScriptedChat.row(id, order, kind, attention: attention, decision: decision)
+        }
+        func command(_ command: String, _ state: CallPhase, exit: Int32? = 0, ms: Int64? = nil, output: [String] = [], more: UInt = 0) -> RowKind {
+            .command(command: command, state: state, outputHead: output, moreLines: more, outputTrimmed: false, outputTail: [], durationMs: ms, exitCode: exit)
+        }
+        func edit(_ path: String, _ added: UInt32, _ removed: UInt32) -> RowKind {
+            .fileChange(files: [FileRow(path: path, change: .edited, added: added, removed: removed, line: nil)], state: .succeeded)
         }
         return [
             r("c01", 1, .boundary(kind: .started, cause: "")),
             r("c02", 2, .prompt(text: [.text("Collapse the pairing errors onto one string.")], steered: false)),
+        ] + ScriptedChat.run([
             r("c03", 3, .thinking(text: "", open: false, durationMs: 8_000)),
-            r("c04", 4, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded, result: ""),
-              run: Run(first: "c04", last: "c04", steps: 6, live: false, openBelow: false, unresolvedFailure: false, counts: RunCounts(commands: 0, edits: 0, reads: 4, searches: 2, subagents: 0, other: 0), recent: nil)),
-            r("c05", 5, .fileChange(files: [FileRow(path: "crates/amux-ui/src/pairing.rs", change: .edited, added: 9, removed: 14, line: nil)], state: .succeeded)),
-            r("c06", 6, .command(command: "cargo check -p amux-ui", state: .failed, outputHead: ["error[E0308]: mismatched types"], moreLines: 214, outputTrimmed: false, outputTail: [], durationMs: 4_200, exitCode: 101)),
-            r("c07", 7, .command(command: "cargo test -p amux-ui", state: .succeeded, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [], durationMs: 12_000, exitCode: 0),
+            r("c04", 4, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded, result: "")),
+            r("c05", 5, .explore(verb: .read, subject: "crates/wire/src/codes.rs", state: .succeeded, result: "")),
+            r("c06", 6, .explore(verb: .read, subject: "crates/amux-ui/src/pairing.rs", state: .succeeded, result: "")),
+            r("c07", 7, edit("crates/amux-ui/src/pairing.rs", 9, 14)),
+            r("c08", 8, command("cargo check -p amux-ui", .failed, exit: 101, ms: 4_200, output: ["error[E0308]: mismatched types"], more: 214)),
+            r("c09", 9, edit("crates/amux-ui/src/pairing.rs", 2, 1)),
+            r("c10", 10, command("cargo check -p amux-ui", .succeeded, ms: 3_900)),
+            r("c11", 11, .fileChange(files: [FileRow(path: "crates/amux-ui/tests/spec/pairing_copy.rs", change: .created(lines: 38), added: 38, removed: 0, line: nil)], state: .succeeded)),
+            r("c12", 12, command("cargo test -p amux-ui", .succeeded, ms: 12_000),
               decision: Decision(outcome: .allowed, elsewhere: false, granted: .session, note: nil)),
-            r("c08", 8, .fileChange(files: [FileRow(path: "crates/amux-ui/tests/spec/pairing_copy.rs", change: .created(lines: 38), added: 38, removed: 0, line: nil)], state: .succeeded)),
-            r("c09", 9, .command(command: "rm -rf target", state: .denied, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [], durationMs: nil, exitCode: nil),
+            r("c13", 13, command("cargo clippy -p amux-ui", .failed, exit: 1, ms: 6_100, output: ["warning: unused import: `PinError`"], more: 12)),
+            r("c14", 14, command("rm -rf target", .denied, exit: nil),
               decision: Decision(outcome: .denied, elsewhere: false, granted: nil, note: "Use cargo clean instead")),
-            r("c10", 10, .prose(text: [.text("Done. The three arms are one now, and the new test asserts on the single string.")], streaming: false, workingNote: false)),
-            r("c11", 11, .turnEnd(failed: false, costUsd: nil, durationMs: 102_000)),
+        ], failed: ["c13"]) + [
+            r("c15", 15, .prose(text: [.text("Done. The three arms are one now, and the new test asserts on the single string. Clippy still flags an unused import I left for you to decide on.")], streaming: false, workingNote: false)),
+            r("c16", 16, .turnEnd(failed: false, costUsd: nil, durationMs: 102_000)),
         ]
+    }()
+
+    /// The finished turn, then a second one the agent is still at: five
+    /// steps in, its newest running.
+    static let working: [Row] = {
+        func r(_ id: String, _ order: UInt64, _ kind: RowKind) -> Row {
+            ScriptedChat.row(id, order, kind)
+        }
+        return conversation + [
+            r("w01", 20, .prompt(text: [.text("Drop the unused import and run the whole suite.")], steered: false)),
+        ] + ScriptedChat.run([
+            r("w02", 21, .explore(verb: .read, subject: "crates/amux-ui/src/pairing.rs", state: .succeeded, result: "")),
+            r("w03", 22, .fileChange(files: [FileRow(path: "crates/amux-ui/src/pairing.rs", change: .edited, added: 0, removed: 1, line: nil)], state: .succeeded)),
+            r("w04", 23, .command(command: "cargo clippy -p amux-ui", state: .succeeded, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [], durationMs: 5_800, exitCode: 0)),
+            r("w05", 24, .explore(verb: .search, subject: "pairing_copy", state: .succeeded, result: "")),
+            r("w06", 25, .command(command: "cargo test --workspace", state: .running, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [], durationMs: nil, exitCode: nil)),
+        ], live: true)
     }()
 
     static let pairingTasks = TasksView(
@@ -1190,7 +1276,7 @@ struct ComponentExampleView: View {
         ZStack {
             Ground()
             example.build()
-                .padding(example.family == .chat ? 0 : 18)
+                .padding([.chat, .fleet, .hosts, .pairing, .settings, .report].contains(example.family) ? 0 : 18)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .frame(width: example.canvas.width, height: example.canvas.height)
@@ -1262,22 +1348,48 @@ extension ComponentCatalog {
     /// provider's model, effort, permission and mode, and the worktree
     /// switch; once more with the provider signed out there.
     fileprivate static let newAgent: [ComponentExample] = [
+        newAgent("claude", provider: .claude, signedIn: true),
         newAgent("codex", provider: .codex, signedIn: true),
+        newAgent("browsing", provider: .claude, signedIn: true, browsing: true),
         newAgent("signed-out", provider: .claude, signedIn: false),
         newAgent("large-text", provider: .claude, signedIn: true, size: .accessibility3, height: 2400),
+        newAgent("refused", provider: .claude, signedIn: true) { store in
+            store.starts()
+            store.started(.failure(RuntimeFailure("desk refused: ~/src/amux is not a git repository")))
+        },
+        newAgent("no-repositories", provider: .claude, signedIn: true, browsing: true) { store in
+            store.listed(
+                .success(Directories(recent: [], repositories: [], roots: ["~/src"])), asked: store.asking())
+        },
+        newAgent("unlisted", provider: .claude, signedIn: true, browsing: true) { store in
+            store.listed(.failure(RuntimeFailure("desk did not answer")), asked: store.asking())
+        },
     ]
 
     private static func newAgent(
-        _ id: String, provider: NewAgentStore.Provider, signedIn: Bool,
-        size: DynamicTypeSize = .large, height: CGFloat = 1100
+        _ id: String, provider: NewAgentStore.Provider, signedIn: Bool, browsing: Bool = false,
+        size: DynamicTypeSize = .large, height: CGFloat = 1100,
+        setUp: @escaping @MainActor (NewAgentStore) -> Void = { _ in }
     ) -> ComponentExample {
         ComponentExample(
             id: "new-agent.\(id)", family: .chat, canvas: CGSize(width: 390, height: height),
             dynamicTypeSize: size,
-            readinessIdentifier: "new-agent.worktree", readinessValue: "on"
+            readinessIdentifier: browsing ? "new-agent.browse" : "new-agent.worktree",
+            readinessValue: browsing ? "" : "on",
+            // The system bar lays its items out a frame after the form.
+            settlesLate: true
         ) {
             let (store, hosts) = CatalogFixtures.newAgent(provider: provider, signedIn: signedIn)
-            NewAgent(model: store, hosts: hosts) { _ in }
+            let _ = setUp(store)
+            // The chooser is drawn on its own: a capture leaves out what the
+            // screen presents, and the form under it is the other stories.
+            if browsing {
+                NewAgentDirectories(model: store) { _ in }
+            } else {
+                NavigationStack {
+                    NewAgent(model: store, hosts: hosts) { _ in }
+                }
+            }
         }
     }
 }
@@ -1296,12 +1408,23 @@ extension CatalogFixtures {
                 ProviderSignIn(provider: .claude, signedIn: signedIn),
                 ProviderSignIn(provider: .codex, signedIn: true),
             ],
+            lastDialError: nil, platform: "macOS", signedIn: nil, version: nil),
+        HostView(
+            hostId: Array(repeating: 8, count: 16), name: "laptop", local: false, trusted: true,
+            candidate: false, reach: .away, addrs: [], current: false, providers: [],
             lastDialError: nil, platform: "macOS", signedIn: nil, version: nil)])
         let store = NewAgentStore()
         store.open(on: desk)
         store.listed(.success(Directories(
-            recent: [Directory(path: "~/src/amux", name: "amux", lastUsedMs: 5)],
-            repositories: [], roots: ["~/src"])), asked: store.asking())
+            recent: [
+                Directory(path: "~/src/amux", name: "amux", lastUsedMs: 5),
+                Directory(path: "~/src/amuxcloud", name: "amuxcloud", lastUsedMs: 4),
+                Directory(path: "~/src/promo", name: "promo", lastUsedMs: 3),
+            ],
+            repositories: [
+                Directory(path: "~/src/dotfiles", name: "dotfiles", lastUsedMs: 0),
+                Directory(path: "~/src/skills", name: "skills", lastUsedMs: 0),
+            ], roots: ["~/src"])), asked: store.asking())
         for offered in NewAgentStore.Provider.allCases {
             let catalogue = offered == .codex ? codexCatalogue : claudeCatalogue
             store.offered(.success(catalogue), for: offered, asked: store.askingOffer(for: offered))
@@ -1355,5 +1478,356 @@ private extension QuestionResponse {
 
     static func typed(_ words: String) -> QuestionResponse {
         QuestionResponse(note: nil, other: words, picked: [])
+    }
+}
+
+extension ComponentCatalog {
+    // MARK: - Hosts
+
+    /// The machines in every group a machine can be in, with one found and
+    /// not paired, and none at all; then one machine's page, and one that no
+    /// longer trusts this phone. The revoke confirmation is the system's own
+    /// dialog, which a flat capture cannot hold; it has a preview of its own.
+    fileprivate static let hosts: [ComponentExample] = [
+        hostsList("list") { _ in },
+        hostsList("empty", hosts: []) { _ in },
+        hostsList("network-refused", hosts: []) { $0.sawLocalNetwork(.denied) },
+        hostPage("page", host: CatalogFixtures.deskHost),
+        hostPage("revoked", host: CatalogFixtures.oldLaptop),
+    ]
+
+    private static func hostsList(
+        _ id: String, hosts: [HostView] = CatalogFixtures.machines,
+        setUp: @escaping @MainActor (HostsStore) -> Void
+    ) -> ComponentExample {
+        ComponentExample(id: "hosts.\(id)", family: .hosts, canvas: CGSize(width: 390, height: 844)) {
+            let store = CatalogFixtures.hostsStore(hosts)
+            // In a navigation stack, as the tab holds it, so its title is the
+            // system's.
+            NavigationStack {
+                HostsTab(model: store) { _ in }
+                    .onAppear { setUp(store) }
+            }
+        }
+    }
+
+    private static func hostPage(_ id: String, host: HostView) -> ComponentExample {
+        ComponentExample(id: "host.\(id)", family: .hosts, canvas: CGSize(width: 390, height: 844)) {
+            hostPageView(host: host)
+        }
+    }
+
+    /// One machine's page as the hosts tab pushes it.
+    static func hostPageView(host: HostView, confirming: Bool = false) -> some View {
+        NavigationStack {
+            HostPage(
+                model: CatalogFixtures.hostsStore(CatalogFixtures.machines), host: host.id!,
+                confirming: confirming
+            ) { _ in }
+        }
+    }
+}
+
+extension ComponentCatalog {
+    // MARK: - Pairing
+
+    /// Pairing with the laptop found on this network by its six digits, from
+    /// an empty keypad to the machine's name and key and the pairing done; a
+    /// code that did not work, and one that reached a machine only the relay
+    /// can carry; then an invitation link waiting, refused, and naming a
+    /// machine that needs an account.
+    fileprivate static let pairing: [ComponentExample] = [
+        code("empty") { _ in },
+        code("typing") { $0.enter("418") },
+        code("checking") { store in
+            store.enter("418207")
+            _ = store.checking()
+        },
+        code("refused") { store in
+            store.enter("418207")
+            store.reached(.failure(RuntimeFailure("wrong secret")), attempt: store.checking())
+        },
+        code("subscribe", machine: CatalogFixtures.relayLaptop) { store in
+            store.enter("418207")
+            store.reached(.failure(RuntimeFailure("relay refused")), attempt: store.checking(), relayOnly: true)
+        },
+        confirm("confirm") { store in
+            store.enter("418207")
+            store.reached(.success(CatalogFixtures.pendingLaptop), attempt: store.checking())
+        },
+        confirm("trusted") { store in
+            store.enter("418207")
+            let attempt = store.checking()
+            store.reached(.success(CatalogFixtures.pendingLaptop), attempt: attempt)
+            store.paired(.success(CatalogFixtures.pairedLaptop), attempt: attempt)
+        },
+        confirm("link-checking", machine: nil) { _ = $0.checking() },
+        confirm("link-refused", machine: nil) { store in
+            store.reached(.failure(RuntimeFailure("expired")), attempt: store.checking())
+        },
+        ComponentExample(id: "pair.needs-account", family: .pairing, canvas: CGSize(width: 390, height: 844)) {
+            NavigationStack { PairNeedsAnAccount { _ in } }
+        },
+    ]
+
+    /// The code in the system's number pad, as the pairing sheet asks for it
+    /// for one machine. The field takes focus once drawn and the pad rises
+    /// after, so the picture waits for the screen to stop changing.
+    private static func code(
+        _ id: String, machine: HostView = CatalogFixtures.nearbyLaptop,
+        setUp: @escaping @MainActor (PairingStore) -> Void
+    ) -> ComponentExample {
+        ComponentExample(
+            id: "pair.code-\(id)", family: .pairing, canvas: CGSize(width: 390, height: 844), settlesLate: true
+        ) {
+            let store = PairingStore(clock: { CatalogFixtures.now })
+            store.open(machine: machine)
+            setUp(store)
+            return NavigationStack { PairByCode(model: store) { _ in } }
+        }
+    }
+
+    /// The machine's answer, after a code or from a link.
+    private static func confirm(
+        _ id: String, machine: HostView? = CatalogFixtures.nearbyLaptop,
+        setUp: @escaping @MainActor (PairingStore) -> Void
+    ) -> ComponentExample {
+        ComponentExample(id: "pair.\(id)", family: .pairing, canvas: CGSize(width: 390, height: 844)) {
+            let store = PairingStore(clock: { CatalogFixtures.now })
+            store.open(machine: machine)
+            setUp(store)
+            return NavigationStack { PairConfirmation(model: store) { _ in } }
+        }
+    }
+}
+
+extension ComponentCatalog {
+    // MARK: - Settings
+
+    /// The settings sheet with two accounts and with none, and every page it
+    /// opens: signing in, subscribing, and deleting an account. Removing one
+    /// asks in the system's dialog, which a flat capture cannot hold; it has
+    /// a preview of its own.
+    fileprivate static let settings: [ComponentExample] = [
+        sheet("two-accounts") { StoryApp(settingsOpen: true) { StoryFleet.busy(accounts: 2) }.settings },
+        sheet("signed-out") { StoryApp(settingsOpen: true) { StoryFleet.busy(accounts: 0) }.settings },
+        sheet("delete") {
+            let stores = StoryFleet.busy()
+            return DeleteAccountOverlay(
+                entry: stores.accounts.selectedAccount, model: DeletionStore(asking: AccountId("ada")),
+                actions: { _ in }
+            ) { YouScreen(accounts: stores.accounts) { _ in } }
+        },
+        sheet("delete-blocked") {
+            let stores = StoryFleet.busy()
+            return DeleteAccountOverlay(
+                entry: stores.accounts.selectedAccount,
+                model: DeletionStore(
+                    asking: AccountId("ada"), typed: "ada@example.com",
+                    phase: .blocked(source: .appStore, manageURL: AmuxCloudService.appStoreSubscriptions)),
+                actions: { _ in }
+            ) { YouScreen(accounts: stores.accounts) { _ in } }
+        },
+        sheet("delete-failed") {
+            let stores = StoryFleet.busy()
+            return DeleteAccountOverlay(
+                entry: stores.accounts.selectedAccount,
+                model: DeletionStore(
+                    asking: AccountId("ada"), typed: "ada@example.com", phase: .failed("amux.sh did not answer")),
+                actions: { _ in }
+            ) { YouScreen(accounts: stores.accounts) { _ in } }
+        },
+        sheet("sign-in") { SignIn(model: SignInStore()) { _ in } },
+        sheet("sign-in-waiting") { SignIn(model: SignInStore(phase: .handingOff)) { _ in } },
+        sheet("sign-in-failed") {
+            SignIn(model: SignInStore(phase: .failed("amux.sh did not answer"))) { _ in }
+        },
+        sheet("sign-in-mismatched") {
+            SignIn(
+                model: SignInStore(
+                    phase: .mismatched(wanted: CatalogFixtures.ada, got: CatalogFixtures.lovelace),
+                    intent: .returning(CatalogFixtures.ada))) { _ in }
+        },
+        sheet("paywall") { Paywall(model: PaywallStore(plans: CatalogFixtures.plans)) { _ in } },
+        sheet("paywall-confirming") {
+            Paywall(model: PaywallStore(plans: CatalogFixtures.plans, phase: .confirming)) { _ in }
+        },
+        sheet("paywall-unconfirmed") {
+            Paywall(
+                model: PaywallStore(plans: CatalogFixtures.plans, phase: .unconfirmed(.unreachable))) { _ in }
+        },
+        sheet("paywall-subscribed") {
+            Paywall(
+                model: PaywallStore(
+                    entitlement: .active(grant: .purchased(.appStore), renews: CatalogFixtures.now.addingTimeInterval(86_400 * 300)),
+                    plans: CatalogFixtures.plans, phase: .entitled(.purchased(.appStore)))) { _ in }
+        },
+    ]
+
+    private static func sheet(_ id: String, build: @escaping @MainActor () -> some View) -> ComponentExample {
+        ComponentExample(id: "settings.\(id)", family: .settings, canvas: CGSize(width: 390, height: 844)) {
+            NavigationStack { build() }
+        }
+    }
+}
+
+extension ComponentCatalog {
+    // MARK: - Report
+
+    /// Reporting a problem, from writing it to the receipt, over a frozen
+    /// frame of the agent list.
+    fileprivate static let report: [ComponentExample] = [
+        page("ready") { ReportStore(capture: CatalogFixtures.frozenFleet, open: true) },
+        page("marked") {
+            ReportStore(
+                capture: CatalogFixtures.frozenFleet,
+                draft: ReportDraft(
+                    note: "The subtitle says no agents while three are listed.",
+                    marks: [
+                        ReportMark(x: 16, y: 104, width: 220, height: 30, note: "Says no agents"),
+                        ReportMark(x: 12, y: 300, width: 366, height: 70, note: ""),
+                    ]),
+                open: true)
+        },
+        page("signed-out", signedIn: false) { ReportStore(capture: CatalogFixtures.frozenFleet, open: true) },
+        page("sending") {
+            ReportStore(
+                capture: CatalogFixtures.frozenFleet, draft: ReportDraft(note: "The list jumps when a row finishes."),
+                sending: .sending, open: true)
+        },
+        page("failed") {
+            ReportStore(
+                capture: CatalogFixtures.frozenFleet, draft: ReportDraft(note: "The list jumps when a row finishes."),
+                sending: .failed("amux.sh did not answer"), open: true)
+        },
+        page("sent") {
+            ReportStore(
+                capture: CatalogFixtures.frozenFleet,
+                sending: .sent(ReportReceipt(id: "rep_4KX2M9", receivedAt: CatalogFixtures.now)), open: true)
+        },
+    ]
+
+    private static func page(
+        _ id: String, signedIn: Bool = true, store: @escaping @MainActor () -> ReportStore
+    ) -> ComponentExample {
+        ComponentExample(
+            id: "report.\(id)", family: .report, canvas: CGSize(width: 390, height: 844),
+            // The system bar lays its items out a frame after the page.
+            settlesLate: true
+        ) {
+            ReportScreen(model: store(), signedIn: signedIn) { _ in }
+        }
+    }
+}
+
+extension CatalogFixtures {
+    /// A frozen agent list to report on: drawn here rather than captured,
+    /// so the picture is the same on every run.
+    @MainActor static let frozenFleet: ReportCapture = {
+        let size = CGSize(width: 390, height: 844)
+        let renderer = ImageRenderer(content: FrozenFleetPicture().frame(width: size.width, height: size.height))
+        renderer.scale = 2
+        let png = renderer.uiImage?.pngData() ?? Data()
+        return ReportCapture(frame: FrozenFrame(png: png, width: size.width, height: size.height, scale: 2))
+    }()
+}
+
+/// The agent list as a report's frozen frame shows it: a title, a subtitle
+/// and three rows, enough to read as the screen it stands for.
+private struct FrozenFleetPicture: View {
+    private let design = Design.app
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Agents")
+                .designFont(.screenTitle, design)
+                .padding(.top, 70)
+            Text("No agents yet · 3 hosts")
+                .designFont(.detail, design)
+                .foregroundStyle(design.inkMuted.color)
+                .padding(.top, 4)
+                .padding(.bottom, 26)
+            ForEach(["fix-flaky-ci", "relay-backoff", "docs-pass"], id: \.self) { name in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(name).designFont(.bodyEmphasis, design)
+                    Text("desk · Working")
+                        .designFont(.detail, design)
+                        .foregroundStyle(design.inkMuted.color)
+                }
+                .padding(.vertical, 14)
+                Rectangle().fill(design.hairline.color).frame(height: 1)
+            }
+            Spacer()
+        }
+        .foregroundStyle(design.ink.color)
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(design.ground.color)
+        .environment(\.colorScheme, .dark)
+    }
+}
+
+extension CatalogFixtures {
+    static let ada = SignedInAccount(id: AccountId("ada"), email: "ada@example.com", displayName: "Ada")
+    static let lovelace = SignedInAccount(id: AccountId("ada-work"), email: "ada@lovelace.dev", displayName: "Lovelace Labs")
+    static let plans = [
+        Plan(id: Plan.monthlyID, period: .monthly, price: "$4.99"),
+        Plan(id: Plan.yearlyID, period: .yearly, price: "$49.99", saving: "Save 17%"),
+    ]
+}
+
+extension CatalogFixtures {
+    static let nearbyLaptop = machine(5, "laptop", platform: "MacBook Air", reach: .online(.direct), trusted: false, candidate: true, version: nil, providers: [])
+    static let relayLaptop = machine(5, "laptop", platform: "MacBook Air", reach: .online(.relay), trusted: false, candidate: true, version: nil, providers: [])
+    static let pendingLaptop = PendingPair(
+        token: [1, 2, 3], hostId: nearbyLaptop.hostId, name: "laptop", fingerprint: fingerprint(5),
+        expiresAtMs: Int64((now.timeIntervalSince1970 + 4 * 60 + 12) * 1000), via: .direct)
+    /// The runtime's answer to a confirmed pairing, which only it makes.
+    static let pairedLaptop = try! JSONDecoder().decode(
+        Paired.self,
+        from: JSONSerialization.data(withJSONObject: [
+            "host_id": nearbyLaptop.hostId.map(Int.init), "name": nearbyLaptop.name,
+        ]))
+}
+
+extension CatalogFixtures {
+    static func machine(
+        _ index: UInt8, _ name: String, platform: String?, reach: Reach, trusted: Bool = true,
+        candidate: Bool = false, addrs: [String] = [], version: String? = "0.8.0",
+        providers: [ProviderSignIn] = [
+            ProviderSignIn(provider: .claude, signedIn: true), ProviderSignIn(provider: .codex, signedIn: false),
+        ]
+    ) -> HostView {
+        HostView(
+            hostId: Array(repeating: index, count: 16), name: name, local: false, trusted: trusted,
+            candidate: candidate, reach: reach, addrs: addrs, current: false, providers: providers,
+            lastDialError: nil, platform: platform, signedIn: nil, version: version)
+    }
+
+    static let deskHost = machine(1, "desk", platform: "Mac Studio", reach: .online(.direct), addrs: ["192.168.1.20:4433", "[fe80::1c2b:9aff:fe31:7d10]:4433"])
+    static let oldLaptop = machine(6, "old-laptop", platform: "MacBook Air", reach: .offline(.revoked))
+    static let machines: [HostView] = [
+        deskHost,
+        machine(2, "build-box", platform: "Linux", reach: .online(.relay)),
+        machine(3, "mini", platform: "Mac mini", reach: .away),
+        machine(4, "garage-pi", platform: "Linux", reach: .offline(.plain)),
+        oldLaptop,
+        machine(5, "laptop", platform: "MacBook Air", reach: .online(.direct), trusted: false, candidate: true, version: nil, providers: []),
+    ]
+
+    static func hostsStore(_ hosts: [HostView]) -> HostsStore {
+        let store = HostsStore(clock: { now })
+        store.show(hosts)
+        store.show(Roster(
+            identity: Identity(hostId: Array(repeating: 9, count: 16), name: "Ada’s iPhone", fingerprint: fingerprint(9)),
+            peers: hosts.filter(\.trusted).map {
+                PairedPeer(hostId: $0.hostId, name: $0.name, fingerprint: fingerprint($0.hostId[0]))
+            }))
+        return store
+    }
+
+    /// A key's fingerprint as the runtime writes one: 64 hex characters.
+    static func fingerprint(_ seed: UInt8) -> String {
+        (0..<32).map { String(format: "%02x", UInt8(truncatingIfNeeded: Int(seed) &* 37 &+ $0 &* 11)) }.joined()
     }
 }

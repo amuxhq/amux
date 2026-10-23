@@ -368,8 +368,18 @@ class TerminalJourney:
         self.frames: list[Frame] = []
         # Names hosts assigned, drawn as ASSIGNED in every frame.
         self.assigned: list[str] = []
-        env = {k: v for k, v in os.environ.items() if k not in ("AMUX_LOG", "AMUX_CONFIG")}
+        # NO_COLOR in the launching shell (some sandboxes export it) would
+        # strip the colour every .styles golden is approved in.
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if k not in ("AMUX_LOG", "AMUX_CONFIG", "NO_COLOR")
+        }
         env.update({key: str(self.scratch) for key in ("TMPDIR", "TMP", "TEMP")})
+        # `just journey terminal` builds amux and the fakes with the
+        # desktop's features; left to itself, testnet rebuilds them without,
+        # which on a cold runner outlasts the wait for readiness.
+        env["TESTNET_BINARIES"] = str(TESTNET.parent)
         self.process = subprocess.Popen(
             [str(TESTNET), "serve", str(topology), "--root-in", str(self.scratch)],
             cwd=ROOT,
@@ -480,6 +490,8 @@ class TerminalJourney:
                 "AMUX_LOG",
                 "-u",
                 "AMUX_CONFIG",
+                "-u",
+                "NO_COLOR",
                 "TERM=xterm-256color",
                 # Goldens are approved in ANSI colour, which every terminal
                 # the client meets can show.

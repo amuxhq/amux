@@ -71,6 +71,15 @@ fn a_topology_rejects_unknown_and_duplicate_names_before_anything_starts() {
             two().agent(AgentDecl::new("x", "a").cwd("/tmp").branch("feature")),
             "names a branch",
         ),
+        (
+            Topology::new().host_decl(HostDecl {
+                name: "a".to_owned(),
+                process: true,
+                router: Some(testnet::RouterKind::Strict),
+                ..HostDecl::default()
+            }),
+            "a router stands only in front of an in-process host",
+        ),
     ];
     for (topology, expected) in cases {
         let error = topology.validate().expect_err(expected).to_string();
@@ -106,6 +115,11 @@ fn a_topology_rejects_unknown_and_duplicate_names_before_anything_starts() {
     assert_eq!(
         loaded.agents[0].script.as_ref().unwrap().steps,
         vec![text("hello"), Step::TurnEnd]
+    );
+    std::fs::write(&path, r#"{"hosts": [{"name": "a", "router": "strict"}]}"#).unwrap();
+    assert_eq!(
+        Topology::load(&path).unwrap().hosts[0].router,
+        Some(testnet::RouterKind::Strict)
     );
     std::fs::write(&path, r#"{"hosts": [{"name": "a", "colour": "red"}]}"#).unwrap();
     assert!(matches!(
@@ -720,6 +734,17 @@ fn every_door_verb_maps_to_one_capability_and_the_crate_docs_list_the_same_map()
             host: "a".into(),
             blocked: true,
         },
+        Control::SetRouter {
+            host: "a".into(),
+            kind: testnet::RouterKind::Strict,
+        },
+        Control::ChangeNetwork { host: "a".into() },
+        Control::BindIpv6Only { host: "a".into() },
+        Control::CarryingPath {
+            host: "a".into(),
+            peer: "b".into(),
+        },
+        Control::LinkLog { host: "a".into() },
         Control::Flap {
             a: "a".into(),
             b: "b".into(),
@@ -1251,5 +1276,136 @@ async fn a_changed_tier_reaches_a_process_host_and_the_plan_read_at_once() {
     net.set_tier("ada", testnet::TierDecl::Pro).await.unwrap();
     assert_eq!(tier(&net).await, wire::Tier::Pro);
     assert_eq!(plan(&net, "ada")["until"], Value::Null);
+    net.shutdown().await.unwrap();
+}
+
+/// Two in-process hosts with no LAN between them, for links a test makes
+/// by hand.
+fn bare_host(name: &str) -> HostDecl {
+    HostDecl {
+        name: name.to_owned(),
+        ..HostDecl::default()
+    }
+}
+
+/// Waits until `near` reaches `far` by `via`, as `near` sees it.
+async fn until_route(net: &Net, near: &str, far: &str, via: node::harness::LiveRoute) {
+    let edge = net.edge(near).unwrap();
+    let far_id = net.host(far).unwrap().host_id;
+    until(&format!("{near} to reach {far} {via:?}"), || {
+        let edge = edge.clone();
+        async move {
+            let seen = edge.via(far_id).await;
+            (seen == via).then_some(()).ok_or(format!("{seen:?}"))
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_ssh_stand_in_carries_a_link_into_the_far_hosts_link_socket() {
+    let mut net = Net::start_with(Topology::new(), testnet::NetOptions::default())
+        .await
+        .unwrap();
+    net.add_host(bare_host("desk")).await.unwrap();
+    net.add_host(bare_host("laptop")).await.unwrap();
+    let desk = net.host("desk").unwrap().clone();
+    let target = net.ssh_target("desk").unwrap();
+
+    // The desk trusts the laptop, so its link socket admits the laptop's
+    // pinned handshake; the laptop trusts the desk as an SSH pairing does,
+    // with the target and profile it reaches the desk by.
+    net.trust("desk", "laptop").await.unwrap();
+    let desk_edge = net.edge("desk").unwrap();
+    net.edge("laptop")
+        .unwrap()
+        .trust_ssh_peer(wire::TrustSshPeerRequest {
+            profile_id: Vec::new(),
+            peer: Some(wire::PairingIdentity {
+                host_id: desk.host_id.as_bytes().to_vec(),
+                pubkey: desk_edge.public_key().to_vec(),
+                name: "desk".to_owned(),
+                expires_at_ms: 0,
+            }),
+            ssh_target: Some(wire::SshTarget {
+                target: target.clone(),
+                profile_id: desk.profile.as_bytes().to_vec(),
+            }),
+        })
+        .await
+        .unwrap();
+    until_route(&net, "laptop", "desk", node::harness::LiveRoute::Ssh).await;
+    until("the laptop's link log to name SSH", || async {
+        match net.carrying_path("laptop", "desk") {
+            Ok(Some(node::link_log::PathKind::Ssh)) => Ok(()),
+            other => Err(format!("{other:?}")),
+        }
+    })
+    .await
+    .unwrap();
+    println!("the laptop reached the desk over the stand-in at {target}");
+    net.shutdown().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_link_behind_a_router_survives_its_host_changing_network() {
+    let mut net = Net::start_with(Topology::new(), testnet::NetOptions::default())
+        .await
+        .unwrap();
+    net.add_host(lan_host("desk")).await.unwrap();
+    net.add_host(lan_host("laptop")).await.unwrap();
+    net.set_router("laptop", testnet::RouterKind::Ordinary)
+        .unwrap();
+    net.trust("desk", "laptop").await.unwrap();
+    net.trust("laptop", "desk").await.unwrap();
+    let desk = net.host("desk").unwrap().host_id;
+    let laptop = net.edge("laptop").unwrap();
+    assert!(
+        laptop.lan_addr().is_some(),
+        "the laptop listens behind its router"
+    );
+    // From behind an ordinary router the laptop's dial opens the mapping
+    // the desk's answers come back through.
+    laptop.dial(desk, net.edge("desk").unwrap().lan_addr().unwrap());
+    until_route(&net, "laptop", "desk", node::harness::LiveRoute::Direct).await;
+    let ups = |net: &Net| {
+        net.link_log("laptop")
+            .unwrap()
+            .iter()
+            .filter(|event| event.event == node::link_log::LinkTransition::Up)
+            .count()
+    };
+    let before = ups(&net);
+
+    // A new network is a new router with new public ports: the connection
+    // migrates, and the link neither drops nor comes up again.
+    println!("{}", net.change_network("laptop").unwrap().installed);
+    let mut peer = net
+        .edge("laptop")
+        .unwrap()
+        .peer(desk)
+        .await
+        .expect("a channel to the desk after the move");
+    let mut inventory = peer
+        .subscribe_inventory(wire::Empty {})
+        .await
+        .expect("the desk answers across the moved link")
+        .into_inner();
+    inventory
+        .message()
+        .await
+        .expect("the desk's inventory streams across the moved link")
+        .expect("a first event");
+    assert_eq!(
+        laptop.via(desk).await,
+        node::harness::LiveRoute::Direct,
+        "the link stays direct"
+    );
+    assert_eq!(ups(&net), before, "the link did not come up again");
+    assert!(matches!(
+        net.change_network("nobody"),
+        Err(NetError::NoHost(_))
+    ));
     net.shutdown().await.unwrap();
 }

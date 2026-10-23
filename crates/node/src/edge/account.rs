@@ -4,7 +4,8 @@
 //! One private file, `profiles/<id>/account`, written whole on every change.
 //! Its absence is an unbound profile; a binding without a refresh token is a
 //! profile that signed out but stays tied to its account; `paused` keeps the
-//! credential and holds the cloud link down.
+//! credential and holds the cloud link down. Signing in or out also forgets
+//! the relay token the profile keeps beside it.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -31,6 +32,9 @@ pub(crate) struct AccountRecord {
     pub(crate) subject: String,
     pub(crate) name: Option<String>,
     pub(crate) email: Option<String>,
+    /// The profile picture's URL, as the service said at sign-in.
+    #[serde(default)]
+    pub(crate) picture: Option<String>,
     pub(crate) bound_at_ms: i64,
     /// Absent after a sign-out.
     pub(crate) refresh_token: Option<String>,
@@ -134,6 +138,7 @@ impl Account {
     /// Binds the profile to an account, or signs a bound profile in again.
     pub(crate) async fn bind(&self, record: AccountRecord, access: AccessToken) -> io::Result<()> {
         let _change = self.changes.lock().await;
+        self.forget_relay_token()?;
         self.write(Some(record))?;
         *self.access.lock().unwrap() = Some(access);
         Ok(())
@@ -147,9 +152,19 @@ impl Account {
             refresh_token: None,
             ..record
         });
+        self.forget_relay_token()?;
         self.write(record)?;
         *self.access.lock().unwrap() = None;
         Ok(())
+    }
+
+    /// A relay token belongs to the login that fetched it: signing in or
+    /// out forgets it before the record changes.
+    fn forget_relay_token(&self) -> io::Result<()> {
+        match self.path.parent() {
+            Some(profile) => super::token::forget_token(profile),
+            None => Ok(()),
+        }
     }
 
     /// A refresh under way finishes first.
@@ -370,6 +385,7 @@ pub(crate) async fn bind(
         subject: info.sub,
         name: info.name,
         email: info.email,
+        picture: info.picture,
         bound_at_ms: existing.as_ref().map_or_else(
             || crate::link::run::system_time_ms(SystemTime::now()),
             |record| record.bound_at_ms,
@@ -486,6 +502,7 @@ mod tests {
             subject: "subject".into(),
             name: None,
             email: None,
+            picture: None,
             bound_at_ms: 1,
             refresh_token: Some("r1".into()),
             paused: false,
@@ -498,6 +515,32 @@ mod tests {
         };
         account.bind(record, expired).await.unwrap();
         account
+    }
+
+    #[tokio::test]
+    async fn signing_in_or_out_forgets_the_kept_relay_token_and_a_pause_keeps_it() {
+        use crate::edge::token::{StoredToken, load_token, store_token};
+        let dir = tempfile::tempdir().unwrap();
+        let endpoint = TokenEndpoint::start().await;
+        // Whole seconds: the file keeps milliseconds.
+        let fetched_at = SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000);
+        let kept = StoredToken {
+            token: "relay-1".into(),
+            expires_at: fetched_at + Duration::from_secs(3600),
+            fetched_at,
+            tier: crate::Tier::Pro,
+            host: "relay.example".into(),
+            port: 4433,
+        };
+        store_token(dir.path(), &kept).unwrap();
+        let account = signed_in(dir.path(), &endpoint).await;
+        assert_eq!(load_token(dir.path()).unwrap(), None, "signing in");
+
+        store_token(dir.path(), &kept).unwrap();
+        account.set_paused(true).await.unwrap();
+        assert_eq!(load_token(dir.path()).unwrap(), Some(kept), "pausing");
+        account.sign_out().await.unwrap();
+        assert_eq!(load_token(dir.path()).unwrap(), None, "signing out");
     }
 
     #[tokio::test]

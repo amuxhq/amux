@@ -1,12 +1,8 @@
 shell |  | agents | 0,62,402,778
-chat |  | asker | 0,62,402,778
-chat.row.boundary | Started |  | 18,132,366,34
-chat.row.prompt | Add a settings screen. |  | 18,166,366,40
-chat.row.question | Asking, 3 questions |  | 18,217,366,20
-chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
-chat.back | Back |  | 16,68,42,46
-chat.title | asker | asker | 51,72,156,38
-chat.more | More |  | 344,69,44,44
+chat |  | asker | 0,116,402,724
+chat.row.boundary | Started |  | 16,124,370,34
+chat.row.prompt | Add a settings screen. |  | 16,158,370,40
+chat.row.question | Asking, 3 questions |  | 16,210,370,20
 ask | 3 questions | open | 12,428,378,402
 ask.more | More |  | 338,436,44,44
 ask.step.0 |  | answered | 28,484,80,44
@@ -18,9 +14,10 @@ ask.review.1 |  | answered | 28,610,346,40
 ask.review.2 |  | skipped | 28,662,346,40
 ask.send | Send answers |  | 28,714,346,44
 ask.reply | Reply instead |  | 28,770,114,44
- | Back |  | 16,68,42,46
- | asker, /t/a/n/d/work · desk |  | 51,72,156,38
- | More |  | 344,69,44,44
+chat.more | More |  | 342,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
+chat.title | asker | asker | 96,66,160,36
  | 3 questions |  | 62,448,87,20
  | More |  | 338,436,44,44
  | Layout |  | 28,484,80,44
@@ -32,6 +29,9 @@ ask.reply | Reply instead |  | 28,770,114,44
  | Order · Which section should come first?, Skipped |  | 28,662,346,40
  | Send answers |  | 28,714,346,44
  | Reply instead |  | 28,782,114,20
- | Started |  | 18,132,366,34
- | Add a settings screen. |  | 18,166,366,40
- | Asking, 3 questions |  | 18,217,366,20
+ | Started |  | 16,124,370,34
+ | Add a settings screen. |  | 16,158,370,40
+ | Asking, 3 questions |  | 16,210,370,20
+ | Back |  | 20,66,56,36
+ | asker, /t/a/n/d/work · desk |  | 96,66,160,36
+ | More |  | 342,66,36,36

@@ -562,6 +562,57 @@ fn the_fleet_places_families_by_their_loudest_member_newest_first() {
 }
 
 #[test]
+fn a_fleet_filter_keeps_what_a_row_says_narrowed_to_a_state_or_a_host() {
+    let mut fleet = FleetState::new();
+    let mut asker = fleet_entry("a", "release-notes", Phase::NeedsYou, None, 30);
+    asker.cwd = "/src/notes".into();
+    fleet.update(listed(asker));
+    fleet.update(fleet_row("a", "flaky-e2e", Phase::Working, None, 20));
+    fleet.update(fleet_row("b", "sensor-logger", Phase::Idle, None, 10));
+    let names = |filter: FleetFilter| {
+        let view = fleet_view(&fleet, b"a", &no_sessions(), &HashSet::new(), &|agent| {
+            filter.keeps(&fleet, b"a", agent)
+        });
+        home(&view)
+            .into_iter()
+            .map(|(_, name, _)| name)
+            .collect::<Vec<_>>()
+    };
+    let words = |words: &str| FleetFilter {
+        words: words.into(),
+        only: None,
+    };
+    let only = |only: FleetOnly| FleetFilter {
+        words: String::new(),
+        only: Some(only),
+    };
+    assert_eq!(names(FleetFilter::default()).len(), 3);
+    // Words match a name or a folder, without regard to case.
+    assert_eq!(names(words("FLAKY")), ["flaky-e2e"]);
+    assert_eq!(names(words("/src/notes")), ["release-notes"]);
+    assert_eq!(
+        names(words("Claude")).len(),
+        3,
+        "the agent's kind is matched too"
+    );
+    assert!(names(words("nothing like this")).is_empty());
+    // A chip narrows to one state or one machine, and words narrow it more.
+    assert_eq!(names(only(FleetOnly::NeedsYou)), ["release-notes"]);
+    assert_eq!(names(only(FleetOnly::Working)), ["flaky-e2e"]);
+    assert_eq!(
+        names(only(FleetOnly::Host {
+            host: b"b".to_vec()
+        })),
+        ["sensor-logger"]
+    );
+    let both = FleetFilter {
+        words: "notes".into(),
+        only: Some(FleetOnly::Working),
+    };
+    assert!(names(both).is_empty());
+}
+
+#[test]
 fn the_review_document_parses_files_hunks_and_places_comments() {
     let patch = "diff --git a/src/a.rs b/src/a.rs\nindex 1..2 100644\n--- a/src/a.rs\n+++ b/src/a.rs\n@@ -10,3 +10,4 @@ fn a()\n keep\n-old\n+new\n+more\n keep2\ndiff --git a/new.txt b/new.txt\nnew file mode 100644\n--- /dev/null\n+++ b/new.txt\n@@ -0,0 +1 @@\n+hello\ndiff --git a/x b/y\nsimilarity index 100%\nrename from x\nrename to y\n";
     let comments = vec![

@@ -18,6 +18,7 @@ core-ring = { workspace = true }
 curve25519-dalek = { workspace = true }
 daemon-core = { workspace = true }
 relay-core = { workspace = true }
+path-core = { workspace = true }
 futures-util = { workspace = true }
 gethostname = { workspace = true }
 http-body-util = { workspace = true }
@@ -37,7 +38,6 @@ tokio-rustls = { workspace = true }
 tokio-util = { workspace = true }
 tower = { workspace = true }
 webpki-roots = { workspace = true }
-yamux = { workspace = true }
 # The dump path's redactor: the one place the daemon decodes a body.
 interpret = { workspace = true }
 journal = { workspace = true }
@@ -80,3 +80,4 @@ journal = { workspace = true, features = ["synthetic"] }
 patience = { workspace = true }
 provider-fakes = { workspace = true }
 tempfile = { workspace = true }
+tracing-subscriber = { workspace = true }

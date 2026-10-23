@@ -50,7 +50,7 @@ SCALE = 3
 VOLATILE = ".volatile"
 # This phone's own name and key, which change with the leased simulator and
 # every fresh install.
-OWN_IDENTITY = ("hosts.fact.identity", "you.identity")
+OWN_IDENTITY = ("you.name", "you.fingerprint")
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
@@ -59,16 +59,21 @@ UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 # Durations measured on the run's own clock, and countdowns.
 DURATION = re.compile(r"\b\d+m \d+s\b|\b\d+(?:\.\d+)?(?:ms|s|m|h)\b")
 KEY = re.compile(r"\b[0-9a-f]{4}(?: [0-9a-f]{4}){15}\b|\b[0-9a-f]{4}…[0-9a-f]{4}\b")
+# The leased simulator's name, which the phone shows as its own: which of the
+# pool's devices a run is given is not the run's to choose.
+DEVICE = re.compile(r"\bamux-[a-z]+-\d+\b")
 # When a usage limit resets: a time of day on the run's wall clock, or a
 # weekday.
 RESETS = re.compile(r"\bresets (?:\d{1,2}:\d{2}(?:\s?[AP]M)?|[A-Z][a-z]{2})")
 
 
 def normalize(text: str) -> str:
-    """Ages, keys, durations, reset times and the served net's scratch
-    suffixes, masked as the terminal driver masks ages and scratch paths."""
+    """Ages, keys, the phone's own name, durations, reset times and the
+    served net's scratch suffixes, masked as the terminal driver masks ages
+    and scratch paths."""
     text = AGE.sub("<age>", text)
     text = KEY.sub("<key>", text)
+    text = DEVICE.sub("<device>", text)
     text = DURATION.sub("<t>", text)
     text = RESETS.sub("resets <time>", text)
     return SCRATCH.sub(lambda match: match.group(1) + "x" * len(match.group(2)), text)
@@ -118,7 +123,7 @@ def is_volatile(identifier: str, named: tuple[str, ...] = ()) -> bool:
 # somebody has been to is kept and still reports its elements while another
 # tab, or a page pushed over it, is on screen; one never reached for is not
 # built and reports nothing.
-TAB_ROOTS = {"agents": "home.", "hosts": "hosts.", "you": "you."}
+TAB_ROOTS = {"agents": "home.", "hosts": "hosts."}
 
 
 # Pages pushed over a tab, which hide the tab's root beneath them.
@@ -143,6 +148,13 @@ def on_screen(identifier: str, screen: str | None) -> bool:
     return root is None or screen is None or TAB_ROOTS.get(screen) == root
 
 
+# How far either side of a volatile surface its mask reaches, at least: its
+# words are as wide as they are in this run, and an age that read "39s" when
+# the golden was taken is wider than one reading "1m" now. The reach grows
+# with the line's height, as a character's width does with the text size.
+VOLATILE_SLACK = 8
+
+
 def volatile_masks(
     elements: list[dict], named: tuple[str, ...] = (), scale: int = SCALE, screen: str | None = None
 ) -> list[str]:
@@ -155,8 +167,10 @@ def volatile_masks(
         if not is_volatile(element["identifier"], named) or not on_screen(element["identifier"], screen):
             continue
         frame = element["frame"]
-        x, y = max(0, int(frame["x"] * scale)), max(0, int(frame["y"] * scale))
-        width = int((frame["x"] + frame["width"]) * scale + 0.999) - x
+        slack = max(VOLATILE_SLACK, frame["height"])
+        x = max(0, int((frame["x"] - slack) * scale))
+        y = max(0, int(frame["y"] * scale))
+        width = int((frame["x"] + frame["width"] + slack) * scale + 0.999) - x
         height = int((frame["y"] + frame["height"]) * scale + 0.999) - y
         masks.append(f"{x},{y},{width},{height}")
     return masks
@@ -214,6 +228,55 @@ def geometry(elements: list[dict], named: tuple[str, ...] = (), ids: dict[str, s
         state = "" if element.get("enabled", True) else " (disabled)"
         lines.append(named_ids(f"{element['identifier']} | {words} | {where}{state}", ids))
     return "\n".join(lines) + "\n"
+
+
+# Words `normalize` masked, whose drawn width still follows what they said.
+MASKED = re.compile(r"<(?:age|key|device|t|time)>")
+# How far a line with masked words may move sideways or change width: "Worked
+# 9s" is narrower than "Worked 12s", and trailing text moves its left edge.
+MASKED_SLACK = 16
+
+
+def same_line(approved: str, drawn: str) -> bool:
+    if approved == drawn:
+        return True
+    if not MASKED.search(approved):
+        return False
+    approved_words, _, approved_where = approved.rpartition(" | ")
+    drawn_words, _, drawn_where = drawn.rpartition(" | ")
+    approved_frame, _, approved_state = approved_where.partition(" ")
+    drawn_frame, _, drawn_state = drawn_where.partition(" ")
+    if (approved_words, approved_state) != (drawn_words, drawn_state):
+        return False
+    try:
+        x, y, width, height = (int(value) for value in approved_frame.split(","))
+        x2, y2, width2, height2 = (int(value) for value in drawn_frame.split(","))
+    except ValueError:
+        return False
+    return (y, height) == (y2, height2) and abs(x - x2) <= MASKED_SLACK and abs(width - width2) <= MASKED_SLACK
+
+
+def same_geometry(approved: str, drawn: str) -> bool:
+    """Whether two geometry records hold the same lines, in any order.
+
+    Each line carries its own frame, so the order says nothing about where
+    anything is drawn; it is the order SwiftUI reduced the screen's reports
+    in and the system walked its accessibility tree, and both move between
+    runs of one build. An exact line is matched before a near one, so a near
+    match never takes the line another needed exactly."""
+    left = drawn.splitlines()
+    near = []
+    for line in approved.splitlines():
+        if line in left:
+            left.remove(line)
+        else:
+            near.append(line)
+    for line in near:
+        match = next((index for index, candidate in enumerate(left) if same_line(line, candidate)), None)
+        if match is None:
+            return False
+        del left[match]
+    return not left
 
 
 def by_name(elements: list[dict]) -> dict[str, dict]:
@@ -391,13 +454,19 @@ class PhoneJourney:
 
     # --- the phone --------------------------------------------------------
 
-    def launch(self, *extra: str, found: list[str] | None = None, geometry: bool = True) -> None:
+    def launch(
+        self,
+        *extra: str,
+        found: list[str] | None = None,
+        geometry: bool = True,
+        relay_quic: str | None = None,
+    ) -> None:
         """The debug app, installed fresh so no earlier run's identity or
         trust is on the phone, launched against this net."""
         simctl("terminate", self.udid, BUNDLE_ID, timeout=60) if self._running() else None
         subprocess.run(["xcrun", "simctl", "uninstall", self.udid, BUNDLE_ID], capture_output=True, timeout=120)
         simctl("install", self.udid, str(self.build), timeout=300)
-        self.relaunch(*extra, found=found, geometry=geometry)
+        self.relaunch(*extra, found=found, geometry=geometry, relay_quic=relay_quic)
 
     def relaunch(
         self,
@@ -410,7 +479,15 @@ class PhoneJourney:
         browser reports the machines named in `found`, every one of the net's
         when nothing is said. Without `geometry` the app reports what is
         drawn but not where, which a measurement wants: see `geometry()`. A
-        `relay_quic` address is dialled in the relay's place, QUIC only."""
+        `relay_quic` address is dialled in the relay's place, QUIC only.
+        When the topology puts any host behind a router, on a network of its
+        own, the phone dials the relay through the net's gate unless told
+        otherwise: the relay then sees the phone at the gate's socket, which
+        takes datagrams from the relay alone, so no host punches to it."""
+        if relay_quic is None and any(host.get("router") for host in self.topology.get("hosts", [])):
+            reply = self.request({"RelayGate": {}})
+            assert isinstance(reply, dict)
+            relay_quic = reply["addr"]
         scope = self.topology.get("scope", "")
         if found is None:
             found = [host["host_id"] for host in self.ready["hosts"]]
@@ -504,8 +581,24 @@ class PhoneJourney:
     def wait_for(self, *identifiers: str, timeout: float = 60.0) -> dict[str, dict]:
         return self.wait(lambda drawn: all(name in drawn for name in identifiers), repr(identifiers), timeout)
 
-    def tap(self, identifier: str) -> None:
-        self.app({"kind": "tap", "identifier": identifier})
+    def tap(self, identifier: str, patience: float = 10.0) -> None:
+        """A tap as a person makes one, as `ctl phone tap` does: on a control
+        that is there and enabled, and again while the app has not yet drawn
+        a just-enabled control able to take it."""
+        self.wait(
+            lambda drawn: drawn.get(identifier, {}).get("enabled", False) is not False,
+            f"{identifier} there to tap",
+            timeout=patience,
+        )
+        deadline = time.monotonic() + patience
+        while True:
+            try:
+                self.app({"kind": "tap", "identifier": identifier})
+                break
+            except DoorError as error:
+                if " did not activate" not in str(error) or time.monotonic() > deadline:
+                    raise
+                self.app({"kind": "settle"})
         self.actions.append(f"tap {identifier}")
 
     def geometry(self, on: bool) -> None:
@@ -523,6 +616,26 @@ class PhoneJourney:
         )
         self.app({"kind": "choose", "label": label})
         self.actions.append(f"choose {label!r}")
+
+    def search(self, text: str) -> None:
+        """The screen's search field made to hold `text`, as a person pulls
+        it into view, clears it and types."""
+        self.app({"kind": "search", "text": text})
+        self.actions.append(f"search {text!r}")
+
+    def tab(self, title: str) -> None:
+        """The tab reading `title` in the system's tab bar, whose tabs carry
+        their titles and no names of their own."""
+        self.choose(title)
+
+    def settings(self) -> None:
+        """Settings, as a person reaches them: the account disc on the agent
+        list, then Settings in its menu. They open as a sheet over the tabs."""
+        self.tab("Agents")
+        self.wait_for("home.accounts")
+        self.tap("home.accounts")
+        self.choose("Settings")
+        self.wait_for("you")
 
     def perform(self, identifier: str, action: str) -> None:
         """An element's named accessibility action, as VoiceOver offers it."""
@@ -566,7 +679,12 @@ class PhoneJourney:
         alone, so a masked region never churns."""
         self.app({"kind": "settle"})
         state = self.query()
-        elements = uncovered(state["elements"])
+        # A tab not on screen still reports what it holds, and its bar's items
+        # come and go from that report while it is hidden.
+        elements = [
+            element for element in uncovered(state["elements"])
+            if on_screen(element["identifier"], state.get("screen"))
+        ]
         actual = self.output / "actual"
         actual.mkdir(parents=True, exist_ok=True)
         png = actual / f"{label}.png"
@@ -610,7 +728,7 @@ class PhoneJourney:
         if not expected.exists() or not golden_png.exists():
             return f"missing golden {golden_png}; review a rewritten one"
         approved = expected.read_text()
-        if approved != drawn:
+        if not same_geometry(approved, drawn):
             diff = "\n".join(
                 difflib.unified_diff(
                     approved.splitlines(), drawn.splitlines(), str(expected), f"actual/{expected.name}", lineterm=""
@@ -660,6 +778,11 @@ class PhoneJourney:
         self._write("PASS\n" + "".join(f"- {item}\n" for item in assertions))
 
     def fail(self, error: BaseException) -> None:
+        # The display as the story stopped, beside what it says it drew.
+        try:
+            simctl("io", self.udid, "screenshot", "--type=png", str(self.output / "failed.png"))
+        except Exception as missed:  # the failure itself matters more
+            self.actions.append(f"no picture of the failure: {missed}")
         self._write(f"FAIL\n- {type(error).__name__}: {error}\n")
 
     def _write(self, result: str) -> None:

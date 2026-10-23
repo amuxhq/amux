@@ -493,6 +493,14 @@
       "shows": "A whole chat: rows, composer and strip."
     },
     {
+      "id": "chat.working",
+      "shows": "A turn under way: its run's newest three steps under how many came before, the newest running."
+    },
+    {
+      "id": "chat.run-open",
+      "shows": "A finished run opened: the line that folds it again, then every step on its own row."
+    },
+    {
       "id": "chat.conversation-large-text",
       "shows": "A chat at accessibility3: the header pill held at the largest ordinary size, and the step rows stacking verb, subject and counts."
     },
@@ -558,7 +566,7 @@
     },
     {
       "id": "chat.stop-cuts",
-      "shows": "Stopping a working agent with background jobs and a child: the confirm names the turn, the jobs and the sub-agents the stop cuts."
+      "shows": "Stopping a working agent with background jobs and a child: the confirm names the turn, the jobs and the subagents the stop cuts."
     },
     {
       "id": "chat.delete",
@@ -566,7 +574,7 @@
     },
     {
       "id": "chat.delete-family",
-      "shows": "Deleting an exited agent that started others: the card counts the child agents deleted with it."
+      "shows": "Deleting an exited agent that started others: the card counts the subagents deleted with it."
     },
     {
       "id": "chat.settings",
@@ -589,8 +597,188 @@
       "shows": "The review page with its files folded."
     },
     {
-      "id": "review.files",
-      "shows": "The list of files a review covers."
+      "id": "review.editing",
+      "shows": "Editing a comment already written, with the way to delete it."
+    },
+    {
+      "id": "hosts.list",
+      "shows": "Every paired machine in one list, reachable first, each saying how it is reached, with one found and not paired offered above."
+    },
+    {
+      "id": "hosts.empty",
+      "shows": "No machine paired or found."
+    },
+    {
+      "id": "host.page",
+      "shows": "One machine's page: how it is reached, what it runs, its addresses and key."
+    },
+    {
+      "id": "host.revoked",
+      "shows": "A machine that no longer trusts this phone, with Pair Again."
+    },
+    {
+      "id": "pair.code-empty",
+      "shows": "Pairing with the laptop found on this network: an empty keypad and where to get the code."
+    },
+    {
+      "id": "pair.code-typing",
+      "shows": "Three digits of the code typed."
+    },
+    {
+      "id": "pair.code-checking",
+      "shows": "All six digits typed and the code being checked."
+    },
+    {
+      "id": "pair.code-refused",
+      "shows": "A code that did not work, with the keypad ready for another."
+    },
+    {
+      "id": "pair.code-subscribe",
+      "shows": "A code that reached a machine only the relay can carry, on the free plan."
+    },
+    {
+      "id": "pair.confirm",
+      "shows": "The machine's own name and key, waiting for Pair or Not Now."
+    },
+    {
+      "id": "pair.trusted",
+      "shows": "The pairing done."
+    },
+    {
+      "id": "pair.link-checking",
+      "shows": "An invitation link being checked."
+    },
+    {
+      "id": "pair.link-refused",
+      "shows": "An invitation link that did not work."
+    },
+    {
+      "id": "pair.needs-account",
+      "shows": "An invitation naming a machine only the relay can reach, on a phone with no account."
+    },
+    {
+      "id": "settings.two-accounts",
+      "shows": "Settings with two accounts, the selected one's relay and actions, this phone and help."
+    },
+    {
+      "id": "settings.signed-out",
+      "shows": "Settings on a phone with no account signed in."
+    },
+    {
+      "id": "settings.delete",
+      "shows": "Asking before an account is deleted, with the address typed to confirm."
+    },
+    {
+      "id": "settings.sign-in",
+      "shows": "Signing in: what an account adds, and continuing on amux.sh."
+    },
+    {
+      "id": "settings.sign-in-waiting",
+      "shows": "Signing in while amux.sh is open."
+    },
+    {
+      "id": "settings.sign-in-failed",
+      "shows": "A sign-in that did not finish, and why."
+    },
+    {
+      "id": "settings.sign-in-mismatched",
+      "shows": "Signing back in as a different account than the one asked for."
+    },
+    {
+      "id": "settings.paywall",
+      "shows": "Subscribing: the plans, the one chosen, and restoring a purchase."
+    },
+    {
+      "id": "settings.paywall-confirming",
+      "shows": "A purchase waiting for amux.sh to confirm it."
+    },
+    {
+      "id": "settings.paywall-unconfirmed",
+      "shows": "A purchase amux.sh could not be reached to confirm."
+    },
+    {
+      "id": "settings.paywall-subscribed",
+      "shows": "An account subscribed through the App Store."
+    },
+    {
+      "id": "chat.opening",
+      "shows": "A chat on its way, before its first frame."
+    },
+    {
+      "id": "chat.not-opened",
+      "shows": "A chat that could not be opened, and why."
+    },
+    {
+      "id": "review.reading",
+      "shows": "The review page while the host reads the changes."
+    },
+    {
+      "id": "review.no-changes",
+      "shows": "The review page for an agent with nothing changed."
+    },
+    {
+      "id": "review.not-read",
+      "shows": "The review page when the host could not be asked for the changes."
+    },
+    {
+      "id": "fleet.no-matches",
+      "shows": "The agent list filtered down to nothing."
+    },
+    {
+      "id": "hosts.network-refused",
+      "shows": "Hosts with nothing found because this phone was refused the local network."
+    },
+    {
+      "id": "new-agent.refused",
+      "shows": "A host refusing to start the agent, and why."
+    },
+    {
+      "id": "new-agent.no-repositories",
+      "shows": "Choosing a directory on a host with no repositories."
+    },
+    {
+      "id": "new-agent.unlisted",
+      "shows": "Choosing a directory on a host that did not list its directories."
+    },
+    {
+      "id": "settings.delete-blocked",
+      "shows": "Deleting an account that an App Store subscription still renews."
+    },
+    {
+      "id": "settings.delete-failed",
+      "shows": "A deletion amux.sh did not answer."
+    },
+    {
+      "id": "report.ready",
+      "shows": "A report over a frozen agent list, nothing written yet."
+    },
+    {
+      "id": "report.marked",
+      "shows": "Two boxes drawn on the frozen frame, one with its note, and a note about the whole thing."
+    },
+    {
+      "id": "report.signed-out",
+      "shows": "A report with nobody signed in to send it as, Send disabled."
+    },
+    {
+      "id": "report.sending",
+      "shows": "A report on its way, the breathing mark where Send was."
+    },
+    {
+      "id": "report.failed",
+      "shows": "A report amux.sh did not answer, its reason in red and Retry in Send's place."
+    },
+    {
+      "id": "report.sent",
+      "shows": "A sent report and the reference to quote."
+    },
+    {
+      "id": "new-agent.claude",
+      "shows": "Starting a Claude agent: the host, a recent directory, the name, the model and permission, and a new worktree."
+    },
+    {
+      "id": "new-agent.browsing",
+      "shows": "Choosing the directory a new agent starts in: recent ones, the host's repositories, and a typed path."
     },
     {
       "id": "new-agent.codex",
@@ -603,6 +791,74 @@
     {
       "id": "new-agent.large-text",
       "shows": "New Agent at accessibility3: the back link above the title, every field's value under its label, and the last row clear of the Start bar."
+    },
+    {
+      "id": "fleet.busy",
+      "shows": "The agent list with agents in every state on four machines: two that need you, three working (one heading a family), two idle, and two stopped agents folded away."
+    },
+    {
+      "id": "fleet.stopped-open",
+      "shows": "The same list with the stopped agents unfolded."
+    },
+    {
+      "id": "fleet.away",
+      "shows": "The same list with one machine away, so its agents read as out of reach."
+    },
+    {
+      "id": "fleet.no-agents",
+      "shows": "A phone paired with a machine that runs no agents yet."
+    },
+    {
+      "id": "fleet.first-run",
+      "shows": "A phone paired with nothing, with one machine found on its network."
+    },
+    {
+      "id": "fleet.first-run-two-found",
+      "shows": "Nothing paired yet, with two machines found on this network."
+    },
+    {
+      "id": "fleet.first-run-looking",
+      "shows": "Nothing paired and nothing found yet: still looking, and the two steps on the computer."
+    },
+    {
+      "id": "fleet.first-run-refused",
+      "shows": "Nothing paired on a phone refused the local network."
+    },
+    {
+      "id": "fleet.first-run-signed-out",
+      "shows": "Nothing paired on a phone with no account, offering to sign in under pairing."
+    },
+    {
+      "id": "fleet.first-run-signed-out-found",
+      "shows": "Nothing paired on a phone with no account, with one machine found on its network."
+    },
+    {
+      "id": "fleet.busy-large-text",
+      "shows": "The busy list at the largest accessibility text size."
+    },
+    {
+      "id": "fleet.two-accounts",
+      "shows": "The busy list on a phone with two accounts: the account disc, the + button's twin, top left."
+    },
+    {
+      "id": "fleet.picture",
+      "shows": "The busy list for an account with a profile picture: the picture fills the account disc."
+    },
+    {
+      "id": "fleet.signed-out",
+      "shows": "The busy list on a phone with no account: a hollow person where the account disc would be."
+    },
+    {
+      "id": "fleet.chat-open",
+      "shows": "The whole app with an agent's chat pushed over the list: no tab bar under the composer."
+    },
+    {
+      "id": "fleet.chat-exited",
+      "shows": "The whole app with a chat open on an agent that exited while its daemon was away: the long exit reason truncates in the title pill, and the bar keeps the way back."
+    },
+    {
+      "id": "fleet.settings-open",
+      "shows": "The whole app with the settings sheet raised from the account disc."
     }
   ],
   "screens": [

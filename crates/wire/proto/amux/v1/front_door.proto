@@ -88,6 +88,9 @@ message ProfileInfo {
   // The bound account's subject at its service, which stays after a
   // sign-out; empty when unbound. What tells two profiles' accounts apart.
   string account_subject = 12;
+  // Where the bound account's profile picture is, as its service said at
+  // sign-in; empty when it has none or the profile is unbound.
+  string account_picture = 13;
 }
 
 message ListProfilesResponse { repeated ProfileInfo profiles = 1; }

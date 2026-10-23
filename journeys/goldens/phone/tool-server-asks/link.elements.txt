@@ -1,23 +1,19 @@
 shell |  | agents | 0,62,402,778
-chat |  | linker | 0,62,402,778
-chat.row.boundary | Started |  | 18,132,366,34
-chat.row.prompt | Check the relay's error rate. |  | 18,166,366,40
-chat.row.tool | Using, grafana · ask, allowed |  | 18,217,366,20
-chat.row.meta.volatile | <volatile>
-chat.row.link | Link from, grafana | folded | 18,235,366,44
-chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
-chat.back | Back |  | 16,68,42,46
-chat.title | linker | linker | 51,72,156,38
-chat.more | More |  | 344,69,44,44
+chat |  | linker | 0,116,402,724
+chat.row.boundary | Started |  | 16,124,370,34
+chat.row.prompt | Check the relay's error rate. |  | 16,158,370,40
+chat.row.run | 1 call | folded | 16,198,370,44
+chat.row.link | Link from, grafana | folded | 16,228,370,44
 ask | grafana wants you to open a link | open | 12,561,378,269
 ask.more | More |  | 338,569,44,44
 ask.subject | https://grafana.example.com/login |  | 28,666,346,40
 ask.open | Open link |  | 28,718,346,44
 ask.choice.0 | I’m done |  | 28,770,169,44
 ask.choice.1 | Decline |  | 205,770,169,44
- | Back |  | 16,68,42,46
- | linker, /t/a/n/d/work · desk |  | 51,72,156,38
- | More |  | 344,69,44,44
+chat.more | More |  | 342,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
+chat.title | linker | linker | 96,66,160,36
  | grafana wants you to open a link |  | 62,581,239,20
  | More |  | 338,569,44,44
  | Grafana needs you to sign in before I can read its dashboards. |  | 28,617,332,37
@@ -25,7 +21,10 @@ ask.choice.1 | Decline |  | 205,770,169,44
  | Open link |  | 28,718,346,44
  | I’m done |  | 28,770,169,44
  | Decline |  | 205,770,169,44
- | Started |  | 18,132,366,34
- | Check the relay's error rate. |  | 18,166,366,40
- | Using, grafana · ask, allowed |  | 18,217,366,30
- | Link from, grafana |  | 18,235,366,44
+ | Started |  | 16,124,370,34
+ | Check the relay's error rate. |  | 16,158,370,40
+ | 1 call |  | 16,198,370,44
+ | Link from, grafana |  | 16,228,370,44
+ | Back |  | 20,66,56,36
+ | linker, /t/a/n/d/work · desk |  | 96,66,160,36
+ | More |  | 342,66,36,36

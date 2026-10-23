@@ -1,62 +1,56 @@
 shell |  | you | 0,62,402,778
-home |  | signed-out | 0,62,402,778
-home.newAgent | New Agent |  | 345,67,44,44
-home.title | Agents, switch account | Agents | 18,105,165,68
-home.subtitle |  | 2 need you · 4 agents | 18,172,186,81
-home.row.<dialog> | dialog, Needs you, Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent., desk, /tmp/amux-phone-journey/net/desk/work, <age> | needs-you | 18,316,366,236
-home.row.<dialog>.age.volatile | <volatile>
-home.row.<dialog>.second |  |  | 31,376,325,78
-home.row.<dialog>.detail.volatile | <volatile>
-home.row.<asker> | asker, Needs you, Which changes should the release notes keep?, desk, /tmp/amux-phone-journey/net/desk/work, <age> | needs-you | 18,552,366,236
-home.row.<asker>.age.volatile | <volatile>
-home.row.<asker>.second |  |  | 31,612,340,78
-home.row.<asker>.detail.volatile | <volatile>
-home.row.<keeper> | keeper, Idle, The recovery state is safely stored., desk, /tmp/amux-phone-journey/net/desk/work, <age>, unread | idle | 18,855,366,236
-home.row.<keeper>.age.volatile | <volatile>
-home.row.<keeper>.second |  |  | 31,915,308,78
-home.row.<keeper>.detail.volatile | <volatile>
-hosts |  | 1 reachable | 0,62,402,778
-hosts.title |  | Hosts | 18,72,118,54
-hosts.subtitle |  | 1 reachable | 18,127,205,40
-hosts.row.<desk> | desk, macOS, reachable on this network | on-this-network | 18,230,366,108
-hosts.fact.identity | <volatile>
-hosts.fact.paired-devices | Paired Devices, 1 | 1 | 18,556,366,114
-hosts.caption.devices |  |  | 18,678,347,78
-you |  | none | 0,62,402,778
-you.title |  | You | 18,62,78,62
-you.add | Add Account |  | 18,189,366,69
-you.signIn | Sign In |  | 18,276,366,65
-you.signIn.caption |  |  | 18,349,329,78
-you.appearance |  | system | 18,492,366,234
-you.appearance.light | Light | not chosen | 32,543,113,70
-you.appearance.dark | Dark | not chosen | 32,600,95,70
-you.appearance.system | System | chosen | 32,656,132,70
-you.shareUsage |  | on | 18,727,366,183
-you.identity | <volatile>
-you.support | Contact Support |  | 18,1087,366,69
-you.report | Report a Problem |  | 18,1156,366,69
-you.dump | Export Diagnostics |  | 18,1226,366,112
-you.help.caption |  |  | 18,1345,366,161
-tab.agents | Agents | not selected | 50,777,99,57
-tab.hosts | Hosts | not selected | 151,777,99,57
-tab.you | You | selected | 253,777,99,57
- | Agents |  | 50,777,99,57
- | Hosts |  | 151,777,99,57
- | You |  | 253,777,99,57
- | You |  | 18,70,78,54
- | ACCOUNTS |  | 20,142,147,39
- | Add Account |  | 18,189,366,69
- | Sign In |  | 18,276,366,65
- | Sign in to reach your agents from anywhere |  | 18,349,329,78
- | THIS PHONE |  | 20,445,184,39
- | Appearance |  | 32,501,197,43
- | Light |  | 32,543,113,70
- | Dark |  | 32,600,95,70
- | System |  | 32,656,132,70
- | Share Usage, Counts and choices, never what you type | 1 | 32,736,338,165
- | Identity, <key> |  | 18,910,366,111
- | HELP |  | 20,1040,74,39
- | Contact Support |  | 18,1087,366,69
- | Report a Problem |  | 18,1156,366,69
- | Export Diagnostics |  | 18,1226,366,112
- | A report includes a screenshot and this phone’s diagnostic dump. |  | 22,1345,358,161
+home |  | signed-out | 0,116,402,675
+hosts |  | 1 reachable | 0,221,402,570
+you |  | none | 0,132,402,708
+you.signIn | Sign In |  | 16,176,370,137
+you.appearance |  | system | 16,374,370,121
+you.appearance.light | Light | not chosen | 32,427,89,66
+you.appearance.dark | Dark | not chosen | 121,427,84,66
+you.appearance.system | System | chosen | 204,427,120,66
+you.shareUsage |  | on | 16,496,370,133
+you.name | <volatile>
+you.fingerprint | <volatile>
+you.support | Contact Support |  | 16,1032,370,69
+you.report | Report a Problem |  | 16,1102,370,69
+you.dump | Export Diagnostics |  | 16,1171,370,112
+you.help.caption |  |  | 16,1291,366,106
+you.close | Close |  | 326,82,56,36
+ | All |  | 16,114,60,44
+ | Needs you, 2 |  | 84,114,191,44
+ | Working |  | 283,114,140,44
+ | dialog, Needs you, Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,160,370,150
+ | asker, Needs you, Which changes should the release notes keep?, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,310,370,150
+ | keeper, Idle, The recovery state is safely stored., desk, /tmp/amux-phone-journey/net/desk/work, <age>, unread |  | 16,460,370,150
+ | planner, Idle, The pairing errors all come from one table in the wire crate, so they can share one string., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,611,370,150
+ | Switch account |  | 21,66,42,36
+ | Agents |  | 167,65,68,25
+ | New Agent |  | 338,62,44,44
+ | 2 need you |  | 171,89,60,14
+ | Search |  | 16,117,370,0
+ | Agents |  | 111,795,94,54
+ | Agents |  | 140,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 229,830,29,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 230,830,29,12
+ | ACCOUNTS |  | 18,132,164,36
+ | Sign In, Reach your agents from anywhere |  | 16,176,370,137
+ | THIS PHONE |  | 18,331,175,36
+ | Appearance |  | 30,383,197,43
+ | Light |  | 32,427,89,66
+ | Dark |  | 121,427,84,66
+ | System |  | 204,427,120,66
+ | Share Usage, Counts and choices, never what you type | 1 | 30,504,342,115
+ | Name, <device> |  | 16,629,370,114
+ | Fingerprint, <key> |  | 30,756,342,203
+ | HELP |  | 18,988,76,36
+ | Contact Support |  | 16,1032,370,69
+ | Report a Problem |  | 16,1102,370,69
+ | Export Diagnostics |  | 16,1171,370,112
+ | A report includes a screenshot and this phone’s diagnostic dump. |  | 30,1291,338,106
+ | Settings |  | 161,88,80,25
+ | Close |  | 326,82,56,36
+ | Agents | selected | 111,795,94,54
+ | Hosts |  | 197,795,94,54

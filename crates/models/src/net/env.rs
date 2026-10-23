@@ -1678,7 +1678,15 @@ impl Transition<'_> {
             let kind = CarrierKind::Direct;
             self.push(
                 Lane::Link(near, far),
-                host(near, Input::LinkUp { link, peer, kind }),
+                host(
+                    near,
+                    Input::LinkUp {
+                        link,
+                        peer,
+                        kind,
+                        resumed: None,
+                    },
+                ),
             );
         }
     }
@@ -2037,7 +2045,10 @@ impl Transition<'_> {
                 | Output::Shell(_)
                 | Output::Pair { .. }
                 | Output::PairPending { .. }
-                | Output::PairEnded { .. } => {}
+                | Output::PairEnded { .. }
+                | Output::RefuseResumed { .. }
+                | Output::PeerAddresses { .. }
+                | Output::ObservedAddress { .. } => {}
             }
         }
     }

@@ -19,14 +19,17 @@ public struct AccountView: Codable, Hashable, Sendable {
     public var binding: AccountBinding
     public var email: String
     public var name: String
+    /// The account's profile picture URL; empty when it has none.
+    public var picture: String
     public var relay: RelayLink
     /// Whether the account buys the relay, as the relay link last heard.
     public var pro: Bool?
 
-    public init(binding: AccountBinding, email: String, name: String, relay: RelayLink, pro: Bool?) {
+    public init(binding: AccountBinding, email: String, name: String, picture: String, relay: RelayLink, pro: Bool?) {
         self.binding = binding
         self.email = email
         self.name = name
+        self.picture = picture
         self.relay = relay
         self.pro = pro
     }
@@ -35,6 +38,7 @@ public struct AccountView: Codable, Hashable, Sendable {
         case binding
         case email
         case name
+        case picture
         case relay
         case pro
     }
@@ -1143,7 +1147,7 @@ public enum BackgroundKind: String, Codable, Hashable, Sendable, CaseIterable {
     case unspecified = "Unspecified"
     /// A shell command.
     case shell = "Shell"
-    /// A sub-agent the provider runs itself.
+    /// A subagent the provider runs itself.
     case subagent = "Subagent"
     /// A watch the provider keeps on something.
     case monitor = "Monitor"
@@ -2997,6 +3001,83 @@ public struct FleetChanges: Codable, Hashable, Sendable {
     }
 }
 
+/// Which agents home lists: those whose row says the words, narrowed to
+/// one state or one host. The default lists every agent.
+public struct FleetFilter: Codable, Hashable, Sendable {
+    /// Matched without regard to case against what a row says.
+    public var words: String
+    public var only: FleetOnly?
+
+    public init(words: String, only: FleetOnly?) {
+        self.words = words
+        self.only = only
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case words
+        case only
+    }
+}
+
+public enum FleetOnly: Codable, Hashable, Sendable {
+    case needsYou
+    /// Working or starting.
+    case working
+    case host(host: [UInt8])
+
+    private enum Tag: String, CodingKey {
+        case host = "Host"
+    }
+
+    private enum HostKeys: String, CodingKey {
+        case host
+    }
+
+    public init(from decoder: any Decoder) throws {
+        if let _single = try? decoder.singleValueContainer(),
+           let _name = try? _single.decode(String.self)
+        {
+            switch _name {
+            case "NeedsYou": self = .needsYou
+            case "Working": self = .working
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: _single, debugDescription: "no FleetOnly is named \(_name)")
+            }
+            return
+        }
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a FleetOnly names exactly one variant"))
+        }
+        switch _tag {
+        case .host:
+            let _fields = try _container.nestedContainer(
+                keyedBy: HostKeys.self, forKey: .host)
+            self = .host(
+                host: try _fields.decode([UInt8].self, forKey: .host))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .needsYou:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("NeedsYou")
+        case .working:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Working")
+        case .host(let host):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: HostKeys.self, forKey: .host)
+            try _fields.encode(host, forKey: .host)
+        }
+    }
+}
+
 public struct FleetRow: Codable, Hashable, Sendable {
     public var card: FleetCard
     /// Zero for a family's head.
@@ -3586,7 +3667,7 @@ public struct JobRow: Codable, Hashable, Sendable {
     public var command: String
     public var startedAtMs: Int64
     /// What the job is, so a client can tell a command from the provider's
-    /// own sub-agent or monitor, whose `command` is a description.
+    /// own subagent or monitor, whose `command` is a description.
     public var kind: BackgroundKind
     /// The step that started it, when the provider said which.
     public var step: String?

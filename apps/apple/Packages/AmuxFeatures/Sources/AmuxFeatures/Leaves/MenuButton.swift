@@ -5,10 +5,14 @@ import UIKit
 /// One row of a ``MenuButton``'s menu.
 struct MenuItem {
     let title: String
-    let systemImage: String
+    var systemImage: String?
+    /// A second line under the title.
+    var subtitle: String?
     var destructive = false
     /// The current one of a set of choices, ticked.
     var chosen = false
+    /// Listed but not choosable, such as a host that cannot be reached.
+    var disabled = false
     let action: () -> Void
 }
 
@@ -108,11 +112,14 @@ private struct MenuTrigger: UIViewRepresentable {
         button.accessibilityLabel = name
         button.accessibilityIdentifier = identifier
         button.menu = UIMenu(children: items.map { item in
-            UIAction(
-                title: item.title, image: UIImage(systemName: item.systemImage),
-                attributes: item.destructive ? .destructive : [],
+            let action = UIAction(
+                title: item.title, image: item.systemImage.flatMap { UIImage(systemName: $0) },
+                attributes: UIMenuElement.Attributes(item.destructive ? [.destructive] : [])
+                    .union(item.disabled ? [.disabled] : []),
                 state: item.chosen ? .on : .off
             ) { _ in item.action() }
+            action.subtitle = item.subtitle
+            return action
         })
     }
 }

@@ -19,7 +19,7 @@ final class EntitlementWatchTests: XCTestCase {
             ProfileView(
                 id: "p1", label: "ada", subject: "ada",
                 account: AccountView(
-                    binding: .signedIn, email: "ada@example.com", name: "Ada", relay: .off, pro: nil)),
+                    binding: .signedIn, email: "ada@example.com", name: "Ada", picture: "", relay: .off, pro: nil)),
         ])
         registry.entitlement(entitlement, for: ada)
         return registry
@@ -46,7 +46,7 @@ final class EntitlementWatchTests: XCTestCase {
         answer = Entitlement.none
         await watch.look()
         XCTAssertEqual(registry.selectedAccount?.entitlement, Entitlement.none)
-        XCTAssertEqual(registry.selectedAccount?.entitlement.summary, "Not subscribed · hosts on this network still work")
+        XCTAssertEqual(registry.selectedAccount?.entitlement.summary, "Not subscribed")
         XCTAssertEqual(relinked, [ada], "the relay link was not asked to read the lapse")
 
         let bought = Entitlement.active(grant: .purchased(.web), renews: nil)

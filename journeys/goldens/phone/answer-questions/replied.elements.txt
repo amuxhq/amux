@@ -1,38 +1,38 @@
 shell |  | agents | 0,62,402,778
-chat |  | asker | 0,62,402,778
-chat.row.boundary | Started |  | 18,132,366,34
-chat.row.prompt | Add a settings screen. |  | 18,166,366,40
-chat.row.question | Answered, 2 of 3 questions |  | 18,217,366,203
-chat.row.prose | Thanks, I'll build it that way. | final | 18,434,366,20
-chat.prose.render |  | rendered | 18,434,366,20
+chat |  | asker | 0,116,402,724
+chat.row.boundary | Started |  | 16,124,370,34
+chat.row.prompt | Add a settings screen. |  | 16,158,370,40
+chat.row.question | Answered, 2 of 3 questions |  | 16,210,370,203
+chat.row.prose | Thanks, I'll build it that way. | final | 16,427,370,20
+chat.prose.render |  | rendered | 16,427,370,20
 chat.row.turn-end | <volatile>
-chat.row.prompt | Pick the palette too. |  | 18,492,366,40
-chat.row.question | Replied instead |  | 18,543,366,84
-chat.row.prose | I'll leave the palette for later. | final | 18,641,366,20
-chat.prose.render |  | rendered | 18,641,366,20
+chat.row.prompt | Pick the palette too. |  | 16,484,370,40
+chat.row.question | Replied instead |  | 16,536,370,84
+chat.row.prose | I'll leave the palette for later. | final | 16,634,370,20
+chat.prose.render |  | rendered | 16,634,370,20
 chat.row.turn-end | <volatile>
-chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
-chat.back | Back |  | 16,68,42,46
-chat.title | asker | asker | 51,72,156,38
-chat.more | More |  | 344,69,44,44
 chat.field | Message asker |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
-chat.model | claude-fake-1 · medium |  | 71,779,139,44
+chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
- | Back |  | 16,68,42,46
- | asker, /t/a/n/d/work · desk |  | 51,72,156,38
- | More |  | 344,69,44,44
+chat.more | More |  | 342,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
+chat.title | asker | asker | 96,66,160,36
  | Attach |  | 23,779,44,44
- | claude-fake-1 |  | 71,779,139,44
+ | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44 (disabled)
- | Started |  | 18,132,366,34
- | Add a settings screen. |  | 18,166,366,40
- | Answered, 2 of 3 questions, Layout, Stacked, Entry, “From the help panel”, Order, Skipped |  | 18,217,366,203
- | Thanks, I'll build it that way. |  | 18,434,366,20
- | Worked <t> · $0.00 |  | 48,462,130,16
- | Pick the palette too. |  | 18,492,366,40
- | Replied instead, Replied: Let me see both palettes on the desk first. |  | 18,543,366,84
- | I'll leave the palette for later. |  | 18,641,366,20
- | Worked <t> · $0.00 |  | 48,669,130,16
+ | Started |  | 16,124,370,34
+ | Add a settings screen. |  | 16,158,370,40
+ | Answered, 2 of 3 questions, Layout, Stacked, Entry, “From the help panel”, Order, Skipped |  | 16,210,370,203
+ | Thanks, I'll build it that way. |  | 16,427,370,20
+ | Worked <t> · $0.00 |  | 16,454,116,16
+ | Pick the palette too. |  | 16,484,370,40
+ | Replied instead, Replied: Let me see both palettes on the desk first. |  | 16,536,370,84
+ | I'll leave the palette for later. |  | 16,634,370,20
+ | Worked <t> · $0.00 |  | 16,661,116,16
+ | Back |  | 20,66,56,36
+ | asker, /t/a/n/d/work · desk |  | 96,66,160,36
+ | More |  | 342,66,36,36

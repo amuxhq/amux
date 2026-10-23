@@ -1,9 +1,32 @@
-shell |  | hosts | 0,62,402,778
-pair-confirm |  | needs subscription | 0,62,402,778
-pair-confirm.subscribe | Reach your agents from anywhere | The relay can see this host and cannot carry agents to it on this account. A subscription opens the tunnel. Hosts on this network never need one. | 18,88,366,126
-pair-confirm.subscribe.buy | Subscribe |  | 18,170,366,44
-pair-confirm.notNow | Not Now |  | 18,228,366,44
- | Reach your agents from anywhere |  | 18,88,255,20
- | The relay can see this host and cannot carry agents to it on this account. A subscription opens the tunnel. Hosts on this network never need one. |  | 18,111,366,47
- | Subscribe |  | 18,170,366,44
- | Not Now |  | 18,228,366,44
+shell |  | agents | 0,62,402,778
+pair-confirm |  | needs subscription | 0,132,402,708
+pair-confirm.subscribe | Reach your agents from anywhere | The relay can see this host and cannot carry agents to it on this account. A subscription opens the tunnel. Hosts on this network never need one. | 16,148,370,126
+pair-confirm.subscribe.buy | Subscribe |  | 16,230,370,44
+pair-confirm.notNow | Not Now |  | 16,288,370,44
+pair.close | Close |  | 20,82,56,36
+ | Pair your first host |  | 16,204,214,32
+ | amux runs agents on your computers. Pair one and its agents appear here. |  | 16,244,368,37
+ | Looking on this network… |  | 36,305,174,18
+ | 1 |  | 25,351,5,16
+ | On your computer, install amux from amux.sh. |  | 52,348,231,39
+ | Send Link |  | 52,400,106,44
+ | 2 |  | 24,464,7,16
+ | Run amux pair --qr on it and scan the code with the Camera app. |  | 52,461,325,39
+ | Switch account |  | 19,69,30,30
+ | Agents |  | 16,127,116,42
+ | Agents |  | 111,795,94,54
+ | Agents |  | 140,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 229,830,29,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 230,830,29,12
+ | Reach your agents from anywhere |  | 16,148,255,20
+ | The relay can see this host and cannot carry agents to it on this account. A subscription opens the tunnel. Hosts on this network never need one. |  | 16,171,354,48
+ | Subscribe |  | 16,230,370,44
+ | Not Now |  | 16,288,370,44
+ | Close |  | 20,82,56,36
+ | Pair a Host |  | 158,89,85,21
+ | Agents | selected | 111,795,94,54
+ | Hosts |  | 197,795,94,54

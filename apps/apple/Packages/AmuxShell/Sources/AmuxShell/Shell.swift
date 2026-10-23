@@ -53,7 +53,7 @@ public enum ShellAction: Equatable, Sendable {
     /// said first, over the page it was asked from.
     case removeAccount(AccountId)
     /// The answer to that question.
-    case confirmRemoval
+    case confirmRemoval(AccountId)
     case cancelRemoval
     /// Somebody asked to give up an account for good. What that costs is a
     /// question the app asks before anything leaves this phone.
@@ -85,6 +85,18 @@ public enum ShellAction: Equatable, Sendable {
 private func leave(for url: URL) {
     #if canImport(UIKit)
     UIApplication.shared.open(url)
+    #endif
+}
+
+/// This app's own page in the system's settings. A local network this phone
+/// refused is granted back there and nowhere else: iOS asks once, and this
+/// app has no second ask to offer.
+@MainActor
+private func openSystemSettings() {
+    #if canImport(UIKit)
+    if let url = URL(string: UIApplication.openSettingsURLString) {
+        UIApplication.shared.open(url)
+    }
     #endif
 }
 
@@ -120,13 +132,6 @@ public struct Shell: View {
     /// the capture; the shell only knows where the row that asks for it is.
     private let report: @MainActor () -> Void
     private let actions: @MainActor (ShellAction) -> Void
-    /// The tabs somebody has left. A tab is built when it is first
-    /// reached for and kept from then on, so coming back finds it as it
-    /// was; building all three for a launch that shows one was a third of
-    /// the first frame's work. The tab on screen is reached without being
-    /// listed here: recording it as the shell appeared changed the shell's
-    /// state while it was first being built, and built the home twice.
-    @State private var visited: Set<Tab> = []
     @Environment(\.scenePhase) private var scenePhase
 
     public init(
@@ -142,6 +147,7 @@ public struct Shell: View {
         report: @escaping @MainActor () -> Void = {},
         actions: @escaping @MainActor (ShellAction) -> Void
     ) {
+        Design.app.dressNavigationBars()
         self.appearance = appearance
         self.shareUsage = shareUsage
         self.deletion = deletion
@@ -158,57 +164,66 @@ public struct Shell: View {
     /// Whether a bottom sheet or card is up over the tab on screen.
     private var coveredByASheet: Bool {
         switch router.tab {
-        case .hosts: stores.hosts.readingDevices
-        case .you: removal.account != nil || deletion.account != nil
-        case .agents: false
+        // The settings sheet's own cards cover the sheet, not a tab.
+        case .agents, .hosts, .you: false
         }
     }
 
     public var body: some View {
         @Bindable var router = router
-        ZStack(alignment: .bottom) {
-            ZStack {
-                if reached(.agents) {
-                    NavigationStack(path: $router.agentsPath) {
-                        AgentsTab(
-                            router: self.router, accounts: accounts, stores: stores,
-                            actions: actions)
-                            .navigationDestination(for: Route.self) { page($0) }
-                    }
-                    .tabSurface(selected: router.tab == .agents)
-                }
-
-                if reached(.hosts) {
-                    NavigationStack(path: $router.hostsPath) {
-                        HostsTabRoot(router: self.router, stores: stores)
-                            .navigationDestination(for: Route.self) { page($0) }
-                    }
-                    .tabSurface(selected: router.tab == .hosts)
-                }
-
-                if reached(.you) {
-                    NavigationStack(path: $router.youPath) {
-                        YouTabRoot(
-                            router: self.router, accounts: accounts, stores: stores,
-                            deletion: deletion, removal: removal, appearance: appearance,
-                            shareUsage: shareUsage, report: report, actions: actions)
-                            .navigationDestination(for: Route.self) { page($0) }
-                    }
-                    .tabSurface(selected: router.tab == .you)
+        // The system's tab bar, for the system's behaviour: it builds a tab
+        // when it is first reached and keeps it, and it hides under a pushed
+        // page so a conversation ends with its composer.
+        TabView(selection: Binding(get: { router.beneath }, set: { router.select($0) })) {
+            SwiftUI.Tab(Tab.agents.title, systemImage: Tab.agents.symbol, value: Tab.agents) {
+                NavigationStack(path: $router.agentsPath) {
+                    AgentsTab(
+                        router: self.router, accounts: accounts, stores: stores,
+                        actions: actions)
+                        .barUnderSheet(coveredByASheet)
+                        .navigationDestination(for: Route.self) { page($0).toolbar(.hidden, for: .tabBar) }
                 }
             }
-
-            // A bottom sheet or card over a tab's root takes the tab bar's
-            // place: the bar drawn over it would cover its last row.
-            if router.path.isEmpty && !coveredByASheet {
-                ShellTabBar(selected: router.tab) { router.select($0) }
-                    .safeAreaPadding(.bottom, 6)
+            SwiftUI.Tab(Tab.hosts.title, systemImage: Tab.hosts.symbol, value: Tab.hosts) {
+                NavigationStack(path: $router.hostsPath) {
+                    HostsTabRoot(router: self.router, stores: stores)
+                        .barUnderSheet(coveredByASheet)
+                        .navigationDestination(for: Route.self) { page($0).toolbar(.hidden, for: .tabBar) }
+                }
+            }
+        }
+        .surface()
+        // Settings are a sheet raised from the account disc rather than a
+        // tab: somewhere visited now and then does not earn a place beside
+        // the two that are used all day. The sheet keeps a stack of its own,
+        // so signing in or subscribing from it pushes inside it.
+        .sheet(isPresented: Binding(
+            get: { router.tab == .you },
+            set: { shown in if !shown, router.tab == .you { router.select(router.beneath) } }
+        )) {
+            settings
+        }
+        // Starting an agent is raised over whatever tab asked for it, the way
+        // a new message is: the list stays beneath, and Cancel puts it away.
+        .sheet(isPresented: $router.composing) {
+            NewAgentPage(router: self.router, stores: stores)
+                .surface()
+        }
+        // Pairing is a short task with an end, so it is raised the same way.
+        // Putting it away by hand ends it; stepping aside for a sign-in or a
+        // subscription does not.
+        .sheet(isPresented: Binding(
+            get: { router.showsPairing },
+            set: { shown in if !shown, router.showsPairing { router.pairing = nil } }
+        )) {
+            if let pairing = router.pairing {
+                PairingSheet(pairing: pairing, router: router, stores: stores, actions: actions)
+                    .surface()
             }
         }
         .tint(design.accentColor)
         .reported("shell", value: router.tab.rawValue)
         .simultaneousGesture(backGesture)
-        .onChange(of: router.tab) { left, _ in visited.insert(left) }
         // What the account buys is read again as the app comes to the front
         // and as You comes on screen; the composition spaces the reads out.
         .onChange(of: scenePhase, initial: true) { _, phase in
@@ -219,10 +234,19 @@ public struct Shell: View {
         }
     }
 
-    /// Whether a tab has been reached for: the one on screen, or any that
-    /// was.
-    private func reached(_ tab: Tab) -> Bool {
-        tab == router.tab || visited.contains(tab)
+    /// The settings sheet's content: its page in a stack of its own. Public
+    /// so a picture of the sheet can be taken without presenting it.
+    public var settings: some View {
+        @Bindable var router = router
+        return NavigationStack(path: $router.youPath) {
+            YouTabRoot(
+                router: self.router, accounts: accounts, stores: stores,
+                deletion: deletion, removal: removal, appearance: appearance,
+                shareUsage: shareUsage, report: report, actions: actions)
+                .navigationDestination(for: Route.self) { page($0) }
+        }
+        .tint(design.accentColor)
+        .surface()
     }
 
     /// Restores the platform's edge-to-pop interaction while the custom page
@@ -248,13 +272,6 @@ public struct Shell: View {
             ChatPage(agent: agent, router: router, stores: stores)
         case .changes(let agent):
             ChangesPage(agent: agent, router: router, stores: stores)
-        case .newAgent:
-            NewAgentPage(router: router, stores: stores)
-        case .pairByCode(let host):
-            PairByCodePage(host: host, router: router, stores: stores, actions: actions)
-        case .pairConfirmation(let invitation):
-            PairConfirmationPage(
-                invitation: invitation, router: router, stores: stores, actions: actions)
         case .signIn(let from):
             SignInPage(from: from, router: router, model: signIn, actions: actions)
         case .paywall(let from):
@@ -269,47 +286,20 @@ public struct Shell: View {
                     stores.revoke(host)
                     router.pop()
                 case .pairAgain(let host):
-                    router.open(.pairByCode(host))
+                    router.pairing = .code(host)
                 }
             }
-            .toolbar(.hidden, for: .navigationBar)
         }
     }
 }
 
 private extension View {
-    /// Retains every root screen and its navigation state while exposing only
-    /// the selected one to drawing, input, and accessibility.
-    func tabSurface(selected: Bool) -> some View {
-        opacity(selected ? 1 : 0)
-            .allowsHitTesting(selected)
-            .accessibilityHidden(!selected)
-    }
-}
-
-/// The app's three top-level places. It floats above root screens and leaves
-/// pushed work alone so a conversation ends with its composer.
-private struct ShellTabBar: View {
-    let selected: Tab
-    let select: (Tab) -> Void
-
-    var body: some View {
-        TabChrome {
-            ForEach(Tab.allCases, id: \.self) { item in
-                let isSelected = item == selected
-                Button { select(item) } label: {
-                    TabLabel(item.title, glyph: item.symbol, selected: isSelected)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.amuxControl)
-                .frame(maxWidth: .infinity)
-                .accessibilityLabel(item.title)
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-                .identified(
-                    "tab.\(item.rawValue)", label: item.title,
-                    value: isSelected ? "selected" : "not selected")
-            }
-        }
+    /// A bottom sheet or card over a tab's root takes the tab bar's place:
+    /// the bar drawn over it would cover its last row. Uncovered, the root
+    /// leaves the bar to the system rather than asking for it, since a root
+    /// that asks for the bar outranks a pushed page that hides it.
+    func barUnderSheet(_ covered: Bool) -> some View {
+        toolbar(covered ? .hidden : .automatic, for: .tabBar)
     }
 }
 
@@ -323,13 +313,15 @@ private struct ChangesPage: View {
     let stores: StoreBundle
     @State private var chat: ChatModel?
     @State private var review: ReviewModel?
+    /// What the review was frozen against, fixed as it opened.
+    @State private var against: String?
     /// Why there is no review: nothing changed, or the host was not asked.
-    @State private var missing: String?
+    @State private var missing: PagePlaceholder.Showing?
 
     var body: some View {
         Group {
             if let chat, let review {
-                ReviewPage(model: review, agent: name(chat)) { action in
+                ReviewPage(model: review, against: against) { action in
                     switch action {
                     case .back: router.pop()
                     case .attach:
@@ -338,36 +330,48 @@ private struct ChangesPage: View {
                     }
                 }
             } else {
-                ZStack(alignment: .topLeading) {
-                    Ground()
-                    VStack(alignment: .leading, spacing: 14) {
-                        BackLink(String(localized: "Chat"), identifier: "review.back") { router.pop() }
-                        if let missing {
-                            Explain(missing).identified("review.empty")
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 10)
-                }
-                .toolbar(.hidden, for: .navigationBar)
+                PagePlaceholder(
+                    missing ?? .waiting(String(localized: "Reading the changes")),
+                    identifier: "review"
+                ) { router.pop() }
             }
         }
         .task {
             guard chat == nil, let model = try? stores.chat(agent) else { return }
             chat = model
+            against = ChatWords.comparison(model.comparison, base: model.base)
             switch await model.openReview() {
             case .success(let opened?): review = opened
             case .success(nil):
-                missing = model.comparison == .onBranch
-                    ? String(localized: "This agent has no changes on its branch.")
-                    : String(localized: "This agent has no uncommitted changes.")
-            case .failure(let failure): missing = failure.description
+                missing = .empty(
+                    title: String(localized: "No changes"),
+                    detail: model.comparison == .onBranch
+                        ? String(localized: "This agent has no changes on its branch.")
+                        : String(localized: "This agent has no uncommitted changes."))
+            case .failure(let failure):
+                missing = .failed(
+                    title: String(localized: "Couldn’t read the changes"), reason: failure.description)
             }
         }
     }
+}
 
-    private func name(_ chat: ChatModel) -> String {
-        stores.fleet.row(agent)?.name ?? chat.frame?.name ?? agent.description
+/// What the fleet says about a chat's agent: who it is and where, the family
+/// it belongs to, and whether it is listed at all.
+private struct Standing: Equatable {
+    let subject: ChatSubject
+    let family: FamilyHeader?
+    let listed: Bool
+}
+
+/// Reads the fleet for a page and hands on what it read only when that
+/// changed, so the fleet's reads land on this view rather than the page.
+private struct FleetReading: View {
+    let read: () -> Standing
+    let changed: (Standing) -> Void
+
+    var body: some View {
+        Color.clear.onChange(of: read(), initial: true) { _, now in changed(now) }
     }
 }
 
@@ -389,25 +393,22 @@ private struct ChatPage: View {
     /// Whether the fleet has listed this agent since the page opened, so its
     /// leaving the fleet reads as deleted rather than as not yet listed.
     @State private var listed = false
+    /// What the fleet says about this agent, as the page last drew it.
+    @State private var standing: Standing?
 
     var body: some View {
         Group {
             if let model {
+                let now = standing ?? read()
                 ChatScreen(
-                    model: model, subject: subject, family: stores.profile?.family(agent),
+                    model: model, subject: now.subject, family: now.family,
                     actions: act)
             } else {
-                ZStack(alignment: .topLeading) {
-                    Ground()
-                    VStack(alignment: .leading, spacing: 14) {
-                        BackLink("Agents", identifier: "chat.back") { router.pop() }
-                        Explain(failure ?? String(localized: "Opening this chat"))
-                            .identified("chat.failure", value: failure ?? "")
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 10)
-                }
-                .toolbar(.hidden, for: .navigationBar)
+                PagePlaceholder(
+                    failure.map { .failed(title: String(localized: "Couldn’t open this chat"), reason: $0) }
+                        ?? .waiting(String(localized: "Opening this chat")),
+                    identifier: "chat"
+                ) { router.pop() }
             }
         }
         .photosPicker(
@@ -426,8 +427,15 @@ private struct ChatPage: View {
             photo = nil
             Task { await attach(photo: item) }
         }
+        // The fleet is read several times a second while any agent works,
+        // and nearly every read changes nothing this page shows. Read in the
+        // page, each one would rebuild the chat and the items it hands the
+        // system bar, enough to drop frames from a streaming turn; read
+        // beside it, the page is drawn again only when what it shows changes.
+        .background { FleetReading(read: read) { standing = $0 } }
         .onAppear(perform: open)
-        .onChange(of: stores.fleet.row(agent) != nil) { _, present in
+        .onChange(of: standing?.listed) { _, present in
+            guard let present else { return }
             if present { listed = true } else if listed { router.pop() }
         }
         .onChange(of: model?.frame?.ended != nil) { _, ended in
@@ -454,21 +462,26 @@ private struct ChatPage: View {
         }
     }
 
-    private var subject: ChatSubject {
+    private var subject: ChatSubject { standing?.subject ?? read().subject }
+
+    /// This agent as the fleet lists it now.
+    private func read() -> Standing {
         let row = stores.fleet.row(agent)
         let host = stores.fleet.host(agent.hostId)
         let name = row?.name ?? model?.frame?.name ?? agent.description
         // The card counts what a stop cuts on hosts this phone cannot see; a
         // folded family's member has one though home lists no row for it.
         let card = row?.card ?? stores.profile?.card(agent)
-        return ChatSubject(
+        let subject = ChatSubject(
             name: name.isEmpty ? agent.description : name,
             host: host?.name ?? row?.hostName ?? "",
             directory: row?.workingDirectory ?? "",
+            branch: row?.branch,
             reach: host?.reach ?? row?.hostReach ?? .offline(.plain),
             descendants: Int(card?.descendants ?? 0),
             backgroundJobs: Int(card?.backgroundJobs ?? 0),
             stopHeld: card?.stopHeld ?? false)
+        return Standing(subject: subject, family: stores.profile?.family(agent), listed: row != nil)
     }
 
     private func act(_ action: ChatAction) {
@@ -532,27 +545,23 @@ private struct AgentsTab: View {
             case .open(let agent):
                 stores.fleet.opened(agent)
                 router.open(.conversation(agent))
-            case .newAgent: router.open(.newAgent)
+            case .newAgent: router.composing = true
             case .openExceptions: router.select(.hosts)
             case .switchAccount(let id): actions(.selectAccount(id))
             case .addAccount: actions(.addAccount)
             case .signIn: actions(.signIn)
             case .signInAgain(let id): actions(.signInAgain(id))
             case .subscribe: actions(.subscribe)
-            // Pairing lives under Hosts wherever it is started from: the page
-            // it opens is that tab's, and going back from it belongs there
-            // rather than on a list of agents that has none.
-            case .pair(let host):
-                router.select(.hosts)
-                router.open(.pairByCode(host))
+            case .openSettings: router.select(.you)
+            case .pair(let host): router.pairing = .code(host)
+            case .openSystemSettings: openSystemSettings()
             // The one place the list is allowed to regroup. Data arriving
             // never reorders what a thumb is already travelling towards.
             case .refresh: stores.fleet.refreshOrder(now: stores.now())
             case .toggleFamily(let head): stores.toggleFamily(head)
+            case .filter(let filter): stores.filterFleet(filter)
             }
         }
-        // The screen draws its own header, so the bar would be a second one.
-        .toolbar(.hidden, for: .navigationBar)
     }
 }
 
@@ -568,7 +577,7 @@ private struct SignInPage: View {
     let actions: @MainActor (ShellAction) -> Void
 
     var body: some View {
-        SignIn(model: model, back: from.title) { action in
+        SignIn(model: model) { action in
             switch action {
             case .cancel, .done: router.pop()
             case .start: actions(.handOffSignIn)
@@ -576,8 +585,6 @@ private struct SignInPage: View {
             case .discard: actions(.discardSignIn)
             }
         }
-        // The screen draws its own header, so the bar would be a second one.
-        .toolbar(.hidden, for: .navigationBar)
     }
 }
 
@@ -593,17 +600,18 @@ private struct PaywallPage: View {
     let actions: @MainActor (ShellAction) -> Void
 
     var body: some View {
-        Paywall(model: model, back: from.title) { action in
+        Paywall(model: model) { action in
             switch action {
-            case .cancel, .done: router.pop()
+            case .cancel: router.pop()
             case .choose(let period): model.choose(period)
             case .buy: actions(.buySubscription)
             case .restore: actions(.restorePurchases)
             case .retry: actions(.retryPurchase)
+            // The App Store's own page, the one place a subscription bought
+            // there is changed or cancelled.
+            case .manage: leave(for: AmuxCloudService.appStoreSubscriptions)
             }
         }
-        // The screen draws its own header, so the bar would be a second one.
-        .toolbar(.hidden, for: .navigationBar)
     }
 }
 
@@ -615,22 +623,14 @@ private struct HostsTabRoot: View {
         HostsTab(model: stores.hosts) { action in
             switch action {
             case .open(let host): router.open(.host(host))
-            case .pair(let host): router.open(.pairByCode(host))
-            case .newAgent: router.open(.newAgent)
+            case .pair(let host): router.pairing = .code(host)
+            case .newAgent: router.composing = true
             // Revoking goes nowhere: the list it happens on is the list it
             // changes, and the machine leaves it when the runtime says so.
             case .revoke(let host): stores.revoke(host)
-            // A local network this phone refused is granted back in the
-            // system's settings and nowhere else: iOS asks once, and this app
-            // has no second ask to offer.
-            case .openSystemSettings:
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
-                }
+            case .openSystemSettings: openSystemSettings()
             }
         }
-        // The screen draws its own header, so the bar would be a second one.
-        .toolbar(.hidden, for: .navigationBar)
     }
 }
 
@@ -641,34 +641,70 @@ private struct HostsTabRoot: View {
 /// round trip and the screen is useful before it arrives, so nothing waits on
 /// it.
 private struct NewAgentPage: View {
+    @Environment(\.design) private var design
     let router: Router
     let stores: StoreBundle
 
     var body: some View {
-        NewAgent(model: stores.newAgent, hosts: stores.hosts) { action in
-            switch action {
-            // A different machine means a different set of directories, so
-            // pointing at one asks it what it has.
-            case .point(let host): stores.point(at: host)
-            case .search: stores.searchDirectories()
-            // Starting is the one thing on this screen that leaves the phone.
-            // Leaving is what the confirmation below does, when the machine
-            // says the agent exists — a screen that left on the press would be
-            // claiming something it has not been told.
-            case .start: stores.startAgent()
-            case .cancel: router.pop()
+        NavigationStack {
+            NewAgent(model: stores.newAgent, hosts: stores.hosts) { action in
+                switch action {
+                // A different machine means a different set of directories,
+                // so pointing at one asks it what it has.
+                case .point(let host): stores.point(at: host)
+                case .search: stores.searchDirectories()
+                // Starting is the one thing on this screen that leaves the
+                // phone. Leaving is what the confirmation below does, when the
+                // machine says the agent exists — a screen that left on the
+                // press would be claiming something it has not been told.
+                case .start: stores.startAgent()
+                case .cancel: router.composing = false
+                }
             }
         }
-        .toolbar(.hidden, for: .navigationBar)
+        .tint(design.accentColor)
         .onAppear { stores.startNewAgent(on: stores.hosts.online.first?.id) }
-        // The conversation replaces this page rather than sitting on top of it:
-        // going back from an agent that was just started belongs at the list it
+        // The sheet goes and the conversation opens over the list: going
+        // back from an agent that was just started belongs at the list it
         // joined, not at the form that made it.
         .onChange(of: stores.newAgent.created) { _, started in
             guard let started else { return }
             stores.fleet.opened(started)
-            router.show(.conversation(started))
+            router.started(started)
         }
+    }
+}
+
+/// Pairing, raised as a sheet: a code typed for one machine, or a link. It
+/// closes itself once the machine is trusted, with the machine already in
+/// the Hosts list and its agents on Agents, as a new contact lands in a list.
+private struct PairingSheet: View {
+    @Environment(\.design) private var design
+    let pairing: Pairing
+    let router: Router
+    let stores: StoreBundle
+    let actions: @MainActor (ShellAction) -> Void
+
+    var body: some View {
+        NavigationStack {
+            switch pairing {
+            case .code(let host):
+                PairByCodePage(host: host, router: router, stores: stores, actions: actions)
+            case .link(let invitation):
+                PairConfirmationPage(
+                    invitation: invitation, router: router, stores: stores, actions: actions)
+            }
+        }
+        .tint(design.accentColor)
+        .sensoryFeedback(.success, trigger: trusted)
+        .onChange(of: trusted) { _, trusted in
+            if trusted { router.pairing = nil }
+        }
+    }
+
+    private var trusted: Bool {
+        if case .trusted = stores.pairing.phase { return true }
+        return false
     }
 }
 
@@ -685,8 +721,7 @@ private struct NewAgentPage: View {
 /// machine made it — so the digits are never the end of it: what the machine
 /// said its name and its key are has to be read and agreed to before any trust
 /// is written. Keeping both halves here means the person who typed the code
-/// stays where they typed it, and going back from either is going back to
-/// Hosts.
+/// stays where they typed it, and closing either closes the sheet.
 private struct PairByCodePage: View {
     let host: HostId
     let router: Router
@@ -697,7 +732,6 @@ private struct PairByCodePage: View {
 
     var body: some View {
         page
-            .toolbar(.hidden, for: .navigationBar)
             .onAppear { stores.pairing.open(machine: stores.hosts.known(host)) }
     }
 
@@ -719,7 +753,7 @@ private struct PairByCodePage: View {
             // authenticates, and an account is not what a typed code needs.
             case .confirm, .abandon, .signIn: break
             case .subscribe: actions(.subscribe)
-            case .cancel: router.pop()
+            case .cancel: router.pairing = nil
             }
         }
     }
@@ -734,7 +768,7 @@ private struct PairByCodePage: View {
             // empty keypad, because the next thing somebody does after
             // refusing a machine is try the code for the right one.
             case .abandon(let peer): stores.abandonPairing(peer)
-            case .cancel: router.pop()
+            case .cancel: router.pairing = nil
             case .digits, .signIn, .subscribe: break
             }
         }
@@ -761,7 +795,6 @@ private struct PairConfirmationPage: View {
 
     var body: some View {
         page
-            .toolbar(.hidden, for: .navigationBar)
             .onAppear { ask() }
             .onChange(of: stores.account) { _, _ in ask() }
             .onChange(of: stores.fleet.relay) { _, _ in ask() }
@@ -780,7 +813,7 @@ private struct PairConfirmationPage: View {
             PairNeedsAnAccount { action in
                 switch action {
                 case .signIn: actions(.signIn)
-                case .cancel: router.pop()
+                case .cancel: router.pairing = nil
                 case .confirm, .abandon, .digits, .subscribe: break
                 }
             }
@@ -804,8 +837,8 @@ private struct PairConfirmationPage: View {
             // holding it open until it expires.
             case .abandon(let peer):
                 stores.abandonPairing(peer)
-                router.pop()
-            case .cancel: router.pop()
+                router.pairing = nil
+            case .cancel: router.pairing = nil
             case .digits, .signIn: break
             case .subscribe: actions(.subscribe)
             }
@@ -855,12 +888,13 @@ struct LinkAsked {
     mutating func asked(_ current: AccountId) { account = current }
 }
 
-/// You.
+/// Settings, in the sheet raised from the account disc.
 ///
 /// The screen decides nothing: switching account, signing in and out, buying
 /// and deleting all leave here, because each of them either changes what the
 /// whole app is pointed at or reaches something outside it.
 private struct YouTabRoot: View {
+    @Environment(\.reducesTransparency) private var reducesTransparency
     let router: Router
     let accounts: AccountRegistry
     let stores: StoreBundle
@@ -882,33 +916,39 @@ private struct YouTabRoot: View {
                 // The only place a renewal can be stopped is where it was
                 // bought, which for an App Store subscription is a page of the
                 // system's rather than one this app or amux.sh owns.
-                case .manageBilling(let url): leave(for: url)
+                //
+                // The question is asked again on the way out, so that coming
+                // back finds the address still typed and Delete one press away.
+                case .manageBilling(let url):
+                    deletion.askAgain()
+                    leave(for: url)
                 }
             }
         ) {
-            RemoveAccountOverlay(
-                accounts: accounts, model: removal,
-                actions: { asked in
-                    switch asked {
-                    case .cancel: actions(.cancelRemoval)
-                    case .confirm: actions(.confirmRemoval)
-                    }
-                }
-            ) {
-                you
-            }
+            you
         }
-        // The screen draws its own header, so the bar would be a second one.
-        .toolbar(.hidden, for: .navigationBar)
+        .navigationTitle(Tab.you.title)
+        .toolbarTitleDisplayMode(.inline)
+        .toolbar {
+            // The app's own circle in ink, as New Agent's and pairing's: the
+            // system's role button takes the sheet's accent tint.
+            ToolbarItem(placement: .topBarTrailing) {
+                BarButton("xmark", label: String(localized: "Close"), identifier: "you.close") {
+                    router.select(router.beneath)
+                }
+            }
+            .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
+        }
     }
 
     private var you: some View {
         YouScreen(
             accounts: accounts, appearance: appearance, shareUsage: shareUsage,
-            // This phone's own key, read off the machine store the way the
-            // devices page reads it: absent until a connection has said what
-            // this device's identity is, rather than guessed at.
-            identity: stores.hosts.roster.map { Fingerprint.short($0.identity.fingerprint) }
+            // This phone's own name and key, read off the machine store:
+            // absent until a connection has said what this device's identity
+            // is, rather than guessed at.
+            identity: stores.hosts.roster?.identity,
+            removing: removal.account
         ) { action in
             switch action {
             case .select(let id): actions(.selectAccount(id))
@@ -916,14 +956,12 @@ private struct YouTabRoot: View {
             case .signIn(let id): actions(.signInAgain(id))
             case .signOut(let id): actions(.signOutAccount(id))
             case .remove(let id): actions(.removeAccount(id))
+            case .confirmRemoval(let id): actions(.confirmRemoval(id))
+            case .cancelRemoval: actions(.cancelRemoval)
             case .subscription: actions(.subscribe)
             case .appearance(let wanted): actions(.wear(wanted))
             case .shareUsage(let on): actions(.shareUsage(on))
             case .delete(let id): actions(.deleteAccount(id))
-            // This phone's key and the machines that trust it are one page,
-            // and it is the machines tab: an identity is only interesting
-            // beside what it is trusted by.
-            case .identity: router.select(.hosts)
             // Reaching a person happens on the web, where the people are.
             // There is no form in here to fill in: a message written into this
             // app would have to be carried by the same account service the
@@ -934,7 +972,6 @@ private struct YouTabRoot: View {
             // of the report rather than of what was wrong.
             case .report: report()
             case .exportDump: actions(.exportDump)
-            case .dismiss: break
             }
         }
     }

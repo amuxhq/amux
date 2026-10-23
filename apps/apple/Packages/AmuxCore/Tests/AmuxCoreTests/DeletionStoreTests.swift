@@ -137,6 +137,20 @@ final class DeletionStoreTests: XCTestCase {
         XCTAssertEqual(forgotten.accounts, [ada.id])
     }
 
+    /// Leaving to cancel the renewal asks the question again with the address
+    /// still typed, so Delete is one press away on the way back.
+    func testLeavingToCancelARenewalAsksAgainWithTheAddressKept() {
+        let store = DeletionStore(
+            asking: ada.id, typed: ada.email,
+            phase: .blocked(source: .appStore, manageURL: portal))
+
+        store.askAgain()
+
+        XCTAssertEqual(store.phase, .asking)
+        XCTAssertEqual(store.account, ada.id)
+        XCTAssertEqual(store.typed, ada.email)
+    }
+
     func testARefusalIsSaidInTheAccountServicesOwnWords() async {
         let store = DeletionStore(asking: ada.id, typed: "bo@example.com")
         let forgotten = Forgotten()

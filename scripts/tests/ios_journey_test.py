@@ -78,21 +78,26 @@ class ComparingScreens(unittest.TestCase):
         ]
         self.assertEqual(
             phone.volatile_masks(elements, ("pair-confirm.fingerprint",)),
-            ["1020,312,93,42", "48,900,1074,120"],
+            ["978,312,177,42", "0,900,1242,120"],
         )
-        self.assertEqual(phone.volatile_masks(elements), ["1020,312,93,42"])
+        self.assertEqual(phone.volatile_masks(elements), ["978,312,177,42"])
+
+    def test_a_larger_text_size_masks_further_either_side(self):
+        # "1m" now, where the golden's "39s" reached about 16 points further left.
+        large = [element(f"home.row.{AGENT}.age.volatile", 330, 104, 30, 36)]
+        self.assertEqual(phone.volatile_masks(large), ["882,312,306,108"])
 
     def test_a_tab_behind_a_pushed_page_masks_nothing(self):
         elements = [element("hosts.fact.identity", 0, 10, 1, 1), element("chat.row.turn-end", 0, 20, 1, 1)]
         named = ("hosts.fact.identity", "chat.row.turn-end")
-        self.assertEqual(phone.volatile_masks(elements, named, screen="chat"), ["0,60,3,3"])
+        self.assertEqual(phone.volatile_masks(elements, named, screen="chat"), ["0,60,27,3"])
         self.assertEqual(len(phone.volatile_masks(elements, named, screen="hosts")), 2)
 
     def test_a_reported_photograph_masks_what_moved_on_the_frozen_screen(self):
         frozen = [element(f"home.row.{AGENT}.age.volatile", 300, 160, 40, 20)]
         # The whole 400-point display, drawn at half size from (100, 50).
         drawn = [element("report.frame", 100, 50, 200, 437)]
-        self.assertEqual(phone.volatile_masks(phone.pictured(drawn, frozen, (1200, 2622))), ["750,390,60,30"])
+        self.assertEqual(phone.volatile_masks(phone.pictured(drawn, frozen, (1200, 2622))), ["720,390,120,30"])
         self.assertEqual(phone.pictured([], frozen, (1200, 2622)), [])
 
     def test_geometry_names_ids_and_drops_volatile_words(self):
@@ -121,10 +126,27 @@ class ComparingScreens(unittest.TestCase):
             "/tmp/aj-xxxxxxxx/testnetxxxxxx/desk/work",
         )
 
-    def test_keys_made_fresh_each_install_are_masked(self):
+    def test_keys_and_the_leased_device_name_are_masked(self):
         whole = " ".join(["d326", "50ce", "ef5c", "7836"] * 4)
         self.assertEqual(phone.normalize(f"Fingerprint | {whole}"), "Fingerprint | <key>")
-        self.assertEqual(phone.normalize("Identity, amux-iphone-1 · 9ab9…c45d"), "Identity, amux-iphone-1 · <key>")
+        self.assertEqual(phone.normalize("Identity, amux-iphone-1 · 9ab9…c45d"), "Identity, <device> · <key>")
+        self.assertEqual(phone.normalize("Name, amux-small-2"), "Name, <device>")
+        self.assertEqual(phone.normalize("/tmp/amux-phone-journey/net"), "/tmp/amux-phone-journey/net")
+
+    def test_masked_words_may_change_their_width(self):
+        approved = " | Worked <t> |  | 16,271,69,16\nchat.send | Send |  | 335,779,44,44\n"
+        self.assertTrue(phone.same_geometry(approved, approved.replace("69,16", "71,16")))
+        self.assertFalse(phone.same_geometry(approved, approved.replace("16,271", "16,280")))
+        self.assertFalse(phone.same_geometry(approved, approved.replace("69,16", "99,16")))
+        self.assertFalse(phone.same_geometry(approved, approved.replace("44,44", "46,44")))
+        self.assertFalse(phone.same_geometry(approved, approved + " | Worked <t> |  | 16,271,69,16\n"))
+
+    def test_geometry_is_compared_without_its_order(self):
+        approved = "home.accounts | Switch account |  | 19,69,30,30\nhome.newAgent | New Agent |  | 338,62,44,44\n"
+        swapped = "home.newAgent | New Agent |  | 338,62,44,44\nhome.accounts | Switch account |  | 19,69,30,30\n"
+        moved = "home.newAgent | New Agent |  | 338,63,44,44\nhome.accounts | Switch account |  | 19,69,30,30\n"
+        self.assertTrue(phone.same_geometry(approved, swapped))
+        self.assertFalse(phone.same_geometry(approved, moved))
 
     def test_durations_and_countdowns_are_masked(self):
         self.assertEqual(phone.normalize("Worked 1ms · $0.00"), "Worked <t> · $0.00")
@@ -184,7 +206,7 @@ class ReadingWhatIsSeen(unittest.TestCase):
 
 
 class Selecting(unittest.TestCase):
-    NATIVE = ["account-sign-in", "purchase-restore", "report", "accessibility", "local-network", "push-wake"]
+    NATIVE = ["account-sign-in", "purchase-restore", "report", "accessibility", "local-network", "push-wake", "resume"]
 
     def test_native_runs_exactly_the_stories_declared_for_the_phone_alone(self):
         self.assertEqual(stories.selected(["--native"]), self.NATIVE)

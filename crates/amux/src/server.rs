@@ -110,6 +110,9 @@ pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>
         );
         tokio::select! {
             () = daemon.shutdown_requested() => tracing::info!("a client asked the daemon to stop"),
+            // Never resolves: each change of the machine's interfaces moves
+            // every profile's links onto the paths that work now.
+            () = daemon.follow_interfaces() => {}
             () = terminated() => tracing::info!("signalled to stop"),
             // The supervisor is gone: exit, so whoever starts a supervisor
             // again gets a fresh daemon under it.
@@ -166,6 +169,7 @@ fn edge_options(config: &InstallationConfig) -> node::EdgeOptions {
         dial: true,
         link_socket: true,
         cloud: node::CloudOptions::default(),
+        interfaces: node::test_interfaces(),
     }
 }
 

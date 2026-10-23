@@ -103,6 +103,44 @@ extension View {
 }
 
 
+/// The surfaces stacked on screen, so the offer and the report are drawn on
+/// the one at the top.
+///
+/// A sheet is a layer of its own: anything drawn over the app underneath it
+/// stays underneath it. A screenshot taken with Settings, New Agent or a
+/// chat's overview raised has to offer the report over that sheet, and
+/// Report a Problem, pressed in Settings, has to open over Settings. So the
+/// app hands the drawing down, every surface that can be on top carries
+/// `surface()`, and each surface registers as it appears. The last to
+/// appear and not yet gone is the top one, and only it draws.
+@MainActor
+@Observable
+public final class ReportLayers {
+    @ObservationIgnored let draw: @MainActor () -> AnyView
+    private var stack: [UUID] = []
+
+    public init(@ViewBuilder draw: @escaping @MainActor () -> some View) {
+        self.draw = { AnyView(draw()) }
+    }
+
+    func enter(_ layer: UUID) {
+        stack.removeAll { $0 == layer }
+        stack.append(layer)
+    }
+
+    func leave(_ layer: UUID) {
+        stack.removeAll { $0 == layer }
+    }
+
+    func isTop(_ layer: UUID) -> Bool {
+        stack.last == layer
+    }
+}
+
+extension EnvironmentValues {
+    @Entry public var reportLayers: ReportLayers? = nil
+}
+
 /// What the report screen asked for.
 public enum ReportAction: Equatable, Sendable {
     case cancel
@@ -118,6 +156,7 @@ public enum ReportAction: Equatable, Sendable {
 /// means the same place to whoever reads the bundle on a Mac.
 public struct ReportScreen: View {
     @Environment(\.design) private var design
+    @Environment(\.reducesTransparency) private var reducesTransparency
     private let model: ReportStore
     /// Whether an account is signed in to send this to. A report is filed
     /// under the person's own account, so with nobody signed in there is
@@ -136,33 +175,20 @@ public struct ReportScreen: View {
     }
 
     public var body: some View {
-        @Bindable var model = model
-        ZStack {
-            design.ground.color.ignoresSafeArea()
-            VStack(spacing: 0) {
-                bar
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        // First, above the picture: nobody should write three
-                        // notes before learning there is nowhere to send them.
-                        if !signedIn { signedOut }
-                        frame.disabled(model.uploadBundle != nil)
-                        guidance("Drag a box around anything wrong. Each box takes a note.")
-                        ForEach(Array(model.draft.marks.enumerated()), id: \.offset) { at, mark in
-                            markNote(at: at, mark: mark).disabled(model.uploadBundle != nil)
-                        }
-                        note.disabled(model.uploadBundle != nil)
-                        guidance("Includes this screen and the available session and host records.")
-                        if case .failed(let why) = model.sending { refusal(why) }
-                        if case .sent(let receipt) = model.sending { sent(receipt) }
-                    }
-                    .padding(.horizontal, design.metrics.gutter)
-                    .padding(.top, 4)
-                    .padding(.bottom, 16)
+        NavigationStack {
+            ZStack(alignment: .topLeading) {
+                Ground()
+                if case .sent(let receipt) = model.sending {
+                    sent(receipt)
+                } else {
+                    form
                 }
-                .scrollDismissesKeyboard(.interactively)
             }
+            .navigationTitle("Report a Problem")
+            .toolbarTitleDisplayMode(.inline)
+            .toolbar { bar }
         }
+        .tint(design.accentColor)
         // A container, so Cancel and Send keep their own names. Without this
         // the screen's identifier is what every control under it reports, and
         // nothing on the page can be reached by the name it declared — by
@@ -171,42 +197,80 @@ public struct ReportScreen: View {
         .identified("report.screen", value: state)
     }
 
-    /// Cancel, the title, and the one thing that leaves the phone.
-    private var bar: some View {
-        HStack {
-            BackLink(
-                "Cancel", identifier: "report.cancel", accessibilityLabel: "Cancel"
-            ) { actions(.cancel) }
-            Spacer(minLength: 8)
-            Text("Report")
-                .designFont(.bodyEmphasis, design)
-                .foregroundStyle(design.ink.color)
-            Spacer(minLength: 8)
-            if case .sent = model.sending {
-                Color.clear.frame(width: 44, height: 44).accessibilityHidden(true)
-            } else {
-                Button { actions(.send) } label: {
-                    Text(sendTitle)
-                        .designFont(.bodyEmphasis, design)
-                        .foregroundStyle(design.accent.color.opacity(sendable ? 1 : 0.4))
-                        .thumbTarget(x: 5, y: 13)
+    private var form: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                // First, above the picture: nobody should write three notes
+                // before learning there is nowhere to send them.
+                if !signedIn {
+                    Explain("Sign in to send reports. They go to your amux account.")
+                        .identified("report.signed-out")
                 }
-                .buttonStyle(.plain)
-                .disabled(!sendable)
-                .identified("report.send", label: sendTitle, enabled: sendable)
-                .reclaimingThumbTarget(x: 5, y: 13)
+                frame.disabled(model.uploadBundle != nil)
+                guidance("Drag a box around anything wrong. Each box takes a note.")
+                if !model.draft.marks.isEmpty {
+                    marks.disabled(model.uploadBundle != nil)
+                }
+                if case .failed(let why) = model.sending { refusal(why) }
+                note.disabled(model.uploadBundle != nil)
+                guidance("Includes this screen and the available session and host records.")
             }
+            .padding(.horizontal, design.metrics.gutter)
+            .padding(.top, 8)
+            .padding(.bottom, 16)
         }
-        .padding(.horizontal, design.metrics.gutter)
-        .padding(.vertical, 10)
+        .scrollDismissesKeyboard(.interactively)
+    }
+
+    /// Close on the left, and on the right the one thing that leaves the
+    /// phone: Send, the breathing mark while it goes, and nothing once it has.
+    @ToolbarContentBuilder
+    private var bar: some ToolbarContent {
+        ToolbarItem(placement: .cancellationAction) {
+            BarButton("xmark", label: closeTitle, identifier: "report.cancel") { actions(.cancel) }
+        }
+        .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
+        if sending {
+            ToolbarItem(placement: .confirmationAction) {
+                StateMark(state: .working)
+                    .frame(width: 36, height: 36)
+                    .identified("report.sending", label: "Sending")
+            }
+            .sharedBackgroundVisibility(.hidden)
+        } else if !isSent {
+            ToolbarItem(placement: .confirmationAction) {
+                Button { actions(.send) } label: { Image(systemName: sendSymbol) }
+                    .prominentBarButton()
+                    .tint(design.accent.color)
+                    .disabled(!sendable)
+                    .accessibilityLabel(sendTitle)
+                    .identified("report.send", label: sendTitle, enabled: sendable)
+            }
+            .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
+        }
     }
 
     /// Send, or Retry once the cloud has already turned one down. The same
     /// press either way: nothing about the report changes on a failure, so
     /// offering a second, different action would be a lie about what happens.
     private var sendTitle: String {
-        if case .failed = model.sending { return "Retry" }
-        return "Send"
+        if case .failed = model.sending { return String(localized: "Retry") }
+        return String(localized: "Send")
+    }
+
+    private var sendSymbol: String {
+        if case .failed = model.sending { return "arrow.clockwise" }
+        return "arrow.up"
+    }
+
+    /// Once it has gone there is nothing left to cancel.
+    private var closeTitle: String {
+        isSent ? String(localized: "Close") : String(localized: "Cancel")
+    }
+
+    private var isSent: Bool {
+        if case .sent = model.sending { return true }
+        return false
     }
 
     private var sending: Bool { model.sending == .sending }
@@ -242,7 +306,28 @@ public struct ReportScreen: View {
         }
     }
 
-    /// One rectangle's own note, under the frame in the order they were drawn.
+    /// Each rectangle's own note, as rows of one list in the order they were
+    /// drawn, numbered as the boxes on the picture are.
+    private var marks: some View {
+        // Drawn as a container whatever the design's separation: these are
+        // fields, and a field with no edge is a placeholder floating on the
+        // page.
+        Surface(always: true) {
+            VStack(spacing: 0) {
+                ForEach(Array(model.draft.marks.enumerated()), id: \.offset) { at, mark in
+                    if at > 0 {
+                        Rectangle()
+                            .fill(design.hairline.color)
+                            .frame(height: design.metrics.hairline)
+                            .padding(.leading, 45)
+                    }
+                    markNote(at: at, mark: mark)
+                }
+            }
+        }
+    }
+
+    /// One rectangle's own note.
     private func markNote(at: Int, mark: ReportMark) -> some View {
         @Bindable var model = model
         return HStack(alignment: .top, spacing: 10) {
@@ -262,7 +347,7 @@ public struct ReportScreen: View {
                 .textInputAutocapitalization(.sentences)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                // Named in its own right. The card around it is a container
+                // Named in its own right. The row around it is a container
                 // and hands nothing down, so without this the field somebody
                 // types into has no name at all.
                 .identified(
@@ -270,7 +355,7 @@ public struct ReportScreen: View {
             Button { model.unmark(at) } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(design.inkMuted.color)
+                    .foregroundStyle(design.inkFaint.color)
                     .frame(width: 22, height: 22)
                     .thumbTarget(x: 12, y: 12)
             }
@@ -278,9 +363,8 @@ public struct ReportScreen: View {
             .identified("report.mark.\(at).remove", label: "Remove Box \(at + 1)")
             .reclaimingThumbTarget(x: 12, y: 12)
         }
-        .padding(13)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(design.raised.color))
+        .padding(.horizontal, 13)
+        .padding(.vertical, 12)
         // A container for the same reason the screen is one: the field and
         // the cross beside it are what somebody reaches for here.
         .accessibilityElement(children: .contain)
@@ -290,47 +374,27 @@ public struct ReportScreen: View {
     /// The one note about the whole thing.
     private var note: some View {
         @Bindable var model = model
-        return TextField("What went wrong?", text: $model.draft.note, axis: .vertical)
-            .designFont(.body, design)
-            .foregroundStyle(design.ink.color)
-            .textInputAutocapitalization(.sentences)
-            .lineLimit(2...)
-            // Take the width offered and grow downwards. A vertical field left
-            // to size itself horizontally settles a few points wider or
-            // narrower depending on what is already in it, and a note that
-            // wrapped in a different place on two runs made a capture of this
-            // screen disagree with itself.
-            .fixedSize(horizontal: false, vertical: true)
-            // Stretched before it is padded, not after. Padded first, the
-            // field sizes itself to its own text and the stretch happens to
-            // the box around it — so the line it wraps on depends on what the
-            // field measured itself at, which is not the same on two runs.
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(13)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(design.raised.color))
-            .identified("report.note", label: "What went wrong?", value: model.draft.note)
-    }
-
-    /// Nobody to send it as. Said before anything else on the page, because a
-    /// button that only explains itself once pressed has already wasted the
-    /// notes somebody wrote.
-    private var signedOut: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Sign in to send a report")
-                .designFont(.bodyEmphasis, design)
+        return Surface(always: true) {
+            TextField("What went wrong?", text: $model.draft.note, axis: .vertical)
+                .designFont(.body, design)
                 .foregroundStyle(design.ink.color)
-            Text("Reports go to your amux account, and nobody is signed in on this phone.")
-                .designFont(.detail, design)
-                .foregroundStyle(design.inkMuted.color)
+                .textInputAutocapitalization(.sentences)
+                .lineLimit(3...)
+                // Take the width offered and grow downwards. A vertical field
+                // left to size itself horizontally settles a few points wider
+                // or narrower depending on what is already in it, and a note
+                // that wrapped in a different place on two runs made a
+                // capture of this screen disagree with itself.
                 .fixedSize(horizontal: false, vertical: true)
+                // Stretched before it is padded, not after. Padded first, the
+                // field sizes itself to its own text and the stretch happens
+                // to the box around it — so the line it wraps on depends on
+                // what the field measured itself at, which is not the same on
+                // two runs.
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(13)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(design.raised.color))
-        .accessibilityElement(children: .combine)
-        .identified("report.signed-out", label: "Sign in to send a report")
+        .identified("report.note", label: "What went wrong?", value: model.draft.note)
     }
 
     /// The two lines that say what to do and what is being sent.
@@ -341,41 +405,31 @@ public struct ReportScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// The cloud would not take it. What it said, and the draft still here.
+    /// The cloud would not take it, in its own words, in red as every failure
+    /// in the app is said. The draft is all still here, and Retry is where
+    /// Send was.
     private func refusal(_ why: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("The report was not sent.")
-                .designFont(.bodyEmphasis, design)
-                .foregroundStyle(design.ink.color)
-            Text(why)
-                .designFont(.detail, design)
-                .foregroundStyle(design.inkMuted.color)
-            Text("Retry sends your saved report.")
-                .designFont(.detail, design)
-                .foregroundStyle(design.inkMuted.color)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(design.raised.color))
-        .identified("report.refusal", label: "The report was not sent.", value: why)
+        Text("Not sent: \(why)")
+            .designFont(.detail, design)
+            .foregroundStyle(design.removed.color)
+            .fixedSize(horizontal: false, vertical: true)
+            .identified("report.refusal", label: "Not sent", value: why)
     }
 
-    /// It arrived. The receipt is what somebody quotes when they ask about it.
+    /// It arrived, and the page says so as the app's other finished pages do.
+    /// The receipt is what somebody quotes when they ask about it.
     private func sent(_ receipt: ReportReceipt) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Sent")
-                .designFont(.bodyEmphasis, design)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Report sent")
+                .designFont(.screenTitle, design)
                 .foregroundStyle(design.ink.color)
-            Text(receipt.id)
-                .designFont(.monoSmall, design)
-                .foregroundStyle(design.inkMuted.color)
+            Explain("Quote \(receipt.id) if you write to us about it.")
         }
-        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(design.raised.color))
-        .identified("report.sent", label: "Sent", value: receipt.id)
+        .padding(.horizontal, design.metrics.gutter)
+        .padding(.top, Space.l)
+        .accessibilityElement(children: .combine)
+        .identified("report.sent", label: "Report sent", value: receipt.id)
     }
 }
 

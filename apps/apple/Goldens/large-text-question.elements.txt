@@ -1,33 +1,31 @@
 shell |  | agents | 0,62,402,778
-chat |  | asker | 0,62,402,778
-chat.row.boundary | Started |  | 18,-56,366,58
-chat.row.prompt | Tidy the release notes. |  | 18,3,366,106
-chat.row.question | Asking |  | 18,120,366,39
-chat.header | /t/a/n/d/work · desk | live | 18,64,262,66
-chat.back | Back |  | 16,74,42,46
-chat.title | asker | asker | 51,72,216,50
-chat.more | More |  | 344,75,44,44
-ask | Question | open | 12,174,378,656
-ask.more | More |  | 338,189,44,44
-ask.question | Which changes should the release notes keep? |  | 28,245,299,128
-ask.option.0 | Only what users will notice |  | 28,385,346,108
-ask.option.1 | Every change |  | 28,499,346,65
-ask.option.other |  |  | 28,570,346,65
-ask.addNote.0 | Add a note |  | 28,647,190,44
+chat |  | asker | 0,116,402,724
+chat.row.prompt | Tidy the release notes. |  | 16,-7,370,106
+chat.row.question | Asking |  | 16,111,370,39
+ask | Question | open | 12,164,378,666
+ask.more | More |  | 338,180,44,44
+ask.question | Which changes should the release notes keep? |  | 28,235,299,128
+ask.option.0 | Only what users will notice |  | 28,375,346,108
+ask.option.1 | Every change |  | 28,489,346,65
+ask.option.other |  |  | 28,560,346,65
+ask.addNote.0 | Add a note |  | 28,637,190,44
 ask.skip | Skip |  | 28,693,346,65
 ask.reply | Reply instead |  | 28,770,234,44
- | Back |  | 16,74,42,46
- | asker, /t/a/n/d/work · desk |  | 51,72,216,50
- | More |  | 344,75,44,44
- | Question |  | 62,190,152,43
- | More |  | 338,189,44,44
- | Which changes should the release notes keep? |  | 28,245,299,128
- | Only what users will notice |  | 28,385,346,108
- | Every change |  | 28,499,346,65
- | Something else… |  | 28,570,346,65
- | Add a note |  | 28,647,190,43
+chat.more | More |  | 342,66,36,36
+chat.back | Back |  | 20,66,56,36
+chat.header | /t/a/n/d/work · desk | live | 96,66,169,36
+chat.title | asker | asker | 96,66,169,36
+ | Question |  | 62,180,152,43
+ | More |  | 338,180,44,44
+ | Which changes should the release notes keep? |  | 28,235,299,128
+ | Only what users will notice |  | 28,375,346,108
+ | Every change |  | 28,489,346,65
+ | Something else… |  | 28,560,346,65
+ | Add a note |  | 28,638,190,43
  | Skip |  | 28,693,346,65
  | Reply instead |  | 28,770,233,43
- | Started |  | 18,-56,366,58
- | Tidy the release notes. |  | 18,3,366,106
- | Asking |  | 18,120,366,39
+ | Tidy the release notes. |  | 16,-7,370,106
+ | Asking |  | 16,111,370,39
+ | Back |  | 20,66,56,36
+ | asker, /t/a/n/d/work · desk |  | 96,66,169,36
+ | More |  | 342,66,36,36

@@ -96,4 +96,28 @@ final class ReviewModelTests: XCTestCase {
         model.toggle(file: 1)
         XCTAssertEqual(model.folded, [])
     }
+
+    func testACommentIsFoundWhereItIsDrawnAndCanBeRewrittenOrRemoved() {
+        let model = ReviewModel(review: ReviewFixtures.frozen)
+        model.begin(at: ReviewLine(file: 0, hunk: 0, line: 3))
+        model.comment("Name the reason.")
+        model.begin(at: ReviewLine(file: 0, hunk: 0, line: 1))
+        model.comment("Refused takes a reason now.")
+        model.begin(at: ReviewLine(file: 2, hunk: 0, line: 0))
+        model.comment("Link the table.")
+        XCTAssertEqual(model.placed[CommentPlace(file: 0, line: ReviewLine(file: 0, hunk: 0, line: 3))], [0])
+        XCTAssertEqual(model.placed[CommentPlace(file: 0, line: ReviewLine(file: 0, hunk: 0, line: 1))], [1])
+        XCTAssertEqual(model.placed[CommentPlace(file: 2, line: ReviewLine(file: 2, hunk: 0, line: 0))], [2])
+
+        XCTAssertFalse(model.rewrite(1, as: "  "), "a blank rewrite changes nothing")
+        XCTAssertTrue(model.rewrite(1, as: "Refused carries why."))
+        XCTAssertEqual(model.doc.files[0].hunks[0].lines[1].comments, ["Refused carries why."])
+
+        model.remove(0)
+        XCTAssertEqual(model.comments.map(\.text), ["Refused carries why.", "Link the table."])
+        XCTAssertEqual(model.doc.files[0].hunks[0].lines[3].comments, [])
+        XCTAssertEqual(
+            model.placed[CommentPlace(file: 2, line: ReviewLine(file: 2, hunk: 0, line: 0))], [1],
+            "the indexes follow the comments that are left")
+    }
 }

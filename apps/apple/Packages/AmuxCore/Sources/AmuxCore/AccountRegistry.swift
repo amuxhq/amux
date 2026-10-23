@@ -166,7 +166,8 @@ public final class AccountRegistry {
             return AccountEntry(
                 account: SignedInAccount(
                     id: id, email: view.account.email,
-                    displayName: view.account.name.isEmpty ? nil : view.account.name),
+                    displayName: view.account.name.isEmpty ? nil : view.account.name,
+                    picture: URL(string: view.account.picture)),
                 signedIn: view.account.binding != .signedOut,
                 entitlement: seen.entitlement, hosts: seen.hosts, attention: seen.attention,
                 profile: view.id)

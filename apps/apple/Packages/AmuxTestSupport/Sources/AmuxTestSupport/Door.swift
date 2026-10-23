@@ -144,12 +144,17 @@ public enum DoorRequest: Sendable, Equatable {
     case capture(path: String)
     case tap(identifier: String)
     /// Activate the item reading `label` in what the system presented over
-    /// the app, a menu among them, whose items carry no names of their own.
+    /// the app, a dialog or a menu, whose items carry no names of their own.
     case choose(label: String)
     /// Run an element's named accessibility action, as VoiceOver's actions
     /// rotor does: what a drag or a hold does for a person with a finger.
     case perform(identifier: String, action: String)
     case type(identifier: String, text: String)
+    /// Make the search field of the screen on top hold `text`, as a person
+    /// does by pulling it into view, clearing it and typing. The system's
+    /// search field takes no name from the screen that asks for it, so it
+    /// is found as the one search field on show.
+    case search(text: String)
     /// Empty a named field, through the field's own delete.
     ///
     /// Typing adds to what a field is already holding, which is what typing
@@ -683,6 +688,8 @@ extension DoorRequest: Codable {
             self = .type(
                 identifier: try fields.decode(String.self, forKey: .identifier),
                 text: try fields.decode(String.self, forKey: .text))
+        case "search":
+            self = .search(text: try fields.decode(String.self, forKey: .text))
         case "clear":
             self = .clear(identifier: try fields.decode(String.self, forKey: .identifier))
         case "scroll":
@@ -863,6 +870,9 @@ extension DoorRequest: Codable {
         case .type(let identifier, let text):
             try fields.encode("type", forKey: .kind)
             try fields.encode(identifier, forKey: .identifier)
+            try fields.encode(text, forKey: .text)
+        case .search(let text):
+            try fields.encode("search", forKey: .kind)
             try fields.encode(text, forKey: .text)
         case .clear(let identifier):
             try fields.encode("clear", forKey: .kind)

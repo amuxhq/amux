@@ -20,7 +20,7 @@ use crate::HostId;
 use crate::driver::{CoreLinks, core_error};
 use crate::link::{ChannelClass, ChannelError, ChannelKey, ChannelPool};
 use crate::routing::{LinkCloseRequest, LiveRoute, Route, core_host, host_from_core};
-use crate::transport::{TrustedPeerConnections, pairing_channel_from_io};
+use crate::transport::TrustedPeerConnections;
 
 /// How long one try the core asks for may take to open its channel before
 /// it counts as failed: as long as a call waits to reach a host.
@@ -165,6 +165,14 @@ impl ConnectionManager {
         });
     }
 
+    /// `peer` refused this host's certificate in a link's handshake: it no
+    /// longer trusts this one.
+    pub(crate) fn peer_revoked(&self, peer: HostId) {
+        self.report(Input::PeerRevoked {
+            host: core_host(peer),
+        });
+    }
+
     /// The account's plan changed, so what the relay carries changed with
     /// it; the core tries again every host the relay carried or refused.
     pub(crate) fn plan_changed(&self) {
@@ -191,7 +199,7 @@ impl ConnectionManager {
             .copied()
             .ok_or(ChannelError::NoRoute { host_id: peer })?;
         let opened = self.open_route(peer, route, class).await;
-        if let Err(ChannelError::Refused(wire::pb::StreamRefusal::PaymentRequired)) = &opened {
+        if let Err(ChannelError::Refused(wire::pb::ForwardRefusal::PaymentRequired)) = &opened {
             self.analytics.record_at_most_every(
                 crate::telemetry::RELAY_REFUSED_EVERY,
                 analytics::Event::RelayRefused,
@@ -235,17 +243,7 @@ impl ConnectionManager {
         peer: HostId,
     ) -> Result<Channel, ChannelError> {
         let relay = self.cloud_relay_for(peer).await?;
-        let stream = self
-            .channels
-            .pairing_stream(peer, Route::Via(relay))
-            .await?;
-        tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            pairing_channel_from_io(stream),
-        )
-        .await
-        .map_err(|_| ChannelError::Handshake("pairing TLS handshake timed out".into()))?
-        .map_err(|error| ChannelError::Tls(error.to_string()))
+        self.channels.pairing_channel(peer, relay).await
     }
 
     pub(crate) async fn has_cloud_route(&self, peer: HostId) -> bool {

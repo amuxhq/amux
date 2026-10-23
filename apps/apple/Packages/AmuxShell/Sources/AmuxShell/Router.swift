@@ -25,9 +25,19 @@ public protocol RouteLoader: AnyObject {
 @MainActor
 @Observable
 public final class Router {
-    /// The tab on show. Each tab keeps its own stack, so coming back to one
+    /// The place on show. Each keeps its own stack, so coming back to one
     /// finds it where it was left.
-    public var tab: Tab = .agents { didSet { arrived?() } }
+    public var tab: Tab = .agents {
+        didSet {
+            if tab != .you { beneath = tab }
+            arrived?()
+        }
+    }
+
+    /// The tab the tab bar shows: the one on show, or, while the settings
+    /// sheet is up, the one it was raised over and that putting it away
+    /// returns to.
+    public private(set) var beneath: Tab = .agents
 
     /// Told after every arrival: a tab reached for, a page pushed, a page
     /// gone back from.
@@ -51,6 +61,25 @@ public final class Router {
     public var agentsPath: [Route] = [] { didSet { departed(oldValue, agentsPath) } }
     public var hostsPath: [Route] = [] { didSet { departed(oldValue, hostsPath) } }
     public var youPath: [Route] = [] { didSet { departed(oldValue, youPath) } }
+
+    /// Whether New Agent is up: a sheet over whichever tab asked for it, as
+    /// a new message is in a chat app, rather than a page in a stack. Putting
+    /// it away leaves everything beneath it where it was.
+    public var composing = false { didSet { arrived?() } }
+
+    /// The pairing up, if one is: a sheet with an end, like New Agent.
+    public var pairing: Pairing? { didSet { arrived?() } }
+
+    /// Whether the pairing sheet is on screen. Signing in and subscribing are
+    /// pages of the tab beneath, so the sheet steps aside while one is open
+    /// and comes back, with its pairing where it was, when it is put away.
+    public var showsPairing: Bool {
+        guard pairing != nil else { return false }
+        switch top {
+        case .signIn, .paywall: return false
+        default: return true
+        }
+    }
 
     /// A link that is not navigation, kept until whatever it answers comes
     /// for it. A sign-in callback can arrive before the sign-in that started
@@ -133,9 +162,24 @@ public final class Router {
     /// in is about the account arriving and the list of accounts about none,
     /// so those stay.
     public func leaveAccount() {
+        // New Agent offers one account's machines, and a code is for a
+        // machine one account found. A link names its machine itself and
+        // pairs it into whichever account is on screen, so it stays: signing
+        // in is how an invitation for a machine only the relay can reach is
+        // taken up.
+        composing = false
+        if case .code = pairing { pairing = nil }
         for tab in Tab.allCases {
             setPath(path(tab).filter(\.outlivesAccount), for: tab)
         }
+    }
+
+    /// Puts New Agent away and opens the agent it started, straight over
+    /// the list: going back from it leads to the list it joined.
+    public func started(_ agent: AgentKey) {
+        composing = false
+        setPath([], for: .agents)
+        open(.conversation(agent))
     }
 
     public func pop() {
@@ -166,7 +210,7 @@ public final class Router {
         guard let link = DeepLink(url) else { return nil }
         switch link {
         case .pair(let invitation):
-            open(.pairConfirmation(invitation))
+            pairing = .link(invitation)
         case .signInCallback:
             held = link
         }

@@ -10,8 +10,8 @@ public enum PaywallAction: Equatable, Sendable {
     case restore
     /// Offer a purchase amux.sh has not confirmed to it again.
     case retry
-    /// Subscribed, and finished reading about it.
-    case done
+    /// Open where an App Store subscription is managed.
+    case manage
 }
 
 /// Subscribing.
@@ -25,16 +25,10 @@ public enum PaywallAction: Equatable, Sendable {
 public struct Paywall: View {
     @Environment(\.design) private var design
     private let model: PaywallStore
-    private let back: String
     private let actions: @MainActor (PaywallAction) -> Void
 
-    public init(
-        model: PaywallStore,
-        back: String = "You",
-        actions: @escaping @MainActor (PaywallAction) -> Void
-    ) {
+    public init(model: PaywallStore, actions: @escaping @MainActor (PaywallAction) -> Void) {
         self.model = model
-        self.back = back
         self.actions = actions
     }
 
@@ -42,7 +36,6 @@ public struct Paywall: View {
         ZStack {
             Ground()
             VStack(alignment: .leading, spacing: 0) {
-                backButton
                 heading
                 if model.entitled {
                     subscribed
@@ -58,10 +51,11 @@ public struct Paywall: View {
                 }
                 Spacer(minLength: 22)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(.horizontal, design.metrics.gutter)
             foot
         }
+        .backBar("paywall.back") { actions(.cancel) }
         // A screen is a container of the things on it, not a name for all of
         // them: without this the system spreads this identifier over the
         // title, the rows and the buttons underneath.
@@ -79,14 +73,6 @@ public struct Paywall: View {
         case .failed: "failed"
         case .entitled(let grant): "entitled by \(grant.named)"
         }
-    }
-
-    private var backButton: some View {
-        HStack {
-            BackLink(back, identifier: "paywall.back") { actions(.cancel) }
-            Spacer()
-        }
-        .padding(.vertical, 8)
     }
 
     private var heading: some View {
@@ -143,8 +129,8 @@ public struct Paywall: View {
                         .foregroundStyle(design.ink.color)
                     if let saving = plan.saving {
                         Text(saving)
-                            .designFont(.monoSmall, design)
-                            .foregroundStyle(design.inkMuted.color)
+                            .designFont(.detail, design)
+                            .foregroundStyle(design.accent.color)
                     }
                 }
             }
@@ -165,7 +151,7 @@ public struct Paywall: View {
     /// cancelled, and that a subscription bought anywhere else already counts.
     private var terms: some View {
         Text("Cancel any time in the App Store. A subscription bought on the web carries over.")
-            .designFont(.monoSmall, design)
+            .designFont(.detail, design)
             .foregroundStyle(design.inkFaint.color)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.top, 14)
@@ -231,25 +217,53 @@ public struct Paywall: View {
     }
 
     /// The one thing pressed, and everything said about pressing it.
+    ///
+    /// Subscribed, the one thing left is managing it where it was bought.
+    /// The App Store's page is a press away; a web subscription is managed
+    /// on amux.sh and access that was given is managed nowhere, so those
+    /// have no button, and going back is the bar's.
+    @ViewBuilder
     private var foot: some View {
+        if model.entitled {
+            if model.grant == .purchased(.appStore) {
+                VStack {
+                    Spacer(minLength: 0)
+                    BottomAction {
+                        Button { actions(.manage) } label: {
+                            ActionLabel("Manage Subscription", kind: .outline, fill: true)
+                        }
+                        .buttonStyle(.amuxControl)
+                        .identified("paywall.manage", label: "Manage Subscription")
+                    }
+                }
+            }
+        } else {
+            purchase
+        }
+    }
+
+    private var purchase: some View {
         VStack {
             Spacer(minLength: 0)
             BottomAction {
                 VStack(spacing: 10) {
                     trouble
-                    Button { actions(pressing) } label: {
-                        ActionLabel(title, kind: .primary, fill: true)
+                    // A wait is said in ink beside the breathing mark rather
+                    // than on a greyed button nobody can read.
+                    if model.working || waiting {
+                        WaitingLine(title: title)
+                            .identified("paywall.buy", label: title, value: state, enabled: false)
+                    } else {
+                        Button { actions(pressing) } label: {
+                            ActionLabel(title, kind: .primary, fill: true)
+                        }
+                        .buttonStyle(.amuxControl)
+                        .identified("paywall.buy", label: title, value: state)
                     }
-                    .buttonStyle(.amuxControl)
-                    .disabled(model.working || waiting)
-                    .opacity(model.working || waiting ? 0.5 : 1)
-                    .identified(
-                        "paywall.buy", label: title, value: state,
-                        enabled: !model.working && !waiting)
                     if !model.entitled {
                         Button { actions(.restore) } label: {
                             Text("Restore Purchases")
-                                .designFont(.mono, design)
+                                .designFont(.body, design)
                                 .foregroundStyle(design.accent.color)
                                 .thumbTarget(y: 14)
                         }
@@ -284,13 +298,9 @@ public struct Paywall: View {
     }
 
     /// What pressing the one button means, which is not always buying.
-    private var pressing: PaywallAction {
-        if model.entitled { return .done }
-        return unconfirmed ? .retry : .buy
-    }
+    private var pressing: PaywallAction { unconfirmed ? .retry : .buy }
 
     private var title: String {
-        if model.entitled { return "Done" }
         switch model.phase {
         case .buying: return "Waiting for the App Store…"
         case .awaitingApproval: return "Waiting for approval"

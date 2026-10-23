@@ -1,7 +1,8 @@
 import AmuxCore
 import Foundation
 
-/// The three places the app is, as the tab bar names them.
+/// The three places the app is: the two tabs, and You, the settings sheet
+/// raised over them from the account disc on the Agents list.
 public enum Tab: String, Hashable, Sendable, CaseIterable, Codable {
     case agents
     case hosts
@@ -11,15 +12,15 @@ public enum Tab: String, Hashable, Sendable, CaseIterable, Codable {
         switch self {
         case .agents: "Agents"
         case .hosts: "Hosts"
-        case .you: "You"
+        case .you: "Settings"
         }
     }
 
     public var symbol: String {
         switch self {
-        case .agents: "square.stack.3d.up"
-        case .hosts: "externaldrive.connected.to.line.below"
-        case .you: "person.crop.circle"
+        case .agents: "terminal"
+        case .hosts: "server.rack"
+        case .you: "gearshape"
         }
     }
 }
@@ -34,18 +35,9 @@ public enum Route: Hashable, Sendable {
     case conversation(AgentKey)
     /// The changes one agent has made, opened from its conversation.
     case changes(AgentKey)
-    case newAgent
-    /// Typing the six-digit code one machine printed. It carries that machine,
-    /// because a code proves possession of one machine's offer and is
-    /// authenticated against it alone. There is no route without one: a
-    /// machine this phone has not found is paired by scanning its code.
-    case pairByCode(HostId)
-    /// A pairing invitation that arrived as a link, waiting to be confirmed or
-    /// abandoned. Arriving here pairs with nobody.
-    case pairConfirmation(PairingInvitation)
     case host(HostId)
-    /// Signing in, pushed onto whichever stack asked for it. The empty Agents
-    /// home and the You tab both offer it, so where it was opened from is a
+    /// Signing in, pushed onto whichever stack asked for it. The Agents list
+    /// and the settings sheet both offer it, so where it was opened from is a
     /// fact about the push rather than about the screen — and it is what the
     /// back button is allowed to name.
     case signIn(Tab)
@@ -57,8 +49,8 @@ public enum Route: Hashable, Sendable {
     /// its tab with it, so the tab bar always agrees with what is on screen.
     public var tab: Tab {
         switch self {
-        case .conversation, .changes, .newAgent: .agents
-        case .pairByCode, .pairConfirmation, .host: .hosts
+        case .conversation, .changes: .agents
+        case .host: .hosts
         case .signIn(let from), .paywall(let from): from
         }
     }
@@ -68,7 +60,7 @@ public enum Route: Hashable, Sendable {
     public var outlivesAccount: Bool {
         switch self {
         case .signIn: true
-        case .conversation, .changes, .newAgent, .pairByCode, .pairConfirmation, .host, .paywall:
+        case .conversation, .changes, .host, .paywall:
             false
         }
     }
@@ -79,12 +71,31 @@ public enum Route: Hashable, Sendable {
         switch self {
         case .conversation: "conversation"
         case .changes: "changes"
-        case .newAgent: "new-agent"
-        case .pairByCode: "pin"
-        case .pairConfirmation: "pair-confirm"
         case .host: "host"
         case .signIn: "sign-in"
         case .paywall: "paywall"
+        }
+    }
+}
+
+/// Pairing with one machine, raised as a sheet over whichever tab asked.
+public enum Pairing: Hashable, Sendable, Identifiable {
+    /// Typing the six-digit code one machine printed. It carries that machine,
+    /// because a code proves possession of one machine's offer and is
+    /// authenticated against it alone. There is no pairing by code without
+    /// one: a machine this phone has not found is paired by scanning its code.
+    case code(HostId)
+    /// A pairing invitation that arrived as a link, waiting to be confirmed or
+    /// abandoned. Arriving pairs with nobody.
+    case link(PairingInvitation)
+
+    public var id: Self { self }
+
+    /// What the sheet is called where a screen is named by a word.
+    public var name: String {
+        switch self {
+        case .code: "pin"
+        case .link: "pair-confirm"
         }
     }
 }

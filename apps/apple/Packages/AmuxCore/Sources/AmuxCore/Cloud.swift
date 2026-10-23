@@ -96,11 +96,14 @@ public struct SignedInAccount: Sendable, Equatable, Codable {
     public var id: AccountId
     public var email: String
     public var displayName: String?
+    /// The account's profile picture, where it has one.
+    public var picture: URL?
 
-    public init(id: AccountId, email: String, displayName: String? = nil) {
+    public init(id: AccountId, email: String, displayName: String? = nil, picture: URL? = nil) {
         self.id = id
         self.email = email
         self.displayName = displayName
+        self.picture = picture
     }
 }
 

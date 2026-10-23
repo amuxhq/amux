@@ -12,7 +12,6 @@ use rcgen::{
 };
 use ring::rand::{SecureRandom as _, SystemRandom};
 use ring::signature::{Ed25519KeyPair, KeyPair as _};
-use rustls::client::Resumption;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::{WebPkiSupportedAlgorithms, verify_tls12_signature, verify_tls13_signature};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName, UnixTime};
@@ -23,8 +22,9 @@ use rustls::{
     DistinguishedName as TlsDistinguishedName, Error as TlsError, ServerConfig, SignatureScheme,
 };
 
+use crate::link::resumption::SessionTickets;
 use crate::trust::{SharedTrustStore, TrustStore};
-use crate::{HostId, audit, dispatcher};
+use crate::{HostId, audit};
 
 const DEVICE_KEY_FILE: &str = "device.key";
 const HOST_ID_FILE: &str = "host_id";
@@ -94,7 +94,13 @@ impl DeviceIdentity {
 
     #[cfg(test)]
     pub(crate) fn for_test(host_id: HostId) -> Self {
-        Self::from_parts(host_id, generate_ed25519_pkcs8_v1().unwrap()).unwrap()
+        Self::generated(host_id).unwrap()
+    }
+
+    /// A fresh key for `host_id`, kept nowhere: an identity that lasts as
+    /// long as the process holding it.
+    pub(crate) fn generated(host_id: HostId) -> Result<Self, IdentityError> {
+        Self::from_parts(host_id, generate_ed25519_pkcs8_v1()?)
     }
 
     fn from_parts(host_id: HostId, private_key_pkcs8: Vec<u8>) -> Result<Self, IdentityError> {
@@ -152,16 +158,6 @@ impl DeviceIdentity {
         self.client_tls_config(PinnedServerCertVerifier::new(peer, trust_store))
     }
 
-    /// A client config whose handshake accepts only `pin`, the key given
-    /// for `peer` as the channel was asked for.
-    pub(crate) fn client_tls_config_pinned(
-        &self,
-        peer: HostId,
-        pin: Vec<u8>,
-    ) -> Result<ClientConfig, IdentityError> {
-        self.client_tls_config(PinnedServerCertVerifier::with_pin(peer, pin))
-    }
-
     fn client_tls_config(
         &self,
         verifier: PinnedServerCertVerifier,
@@ -177,22 +173,15 @@ impl DeviceIdentity {
         Ok(config)
     }
 
+    /// The configuration this host answers links with, issuing session
+    /// tickets from `tickets`.
     pub fn quic_server_config(
         &self,
         trust_store: SharedTrustStore,
+        tickets: &std::sync::Arc<SessionTickets>,
     ) -> Result<quinn::ServerConfig, IdentityError> {
-        let mut tls = self.server_tls_config(trust_store)?;
-        tls.alpn_protocols = vec![QUIC_ALPN.to_vec()];
-        tls.session_storage = std::sync::Arc::new(rustls::server::NoServerSessionStorage {});
-        tls.send_tls13_tickets = 0;
-        tls.max_early_data_size = 0;
-
-        let crypto = quinn::crypto::rustls::QuicServerConfig::try_from(tls)
-            .map_err(|error| IdentityError::TlsConfig(error.to_string()))?;
-        let mut config = quinn::ServerConfig::with_crypto(std::sync::Arc::new(crypto));
-        config.transport_config(quic_transport_config());
-        config.migration(true);
-        Ok(config)
+        let tls = self.server_tls_config(trust_store)?;
+        quic_server_config_issuing(tls, tickets).map_err(IdentityError::TlsConfig)
     }
 
     pub(crate) fn quic_client_config_for_peer(
@@ -200,10 +189,30 @@ impl DeviceIdentity {
         trust_store: SharedTrustStore,
         peer: HostId,
     ) -> Result<quinn::ClientConfig, IdentityError> {
+        self.quic_client_config_keeping(trust_store, peer, None)
+    }
+
+    /// The configuration to dial `peer` with, keeping the tickets the peer
+    /// gives it in `tickets` (loaded into it now) when given, in memory
+    /// otherwise.
+    pub(crate) fn quic_client_config_keeping(
+        &self,
+        trust_store: SharedTrustStore,
+        peer: HostId,
+        tickets: Option<std::sync::Arc<crate::link::client_tickets::ClientTickets>>,
+    ) -> Result<quinn::ClientConfig, IdentityError> {
         let mut tls = self.client_tls_config_for_peer(trust_store, peer)?;
         tls.alpn_protocols = vec![QUIC_ALPN.to_vec()];
-        tls.resumption = Resumption::disabled();
-        tls.enable_early_data = false;
+        tls.resumption = match &tickets {
+            Some(tickets) => rustls::client::Resumption::store(tickets.clone()),
+            None => crate::link::resumption::client_resumption(),
+        };
+        // Only a launch's first flight (`QuicCarrier::first_flight`) writes
+        // early data; other dials wait for the handshake as before.
+        tls.enable_early_data = true;
+        if let Some(tickets) = tickets {
+            tickets.load(&tls, &crate::link::quic::device_server_name());
+        }
 
         let crypto = quinn::crypto::rustls::QuicClientConfig::try_from(tls)
             .map_err(|error| IdentityError::TlsConfig(error.to_string()))?;
@@ -211,6 +220,32 @@ impl DeviceIdentity {
         config.transport_config(quic_transport_config());
         Ok(config)
     }
+}
+
+/// A QUIC server configuration from `tls` that issues one session ticket
+/// per link from `tickets` and accepts early data on it. rustls allows
+/// 0-RTT only while no stateless ticketer is set, so the store keeps
+/// every ticket's session; quinn's address-validation tokens come from
+/// the store's secret, so a restarted server still honours them.
+pub(crate) fn quic_server_config_issuing(
+    mut tls: ServerConfig,
+    tickets: &std::sync::Arc<SessionTickets>,
+) -> Result<quinn::ServerConfig, String> {
+    tls.alpn_protocols = vec![QUIC_ALPN.to_vec()];
+    tls.session_storage = tickets.clone();
+    // One ticket per link: the client offers one on its next link, and
+    // every ticket issued is an entry the store keeps for a week.
+    tls.send_tls13_tickets = 1;
+    // QUIC allows nothing between none and unbounded.
+    tls.max_early_data_size = u32::MAX;
+
+    let crypto = quinn::crypto::rustls::QuicServerConfig::try_from(tls)
+        .map_err(|error| error.to_string())?;
+    let mut config = quinn::ServerConfig::new(std::sync::Arc::new(crypto), tickets.token_key());
+    config.transport_config(quic_transport_config());
+    config.migration(true);
+    crate::link::validation::issue_tokens(&mut config);
+    Ok(config)
 }
 
 pub(crate) fn quic_transport_config() -> std::sync::Arc<quinn::TransportConfig> {
@@ -238,7 +273,7 @@ pub(crate) fn quic_transport_config() -> std::sync::Arc<quinn::TransportConfig> 
     // two packets is what Chromium's QUIC starts with.
     let mut congestion = quinn::congestion::CubicConfig::default();
     congestion.initial_window(32 * 1200);
-    let mut transport = quinn::TransportConfig::default();
+    let mut transport = quic_transport_base();
     transport
         .keep_alive_interval(Some(keep_alive))
         .max_idle_timeout(Some(
@@ -252,6 +287,41 @@ pub(crate) fn quic_transport_config() -> std::sync::Arc<quinn::TransportConfig> 
     std::sync::Arc::new(transport)
 }
 
+/// What every QUIC connection's transport starts from. Every datagram is
+/// [`MAX_DATAGRAM`](crate::link::socket::MAX_DATAGRAM) bytes on every path,
+/// so a path switch never needs a new MTU search: discovery is off and the
+/// MTU is set here rather than left to quinn's defaults, which turn
+/// discovery off only while the socket says it may fragment.
+pub(crate) fn quic_transport_base() -> quinn::TransportConfig {
+    let mtu = u16::try_from(crate::link::socket::MAX_DATAGRAM).expect("the datagram size fits");
+    let mut transport = quinn::TransportConfig::default();
+    transport
+        .mtu_discovery_config(None)
+        .initial_mtu(mtu)
+        .min_mtu(mtu);
+    transport
+}
+
+/// Every QUIC endpoint's config. None offers to grease the fixed bit: the
+/// link socket tells its own datagrams from QUIC by that bit, and a peer
+/// clears it only when offered.
+pub fn quic_endpoint_config() -> quinn::EndpointConfig {
+    let mut config = quinn::EndpointConfig::default();
+    config.grease_quic_bit(false);
+    config
+}
+
+/// A QUIC endpoint on a UDP socket of its own at `bind`.
+pub fn quic_endpoint(
+    server: Option<quinn::ServerConfig>,
+    bind: std::net::SocketAddr,
+) -> std::io::Result<quinn::Endpoint> {
+    let socket = std::net::UdpSocket::bind(bind)?;
+    let runtime = quinn::default_runtime()
+        .ok_or_else(|| std::io::Error::other("no async runtime for a QUIC endpoint"))?;
+    quinn::Endpoint::new(quic_endpoint_config(), server, socket, runtime)
+}
+
 pub(crate) fn host_id_for_certificate(
     trust_store: &TrustStore,
     cert: &CertificateDer<'_>,
@@ -261,12 +331,10 @@ pub(crate) fn host_id_for_certificate(
 }
 
 fn emit_mtls_audit(reason: impl fmt::Display) {
-    dispatcher::mark_mtls_audit_emitted();
     audit::auth_mtls_handshake_failure(reason);
 }
 
 fn emit_mtls_audit_for_host(host_id: HostId, reason: impl fmt::Display) {
-    dispatcher::mark_mtls_audit_emitted();
     audit::auth_mtls_handshake_failure_for_host(host_id, reason);
 }
 
@@ -325,8 +393,10 @@ impl ClientCertVerifier for PinnedClientCertVerifier {
         } else {
             // Revoked, not an unknown issuer: only a host that trusts this
             // one presents its certificate here, so the refusal tells it
-            // this host no longer trusts it, and the alert this raises is
-            // how that host learns so over a relay.
+            // this host no longer trusts it. The dialler reads the
+            // certificate_revoked alert closing its handshake as that, on
+            // any route, which is how a host revoked while its link was
+            // down learns it.
             emit_mtls_audit("client certificate pubkey is not trusted");
             Err(TlsError::InvalidCertificate(CertificateError::Revoked))
         }
@@ -358,32 +428,16 @@ impl ClientCertVerifier for PinnedClientCertVerifier {
 #[derive(Clone)]
 struct PinnedServerCertVerifier {
     expected_host_id: HostId,
-    pins: Pins,
+    /// The trust store, read as of the handshake.
+    trust_store: SharedTrustStore,
     supported_algs: WebPkiSupportedAlgorithms,
-}
-
-/// Where the key the server must present comes from.
-#[derive(Clone)]
-enum Pins {
-    /// The trust store, as of the handshake.
-    Trusted(SharedTrustStore),
-    /// One key, given before the handshake began.
-    Key(Vec<u8>),
 }
 
 impl PinnedServerCertVerifier {
     fn new(expected_host_id: HostId, trust_store: SharedTrustStore) -> Self {
-        Self::pinned(expected_host_id, Pins::Trusted(trust_store))
-    }
-
-    fn with_pin(expected_host_id: HostId, pin: Vec<u8>) -> Self {
-        Self::pinned(expected_host_id, Pins::Key(pin))
-    }
-
-    fn pinned(expected_host_id: HostId, pins: Pins) -> Self {
         Self {
             expected_host_id,
-            pins,
+            trust_store,
             supported_algs: rustls::crypto::ring::default_provider()
                 .signature_verification_algorithms,
         }
@@ -414,14 +468,12 @@ impl ServerCertVerifier for PinnedServerCertVerifier {
             );
             TlsError::InvalidCertificate(CertificateError::BadEncoding)
         })?;
-        let expected = match &self.pins {
-            Pins::Trusted(trust_store) => trust_store
-                .read()
-                .map_err(|_| TlsError::General("trust store lock is poisoned".to_string()))?
-                .pubkey_for_host(self.expected_host_id)
-                .map(<[u8]>::to_vec),
-            Pins::Key(pin) => Some(pin.clone()),
-        };
+        let expected = self
+            .trust_store
+            .read()
+            .map_err(|_| TlsError::General("trust store lock is poisoned".to_string()))?
+            .pubkey_for_host(self.expected_host_id)
+            .map(<[u8]>::to_vec);
         match expected {
             Some(expected) if expected == pubkey.as_slice() => Ok(ServerCertVerified::assertion()),
             Some(_) => {
@@ -734,6 +786,7 @@ mod tests {
                 reachabilities: vec![Reachability::Cloud],
                 signed_in: None,
                 platform: None,
+                listed: Vec::new(),
             },
         );
         store

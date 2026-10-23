@@ -46,6 +46,7 @@ use crate::probes;
 use crate::process::ProcessHost;
 use crate::providers::{self, Commands, RealTools, SMALL_CLAUDE, SMALL_CODEX};
 use crate::relay::Relay;
+use crate::router::{Router, RouterKind};
 use crate::topology::{
     AccountDecl, AgentDecl, FakeKind, HostDecl, LinkDecl, Provider, RelayDecl, TierDecl, Topology,
     TopologyError, link_key,
@@ -56,6 +57,10 @@ use crate::topology::{
 const INPUT_LOG: &str = "input";
 /// The relay's certificate in the net's root, for process hosts to trust.
 const RELAY_CA: &str = "relay-ca.pem";
+/// How long an imitated router keeps a mapping nothing uses: longer than a
+/// link's keep-alive, so a quiet link keeps its port, as a home router's
+/// half-minute or more does.
+const ROUTER_IDLE: Duration = Duration::from_secs(30);
 
 /// The version a supervised host starts on: older than anything a test
 /// publishes.
@@ -381,6 +386,8 @@ impl Net {
     /// returns the net is ready.
     pub async fn start_with(topology: Topology, options: NetOptions) -> Result<Self, NetError> {
         topology.check()?;
+        crate::link_log::install();
+        crate::ssh::install();
         let driven = match options.clock {
             ClockMode::Driven => Some(options.driven.unwrap_or_default()),
             ClockMode::Wall => None,
@@ -776,6 +783,20 @@ impl Net {
             .get(name)
             .map(|host| &host.info)
             .ok_or_else(|| NetError::NoHost(name.to_owned()))
+    }
+
+    /// What `host` has written to the link log, oldest first: each of its
+    /// links coming up, going down or changing path, across restarts.
+    pub fn link_log(&self, host: &str) -> Result<Vec<node::link_log::LinkEvent>, NetError> {
+        let id = self.host(host)?.host_id;
+        Ok(match self.process(host)? {
+            Some(process) => crate::link_log::read(
+                &std::fs::read_to_string(process.data_dir.join(node::DAEMON_LOG))
+                    .unwrap_or_default(),
+                id,
+            ),
+            None => crate::link_log::captured(id),
+        })
     }
 
     pub fn is_up(&self, name: &str) -> bool {
@@ -1652,6 +1673,12 @@ impl Net {
             },
         );
         let made = (|| {
+            let host = &self.hosts[&decl.name];
+            let amux = host
+                .process
+                .as_ref()
+                .map_or_else(|| self.binaries.amux(), |process| process.amux.clone());
+            crate::ssh::write_login(&host.dir, &amux, &host.info.config)?;
             if decl.provider == Provider::Real {
                 self.ensure_real(&decl.name)?;
             } else {
@@ -1753,7 +1780,7 @@ impl Net {
             host_name: decl.name.clone(),
             kinds: node::local_kinds(),
             lan: decl.lan.then(|| LanOptions {
-                bind: std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
+                bind: SocketAddr::new(loopback(decl), 0),
                 socket: None,
             }),
             discovery: if decl.bonjour && !self.gated_lan {
@@ -1793,11 +1820,23 @@ impl Net {
                 .clone()
                 .unwrap_or_else(|| self.topology.scope.clone()),
             dial: decl.lan,
-            link_socket: false,
+            link_socket: true,
             cloud: node::CloudOptions::default(),
+            // An in-process host is reached on loopback alone, which it
+            // never lists, and has no interfaces of its own to list after
+            // a network change either.
+            interfaces: Some(Vec::new()),
         };
         if let Some(relay) = &self.relay {
             edge.cloud = relay.cloud_options(&self.udp[name]);
+            // The relay tells a host the address it sees its packets come
+            // from, which a peer punches to: behind a router that must be
+            // the router's public port, not the gate's own socket.
+            if host.decl.router.is_some()
+                && let Some(quic) = &mut edge.cloud.relay_quic
+            {
+                quic.addr = relay.quic();
+            }
         }
         if let Some(hook) = &self.edge_hook {
             hook(name, &mut edge);
@@ -1830,6 +1869,9 @@ impl Net {
         host.runtime = Arc::downgrade(&runtime);
         host.daemon = Some(std::sync::Mutex::new(daemon));
         host.lan_handed = handed;
+        if let Some(kind) = host.decl.router {
+            self.put_behind_router(name, kind)?;
+        }
         Ok(())
     }
 
@@ -1904,7 +1946,8 @@ impl Net {
     /// it learn that at once, as the host where a purchase or a
     /// cancellation happened does: an in-process host asks for its
     /// entitlement over its relay link. A process host's daemon offers no
-    /// socket that asks it to, so its profile is paused and resumed, which
+    /// socket that asks it to, so its profile is paused, the relay token it
+    /// keeps between launches forgotten, and the profile resumed, which
     /// dials the relay afresh for a credential of the new tier; its relay
     /// link drops for that moment.
     pub async fn set_tier(&mut self, account: &str, tier: TierDecl) -> Result<Ack, NetError> {
@@ -1964,6 +2007,14 @@ impl Net {
                 door.pause_profile(request.clone())
                     .await
                     .map_err(|status| NetError::Refused(Box::new(status)))?;
+                let kept = node::profile_dir(&self.host(&host)?.data_dir, profile)
+                    .join(node::RELAY_TOKEN_FILE);
+                match std::fs::remove_file(&kept) {
+                    Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                        return Err(NetError::Io(error));
+                    }
+                    _ => {}
+                }
                 door.resume_profile(request)
                     .await
                     .map_err(|status| NetError::Refused(Box::new(status)))?;
@@ -2010,9 +2061,95 @@ impl Net {
             host: host.to_owned(),
             error: "has no LAN listener to gate".to_owned(),
         })?;
+        Ok(self.lan.front(
+            host,
+            Some(SocketAddr::new(loopback(&self.hosts[host].decl), port)),
+        )?)
+    }
+
+    /// Binds `host`'s socket to IPv6 loopback alone from its next start,
+    /// so it reaches and is reached over IPv6 only. In-process hosts only.
+    pub fn bind_ipv6_only(&mut self, host: &str) -> Result<Ack, NetError> {
+        self.in_process(host, "binding IPv6 only")?;
+        self.hosts
+            .get_mut(host)
+            .ok_or_else(|| NetError::NoHost(host.to_owned()))?
+            .decl
+            .ipv6_only = true;
+        Ok(self.ack(format!("{host} binds IPv6 only from its next start")))
+    }
+
+    /// The SSH target that reaches `host`: give it to a peer as its way
+    /// there. The stand-in on the PATH runs the far host's `amux` for it.
+    pub fn ssh_target(&self, host: &str) -> Result<String, NetError> {
+        Ok(self.host(host)?.dir.to_string_lossy().into_owned())
+    }
+
+    /// Puts an imitated router of `kind` in front of `host`'s link socket,
+    /// now if it runs and on every start after; its links migrate onto the
+    /// router's public port. In-process hosts only.
+    pub fn set_router(&mut self, host: &str, kind: RouterKind) -> Result<Ack, NetError> {
+        self.in_process(host, "a router in front of the link socket")?;
+        self.hosts
+            .get_mut(host)
+            .ok_or_else(|| NetError::NoHost(host.to_owned()))?
+            .decl
+            .router = Some(kind);
+        if self.is_up(host) {
+            self.put_behind_router(host, kind)?;
+        }
+        Ok(self.ack(format!("{host} behind a {kind:?} router")))
+    }
+
+    fn put_behind_router(&self, host: &str, kind: RouterKind) -> Result<(), NetError> {
+        let router = Router::new(kind, ROUTER_IDLE)?;
+        self.edge(host)?.rebind(router)?;
+        Ok(())
+    }
+
+    /// Moves `host` onto another network, as a phone leaving Wi-Fi does: its
+    /// link socket is rebound to a fresh port, or behind a fresh router of
+    /// the same kind with new public ports, its links migrate, and its path
+    /// machines are told as a phone's are. In-process hosts that run only.
+    pub fn change_network(&self, host: &str) -> Result<Ack, NetError> {
+        self.in_process(host, "changing the network under the link socket")?;
+        let edge = self.edge(host)?;
+        let own = &self.hosts[host];
+        let substrate: Arc<dyn node::socket::Datagrams> = match own.decl.router {
+            Some(kind) => Router::new(kind, ROUTER_IDLE)?,
+            None => node::socket::LinkSocket::bind_dual_stack(
+                SocketAddr::new(loopback(&own.decl), 0),
+                None,
+            )?,
+        };
+        let to = substrate.local_addr()?;
+        edge.rebind(substrate)?;
+        // As a phone's runtime hears from its path monitor: every path
+        // machine probes its paths again from the new network.
+        let told = edge.network_changed()?;
+        Ok(self.ack(format!(
+            "{host} moved to another network, now at {to}; {} path machines told",
+            told.machines_told
+        )))
+    }
+
+    /// The path carrying `host`'s link to `peer` now, by `host`'s link log:
+    /// the path its last line for the peer names, or none once that line
+    /// says the link went down.
+    pub fn carrying_path(
+        &self,
+        host: &str,
+        peer: &str,
+    ) -> Result<Option<node::link_log::PathKind>, NetError> {
+        let peer = self.host(peer)?.host_id;
         Ok(self
-            .lan
-            .front(host, Some(SocketAddr::from(([127, 0, 0, 1], port))))?)
+            .link_log(host)?
+            .iter()
+            .rev()
+            .find(|event| event.peer == peer)
+            .and_then(|event| {
+                (event.event != node::link_log::LinkTransition::Down).then_some(event.path)
+            }))
     }
 
     /// What the gate in front of `host`'s LAN listener does to each
@@ -2437,7 +2574,7 @@ impl Net {
                 &format!("{name}'s LAN port to be free"),
                 LAN_PORT_PATIENCE,
                 || {
-                    let bound = std::net::UdpSocket::bind(("127.0.0.1", port));
+                    let bound = std::net::UdpSocket::bind((loopback(&host.decl), port));
                     async move { bound.map(|_| ()).map_err(|error| error.to_string()) }
                 },
             )
@@ -3557,4 +3694,14 @@ fn work_dir(work: &Path, cwd: Option<&str>) -> Result<String, NetError> {
 /// An input id as a failure message shows it.
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// The loopback address a host's socket binds to: IPv6's for a host bound
+/// IPv6 only, IPv4's otherwise.
+fn loopback(decl: &HostDecl) -> std::net::IpAddr {
+    if decl.ipv6_only {
+        std::net::Ipv6Addr::LOCALHOST.into()
+    } else {
+        std::net::Ipv4Addr::LOCALHOST.into()
+    }
 }

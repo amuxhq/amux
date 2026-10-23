@@ -3,6 +3,8 @@
 mod compress;
 mod io;
 mod memory;
+mod pairing;
+mod relay_tls;
 mod single_io;
 mod ssh;
 mod tcp;
@@ -12,10 +14,14 @@ use std::time::Duration;
 
 pub(crate) use compress::Compressed;
 pub(crate) use io::{
-    BoxedGrpcAuth, BoxedGrpcConnectInfo, BoxedGrpcInner, BoxedGrpcIo, PreTrustPairingReachability,
+    BoxedGrpcAuth, BoxedGrpcConnectInfo, BoxedGrpcIo, PreTrustPairingReachability,
     TrustedPeerConnections,
 };
 pub(crate) use memory::ShutdownIo;
+pub(crate) use pairing::{pairing_quic_channel, pairing_quic_channel_through};
+pub use relay_tls::{
+    create_tls_acceptor, relay_quic_server_config, relay_quic_server_config_from_der,
+};
 pub(crate) use single_io::channel_from_single_io;
 #[allow(unused_imports)]
 pub(crate) use ssh::{SshRelayIo, spawn_ssh_pair_recv, spawn_ssh_relay};
@@ -23,13 +29,8 @@ pub(crate) use tcp::configure_relay_tcp_keepalive;
 #[allow(unused_imports)]
 pub(crate) use tcp::tcp_incoming;
 use thiserror::Error;
-pub use tls::{
-    create_tls_acceptor, relay_quic_client_config_with_roots, relay_quic_server_config,
-    relay_quic_server_config_from_der,
-};
-pub(crate) use tls::{
-    pairing_channel_from_io, pairing_quic_channel, relay_quic_client_config, tls_connect_stream,
-};
+pub use tls::relay_quic_client_config_with_roots;
+pub(crate) use tls::{cloud_root_store, relay_quic_client_config_keeping, tls_connect_stream};
 use tonic::transport::{Endpoint, Server};
 
 pub(crate) type Result<T> = std::result::Result<T, TransportError>;

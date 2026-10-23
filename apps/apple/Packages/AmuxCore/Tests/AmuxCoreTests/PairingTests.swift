@@ -22,6 +22,15 @@ final class PairingTests: XCTestCase {
             .pin(pin: "123456", addrs: ["10.0.0.2:4000"], hostId: Cards.desk.bytes))
     }
 
+    /// A code copied where the host printed it, "418 207", pastes whole.
+    func testAPastedCodeKeepsItsDigits() {
+        let pairing = PairingStore()
+        pairing.open(machine: Cards.host(addrs: ["10.0.0.2:4000"]))
+        pairing.enter("Pairing PIN: 418 207")
+        XCTAssertEqual(pairing.digits, "418207")
+        XCTAssertNotNil(pairing.request)
+    }
+
     func testAReachedMachineIsConfirmedThenTrusted() {
         let pairing = PairingStore()
         pairing.open()

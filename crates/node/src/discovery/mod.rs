@@ -50,17 +50,25 @@ pub const WAKE_GAP: Duration = Duration::from_secs(30);
 
 pub(crate) const EVENT_CAPACITY: usize = 128;
 
+/// The addresses of both families a listener on every interface answers
+/// at. IPv6 link-local addresses are left out: one names a peer only with
+/// its interface, which differs on the dialling machine.
 #[cfg(not(target_os = "ios"))]
 pub(crate) fn local_pairing_addrs(port: u16) -> Vec<SocketAddr> {
     let mut addrs = if_addrs::get_if_addrs()
         .unwrap_or_default()
         .into_iter()
         .map(|interface| SocketAddr::new(interface.ip(), port))
-        .filter(|addr| !addr.ip().is_unspecified())
+        .filter(|addr| !addr.ip().is_unspecified() && !is_ipv6_link_local(addr.ip()))
         .collect::<Vec<_>>();
     addrs.sort_unstable();
     addrs.dedup();
     addrs
+}
+
+#[cfg(not(target_os = "ios"))]
+fn is_ipv6_link_local(ip: std::net::IpAddr) -> bool {
+    matches!(ip, std::net::IpAddr::V6(ip) if ip.segments()[0] & 0xffc0 == 0xfe80)
 }
 
 #[cfg(target_os = "ios")]

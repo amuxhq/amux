@@ -48,9 +48,13 @@ final class PhoneDecisionsTests: XCTestCase {
         _ source: ScriptedChat, family: FamilyHeader? = nil, size: DynamicTypeSize = .large
     ) async throws -> ChatModel {
         let model = ChatModel(source: source, loadingHintAfter: .zero)
+        // In a navigation stack, as the app pushes it: the chat's menu and
+        // title are the system bar's, which draws only inside one.
         try host(
-            ChatScreen(model: model, subject: CatalogFixtures.subject, family: family) { [unowned self] action in
-                acted.append(action)
+            NavigationStack {
+                ChatScreen(model: model, subject: CatalogFixtures.subject, family: family) { [unowned self] action in
+                    acted.append(action)
+                }
             }, size: size)
         await spin()
         return model
@@ -132,7 +136,7 @@ final class PhoneDecisionsTests: XCTestCase {
     }
 
     /// Stopping is always "stop now"; when it cuts work, the confirm says
-    /// what: the turn under way, its background jobs and its sub-agents.
+    /// what: the turn under way, its background jobs and its subagents.
     func testStoppingAWorkingAgentNamesWhatTheStopCuts() async throws {
         _ = try await chat(
             ScriptedChat(
@@ -146,8 +150,8 @@ final class PhoneDecisionsTests: XCTestCase {
         let said = probe.elements.map { [$0.label, $0.value].compactMap { $0 }.joined(separator: " ") }
             .joined(separator: " | ")
         XCTAssertTrue(
-            said.contains("working") && said.contains("2 background jobs") && said.contains("1 sub-agent"),
-            "the stop confirm names the turn, its 2 background jobs and its sub-agent: \(said)")
+            said.contains("working") && said.contains("2 background jobs") && said.contains("1 subagent"),
+            "the stop confirm names the turn, its 2 background jobs and its subagent: \(said)")
     }
 
     /// Terminal Claude's own view resumed another conversation: the chat

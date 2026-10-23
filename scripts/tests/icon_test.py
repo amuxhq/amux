@@ -8,8 +8,8 @@ validation, after an archive, an export and a signing round trip. So it is
 checked here instead, from the sources the icon is compiled out of, and again
 in the release scope audit, from the bundle a build produces.
 
-The artwork itself is the published App Store icon, copied into this
-repository. Nothing generates it, so these checks describe a committed file
+The artwork is exported from the logo's master by `just logo` and copied
+in. The build never regenerates it, so these checks describe committed files
 rather than a step that has to be re-run.
 """
 

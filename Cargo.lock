@@ -1539,28 +1539,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "futures"
-version = "0.3.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a31d2a3fbaaeb2af2368bbdd904aa8e812d3c04a1ee10d3171f52d556e5d0a3"
-dependencies = [
- "futures-channel",
- "futures-core",
- "futures-executor",
- "futures-io",
- "futures-sink",
- "futures-task",
- "futures-util",
-]
-
-[[package]]
 name = "futures-channel"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1f9e3d69d39e4862ffed03ed071a76f9a13ba1d9109d355b0f0aa6b15e393c4"
 dependencies = [
  "futures-core",
- "futures-sink",
 ]
 
 [[package]]
@@ -1568,17 +1552,6 @@ name = "futures-core"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92d699e522242e69e3003b94ecc1f960f3a5e015aa7c5d7486e65ad01dd94f5e"
-
-[[package]]
-name = "futures-executor"
-version = "0.3.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "031b47cf1a3c6cc8bc2fc76cd437f521619387907d469316e7c0bc278f1f5432"
-dependencies = [
- "futures-core",
- "futures-task",
- "futures-util",
-]
 
 [[package]]
 name = "futures-io"
@@ -1615,13 +1588,10 @@ version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d50a92467f8ba5dd6e3ee5d4bd04d73ab2e4e1c44474a0674821dfce14b79bc"
 dependencies = [
- "futures-channel",
  "futures-core",
- "futures-io",
  "futures-macro",
  "futures-sink",
  "futures-task",
- "memchr",
  "pin-project-lite",
  "slab",
 ]
@@ -2489,8 +2459,10 @@ dependencies = [
  "daemon-core",
  "interpret",
  "journal",
+ "path-core",
  "prost",
  "provider-fakes",
+ "relay-core",
  "release",
  "rusqlite",
  "serde_json",
@@ -2499,6 +2471,7 @@ dependencies = [
  "supervisor-core",
  "tempfile",
  "ui-state",
+ "uuid",
  "wire",
 ]
 
@@ -2581,6 +2554,7 @@ dependencies = [
  "libc",
  "mdns-sd",
  "oauth2",
+ "path-core",
  "patience",
  "prost",
  "provider-fakes",
@@ -2608,12 +2582,12 @@ dependencies = [
  "tonic",
  "tower",
  "tracing",
+ "tracing-subscriber",
  "uuid",
  "version-stamp",
  "webpki-roots",
  "windows-sys 0.61.2",
  "wire",
- "yamux",
  "zstd",
 ]
 
@@ -2930,6 +2904,15 @@ dependencies = [
  "redox_syscall",
  "smallvec",
  "windows-link",
+]
+
+[[package]]
+name = "path-core"
+version = "0.1.0"
+dependencies = [
+ "daemon-core",
+ "postcard",
+ "serde",
 ]
 
 [[package]]
@@ -3463,6 +3446,7 @@ dependencies = [
  "prost",
  "provider-fakes",
  "pty-host",
+ "quinn",
  "rcgen",
  "rustls",
  "serde",
@@ -4034,9 +4018,8 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.45"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+version = "0.23.46"
+source = "git+https://github.com/jordanwebster/rustls?rev=ad62be4607107d24c73c9c746dcc9edf57daaaea#ad62be4607107d24c73c9c746dcc9edf57daaaea"
 dependencies = [
  "once_cell",
  "ring",
@@ -4346,8 +4329,11 @@ name = "shot"
 version = "0.4.0"
 dependencies = [
  "clap",
+ "crossterm 0.29.0",
  "fontdue",
+ "interpret",
  "png 0.17.16",
+ "prost",
  "ratatui",
  "serde",
  "serde_json",
@@ -4355,6 +4341,9 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "tui",
+ "ui-state",
+ "ui-view",
+ "wire",
 ]
 
 [[package]]
@@ -4649,7 +4638,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
@@ -5294,31 +5283,6 @@ dependencies = [
  "ui-view",
  "unicode-segmentation",
  "unicode-width 0.2.2",
- "wire",
-]
-
-[[package]]
-name = "tui-set"
-version = "0.1.0"
-dependencies = [
- "agent-dir",
- "anyhow",
- "clap",
- "client",
- "crossterm 0.29.0",
- "hyper-util",
- "ratatui",
- "serde",
- "serde_json",
- "serde_yaml",
- "settings",
- "shell-words",
- "shot",
- "tokio",
- "tonic",
- "tower",
- "tui",
- "ui-runtime",
  "wire",
 ]
 
@@ -6044,21 +6008,6 @@ dependencies = [
  "ui-view",
  "version-stamp",
  "wire",
-]
-
-[[package]]
-name = "yamux"
-version = "0.14.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f4e661d6ba6f09a768e31c6f3d88f9fac596ad5d376515d598a37b62d220b34"
-dependencies = [
- "futures",
- "log",
- "nohash-hasher",
- "parking_lot",
- "pin-project",
- "static_assertions",
- "web-time",
 ]
 
 [[package]]

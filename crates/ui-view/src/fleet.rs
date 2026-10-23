@@ -6,12 +6,12 @@ use std::collections::{HashMap, HashSet};
 
 use attachments::PLACEHOLDER;
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 pub use ui_state::ExitCause;
 use ui_state::{
     Activity, ActivityKind, AgentKey, Attention, FleetState, ItemBody, ItemClass, SessionState,
 };
-use wire::{Agent, Kind, Presence, RouteKind, SignInState, UsageState};
+use wire::{Agent, Kind, Lifecycle, Presence, RouteKind, SignInState, UsageState};
 
 use crate::ask::{AskBody, ask_card};
 use crate::text::{markdown_words, within, without_direction_controls};
@@ -449,6 +449,78 @@ fn card(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> FleetCard {
         background_jobs: agent.background_jobs,
         stop_held: fleet.stop_held(&at),
         agent: at,
+    }
+}
+
+/// Which agents home lists: those whose row says the words, narrowed to
+/// one state or one host. The default lists every agent.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FleetFilter {
+    /// Matched without regard to case against what a row says.
+    pub words: String,
+    pub only: Option<FleetOnly>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum FleetOnly {
+    NeedsYou,
+    /// Working or starting.
+    Working,
+    Host {
+        host: Vec<u8>,
+    },
+}
+
+impl FleetFilter {
+    /// Whether `agent` is one this filter lists. A family stays when any of
+    /// its members is, so a filter finds folded members too.
+    pub fn keeps(&self, fleet: &FleetState, local_host: &[u8], agent: &Agent) -> bool {
+        let needle = self.words.trim().to_lowercase();
+        let said = needle.is_empty() || matches(fleet, agent, &needle);
+        let placed = || placed(fleet, local_host, agent);
+        let narrowed = match &self.only {
+            None => true,
+            Some(FleetOnly::NeedsYou) => placed() == Attention::NeedsYou,
+            Some(FleetOnly::Working) => {
+                matches!(placed(), Attention::Working | Attention::Starting)
+            }
+            Some(FleetOnly::Host { host }) => agent.host_id == *host,
+        };
+        said && narrowed
+    }
+}
+
+/// Whether a lowercase `needle` is in what the agent's row says: its name,
+/// branch, folder, host, how it ended and which agent it is.
+pub fn matches(fleet: &FleetState, agent: &Agent, needle: &str) -> bool {
+    let host = fleet.host(&agent.host_id).map(|host| host.name.as_str());
+    let branch = agent.git.as_ref().and_then(|git| git.branch.as_deref());
+    // The cause as the row words it, so the filter finds what it shows.
+    // Only an exited row shows one: a live row can briefly hold the cause
+    // its journal ended with, until the daemon marks it exited.
+    let cause = (agent.lifecycle() == Lifecycle::Exited)
+        .then(|| ui_state::exit_words(agent.exit_cause, agent.exit_detail.as_deref()));
+    [
+        Some(agent.name.as_str()),
+        branch,
+        Some(agent.cwd.as_str()),
+        host,
+        cause.as_deref(),
+        Some(kind_name(agent.kind())),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|field| field.to_lowercase().contains(needle))
+}
+
+/// The agent as a row names it: Claude chatted with here, Claude in its
+/// own terminal, or Codex.
+pub fn kind_name(kind: Kind) -> &'static str {
+    match kind {
+        Kind::ClaudeSdk => "Claude",
+        Kind::ClaudePty => "Claude (terminal)",
+        Kind::Codex => "Codex",
+        Kind::Unspecified => "",
     }
 }
 

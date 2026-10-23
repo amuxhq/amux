@@ -83,36 +83,34 @@ def reach_host(journey: PhoneJourney) -> list[str]:
     reply = "The desk is reachable."
     # Unpaired: the phone's own browser finds the desk and offers to pair.
     journey.launch()
-    journey.tap("tab.hosts")
-    journey.wait_for(f"hosts.offer.{desk}", f"hosts.pair.{desk}")
+    journey.tab("Hosts")
+    journey.wait_for(f"hosts.pair.{desk}", f"hosts.pair.{desk}")
     journey.screen("found-not-paired")
 
-    # Six digits the desk printed, typed on the phone's keypad, reach the
+    # Six digits the desk printed, typed on the phone's number pad, reach the
     # desk's own name and key before anything is trusted.
     pairing = journey.amux("desk", "pair")
     pin = printed_pin(pairing)
     journey.tap(f"hosts.pair.{desk}")
-    journey.wait_for("pin.code", "pin.key.0")
-    for digit in pin:
-        journey.tap(f"pin.key.{digit}")
+    journey.wait_for("pin.code")
+    journey.type("pin.code", pin)
     card = journey.wait_for("pair-confirm.trust", "pair-confirm.fingerprint")
     if card["pair-confirm.name"].get("value") != "desk":
         raise RuntimeError(f"the code reached {card['pair-confirm.name']!r}, not the desk")
     journey.screen("pair-confirm", volatile=("pair-confirm.fingerprint", "pair-confirm.expiry"))
     journey.tap("pair-confirm.trust")
+    # Trusting closes the sheet, with the desk already in the list.
     drawn = journey.wait(
-        lambda drawn: f"hosts.row.{desk}" in drawn and "pair-confirm.done" in drawn, "the desk paired"
+        lambda drawn: f"hosts.row.{desk}" in drawn and "pair-confirm" not in drawn, "the desk paired"
     )
     trusted_as(drawn, desk, "desk")
     control = negative_control(trusted_as, drawn, desk, "laptop")
     pairing.wait(timeout=30)
     journey.screen("paired")
-    journey.tap("pair-confirm.done")
-    journey.wait(lambda drawn: "pair-confirm.done" not in drawn and "tab.agents" in drawn, "the hosts tab again")
 
     # The desk's agent is in the fleet; the phone opens it, writes, and the
     # desk holds the prompt once and answers.
-    journey.tap("tab.agents")
+    journey.tab("Agents")
     agent = next(item["id"] for item in journey.ready["agents"] if item["name"] == "desk-work")
     journey.wait_for(f"home.row.{agent}")
     journey.tap(f"home.row.{agent}")
@@ -173,25 +171,22 @@ def pair_by_code(journey: PhoneJourney, host: str) -> None:
     """The phone's browser finds `host`; the PIN it printed is typed on the
     keypad and the machine it names is trusted."""
     host_id = journey.host_id(host)
-    journey.tap("tab.hosts")
+    journey.tab("Hosts")
     journey.wait_for(f"hosts.pair.{host_id}")
     pairing = journey.amux(host, "pair")
     pin = printed_pin(pairing)
     journey.tap(f"hosts.pair.{host_id}")
-    journey.wait_for("pin.key.0")
-    for digit in pin:
-        journey.tap(f"pin.key.{digit}")
+    journey.wait_for("pin.code")
+    journey.type("pin.code", pin)
     journey.wait_for("pair-confirm.trust")
     journey.tap("pair-confirm.trust")
-    journey.wait_for("pair-confirm.done")
-    journey.tap("pair-confirm.done")
-    journey.wait(lambda drawn: f"hosts.row.{host_id}" in drawn and "tab.agents" in drawn, f"{host} paired")
+    journey.wait(lambda drawn: f"hosts.row.{host_id}" in drawn and "pair-confirm" not in drawn, f"{host} paired")
     pairing.wait(timeout=30)
 
 
 def open_agent(journey: PhoneJourney, name: str) -> str:
     agent = next(item["id"] for item in journey.ready["agents"] if item["name"] == name)
-    journey.tap("tab.agents")
+    journey.tab("Agents")
     journey.wait_for(f"home.row.{agent}")
     journey.tap(f"home.row.{agent}")
     journey.wait_for("chat.field")
@@ -889,11 +884,17 @@ def manage_agent(journey: PhoneJourney) -> list[str]:
     before = {agent["id"] for agent in journey.wait_inventory("desk", lambda agents: True, "inventory-before")}
 
     # Created from the fleet: Claude on the desk, whose chat opens.
-    journey.tap("tab.agents")
+    journey.tab("Agents")
     journey.tap("home.newAgent")
     drawn = journey.wait_for("new-agent")
-    if drawn.get(f"new-agent.host.{desk}", {}).get("value") != "chosen":
-        journey.tap(f"new-agent.host.{desk}")
+    if drawn.get("new-agent.host", {}).get("value") != "desk":
+        journey.tap("new-agent.host")
+        journey.choose("desk")
+    # New Agent starts on the kind most recently at work, which on this
+    # desk may be Codex.
+    if drawn.get("new-agent.provider", {}).get("value") != "claude":
+        journey.tap("new-agent.provider")
+        journey.choose("Claude")
     drawn = journey.wait(lambda drawn: drawn.get("new-agent.directory", {}).get("value"), "a directory chosen")
     # Unnamed, an agent is called after the directory it starts in.
     named = Path(drawn["new-agent.directory"]["value"]).name
@@ -1012,11 +1013,11 @@ def chips(drawn: dict) -> list[str]:
     ]
 
 
-def on_branch(drawn: dict, agent_id: str, branch: str) -> None:
-    """The fleet's row for the agent names the branch its folder is on."""
-    reported = drawn.get(f"home.row.{agent_id}.branch", {}).get("value")
-    if reported != branch:
-        raise RuntimeError(f"the row reports branch {reported!r}, not {branch!r}")
+def on_branch(drawn: dict, branch: str) -> None:
+    """The chat's overview names the branch the agent's folder is on."""
+    said = drawn.get("chat.overview.branch", {}).get("value")
+    if said != branch:
+        raise RuntimeError(f"the overview does not say it is on {branch!r}: {said!r}")
 
 
 def attachment_or_review(journey: PhoneJourney) -> list[str]:
@@ -1100,18 +1101,13 @@ def attachment_or_review(journey: PhoneJourney) -> list[str]:
     reopen(journey, reviewer, lambda drawn: labelled(drawn, "I read the review.") and "chat.row.turn-end" in drawn)
     journey.screen("reopened", volatile=("chat.row.turn-end",))
 
-    # Back on the fleet, the reviewer's row names the branch its folder is
-    # on beside its name, above what it last said.
-    journey.tap("chat.back")
-    back_to_row(journey, reviewer, lambda drawn: "chat" not in drawn)
-    drawn = journey.wait(
-        lambda drawn: drawn.get(f"home.row.{reviewer}.branch", {}).get("value") == "main"
-        and f"home.row.{reviewer}.second" in drawn,
-        "the reviewer's row on its branch",
-    )
-    on_branch(drawn, reviewer, "main")
-    branch_control = negative_control(on_branch, drawn, reviewer, "develop")
-    journey.screen("fleet-branch")
+    # The chat's overview names the branch its folder is on.
+    journey.tap("chat.more")
+    journey.choose("Overview")
+    drawn = journey.wait(lambda drawn: "chat.overview.branch" in drawn, "the overview's branch")
+    on_branch(drawn, "main")
+    branch_control = negative_control(on_branch, drawn, "develop")
+    journey.screen("overview-branch")
     return [
         "the prompt reached the desk as the text, then the paste, then the review, as the composer showed them",
         "the paste arrived as one attachment holding exactly the twelve lines pasted",
@@ -1119,7 +1115,7 @@ def attachment_or_review(journey: PhoneJourney) -> list[str]:
         control,
         "the review names a patch the desk computed; its bytes on the desk hash to that name and hold the edit",
         "the chat opened again shows what was sent and the reply",
-        "the fleet's row for the reviewer names its folder's branch, main, beside its name and above what it said",
+        "the chat's overview names the branch its folder is on, main",
         branch_control,
     ]
 
@@ -1151,7 +1147,7 @@ def leave_and_recover(journey: PhoneJourney) -> list[str]:
     # Opened again, the app paints the chat from its own store: the cached
     # tail, the desk out of reach, and a composer that keeps a draft.
     journey.relaunch()
-    journey.tap("tab.agents")
+    journey.tab("Agents")
     journey.wait_for(f"home.row.{keeper}")
     journey.tap(f"home.row.{keeper}")
     drawn = journey.wait(
@@ -1227,13 +1223,12 @@ def never_received(chat: dict, text: str) -> None:
 
 
 def switch_to(journey: PhoneJourney, account: str) -> None:
-    """The account a person picks from the switcher under the title."""
-    journey.tap("tab.agents")
-    journey.tap("home.title")
-    journey.wait_for(f"account.{account}@example.com")
-    journey.tap(f"account.{account}@example.com")
+    """The account a person picks from the account disc's menu."""
+    journey.tab("Agents")
+    journey.tap("home.accounts")
+    journey.choose(account)
     journey.wait(
-        lambda drawn: (drawn.get("home.subtitle", {}).get("value") or "").startswith(f"{account} ·"),
+        lambda drawn: (drawn.get("home.subtitle", {}).get("value") or "").split(" · ")[0] == account,
         f"{account} on screen",
     )
 
@@ -1269,13 +1264,13 @@ def keep_authority(journey: PhoneJourney) -> list[str]:
     # relay.
     journey.app({"kind": "connect", "relay": relay, "token": "refresh-ada", "user": "ada"})
     pair_through_the_relay(journey, "desk")
-    journey.tap("tab.agents")
+    journey.tab("Agents")
     journey.wait_for(f"home.row.{guarded}")
 
     # A second account is a profile of its own, on its own empty fleet.
     journey.app({"kind": "addAccount", "user": "bob", "token": "refresh-bob"})
-    journey.wait(lambda drawn: f"home.row.{guarded}" not in drawn and "home.title" in drawn, "bob's empty fleet")
-    journey.tap("tab.hosts")
+    journey.wait(lambda drawn: f"home.row.{guarded}" not in drawn and "home" in drawn, "bob's empty fleet")
+    journey.tab("Hosts")
     drawn = journey.wait(lambda drawn: "hosts" in drawn, "bob's hosts")
     if f"hosts.row.{desk}" in drawn:
         raise RuntimeError("bob's profile knows the desk")
@@ -1294,16 +1289,18 @@ def keep_authority(journey: PhoneJourney) -> list[str]:
 
     # Signed out, the phone has no way to the desk: the chat says so and a
     # message written now never reaches it.
-    journey.tap("tab.you")
+    journey.settings()
     journey.wait_for("you.signOut")
     journey.tap("you.signOut")
     journey.wait(
         lambda drawn: "Signed out" in (drawn.get("account.ada@example.com", {}).get("label") or ""), "signed out"
     )
-    journey.tap("tab.hosts")
+    journey.tap("you.close")
+    journey.wait(lambda drawn: "you" not in drawn, "Settings put away")
+    journey.tab("Hosts")
     journey.wait(lambda drawn: labelled(drawn, "signed out"), "the hosts tab naming the sign-out")
     journey.screen("blocked-hosts")
-    journey.tap("tab.agents")
+    journey.tab("Agents")
     journey.tap(f"home.row.{guarded}")
     journey.wait(lambda drawn: "chat.field" in drawn and labelled(drawn, "this phone is signed out"), "the chat naming the sign-out")
     # Send holds the message, pending until the phone can reach the desk.
@@ -1409,9 +1406,9 @@ def calls(journey: PhoneJourney, label: str) -> dict:
 
 
 def sign_in(journey: PhoneJourney, photograph: bool = False) -> None:
-    """Sign In on the You tab, handed off to the account service's page and
-    back, and Done."""
-    journey.tap("tab.you")
+    """Sign In in Settings, handed off to the account service's page and
+    back, and Settings put away."""
+    journey.settings()
     journey.wait_for("you.signIn")
     if photograph:
         journey.screen("signed-out")
@@ -1426,8 +1423,10 @@ def sign_in(journey: PhoneJourney, photograph: bool = False) -> None:
     journey.tap("sign-in.continue")
     journey.wait(
         lambda drawn: drawn.get("you", {}).get("value") == "ada@example.com" and "sign-in" not in drawn,
-        "ada on the You tab",
+        "ada in Settings",
     )
+    journey.tap("you.close")
+    journey.wait(lambda drawn: "you" not in drawn, "Settings put away")
 
 
 def round_trip(journey: PhoneJourney, agent: str, prompt: str, reply: str, host: str = "desk") -> str:
@@ -1456,7 +1455,7 @@ def account_sign_in(journey: PhoneJourney) -> list[str]:
     # Signed in, the phone reaches the desk only through the relay the
     # account service named: the desk has no network in common with it.
     pair_through_the_relay(journey, "desk")
-    journey.tap("tab.hosts")
+    journey.tab("Hosts")
     desk = journey.host_id("desk")
     trusted_as(journey.wait_for(f"hosts.row.{desk}"), desk, "desk")
     journey.screen("hosts")
@@ -1513,18 +1512,16 @@ def purchase_restore(journey: PhoneJourney) -> list[str]:
     recorded = [call for call in record["cloud"] if call.startswith("recordPurchase")]
     if len(recorded) != 2 or "restore" not in record["store"]:
         raise RuntimeError(f"the purchase was not offered to amux.sh again by a restore: {record!r}")
-    journey.tap("paywall.buy")
+    journey.tap("paywall.back")
     journey.wait(lambda drawn: "paywall" not in drawn, "the paywall closed")
 
     # The relay link reads what the account buys again, and the same
     # invitation, still offered by the desk, pairs it through the relay.
     pair_by_link(journey, link)
     pairing.wait(timeout=30)
-    journey.wait_for("pair-confirm.done")
+    journey.wait(lambda drawn: "pair-confirm" not in drawn, "the pairing sheet closed")
     journey.screen("paired")
-    journey.tap("pair-confirm.done")
-    journey.wait_for("tab.hosts")
-    journey.tap("tab.hosts")
+    journey.tab("Hosts")
     trusted_as(journey.wait_for(f"hosts.row.{desk}"), desk, "desk")
     round_trip(journey, "desk-work", RELAYED, THROUGH_RELAY)
     journey.screen("reached", volatile=("chat.row.turn-end",))
@@ -1552,7 +1549,7 @@ def report(journey: PhoneJourney) -> list[str]:
     journey.app({"kind": "connect", "relay": journey.ready["cloud_url"], "token": "refresh-ada", "user": "ada"})
     pair_through_the_relay(journey, "desk")
     agent = next(item["id"] for item in journey.ready["agents"] if item["name"] == "desk-work")
-    journey.tap("tab.agents")
+    journey.tab("Agents")
     journey.wait_for(f"home.row.{agent}")
     journey.app({"kind": "cloud", "cloud": {"upload": "refused", "uploadReason": REFUSED_UPLOAD}})
 
@@ -1669,9 +1666,9 @@ def local_network(journey: PhoneJourney) -> list[str]:
     # Refused: the Hosts tab says so and where it is undone.
     journey.app({"kind": "localNetwork", "permission": "denied"})
     journey.actions.append("the system says the local network was refused")
-    journey.tap("tab.hosts")
+    journey.tab("Hosts")
     drawn = journey.wait_for("hosts.localNetwork.refused", "hosts.localNetwork.settings")
-    if f"hosts.offer.{desk}" in drawn:
+    if f"hosts.pair.{desk}" in drawn:
         raise RuntimeError("the phone offers the desk with the local network refused")
     journey.screen("refused")
 
@@ -1679,9 +1676,9 @@ def local_network(journey: PhoneJourney) -> list[str]:
     # is found and offered.
     journey.relaunch()
     journey.actions.append("the local network granted in Settings and the app opened again")
-    journey.tap("tab.hosts")
+    journey.tab("Hosts")
     journey.wait(
-        lambda drawn: f"hosts.offer.{desk}" in drawn and "hosts.localNetwork.refused" not in drawn,
+        lambda drawn: f"hosts.pair.{desk}" in drawn and "hosts.localNetwork.refused" not in drawn,
         "the desk found",
     )
     journey.screen("granted")
@@ -1695,9 +1692,9 @@ def local_network(journey: PhoneJourney) -> list[str]:
         raise RuntimeError(f"the link reached {card['pair-confirm.name']!r}, not the desk")
     journey.screen("link-confirm", volatile=("pair-confirm.fingerprint", "pair-confirm.expiry"))
     journey.tap("pair-confirm.trust")
-    journey.wait_for("pair-confirm.done")
-    journey.tap("pair-confirm.done")
+    journey.wait(lambda drawn: "pair-confirm" not in drawn, "the pairing sheet closed")
     pairing.wait(timeout=30)
+    journey.tab("Hosts")
     trusted_as(journey.wait_for(f"hosts.row.{desk}"), desk, "desk")
     round_trip(journey, "desk-work", "Hello from the phone.", "The desk is reachable.")
     journey.screen("reached", volatile=("chat.row.turn-end",))
@@ -1756,7 +1753,7 @@ def push_wake(journey: PhoneJourney) -> list[str]:
     bystander = next(item["id"] for item in journey.ready["agents"] if item["name"] == "bystander")
     journey.launch()
     pair_by_code(journey, "desk")
-    journey.tap("tab.agents")
+    journey.tab("Agents")
     journey.wait_for(f"home.row.{asker}", f"home.row.{bystander}")
 
     # Put away. Both agents move on at the desk: one comes to need the
@@ -1833,6 +1830,154 @@ def push_wake(journey: PhoneJourney) -> list[str]:
     ]
 
 
+# The resume story: three launches of one installation, each read back from
+# the link log the phone's runtime writes.
+
+RESUME_HOSTS = ("desk", "laptop")
+# Where each launch's link log is kept, named by the launch.
+LINK_LOGS = ROOT / "target/ios/journey/resume"
+LINK_LINE = re.compile(r"amux::link: link (.*)$")
+
+
+def runtime_log(journey: PhoneJourney) -> Path:
+    """The log the phone's runtime writes, in the installation's directory."""
+    return app_data(journey) / "Library/Application Support/amux/installation/runtime.log"
+
+
+def logged_since(journey: PhoneJourney, offset: int) -> list[str]:
+    """The link log's lines written since `offset`, the log's length before
+    the launch. A log cut to its newest part since then is read whole."""
+    log = runtime_log(journey)
+    if not log.exists():
+        return []
+    data = log.read_bytes()
+    if len(data) < offset:
+        offset = 0
+    lines = data[offset:].decode(errors="replace").splitlines()
+    return [line for line in lines if LINK_LINE.search(line)]
+
+
+def link_fields(line: str) -> dict[str, str]:
+    return dict(field.split("=", 1) for field in LINK_LINE.search(line).group(1).split() if "=" in field)
+
+
+def machine_lines(journey: PhoneJourney, lines: list[str], event: str) -> list[tuple[str, dict[str, str]]]:
+    """The lines for links to the machines that say `event`, by machine name
+    in the order written: the relay's own link is not a machine's."""
+    names = {journey.host_id(host): host for host in RESUME_HOSTS}
+    found = []
+    for line in lines:
+        fields = link_fields(line)
+        name = names.get(fields.get("peer", ""))
+        if name is not None and fields.get("event") == event:
+            found.append((name, fields))
+    return found
+
+
+def first_ups(journey: PhoneJourney, lines: list[str]) -> dict[str, dict[str, str]]:
+    """The first link to come up to each machine, by machine name, with the
+    milliseconds its catch-up took from the first packet where it carried one."""
+    ups: dict[str, dict[str, str]] = {}
+    for name, fields in machine_lines(journey, lines, "up"):
+        ups.setdefault(name, dict(fields))
+    for name, fields in machine_lines(journey, lines, "caught_up"):
+        if name in ups:
+            ups[name]["first_packet_to_catch_up_ms"] = fields["first_packet_to_catch_up_ms"]
+    return ups
+
+
+def log_length(journey: PhoneJourney) -> int:
+    log = runtime_log(journey)
+    return log.stat().st_size if log.exists() else 0
+
+
+def reconciled_launch(journey: PhoneJourney, launch: str, offset: int) -> dict[str, dict[str, str]]:
+    """Waits for the launch to reconcile with every machine and for its link
+    log to name a link to each, then keeps that log as `<launch>.log`."""
+    journey.app({"kind": "awaitReconciled", "seconds": 60}, timeout=70)
+    deadline = time.monotonic() + 60
+    while "reconciled" not in [mark["signpost"] for mark in journey.app({"kind": "signposts"})["marks"]]:
+        if time.monotonic() > deadline:
+            raise RuntimeError(f"the {launch} launch never read every machine current")
+        time.sleep(0.2)
+    journey.actions.append(f"the {launch} launch read every machine current")
+    deadline = time.monotonic() + 30
+    while True:
+        lines = logged_since(journey, offset)
+        ups = first_ups(journey, lines)
+        if len(ups) == len(RESUME_HOSTS):
+            break
+        if time.monotonic() > deadline:
+            raise RuntimeError(f"the {launch} launch logged links to {sorted(ups)} only: {lines!r}")
+        time.sleep(0.2)
+    (LINK_LOGS / f"{launch}.log").write_text("\n".join(lines) + "\n")
+    journey.observations[f"{launch}-links"] = ups
+    return ups
+
+
+def restart(journey: PhoneJourney, host: str) -> None:
+    """The machine restarted, as a person restarts amux on it: its daemon
+    killed and started again on the same disk."""
+    journey.request({"RestartDaemon": {"host": host}})
+    journey.wait_inventory(host, lambda agents: bool(agents), f"{host}-back")
+
+
+def resume(journey: PhoneJourney) -> list[str]:
+    shutil.rmtree(LINK_LOGS, ignore_errors=True)
+    LINK_LOGS.mkdir(parents=True)
+
+    # The first launch ever: nothing kept, so every link is a full handshake.
+    journey.launch()
+    journey.app({
+        "kind": "connect", "relay": journey.ready["cloud_url"], "token": "refresh-ada", "user": "ada",
+    })
+    journey.actions.append("signed in as ada")
+    for host in RESUME_HOSTS:
+        pair_by_code(journey, host)
+    first = reconciled_launch(journey, "first", 0)
+    for host, fields in machine_lines(journey, logged_since(journey, 0), "up"):
+        if fields["resumed"] != "false" or fields["early_data"] != "none":
+            raise RuntimeError(f"the first launch ever reached {host} on a resumed session: {fields!r}")
+
+    # Closed and opened again: every machine resumed, its early data taken.
+    journey.quit()
+    offset = log_length(journey)
+    journey.relaunch()
+    relaunch = reconciled_launch(journey, "relaunch", offset)
+    for host, fields in relaunch.items():
+        if fields["resumed"] != "true" or fields["early_data"] != "accepted":
+            raise RuntimeError(f"the relaunch did not resume {host} with its early data accepted: {fields!r}")
+
+    # One machine restarted while the phone is closed: its session tickets
+    # are kept on its disk, so the next launch still resumes it.
+    journey.quit()
+    restart(journey, "desk")
+    offset = log_length(journey)
+    journey.relaunch()
+    after = reconciled_launch(journey, "after-host-restart", offset)
+    for host, fields in after.items():
+        if fields["resumed"] != "true":
+            raise RuntimeError(f"after the desk restarted the launch did not resume {host}: {fields!r}")
+
+    def spelled(launch: dict[str, dict[str, str]]) -> str:
+        def caught_up(fields: dict[str, str]) -> str:
+            ms = fields["first_packet_to_catch_up_ms"]
+            return "" if ms == "none" else f", caught up {ms} ms after its first packet"
+
+        return ", ".join(
+            f"{host} over {fields['path']} (resumed={fields['resumed']}, early data {fields['early_data']}"
+            f"{caught_up(fields)})"
+            for host, fields in sorted(launch.items())
+        )
+
+    return [
+        f"the first launch ever reached both machines by full handshakes on every link: {spelled(first)}",
+        f"the relaunch resumed both with their early data accepted: {spelled(relaunch)}",
+        f"with the desk restarted while the phone was closed, the next launch still resumed both: {spelled(after)}",
+        f"each launch's link log is kept in {LINK_LOGS.relative_to(ROOT)}",
+    ]
+
+
 STORIES = {
     "reach-host": reach_host,
     "conversation-decision-claude-pty": lambda j: conversation_decision(j, "decision-pty", False),
@@ -1856,6 +2001,7 @@ STORIES = {
     "accessibility": accessibility,
     "local-network": local_network,
     "push-wake": push_wake,
+    "resume": resume,
 }
 
 

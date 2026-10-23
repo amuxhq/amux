@@ -512,33 +512,33 @@ peer's link over SSH).
 | Component goldens in light and dark: every row kind as the feed draws it, each ask in its box, the queue, the composer's states, the review page | `crates/tui/tests/golden.rs`, `crates/tui/tests/golden/` | `just test-tui`; rewrite with `UPDATE_GOLDENS=1 just test-tui` |
 | Whole frames from served hosts: home at several widths and with every standing, the hosts window, chats mid-call, an ask this client cannot answer, and a chat through a rewind | `crates/tui/tests/frames.rs` | `just test-tui` |
 | PNG renderings of the components | [`crates/shot`](../crates/shot/README.md) | `just shot -- render vocabulary --out DIR` |
+| The storybook: every named whole screen draws at every size in both palettes | `crates/shot/src/stories.rs` | `just test-crate shot` |
 | Raw attach, the CLI and the binary against real daemons | `crates/amux/tests/` | `just test-crate amux` |
 | Journeys through the real terminal client: deciding asks and plans, the queue, sending, the composer's states, starting and managing agents, attachments and review, reaching hosts, recovering, reporting a problem | `journeys/`, `scripts/terminal-journey.py` | `just journey terminal <name>` |
-| Sets: every declared world loads and names only agents it declares | `crates/tui-set`, `journeys/sets/` | `just test-crate tui-set` |
 
 [TESTING.md](TESTING.md) places these in the suite catalogue.
 
-## Sets
+## Storybook
 
-A set is a declared world for working on this client: hosts, links and agents served by real daemons on the
-fake providers, with what each agent has said and does next. Sets live in `journeys/sets/` in the journeys'
-own format: a topology as `testnet serve` reads it, its fake-provider scripts inline (see
-[TestNet](TESTNET.md)), the host the client runs on, the chat frames open on, settings merged into that host's
-installation config, and a timeline of door requests played before the client starts and, after a `launch`
-beat, while it runs.
+The storybook is this client's named whole screens, each drawn from data by the real views: home empty, busy
+and filtered, the hosts window, both new-agent composers, chats at work, finished, failed and interrupted,
+every kind of ask, the overview and the review page. Chats replay the recorded provider fixtures, so a screen
+shows what a real agent said. Stories live in `crates/shot/src/stories.rs`, in the order a person meets them,
+and a test draws every one at every size in both palettes.
 
 ```sh
-just tui-set list                      # the sets
-just tui-set busy-fleet                # serve it and run amux on it in this terminal
-just tui-set sending --door '{"Sever": {"a": "laptop", "b": "cabin"}}'   # change a running set
-just tui-set asks --frames "down enter" --size 120x36 --size 80x24 --open "flaky e2e"
+just storybook                         # step through them in this terminal
+just storybook --story ask.question    # open on one
+just storybook capture --out target/stories [--only chat.]
 ```
 
-The set's installations are temporary and its door's address is in `target/tui-set/<name>/door.json`, so sets
-served from different worktrees never cross. `--frames KEYS` draws the client headlessly over the client host's
-own profile socket, to text and PNG under `target/tui-set/<name>/frames/` (or `--out`), after keys written like
-a shell line: named keys, `C-x` and `C-enter`, `hover:X,Y`, `click:X,Y`, `wheelup`, `wheeldown`, `paste:TEXT`
-for a bracketed paste, `wait:MS` to let the world move, `door:JSON` for a door request at that point, and
-anything else typed. Frames draw in the colours this terminal reported the last time `tui-set` ran in it
-(`--theme sample`, `dark` and `light` otherwise).
+In the storybook, ← → step, ↑ ↓ jump to the first story of the previous or next group, and `/` finds a story
+by name or by what it shows. `t` cycles the palette: this terminal's own colours, as the client draws by
+default, then the shipped dark and light. `s` cycles the size: this terminal's, then 80x24, 110x34 and 60x24,
+framed in the middle. It opens where it was left, and it rebuilds itself when a source file of `tui`,
+`ui-view`, `ui-state` or `shot` changes, coming back on the same story; a failed build says so on the bottom
+line and leaves its log in `target/storybook/build.log`.
 
+`capture` draws each story at 80x24, 110x34 and 60x24 in dark and light, as text and PNG, with an `index.md`
+naming each story and what it shows. A live world of real agents to drive the client against is an
+[environment](TESTNET.md#environments).

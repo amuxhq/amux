@@ -42,8 +42,10 @@ final class DoorHost {
     /// until the `geometry` verb says otherwise.
     private(set) var elementGeometry = ProcessInfo.processInfo.arguments.contains(
         "-\(Door.elementGeometryArgument)")
-    /// Every element the screens declared, with where it is drawn.
-    @ObservationIgnored var declared: [IdentifiedElement] = []
+    /// What the app's root declared: everything no surface handed over.
+    @ObservationIgnored var rootDeclared: [IdentifiedElement] = []
+    /// What each surface on screen, a sheet among them, declared.
+    let surfaces = SurfaceElements()
     let store = ScriptedStoreFront()
     let cloud = DoorCloud()
     let webAuth = ScriptedWebAuth()
@@ -146,6 +148,7 @@ final class DoorHost {
                 return .error("no type size named \(name)")
             }
             typeSize = size
+            DoorWindow.wear(size)
             events.append(.dynamicType(name))
             return .ack
         case .assist(let motion, let transparency):
@@ -169,13 +172,21 @@ final class DoorHost {
             return .ack
         case .query: return query()
         case .capture(let path): return await capture(to: path)
-        case .tap(let identifier): return tap(identifier)
-        case .choose(let label): return choose(label)
-        case .perform(let identifier, let action): return perform(action, on: identifier)
-        case .type(let identifier, let text): return type(text, into: identifier)
-        case .clear(let identifier): return clear(identifier)
-        case .scroll(let direction, let identifier): return scroll(direction, holding: identifier)
-        case .paste(let identifier, let text): return paste(text, into: identifier)
+        // A finger lands where things are, and the system draws a sheet or a
+        // page at its final place before it has slid there: acted on
+        // mid-slide, a point aimed at a row in a rising sheet lands on what
+        // the sheet is about to cover. So every action waits for stillness.
+        case .tap(let identifier):
+            await still()
+            await reveal(identifier)
+            return tap(identifier)
+        case .choose(let label): await still(); return choose(label)
+        case .perform(let identifier, let action): await still(); return perform(action, on: identifier)
+        case .type(let identifier, let text): await still(); return type(text, into: identifier)
+        case .clear(let identifier): await still(); return clear(identifier)
+        case .search(let text): await still(); return search(text)
+        case .scroll(let direction, let identifier): await still(); return scroll(direction, holding: identifier)
+        case .paste(let identifier, let text): await still(); return paste(text, into: identifier)
         case .pair(let qr): return await pair(link: qr)
         case .pairByCode(let host, let pin): return await pair(pin: pin, on: host)
         case .localNetwork(let permission):
@@ -264,23 +275,17 @@ final class DoorHost {
         switch screen {
         case "home": router.setPath([], for: .agents); router.select(.agents)
         case "hosts":
-            stores.hosts.stopReadingDevices()
             router.setPath([], for: .hosts)
             router.select(.hosts)
-        case "you": router.setPath([], for: .you); router.select(.you)
-        case "devices":
-            router.setPath([], for: .hosts)
-            router.select(.hosts)
-            stores.hosts.readDevices()
-            Task { await stores.refreshRoster() }
-        case "new-agent": router.open(.newAgent)
+        case "you", "settings": router.setPath([], for: .you); router.select(.you)
+        case "new-agent": router.composing = true
         case "sign-in":
             composition.handle(.signIn)
         case "paywall":
             composition.handle(.subscribe)
         case "pin":
             guard let id = host?.id else { return .error("no host named \(subject ?? "")") }
-            router.open(.pairByCode(id))
+            router.pairing = .code(id)
         case "conversation":
             guard let agent else { return .error("no agent named \(subject ?? "")") }
             router.open(.conversation(agent.id))
@@ -592,14 +597,46 @@ final class DoorHost {
     }
 
     private func settle() async {
-        for _ in 0..<3 { await DoorFrames.next() }
+        await still()
         guard let window = DoorWindow.current else { return }
         _ = await steady(window)
     }
 
+    /// Until the system has stopped moving things: a sheet, a page, the
+    /// keyboard. Bounded, because something on screen may move for as long
+    /// as it is there; the system's own transitions take well under a
+    /// second.
+    private func still() async {
+        // What was just asked of the app starts moving at its next frame.
+        for _ in 0..<2 { await DoorFrames.next() }
+        let started = Date()
+        while DoorWindow.animating, Date().timeIntervalSince(started) < 2 {
+            await DoorFrames.next()
+        }
+        // The frames the screen reports are laid out a frame after it
+        // stops.
+        for _ in 0..<2 { await DoorFrames.next() }
+    }
+
+    /// Every element the screens declared, with where it is drawn, in the
+    /// order they are stacked: the root, then each surface, the top one last.
+    private var declared: [IdentifiedElement] {
+        rootDeclared + surfaces.stacked.flatMap { $0 }
+    }
+
+    /// The element a request names, found on the top surface first, so a
+    /// sheet's control is the one acted on and not one under it that shares
+    /// its name.
+    private func declared(named identifier: String) -> IdentifiedElement? {
+        for surface in ([rootDeclared] + surfaces.stacked).reversed() {
+            if let found = surface.first(where: { $0.identifier == identifier }) { return found }
+        }
+        return nil
+    }
+
     private func query() -> DoorReply {
         guard let window = DoorWindow.current else { return .error("no window on screen") }
-        let declared = declared.map {
+        let declared = self.declared.map {
             VisibleElement(
                 identifier: $0.identifier, label: $0.label, value: $0.value,
                 frame: VisibleFrame(
@@ -608,10 +645,16 @@ final class DoorHost {
                 enabled: $0.enabled)
         }
         let named = Set(declared.map(\.identifier))
-        let leaves = ([window] + DoorWindow.others).flatMap(VisibleTree.elements(of:))
+        let windows = [window] + DoorWindow.others
+        let leaves = (windows.flatMap(VisibleTree.elements(of:)) + windows.flatMap(TabSource.tabs(in:)))
             .filter { !named.contains($0.identifier) }
         return .state(VisibleState(
-            screen: composition?.router.top?.name ?? composition?.router.tab.rawValue ?? "none",
+            screen: composition.map { shown in
+                let router = shown.router
+                if router.composing { return "new-agent" }
+                if router.showsPairing, let pairing = router.pairing { return pairing.name }
+                return router.top?.name ?? router.tab.rawValue
+            } ?? "none",
             typeSize: typeSize.doorName,
             voiceOver: UIAccessibility.isVoiceOverRunning,
             elements: declared + leaves,
@@ -641,6 +684,37 @@ final class DoorHost {
         return last
     }
 
+    /// An element out of sight is brought into it first, as VoiceOver does
+    /// when it moves to one: a card a strip has scrolled past, or a row
+    /// under the tab bar, is still the screen's, and a person would swipe
+    /// to it.
+    private func reveal(_ identifier: String) async {
+        guard let window = DoorWindow.current, let declared = declared(named: identifier) else { return }
+        let middle = CGPoint(x: declared.frame.midX, y: declared.frame.midY)
+        guard let list = VisibleTree.scroller(holding: middle, in: window) else { return }
+        // What the list shows clear of the bars laid over its edges.
+        let clear = list.bounds.inset(by: list.adjustedContentInset)
+        let wanted = list.convert(declared.frame, from: window)
+        guard !clear.contains(wanted) else { return }
+        // By hand rather than `scrollRectToVisible`, which counts what is
+        // under the bars as shown.
+        let inset = list.adjustedContentInset
+        func moved(_ at: CGFloat, low: CGFloat, high: CGFloat, from: CGFloat, to: CGFloat,
+                   least: CGFloat, most: CGFloat) -> CGFloat {
+            var at = at
+            if high > to { at += high - to } else if low < from { at -= from - low }
+            return min(max(at, least), most)
+        }
+        let offset = CGPoint(
+            x: moved(list.contentOffset.x, low: wanted.minX, high: wanted.maxX, from: clear.minX, to: clear.maxX,
+                     least: -inset.left, most: max(-inset.left, list.contentSize.width + inset.right - list.bounds.width)),
+            y: moved(list.contentOffset.y, low: wanted.minY, high: wanted.maxY, from: clear.minY, to: clear.maxY,
+                     least: -inset.top, most: max(-inset.top, list.contentSize.height + inset.bottom - list.bounds.height)))
+        list.setContentOffset(offset, animated: false)
+        // The screen reports where things went once it has laid them out.
+        for _ in 0..<3 { await DoorFrames.next() }
+    }
+
     private func tap(_ identifier: String) -> DoorReply {
         guard let window = DoorWindow.current else { return .error("no window on screen") }
         guard let element = element(named: identifier, in: window) else {
@@ -649,34 +723,56 @@ final class DoorHost {
         // What VoiceOver does to a control, which is the one way to act on a
         // SwiftUI element from inside the process.
         if element.accessibilityActivate() { return .ack }
-        if let declared = declared.first(where: { $0.identifier == identifier }),
+        if let declared = declared(named: identifier),
            let under = VisibleTree.element(
                at: CGPoint(x: declared.frame.midX, y: declared.frame.midY), in: window,
                saying: declared.label),
            under.accessibilityActivate() {
             return .ack
         }
-        return .error("\(identifier) did not activate")
+        if let label = declared(named: identifier)?.label,
+           let saying = VisibleTree.element(saying: label, in: window),
+           saying.accessibilityActivate() {
+            return .ack
+        }
+        // Where it was aimed and what is there, so a refusal says whether
+        // the element was covered, out of sight or simply would not act.
+        let aimed = declared(named: identifier).map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) }
+        let hit = aimed.flatMap { window.hitTest($0, with: nil) }.map { String(describing: Swift.type(of: $0)) }
+        return .error("\(identifier) did not activate (aimed at \(aimed.map { "\(Int($0.x)),\(Int($0.y))" } ?? "nowhere"), which reaches \(hit ?? "nothing"))")
     }
 
+    /// Picks an item by its title, from a dialog on screen, the tab bar or
+    /// a menu.
+    ///
+    /// A dialog's buttons and the tab bar's tabs carry no name the process
+    /// can read, only their titles, so they are found by title and pressed.
     /// A presented menu's rows cannot be activated from inside the process,
     /// so the item is run as the menu's own action, found on the control
     /// that presents the menu, and the menu is put away as a tap would.
     private func choose(_ label: String) -> DoorReply {
         let windows = [DoorWindow.current].compactMap { $0 } + DoorWindow.others
         for window in windows {
+            guard let dialog = DialogSource.shown(in: window) else { continue }
+            if DialogSource.press(label, in: dialog) { return .ack }
+            return .error("the dialog on screen offers no \(label)")
+        }
+        for window in windows where TabSource.press(label, in: window) {
+            return .ack
+        }
+        for window in windows {
             guard let (button, action) = MenuSource.item(label, in: window) else { continue }
             button.contextMenuInteraction?.dismissMenu()
             MenuSource.run(action, from: button)
             return .ack
         }
-        return .error("no menu offers \(label)")
+        return .error("no dialog, tab or menu offers \(label)")
     }
 
     private func perform(_ action: String, on identifier: String) -> DoorReply {
         guard let window = DoorWindow.current else { return .error("no window on screen") }
         var candidates = [element(named: identifier, in: window)].compactMap { $0 }
-        if let declared = declared.first(where: { $0.identifier == identifier }),
+        if let declared = declared(named: identifier),
            let under = VisibleTree.element(
                at: CGPoint(x: declared.frame.midX, y: declared.frame.midY), in: window,
                saying: declared.label) {
@@ -719,7 +815,7 @@ final class DoorHost {
         guard let window = DoorWindow.current else { return .error("no window on screen") }
         let found: UIScrollView?
         if let identifier {
-            guard let declared = declared.first(where: { $0.identifier == identifier }) else {
+            guard let declared = declared(named: identifier) else {
                 return .error("no element named \(identifier)")
             }
             found = VisibleTree.list(holding: CGPoint(x: declared.frame.midX, y: declared.frame.midY), in: window)
@@ -767,6 +863,24 @@ final class DoorHost {
         return .ack
     }
 
+    /// The search field on show, made to hold `text`. Focusing it is what
+    /// pulls a field the list has tucked away back into view, as a person's
+    /// pull does.
+    private func search(_ text: String) -> DoorReply {
+        guard let window = DoorWindow.current else { return .error("no window on screen") }
+        guard let field = DoorWindow.searchField(in: window) else {
+            return .error("no search field on screen")
+        }
+        if !field.isFirstResponder { _ = field.becomeFirstResponder() }
+        if field.hasText,
+           let all = field.textRange(from: field.beginningOfDocument, to: field.endOfDocument) {
+            field.selectedTextRange = all
+            field.deleteBackward()
+        }
+        if !text.isEmpty { field.insertText(text) }
+        return .ack
+    }
+
     private func paste(_ text: String, into identifier: String) -> DoorReply {
         guard let window = DoorWindow.current else { return .error("no window on screen") }
         guard element(named: identifier, in: window) != nil else {
@@ -788,7 +902,7 @@ final class DoorHost {
            let input = DoorWindow.textInput(in: view) {
             return input
         }
-        if let declared = declared.first(where: { $0.identifier == identifier }),
+        if let declared = declared(named: identifier),
            let under = window.hitTest(
                CGPoint(x: declared.frame.midX, y: declared.frame.midY), with: nil),
            let input = DoorWindow.textInput(in: under) {
@@ -796,6 +910,17 @@ final class DoorHost {
         }
         if let focused = DoorWindow.focused(in: window) { return focused }
         let inputs = DoorWindow.allTextViews(in: window)
+        // The field drawn where the screen says it is: a page under a
+        // pushed one keeps its own fields, the agent list's search among
+        // them, so there is seldom only one.
+        if let declared = declared(named: identifier) {
+            let middle = CGPoint(x: declared.frame.midX, y: declared.frame.midY)
+            let drawn = inputs.last { input in
+                !input.isHidden && input.window != nil
+                    && input.convert(input.bounds, to: window).contains(middle)
+            }
+            if let drawn = drawn as? (any UIKeyInput & UIResponder) { return drawn }
+        }
         if inputs.count == 1, let sole = inputs.first as? (any UIKeyInput & UIResponder) {
             return sole
         }
@@ -807,7 +932,7 @@ final class DoorHost {
         for other in DoorWindow.others {
             if let found = VisibleTree.find(identifier, in: other) { return found }
         }
-        guard let declared = declared.first(where: { $0.identifier == identifier }) else {
+        guard let declared = declared(named: identifier) else {
             return nil
         }
         return window.hitTest(CGPoint(x: declared.frame.midX, y: declared.frame.midY), with: nil)
@@ -854,8 +979,9 @@ struct DrivenRoot<Content: View>: View {
             .transformEnvironment(\.reducesMotion) { $0 = $0 || host.reduceMotion }
             .transformEnvironment(\.reducesTransparency) { $0 = $0 || host.reduceTransparency }
             .reportingIdentifiedElements(includeGeometry: !voiceOver && host.elementGeometry)
+            .environment(\.surfaceElements, host.surfaces)
             .onPreferenceChange(IdentifiedElements.self) { declared in
-                Task { @MainActor in DoorHost.shared.declared = declared }
+                Task { @MainActor in DoorHost.shared.rootDeclared = declared }
             }
     }
 }

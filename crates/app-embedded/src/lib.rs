@@ -56,7 +56,8 @@ pub struct EdgeOverrides {
     /// Local-network discovery; the phone's system browses and hands its
     /// results over, so there is none by default.
     pub discovery: Option<DiscoveryFactory>,
-    /// Where direct links listen: every interface by default.
+    /// Where direct links listen: every interface of both families by
+    /// default.
     pub lan_bind: SocketAddr,
     /// Whether this is the app as published, which sends product
     /// analytics; tests and driving builds are not, and send none unless
@@ -71,7 +72,7 @@ impl Default for EdgeOverrides {
         EdgeOverrides {
             cloud: CloudOptions::default(),
             discovery: None,
-            lan_bind: SocketAddr::from(([0, 0, 0, 0], 0)),
+            lan_bind: node::DUAL_STACK_ANY,
             published: false,
             recording: None,
         }
@@ -118,6 +119,19 @@ pub enum EmbeddedError {
     Relay(String),
     #[error("checkpointing profile {0}: {1}")]
     Checkpoint(ProfileId, String),
+    #[error("binding profile {0}'s link socket afresh: {1}")]
+    Rebind(ProfileId, io::Error),
+}
+
+/// What a network change did across every profile.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct NetworkChangeReport {
+    /// The profiles whose link socket was bound afresh.
+    pub profiles_rebound: usize,
+    /// The path machines told, one per peer of every profile.
+    pub machines_told: usize,
+    /// The device's interface addresses now.
+    pub addrs: Vec<std::net::IpAddr>,
 }
 
 /// One installation with every profile it hosts, in process.
@@ -193,6 +207,7 @@ impl EmbeddedRuntime {
             dial: config.lan,
             link_socket: false,
             cloud: overrides.cloud,
+            interfaces: None,
         };
         let telemetry = Arc::new(AtomicBool::new(config.telemetry));
         let analytics = match overrides.recording {
@@ -705,6 +720,32 @@ impl EmbeddedRuntime {
         }
     }
 
+    /// The phone's network changed under it: every profile's link socket
+    /// is bound afresh, so its links move to the new network with their
+    /// QUIC connections, and every path machine probes its paths again.
+    /// Every profile is told even when one fails to rebind; the first
+    /// failure is the answer.
+    pub async fn network_changed(&self) -> Result<NetworkChangeReport, EmbeddedError> {
+        let mut report = NetworkChangeReport::default();
+        let mut failed = None;
+        for runtime in self.hosted() {
+            let Some(edge) = runtime.edge() else {
+                continue;
+            };
+            match edge.network_changed() {
+                Ok(change) => {
+                    report.profiles_rebound += usize::from(change.rebound);
+                    report.machines_told += change.machines_told;
+                    report.addrs = change.addrs;
+                }
+                Err(error) => {
+                    failed.get_or_insert(EmbeddedError::Rebind(runtime.profile(), error));
+                }
+            }
+        }
+        failed.map_or(Ok(report), Err)
+    }
+
     /// The account a profile is bound to, and its relay link.
     pub async fn account(&self, profile: ProfileId) -> Result<AccountView, EmbeddedError> {
         Ok(self.profile(profile).await?.account)
@@ -815,6 +856,7 @@ fn account_view(info: &ProfileInfo) -> AccountView {
         binding,
         email: info.email.clone(),
         name: info.account_name.clone(),
+        picture: info.account_picture.clone(),
         pro,
         relay,
     }

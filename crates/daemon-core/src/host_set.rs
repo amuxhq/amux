@@ -234,7 +234,7 @@ impl Daemon {
             Some(Route::Direct(link)) => match self.routing.links.link(link).map(|up| up.kind) {
                 Some(CarrierKind::Direct) => RouteKind::Direct,
                 Some(CarrierKind::Ssh) => RouteKind::Ssh,
-                Some(CarrierKind::Relay) => RouteKind::Relay,
+                Some(CarrierKind::Relay | CarrierKind::Forwarded) => RouteKind::Relay,
                 None => RouteKind::Unspecified,
             },
             None => RouteKind::Unspecified,

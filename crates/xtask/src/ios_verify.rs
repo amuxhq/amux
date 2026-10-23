@@ -107,6 +107,7 @@ const REQUIRED_JOURNEYS: &[&str] = &[
     "accessibility",
     "local-network",
     "push-wake",
+    "resume",
 ];
 
 fn check_journeys(manifest: &str) -> Result<(), Box<dyn Error>> {

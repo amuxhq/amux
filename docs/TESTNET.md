@@ -112,6 +112,8 @@ The same network as JSON, as `testnet serve` reads it:
 | `hosts[].provider` | `fake` (the default) or `real`: what every agent created on this host runs, whichever client creates it. See [real providers](#real-providers). |
 | `hosts[].process` | Run the host as a real `amux` daemon process with its own installation config. |
 | `hosts[].supervised` | Run it under `amux supervise`, taking releases from the net's feed; implies `process`. |
+| `hosts[].ipv6_only` | Bind the host's socket to IPv6 loopback alone, so every link it has runs over IPv6; `Net::bind_ipv6_only` sets it from the host's next start. In-process hosts only. |
+| `hosts[].router` | `open`, `ordinary` or `strict`: put the host on a network of its own, behind an imitated router of that kind from its first start, as `set_router` does (below). In-process hosts only. |
 | `links[]` | `{"a", "b"}`: two hosts that trust each other and are linked at start. |
 | `relay.accounts[]` | `{"name", "tier"}`, tier `pro` (the default: relayed tunnels) or `free` (hosts are listed; the relay opens no tunnels). |
 | `settle` | Start each declared agent only once the one before it has settled (see `settle(name)` below), so agents that come to rest in the same standing are listed in declaration order, the last declared as most recently active. Every declared agent must come to rest. Without it the agents start together and which first turn ends last is a race. |
@@ -194,7 +196,9 @@ grace, and the next daemon adopts them. The net reaches it as a client does, ove
 socket: the waits that listen inside an in-process runtime (`fence`, `turn_ended`, `input_settled`) use the
 profile's Subscribe stream instead, back-filling with Fetch past the 200 rows a subscription opens with.
 Subscribing on a host that only replicates an agent can start replication there, which the in-process wait does
-not.
+not. It lists no interface addresses to its peers (`AMUX_TEST_INTERFACES` is set empty), as an in-process host on
+loopback lists none: the machine's real interfaces would give a peer's path machine a way around a cut, gated or
+imitated network.
 
 A supervised host runs under `amux supervise`, from a copy of the build under test stamped as version `0.0.1`
 (`SUPERVISED_VERSION`), so any ordinary version is newer. Its supervisor takes releases from the net's
@@ -255,6 +259,78 @@ them directly.
 | `set_relay_faults(faults)`, `relay_gate()` | A gate in front of the relay's QUIC carrier for a client outside the net. |
 | `pair_gate(from, to)` | The gate `from` dials to reach `to`'s LAN listener: give it to a pairing in place of `to`'s address. |
 | `block_udp(host, blocked)` | Drop every datagram on the host's way to the relay, so it falls back to TCP. |
+
+### Routers
+
+`Router` imitates the home router in front of a host, for the stories that decide whether two hosts can punch
+through to each other. It is the substrate under the host's link socket: the host's own address is a private one
+(`10.n.0.2`) nobody can reach, what it sends leaves from a public loopback port the router's table hands out, and
+what arrives passes only through a mapping the router's filter allows. A mapping nothing has used for the router's
+idle time expires, and the next packet out gets a new port. `public_addr_for(inner, dst)` says which public address
+packets to `dst` leave from now, which is what the relay sees.
+
+| `RouterKind` | Mapping | Inbound filter |
+| --- | --- | --- |
+| `Open` | none: the host's own address is public | anyone |
+| `Ordinary` | one public port for every destination | from any address and port the host sent to through it |
+| `Strict` | a public port per destination | only from the exact address and port that port was opened toward |
+
+A punch works behind `Ordinary`: the port the relay saw is the port the host punches from, so the peer's answer to
+the address the relay told it gets in. Behind `Strict` the punch leaves from a different port, and the answer to the
+relay's address is dropped.
+
+A story puts a router in front of an in-process host and moves it between networks with these verbs; each is also
+on `World`, and a simulated net, which has no sockets, refuses them:
+
+| Verb | Effect |
+| --- | --- |
+| `set_router(host, kind)` | Put a router of that kind in front of the host's link socket, now if it runs and on every start after. Its links migrate onto the router's public port; a mapping idle for 30 seconds expires. A host started behind a router reaches the relay's QUIC listener straight from its public port, not through the net's gate, so the relay sees and reports the router's port. |
+| `change_network(host)` | Move a running host onto another network, as a phone leaving Wi-Fi does: its link socket rebinds to a fresh port, or behind a fresh router of the same kind with new public ports, its links migrate without going down, and its path machines are told as the phone's runtime tells them. |
+| `bind_ipv6_only(host)` | Bind the host's socket to IPv6 loopback alone from its next start. |
+
+Without a router an in-process host reaches the relay's QUIC listener through a gate of its own, whose socket toward
+the relay takes datagrams from the relay alone, so the address the relay reports for it is one no peer can punch to.
+A story or journey that means hosts on different networks says so with the router instead: `strict` for hosts reached
+through the relay alone, whose ports take datagrams only from where they were opened toward, and `ordinary` for
+networks a punch crosses. A routed host reaches the relay from its router's public port, not through its gate, so the
+gate's verbs (`block_udp`) do not reach it. A phone launched against a net dials the relay from its own socket, which
+a host's probe reaches; a phone journey whose topology routes any host launches the app against the net's relay gate
+(`RelayGate`) instead, so the phone too is seen at a socket that takes datagrams from the relay alone.
+
+The router stories in `spec_links.rs` put two paid hosts behind routers with nothing between them but the relay:
+
+| Story | What it shows |
+| --- | --- |
+| `punch_ordinary_routers_…` | Behind `Ordinary` routers each host probes the address the relay saw the other at, both routers open, and the link moves from `relay_udp` to `punched` with the session streaming. |
+| `punch_strict_routers_…` | Behind `Strict` routers both hosts learn the other's observed address, every probe is dropped, and the link stays on `relay_udp`. |
+| `punch_free_never_…` | Two hosts on one free account on the same network: neither learns where the relay sees the other, so neither has anything to punch to, and the link stays on `lan`. |
+| `another_network_strict_routers_…` | Two paid hosts declared behind `strict` routers: each end's link stays on `relay_udp` after every punch has given up, never `punched` or `lan`. |
+| `another_network_ordinary_routers_…` | The same declaration with `ordinary` routers: the link moves onto `punched`. |
+| `punch_lapse_drops_…` | A lapse takes the punched path away: the link leaves `punched`, and with no free path between the routers goes down. |
+| `path_change_lan_relay_lan_…` | One subscription stays open while the LAN between two signed-in hosts is cut (the link moves to `relay_udp`) and restored (back to `lan`): every line once, one opening, no reset, lag or detach, and the link never goes down. |
+| `path_change_phone_network_…` | `change_network` under a host mid-stream: the same subscription reads on with no gap and the link stays up. |
+
+### Which path carries a link
+
+Every daemon writes the link log: one line at INFO each time one of its links comes up, goes down or changes path,
+naming the peer and the path (`lan`, `direct`, `punched`, `relay_udp`, `relay_tcp`, `ssh`, `via_daemon`). The net
+reads an in-process host's lines from its own trace and a process host's from its daemon log, so a story says which
+path carried a link the way a person reading the log would:
+
+| Verb | Effect |
+| --- | --- |
+| `link_log(host)` | Every line the host has written, oldest first, across restarts. |
+| `carrying_path(host, peer)` | The path the host's last line for that peer names, or none once that line says the link went down. |
+
+### SSH
+
+A host reaches a peer over SSH by running `ssh <target> amux relay --profile <id>` and carrying the link over that
+process's stdio into the far daemon's link socket (`link.sock` in its profile directory), where the pinned QUIC
+handshake admits only a paired key. Every in-process host serves its link socket. The net puts a stand-in `ssh`
+(`crates/testnet/stand-in/ssh`) first on its process's PATH, which process hosts inherit; no real SSH runs. A target
+is a host's directory, which `ssh_target(host)` answers: the stand-in runs the far host's own `amux` against its own
+installation there, so `amux relay` joins the far daemon's link socket. Give the target to a peer as an SSH pairing
+does, with the far host's profile id.
 
 ## Growing a net while it runs
 
@@ -443,6 +519,11 @@ verb without fields is a bare string (`"Shutdown"`).
 | `{"RelayGate": {}}`, `{"RelayFaults": {…}}` | A gate in front of the relay's QUIC carrier: `{"addr": "…"}`; its faults. |
 | `{"PairGate": {"from", "to"}}` | The gate `from` dials to reach `to`'s LAN listener: `{"addr": "…"}`. |
 | `{"BlockUdp": {"host", "blocked"}}` | Drop every datagram on the host's way to the relay, or stop. |
+| `{"SetRouter": {"host", "kind"}}` | Put a router (`open`, `ordinary` or `strict`) in front of the host's link socket, now and on every start after. |
+| `{"ChangeNetwork": {"host"}}` | Move a running host onto another network: its link socket rebinds and its links migrate. |
+| `{"BindIpv6Only": {"host"}}` | Bind the host's socket to IPv6 loopback alone from its next start. |
+| `{"CarryingPath": {"host", "peer"}}` | The path carrying the host's link to the peer, by its link log: `{"path": "lan"}`, or `{"path": null}` while the link is down. |
+| `{"LinkLog": {"host"}}` | Every line the host has written to the link log, oldest first: `[{"peer", "event", "path", "resumed", "early_data", "first_packet_to_catch_up_ms"}]`. |
 | `{"Flap": {"a", "b", "down_ms", "up_ms"}}`, `{"FlapStop": {}}` | Sever and restore a link on a period, until stopped; stop every flap, leaving each link restored. |
 | `{"Release": {"version", "channel", "rollout", "broken"}}` | Publish the build under test on the release feed (channel `stable` by default) and have supervised hosts check now. |
 | `{"Status": {}}` | The readiness record as it stands now, with `topology`: the declaration that would start this net again, run-time additions included. |
@@ -514,8 +595,8 @@ what holds the port.
 | Agents | `spawn NAME --host H [--kind claude-sdk\|claude-pty\|codex] [--provider real\|fake] [--script FILE] [--prompt P] [--model M] [--permission P] [--mode M] [--parent A] [--cwd D] [--wait] [--timeout S]`, `send AGENT TEXT [--wait]`, `wait AGENT`, `stop-agent AGENT`, `resume AGENT [TEXT]`, `gate open NAME` |
 | A host's own record | `fleet HOST` (its own agents and its trusted peers', as its clients show them; rows a host it no longer trusts left behind are listed apart), `chat HOST AGENT` (each item with what its body decodes as, and the asks waiting on a person), `block HOST AGENT`, `provider-input AGENT` |
 | The real CLI | `amux HOST -- ARGS…`, with standard input passed through; bare `pair` runs in the background and prints its PIN and address, and `pair ADDRESS` naming one of the net's hosts goes through the pair's gate |
-| Terminal client | `tui open HOST [--size COLSxROWS] [--theme light\|dark] [--name N]`, `tui keys PANE KEY…`, `tui type PANE TEXT`, `tui paste PANE TEXT\|--file FILE\|--file -`, `tui clip PANE FILE [--image]`, `tui screen PANE`, `tui shot PANE`, `tui resize PANE COLSxROWS`, `tui attach PANE AGENT`, `tui close PANE`, `tui list` |
-| Phone | `phone open [--host H] [--relay]`, `phone pair HOST`, `phone connect ACCOUNT`, `phone tap ID`, `phone choose LABEL` (an item of the menu that is open), `phone type TEXT --into ID`, `phone scroll DIRECTION [--in ID]`, `phone query`, `phone shot`, `phone appearance light\|dark`, `phone text-size SIZE`, `phone attach AGENT FILE [--image]`, `phone settle` |
+| Terminal client | `tui open HOST [--size COLSxROWS] [--theme light\|dark] [--name N]`, `tui keys PANE KEY…`, `tui type PANE TEXT`, `tui paste PANE TEXT\|--file FILE\|--file -`, `tui clip PANE FILE [--image]`, `tui screen PANE`, `tui shot PANE`, `tui resize PANE COLSxROWS`, `tui attach PANE AGENT`, `tui watch PANE`, `tui close PANE`, `tui list` |
+| Phone | `phone open [--host H] [--relay]`, `phone pair HOST`, `phone connect ACCOUNT`, `phone tap ID`, `phone choose LABEL` (an item of the dialog or menu that is open), `phone type TEXT --into ID`, `phone search TEXT`, `phone scroll DIRECTION [--in ID]`, `phone query`, `phone shot`, `phone appearance light\|dark`, `phone text-size SIZE`, `phone attach AGENT FILE [--image]`, `phone settle` |
 | Evidence | `capture NAME [--note TEXT]`, `log [--tail N]`, `dump show BUNDLE [--agent A]` |
 | Files to test with | `make-file NAME SIZE [--fill zero\|random\|text]`: a file below the folder (no `..`), up to 2g |
 | Ledger | `ledger read`, `ledger findings`, `ledger claim TEXT`, `ledger idea TEXT`, `ledger finding NAME [--new\|--duplicate-of TESTER/NAME]`, `ledger done SUMMARY` |
@@ -534,6 +615,8 @@ line endings arrive as written, and a paste of any size goes through. `tui shot`
 (`.frame.json`) and draws that to PNG with `crates/shot`; the exact text sits beside it (`.txt`). Background colour a
 program paints by clearing to the end of a line is not kept, and the font has no CJK or emoji glyphs. `tui attach`
 opens `amux attach` for an agent in a second pane: Claude's own interface for terminal Claude, Codex's own for Codex.
+`tui watch` attaches this terminal to a pane, to watch and use the client in it by hand; tmux's C-b d leaves it
+open.
 `tui clip` attaches as a person does in the terminal client: it puts a file's path (or, with `--image`, a PNG as
 picture data) on the Mac's clipboard and presses Ctrl+V in the pane. The clipboard is the machine's own, so `clip`
 holds a lock across every session for the moment the client reads it and then puts back the text the clipboard held;
@@ -549,7 +632,9 @@ it cannot break the install, then installs and launches that copy browsing the n
 commands talk to the app's door, which serves several connections at once. `phone tap` waits up to ten seconds for
 its element to be on screen and enabled, taps again while the app has not yet drawn a just-enabled control able to
 take it, then waits for the screen to change and the app to settle, so the screen a tap opens is there for the next
-command. The phone finds hosts by real mDNS, so a host it pairs with needs `--lan` and `--bonjour`; a `phone pair`
+command. `phone type` and `phone search` settle too. `phone shot` waits for two pictures a moment apart to agree, so
+a sheet still sliding is not caught halfway, and takes the last one after about six seconds of a screen that keeps
+moving. The phone finds hosts by real mDNS, so a host it pairs with needs `--lan` and `--bonjour`; a `phone pair`
 that fails closes the pairing window it opened, so the next attempt can open one. `phone open --relay` and
 `phone connect ACCOUNT` reach accounts through the net's relay instead; signing in reads what the account may do
 from the net's account service, as the app does from amux.sh.
@@ -571,16 +656,56 @@ pane and of the phone plus every earlier shot (`screens/`), and the net's and ea
 Anything it could not take is named in `errors.txt`. `dump show` prints a captured dump bundle as text with the
 `dump-show` binary from `crates/replay-support`, which must be built beside `testnet`. The ledger commands are
 for a [QA](QA.md) run and need its `AMUX_QA_RUN`. Inside such a run agents are real only: `host add` defaults to
-`--provider real`, and `host add` and `spawn` refuse `--provider fake` and `--script`.
+`--provider real`, `host add` and `spawn` refuse `--provider fake` and `--script`, and `up` takes a topology file
+only when every host in it declares `"provider": "real"` and no agent plays a script or journal.
+
+### Environments
+
+An environment is a named world of real agents to use the product in: `environments/NAME.json`, an ordinary topology
+file with a `clients` section saying which clients come with it.
+
+```json
+"clients": {
+  "phone": {"paired": ["studio", "laptop"], "account": "ada"},
+  "terminal": {"host": "studio"}
+}
+```
+
+`ctl up` opens what the section declares once the net is ready: the phone, paired with each listed host through the
+real pairing flow (each needs `lan` and `bonjour`) and then signed in to the account if one is named, and the
+terminal client in a pane against its host. A world with no `phone` never touches the simulator. The section is
+ctl's alone; the net is served the file without it, and `ctl up` names a client that cannot be opened (a host that
+is not declared, an account the relay does not know) before anything starts.
+
+`just env NAME` builds what the world needs and starts it in its own session folder,
+`~/.local/state/amux-env/<tree>/NAME`, taking down whatever an earlier start left there first. The folder is outside
+the checkout, as a QA run's are: inside it, git would find the repository above every agent's folder. It stays in the foreground holding the net, and the simulator lease
+when the world has a phone, until Ctrl-C takes the net down: a lease given back while the app still runs would let
+another tree take that simulator. Everything else is `testnet ctl` from that folder in another terminal, the world
+being only where a session starts: add a host, spawn an agent, sever a link, pair the phone with another host, `tui
+watch` the terminal pane. Every environment is real throughout, so a QA run may start from one too.
+
+| Environment | What it is |
+| --- | --- |
+| `busy` | Four hosts with six agents between them: two at work editing, one Codex reading a repository, a terminal Claude waiting on a permission, and quick ones that come to rest. The phone is paired with three hosts; `nas` stays discoverable for pairing by hand. The terminal client runs on `studio`. |
+| `asks` | One host whose agents stop to ask: a Claude permission for a new file, a Claude plan, a Claude question, a terminal Claude's permission and a Codex approval. The phone is paired with it and the terminal client runs on it. |
+| `first-run` | Two hosts on the network, neither paired: the empty fleet, discovery and the pairing flow, on the phone only. |
 
 ## The harness's own tests
 
 ```sh
 just test -- --test harness                  # topology validation, clock, waits, faults, growth, process hosts, the door
 just test -- --test ctl                      # testnet ctl end to end: up, hosts, a link, a fake agent, a shot, a capture, down
-just test -- --test spec_edge --test spec_families --test spec_inventory --test spec_network --test spec_replication
+just test -- --test spec_edge --test spec_families --test spec_inventory --test spec_links --test spec_network --test spec_replication
 ```
 
 The `spec_*` targets are the many-daemon specifications: pairing, trust, discovery, routing, relay carriers,
 credential refresh, revocation, account isolation, the inventory, replication and agent families across hosts.
+`spec_links` holds one story per route a link takes (the same network, SSH, IPv6 alone), each reaching an agent's
+session, streaming it live and naming the carrying path from the link log. A story on the relay alone puts every
+host on a network of its own behind a `strict` router and ends by asserting, with `still_relayed`, that each end's
+link is still carried through the relay, so it cannot pass by finishing before a punch or a LAN dial moves the link.
+Signing out takes only what the relay does: `route_relay_signing_out_…` closes a link the relay alone carried, while
+`route_lan_signing_out_…` keeps a direct link between two hosts on one network up on `lan`, and the signed-out laptop
+still reaches the desk's session over it.
 Each reads top to bottom as a description of one behaviour, with its assertions in the test body.

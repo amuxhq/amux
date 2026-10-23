@@ -332,34 +332,14 @@ final class PaywallStoreTests: XCTestCase {
         XCTAssertNil(outcome)
     }
 
-    func testTheSourceIsSaidWhereverAnEntitlementIsShown() {
-        XCTAssertEqual(
-            Entitlement.active(grant: .purchased(.appStore), renews: nil).summary,
-            "Subscribed through the App Store")
-        XCTAssertEqual(
-            Entitlement.active(grant: .purchased(.web), renews: nil).summary,
-            "Subscribed on the web")
-    }
-
-    /// An account that has bought nothing has lost nothing on its own network,
-    /// and the line that says it is not subscribed says that in the same
-    /// breath. A subscription that ended reads the same way: what it ended is
-    /// the relay, not amux.
-    func testNotSubscribedSaysWhatStillWorks() {
-        XCTAssertEqual(
-            Entitlement.none.summary, "Not subscribed · hosts on this network still work")
-        XCTAssertEqual(
-            Entitlement.lapsed(grant: .purchased(.web), endedAt: Date()).summary,
-            "Not subscribed · hosts on this network still work")
-    }
-
-    /// Access nobody paid for names no store: a line reading *Subscribed on
-    /// the web* would send somebody looking for a billing page that does not
-    /// exist for them.
-    func testAccessThatWasGivenNamesNoStore() {
-        XCTAssertEqual(
-            Entitlement.active(grant: .granted, renews: nil).summary,
-            "Included with this account")
+    /// The settings row says only whether the relay is bought; where, and
+    /// what works without it, are the paywall's to say.
+    func testTheSummaryIsSubscribedOrNot() {
+        XCTAssertEqual(Entitlement.active(grant: .purchased(.appStore), renews: nil).summary, "Subscribed")
+        XCTAssertEqual(Entitlement.active(grant: .purchased(.web), renews: nil).summary, "Subscribed")
+        XCTAssertEqual(Entitlement.active(grant: .granted, renews: nil).summary, "Subscribed")
+        XCTAssertEqual(Entitlement.none.summary, "Not subscribed")
+        XCTAssertEqual(Entitlement.lapsed(grant: .purchased(.web), endedAt: Date()).summary, "Not subscribed")
     }
 
     /// The paywall does not offer to sell to somebody who was given it, and

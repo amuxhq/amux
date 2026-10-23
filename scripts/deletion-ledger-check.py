@@ -646,6 +646,50 @@ ROWS = [
             r"delivery\.kind",
         ],
     ),
+    Row(
+        "yamux",
+        "streams multiplexed by yamux over TLS on TCP and SSH: every link is a QUIC connection, its packets framed over a byte stream where UDP does not reach",
+        [
+            r"yamux",
+            r"MuxCarrier|MuxRole",
+            r"link/mux\.rs",
+        ],
+    ),
+    Row(
+        "the stream splice",
+        "a relay or daemon copying a host's stream onto another link: forwarders carry each pair's QUIC packets end to end, and no stream crosses a link to another host",
+        [
+            r"link/piper\.rs",
+            r"\bPiper\b",
+            r"Input::Stream(Opened|Ended)|RefuseStream|Output::Splice",
+        ],
+    ),
+    Row(
+        "the stream preface",
+        "a destination written at the head of every stream: a stream on a link belongs to the host at its other end",
+        [r"StreamPreface"],
+    ),
+    Row(
+        "stream refusals",
+        "a stream reset with a reason before any of it was carried: a forwarder that will not carry a pair says so once on the sender's control link with ForwardRefused",
+        [r"StreamRefusal|STREAM_REFUSAL_"],
+    ),
+    Row(
+        "the plain stream flag",
+        "a stream marking itself as carrying no handshake: every stream is plain, its link pinned both ends",
+        [r"preface\.plain", r"plain: (true|false)"],
+    ),
+    Row(
+        "the pinned TLS inside a stream",
+        "a pinned TLS handshake run inside each channel's stream and per route: the link's own QUIC handshake pins both ends once, and pairing through the relay is the same certificate-less QUIC handshake as on a direct link",
+        [
+            r"client_tls_config_pinned",
+            r"pairing_channel_from_io",
+            r"pairing_stream",
+            r"secure_channel",
+            r"enum Handshake\b|Handshake::Pinned",
+        ],
+    ),
 ]
 
 # Files that name removed things on purpose, to hold them gone.

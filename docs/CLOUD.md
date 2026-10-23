@@ -161,10 +161,23 @@ The tier decides what the relay carries:
   riding a connection opened while it was Pro. Machines on the same local
   network reach each other directly either way.
 
-A profile renews its credential shortly before it expires, and a free one
-renews every three minutes so that a purchase reaches the link promptly. After
-a purchase the app does not wait for that: it asks the profile to refresh at
-once (`amux_runtime_refresh_entitlement`).
+Relay credentials last a week. A profile keeps its credential, with the relay
+it names, its expiry, its tier and when it was fetched, in
+`profiles/<id>/relay-token`, and a launch that finds it more than five minutes
+from expiry dials that relay and presents it without asking the account
+service first. A credential within five minutes of expiry is never presented;
+the launch fetches a fresh one. If the relay refuses a kept credential, the
+profile forgets it and fetches a fresh one at once; only a refusal of that
+fresh one asks for a sign-in. Signing in or out forgets the kept credential.
+
+The plan a credential carries is only as fresh as its fetch, so a profile
+renews it once it is an hour old (at once, after the link comes up, for a kept
+one older than that) and hourly while connected, sending each renewal to the
+relay as `Reauth`. A lapse therefore reaches the relay within the hour. A free
+profile renews every three minutes so that a purchase reaches the link
+promptly. After a purchase the app does not wait for that: it asks the profile
+to refresh at once (`amux_runtime_refresh_entitlement`). Every renewal is kept
+for the next launch.
 
 ## A purchase reaching amux.sh
 

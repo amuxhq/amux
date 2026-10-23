@@ -1,25 +1,40 @@
 //! The relay's scaling curve: the production relay on loopback, held by 10,
-//! 100 and 1,000 hosts at once, measured for the bytes it carries between
-//! them and for how long a new stream through it takes to answer.
+//! 100 and 1,000 hosts at once, measured for how fast it admits their links,
+//! for the bytes it forwards between them and for how long a new stream on
+//! a link it forwards takes to answer.
 //!
-//! Each level starts a fresh relay serving its TLS-over-TCP carrier, the
-//! listener a deployment runs beside QUIC. QUIC is not used: the relay
-//! admits ten new QUIC handshakes a minute from one address, and every host
-//! here dials from the same loopback address. Hosts come in pairs, one pair
-//! to an account, as a person's laptop and desktop do. Every host:
+//! Each level starts a fresh relay, and every host links to it over one
+//! [`Carrier`]: QUIC inside TLS on TCP, the listener a deployment runs for
+//! hosts whose UDP does not get through and the default here, or QUIC on
+//! UDP, as a deployment's hosts normally link. Over UDP each host has a
+//! socket of its own and answers the relay's Retry as a deployed host
+//! does; the relay's limit of ten new QUIC handshakes a minute from one
+//! address is lifted for the benchmark, since every host here dials from
+//! the same loopback address. A run records its carrier, so a baseline is
+//! only compared with a run over the same one. Hosts come in pairs, one
+//! pair to an account, as a person's laptop and desktop do. Every host:
 //!
-//! - opens [`CurveOptions::opens_per_host`] streams to its partner one after
-//!   another, all hosts at once, each timed from the open to the partner's
-//!   one-byte answer (stream-open latency);
+//! - links to the relay, all hosts dialling at once up to
+//!   [`DIAL_CONCURRENCY`]; the level's hosts over the time from the first
+//!   dial to the last link the relay accepted is the admission rate;
+//! - pins its partner's key, and one host of each pair dials the other
+//!   through its link to the relay: an end-to-end QUIC link whose packets
+//!   the relay forwards, as two daemons' links through it are;
+//! - opens [`CurveOptions::opens_per_host`] streams to its partner on that
+//!   link one after another, all hosts at once, each timed from the open to
+//!   the partner's one-byte answer (stream-open latency);
 //! - then opens one stream to its partner and writes into it as fast as the
-//!   relay takes the bytes; what every partner reads over a fixed window is
+//!   link takes the bytes; what every partner reads over a fixed window is
 //!   the aggregate throughput.
 //!
-//! The hosts are bare: one link to the relay and raw streams, with no
-//! handshake inside a stream, so the work measured is the relay's and the
-//! two carriers' TLS. They share the process and its cores with the relay.
+//! The hosts are bare: a link to the relay, one to the partner and raw
+//! streams on it, with no handshake inside a stream, so the work measured
+//! is the relay's forwarding and the QUIC of the links and of the
+//! carrier, with the carrier's TLS over TCP. They share the process and
+//! its cores with the relay.
 
 use std::collections::BTreeMap;
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -43,17 +58,19 @@ use super::{DESKTOP_REFERENCE_STATE, Machine};
 pub const LEVELS: [usize; 3] = [10, 100, 1_000];
 /// Where a machine's baseline lives, under the model's directory.
 pub const BASELINE_ROOT: &str = "perf/relay";
-/// The carrier every host links over, recorded so a baseline is only
-/// compared with a run over the same one.
-pub const CARRIER: &str = "TLS over TCP";
-const SCHEMA: u32 = 1;
+const SCHEMA: u32 = 2;
 const RELAY_NAME: &str = "localhost";
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+/// The relay's new QUIC handshakes a minute from one address over UDP,
+/// where every host dials from loopback: more than any level dials.
+const BENCHMARK_HANDSHAKE_RATE: usize = 1_000_000;
 const PHASE_TIMEOUT: Duration = Duration::from_secs(180);
-/// How many hosts dial at once: the relay finishes 128 TLS handshakes at a
-/// time and refuses none, so this only bounds the dialling side's sockets.
-const DIAL_CONCURRENCY: usize = 64;
+/// How many hosts dial at once: the relay finishes 128 handshakes at a time
+/// and refuses none, so this only bounds the dialling side's sockets.
+pub const DIAL_CONCURRENCY: usize = 64;
 const CHUNK: usize = 64 * 1024;
+/// How long a round waits after the relay has dropped its last link.
+const TEARDOWN_SETTLE: Duration = Duration::from_millis(250);
 const PING: u8 = b'p';
 const BULK: u8 = b'b';
 
@@ -67,25 +84,47 @@ const BULK: u8 = b'b';
 pub const THROUGHPUT_BAND: f64 = 0.15;
 pub const OPEN_P50_BAND: f64 = 0.25;
 pub const OPEN_P99_BAND: f64 = 1.00;
+/// Links admitted per second: three runs of one build on the enrolled Mac,
+/// busy elsewhere (load averages 39 to 140), moved by up to 10% at every
+/// level (1,054 to 1,154 at ten connections, 1,625 to 1,757 at a hundred,
+/// 2,255 to 2,422 at a thousand), so its band is the median open's.
+pub const ADMISSIONS_BAND: f64 = 0.25;
+
+/// What every host links to the relay over.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Carrier {
+    TlsOverTcp,
+    QuicOverUdp,
+}
+
+impl Carrier {
+    /// The name a run records.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::TlsOverTcp => "TLS over TCP",
+            Self::QuicOverUdp => "QUIC over UDP",
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct CurveOptions {
+    pub carrier: Carrier,
     pub levels: Vec<usize>,
     /// Fresh relays per level. Throughput is the median round's; the open
     /// latencies of every round are pooled, so the 99th percentile at ten
     /// connections rests on a thousand opens rather than two hundred.
     pub rounds: usize,
-    /// Streams each host opens for the latency sample. With the bulk
-    /// stream it stays under the relay's thirty stream opens a minute per
-    /// link.
+    /// Streams each host opens for the latency sample.
     pub opens_per_host: usize,
     pub warm_up: Duration,
     pub window: Duration,
 }
 
 impl CurveOptions {
-    pub fn full() -> Self {
+    pub fn full(carrier: Carrier) -> Self {
         Self {
+            carrier,
             levels: LEVELS.to_vec(),
             rounds: 5,
             opens_per_host: 20,
@@ -100,6 +139,10 @@ impl CurveOptions {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Point {
     pub connections: usize,
+    /// Links the relay accepted per second while the level came up: the
+    /// level's hosts over the time from the first dial to the last
+    /// accepted link, the median round's.
+    pub admissions_per_s: f64,
     /// Aggregate bytes carried between hosts, MiB per second.
     pub throughput_mib_s: f64,
     /// From a stream's open to the partner's first answer, milliseconds.
@@ -127,10 +170,15 @@ pub struct Curve {
 }
 
 impl Curve {
-    pub fn baseline_path(machine: &Machine) -> PathBuf {
-        Path::new(BASELINE_ROOT)
-            .join(&machine.model)
-            .join("baseline.json")
+    /// Where `machine`'s baseline over `carrier` lives: TCP's beside the
+    /// model's directory, UDP's in its `udp` directory.
+    pub fn baseline_path(machine: &Machine, carrier: Carrier) -> PathBuf {
+        let model = Path::new(BASELINE_ROOT).join(&machine.model);
+        match carrier {
+            Carrier::TlsOverTcp => model,
+            Carrier::QuicOverUdp => model.join("udp"),
+        }
+        .join("baseline.json")
     }
 
     pub fn read(path: &Path) -> Result<Self> {
@@ -163,11 +211,12 @@ impl Curve {
             load(self.load_before),
             load(self.load_after)
         );
-        println!("connections | throughput | open p50 | open p99 | opens");
+        println!("connections | admissions | throughput | open p50 | open p99 | opens");
         for point in &self.points {
             println!(
-                "{} | {:.1} MiB/s | {:.3} ms | {:.3} ms | {}",
+                "{} | {:.0} links/s | {:.1} MiB/s | {:.3} ms | {:.3} ms | {}",
                 point.connections,
+                point.admissions_per_s,
                 point.throughput_mib_s,
                 point.open_p50_ms,
                 point.open_p99_ms,
@@ -233,6 +282,13 @@ pub fn compare(run: &Curve, baseline: &Curve) -> Result<Vec<Judgement>> {
         };
         for (metric, measured, baseline, band, higher_is_better) in [
             (
+                "admissions",
+                point.admissions_per_s,
+                base.admissions_per_s,
+                ADMISSIONS_BAND,
+                true,
+            ),
+            (
                 "throughput",
                 point.throughput_mib_s,
                 base.throughput_mib_s,
@@ -273,10 +329,10 @@ pub fn compare(run: &Curve, baseline: &Curve) -> Result<Vec<Judgement>> {
 pub fn print_judgements(judgements: &[Judgement]) {
     println!("connections | metric | baseline | measured | worse by | band | verdict");
     for judgement in judgements {
-        let unit = if judgement.metric == "throughput" {
-            "MiB/s"
-        } else {
-            "ms"
+        let unit = match judgement.metric {
+            "throughput" => "MiB/s",
+            "admissions" => "links/s",
+            _ => "ms",
         };
         println!(
             "{} | {} | {:.3} {unit} | {:.3} {unit} | {:+.1}% | {:.0}% | {}",
@@ -300,6 +356,7 @@ pub async fn run(
     let load_before = load_average()?;
     let mut points = Vec::new();
     for &connections in &options.levels {
+        let mut admissions = Vec::new();
         let mut throughputs = Vec::new();
         let mut latencies = Vec::new();
         for round in 0..options.rounds {
@@ -307,18 +364,21 @@ pub async fn run(
                 .await
                 .with_context(|| format!("{connections} connections, round {}", round + 1))?;
             eprintln!(
-                "{connections} connections, round {}: {:.1} MiB/s, open p50 {:.3} ms, p99 {:.3} ms",
+                "{connections} connections, round {}: {:.0} links/s, {:.1} MiB/s, open p50 {:.3} ms, p99 {:.3} ms",
                 round + 1,
+                measured.admissions_per_s,
                 measured.throughput_mib_s,
                 percentile(&measured.latencies, 0.50),
                 percentile(&measured.latencies, 0.99),
             );
+            admissions.push(measured.admissions_per_s);
             throughputs.push(measured.throughput_mib_s);
             latencies.extend(measured.latencies);
         }
         latencies.sort();
         points.push(Point {
             connections,
+            admissions_per_s: median(admissions.into_iter()),
             throughput_mib_s: median(throughputs.into_iter()),
             open_p50_ms: percentile(&latencies, 0.50),
             open_p99_ms: percentile(&latencies, 0.99),
@@ -335,7 +395,7 @@ pub async fn run(
             "release"
         }
         .to_owned(),
-        carrier: CARRIER.to_owned(),
+        carrier: options.carrier.label().to_owned(),
         reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
         cpus: std::thread::available_parallelism().map_or(0, usize::from),
         load_before,
@@ -354,16 +414,22 @@ async fn measure(
     if !connections.is_multiple_of(2) {
         bail!("hosts come in pairs; {connections} connections is odd");
     }
-    let relay = relay_runtime.spawn(Relay::start()).await??;
+    let relay = relay_runtime.spawn(Relay::start(options.carrier)).await??;
     let accounts = (0..connections / 2)
         .map(|_| Uuid::new_v4())
         .collect::<Vec<_>>();
+    let linking = Instant::now();
     let hosts = tokio::time::timeout(PHASE_TIMEOUT, relay.link_hosts(&accounts))
         .await
         .map_err(|_| anyhow!("hosts did not all link to the relay"))??;
+    // Every host's connect returns once the relay has accepted its link.
+    let admissions_per_s = connections as f64 / linking.elapsed().as_secs_f64();
     tokio::time::timeout(PHASE_TIMEOUT, relay.wait_for_pairs(&accounts))
         .await
         .map_err(|_| anyhow!("the relay never held both hosts of every account"))?;
+    tokio::time::timeout(PHASE_TIMEOUT, link_pairs(&hosts))
+        .await
+        .map_err(|_| anyhow!("the pairs' links through the relay did not all come up"))??;
 
     let received = Arc::new(AtomicU64::new(0));
     let mut serving = JoinSet::new();
@@ -436,16 +502,54 @@ async fn measure(
     writing.abort_all();
     serving.abort_all();
     drop(hosts);
+    // The next round's hosts dial on the same runtimes, and this round's
+    // teardown delays those dials: ten hosts' TCP connects waited 90 to 190
+    // ms behind it, and 30 to 50 ms after the relay had let every link go,
+    // so the next round's admission rate measured the teardown. A quarter
+    // second after the last link closed, they connect in a millisecond or two.
+    tokio::time::timeout(PHASE_TIMEOUT, relay.wait_for_no_links(&accounts))
+        .await
+        .map_err(|_| anyhow!("the relay still held links after every host let go"))?;
+    tokio::time::sleep(TEARDOWN_SETTLE).await;
 
     Ok(Round {
+        admissions_per_s,
         throughput_mib_s: (to - from) as f64 / (1024.0 * 1024.0) / elapsed.as_secs_f64(),
         latencies,
     })
 }
 
-/// What one round measured: its aggregate throughput and every open's
-/// latency, sorted.
+/// Pins each pair's keys to each other and dials the link between them
+/// through the relay, [`DIAL_CONCURRENCY`] at once: hosts 2k and 2k+1 are a
+/// pair, and 2k dials.
+async fn link_pairs(hosts: &[Arc<RelayHost>]) -> Result<()> {
+    let (pairs, _) = hosts.as_chunks::<2>();
+    for [near, far] in pairs {
+        near.trust(far)?;
+        far.trust(near)?;
+    }
+    let slots = Arc::new(Semaphore::new(DIAL_CONCURRENCY));
+    let mut dialling = JoinSet::new();
+    for [near, far] in pairs {
+        let (near, far) = (near.clone(), far.id());
+        let slots = slots.clone();
+        dialling.spawn(async move {
+            let _slot = slots.acquire_owned().await?;
+            near.link_to(far)
+                .await
+                .context("link to the partner through the relay")
+        });
+    }
+    while let Some(linked) = dialling.join_next().await {
+        linked??;
+    }
+    Ok(())
+}
+
+/// What one round measured: its admission rate, its aggregate throughput
+/// and every open's latency, sorted.
 struct Round {
+    admissions_per_s: f64,
     throughput_mib_s: f64,
     latencies: Vec<Duration>,
 }
@@ -473,13 +577,20 @@ async fn answer(mut stream: ByteStream, received: Arc<AtomicU64>) {
 /// credentials: a token is the account it names.
 struct Relay {
     server: CloudLinkServer,
-    addr: std::net::SocketAddr,
+    carrier: Carrier,
+    /// The relay's TCP listener and its UDP socket.
+    tcp: SocketAddr,
+    udp: SocketAddr,
+    /// The QUIC handshake each host makes inside its TLS stream.
+    quic_client: quinn::ClientConfig,
+    /// The roots each host over UDP trusts the relay by.
+    roots: rustls::RootCertStore,
     connector: tokio_rustls::TlsConnector,
-    task: tokio::task::JoinHandle<()>,
+    serving: node::RelayServing,
 }
 
 impl Relay {
-    async fn start() -> Result<Self> {
+    async fn start(carrier: Carrier) -> Result<Self> {
         let rcgen::CertifiedKey { cert, signing_key } =
             rcgen::generate_simple_self_signed(vec![RELAY_NAME.to_owned()])
                 .context("make the relay's certificate")?;
@@ -488,10 +599,18 @@ impl Relay {
             signing_key.serialize_pem().as_bytes(),
         )
         .context("load the relay's certificate")?;
+        let quic = node::relay_quic_server_config(
+            cert.pem().as_bytes(),
+            signing_key.serialize_pem().as_bytes(),
+            &node::SessionTickets::in_memory(node::RELAY_TICKETS),
+        )
+        .context("the relay's QUIC configuration")?;
         let mut roots = rustls::RootCertStore::empty();
         roots.add(cert.der().clone())?;
+        let quic_client = node::harness::relay_quic_client_config_with_roots(roots.clone())
+            .context("the relay's QUIC client configuration")?;
         let client = rustls::ClientConfig::builder()
-            .with_root_certificates(roots)
+            .with_root_certificates(roots.clone())
             .with_no_client_auth();
         let server = CloudLinkServer::new(
             RelayIdentity {
@@ -502,15 +621,21 @@ impl Relay {
             },
             // The curve reads no dump the relay's core asks for.
             None,
-        );
+        )
+        .with_handshake_rate_limit(BENCHMARK_HANDSHAKE_RATE);
         let listener = TcpListener::bind("127.0.0.1:0").await?;
-        let addr = listener.local_addr()?;
-        let task = server.serve_on_tls_tcp_listener(listener, acceptor, HANDSHAKE_TIMEOUT);
+        let tcp = listener.local_addr()?;
+        let udp = std::net::UdpSocket::bind("127.0.0.1:0")?;
+        let serving = server.serve_tls(udp, listener, acceptor, quic, HANDSHAKE_TIMEOUT)?;
         Ok(Self {
             server,
-            addr,
+            carrier,
+            tcp,
+            udp: serving.udp_addr()?,
+            quic_client,
+            roots,
             connector: tokio_rustls::TlsConnector::from(Arc::new(client)),
-            task,
+            serving,
         })
     }
 
@@ -526,20 +651,37 @@ impl Relay {
         {
             let slots = slots.clone();
             let connector = self.connector.clone();
-            let addr = self.addr;
+            let quic_client = match self.carrier {
+                Carrier::TlsOverTcp => self.quic_client.clone(),
+                // A host keeps the relay's tickets to itself, as a deployed
+                // host does: from one shared store every host after the
+                // first resumes with a ticket another host was given.
+                Carrier::QuicOverUdp => {
+                    node::harness::relay_quic_client_config_with_roots(self.roots.clone())
+                        .context("the relay's QUIC client configuration")?
+                }
+            };
+            let (carrier, tcp, udp) = (self.carrier, self.tcp, self.udp);
             let token = account.to_string();
+            let expires_at = SystemTime::now() + Duration::from_secs(3600);
             dialling.spawn(async move {
                 let _slot = slots.acquire_owned().await?;
-                let tcp = TcpStream::connect(addr).await?;
-                tcp.set_nodelay(true)?;
-                let tls = connector
-                    .connect(RELAY_NAME.try_into()?, tcp)
-                    .await
-                    .context("TLS handshake with the relay")?;
-                let host =
-                    RelayHost::connect(tls, token, SystemTime::now() + Duration::from_secs(3600))
-                        .await
-                        .context("link to the relay")?;
+                let host = match carrier {
+                    Carrier::TlsOverTcp => {
+                        let tcp = TcpStream::connect(tcp).await?;
+                        tcp.set_nodelay(true)?;
+                        let tls = connector
+                            .connect(RELAY_NAME.try_into()?, tcp)
+                            .await
+                            .context("TLS handshake with the relay")?;
+                        RelayHost::connect(tls, quic_client, RELAY_NAME, token, expires_at).await
+                    }
+                    Carrier::QuicOverUdp => {
+                        RelayHost::connect_udp(udp, quic_client, RELAY_NAME, token, expires_at)
+                            .await
+                    }
+                }
+                .context("link to the relay")?;
                 Ok::<_, anyhow::Error>((index, Arc::new(host)))
             });
         }
@@ -560,9 +702,19 @@ impl Relay {
     }
 }
 
+impl Relay {
+    async fn wait_for_no_links(&self, accounts: &[Uuid]) {
+        for account in accounts {
+            while !self.server.user_links(*account).await.is_empty() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        }
+    }
+}
+
 impl Drop for Relay {
     fn drop(&mut self) {
-        self.task.abort();
+        self.serving.close();
     }
 }
 
@@ -626,12 +778,16 @@ mod tests {
     use super::*;
 
     fn curve(throughput: f64, p50: f64, p99: f64) -> Curve {
+        admitting(1_000.0, throughput, p50, p99)
+    }
+
+    fn admitting(admissions: f64, throughput: f64, p50: f64, p99: f64) -> Curve {
         Curve {
             schema: SCHEMA,
             model: "Mac14,6".to_owned(),
             os: "26.0".to_owned(),
             profile: "release".to_owned(),
-            carrier: CARRIER.to_owned(),
+            carrier: Carrier::TlsOverTcp.label().to_owned(),
             reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             cpus: 12,
             load_before: [1.0; 3],
@@ -639,6 +795,7 @@ mod tests {
             rounds: 5,
             points: vec![Point {
                 connections: 10,
+                admissions_per_s: admissions,
                 throughput_mib_s: throughput,
                 open_p50_ms: p50,
                 open_p99_ms: p99,
@@ -673,13 +830,38 @@ mod tests {
         assert_eq!(failed(curve(800.0, 1.0, 2.0)), ["throughput"]);
         assert_eq!(failed(curve(1_000.0, 1.3, 2.0)), ["open p50"]);
         assert_eq!(failed(curve(1_000.0, 1.0, 4.1)), ["open p99"]);
+        assert_eq!(failed(admitting(700.0, 1_000.0, 1.0, 2.0)), ["admissions"]);
+    }
+
+    #[test]
+    fn admissions_are_judged_beside_throughput_and_more_are_better() {
+        let baseline = curve(1_000.0, 1.0, 2.0);
+        let judgements = compare(&admitting(2_000.0, 1_000.0, 1.0, 2.0), &baseline).unwrap();
+        assert_eq!(
+            judgements
+                .iter()
+                .map(|judgement| judgement.metric)
+                .collect::<Vec<_>>(),
+            ["admissions", "throughput", "open p50", "open p99"]
+        );
+        assert!(judgements.iter().all(|judgement| judgement.passed));
+        assert!(judgements[0].worse_by < 0.0, "{judgements:?}");
+        let near = compare(&admitting(800.0, 1_000.0, 1.0, 2.0), &baseline).unwrap();
+        assert!(near[0].passed, "{near:?}");
+    }
+
+    #[test]
+    fn a_baseline_without_admissions_is_refused() {
+        let mut baseline = curve(1_000.0, 1.0, 2.0);
+        baseline.schema = 1;
+        assert!(compare(&curve(1_000.0, 1.0, 2.0), &baseline).is_err());
     }
 
     #[test]
     fn a_baseline_measured_another_way_is_refused() {
         let baseline = curve(1_000.0, 1.0, 2.0);
         let mut run = curve(1_000.0, 1.0, 2.0);
-        run.carrier = "QUIC".to_owned();
+        run.carrier = Carrier::QuicOverUdp.label().to_owned();
         assert!(compare(&run, &baseline).is_err());
         let mut run = curve(1_000.0, 1.0, 2.0);
         run.points[0].connections = 20;

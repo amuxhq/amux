@@ -14,14 +14,15 @@ mod wire;
 
 pub use host::local_kinds;
 pub(crate) use host::{
-    LiveLocalHost, RuntimeInstance, local_host, local_platform, validate_remote_host,
+    LiveLocalHost, OwnAddresses, RuntimeInstance, listed_addrs, local_host, local_platform,
+    validate_remote_host,
 };
 pub use link::ConnectRole;
 pub(crate) use link::{
     ConnectHandshake, ConnectHandshakeEvent, protocol_error_hello_ack, protocol_error_link_close,
 };
 pub(crate) use link_registry::{
-    LinkAdmission, LinkCloseRequest, LinkProperties, Registration, direct_order,
+    LinkAdmission, LinkCloseRequest, LinkOutputTx, LinkProperties, Registration, direct_order,
 };
 pub use link_registry::{LinkCarrier, LinkRegistry, LinkRole};
 pub use types::{Capabilities, Host, LinkId, LiveRoute, Route, host_to_wire};

@@ -375,6 +375,10 @@ fn since_last_run(
     events
 }
 
+/// How often the desktop daemon reads the machine's interface addresses
+/// for a change: a network change is noticed within it.
+const INTERFACE_POLL: std::time::Duration = std::time::Duration::from_secs(2);
+
 pub struct Daemon {
     installation: Arc<Installation>,
     generation: Generation,
@@ -577,6 +581,34 @@ impl Daemon {
     /// What sends the analytics waiting, when this installation uploads.
     pub fn analytics_flusher(&self) -> Option<analytics::Flusher> {
         self.uploader.as_ref().map(analytics::Uploader::flusher)
+    }
+
+    /// Watches the machine's interface addresses and, whenever they change,
+    /// tells every profile's edge its network changed. Never resolves.
+    pub async fn follow_interfaces(&self) {
+        let mut seen = crate::edge::interface_addrs();
+        let mut every = tokio::time::interval(INTERFACE_POLL);
+        every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            every.tick().await;
+            let now = crate::edge::interface_addrs();
+            if now == seen {
+                continue;
+            }
+            seen = now;
+            for runtime in self.profiles() {
+                let Some(edge) = runtime.edge() else {
+                    continue;
+                };
+                if let Err(error) = edge.network_changed() {
+                    tracing::warn!(
+                        profile = %runtime.host(),
+                        %error,
+                        "binding the link socket afresh failed"
+                    );
+                }
+            }
+        }
     }
 
     /// Resolves once a client has asked the daemon to shut down.

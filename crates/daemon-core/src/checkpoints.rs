@@ -161,6 +161,7 @@ fn writes(input: &Input, copying: JobId) -> bool {
         | Input::AnswerLagged { .. }
         | Input::LinkUp { .. }
         | Input::LinkDown { .. }
+        | Input::LinkCarried { .. }
         | Input::LinkControl { .. }
         | Input::Credential { .. }
         | Input::WantChannel { .. }

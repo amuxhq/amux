@@ -9,21 +9,22 @@ public enum AccountsAction: Equatable, Sendable {
     /// Sign back into an account this phone still remembers.
     case signIn(AccountId)
     case signOut(AccountId)
-    /// Take an account off this phone, leaving it on amux.sh.
+    /// Ask about taking an account off this phone, leaving it on amux.sh.
     case remove(AccountId)
+    /// Take it off, once asked. It names the account, because the system's
+    /// dialog may report being put away before the press it was put away by.
+    case confirmRemoval(AccountId)
+    case cancelRemoval
     case delete(AccountId)
     /// Open what this account has bought.
     case subscription
     case appearance(Appearance?)
     /// Turn sending amux.sh usage events on or off.
     case shareUsage(Bool)
-    case identity
     case support
     case report
     /// Write this phone's diagnostic dump and hand it to the share sheet.
     case exportDump
-    /// Put the switcher away without changing anything.
-    case dismiss
 }
 
 /// One account, as a row.
@@ -98,7 +99,9 @@ struct AccountRow: View {
     }
 }
 
-/// The two letters an account is recognised by before its name is read.
+/// What an account is recognised by before its name is read: its profile
+/// picture where it has one, and two letters until that arrives or where it
+/// has none.
 struct InitialsDisc: View {
     @Environment(\.design) private var design
     let entry: AccountEntry
@@ -106,11 +109,12 @@ struct InitialsDisc: View {
     var size: CGFloat = 30
 
     var body: some View {
-        Text(initials)
+        Text(Self.initials(of: entry.name))
             .font(.system(size: size * 0.36, weight: .semibold))
             .foregroundStyle(filled ? design.onAccent.color : design.inkMuted.color)
             .frame(width: size, height: size)
             .background(Circle().fill(filled ? design.accent.color : design.sunken.color))
+            .overlay { AccountPicture(url: entry.account.picture, size: size) }
             .opacity(entry.signedIn ? 1 : 0.5)
             .accessibilityHidden(true)
     }
@@ -118,8 +122,8 @@ struct InitialsDisc: View {
     /// Two letters, because one is not enough to tell two accounts apart at a
     /// glance and three stops reading as a monogram. A name of two words gives
     /// one letter from each; a single word gives its first two.
-    private var initials: String {
-        let words = entry.name.split(separator: " ").prefix(2)
+    static func initials(of name: String) -> String {
+        let words = name.split(separator: " ").prefix(2)
         guard let first = words.first else { return "?" }
         let letters = words.count > 1
             ? words.compactMap(\.first).map(String.init).joined()
@@ -128,93 +132,23 @@ struct InitialsDisc: View {
     }
 }
 
-/// The accounts this phone knows, as a panel under the title that named them.
-///
-/// It is a panel and not a system menu because the rows are not menu items:
-/// each carries what this phone knows about that account, and one of them
-/// offers to sign back in rather than to switch. A menu would flatten all of
-/// that into a list of words.
-public struct AccountSwitcher: View {
-    @Environment(\.design) private var design
-    private let accounts: AccountRegistry
-    private let actions: @MainActor (AccountsAction) -> Void
-
-    public init(
-        accounts: AccountRegistry, actions: @escaping @MainActor (AccountsAction) -> Void
-    ) {
-        self.accounts = accounts
-        self.actions = actions
-    }
-
-    public var body: some View {
-        VStack(spacing: 0) {
-            ForEach(accounts.accounts) { entry in
-                AccountRow(entry: entry, selected: entry.id == accounts.selected, actions: actions)
-                    .padding(.horizontal, 14)
-                Rectangle()
-                    .fill(design.hairline.color)
-                    .frame(height: design.metrics.hairline)
-                    .padding(.leading, 14)
-            }
-            Button { actions(.add) } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 14, weight: .semibold))
-                        .frame(width: 30)
-                    Text("Add Account")
-                        .designFont(.body, design)
-                    Spacer(minLength: 0)
-                }
-                .foregroundStyle(design.accent.color)
-                .padding(.vertical, 13)
-                .padding(.horizontal, 14)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.amuxRow)
-            .identified("accounts.add", label: "Add Account")
-        }
-        .frosted(
-            RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous),
-            wash: 0.88)
-        .accessibilityElement(children: .contain)
-        .identified("accounts.switcher", value: accounts.selected?.value ?? "none")
-    }
-}
-
-/// The switcher over the screen it was opened from.
-///
-/// Drawn over the real screen rather than beside it: what it covers, what its
-/// edge uncovers and how the list behind it dims are facts about the screen
-/// underneath, so a capture is of both at once.
-struct SwitcherOverlay<Content: View>: View {
-    @Environment(\.design) private var design
-    @Binding var open: Bool
-    let accounts: AccountRegistry
-    let actions: @MainActor (AccountsAction) -> Void
-    @ViewBuilder let content: Content
+/// An account's profile picture as a circle, drawn over whatever stands in
+/// for it: nothing at all until it has loaded, or where it fails to.
+struct AccountPicture: View {
+    let url: URL?
+    let size: CGFloat
 
     var body: some View {
-        ZStack(alignment: .top) {
-            content
-            if open {
-                // Everything under the panel is dimmed and takes the tap that
-                // puts it away: a panel you have to aim at a close button to
-                // dismiss is a panel that traps a thumb.
-                Color.black.opacity(Glass.scrim)
-                    .padding(.top, 76)
-                    .ignoresSafeArea(edges: [.horizontal, .bottom])
-                    .onTapGesture { actions(.dismiss) }
-                    .accessibilityHidden(true)
-                AccountSwitcher(accounts: accounts, actions: actions)
-                    .frame(width: 300)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, design.metrics.gutter)
-                    // Under the title it hangs from, which is where the eye
-                    // already is after pressing it.
-                    .padding(.top, 76)
+        if let url {
+            AsyncImage(url: url) { phase in
+                if let image = phase.image {
+                    image.resizable().scaledToFill()
+                }
             }
+            .frame(width: size, height: size)
+            .clipShape(Circle())
+            .accessibilityHidden(true)
         }
-        .moving(value: open)
     }
 }
 
@@ -231,20 +165,24 @@ public struct YouScreen: View {
     private let accounts: AccountRegistry
     private let appearance: Appearance?
     private let shareUsage: Bool
-    private let identity: String?
+    private let identity: Identity?
+    /// The account being asked about removing, if one is.
+    private let removing: AccountId?
     private let actions: @MainActor (AccountsAction) -> Void
 
     public init(
         accounts: AccountRegistry,
         appearance: Appearance? = nil,
         shareUsage: Bool = true,
-        identity: String? = nil,
+        identity: Identity? = nil,
+        removing: AccountId? = nil,
         actions: @escaping @MainActor (AccountsAction) -> Void
     ) {
         self.accounts = accounts
         self.appearance = appearance
         self.shareUsage = shareUsage
         self.identity = identity
+        self.removing = removing
         self.actions = actions
     }
 
@@ -253,20 +191,7 @@ public struct YouScreen: View {
             Ground()
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text("You")
-                        .designFont(.screenTitle, design)
-                        .foregroundStyle(design.ink.color)
-                        .padding(.top, 8)
-                        .identified("you.title", value: "You")
                     accountList
-                    // Offered here and nowhere above it. A phone with nobody
-                    // signed in is not a broken phone — it pairs and it runs
-                    // agents on this network — so the account is put where
-                    // somebody has come looking for one, said as the thing it
-                    // adds rather than as something missing.
-                    if !signedIn {
-                        SignInCallToAction(identifier: "you.signIn") { actions(.add) }
-                    }
                     if let entry = accounts.selectedAccount { account(entry) }
                     phone
                     help
@@ -281,18 +206,17 @@ public struct YouScreen: View {
         .identified("you", value: accounts.selectedAccount?.account.email ?? "none")
     }
 
-    /// Whether any account on this phone is signed in. An account listed with
-    /// Sign In beside it is remembered, not signed in.
-    private var signedIn: Bool { accounts.accounts.contains(where: \.signedIn) }
-
     private var accountList: some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionHead(title: "Accounts")
             VStack(spacing: 0) {
                 ForEach(accounts.accounts) { entry in
-                    AccountRow(
-                        entry: entry, selected: entry.id == accounts.selected, actions: actions)
+                    let selected = entry.id == accounts.selected
+                    AccountRow(entry: entry, selected: selected, actions: actions)
                         .padding(.horizontal, 14)
+                        // The selected account is asked about from its own
+                        // section's row below; any other, from its row here.
+                        .removalDialog(entry, asking: !selected && removing == entry.id, actions: actions)
                         // On the row itself, because the account's own section
                         // below is only ever the selected account's, and an
                         // account signed out of is the one most likely to be
@@ -307,24 +231,59 @@ public struct YouScreen: View {
                         }
                     rule(inset: 14)
                 }
-                Button { actions(.add) } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 14, weight: .semibold))
-                            .frame(width: 30)
-                        Text("Add Account")
-                            .designFont(.body, design)
-                        Spacer(minLength: 0)
+                if accounts.accounts.isEmpty {
+                    signIn
+                } else {
+                    Button { actions(.add) } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 14, weight: .semibold))
+                                .frame(width: 30)
+                            Text("Add Account")
+                                .designFont(.body, design)
+                            Spacer(minLength: 0)
+                        }
+                        .foregroundStyle(design.accent.color)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 13)
+                        .contentShape(Rectangle())
                     }
-                    .foregroundStyle(design.accent.color)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 13)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.amuxRow)
+                    .identified("you.add", label: "Add Account")
                 }
-                .buttonStyle(.amuxRow)
-                .identified("you.add", label: "Add Account")
             }
         }
+    }
+
+    /// The first account, offered where the accounts would be. A phone with
+    /// nobody signed in is not a broken phone — it pairs and runs agents on
+    /// this network — so it is said as what an account adds rather than as
+    /// something missing. An account this phone remembers is signed back into
+    /// from its own row instead.
+    private var signIn: some View {
+        Button { actions(.add) } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "person.crop.circle")
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundStyle(design.accent.color)
+                    .frame(width: 30)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Sign In")
+                        .designFont(.body, design)
+                        .foregroundStyle(design.accent.color)
+                    Text("Reach your agents from anywhere")
+                        .designFont(.caption, design)
+                        .foregroundStyle(design.inkMuted.color)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.amuxRow)
+        .accessibilityElement(children: .combine)
+        .identified("you.signIn", label: "Sign In")
     }
 
     /// The selected account's own actions, under the list they continue.
@@ -346,6 +305,7 @@ public struct YouScreen: View {
                 action("Sign Out", id: "signOut") { actions(.signOut(entry.id)) }
                 rule()
                 action("Remove from This Phone", id: "remove") { actions(.remove(entry.id)) }
+                    .removalDialog(entry, asking: removing == entry.id, actions: actions)
                 rule()
                 // The one destructive thing on the page, in the colour this
                 // app keeps for exactly that.
@@ -363,9 +323,18 @@ public struct YouScreen: View {
                 appearanceRow
                 rule(inset: 14)
                 shareUsageRow
+                // What the machines this phone pairs with know it by: its
+                // name, and its key in full to compare against the one a
+                // machine shows. Facts, not places to go: revoking a device
+                // happens on the machine, and a machine is revoked from its
+                // own page on Hosts.
                 if let identity {
                     rule(inset: 14)
-                    row("Identity", value: identity, id: "identity", mono: true) { actions(.identity) }
+                    FieldRow(label: String(localized: "Name"), value: identity.name, chevron: false)
+                        .accessibilityElement(children: .combine)
+                        .identified("you.name", label: String(localized: "Name"), value: identity.name)
+                    rule(inset: 14)
+                    fingerprint(identity.fingerprint)
                 }
             }
         }
@@ -434,7 +403,7 @@ public struct YouScreen: View {
                     .foregroundStyle(design.inkMuted.color)
             }
         }
-        .tint(design.ink.color)
+        .tint(design.accent.color)
         .oneSwitch(String(localized: "Share Usage, Counts and choices, never what you type"), isOn: isOn)
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
@@ -483,12 +452,30 @@ public struct YouScreen: View {
                 .designFont(.caption, design)
                 .foregroundStyle(design.inkFaint.color)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, 14)
                 .identified("you.help.caption")
         }
     }
 
     // MARK: - Rows
+
+    private func fingerprint(_ key: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Fingerprint")
+                .designFont(.body, design)
+                .foregroundStyle(design.ink.color)
+            Text(Fingerprint.grouped(key))
+                .designFont(.monoSmall, design)
+                .foregroundStyle(design.inkMuted.color)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .accessibilityElement(children: .combine)
+        .identified("you.fingerprint", label: String(localized: "Fingerprint"), value: key)
+    }
 
     private func row(
         _ title: String, value: String, id: String, mono: Bool = false,
@@ -532,5 +519,31 @@ public struct YouScreen: View {
             .fill(design.hairline.color)
             .frame(height: design.metrics.hairline)
             .padding(.leading, inset)
+    }
+}
+
+extension View {
+    /// Asks before an account is taken off this phone, in the system's dialog
+    /// held by the row it was asked from, so it points there.
+    ///
+    /// It sits beside Delete Account and must never be mistaken for it, so
+    /// what stays is said first: the account on amux.sh, what it pays for, and
+    /// every agent on every host are untouched. What goes is this phone's own
+    /// part — the sign-in, and the hosts it paired for that account, which are
+    /// paired again if the account comes back. Nothing is typed to confirm
+    /// it, because nothing here cannot be put back by signing in.
+    func removalDialog(
+        _ entry: AccountEntry, asking: Bool, actions: @escaping @MainActor (AccountsAction) -> Void
+    ) -> some View {
+        confirmationDialog(
+            String(localized: "Remove \(entry.account.email) from this phone?"),
+            isPresented: Binding(get: { asking }, set: { if !$0, asking { actions(.cancelRemoval) } }),
+            titleVisibility: .visible
+        ) {
+            Button(String(localized: "Remove"), role: .destructive) { actions(.confirmRemoval(entry.id)) }
+                .accessibilityIdentifier("remove.confirm")
+        } message: {
+            Text("Your amux.sh account, its subscription, and your agents and files on your hosts stay as they are. This phone signs out and forgets the hosts it paired for this account.")
+        }
     }
 }

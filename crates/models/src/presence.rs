@@ -9,9 +9,10 @@
 //!
 //! The world around the daemon is the environment: the target host's own
 //! links coming up and going, an adjacent peer and the account's relay
-//! starting and ceasing to claim it, the shell making each attempt the core
+//! starting and ceasing to claim it, the relay refusing to forward to it, the shell making each attempt the core
 //! asks for and reporting how it went, the account's plan changing, and the
-//! retry timer the core arms firing. Calls open channels of their own on
+//! retry timer the core arms firing. The relay enforces a change of plan
+//! at once, and this host hears of it later. Calls open channels of their own on
 //! the routes the core lists, which conclude as attempts do, and a call may
 //! find no channel within its patience; when the core says to close the
 //! target's own links for it, they close. The relay carries a channel only
@@ -20,12 +21,23 @@
 //! a fault says the attempt was refused or timed out. A route gone before
 //! its attempt concluded fails as its link closing, and a call whose
 //! channel's link closed under it tries the route the core names next.
+//!
+//! The model starts at launch: the relay's and the peer's links are up and
+//! neither has said anything of the target, which this host remembers and
+//! dials at once on every path it knows. So the target's own link may come
+//! up before any claim of it, whether its packets go on the network or
+//! through the relay forwarding them end to end; every other one of its
+//! links is carried over SSH. The relay refuses the target's packets for
+//! the plan while it lapses, even while the route through it carries the
+//! target's traffic because this host has not yet heard of the lapse, and
+//! for no route when it holds no link to the target any more while its
+//! claim has not yet gone.
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::fmt;
 
-use daemon_core::payload::{CarrierKind, ChannelClass, ChannelError, PublicKey, StreamRefusal};
+use daemon_core::payload::{CarrierKind, ChannelClass, ChannelError, ForwardRefusal, PublicKey};
 use daemon_core::{
     ChannelId, Checkpoint, Daemon, HostId, HostView, Input, LinkId, Output, Presence, Route,
     StartOptions, StepBudget, TimerId, Tried,
@@ -51,6 +63,12 @@ const RELAY_LINK: LinkId = LinkId(1);
 const PEER_LINK: LinkId = LinkId(2);
 /// The target's own links take ids from here, in the order they come up.
 const FIRST_DIRECT: u64 = 3;
+/// What carries each of the target's own links, in the order they come up,
+/// as the core is told it: the host's own connection, whose packets go on
+/// the network or through the relay alike, then SSH. Which path carries a
+/// link is the path machine's business; to the core a link forwarded end
+/// to end through the relay is the target's own, never a relay's.
+const KINDS: [CarrierKind; 2] = [CarrierKind::Direct, CarrierKind::Ssh];
 
 /// Presence and routing of one host, within its bounds.
 #[derive(Clone, Debug)]
@@ -60,45 +78,52 @@ pub struct PresenceRouting {
     /// Links of the target's own and claims of it that go, all told.
     pub downs: u8,
     /// Attempts and channels on a route still listed that are refused
-    /// other than for the plan, or time out, and calls that find no
-    /// channel within their patience, all told.
+    /// other than for the plan, or time out, calls that find no channel
+    /// within their patience, and forwarders refusing the target's packets
+    /// for no route, all told.
     pub faults: u8,
     /// Calls that open a channel of their own, all told.
     pub calls: u8,
     /// Times the account's plan changes, all told.
     pub plans: u8,
-    /// Refusals for the plan in a row, with nothing else happening between
-    /// but the retry timer: the relay refuses for as long as the plan
+    /// Refusals for the plan in a row, of a channel or of the target's
+    /// packets, with nothing else happening between but the retry timer: the relay refuses for as long as the plan
     /// lapses, so this bound is what lets a path that only retries the
     /// relay end and have its liveness judged.
     pub payments: u8,
+    /// The relay may refuse the target's packets for no route, as a fault.
+    pub no_route: bool,
 }
 
 impl PresenceRouting {
     /// The bounds `just test` explores exhaustively: three links or claims
     /// up and two down, so a route can carry traffic while another comes
-    /// and goes; two failed attempts or calls; one call opening a channel;
+    /// and goes; one failed attempt or call; one call opening a channel;
     /// the plan bought and lapsed again; one refusal for the plan before
-    /// something else happens, which keeps the run inside its time budget.
+    /// something else happens. One failure and one refusal in a row keep
+    /// the run inside its time budget.
     pub const fn ci() -> Self {
         Self {
             ups: 3,
             downs: 2,
-            faults: 2,
+            faults: 1,
             calls: 1,
             plans: 2,
             payments: 1,
+            no_route: false,
         }
     }
 
-    /// The larger bounds a nightly run explores, the relay's retry refused
-    /// for the plan a second time in a row among them.
+    /// The larger bounds a nightly run explores: more failures, among them
+    /// the relay refusing for no route, and the relay's retry refused for
+    /// the plan a second time in a row. A fourth link up and a third down
+    /// multiply the states sevenfold, past what the nightly job can wait
+    /// for, so these keep the CI bounds' ups and downs.
     pub const fn nightly() -> Self {
         Self {
-            ups: 4,
-            downs: 3,
             faults: 3,
             payments: 2,
+            no_route: true,
             ..Self::ci()
         }
     }
@@ -116,6 +141,13 @@ impl Via {
         match self {
             Via::Peer => PEER_LINK,
             Via::Relay => RELAY_LINK,
+        }
+    }
+
+    fn route(self) -> Route {
+        match self {
+            Via::Peer => Route::Via(PEER),
+            Via::Relay => Route::Via(RELAY),
         }
     }
 }
@@ -147,6 +179,9 @@ pub enum Action {
     ClaimUp(Via),
     /// The peer or the relay says it no longer reaches the target.
     ClaimDown(Via),
+    /// The relay refuses to forward the target's packets: for the plan
+    /// (`true`), or for no route.
+    ForwardRefused(Via, bool),
     /// The shell's attempt on a route the core asked it to try concluded.
     AttemptConcluded(Route, Concluded),
     /// A call opens a channel of its own on the route a fresh call takes
@@ -158,8 +193,11 @@ pub enum Action {
     Call(Concluded),
     /// A call to the target found no channel within its patience.
     CallsFailed,
-    /// The account's plan changed: bought, or lapsed.
+    /// The account's plan changed: bought, or lapsed. The relay enforces
+    /// it at once; this host hears of it later.
     PlanChanged,
+    /// This host hears that the account's plan changed.
+    PlanHeard,
     /// The target's retry timer fired.
     TimerFired,
     /// The world stops changing: no link or claim comes or goes, the plan
@@ -192,6 +230,8 @@ pub struct State {
     direct: BTreeSet<LinkId>,
     /// The hosts that claim to reach the target.
     claims: BTreeSet<Via>,
+    /// The relay has claimed the target since launch.
+    relay_claimed: bool,
     /// The routes to the target the core asked the shell to try, whose
     /// attempts have not concluded.
     attempts: BTreeSet<Route>,
@@ -199,6 +239,8 @@ pub struct State {
     timer: bool,
     /// The account's plan pays for connections between hosts.
     paid: bool,
+    /// The plan changed and this host has not heard of it yet.
+    untold: bool,
     /// The world has stopped changing.
     rested: bool,
     used: Used,
@@ -219,11 +261,24 @@ pub struct State {
     flapped: Option<String>,
     /// The core asked for an attempt already in flight.
     doubled: Option<String>,
+    /// The first time a forwarder refused the target's packets and the
+    /// route through it still carried the target's traffic.
+    kept_refused: Option<String>,
     /// The core asked for a dump.
     dumped: Option<String>,
 }
 
 impl State {
+    /// The route carrying the target's traffic, as the core last told it.
+    pub fn active(&self) -> Option<Route> {
+        self.view.active
+    }
+
+    /// Whether an attempt the core asked for on `route` is in flight.
+    pub fn attempting(&self, route: Route) -> bool {
+        self.attempts.contains(&route)
+    }
+
     /// Counts what a concluded attempt or channel used of the bounds.
     fn count(&mut self, route: Route, concluded: Concluded) {
         self.hear(route, concluded);
@@ -284,7 +339,15 @@ impl Machine for PresenceRouting {
             (RELAY_LINK, RELAY, CarrierKind::Relay),
             (PEER_LINK, PEER, CarrierKind::Direct),
         ] {
-            daemon.step(Input::LinkUp { link, peer, kind }, &mut out);
+            daemon.step(
+                Input::LinkUp {
+                    link,
+                    peer,
+                    kind,
+                    resumed: None,
+                },
+                &mut out,
+            );
         }
         daemon.step(
             Input::AttemptConcluded {
@@ -304,9 +367,11 @@ impl Machine for PresenceRouting {
             core,
             direct: BTreeSet::new(),
             claims: BTreeSet::new(),
+            relay_claimed: false,
             attempts: BTreeSet::new(),
             timer: false,
             paid: false,
+            untold: false,
             rested: false,
             used: Used::default(),
             refused_for_plan: false,
@@ -315,6 +380,7 @@ impl Machine for PresenceRouting {
             unprompted: None,
             flapped: None,
             doubled: None,
+            kept_refused: None,
             dumped: None,
         }
     }
@@ -359,8 +425,28 @@ impl Machine for PresenceRouting {
         if world && s.used.faults < self.faults && s.view.route().is_some() {
             out.push(Action::CallsFailed);
         }
-        if world && s.used.plans < self.plans {
+        // The relay answers packets sent its way: on the route through it
+        // while that route carries the host's traffic or is being tried. A
+        // daemon forwarding for its paired hosts refuses through the same
+        // input and is left to the core's unit tests, which keeps the run
+        // inside its budget.
+        let relayed = Via::Relay.route();
+        if world
+            && s.view.routes.contains(&relayed)
+            && (s.view.active == Some(relayed) || s.attempts.contains(&relayed))
+        {
+            if !s.paid && s.used.payments < self.payments {
+                out.push(Action::ForwardRefused(Via::Relay, true));
+            }
+            if self.no_route && s.used.faults < self.faults {
+                out.push(Action::ForwardRefused(Via::Relay, false));
+            }
+        }
+        if world && s.used.plans < self.plans && !s.untold {
             out.push(Action::PlanChanged);
+        }
+        if s.untold {
+            out.push(Action::PlanHeard);
         }
         if s.timer {
             out.push(Action::TimerFired);
@@ -370,7 +456,9 @@ impl Machine for PresenceRouting {
     fn next(&self, s: &State, action: &Action) -> Option<State> {
         let mut next = s.clone();
         match action {
-            Action::AttemptConcluded(_, Concluded::Payment) => next.used.payments += 1,
+            Action::AttemptConcluded(_, Concluded::Payment) | Action::ForwardRefused(_, true) => {
+                next.used.payments += 1
+            }
             Action::TimerFired | Action::Rest => {}
             _ => next.used.payments = 0,
         }
@@ -383,7 +471,8 @@ impl Machine for PresenceRouting {
                 Input::LinkUp {
                     link,
                     peer: TARGET,
-                    kind: CarrierKind::Direct,
+                    kind: KINDS[usize::from(s.used.direct_ups) % KINDS.len()],
+                    resumed: None,
                 }
             }
             Action::DirectDown(link) => {
@@ -397,6 +486,7 @@ impl Machine for PresenceRouting {
             Action::ClaimUp(via) => {
                 next.used.ups += 1;
                 next.claims.insert(via);
+                next.relay_claimed |= via == Via::Relay;
                 let up = NeighborUp {
                     host: Some(wire::Host {
                         host_id: TARGET.0.to_vec(),
@@ -491,6 +581,27 @@ impl Machine for PresenceRouting {
                 self.judge(s, &mut next, action);
                 return Some(next);
             }
+            Action::ForwardRefused(via, for_plan) => {
+                let reason = if for_plan {
+                    // The relay's word on the plan, as a refused channel's.
+                    next.refused_for_plan = true;
+                    next.calls_failed = false;
+                    ForwardRefusal::PaymentRequired
+                } else {
+                    next.used.faults += 1;
+                    ForwardRefusal::NoRoute
+                };
+                let refused = wire::ForwardRefused {
+                    dst: TARGET.0.to_vec(),
+                    reason: reason as i32,
+                };
+                Input::LinkControl {
+                    link: via.link(),
+                    frame: Message {
+                        body: Some(Body::ForwardRefused(refused)),
+                    },
+                }
+            }
             Action::CallsFailed => {
                 next.used.faults += 1;
                 next.calls_failed = true;
@@ -502,6 +613,11 @@ impl Machine for PresenceRouting {
             Action::PlanChanged => {
                 next.used.plans += 1;
                 next.paid = !next.paid;
+                next.untold = true;
+                return Some(next);
+            }
+            Action::PlanHeard => {
+                next.untold = false;
                 Input::PlanChanged
             }
             Action::TimerFired => {
@@ -516,6 +632,12 @@ impl Machine for PresenceRouting {
             }
         };
         self.step(&mut next, input);
+        if let Action::ForwardRefused(via, _) = action
+            && next.view.active == Some(via.route())
+            && next.kept_refused.is_none()
+        {
+            next.kept_refused = Some(format!("{action:?} left {:?} carrying", via.route()));
+        }
         self.judge(s, &mut next, action);
         Some(next)
     }
@@ -530,8 +652,9 @@ impl Machine for PresenceRouting {
             }),
             Property::always(
                 "offline after failed calls until a channel opens: once calls to a host have \
-                 failed, it reads offline until a channel to it opens or the relay refuses one \
-                 for the account's plan, whatever routes come, go or are listed again meanwhile",
+                 failed, it reads offline until a channel to it opens or the relay refuses one or \
+                 its packets for the account's plan, whatever routes come, go or are listed again \
+                 meanwhile",
                 |_, s: &State| !s.calls_failed || s.view.presence == Presence::Offline,
             ),
             Property::always(
@@ -541,6 +664,11 @@ impl Machine for PresenceRouting {
                 |_, s: &State| s.flapped.is_none(),
             ),
             Property::always(ONE_ATTEMPT_IN_FLIGHT, |_, s: &State| s.doubled.is_none()),
+            Property::always(
+                "a refused route stops carrying: once a forwarder refuses a host's packets, the \
+                 route through it no longer carries the host's traffic",
+                |_, s: &State| s.kept_refused.is_none(),
+            ),
             Property::always("the core never asks for a dump", |_, s: &State| {
                 s.dumped.is_none()
             }),
@@ -558,6 +686,18 @@ impl Machine for PresenceRouting {
             ),
             Property::sometimes("a host is sometimes away", |_, s: &State| {
                 s.view.presence == Presence::Away
+            }),
+            Property::sometimes(
+                "a host dialled from memory reads online before the relay says anything of it",
+                |_, s: &State| {
+                    s.view.presence == Presence::Online
+                        && s.view.active.is_some_and(|route| route.is_direct())
+                        && !s.relay_claimed
+                },
+            ),
+            Property::sometimes("a host reads online over SSH", |_, s: &State| {
+                s.view.presence == Presence::Online
+                    && s.view.active == Some(Route::Direct(LinkId(FIRST_DIRECT + 1)))
             }),
             Property::sometimes("a host reads online through the relay", |_, s: &State| {
                 s.view.presence == Presence::Online && s.view.active == Some(Route::Via(RELAY))
@@ -578,8 +718,8 @@ impl Machine for PresenceRouting {
 fn failure(concluded: Concluded) -> Option<ChannelError> {
     match concluded {
         Concluded::Ok => None,
-        Concluded::Refused => Some(ChannelError::Refused(StreamRefusal::NoRoute)),
-        Concluded::Payment => Some(ChannelError::Refused(StreamRefusal::PaymentRequired)),
+        Concluded::Refused => Some(ChannelError::Refused(ForwardRefusal::NoRoute)),
+        Concluded::Payment => Some(ChannelError::Refused(ForwardRefusal::PaymentRequired)),
         Concluded::Timeout => Some(ChannelError::Handshake("the handshake timed out".into())),
         Concluded::Gone => Some(ChannelError::LinkClosed),
     }
@@ -670,7 +810,7 @@ impl PresenceRouting {
                 ..
             }
             | Input::ChannelClosed { reason: error, .. } => {
-                *error == ChannelError::Refused(StreamRefusal::PaymentRequired)
+                *error == ChannelError::Refused(ForwardRefusal::PaymentRequired)
             }
             _ => false,
         };
@@ -736,9 +876,18 @@ impl PresenceRouting {
             Action::Call(_) => was.routes.first().copied(),
             // A call finding no channel concludes on the route calls took.
             Action::CallsFailed => was.route(),
+            // A forwarder's refusal concludes the route through it.
+            Action::ForwardRefused(via, _) => Some(via.route()),
             _ => None,
         };
-        if !change_prompted(now, concluded, *action == Action::CallsFailed)
+        // A forwarder refusing the host's packets settles how it reads when
+        // the route through it carried its traffic, or none did.
+        let refused = match action {
+            Action::ForwardRefused(via, _) => was.active.is_none_or(|active| active == via.route()),
+            _ => false,
+        };
+        if !refused
+            && !change_prompted(now, concluded, *action == Action::CallsFailed)
             && next.unprompted.is_none()
         {
             next.unprompted = Some(change.clone());
@@ -758,10 +907,11 @@ impl PresenceRouting {
 pub(crate) const CHANGES_ON_A_CONCLUDED_ATTEMPT: &str = "presence changes only on a concluded attempt \
      on the preferred route: a host's presence moves only when an attempt or a call's channel concludes \
      on the route carrying its traffic, or else the first listed, as the attempt leaves them, when a call \
-     finds no channel on the route calls take, or when no route lists it";
+     finds no channel on the route calls take, when a forwarder refuses its packets while the route \
+     through it carries its traffic or none does, or when no route lists it";
 pub(crate) const AWAY_ONLY_ON_PAYMENT_REFUSAL: &str = "Away only on payment refusal: a host reads away \
-     only once the relay refused a channel to it for the account's plan, and since then no channel to it \
-     opened and no attempt on its preferred route failed for another reason";
+     only once the relay refused a channel to it or its packets for the account's plan, and since then no \
+     channel to it opened and no attempt on its preferred route failed for another reason";
 pub(crate) const ONE_ATTEMPT_IN_FLIGHT: &str =
     "at most one attempt the core asked for is in flight per host and route";
 
@@ -829,14 +979,17 @@ impl fmt::Debug for State {
             .field("active", &self.view.active)
             .field("attempts", &self.attempts)
             .field("direct", &self.direct)
+            .field("claims", &self.claims)
             .field("timer", &self.timer)
             .field("paid", &self.paid)
+            .field("untold", &self.untold)
             .field("rested", &self.rested)
             .field("refused_for_plan", &self.refused_for_plan);
         for (name, value) in [
             ("unprompted", &self.unprompted),
             ("flapped", &self.flapped),
             ("doubled", &self.doubled),
+            ("kept_refused", &self.kept_refused),
             ("dumped", &self.dumped),
         ] {
             if let Some(value) = value {

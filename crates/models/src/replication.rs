@@ -18,6 +18,13 @@
 //! rebooting uncleanly) are the environment here. The inventory stream is
 //! opened once and never lost: following a host is the family model's.
 //!
+//! The replica's link to the origin is a resumed one, and the opening the
+//! replica asks for after the origin reboots rides it as early data: the
+//! origin's driver holds it until the origin's core has decided the
+//! identity the link's ticket names. Anyone holding the early packets may
+//! replay them on a connection of their own, which the origin serves and
+//! whose answers never reach the replica.
+//!
 //! Two states are one when their stores, the link, the environment and the
 //! replica's source stand alike. The cores' checkpoints ride along beside
 //! that, as the first path to reach the state left them: what else differs
@@ -31,10 +38,12 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use daemon_core::payload::{
-    Answer, CarrierKind, ClientRequest, PeerFailure, PeerReply, PeerRequest, Response, Status,
+    Answer, CarrierKind, ClientRequest, PeerFailure, PeerReply, PeerRequest, PublicKey, Response,
+    Status,
 };
+use daemon_core::trust::TrustStore;
 use daemon_core::{
-    AgentId, CallId, Daemon, FromShell, HostId, Input, LinkId, Output, Settings, Standing,
+    AgentId, CallId, Daemon, FromShell, HostId, Input, LinkId, Output, Route, Settings, Standing,
     StartOptions, StepBudget, TimerId,
 };
 use prost::Message as _;
@@ -42,6 +51,7 @@ use store::{AgentKey, AgentRow, CommitClock, Dump, Marker, Sqlite};
 use wire::{Item, Phase, SessionEvent, Snapshot, Step, session_event};
 
 use crate::held::{Held, Slot};
+use crate::single_daemon::{EARLY_AFTER_ACCEPT, REPLAY_CHANGES_NOTHING};
 use crate::{Fault, Host, Machine, MsgIndex, Property};
 
 const ORIGIN: HostId = HostId(*b"origin-host-0000");
@@ -51,6 +61,12 @@ const REPLICA: HostId = HostId(*b"replica-host-000");
 const AGENT: AgentId = AgentId(*b"agent-0000000000");
 /// The replica's link to the origin.
 const LINK: LinkId = LinkId(1);
+/// The link as the origin numbers it, and the connection a replay of the
+/// replica's early data arrives on there.
+const ORIGIN_LINK: LinkId = LinkId(1);
+const REPLAY_LINK: LinkId = LinkId(2);
+/// The call the origin's driver numbers a replayed opening with.
+const REPLAYED: CallId = CallId(1 << 32);
 /// The replica's client that fetches below the block.
 const CLIENT: CallId = CallId(1);
 const KEYS: [&str; 4] = ["a", "b", "c", "d"];
@@ -80,6 +96,8 @@ pub struct Replication {
     pub in_flight: usize,
     /// How many losses in a row the link may suffer before it delivers.
     pub losses: u8,
+    /// How many times the replica's early data is replayed.
+    pub replays: u8,
     /// Adds the deliberately wrong promise that the block stays empty, to
     /// show what a failure prints.
     pub wrong: bool,
@@ -96,6 +114,7 @@ impl Replication {
             generations: 2,
             in_flight: 2,
             losses: 1,
+            replays: 1,
             wrong: false,
         }
     }
@@ -220,6 +239,14 @@ pub struct State {
     link: Link,
     /// The replica's core armed the timer that opens its source again.
     timer: bool,
+    /// The origin's core took the link the replica's calls ride.
+    accepted: bool,
+    /// Replays of the replica's early data so far.
+    replays: u8,
+    /// The origin's driver served a call on a link its core did not list.
+    early_unaccepted: Option<String>,
+    /// A replay of early data changed what a store holds.
+    replay_changed: Option<String>,
     /// Losses since the link last delivered.
     lost: u8,
     seen: Seen,
@@ -250,6 +277,12 @@ impl State {
             (link, self.generation, self.timer, self.lost),
             self.page.as_ref().map(|(_, page)| page),
             (&self.refused, &self.dumped, self.standing),
+            (
+                self.accepted,
+                self.replays,
+                &self.early_unaccepted,
+                &self.replay_changed,
+            ),
         )
     }
 }
@@ -278,15 +311,20 @@ pub enum Action {
     /// The timer the replica's core armed fires, and its source opens a
     /// stream: after its cursor, or for a tail.
     Open,
+    /// The origin's driver reports the replica's resumed link to its core,
+    /// which takes it or refuses it.
+    Resumed,
     /// The origin's core answers the opening: a delta when it fits and the
-    /// generation is its own, otherwise a reset and a fresh tail.
+    /// generation is its own, otherwise a reset and a fresh tail. Its
+    /// driver serves it only once the core took the link it rides.
     Answer,
     /// The stream delivers its next message to the replica's core.
     Deliver,
     /// The world's doing: the origin reboots uncleanly, losing its newest
     /// commit and coming back under the next generation to mint those
-    /// revisions again; or the stream dies at a message, which goes with
-    /// everything behind it.
+    /// revisions again; the stream dies at a message, which goes with
+    /// everything behind it; or the replica's opening arrives again,
+    /// replayed on a connection of its own.
     Fault(Fault),
     /// A client fetches below the replica's block: the replica's core asks
     /// the origin's for the page, which answers it at once.
@@ -328,6 +366,10 @@ impl Machine for Replication {
             durable: None,
             link: Link::Idle,
             timer: false,
+            accepted: false,
+            replays: 0,
+            early_unaccepted: None,
+            replay_changed: None,
             lost: 0,
             seen: Seen {
                 minted: 0,
@@ -346,6 +388,8 @@ impl Machine for Replication {
                 next: &mut s,
             };
             t.origin(Input::Configure(self.settings()));
+            t.origin_trusts();
+            t.resumed();
             t.replica(Input::Configure(self.settings()));
             t.replica(Input::TrustRead {
                 store: daemon_core::trust::TrustStore::of_hosts(vec![ORIGIN]),
@@ -354,6 +398,7 @@ impl Machine for Replication {
                 link: LINK,
                 peer: ORIGIN,
                 kind: CarrierKind::Direct,
+                resumed: None,
             });
             // The replica follows the origin's inventory, and at its
             // CaughtUp opens the agent's source.
@@ -370,11 +415,7 @@ impl Machine for Replication {
             }) else {
                 panic!("the replica follows the origin's inventory: {follow:?}");
             };
-            let listed = t.origin(Input::PeerCall {
-                from: REPLICA,
-                call: inventory,
-                request,
-            });
+            let listed = t.serve(ORIGIN_LINK, inventory, request);
             for output in listed {
                 if let Output::Answer {
                     call,
@@ -415,6 +456,7 @@ impl Machine for Replication {
         }
         match &s.link {
             Link::Idle => {}
+            Link::Asked { .. } if !s.accepted => out.push(Action::Resumed),
             Link::Asked { .. } => out.push(Action::Answer),
             Link::Open { queue, .. } => {
                 if !queue.is_empty() {
@@ -427,8 +469,13 @@ impl Machine for Replication {
                 }
             }
         }
+        if s.replays < self.replays && matches!(s.link, Link::Asked { .. }) {
+            out.push(Action::Fault(Fault::Duplicate(MsgIndex(0))));
+        }
         match s.page {
-            None if s.seen.can_page => out.push(Action::AskPage),
+            // A page asked for rides the link too, held until the origin
+            // takes it.
+            None if s.seen.can_page && s.accepted => out.push(Action::AskPage),
             None => {}
             Some(_) => out.push(Action::PageArrives),
         }
@@ -458,6 +505,12 @@ impl Machine for Replication {
             }),
             Property::always("the cores never ask for a dump", |_, s: &State| {
                 s.dumped.is_none()
+            }),
+            Property::always(EARLY_AFTER_ACCEPT, |_, s: &State| {
+                s.early_unaccepted.is_none()
+            }),
+            Property::always(REPLAY_CHANGES_NOTHING, |_, s: &State| {
+                s.replay_changed.is_none()
             }),
             Property::always(BLOCK_CONTIGUOUS, |_, s: &State| {
                 !s.same_generation()
@@ -564,6 +617,10 @@ impl Transition<'_> {
                     Daemon::new(store, options(generation))
                 });
                 self.origin(Input::Configure(self.model.settings()));
+                self.origin_trusts();
+                // The replica's driver resumes the link the reboot dropped,
+                // and what it asks next rides it as early data.
+                self.next.accepted = false;
                 // A page on its way back goes with the link the reboot
                 // dropped.
                 if let Some((call, _)) = self.next.page.take() {
@@ -593,6 +650,8 @@ impl Transition<'_> {
                     id: TimerId::Source(ORIGIN, AGENT),
                 });
             }
+            Action::Resumed => self.resumed(),
+            Action::Fault(Fault::Duplicate(_)) => self.replay(),
             Action::Answer => {
                 let Link::Asked { call, request } = &self.next.link else {
                     unreachable!("answered without an ask")
@@ -605,11 +664,7 @@ impl Transition<'_> {
                     queue: Vec::new(),
                     live: true,
                 };
-                let answered = self.origin(Input::PeerCall {
-                    from: REPLICA,
-                    call,
-                    request: PeerRequest::Subscribe(request),
-                });
+                let answered = self.serve(ORIGIN_LINK, call, PeerRequest::Subscribe(request));
                 let (events, ended) = answers_to(call, &answered);
                 let Link::Open { queue, live, .. } = &mut self.next.link else {
                     unreachable!("the stream was just opened")
@@ -770,11 +825,7 @@ impl Transition<'_> {
         }) else {
             return;
         };
-        let answered = self.origin(Input::PeerCall {
-            from: REPLICA,
-            call: made,
-            request,
-        });
+        let answered = self.serve(ORIGIN_LINK, made, request);
         let page = answered
             .into_iter()
             .find_map(|output| match output {
@@ -815,6 +866,80 @@ impl Transition<'_> {
         let out = self.slots.origin.step(&mut self.next.origin, input);
         self.dumps(&out);
         out
+    }
+
+    /// The origin's driver serves the replica's call that arrived on
+    /// `link`, which its core must list to the replica. What the core lists
+    /// after the step is what it listed before: a call moves no route.
+    fn serve(&mut self, link: LinkId, call: CallId, request: PeerRequest) -> Vec<Output> {
+        let input = Input::PeerCall {
+            from: REPLICA,
+            call,
+            request,
+        };
+        let (out, listed) =
+            self.slots
+                .origin
+                .step_reading(&mut self.next.origin, input, |daemon| {
+                    daemon.links().routes_to(REPLICA)
+                });
+        if !listed.contains(&Route::Direct(link)) {
+            self.next.early_unaccepted.get_or_insert_with(|| {
+                format!("served on {link:?} while the origin lists {listed:?}")
+            });
+        }
+        self.dumps(&out);
+        out
+    }
+
+    /// The origin's driver reads its trust store, which pins the replica.
+    fn origin_trusts(&mut self) {
+        self.origin(Input::TrustRead {
+            store: TrustStore::of_hosts([REPLICA]),
+        });
+    }
+
+    /// The origin's driver reports the replica's resumed link, its ticket
+    /// naming the key the origin pinned for the replica.
+    fn resumed(&mut self) {
+        let out = self.origin(resumed_up(ORIGIN_LINK));
+        self.next.accepted = !out.contains(&Output::RefuseResumed { link: ORIGIN_LINK });
+    }
+
+    /// The replica's early opening arrives again on a connection of its
+    /// own: the origin serves it there once its core took the connection,
+    /// its answers go to whoever replayed it, and the connection dies.
+    fn replay(&mut self) {
+        let Link::Asked { request, .. } = &self.next.link else {
+            unreachable!("only an opening in flight is replayed")
+        };
+        let request =
+            wire::PeerSubscribeRequest::decode(request.as_slice()).expect("a request decodes");
+        self.next.replays += 1;
+        let before = (
+            self.next.origin.store.clone(),
+            self.next.replica.store.clone(),
+            self.next.link.clone(),
+        );
+        let out = self.origin(resumed_up(REPLAY_LINK));
+        if !out.contains(&Output::RefuseResumed { link: REPLAY_LINK }) {
+            self.serve(REPLAY_LINK, REPLAYED, PeerRequest::Subscribe(request));
+            self.origin(Input::CallCancelled { call: REPLAYED });
+        }
+        self.origin(Input::LinkDown {
+            link: REPLAY_LINK,
+            reason: wire::LinkCloseReason::UserShutdown,
+        });
+        let after = (
+            &self.next.origin.store,
+            &self.next.replica.store,
+            &self.next.link,
+        );
+        if (&before.0, &before.1, &before.2) != after {
+            self.next
+                .replay_changed
+                .get_or_insert_with(|| "a store or the stream changed".into());
+        }
     }
 
     /// Steps the replica's core and carries out what it asks of the link
@@ -894,6 +1019,22 @@ impl Transition<'_> {
             origin_rows,
             can_page,
         };
+    }
+}
+
+/// The replica's link coming up at the origin as `link`, resumed with a
+/// ticket naming the key the origin pinned for the replica.
+fn resumed_up(link: LinkId) -> Input {
+    let store = TrustStore::of_hosts([REPLICA]);
+    let key = store
+        .pubkey_for_host(uuid::Uuid::from_bytes(REPLICA.0))
+        .expect("the replica is pinned")
+        .to_vec();
+    Input::LinkUp {
+        link,
+        peer: REPLICA,
+        kind: CarrierKind::Direct,
+        resumed: Some(PublicKey(key)),
     }
 }
 

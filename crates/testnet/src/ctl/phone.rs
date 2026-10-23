@@ -41,9 +41,9 @@ pub enum PhoneCommand {
     /// a tap, then waits for the screen to change and the app to settle, so
     /// the next command sees what the tap did.
     Tap { id: String },
-    /// Choose the item with this label in the menu that is open: a menu's
-    /// items are drawn by the system and carry no identifier (`phone shot`
-    /// shows them).
+    /// Choose the item with this label in the dialog or menu that is open:
+    /// their items are drawn by the system and carry no identifier (`phone
+    /// shot` shows them).
     Choose { label: String },
     /// Type text into the element with this identifier.
     Type {
@@ -52,6 +52,9 @@ pub enum PhoneCommand {
         #[arg(long = "into")]
         into: String,
     },
+    /// Make the screen's search field hold this text ("" empties it): the
+    /// system's search field has no identifier to type into.
+    Search { text: String },
     /// Scroll: up, down, top or bottom; in one element, or the screen.
     Scroll {
         direction: String,
@@ -239,11 +242,22 @@ pub(crate) fn run(folder: &Folder, command: PhoneCommand) -> Result<Outcome, Str
             request(folder, json!({"kind": "choose", "label": label}))
                 .map(|reply| Outcome::new(format!("chose {label}"), reply))
         }
-        PhoneCommand::Type { text, into } => request(
-            folder,
-            json!({"kind": "type", "identifier": into, "text": text}),
-        )
-        .map(|reply| Outcome::new(format!("typed into {into}"), reply)),
+        PhoneCommand::Search { text } => {
+            request(folder, json!({"kind": "search", "text": text}))?;
+            request(folder, json!({"kind": "settle"}))
+                .map(|reply| Outcome::new(format!("searched for {text:?}"), reply))
+        }
+        // Settled before the next command, as a tap is: what the typing
+        // enables (a Use or Send button) is enabled in the app's model a
+        // frame before it is drawn able to take a tap.
+        PhoneCommand::Type { text, into } => {
+            request(
+                folder,
+                json!({"kind": "type", "identifier": into, "text": text}),
+            )?;
+            request(folder, json!({"kind": "settle"}))
+                .map(|reply| Outcome::new(format!("typed into {into}"), reply))
+        }
         PhoneCommand::Scroll { direction, within } => {
             let mut asked = json!({"kind": "scroll", "direction": direction});
             if let Some(within) = within {
@@ -360,7 +374,7 @@ fn tap(folder: &Folder, id: &str) -> Result<Outcome, String> {
     let reply = loop {
         match request(folder, json!({"kind": "tap", "identifier": id})) {
             Ok(reply) => break reply,
-            Err(error) if error.ends_with("did not activate") && Instant::now() < deadline => {
+            Err(error) if error.contains(" did not activate") && Instant::now() < deadline => {
                 request(folder, json!({"kind": "settle"}))?;
             }
             Err(error) => return Err(error),
@@ -535,7 +549,13 @@ fn describe(state: &Value) -> String {
     out
 }
 
-/// A picture of the simulator's whole display, as a person sees it.
+/// A picture of the simulator's whole display, as a person sees it, once
+/// two pictures a moment apart agree.
+///
+/// The app's own settle cannot wait for this: a sheet sliding up or a page
+/// pushing is animated by the system out of the app's sight, so the app is
+/// still while the display is not. A screen that never holds still, such as
+/// one with an agent working, is photographed as it was last seen.
 pub(crate) fn shot(folder: &Folder) -> Result<PathBuf, String> {
     let app = running(folder)?;
     let dir = folder.dir.join("shots");
@@ -544,15 +564,29 @@ pub(crate) fn shot(folder: &Folder) -> Result<PathBuf, String> {
         "phone-{}.png",
         chrono::Utc::now().format("%H%M%S%3f")
     ));
-    simctl(&[
-        "io",
-        &app.udid,
-        "screenshot",
-        "--type=png",
-        path.to_string_lossy().as_ref(),
-    ])?;
+    let mut previous = Vec::new();
+    for _ in 0..STILL_TRIES {
+        simctl(&[
+            "io",
+            &app.udid,
+            "screenshot",
+            "--type=png",
+            path.to_string_lossy().as_ref(),
+        ])?;
+        let taken = std::fs::read(&path).map_err(|error| error.to_string())?;
+        if taken == previous {
+            break;
+        }
+        previous = taken;
+        std::thread::sleep(STILL_GAP);
+    }
     Ok(path)
 }
+
+/// How many pictures a shot takes at most waiting for the display to hold
+/// still, and how far apart: the journeys' pace, about six seconds in all.
+const STILL_TRIES: usize = 20;
+const STILL_GAP: Duration = Duration::from_millis(300);
 
 /// The phone's state as text, for a capture.
 pub(crate) fn query_text(folder: &Folder) -> Result<String, String> {

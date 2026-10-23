@@ -68,20 +68,25 @@ pub use dump::{
     DUMP_SEGMENTS, DumpError, MANIFEST, pack,
 };
 pub use edge::{
-    ACCOUNT_FILE, CloudLinkServer, CloudOptions, DiscoveryFactory, Edge, EdgeError, EdgeOptions,
-    FREE_TIER_REFRESH_INTERVAL, JwtCloudLinkAuthenticator, LAN_PORT_FILE, LINK_SOCKET, LanOptions,
-    LoopbackLink, Observed, RelayCarrier, RelayIdentity, RelayQuic, UDP_BLOCKED_MEMORY,
-    mdns_discovery,
+    ACCOUNT_FILE, CloudLinkServer, CloudOptions, DUAL_STACK_ANY, DiscoveryFactory, Edge, EdgeError,
+    EdgeOptions, FREE_TIER_REFRESH_INTERVAL, JwtCloudLinkAuthenticator, LAN_PORT_FILE, LINK_SOCKET,
+    LanOptions, LoopbackLink, NetworkChange, Observed, RELAY_TOKEN_FILE, RelayCarrier,
+    RelayIdentity, RelayQuic, RelayServing, UDP_BLOCKED_MEMORY, interface_addrs, mdns_discovery,
+    test_interfaces,
 };
 pub use forward::{ForwardError, HostNameError, Owner};
 pub use front_door::FrontDoor;
 pub use generation::{Generation, boot_id};
 pub use grpc::{ClientApi, status};
+pub use identity::{quic_endpoint, quic_endpoint_config};
 pub use install::{
     AGENTS, CORE_CHECKPOINT, CORE_RING, GENERATION, HOST_ID, INSTALLATION_LOCK, InstallationLock,
     LockError, PROFILES, REGISTRY, REPLICAS, REPORTS, STORE, write_durably,
 };
-pub use link::{PeerChannel, PeerClient, TRUST_REVOKED};
+pub use link::{
+    Cursor, EarlyAnswer, EarlyCall, EarlyReply, PeerChannel, PeerClient, ResumedLink,
+    TRUST_REVOKED, forwarder, framed, link_log, paths, socket,
+};
 pub use offers::{CatalogueError, HostCatalogue, PROVIDERS, Provider};
 pub use outbox::{DrainReport, HttpSender, NoopSender, Push, PushError, PushFuture, PushSender};
 pub use pairing::PairingAdmin;
@@ -142,6 +147,9 @@ pub use agent_dir::Clock;
 pub use auth::claims::Tier;
 pub use auth::oauth::{OAuthError, run_device_flow};
 pub use auth::{AccessToken, AuthError};
+pub use link::client_tickets::CLIENT_TICKETS_DIR;
+pub use link::resumption::{RELAY_TICKETS, SessionTickets, TICKETS_DIR};
+pub use link::validation::CLIENT_TOKENS_DIR;
 /// This binary's version, as stamped: the one it writes into every spec.
 pub use release::version;
 pub use transport::{TransportError, create_tls_acceptor, relay_quic_server_config};

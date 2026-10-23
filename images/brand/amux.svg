@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="1024" height="1024" viewBox="128 128 998 998" role="img" aria-labelledby="title desc">
+  <title id="title">amux</title>
+  <desc id="desc">A folded blue, violet and coral ribbon forms an A, with an upward arrow cut through its centre.</desc>
+  <defs>
+    <path id="silhouette" d="
+      M 264,784 L 490,330
+      C 519,273 566,242 630,242
+      C 695,242 740,272 764,319
+      L 1028,864
+      C 1061,930 1024,1007 944,1007
+      L 890,1007 C 831,1007 788,978 761,928
+      L 681,760 C 667,732 667,711 676,689
+      L 777,477 C 789,452 776,453 763,459
+      L 482,563 C 468,568 473,581 484,582
+      L 628,595 C 545,677 399,727 264,784 Z
+      M 627,617
+      C 613,733 539,848 490,932
+      C 462,982 414,1007 362,1007
+      L 311,1007 C 257,1007 223,977 216,936
+      C 206,891 238,857 280,840
+      C 433,780 565,728 627,617 Z"/>
+    <clipPath id="mark-clip"><use xlink:href="#silhouette"/></clipPath>
+    <path id="crown-shape" d="
+      M 300,712 L 490,330 C 519,273 566,242 630,242
+      C 695,242 740,272 764,319 L 864,529
+      C 804,415 748,378 684,387
+      C 570,400 461,536 300,712 Z"/>
+    <linearGradient id="blue-ribbon" gradientUnits="userSpaceOnUse" x1="400" y1="850" x2="720" y2="405">
+      <stop stop-color="#078bff"/>
+      <stop offset=".5" stop-color="#096cf7"/>
+      <stop offset="1" stop-color="#253abe"/>
+    </linearGradient>
+    <radialGradient id="rear-glow" gradientUnits="userSpaceOnUse" cx="1060" cy="850" r="580">
+      <stop stop-color="#ffc365"/>
+      <stop offset=".2" stop-color="#ffad60"/>
+      <stop offset=".4" stop-color="#ff7395"/>
+      <stop offset=".64" stop-color="#7e4bd5"/>
+      <stop offset=".85" stop-color="#2e42c4"/>
+      <stop offset="1" stop-color="#2e42c4" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="crown-spectrum" gradientUnits="userSpaceOnUse" x1="445" y1="350" x2="700" y2="540">
+      <stop stop-color="#079fff"/>
+      <stop offset=".42" stop-color="#347aff"/>
+      <stop offset="1" stop-color="#9747ff"/>
+    </linearGradient>
+    <radialGradient id="crown-light" gradientUnits="userSpaceOnUse" cx="630" cy="235" r="245">
+      <stop stop-color="#ffffff" stop-opacity=".23"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="warm-fold" gradientUnits="userSpaceOnUse" x1="712" y1="703" x2="1024" y2="977">
+      <stop stop-color="#303bb6"/>
+      <stop offset=".3" stop-color="#a64bba"/>
+      <stop offset=".58" stop-color="#ff7374"/>
+      <stop offset="1" stop-color="#ffc158"/>
+    </linearGradient>
+    <linearGradient id="blue-foot" gradientUnits="userSpaceOnUse" x1="375" y1="787" x2="458" y2="1007">
+      <stop stop-color="#123dc5"/>
+      <stop offset=".53" stop-color="#136cf7"/>
+      <stop offset="1" stop-color="#2c87ff"/>
+    </linearGradient>
+  </defs>
+  <g id="artwork" clip-path="url(#mark-clip)">
+    <use id="body" xlink:href="#silhouette" fill="url(#blue-ribbon)"/>
+    <use id="rear-light" xlink:href="#silhouette" fill="url(#rear-glow)"/>
+    <use id="crown" xlink:href="#crown-shape" fill="url(#crown-spectrum)"/>
+    <use id="crown-highlight" xlink:href="#crown-shape" fill="url(#crown-light)"/>
+    <path id="front-fold" fill="url(#warm-fold)" d="
+      M 711.75,614 C 707,663 747,700 805,727
+      C 884,766 1006,801 1045,899
+      L 1060,1030 L 745,1030 L 650,760 Z"/>
+    <path id="left-foot" fill="url(#blue-foot)" d="
+      M 627,617 C 613,733 539,848 490,932
+      C 462,982 414,1007 362,1007 L 311,1007
+      C 257,1007 223,977 216,936 C 206,891 238,857 280,840
+      C 433,780 565,728 627,617 Z"/>
+  </g>
+</svg>

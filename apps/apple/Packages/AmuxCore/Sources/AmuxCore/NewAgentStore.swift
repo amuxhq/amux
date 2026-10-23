@@ -31,6 +31,16 @@ public final class NewAgentStore {
             }
         }
 
+        /// The provider an agent of this kind runs, if this phone can start
+        /// one.
+        public init?(_ kind: Kind) {
+            switch kind {
+            case .claudePty, .claudeSdk: self = .claude
+            case .codex: self = .codex
+            case .unspecified: return nil
+            }
+        }
+
         /// Claude always starts on the SDK driver: the phone renders the chat
         /// vocabulary, and only the SDK driver carries every row of it.
         public var kind: Kind {
@@ -102,6 +112,9 @@ public final class NewAgentStore {
     @ObservationIgnored private var offerAsked: [Provider: Int] = [:]
     /// Whether the chosen machine could be reached when last told.
     @ObservationIgnored private var machineOnline: Bool?
+    /// Whether the person has picked the agent since the screen opened, so
+    /// the fleet arriving does not change it under them.
+    @ObservationIgnored private var providerPicked = false
 
     public init() {}
 
@@ -127,6 +140,7 @@ public final class NewAgentStore {
         typedName = nil
         browsing = false
         provider = .claude
+        providerPicked = false
         offers = [:]
         offerAsked = [:]
         startAfresh()
@@ -156,8 +170,14 @@ public final class NewAgentStore {
         startAfresh()
     }
 
-    /// What the fleet lists, for names and directories per host.
+    /// What the fleet lists, for names and directories per host, and the
+    /// agent to start with: the kind most recently at work, since with
+    /// several to choose from that is the one most often wanted again.
     public func remember(_ rows: [AgentRow]) {
+        if !providerPicked, let latest = rows.filter({ Provider($0.card.kind) != nil })
+            .max(by: { $0.lastActivity < $1.lastActivity }), let usual = Provider(latest.card.kind) {
+            provider = usual
+        }
         var names: [HostId: Set<String>] = [:]
         var places: [HostId: [Directory]] = [:]
         for row in rows.sorted(by: { $0.lastActivity > $1.lastActivity }) {
@@ -212,6 +232,7 @@ public final class NewAgentStore {
     /// Another agent starts its model, effort, permission and mode afresh:
     /// they do not carry across providers.
     public func choose(provider chosen: Provider) {
+        providerPicked = true
         guard provider != chosen else { return }
         provider = chosen
         startAfresh()

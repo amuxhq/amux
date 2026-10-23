@@ -23,8 +23,7 @@ use hyper::body::Incoming;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use node::harness::{
-    AuthenticatedLinkUser, LinkTokenAuthenticator, Tier, relay_quic_client_config_with_roots,
-    relay_quic_server_config_from_der,
+    AuthenticatedLinkUser, LinkTokenAuthenticator, Tier, relay_quic_server_config_from_der,
 };
 use node::{CloudLinkServer, CloudOptions, RelayIdentity, RelayQuic};
 use tokio::task::JoinHandle;
@@ -36,10 +35,9 @@ use crate::topology::{RelayDecl, TierDecl};
 /// The name the relay's certificate is issued to, and the host the cloud
 /// names for it.
 pub const RELAY_HOST: &str = "localhost";
-/// How long a relay credential lives on the policy clock.
+/// How long a relay credential lives on the policy clock unless a story
+/// sets another lifetime with [`Relay::set_credential_ttl`].
 pub const CREDENTIAL_TTL: Duration = Duration::from_secs(600);
-/// How long the relay gives a QUIC handshake.
-const QUIC_HANDSHAKE: Duration = Duration::from_secs(10);
 
 /// One account the cloud knows.
 #[derive(Clone, Debug)]
@@ -73,6 +71,8 @@ struct CloudState {
     refreshed_as: Vec<String>,
     /// How far the relay's clock runs ahead of the hosts'.
     ahead: Duration,
+    /// How long credentials minted from now on live, when not the default.
+    ttl: Option<Duration>,
 }
 
 struct Cloud {
@@ -87,13 +87,13 @@ pub struct Relay {
     url: String,
     tcp: SocketAddr,
     quic: SocketAddr,
-    quic_client: quinn::ClientConfig,
+    quic_roots: rustls::RootCertStore,
     /// The relay's self-signed certificate, DER, for a client outside the
     /// net to trust its QUIC carrier by.
     quic_root: Vec<u8>,
     /// The same certificate as PEM, for a daemon process to trust.
     quic_root_pem: String,
-    quic_endpoint: quinn::Endpoint,
+    serving: node::RelayServing,
     cloud: Arc<Cloud>,
     tasks: Vec<JoinHandle<()>>,
 }
@@ -102,10 +102,9 @@ impl Relay {
     /// Starts the relay and the cloud for `decl`'s accounts, their
     /// credentials timed by `clock`.
     pub async fn start(decl: &RelayDecl, clock: Arc<dyn Clock>) -> std::io::Result<Self> {
-        let (quic_server, quic_client, quic_root, quic_root_pem) = quic_configs();
-        let quic_endpoint =
-            quinn::Endpoint::server(quic_server, SocketAddr::from(([127, 0, 0, 1], 0)))?;
-        let quic = quic_endpoint.local_addr()?;
+        let (quic_server, quic_roots, quic_root, quic_root_pem) = quic_configs();
+        let udp = std::net::UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))?;
+        let quic = udp.local_addr()?;
         let mut state = CloudState::default();
         for account in &decl.accounts {
             state.accounts.insert(
@@ -138,21 +137,18 @@ impl Relay {
         let tcp = tcp_listener.local_addr()?;
         let http = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let url = format!("http://{}", http.local_addr()?);
-        let tasks = vec![
-            server.serve_on_tcp_listener(tcp_listener),
-            server.serve_on_quic_endpoint(quic_endpoint.clone(), QUIC_HANDSHAKE),
-            tokio::spawn(serve_cloud(http, cloud.clone())),
-        ];
+        let serving = server.serve_tcp(udp, tcp_listener, quic_server)?;
+        let tasks = vec![tokio::spawn(serve_cloud(http, cloud.clone()))];
         Ok(Self {
             server,
             host_id,
             url,
             tcp,
             quic,
-            quic_client,
+            quic_roots,
             quic_root,
             quic_root_pem,
-            quic_endpoint,
+            serving,
             cloud,
             tasks,
         })
@@ -270,7 +266,14 @@ impl Relay {
         self.cloud.state.lock().unwrap().ahead = ahead;
     }
 
-    /// Every connect call so far, by account.
+    /// Mints credentials that live `ttl` from now on, as an account service
+    /// issuing week-long tokens does.
+    pub fn set_credential_ttl(&self, ttl: Duration) {
+        self.cloud.state.lock().unwrap().ttl = Some(ttl);
+    }
+
+    /// Every connect call so far, by account: each one is a credential the
+    /// account service issued.
     pub fn connects(&self) -> Vec<String> {
         self.cloud.state.lock().unwrap().connects.clone()
     }
@@ -283,6 +286,13 @@ impl Relay {
     /// Every credential the relay was shown so far, in Hello or Reauth.
     pub fn presented(&self) -> Vec<String> {
         self.cloud.state.lock().unwrap().presented.clone()
+    }
+
+    /// What the relay's forwarder has done with the packets hosts sent it
+    /// to forward: forwarded, held from senders not yet admitted, and of
+    /// those released or dropped.
+    pub fn forward_counts(&self) -> node::forwarder::Counts {
+        self.server.forward_counts().unwrap_or_default()
     }
 
     /// Which hosts `account` holds relay links from, and how many each.
@@ -300,7 +310,7 @@ impl Relay {
             relay_tcp: Some(self.tcp),
             relay_quic: Some(RelayQuic {
                 addr: gate.addr(),
-                client: self.quic_client.clone(),
+                roots: self.quic_roots.clone(),
             }),
             ..CloudOptions::default()
         }
@@ -314,8 +324,7 @@ impl Relay {
 
 impl Drop for Relay {
     fn drop(&mut self) {
-        self.quic_endpoint
-            .close(quinn::VarInt::from_u32(0), b"relay stopping");
+        self.serving.close();
         for task in &self.tasks {
             task.abort();
         }
@@ -348,6 +357,12 @@ impl LinkTokenAuthenticator for Presented {
             .get(token)
             .cloned()
             .ok_or_else(|| tonic::Status::unauthenticated("unknown credential"))?;
+        // The account service's tokens carry their expiry, which the relay
+        // checks as it reads one: a lapsed credential is refused at Hello,
+        // never admitted until a timer finds it out.
+        if minted.expires_ms <= self.0.clock.now_ms() {
+            return Err(tonic::Status::unauthenticated("expired credential"));
+        }
         Ok(AuthenticatedLinkUser {
             user_id: minted.user,
             client_id: "cli".to_owned(),
@@ -476,7 +491,8 @@ impl Cloud {
         state.connects.push(account.to_owned());
         let known = state.accounts[account].clone();
         let token = format!("relay-{account}-{}", state.connects.len());
-        let expires_ms = self.clock.now_ms() + CREDENTIAL_TTL.as_millis() as i64;
+        let ttl = state.ttl.unwrap_or(CREDENTIAL_TTL);
+        let expires_ms = self.clock.now_ms() + ttl.as_millis() as i64;
         let lapses_ms = expires_ms - state.ahead.as_millis() as i64;
         state.minted.insert(
             token.clone(),
@@ -516,7 +532,7 @@ fn status(code: u16, body: serde_json::Value) -> hyper::Response<Full<Bytes>> {
 /// A self-signed certificate for the relay's QUIC carrier, a client
 /// configuration that trusts only it, and the certificate itself, as DER
 /// and as PEM.
-fn quic_configs() -> (quinn::ServerConfig, quinn::ClientConfig, Vec<u8>, String) {
+fn quic_configs() -> (quinn::ServerConfig, rustls::RootCertStore, Vec<u8>, String) {
     let rcgen::CertifiedKey { cert, signing_key } =
         rcgen::generate_simple_self_signed(vec![RELAY_HOST.to_owned()])
             .expect("a relay certificate");
@@ -526,11 +542,10 @@ fn quic_configs() -> (quinn::ServerConfig, quinn::ClientConfig, Vec<u8>, String)
         rustls::pki_types::PrivateKeyDer::Pkcs8(rustls::pki_types::PrivatePkcs8KeyDer::from(
             signing_key.serialize_der(),
         )),
+        &node::SessionTickets::in_memory(node::RELAY_TICKETS),
     )
     .expect("the relay's QUIC server configuration");
     let mut roots = rustls::RootCertStore::empty();
     roots.add(der).expect("the relay certificate as a root");
-    let client =
-        relay_quic_client_config_with_roots(roots).expect("the relay's QUIC client configuration");
-    (server, client, cert.der().as_ref().to_vec(), cert.pem())
+    (server, roots, cert.der().as_ref().to_vec(), cert.pem())
 }

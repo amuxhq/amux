@@ -1,0 +1,28 @@
+{
+  "scope": "phone-resume",
+  "relay": {"accounts": [{"name": "ada"}]},
+  "hosts": [
+    {"name": "desk", "account": "ada", "lan": true, "bonjour": true},
+    {"name": "laptop", "account": "ada", "lan": true, "bonjour": true}
+  ],
+  "agents": [
+    {
+      "name": "desk-work",
+      "host": "desk",
+      "kind": "claude_sdk",
+      "script": {"steps": [
+        {"text": {"chunks": ["The desk is here."]}},
+        "turn_end"
+      ]}
+    },
+    {
+      "name": "laptop-work",
+      "host": "laptop",
+      "kind": "claude_sdk",
+      "script": {"steps": [
+        {"text": {"chunks": ["The laptop is here."]}},
+        "turn_end"
+      ]}
+    }
+  ]
+}

@@ -154,7 +154,7 @@ content.
 Every snapshot body carries `BackgroundJobs`: each command or task the
 provider runs past the call that started it, with the key of that call's
 item, the command (or the task's description), when it started, and its
-kind (shell, sub-agent, monitor or other, unspecified while the interpreter
+kind (shell, subagent, monitor or other, unspecified while the interpreter
 does not say). The provider's own id for a job stays with the interpreter
 (the Claude interpreters track jobs by task id, Codex's by the command's
 item); no client needs it. The snapshot envelope carries how many there are, which the daemon

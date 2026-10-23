@@ -1,38 +1,16 @@
 shell |  | hosts | 0,62,402,778
-home |  | signed-out | 0,62,402,778
-home.title | Agents, switch account | Agents | 60,65,104,46
-home.subtitle |  | Nothing paired yet | 60,105,130,16
-home.empty.firstRun |  | No agents yet | 18,161,162,32
-home.empty.explain |  |  | 18,201,291,18
-home.offer.<desk> | desk, found, not paired | found | 18,259,366,64
-home.pair.<desk> | Pair with desk |  | 309,269,61,44
-home.empty.howToPair |  |  | 18,341,360,37
-home.empty.signIn | Sign In |  | 18,396,366,44
-home.empty.signIn.caption |  |  | 18,448,296,18
-hosts |  | 0 reachable | 0,62,402,778
-hosts.title |  | Hosts | 18,72,69,32
-hosts.subtitle |  | 0 reachable | 18,105,79,16
-hosts.offer.<desk> | desk, found, not paired | not paired | 18,159,366,64
-hosts.pair.<desk> | Pair with desk |  | 309,169,61,44
-hosts.caption.on-this-network |  | Run amux pair on one of these and enter the code it prints. | 18,231,343,37
-hosts.fact.identity | <volatile>
-hosts.fact.paired-devices | Paired Devices, 0 | 0 | 18,354,366,46
-hosts.caption.devices |  |  | 18,408,320,18
-tab.agents | Agents | not selected | 50,777,99,57
-tab.hosts | Hosts | selected | 151,777,99,57
-tab.you | You | not selected | 253,777,99,57
- | Agents |  | 50,777,99,57
- | Hosts |  | 151,777,99,57
- | You |  | 253,777,99,57
- | Hosts |  | 18,72,69,32
- | 0 reachable |  | 18,105,79,16
- | ON THIS NETWORK |  | 20,137,105,14
- | Computer |  | 34,183,18,15
- | desk |  | 65,171,39,21
- | found |  | 65,194,39,17
- | Pair with desk |  | 309,169,61,44
- | Run amux pair on one of these and enter the code it prints. |  | 18,231,343,37
- | THIS PHONE |  | 20,286,70,14
- | Identity, amux-iphone-1 · <key> |  | 18,308,366,46
- | Paired Devices, 0 |  | 18,354,366,46
- | Revoking a device ends its access immediately. |  | 18,408,320,18
+home |  | signed-out | 0,174,402,617
+hosts |  |  | 0,174,402,617
+hosts.pair.<desk> | desk is nearby |  | 16,180,370,60
+ | desk is nearby, Pair it to see its agents here, Pair |  | 16,180,370,60
+ | Hosts |  | 16,127,93,42
+ | Agents |  | 111,795,94,54
+ | Agents |  | 140,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 229,830,29,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 230,830,29,12
+ | Agents |  | 111,795,94,54
+ | Hosts | selected | 197,795,94,54

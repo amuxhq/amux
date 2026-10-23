@@ -34,8 +34,8 @@ extension Design {
             FontSpec(family: faces.display, size: type.titleSize,
                      weight: type.titleWeight, relativeTo: .title, tracking: type.tightTracking)
         case .sectionTitle:
-            FontSpec(family: faces.mono, size: 11,
-                     weight: .medium, relativeTo: .caption2, tracking: 0.4)
+            FontSpec(family: faces.body, size: 13,
+                     weight: .semibold, relativeTo: .footnote, tracking: 0)
         case .identifier:
             identifierSpec(weight: type.identifierIsMono ? .medium : .semibold)
         case .identifierUnread:
@@ -50,8 +50,8 @@ extension Design {
             FontSpec(family: faces.body, size: body - 1,
                      weight: .regular, relativeTo: .subheadline, tracking: 0)
         case .caption:
-            FontSpec(family: faces.mono, size: 11.5,
-                     weight: .medium, relativeTo: .caption2, tracking: 0)
+            FontSpec(family: faces.body, size: 13,
+                     weight: .regular, relativeTo: .footnote, tracking: 0)
         case .mono:
             FontSpec(family: faces.mono, size: body - 2,
                      weight: .regular, relativeTo: .footnote, tracking: 0)

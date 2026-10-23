@@ -21,14 +21,19 @@ import XCTest
 /// this test audits it and answers `page-N.done`, and `end` says there are no
 /// more.
 ///
-/// One kind of thing is judged on its name and not on its size: a link the
-/// markdown parser made out of a run of an agent's prose. That is not a control
-/// the app draws. The app draws a paragraph; the parser turns a span of a
-/// sentence inside it into something tappable, laid out as part of a line and
-/// split across two of them when the line wraps. There is no rectangle to grow,
-/// and its height is the height of the prose around it. WCAG's target-size rule
-/// carves out inline targets in a sentence for exactly this reason, so the
-/// exception here is the standard's rather than this app's. It is kept narrow:
+/// Two kinds of thing are judged on their names and not on their size. The
+/// first is an item in the system's navigation bar, which the bar lays out
+/// and answers to itself: the slot it gives an item is 36 points tall, the
+/// glass it draws round it 44, and only the slot can be measured from here.
+///
+/// The second is a link the markdown parser made out of a run of an agent's
+/// prose. That is not a control the app draws. The app draws a paragraph; the
+/// parser turns a span of a sentence inside it into something tappable, laid
+/// out as part of a line and split across two of them when the line wraps.
+/// There is no rectangle to grow, and its height is the height of the prose
+/// around it. WCAG's target-size rule carves out inline targets in a sentence
+/// for exactly this reason, so the exception here is the standard's rather
+/// than this app's. It is kept narrow:
 /// only a link with no identifier of its own, sitting inside a block of agent
 /// prose, and only its size is excused — it must still say something VoiceOver
 /// can read out. Each one excused is written into the record with the state it
@@ -38,6 +43,9 @@ final class AccessibilityAuditTests: XCTestCase {
     /// The smallest a control may be, in points, in either direction. Apple's
     /// own number, and the one a thumb actually needs.
     static let smallest: CGFloat = 44
+    /// What placing a rectangle on the display's pixels can take off it:
+    /// a 44-point row comes back a hair under 44.
+    static let pixelSnap: CGFloat = 0.5
 
     /// Controls that are smaller than that on purpose, by identifier prefix,
     /// each with the reason.
@@ -80,6 +88,7 @@ final class AccessibilityAuditTests: XCTestCase {
             let door = try DoorLines(address: "127.0.0.1:\(port)")
             _ = try door.ask(["kind": "settle"])
             let laidOut = try laidOut(door)
+            let barItems = Self.barItems(app)
             var found = 0
             for control in controls(app) {
                 found += 1
@@ -92,8 +101,9 @@ final class AccessibilityAuditTests: XCTestCase {
                         "size": rectangle(control.frame),
                     ])
                 }
+                let inBar = !control.identifier.isEmpty && barItems.contains(control.identifier)
                 complaints += fault(
-                    control, on: name, laidOut: laidOut, judgeSize: !inline)
+                    control, on: name, laidOut: laidOut, judgeSize: !inline && !inBar)
             }
             XCTAssertGreaterThan(found, 0, "\(name) has no controls at all")
             audited += found
@@ -140,12 +150,14 @@ final class AccessibilityAuditTests: XCTestCase {
     /// Buttons and the things that behave like them. An element with no
     /// rectangle is not on screen — a row scrolled out of a list is still in
     /// the tree — and judging one of those on its size would be judging it on
-    /// nothing.
+    /// nothing. Nor is one a sheet covers, which stays in the tree under it:
+    /// it is judged on the page where it is on top.
     private func controls(_ app: XCUIApplication) -> [XCUIElement] {
         let kinds: [XCUIElement.ElementType] = [.button, .switch, .link]
         return kinds.flatMap { kind in
             app.descendants(matching: kind).allElementsBoundByIndex.filter { control in
                 control.exists && control.frame.width > 0 && control.frame.height > 0
+                    && control.isHittable
                     && !Self.notOurs.contains { control.identifier.hasPrefix($0) }
             }
         }
@@ -208,6 +220,17 @@ final class AccessibilityAuditTests: XCTestCase {
         rectangle.isNull ? 0 : rectangle.width * rectangle.height
     }
 
+    /// What the system's navigation bar holds: back, close, a title, a menu.
+    /// They are judged on their names and not on their size. The bar lays
+    /// each one out in a slot 36 points tall, which is what the app can
+    /// measure, and draws and answers to a 44-point circle around it.
+    private static func barItems(_ app: XCUIApplication) -> Set<String> {
+        let kinds: [XCUIElement.ElementType] = [.button, .switch, .link]
+        return Set(kinds.flatMap { kind in
+            app.navigationBars.descendants(matching: kind).allElementsBoundByIndex.map { $0.identifier }
+        })
+    }
+
     /// Whether this is a link the markdown parser made inside a run of an
     /// agent's prose, which is judged on its name but not on its size.
     ///
@@ -243,7 +266,8 @@ final class AccessibilityAuditTests: XCTestCase {
         }
         guard judgeSize else { return faults }
         let frame = judged(control, laidOut: laidOut)
-        if frame.width < Self.smallest || frame.height < Self.smallest {
+        let least = Self.smallest - Self.pixelSnap
+        if frame.width < least || frame.height < least {
             faults.append(
                 "\(state): \(named) (\"\(control.label)\") is \(rectangle(frame)), under the "
                 + "\(Int(Self.smallest)) pt a thumb needs")
@@ -251,9 +275,13 @@ final class AccessibilityAuditTests: XCTestCase {
         return faults
     }
 
+    /// Whole points as they are and anything else to a tenth, so a control
+    /// a fraction under the limit does not read as exactly on it.
     private func rectangle(_ frame: CGRect) -> String {
-        String(format: "%.0f×%.0f pt at (%.0f, %.0f)",
-               frame.width, frame.height, frame.minX, frame.minY)
+        func points(_ value: CGFloat) -> String {
+            value == value.rounded() ? String(format: "%.0f", value) : String(format: "%.1f", value)
+        }
+        return "\(points(frame.width))×\(points(frame.height)) pt at (\(points(frame.minX)), \(points(frame.minY)))"
     }
 
     // MARK: - What it leaves behind

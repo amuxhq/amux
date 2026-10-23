@@ -694,6 +694,10 @@ pub enum Lifecycle {
     /// end the app; a relaunch starts from that store, not the checkpoint,
     /// whose links, calls, jobs and timers belong to the process that ended.
     Suspending,
+    /// The phone's network changed: every profile's link socket is bound
+    /// afresh and every path machine probes its paths again, which the
+    /// link log's rebind line records.
+    NetworkChanged,
 }
 
 /// Feeds a `Lifecycle` input as JSON; blocks, stepping the cores, until
@@ -749,6 +753,15 @@ fn feed(runtime: &AmuxRuntime, input: Lifecycle) -> Result<(), String> {
                     embedded.flush_analytics().await;
                     embedded.checkpoint().await
                 })
+                .ok_or("the runtime has stopped")?
+                .map_err(|error| error.to_string())?;
+        }
+        Lifecycle::NetworkChanged => {
+            let embedded = runtime.embedded().clone();
+            runtime
+                .shared
+                .phone
+                .wait(async move { embedded.network_changed().await })
                 .ok_or("the runtime has stopped")?
                 .map_err(|error| error.to_string())?;
         }
@@ -1616,20 +1629,24 @@ unsafe fn fleet_read<T: Serialize>(
 }
 
 /// Home's `FleetView`: its sections, expanded under the roots whose agent
-/// ids `expand` lists (a JSON array of byte arrays, or null).
+/// ids `expand` lists (a JSON array of byte arrays, or null), listing the
+/// agents `filter` keeps (a JSON `FleetFilter`, or null for every agent).
 ///
 /// # Safety
-/// `profile` is from `amux_profile_open`; `expand` is null or a
-/// NUL-terminated string.
+/// `profile` is from `amux_profile_open`; `expand` and `filter` are null or
+/// NUL-terminated strings.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn amux_fleet_view(
     profile: *const AmuxProfile,
     expand: *const c_char,
+    filter: *const c_char,
 ) -> *mut c_char {
     // SAFETY: the caller's contract.
     let expand: Vec<Vec<u8>> = unsafe { parse(expand) }.unwrap_or_default();
     // SAFETY: the caller's contract.
-    unsafe { fleet_read(profile, |app| app.fleet_view(&expand)) }
+    let filter: ui_view::FleetFilter = unsafe { parse(filter) }.unwrap_or_default();
+    // SAFETY: the caller's contract.
+    unsafe { fleet_read(profile, |app| app.fleet_view(&expand, &filter)) }
 }
 
 /// One agent's `FleetCard`, or null JSON when it is not listed.

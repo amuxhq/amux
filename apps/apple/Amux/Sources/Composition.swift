@@ -93,7 +93,8 @@ final class Composition {
         #endif
         let runtime = RuntimeCoordinator(
             registry: accounts, support: AppFiles.support, deviceName: UIDevice.current.name,
-            signedOut: StoreBundle(account: AccountId("signed-out")), options: options)
+            signedOut: StoreBundle(account: AccountId("signed-out")), options: options,
+            networkWatch: SystemNetworkWatch())
         self.runtime = runtime
         // Only the system may look at the network a phone is on, so the
         // browser is the app's and the runtime is handed what it saw.
@@ -236,8 +237,7 @@ final class Composition {
         // Taking an account off this phone: its profile — its key, the
         // machines it paired, what it held — is deleted. The account on
         // amux.sh is untouched.
-        case .confirmRemoval:
-            guard let id = removal.account else { break }
+        case .confirmRemoval(let id):
             removal.dismiss()
             Task { [cloud] in try? await cloud.forgetSession(id) }
             forget(id)

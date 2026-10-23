@@ -203,6 +203,7 @@ impl Bundle {
                     journal,
                     read.seen,
                 )?;
+                daemon.journal_relaid(read.agent);
                 if let Some(why) = &read.failed {
                     refuse.get_or_insert(why.clone());
                 }

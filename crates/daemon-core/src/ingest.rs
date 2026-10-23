@@ -258,6 +258,15 @@ impl Daemon {
         Ok(())
     }
 
+    /// The agent's journal was laid out again under its directory, as a
+    /// replay does before each step: the reader held open on the old files
+    /// is dropped, and the next read opens what is there now. A live
+    /// journal is only ever appended to and reclaimed, which the held
+    /// reader follows on its own.
+    pub fn journal_relaid(&mut self, agent: AgentId) {
+        self.journal_readers.remove(&agent);
+    }
+
     /// The agent's journal, where this core reads it.
     pub fn journal_dir(&self, agent: AgentId) -> PathBuf {
         journal_dir(&self.options.agents, agent)

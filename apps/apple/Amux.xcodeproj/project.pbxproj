@@ -16,6 +16,7 @@
 		0415D325FE4D2CF8B296082B /* components.row-command-allowed-always-light.png in Resources */ = {isa = PBXBuildFile; fileRef = ED902A6D10695D8376A99E8B /* components.row-command-allowed-always-light.png */; };
 		042A39F8F8EDDE243C21CB18 /* components.row-image-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 9215BDF01E19C20DA96CB89E /* components.row-image-light.png */; };
 		04DBBBAEFCD3641FED683F5C /* components.report-failed-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = D2C3318E3B817F2A7B2307F8 /* components.report-failed-dark.png */; };
+		05BFDAA79A7239AEEB5BCE5D /* components.settings-notifications-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 964B4657E8AC0E50AB959F30 /* components.settings-notifications-light.png */; };
 		05DFFA86753B995BB850DE4C /* ScriptedCloud.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F013D54F67D2DF0722A08B /* ScriptedCloud.swift */; };
 		0634E9D73AB11BD89B3C6715 /* components.chat-settings-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 23C1B500809960DA65F90789 /* components.chat-settings-dark.png */; };
 		0667AADC3DDE04FE18C53F06 /* components.composer-chip-stops-asking-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 8DF95DB041377C76B2A2ABB9 /* components.composer-chip-stops-asking-light.png */; };
@@ -117,6 +118,7 @@
 		3E1B1DFE53B9D3F682997BBE /* components.chat-conversation-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = BA0ECFF045EE2CF7858A26DA /* components.chat-conversation-dark.png */; };
 		3E2FA888510A19B4D00C635F /* components.ask-codex-command-large-text-light.png in Resources */ = {isa = PBXBuildFile; fileRef = D571B8B0EF85F90BA6191E07 /* components.ask-codex-command-large-text-light.png */; };
 		3E52D08E219200A1728981AB /* components.settings-delete-failed-light.png in Resources */ = {isa = PBXBuildFile; fileRef = A657D8ACC4F22BF6A609F57F /* components.settings-delete-failed-light.png */; };
+		3EEDA832D26B1E4DD53B087C /* components.fleet-notifications-offer-light.png in Resources */ = {isa = PBXBuildFile; fileRef = A4C574F9EA67DC34EA592A48 /* components.fleet-notifications-offer-light.png */; };
 		3EF053800C67306DE1003EB2 /* components.ask-sending-light.png in Resources */ = {isa = PBXBuildFile; fileRef = E2FFBA616697109868471B98 /* components.ask-sending-light.png */; };
 		4009144BCFEBAEEB48E15D8B /* components.ask-codex-command-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 7730E5ADC6A2608A431B6A8F /* components.ask-codex-command-dark.png */; };
 		40FFCD4C1BAC00050EA740BB /* components.row-file-change-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = FDE836A6BF08FDA28D308E98 /* components.row-file-change-dark.png */; };
@@ -359,6 +361,7 @@
 		C1E4358A90F6700FE5F8C696 /* components.fleet-no-matches-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = A9FF07370B7B20EF33931145 /* components.fleet-no-matches-dark.png */; };
 		C1EE79B39F9821CCD6DD68B0 /* components.pair-code-refused-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 516D7D210A174AF5CE365A59 /* components.pair-code-refused-light.png */; };
 		C33CB71ABFB42CDE7E3168D0 /* components.composer-dictation-listening-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 14E38B904C1FD1D222FB6C82 /* components.composer-dictation-listening-light.png */; };
+		C33E804FEE0F2EEDF7046F33 /* components.fleet-notifications-offer-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 1371DFE946BB44B9E870A761 /* components.fleet-notifications-offer-dark.png */; };
 		C4ABB410E15EB9DD3BCE1CFF /* components.fleet-settings-open-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 786518FB0AAA878D85CB87DE /* components.fleet-settings-open-dark.png */; };
 		C4CD03E9E0ED975E7823D51E /* components.chat-detached-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 8A66717812856056E64C6238 /* components.chat-detached-dark.png */; };
 		C53EFD5F4B50F04228855DA0 /* components.composer-empty-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 581B37F7D26DE8D94FAC9EBC /* components.composer-empty-light.png */; };
@@ -441,6 +444,7 @@
 		F35570936B310DC3C1F8561C /* components.settings-signed-out-light.png in Resources */ = {isa = PBXBuildFile; fileRef = CB748BD664B0D01CCD794EE2 /* components.settings-signed-out-light.png */; };
 		F3794181150718D47378D780 /* components.settings-signed-out-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = A6C74D3637AE633258B1350E /* components.settings-signed-out-dark.png */; };
 		F44FCA2B2478CFE03208FCE7 /* components.composer-strip-claude-pty-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 93D2A8BB17F55C0A30E8632D /* components.composer-strip-claude-pty-dark.png */; };
+		F50DF30D0F5FB10E7FE6E215 /* components.settings-notifications-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 935C0574A35FB0DD79333E16 /* components.settings-notifications-dark.png */; };
 		F56766E05F22DCA8EEDA4D46 /* components.new-agent-codex-light.png in Resources */ = {isa = PBXBuildFile; fileRef = EC4A1499A9E0A7683A0080C1 /* components.new-agent-codex-light.png */; };
 		F57D20E641910776C2CB94DE /* DoorTargetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F5CB3619E7C3A489C1D92DF /* DoorTargetTests.swift */; };
 		F5923CA3B2A4304640B245B6 /* components.row-auto-review-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = A644A0F05DA455C5891F937C /* components.row-auto-review-dark.png */; };
@@ -534,6 +538,7 @@
 		12ABCF940EE4B9A099281C70 /* ReportFreeze.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportFreeze.swift; sourceTree = "<group>"; };
 		12B685A9B279A7AB2C08166A /* components.row-agent-message-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-agent-message-light.png"; sourceTree = "<group>"; };
 		12CBFEFFEE2A9B74B9388DEE /* components.ask-dismissed-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.ask-dismissed-light.png"; sourceTree = "<group>"; };
+		1371DFE946BB44B9E870A761 /* components.fleet-notifications-offer-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.fleet-notifications-offer-dark.png"; sourceTree = "<group>"; };
 		145B07255DF6CD0E6F29358D /* components.hosts-list-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.hosts-list-light.png"; sourceTree = "<group>"; };
 		14E38B904C1FD1D222FB6C82 /* components.composer-dictation-listening-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.composer-dictation-listening-light.png"; sourceTree = "<group>"; };
 		151708A994043EC5A7F853A1 /* components.chat-delete-family-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.chat-delete-family-light.png"; sourceTree = "<group>"; };
@@ -771,10 +776,12 @@
 		9221C97D23BC0F34C042504C /* components.fleet-stopped-open-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.fleet-stopped-open-dark.png"; sourceTree = "<group>"; };
 		92263008F1BDF54984079DB3 /* components.composer-usage-blocked-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.composer-usage-blocked-light.png"; sourceTree = "<group>"; };
 		933A5BD66D0300235FFFA46A /* components.pair-link-checking-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.pair-link-checking-light.png"; sourceTree = "<group>"; };
+		935C0574A35FB0DD79333E16 /* components.settings-notifications-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.settings-notifications-dark.png"; sourceTree = "<group>"; };
 		93D2A8BB17F55C0A30E8632D /* components.composer-strip-claude-pty-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.composer-strip-claude-pty-dark.png"; sourceTree = "<group>"; };
 		941A466A2D82F7A7193C7B30 /* components.settings-delete-blocked-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.settings-delete-blocked-dark.png"; sourceTree = "<group>"; };
 		945602D9376D08934B80A0F1 /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = manifest.json; sourceTree = "<group>"; };
 		94B652EB978D0E2CF39BEA0D /* components.row-turn-end-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-turn-end-dark.png"; sourceTree = "<group>"; };
+		964B4657E8AC0E50AB959F30 /* components.settings-notifications-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.settings-notifications-light.png"; sourceTree = "<group>"; };
 		971BBE775770616DEE93C37C /* components.review-folded-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.review-folded-dark.png"; sourceTree = "<group>"; };
 		996E505FD7D2C40CA8E4A27B /* components.fleet-chat-open-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.fleet-chat-open-dark.png"; sourceTree = "<group>"; };
 		9A426466404241B11DC80F0C /* components.ask-rejected-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.ask-rejected-dark.png"; sourceTree = "<group>"; };
@@ -789,6 +796,7 @@
 		A2E0256EE187695B50A4D052 /* components.chat-new-activity-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.chat-new-activity-light.png"; sourceTree = "<group>"; };
 		A3D2F9E737EBDA22DE11C1D0 /* components.fleet-first-run-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.fleet-first-run-dark.png"; sourceTree = "<group>"; };
 		A481FD85803ACED0CA73EBB9 /* components.new-agent-claude-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.new-agent-claude-dark.png"; sourceTree = "<group>"; };
+		A4C574F9EA67DC34EA592A48 /* components.fleet-notifications-offer-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.fleet-notifications-offer-light.png"; sourceTree = "<group>"; };
 		A5460B8E61AD1A082B4A0FE7 /* DoorWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoorWindow.swift; sourceTree = "<group>"; };
 		A644A0F05DA455C5891F937C /* components.row-auto-review-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-auto-review-dark.png"; sourceTree = "<group>"; };
 		A657D8ACC4F22BF6A609F57F /* components.settings-delete-failed-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.settings-delete-failed-light.png"; sourceTree = "<group>"; };
@@ -1297,6 +1305,8 @@
 				872B808CA4A612A694FFE658 /* components.fleet-no-agents-light.png */,
 				A9FF07370B7B20EF33931145 /* components.fleet-no-matches-dark.png */,
 				019F86BE3BA4CB4CDB0EA47E /* components.fleet-no-matches-light.png */,
+				1371DFE946BB44B9E870A761 /* components.fleet-notifications-offer-dark.png */,
+				A4C574F9EA67DC34EA592A48 /* components.fleet-notifications-offer-light.png */,
 				47A38E63B9CFC143F12C12D5 /* components.fleet-picture-dark.png */,
 				5EDDCAC7DDFF11FA0F90D1E6 /* components.fleet-picture-light.png */,
 				786518FB0AAA878D85CB87DE /* components.fleet-settings-open-dark.png */,
@@ -1489,6 +1499,8 @@
 				9F9DC71D3816BD63B1EB97B8 /* components.settings-delete-failed-dark.png */,
 				A657D8ACC4F22BF6A609F57F /* components.settings-delete-failed-light.png */,
 				CB0BB85E37A03548ECF937B5 /* components.settings-delete-light.png */,
+				935C0574A35FB0DD79333E16 /* components.settings-notifications-dark.png */,
+				964B4657E8AC0E50AB959F30 /* components.settings-notifications-light.png */,
 				46A15115FB158B5B901EF451 /* components.settings-paywall-confirming-dark.png */,
 				4E1C701B88C11D23D7BFFD57 /* components.settings-paywall-confirming-light.png */,
 				21C796417B09453817B0CCDF /* components.settings-paywall-dark.png */,
@@ -1945,6 +1957,8 @@
 				A0039B494B2C5B8C0DBEB258 /* components.fleet-no-agents-light.png in Resources */,
 				C1E4358A90F6700FE5F8C696 /* components.fleet-no-matches-dark.png in Resources */,
 				FBCE1A212EBED2BF463CAB02 /* components.fleet-no-matches-light.png in Resources */,
+				C33E804FEE0F2EEDF7046F33 /* components.fleet-notifications-offer-dark.png in Resources */,
+				3EEDA832D26B1E4DD53B087C /* components.fleet-notifications-offer-light.png in Resources */,
 				69F3AA5D8B8A6772CF013575 /* components.fleet-picture-dark.png in Resources */,
 				FB1DEDF2BBE7FD6A32E2342B /* components.fleet-picture-light.png in Resources */,
 				C4ABB410E15EB9DD3BCE1CFF /* components.fleet-settings-open-dark.png in Resources */,
@@ -2137,6 +2151,8 @@
 				7D2BA6BF3FCD4A4C14F0AD69 /* components.settings-delete-failed-dark.png in Resources */,
 				3E52D08E219200A1728981AB /* components.settings-delete-failed-light.png in Resources */,
 				A0BC50AD39B02AC51E101BB0 /* components.settings-delete-light.png in Resources */,
+				F50DF30D0F5FB10E7FE6E215 /* components.settings-notifications-dark.png in Resources */,
+				05BFDAA79A7239AEEB5BCE5D /* components.settings-notifications-light.png in Resources */,
 				CAC0BB10A3187E8DA4DEF141 /* components.settings-paywall-confirming-dark.png in Resources */,
 				58D74FFEC3D5019E3746E3BE /* components.settings-paywall-confirming-light.png in Resources */,
 				75754FF9F0EB371D0366211E /* components.settings-paywall-dark.png in Resources */,

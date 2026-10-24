@@ -21,10 +21,24 @@ public enum AccountsAction: Equatable, Sendable {
     case appearance(Appearance?)
     /// Turn sending amux.sh usage events on or off.
     case shareUsage(Bool)
+    /// The Notifications row: ask iOS for them, or go to the system's
+    /// settings, the only place they are turned off or back on once asked.
+    case notifications
     case support
     case report
     /// Write this phone's diagnostic dump and hand it to the share sheet.
     case exportDump
+}
+
+/// Whether this phone shows a notification when an agent needs you, as iOS
+/// has it. Nothing here is the app's own switch: once asked, iOS alone turns
+/// them off or on again.
+public enum NotificationsSetting: Equatable, Sendable {
+    /// iOS has not asked yet.
+    case notAsked
+    case on
+    /// Refused, or turned off in the system's settings.
+    case off
 }
 
 /// One account, as a row.
@@ -165,6 +179,8 @@ public struct YouScreen: View {
     private let accounts: AccountRegistry
     private let appearance: Appearance?
     private let shareUsage: Bool
+    /// None while this build offers no notifications.
+    private let notifications: NotificationsSetting?
     private let identity: Identity?
     /// The account being asked about removing, if one is.
     private let removing: AccountId?
@@ -174,6 +190,7 @@ public struct YouScreen: View {
         accounts: AccountRegistry,
         appearance: Appearance? = nil,
         shareUsage: Bool = true,
+        notifications: NotificationsSetting? = nil,
         identity: Identity? = nil,
         removing: AccountId? = nil,
         actions: @escaping @MainActor (AccountsAction) -> Void
@@ -181,6 +198,7 @@ public struct YouScreen: View {
         self.accounts = accounts
         self.appearance = appearance
         self.shareUsage = shareUsage
+        self.notifications = notifications
         self.identity = identity
         self.removing = removing
         self.actions = actions
@@ -323,6 +341,10 @@ public struct YouScreen: View {
                 appearanceRow
                 rule(inset: 14)
                 shareUsageRow
+                if let notifications {
+                    rule(inset: 14)
+                    notificationsRow(notifications)
+                }
                 // What the machines this phone pairs with know it by: its
                 // name, and its key in full to compare against the one a
                 // machine shows. Facts, not places to go: revoking a device
@@ -408,6 +430,18 @@ public struct YouScreen: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
         .identified("you.shareUsage", value: shareUsage ? "on" : "off")
+    }
+
+    /// What iOS says, and a press that goes where it can be changed: the
+    /// question itself the first time, the system's settings after.
+    private func notificationsRow(_ setting: NotificationsSetting) -> some View {
+        row(
+            String(localized: "Notifications"),
+            value: setting == .on ? String(localized: "On") : String(localized: "Off"),
+            id: "notifications"
+        ) {
+            actions(.notifications)
+        }
     }
 
     private func choice(_ title: String, _ wanted: Appearance?) -> some View {

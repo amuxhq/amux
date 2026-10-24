@@ -23,7 +23,12 @@ struct RootView: View {
             // connection nobody is reading.
             .onChange(of: phase) { _, now in
                 composition.runtime.setActive(now != .background)
+                if now == .active {
+                    composition.readNotifications()
+                    composition.clearSettledNotifications()
+                }
             }
+            .background { StaleNotifications(composition: composition) }
     }
 
     @ViewBuilder private var scene: some View {
@@ -82,9 +87,26 @@ private struct ComposedShell: View {
                 removal: composition.removal,
                 appearance: composition.appearance,
                 shareUsage: composition.shareUsage,
+                notifications: composition.notifications,
+                offerNotifications: composition.offerNotifications,
                 report: { composition.beginReport() },
                 actions: { composition.handle($0) }
             )
         }
+    }
+}
+
+/// Clears the notifications of agents that stopped needing you, whenever the
+/// fleet on screen changes which ones do.
+///
+/// A view of its own, drawing nothing, so the fleet changing several times a
+/// second while an agent works redraws this and not the root above it.
+private struct StaleNotifications: View {
+    let composition: Composition
+
+    var body: some View {
+        Color.clear
+            .accessibilityHidden(true)
+            .onChange(of: composition.waiting) { composition.clearSettledNotifications() }
     }
 }

@@ -118,12 +118,20 @@ final class AppDelegate: NSObject, UIApplicationDelegate, ObservableObject,
     /// A tap on the notification opens the chat it names, under the account
     /// whose profile trusts its host; coming to the foreground lists every
     /// agent again.
+    ///
+    /// The completion handler's form, finished on the main actor: UIKit
+    /// takes the async form's return as the handler being called, off the
+    /// main thread, and a tap on a real notification aborted the app there.
     nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
-    ) async {
+        _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+        withCompletionHandler completion: @escaping @Sendable () -> Void
+    ) {
         guard let agent = PushPayload.agent(response.notification.request.content.userInfo)
-        else { return }
-        await openPushed(agent)
+        else { return completion() }
+        Task { @MainActor in
+            await openPushed(agent)
+            completion()
+        }
     }
 
     private func openPushed(_ agent: AgentKey) async {

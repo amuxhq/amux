@@ -1611,6 +1611,7 @@ extension ComponentCatalog {
     fileprivate static let settings: [ComponentExample] = [
         sheet("two-accounts") { StoryApp(settingsOpen: true) { StoryFleet.busy(accounts: 2) }.settings },
         sheet("signed-out") { StoryApp(settingsOpen: true) { StoryFleet.busy(accounts: 0) }.settings },
+        sheet("notifications") { StoryApp(settingsOpen: true, notifications: .on).settings },
         sheet("delete") {
             let stores = StoryFleet.busy()
             return DeleteAccountOverlay(

@@ -144,6 +144,7 @@
       {"literal": "\"1\"", "context": "|| environment[\"XCODE_RUNNING_FOR_PREVIEWS\"] == \"1\" {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Amux/Sources/Composition.swift": [
+      {"literal": "\"notificationsOfferDeclined\"", "context": "private static let notificationsOfferKey = \"notificationsOfferDeclined\"", "reason": "Storage filename, keychain service identifier, or relay URL syntax; not app interface copy.", "count": 1},
       {"literal": "\"shareUsage\"", "context": "private static let shareUsageKey = \"shareUsage\"", "reason": "Storage filename, keychain service identifier, or relay URL syntax; not app interface copy.", "count": 1},
       {"literal": "\"accounts.json\"", "context": "let accounts = AccountRegistry(file: AppFiles.support.appendingPathComponent(\"accounts.json\"))", "reason": "Storage filename, keychain service identifier, or relay URL syntax; not app interface copy.", "count": 1},
       {"literal": "\"-\\(Door.scriptedCloudArgument)\"", "context": ".contains(\"-\\(Door.scriptedCloudArgument)\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
@@ -431,6 +432,7 @@
       {"literal": "\"\\(identifier).buy\"", "context": ".identified(\"\\(identifier).buy\", label: \"Subscribe\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Accounts.swift": [
+      {"literal": "\"notifications\"", "context": "id: \"notifications\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"you.shareUsage\"", "context": ".identified(\"you.shareUsage\", value: shareUsage ? \"on\" : \"off\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"on\"", "context": ".identified(\"you.shareUsage\", value: shareUsage ? \"on\" : \"off\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"off\"", "context": ".identified(\"you.shareUsage\", value: shareUsage ? \"on\" : \"off\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -466,6 +468,10 @@
       {"literal": "\"remove.confirm\"", "context": ".accessibilityIdentifier(\"remove.confirm\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift": [
+      {"literal": "\"\\(identifier).dismiss\"", "context": ".identified(\"\\(identifier).dismiss\", label: String(localized: \"Not Now\"))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"home.callout.\\(callout.id)\"", "context": "private var identifier: String { callout.identifier ?? \"home.callout.\\(callout.id)\" }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"bell\"", "context": "id: \"notifications\", glyph: \"bell\",", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
+      {"literal": "\"notifications\"", "context": "id: \"notifications\", glyph: \"bell\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"home\"", "context": ".identified(\"home\", value: accounts.gate.name)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"plus\"", "context": "Button { actions(.newAgent) } label: { Image(systemName: \"plus\") }", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
       {"literal": "\"home.newAgent\"", "context": ".identified(\"home.newAgent\", label: \"New Agent\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
@@ -509,7 +515,6 @@
       {"literal": "\"needs-you\"", "context": "case \"needs-you\": .needsYou", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"studio\"", "context": "case \"away\": .hostAway(\"studio\")", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"stopped\"", "context": "case \"stopped\": .exited(.finished)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"home.callout.\\(callout.id)\"", "context": ".identified(callout.identifier ?? \"home.callout.\\(callout.id)\", label: callout.title)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"home.noMatches\"", "context": ".identified(\"home.noMatches\", label: \"No agents match\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"home.noMatches.clear\"", "context": ".identified(\"home.noMatches.clear\", label: \"Clear\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"home.empty.firstRun\"", "context": ".identified(\"home.empty.firstRun\", value: \"Pair your first host\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1016,6 +1021,7 @@
       {"literal": "\"review\"", "context": "case \"review\": return .review(try fields.decode(AgentKey.self, forKey: .agent))", "reason": "Trace wire key, not interface copy.", "count": 1}
     ],
     "apps/apple/Amux/Debug/ComponentCatalog.swift": [
+      {"literal": "\"notifications\"", "context": "sheet(\"notifications\") { StoryApp(settingsOpen: true, notifications: .on).settings },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"Change `../plan1/README.md` instead.\"", "context": "label: \"Edit the other\", description: \"Change `../plan1/README.md` instead.\",", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"Edit the other\"", "context": "label: \"Edit the other\", description: \"Change `../plan1/README.md` instead.\",", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"Create the missing file with exactly one line: `UPDATED`.\"", "context": "label: \"Create `README.md`\", description: \"Create the missing file with exactly one line: `UPDATED`.\",", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
@@ -1257,6 +1263,7 @@
       {"literal": "\"desk · Working\"", "context": "Text(\"desk · Working\")", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1}
     ],
     "apps/apple/Amux/Debug/Stories.swift": [
+      {"literal": "\"notifications-offer\"", "context": "fleet(\"notifications-offer\", offerNotifications: true) { StoryFleet.busy(nearby: false) },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"busy\"", "context": "fleet(\"busy\") { StoryFleet.busy() },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"stopped-open\"", "context": "fleet(\"stopped-open\") { StoryFleet.busy(stoppedOpen: true) },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"no-agents\"", "context": "fleet(\"no-agents\") { StoryFleet.noAgents() },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1666,6 +1673,8 @@
       {"literal": "\"chevron.left\"", "context": "BarButton(\"chevron.left\", label: String(localized: \"Back\"), identifier: identifier, action: action)", "reason": "SF Symbol name, not interface copy.", "count": 1}
     ],
     "apps/apple/Amux/Debug/AppPreviews.swift": [
+      {"literal": "\"fleet.notifications-offer\"", "context": "#Preview(\"Fleet · notifications offer\") { StoryScreen(\"fleet.notifications-offer\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"Fleet · notifications offer\"", "context": "#Preview(\"Fleet · notifications offer\") { StoryScreen(\"fleet.notifications-offer\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"fleet.busy\"", "context": "#Preview(\"Fleet · busy\") { StoryScreen(\"fleet.busy\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"fleet.stopped-open\"", "context": "#Preview(\"Fleet · stopped open\") { StoryScreen(\"fleet.stopped-open\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"fleet.away\"", "context": "#Preview(\"Fleet · host away\") { StoryScreen(\"fleet.away\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1730,6 +1739,8 @@
       {"literal": "\"new-agent.unlisted\"", "context": "#Preview(\"New agent · directories not listed\") { StoryScreen(\"new-agent.unlisted\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Amux/Debug/SettingsPreviews.swift": [
+      {"literal": "\"settings.notifications\"", "context": "#Preview(\"Settings · notifications\") { StoryScreen(\"settings.notifications\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"Settings · notifications\"", "context": "#Preview(\"Settings · notifications\") { StoryScreen(\"settings.notifications\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"Settings · two accounts\"", "context": "#Preview(\"Settings · two accounts\") { StoryScreen(\"settings.two-accounts\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"settings.two-accounts\"", "context": "#Preview(\"Settings · two accounts\") { StoryScreen(\"settings.two-accounts\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"Settings · signed out\"", "context": "#Preview(\"Settings · signed out\") { StoryScreen(\"settings.signed-out\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},

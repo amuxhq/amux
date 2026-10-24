@@ -11,6 +11,7 @@ import SwiftUI
 #Preview("App · new agent") { StoryApp(newAgentOpen: true) }
 
 #Preview("Fleet · busy") { StoryScreen("fleet.busy") }
+#Preview("Fleet · notifications offer") { StoryScreen("fleet.notifications-offer") }
 #Preview("Fleet · stopped open") { StoryScreen("fleet.stopped-open") }
 #Preview("Fleet · host away") { StoryScreen("fleet.away") }
 #Preview("Fleet · no agents") { StoryScreen("fleet.no-agents") }

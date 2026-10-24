@@ -67,6 +67,12 @@ public enum ShellAction: Equatable, Sendable {
     case wear(Appearance?)
     /// Turn sending amux.sh usage events on or off.
     case shareUsage(Bool)
+    /// Ask iOS to show a notification when an agent needs you.
+    case turnOnNotifications
+    /// Put the home's offer of notifications away for good.
+    case notNowNotifications
+    /// The Notifications row in Settings was pressed.
+    case notificationSettings
     /// Write this phone's diagnostic dump and offer it to share.
     case exportDump
     /// Ask the account service what the account on screen buys now: the app
@@ -128,6 +134,10 @@ public struct Shell: View {
     private let appearance: Appearance?
     /// Whether this phone sends amux.sh usage events.
     private let shareUsage: Bool
+    /// Notifications as iOS has them, or none while this build offers none.
+    private let notifications: NotificationsSetting?
+    /// Whether the home offers notifications above its list.
+    private let offerNotifications: Bool
     /// Freezes the screen and opens a report on it, from Help. The app owns
     /// the capture; the shell only knows where the row that asks for it is.
     private let report: @MainActor () -> Void
@@ -144,12 +154,16 @@ public struct Shell: View {
         removal: RemovalStore = RemovalStore(),
         appearance: Appearance? = nil,
         shareUsage: Bool = true,
+        notifications: NotificationsSetting? = nil,
+        offerNotifications: Bool = false,
         report: @escaping @MainActor () -> Void = {},
         actions: @escaping @MainActor (ShellAction) -> Void
     ) {
         Design.app.dressNavigationBars()
         self.appearance = appearance
         self.shareUsage = shareUsage
+        self.notifications = notifications
+        self.offerNotifications = offerNotifications
         self.deletion = deletion
         self.removal = removal
         self.router = router
@@ -179,7 +193,7 @@ public struct Shell: View {
                 NavigationStack(path: $router.agentsPath) {
                     AgentsTab(
                         router: self.router, accounts: accounts, stores: stores,
-                        actions: actions)
+                        offerNotifications: offerNotifications, actions: actions)
                         .barUnderSheet(coveredByASheet)
                         .navigationDestination(for: Route.self) { page($0).toolbar(.hidden, for: .tabBar) }
                 }
@@ -242,7 +256,8 @@ public struct Shell: View {
             YouTabRoot(
                 router: self.router, accounts: accounts, stores: stores,
                 deletion: deletion, removal: removal, appearance: appearance,
-                shareUsage: shareUsage, report: report, actions: actions)
+                shareUsage: shareUsage, notifications: notifications, report: report,
+                actions: actions)
                 .navigationDestination(for: Route.self) { page($0) }
         }
         .tint(design.accentColor)
@@ -537,10 +552,14 @@ private struct AgentsTab: View {
     let router: Router
     let accounts: AccountRegistry
     let stores: StoreBundle
+    let offerNotifications: Bool
     let actions: @MainActor (ShellAction) -> Void
 
     var body: some View {
-        AgentsHome(model: stores.fleet, accounts: accounts, hosts: stores.hosts) { action in
+        AgentsHome(
+            model: stores.fleet, accounts: accounts, hosts: stores.hosts,
+            offerNotifications: offerNotifications
+        ) { action in
             switch action {
             case .open(let agent):
                 stores.fleet.opened(agent)
@@ -555,6 +574,8 @@ private struct AgentsTab: View {
             case .openSettings: router.select(.you)
             case .pair(let host): router.pairing = .code(host)
             case .openSystemSettings: openSystemSettings()
+            case .turnOnNotifications: actions(.turnOnNotifications)
+            case .notNowNotifications: actions(.notNowNotifications)
             // The one place the list is allowed to regroup. Data arriving
             // never reorders what a thumb is already travelling towards.
             case .refresh: stores.fleet.refreshOrder(now: stores.now())
@@ -902,6 +923,7 @@ private struct YouTabRoot: View {
     let removal: RemovalStore
     let appearance: Appearance?
     let shareUsage: Bool
+    let notifications: NotificationsSetting?
     /// Freezes the screen behind this page and opens the report on it.
     let report: @MainActor () -> Void
     let actions: @MainActor (ShellAction) -> Void
@@ -944,6 +966,7 @@ private struct YouTabRoot: View {
     private var you: some View {
         YouScreen(
             accounts: accounts, appearance: appearance, shareUsage: shareUsage,
+            notifications: notifications,
             // This phone's own name and key, read off the machine store:
             // absent until a connection has said what this device's identity
             // is, rather than guessed at.
@@ -961,6 +984,7 @@ private struct YouTabRoot: View {
             case .subscription: actions(.subscribe)
             case .appearance(let wanted): actions(.wear(wanted))
             case .shareUsage(let on): actions(.shareUsage(on))
+            case .notifications: actions(.notificationSettings)
             case .delete(let id): actions(.deleteAccount(id))
             // Reaching a person happens on the web, where the people are.
             // There is no form in here to fill in: a message written into this

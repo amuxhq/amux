@@ -581,11 +581,11 @@ tests = [
 id = "front-door-pairing-windows"
 source = "invariant"
 section = "Boundaries"
-claim = "A pairing window lasts the length its start names, else the default, whatever its method, and nothing outside one second to ninety days opens; a demo window from `amux pair --demo` holds its chosen PIN through a wrong guess and successive pairings until it is closed; no window outlives its daemon, so a start re-run after a restart opens a fresh one; a confirm or an abandon that names no pairing is a malformed call; a profile rename or delete that names a revision other than the current one is refused and changes nothing."
+claim = "A pairing window lasts the length its start names, else the default, whatever its method, and nothing outside one second to ninety days opens; a demo window from `amux pair --demo` holds its chosen PIN through a wrong guess and successive pairings until it is closed; no window outlives its daemon, so a start re-run after a restart opens a fresh one; a confirm or an abandon that names no pairing is a malformed call; a profile renamed or deleted is listed so at once."
 tests = [
   "node/front_door::ttl_applies_to_each_method",
   "node/front_door::an_empty_pairing_token_is_invalid",
-  "node/front_door::rename_and_delete_refuse_a_stale_revision",
+  "node/front_door::rename_and_delete_change_the_listed_profile",
   "testnet/spec_network::demo_pin_from_the_cli",
   "testnet/spec_network::a_pairing_rerun_after_the_daemon_restarts_opens_a_fresh_window",
   "amux/bin:amux::tests::a_demo_window_needs_its_pin_and_its_length",
@@ -745,7 +745,7 @@ tests = [
   "app-embedded/embedded::a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows",
   "model/lib::tests::every_shared_value_has_a_schema_for_the_swift_mirrors",
   "ui-runtime/session::closing_drops_the_stream_and_a_late_result_changes_nothing",
-  "swift:AmuxCoreTests/RuntimeCoordinatorTests/testASecondAccountGetsItsOwnProfileAndSwitchingPausesTheOther",
+  "swift:AmuxCoreTests/RuntimeCoordinatorTests/testASecondAccountGetsItsOwnProfileAndBothStaySignedIn",
   "swift:AmuxCoreTests/ChatModelTraceTests/testEveryRecordedTraceProjectsTheSameRowsAsTheRustModel",
   "app-runtime/lib::traces::the_phones_trace_fixtures_are_the_client_models_current_traces",
 ]

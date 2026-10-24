@@ -379,7 +379,7 @@ impl Edge {
         let dispatcher = TunnelDispatcher::new(
             trust.clone(),
             pair_mode.clone(),
-            connections.trusted_connections(),
+            connections.replacing(),
             trusted_tx,
             pairing_tx,
             DEVICE_TLS_HANDSHAKE_TIMEOUT,

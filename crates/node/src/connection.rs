@@ -19,7 +19,7 @@ use crate::HostId;
 use crate::driver::{CoreLinks, core_error};
 use crate::link::{ChannelClass, ChannelError, ChannelKey, ChannelPool};
 use crate::routing::{LinkCloseRequest, LiveRoute, Route, core_host, host_from_core};
-use crate::transport::TrustedPeerConnections;
+use crate::transport::Replacing;
 
 /// How long one try the core asks for may take to open its channel before
 /// it counts as failed: as long as a call waits to reach a host.
@@ -29,7 +29,7 @@ pub struct ConnectionManager {
     /// This manager, for the tries it runs in the background.
     me: Weak<ConnectionManager>,
     channels: Arc<ChannelPool>,
-    trusted_connections: TrustedPeerConnections,
+    replacing: Replacing,
     analytics: analytics::Analytics,
     /// What dials a host the core says to, once the edge dials at all.
     dialer: std::sync::OnceLock<crate::services::Dialer>,
@@ -40,7 +40,7 @@ impl ConnectionManager {
         Arc::new_cyclic(|me| Self {
             me: me.clone(),
             channels,
-            trusted_connections: TrustedPeerConnections::default(),
+            replacing: Replacing::default(),
             analytics,
             dialer: std::sync::OnceLock::new(),
         })
@@ -134,8 +134,8 @@ impl ConnectionManager {
         }
     }
 
-    pub(crate) fn trusted_connections(&self) -> TrustedPeerConnections {
-        self.trusted_connections.clone()
+    pub(crate) fn replacing(&self) -> Replacing {
+        self.replacing.clone()
     }
 
     /// A channel for calls to `peer`.
@@ -315,9 +315,11 @@ impl ConnectionManager {
             .map_or(LiveRoute::Offline, LiveRoute::from_wire)
     }
 
+    /// `peer`'s key is being replaced: its links close, and no stream from
+    /// it is admitted until the replacement ends.
     pub(crate) async fn teardown_host(&self, peer: HostId) {
         self.forget(peer);
-        self.trusted_connections.close_host(peer).await;
+        self.replacing.begin(peer);
         self.channels
             .link_registry()
             .close_host(peer, LinkCloseRequest::TrustReplaced)
@@ -325,31 +327,27 @@ impl ConnectionManager {
         self.forget(peer);
     }
 
-    /// Ends live access to `peer` — trusted streams, channels, links and our
-    /// own routes — without forgetting the relay's word that it is online.
+    /// Ends live access to `peer` — its links and the streams on them,
+    /// channels and our own routes — without forgetting the relay's word
+    /// that it is online.
     /// Used when a peer is unpaired: the trust is gone and nothing of the old
     /// connection survives, but the peer stays reachable for pairing, the way
     /// any other machine on the account is before it is ever paired.
     ///
     /// The links close first, saying USER_REVOKED, while nothing else has
     /// cut them: that is how the peer learns it is no longer trusted.
-    ///
-    /// Closing ends with the host admitted again: its key has already left
-    /// the trust store, so nothing of it gets back in unless it is paired
-    /// again, and then its new streams must not be closed as they arrive.
+    /// Its key has already left the trust store, so no link of it gets
+    /// back in unless it is paired again.
     pub(crate) async fn close_host_access(&self, peer: HostId) {
         self.channels
             .link_registry()
             .close_host(peer, LinkCloseRequest::Revoked)
             .await;
         self.forget(peer);
-        self.trusted_connections.close_host(peer).await;
-        self.forget(peer);
-        self.trusted_connections.finish_host_replacement(peer);
     }
 
     pub(crate) fn finish_host_replacement(&self, peer: HostId) {
-        self.trusted_connections.finish_host_replacement(peer);
+        self.replacing.finish(peer);
     }
 
     /// Opens a channel to `peer` on `route`, while the core still lists it.

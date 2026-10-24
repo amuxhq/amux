@@ -11,9 +11,7 @@ use crate::identity::{self, IdentityError};
 use crate::link::link_log::PathKind;
 use crate::link::{InboundStream, LinkCtx, QuicCarrier, accepted_quic_bidi_stream, run_link};
 use crate::resource_limits::HandshakeAdmission;
-use crate::transport::{
-    BoxedGrpcIo, Compressed, PreTrustPairingReachability, TrustedPeerConnections,
-};
+use crate::transport::{BoxedGrpcIo, Compressed, PreTrustPairingReachability, Replacing};
 use crate::trust::SharedTrustStore;
 
 #[derive(Debug, Error)]
@@ -53,7 +51,7 @@ fn link_outcome(error: crate::link::LinkError) -> DispatchError {
 pub(crate) struct TunnelDispatcher {
     trust_store: SharedTrustStore,
     pair_mode: std::sync::Arc<PairMode>,
-    trusted_connections: TrustedPeerConnections,
+    replacing: Replacing,
     trusted_tx: mpsc::Sender<BoxedGrpcIo>,
     pairing_tx: mpsc::Sender<BoxedGrpcIo>,
     handshake_timeout: Duration,
@@ -114,7 +112,7 @@ impl TunnelDispatcher {
     pub(crate) fn new(
         trust_store: SharedTrustStore,
         pair_mode: std::sync::Arc<PairMode>,
-        trusted_connections: TrustedPeerConnections,
+        replacing: Replacing,
         trusted_tx: mpsc::Sender<BoxedGrpcIo>,
         pairing_tx: mpsc::Sender<BoxedGrpcIo>,
         handshake_timeout: Duration,
@@ -122,7 +120,7 @@ impl TunnelDispatcher {
         Self {
             trust_store,
             pair_mode,
-            trusted_connections,
+            replacing,
             trusted_tx,
             pairing_tx,
             handshake_timeout,
@@ -229,12 +227,14 @@ impl TunnelDispatcher {
                 "a stream from {adjacent_peer}, which is not paired"
             )));
         }
+        if self.replacing.contains(adjacent_peer) {
+            return Err(DispatchError::Link(format!(
+                "a stream from {adjacent_peer}, whose key is being replaced"
+            )));
+        }
         // Compressed as the opener's end is (`ChannelPool::channel_over`).
         self.trusted_tx
-            .send(
-                BoxedGrpcIo::trusted(Compressed::new(stream), adjacent_peer)
-                    .track_trusted_peer(&self.trusted_connections),
-            )
+            .send(BoxedGrpcIo::trusted(Compressed::new(stream), adjacent_peer))
             .await
             .map_err(|_| DispatchError::ChannelClosed)
     }

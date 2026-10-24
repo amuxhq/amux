@@ -12,8 +12,7 @@ mod tls;
 
 pub(crate) use compress::Compressed;
 pub(crate) use io::{
-    BoxedGrpcAuth, BoxedGrpcConnectInfo, BoxedGrpcIo, PreTrustPairingReachability,
-    TrustedPeerConnections,
+    BoxedGrpcAuth, BoxedGrpcConnectInfo, BoxedGrpcIo, PreTrustPairingReachability, Replacing,
 };
 pub(crate) use memory::ShutdownIo;
 pub(crate) use pairing::{pairing_quic_channel, pairing_quic_channel_through};

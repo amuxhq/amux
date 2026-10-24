@@ -112,7 +112,6 @@ pub(crate) fn core_class(class: ChannelClass) -> payload::ChannelClass {
     match class {
         ChannelClass::Calls => payload::ChannelClass::Calls,
         ChannelClass::Session => payload::ChannelClass::Session,
-        ChannelClass::Bulk => payload::ChannelClass::Bulk,
     }
 }
 

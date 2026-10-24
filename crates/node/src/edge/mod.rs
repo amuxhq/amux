@@ -730,22 +730,6 @@ impl Edge {
         Ok(crate::link::peer_client(channel))
     }
 
-    /// A PeerService client for bulk transfers, blobs, apart from calls.
-    pub async fn bulk_peer(
-        &self,
-        host: HostId,
-    ) -> Result<crate::PeerClient, crate::link::ChannelError> {
-        let channel = self.connections.bulk_channel_to(host).await?;
-        Ok(crate::link::peer_client(channel))
-    }
-
-    /// Holds the next bulk transfer from `host` once its first data has
-    /// arrived, until the returned hold is released or dropped.
-    #[doc(hidden)]
-    pub fn hold_next_bulk_response(&self, host: HostId) -> crate::link::BulkResponseHold {
-        self.channels.hold_next_bulk_response(host)
-    }
-
     /// Why the last dial to a host failed, until a route to it comes up.
     pub async fn last_dial_error(&self, host: HostId) -> Option<String> {
         self.connections.stored_reachability_error(host).await

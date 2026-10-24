@@ -819,7 +819,7 @@ mod tests {
                 channel: ChannelId(4),
                 link: LinkId(1),
                 peer: HostId([1; 16]),
-                class: ChannelClass::Bulk,
+                class: ChannelClass::Session,
             },
             Input::ChannelClosed {
                 channel: ChannelId(4),

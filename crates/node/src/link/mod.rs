@@ -19,8 +19,8 @@ pub use carrier::{
     write_message,
 };
 pub use channels::{
-    BulkResponseHold, ChannelClass, ChannelError, ChannelPool, Cursor, EarlyAnswer, EarlyCall,
-    EarlyReply, PeerChannel, PeerClient, ResumedLink, TRUST_REVOKED,
+    ChannelClass, ChannelError, ChannelPool, Cursor, EarlyAnswer, EarlyCall, EarlyReply,
+    PeerChannel, PeerClient, ResumedLink, TRUST_REVOKED,
 };
 pub(crate) use channels::{ChannelKey, InboundStream, peer_client, serve_inbound_streams};
 pub use quic::QuicCarrier;

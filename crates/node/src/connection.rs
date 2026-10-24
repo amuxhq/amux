@@ -182,10 +182,6 @@ impl ConnectionManager {
         self.channel_to_class(peer, ChannelClass::Session).await
     }
 
-    pub async fn bulk_channel_to(&self, peer: HostId) -> Result<Channel, ChannelError> {
-        self.channel_to_class(peer, ChannelClass::Bulk).await
-    }
-
     async fn channel_to_class(
         &self,
         peer: HostId,

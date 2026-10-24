@@ -90,8 +90,6 @@ pub enum ChannelClass {
     /// Session subscriptions, apart from the calls so that neither waits
     /// behind the other.
     Session,
-    /// One bulk transfer.
-    Bulk,
 }
 
 /// Where a candidate address for a peer came from, which decides whether a

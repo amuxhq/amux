@@ -525,7 +525,7 @@ the host as revoked and offline, and fails the call as `UNAUTHENTICATED`
 The channel pool (`crates/node/src/link/channels.rs`) selects a live link by
 peer and route, dialling one through the forwarder when the route is a
 forwarder's and none is up, opens a stream, and gives it to tonic as one
-HTTP/2 channel. It has three channel classes:
+HTTP/2 channel. It has two channel classes:
 
 - `Calls`: one cached channel per peer and route. The inventory subscription,
   forwarded calls, `Fetch`, `GetBlob`, `Diff` and every other one-shot call
@@ -534,9 +534,6 @@ HTTP/2 channel. It has three channel classes:
 - `Session`: one cached channel per peer and route for the replica agents'
   `Subscribe` streams, so they neither wait behind nor hold up the host's
   calls, and a host with many agents costs one stream, not one per agent.
-- `Bulk`: a fresh channel per transfer, for a caller that wants a large read
-  kept apart from calls. The daemon's own paths do not use it; blob and diff
-  reads ride `Calls`.
 
 Separate streams give separate flow control, so a long subscription does not
 queue behind calls at the amux layer. Channel payloads are bounded by

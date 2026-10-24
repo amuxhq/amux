@@ -11,7 +11,7 @@ use std::task::{Context, Poll, ready};
 use futures_util::future::BoxFuture;
 use serde::Serialize;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tonic::codegen::http;
@@ -27,9 +27,6 @@ use crate::routing::{LinkId, LinkRegistry, Route};
 use crate::transport::{Compressed, channel_from_single_io, configure_tonic_endpoint_keepalive};
 use crate::trust::SharedTrustStore;
 
-const HTTP2_FRAME_HEADER_LEN: usize = 9;
-const HTTP2_DATA_FRAME: u8 = 0;
-
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChannelClass {
@@ -37,15 +34,6 @@ pub enum ChannelClass {
     /// Session subscriptions, on a channel of their own so that they
     /// neither wait behind nor hold up the host's calls.
     Session,
-    Bulk,
-}
-
-impl ChannelClass {
-    /// Whether one channel of this class serves every caller to a host
-    /// while its connection lasts.
-    fn shared(self) -> bool {
-        matches!(self, Self::Calls | Self::Session)
-    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
@@ -156,11 +144,11 @@ impl EarlyCall {
     /// The channel the call rides, as the same call made later would.
     fn class(&self) -> ChannelClass {
         match self {
-            EarlyCall::SubscribeInventory | EarlyCall::Fetch(_) | EarlyCall::Diff(_) => {
-                ChannelClass::Calls
-            }
+            EarlyCall::SubscribeInventory
+            | EarlyCall::Fetch(_)
+            | EarlyCall::GetBlob(_)
+            | EarlyCall::Diff(_) => ChannelClass::Calls,
             EarlyCall::Subscribe { .. } => ChannelClass::Session,
-            EarlyCall::GetBlob(_) => ChannelClass::Bulk,
         }
     }
 
@@ -329,7 +317,6 @@ pub struct ChannelPool {
     forwarded: OnceLock<Arc<dyn ForwardedDial>>,
     /// How a link resuming with a ticket is dialled, once the edge is up.
     resumed: OnceLock<Arc<dyn ResumedDial>>,
-    bulk_response_holds: std::sync::Mutex<HashMap<HostId, PendingBulkResponseHold>>,
     /// Hosts no channel opens to while the link stays up: a fault a test
     /// network injects.
     refused: std::sync::Mutex<HashSet<HostId>>,
@@ -368,58 +355,6 @@ impl Drop for Telling {
     }
 }
 
-/// A bulk transfer held after its first data arrives, so a test can show
-/// what else moves while one is in flight. Dropping it releases the hold.
-pub struct BulkResponseHold {
-    entered: oneshot::Receiver<()>,
-    release: Option<oneshot::Sender<()>>,
-}
-
-impl BulkResponseHold {
-    /// Resolves once the held transfer's first data has arrived.
-    pub async fn entered(&mut self) -> Result<(), oneshot::error::RecvError> {
-        (&mut self.entered).await
-    }
-
-    pub fn release(mut self) {
-        if let Some(release) = self.release.take() {
-            let _ = release.send(());
-        }
-    }
-}
-
-impl Drop for BulkResponseHold {
-    fn drop(&mut self) {
-        if let Some(release) = self.release.take() {
-            let _ = release.send(());
-        }
-    }
-}
-
-struct PendingBulkResponseHold {
-    entered: Option<oneshot::Sender<()>>,
-    release: oneshot::Receiver<()>,
-}
-
-impl PendingBulkResponseHold {
-    fn has_entered(&self) -> bool {
-        self.entered.is_none()
-    }
-
-    fn enter(&mut self) {
-        if let Some(entered) = self.entered.take() {
-            let _ = entered.send(());
-        }
-    }
-
-    fn poll_release(&mut self, cx: &mut Context<'_>) -> Poll<()> {
-        match Pin::new(&mut self.release).poll(cx) {
-            Poll::Ready(_) => Poll::Ready(()),
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
-
 impl ChannelPool {
     pub(crate) fn new(links: Arc<LinkRegistry>) -> Self {
         Self {
@@ -430,7 +365,6 @@ impl ChannelPool {
             trust_store: None,
             forwarded: OnceLock::new(),
             resumed: OnceLock::new(),
-            bulk_response_holds: std::sync::Mutex::new(HashMap::new()),
             refused: std::sync::Mutex::default(),
         }
     }
@@ -488,9 +422,7 @@ impl ChannelPool {
                     tracing::debug!(%peer, ?class, "opened an early link stream");
                     let ended = Arc::new(Ending::default());
                     let lifetime = Arc::new(CancellationToken::new());
-                    let channel = self.channel_on(
-                        peer,
-                        class,
+                    let channel = channel_on(
                         Watched::new(stream, ended.clone()),
                         &ended,
                         lifetime.clone(),
@@ -570,19 +502,17 @@ impl ChannelPool {
             }
         }
         self.track(key, &lifetime);
-        if key.class.shared() {
-            self.by_key
-                .write()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .insert(
-                    key,
-                    Cached {
-                        channel,
-                        ended,
-                        link,
-                    },
-                );
-        }
+        self.by_key
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(
+                key,
+                Cached {
+                    channel,
+                    ended,
+                    link,
+                },
+            );
     }
 
     /// From now on every channel to `peer` is refused while `refuse`
@@ -607,37 +537,11 @@ impl ChannelPool {
             .contains(&peer)
     }
 
-    /// Holds the next bulk channel opened to `peer` after the first data
-    /// frame of its response.
-    pub fn hold_next_bulk_response(&self, peer: HostId) -> BulkResponseHold {
-        let (entered_tx, entered) = oneshot::channel();
-        let (release, release_rx) = oneshot::channel();
-        let previous = self
-            .bulk_response_holds
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .insert(
-                peer,
-                PendingBulkResponseHold {
-                    entered: Some(entered_tx),
-                    release: release_rx,
-                },
-            );
-        assert!(previous.is_none(), "a bulk response hold is already armed");
-        BulkResponseHold {
-            entered,
-            release: Some(release),
-        }
-    }
-
     pub fn link_registry(&self) -> Arc<LinkRegistry> {
         self.links.clone()
     }
 
     pub(crate) async fn channel(&self, key: ChannelKey) -> Result<Channel, ChannelError> {
-        if !key.class.shared() {
-            return self.open_channel(key).await;
-        }
         let opener = self
             .opening
             .lock()
@@ -651,7 +555,7 @@ impl ChannelPool {
 
     async fn open_channel(&self, key: ChannelKey) -> Result<Channel, ChannelError> {
         let refused = self.refuses(key.peer);
-        let cached = if key.class.shared() && !refused {
+        let cached = if !refused {
             self.by_key
                 .read()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -757,19 +661,17 @@ impl ChannelPool {
             elapsed_ms = opened.elapsed().as_millis(),
             "opened a link stream"
         );
-        if key.class.shared() {
-            self.by_key
-                .write()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .insert(
-                    key,
-                    Cached {
-                        channel: channel.clone(),
-                        ended,
-                        link,
-                    },
-                );
-        }
+        self.by_key
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(
+                key,
+                Cached {
+                    channel: channel.clone(),
+                    ended,
+                    link,
+                },
+            );
         Ok(channel)
     }
 
@@ -865,7 +767,7 @@ impl ChannelPool {
     ) -> Channel {
         let lifetime = Arc::new(CancellationToken::new());
         self.track(key, &lifetime);
-        self.channel_on(key.peer, key.class, stream, ended, lifetime)
+        channel_on(stream, ended, lifetime)
     }
 
     /// Cancels `lifetime` when the channels `key` names are forgotten.
@@ -877,36 +779,6 @@ impl ChannelPool {
         let tracked = lifetimes.entry(key).or_default();
         tracked.retain(|lifetime| lifetime.strong_count() > 0);
         tracked.push(Arc::downgrade(lifetime));
-    }
-
-    /// The channel of class `class` to `peer` over `stream`, ending when
-    /// `lifetime` is cancelled.
-    fn channel_on(
-        &self,
-        peer: HostId,
-        class: ChannelClass,
-        stream: Watched<ByteStream>,
-        ended: &Arc<Ending>,
-        lifetime: Arc<CancellationToken>,
-    ) -> Channel {
-        let stream = crate::transport::ShutdownIo::new_shared(stream, lifetime);
-        // The acceptor wraps its end the same way (`TunnelDispatcher`).
-        let io = Compressed::new(TrustAnswer::new(stream, ended.clone()));
-        let endpoint = configure_tonic_endpoint_keepalive(Endpoint::from_static("https://peer"));
-        let hold = (class == ChannelClass::Bulk).then(|| {
-            self.bulk_response_holds
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .remove(&peer)
-        });
-        match hold.flatten() {
-            Some(hold) => channel_from_single_io(
-                endpoint,
-                "held native link channel",
-                HoldAfterFirstDataFrame::new(io, hold),
-            ),
-            None => channel_from_single_io(endpoint, "native link channel", io),
-        }
     }
 
     fn cancel_where(&self, predicate: impl Fn(&ChannelKey) -> bool) {
@@ -1108,134 +980,17 @@ pub(crate) fn peer_client(channel: Channel) -> PeerClient {
         .max_encoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT)
 }
 
-enum Http2ReadState {
-    Header {
-        bytes: [u8; HTTP2_FRAME_HEADER_LEN],
-        filled: usize,
-    },
-    Payload {
-        frame_type: u8,
-        remaining: usize,
-    },
-}
-
-struct HoldAfterFirstDataFrame<T> {
-    inner: T,
-    hold: Option<PendingBulkResponseHold>,
-    state: Http2ReadState,
-}
-
-impl<T> HoldAfterFirstDataFrame<T> {
-    fn new(inner: T, hold: PendingBulkResponseHold) -> Self {
-        Self {
-            inner,
-            hold: Some(hold),
-            state: Http2ReadState::Header {
-                bytes: [0; HTTP2_FRAME_HEADER_LEN],
-                filled: 0,
-            },
-        }
-    }
-}
-
-impl<T: AsyncRead + Unpin> AsyncRead for HoldAfterFirstDataFrame<T> {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        output: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        let this = self.get_mut();
-        if this.hold.as_ref().is_some_and(|hold| hold.has_entered()) {
-            ready!(this.hold.as_mut().expect("hold exists").poll_release(cx));
-            this.hold = None;
-        }
-        if output.remaining() == 0 {
-            return Poll::Ready(Ok(()));
-        }
-        let boundary = match &this.state {
-            Http2ReadState::Header { filled, .. } => HTTP2_FRAME_HEADER_LEN - filled,
-            Http2ReadState::Payload { remaining, .. } => *remaining,
-        };
-        let before = output.filled().len();
-        let (poll, initialized, read) = {
-            let mut limited = output.take(boundary);
-            let poll = Pin::new(&mut this.inner).poll_read(cx, &mut limited);
-            (poll, limited.initialized().len(), limited.filled().len())
-        };
-        // SAFETY: `limited` covered exactly this prefix of `output`'s
-        // unfilled storage and reported it initialized by the inner reader.
-        unsafe { output.assume_init(initialized) };
-        output.advance(read);
-        match poll {
-            Poll::Pending => return Poll::Pending,
-            Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
-            Poll::Ready(Ok(())) => {}
-        }
-        if read == 0 {
-            return Poll::Ready(Ok(()));
-        }
-        let bytes = &output.filled()[before..before + read];
-        match &mut this.state {
-            Http2ReadState::Header {
-                bytes: header,
-                filled,
-            } => {
-                header[*filled..*filled + read].copy_from_slice(bytes);
-                *filled += read;
-                if *filled == HTTP2_FRAME_HEADER_LEN {
-                    let length = usize::from(header[0]) << 16
-                        | usize::from(header[1]) << 8
-                        | usize::from(header[2]);
-                    if length == 0 {
-                        this.state = Http2ReadState::Header {
-                            bytes: [0; HTTP2_FRAME_HEADER_LEN],
-                            filled: 0,
-                        };
-                    } else {
-                        this.state = Http2ReadState::Payload {
-                            frame_type: header[3],
-                            remaining: length,
-                        };
-                    }
-                }
-            }
-            Http2ReadState::Payload {
-                frame_type,
-                remaining,
-            } => {
-                *remaining -= read;
-                if *remaining == 0 {
-                    let is_data = *frame_type == HTTP2_DATA_FRAME;
-                    this.state = Http2ReadState::Header {
-                        bytes: [0; HTTP2_FRAME_HEADER_LEN],
-                        filled: 0,
-                    };
-                    if is_data && let Some(hold) = &mut this.hold {
-                        hold.enter();
-                    }
-                }
-            }
-        }
-        Poll::Ready(Ok(()))
-    }
-}
-
-impl<T: AsyncWrite + Unpin> AsyncWrite for HoldAfterFirstDataFrame<T> {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        bytes: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.get_mut().inner).poll_write(cx, bytes)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().inner).poll_flush(cx)
-    }
-
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().inner).poll_shutdown(cx)
-    }
+/// A channel over `stream`, ending when `lifetime` is cancelled.
+fn channel_on(
+    stream: Watched<ByteStream>,
+    ended: &Arc<Ending>,
+    lifetime: Arc<CancellationToken>,
+) -> Channel {
+    let stream = crate::transport::ShutdownIo::new_shared(stream, lifetime);
+    // The acceptor wraps its end the same way (`TunnelDispatcher`).
+    let io = Compressed::new(TrustAnswer::new(stream, ended.clone()));
+    let endpoint = configure_tonic_endpoint_keepalive(Endpoint::from_static("https://peer"));
+    channel_from_single_io(endpoint, "native link channel", io)
 }
 
 /// A stream a peer opened to this host, from the link it arrived on.

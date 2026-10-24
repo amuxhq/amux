@@ -605,11 +605,12 @@ mod tests {
     use std::task::{Context, Poll};
     use std::time::Duration;
 
+    use daemon_core::trust::PairingUpdate;
+
     use super::*;
     use crate::identity::DeviceIdentity;
     use crate::link::socket::{Datagrams, PacketKind, encode_delivered, parse};
     use crate::trust::{SharedTrustStore, TrustStore};
-    use daemon_core::trust::PairingUpdate;
 
     /// The real loopback network, with the path to one address that can
     /// be cut both ways: what is sent there and what comes from there is

@@ -298,7 +298,7 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
     let mut candidates: Vec<&str> = ambiguous
         .candidates
         .iter()
-        .map(|host| host.name.as_str())
+        .map(|host| host.name())
         .collect();
     candidates.sort_unstable();
     assert_eq!(candidates, ["BOX", "box"]);

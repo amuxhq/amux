@@ -11,7 +11,7 @@ pub use ui_state::ExitCause;
 use ui_state::{
     Activity, ActivityKind, AgentKey, Attention, FleetState, ItemBody, ItemClass, SessionState,
 };
-use wire::{Agent, Kind, Lifecycle, Presence, RouteKind, SignInState, UsageState};
+use wire::{Agent, HostEntry, Kind, Lifecycle, RouteKind, SignInState, UsageState, trusted};
 
 use crate::ask::{AskBody, ask_card};
 use crate::text::{markdown_words, within, without_direction_controls};
@@ -439,7 +439,7 @@ fn card(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> FleetCard {
         phase_since_ms: agent.phase_since_ms,
         host: fleet
             .host(&agent.host_id)
-            .map(|host| host.name.clone())
+            .map(|host| host.name().to_owned())
             .unwrap_or_default(),
         host_reach: reach(fleet, local_host, &agent.host_id),
         children: fleet.families().children(&at).count() as u32,
@@ -493,7 +493,7 @@ impl FleetFilter {
 /// Whether a lowercase `needle` is in what the agent's row says: its name,
 /// branch, folder, host, how it ended and which agent it is.
 pub fn matches(fleet: &FleetState, agent: &Agent, needle: &str) -> bool {
-    let host = fleet.host(&agent.host_id).map(|host| host.name.as_str());
+    let host = fleet.host(&agent.host_id).map(|host| host.name());
     let branch = agent.git.as_ref().and_then(|git| git.branch.as_deref());
     // The cause as the row words it, so the filter finds what it shows.
     // Only an exited row shows one: a live row can briefly hold the cause
@@ -705,31 +705,32 @@ pub enum Offline {
 fn signed_out(fleet: &FleetState, local_host: &[u8]) -> bool {
     fleet
         .host(local_host)
-        .is_some_and(|entry| entry.account_signed_in == Some(false))
+        .is_some_and(|entry| entry.account_signed_in() == Some(false))
 }
 
 /// How this machine reaches `host`. Its own host is always online. What the
 /// host itself said comes first: a host that no longer trusts this machine
-/// is offline for that reason whatever route still reaches it. A host this
-/// machine knows nothing about, or whose presence is unknown, is offline.
+/// is offline for that reason. A candidate was found on this network,
+/// where pairing reaches it, so it reads online with no route yet. A host
+/// this machine knows nothing about is offline.
 pub fn reach(fleet: &FleetState, local_host: &[u8], host: &[u8]) -> Reach {
     let entry = fleet.host(host);
     if host == local_host {
-        return Reach::Online(entry.map_or(RouteKind::Unspecified, |entry| entry.via()));
+        return Reach::Online(entry.and_then(HostEntry::online).unwrap_or_default());
     }
-    let Some(entry) = entry else {
-        return Reach::Offline(Offline::Plain);
-    };
-    if entry.revoked == Some(true) {
-        return Reach::Offline(Offline::Revoked);
-    }
-    match entry.presence() {
-        Presence::Online => Reach::Online(entry.via()),
-        Presence::Away => Reach::Away,
-        Presence::Offline | Presence::Unspecified if signed_out(fleet, local_host) => {
-            Reach::Offline(Offline::SignedOut)
+    match entry.and_then(HostEntry::reach) {
+        Some(trusted::Reach::Online(_)) => {
+            Reach::Online(entry.and_then(HostEntry::online).unwrap_or_default())
         }
-        Presence::Offline | Presence::Unspecified => Reach::Offline(Offline::Plain),
+        Some(trusted::Reach::Away(_)) => Reach::Away,
+        None if entry.is_some_and(|entry| entry.candidate().is_some()) => {
+            Reach::Online(RouteKind::Unspecified)
+        }
+        Some(trusted::Reach::Offline(offline)) if offline.revoked => {
+            Reach::Offline(Offline::Revoked)
+        }
+        _ if signed_out(fleet, local_host) => Reach::Offline(Offline::SignedOut),
+        _ => Reach::Offline(Offline::Plain),
     }
 }
 

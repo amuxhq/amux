@@ -1020,7 +1020,7 @@ async fn a_host_revoked_while_away_reads_the_desk_as_revoked_once_it_dials_throu
         &mut fleet,
         desk,
         "the tablet to read the desk as no longer trusting it",
-        |row| row.revoked == Some(true),
+        |row| row.revoked(),
     )
     .await;
     let refused = open_session(&edge(&net, "tablet"), desk, worker)
@@ -1109,7 +1109,7 @@ async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_t
             &mut fleet,
             desk,
             &format!("{host} to read the desk as no longer trusting it"),
-            |row| row.revoked == Some(true),
+            |row| row.revoked(),
         )
         .await;
         let refused = open_session(&edge(&net, host), desk, worker)
@@ -1424,7 +1424,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
             .into_inner();
         let first = loop {
             match events.message().await.unwrap().unwrap().of {
-                Some(wire::inventory_event::Of::Host(host)) if host.host_id == own.as_bytes() => {
+                Some(wire::inventory_event::Of::Host(host)) if host.host_id() == own.as_bytes() => {
                     break host;
                 }
                 Some(wire::inventory_event::Of::CaughtUp(_)) => {
@@ -1433,7 +1433,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
                 _ => {}
             }
         };
-        assert_eq!(first.trust, wire::Trust::Trusted as i32);
+        assert!(first.trusted().is_some());
     }
 
     net.shutdown().await.unwrap();
@@ -1486,7 +1486,7 @@ async fn a_lapsed_account_stops_carrying_calls_the_relay_carried_while_it_was_pr
         &mut fleet,
         laptop,
         "the laptop away on a free account",
-        |row| (row.presence(), row.via()) == (wire::Presence::Away, wire::RouteKind::Relay),
+        |row| row.away(),
     )
     .await;
     println!("Free: the desk's client shows the laptop away");
@@ -1548,7 +1548,7 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
         &mut phones_fleet,
         desk,
         "the phone to read the desk away, refused for the plan",
-        |row| row.presence() == wire::Presence::Away,
+        |row| row.away(),
     )
     .await;
     let started = start_pairing(&net, "desk", pin_window()).await.unwrap();
@@ -1588,7 +1588,7 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
         &mut fleet,
         desk,
         "the tablet's client told of the direct link",
-        |row| row.via == wire::RouteKind::Direct as i32 && row.trust == wire::Trust::Trusted as i32,
+        |row| row.online() == Some(wire::RouteKind::Direct),
     )
     .await;
     peer_inventory_hosts(&edge(&net, "tablet"), desk)
@@ -2370,7 +2370,7 @@ async fn row_until(
     let found = |events: &[wire::InventoryEvent]| {
         testnet::observe::inventory_hosts(events)
             .into_iter()
-            .find(|row| row.host_id == host.as_bytes())
+            .find(|row| row.host_id() == host.as_bytes())
     };
     let events = fleet
         .observe_until(
@@ -2406,16 +2406,16 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
     // in or out says so in its next handshake, with neither end
     // restarting.
     let row = row_until(&mut fleet, desk, "the desk, online and signed in", |row| {
-        row.presence == wire::Presence::Online as i32 && row.account_signed_in == Some(true)
+        row.online().is_some() && row.account_signed_in() == Some(true)
     })
     .await;
-    assert_eq!(row.via, wire::RouteKind::Direct as i32);
+    assert_eq!(row.online(), Some(wire::RouteKind::Direct));
     let mut desk_fleet = net.observe_inventory("desk").await.unwrap();
     row_until(
         &mut desk_fleet,
         laptop,
         "the laptop, never signed in",
-        |row| row.account_signed_in == Some(false),
+        |row| row.account_signed_in() == Some(false),
     )
     .await;
     admin(&net, "desk")
@@ -2426,14 +2426,14 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
     net.sever_link("desk", "laptop").unwrap();
     net.restore_link("desk", "laptop").await.unwrap();
     row_until(&mut fleet, desk, "the desk signed out", |row| {
-        row.account_signed_in == Some(false)
+        row.account_signed_in() == Some(false)
     })
     .await;
     net.sign_in("desk", "ada").await.unwrap();
     net.sever_link("desk", "laptop").unwrap();
     net.restore_link("desk", "laptop").await.unwrap();
     row_until(&mut fleet, desk, "the desk signed in again", |row| {
-        row.account_signed_in == Some(true)
+        row.account_signed_in() == Some(true)
     })
     .await;
     println!("the laptop saw the desk sign out and in, each at its next handshake");
@@ -2489,11 +2489,11 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
     // with the identity it had, which the laptop's pinned key accepts.
     net.stop_daemon("desk").await.unwrap();
     let row = row_until(&mut fleet, desk, "the desk offline", |row| {
-        row.presence != wire::Presence::Online as i32
+        row.online().is_none()
     })
     .await;
-    assert_eq!(row.trust, wire::Trust::Trusted as i32);
-    assert_eq!(row.account_signed_in, Some(true));
+    assert!(row.trusted().is_some());
+    assert_eq!(row.account_signed_in(), Some(true));
     peer_inventory_hosts(&edge(&net, "laptop"), desk)
         .await
         .expect_err("no calls to a host that is down");
@@ -2516,7 +2516,7 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
     assert_eq!(identity.pubkey, pinned.2);
     assert!(!edge(&net, "desk").pairing_active());
     row_until(&mut fleet, desk, "the desk back online", |row| {
-        row.presence == wire::Presence::Online as i32
+        row.online().is_some()
     })
     .await;
     peer_inventory_hosts(&edge(&net, "laptop"), desk)
@@ -2533,12 +2533,12 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
         &mut fleet,
         desk,
         "the laptop still listing the desk",
-        |row| row.trust == wire::Trust::Trusted as i32,
+        |row| row.trusted().is_some(),
     )
     .await;
     println!(
         "the desk forgot the laptop; the laptop still lists {}",
-        row.name
+        row.name()
     );
 
     net.shutdown().await.unwrap();
@@ -2920,7 +2920,7 @@ async fn a_call_to_a_host_only_a_lapsed_account_reached_names_the_lapse_at_once(
         &mut fleet,
         laptop,
         "the laptop away on a free account",
-        |row| row.presence() == wire::Presence::Away,
+        |row| row.away(),
     )
     .await;
 

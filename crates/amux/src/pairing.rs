@@ -17,7 +17,7 @@ use wire::profile_service_client::ProfileServiceClient;
 use wire::{
     BeginPairRequest, BindProfileRequest, Empty, HostEntry, HostRef, PairingIdentity,
     PairingWindow, PeerEntry, PendingPair, PendingPairRequest, ProfileInfo, RouteKind,
-    StartPairingRequest, Trust, TrustSshPeerRequest, UnpairRequest, begin_pair_request, host_ref,
+    StartPairingRequest, TrustSshPeerRequest, UnpairRequest, begin_pair_request, host_ref,
     pairing_window, peer_reachability, start_pairing_request,
 };
 
@@ -313,7 +313,12 @@ pub async fn pair(
         Target::Found(name) => {
             let (hosts, _) = crate::verbs::inventory(client).await?;
             let host = candidate(&hosts, &name)?;
-            (host.host_id.clone(), host.addrs.clone())
+            (
+                host.host_id().to_vec(),
+                host.candidate()
+                    .map(|candidate| candidate.addrs.clone())
+                    .unwrap_or_default(),
+            )
         }
     };
     let pin = ask("Pairing PIN shown on the other host: ")?;
@@ -347,10 +352,10 @@ pub async fn pair_with_link(admin: Admin, link: &str) -> Result<()> {
 fn candidate<'a>(hosts: &'a [HostEntry], name: &str) -> Result<&'a HostEntry> {
     let found = hosts
         .iter()
-        .filter(|host| host.trust() == Trust::Candidate)
+        .filter(|host| host.candidate().is_some())
         .filter(|host| {
-            host.name == name
-                || Uuid::from_slice(&host.host_id).is_ok_and(|id| id.to_string() == name)
+            host.name() == name
+                || Uuid::from_slice(host.host_id()).is_ok_and(|id| id.to_string() == name)
         })
         .collect::<Vec<_>>();
     match found.as_slice() {
@@ -548,18 +553,16 @@ fn peer_table(trusted: &[PeerEntry], hosts: &[HostEntry]) -> String {
     let mut paired = trusted.to_vec();
     paired.sort_by(|a, b| a.name.cmp(&b.name));
     for peer in &paired {
-        let reached = match hosts.iter().find(|host| host.host_id == peer.host_id) {
-            Some(host) if host.presence() == wire::Presence::Online => match host.via() {
-                wire::RouteKind::Relay => "online, through the relay",
-                wire::RouteKind::Ssh => "online, over SSH",
-                _ => "online, on this network",
+        let reached = match hosts.iter().find(|host| host.host_id() == peer.host_id) {
+            Some(host) => match host.online() {
+                Some(wire::RouteKind::Relay) => "online, through the relay",
+                Some(wire::RouteKind::Ssh) => "online, over SSH",
+                Some(_) => "online, on this network",
+                // The daemon lists a host away only when the relay alone
+                // sees it and the account is on the free plan.
+                None if host.away() => "away: the free plan does not relay between hosts",
+                None => "away",
             },
-            // The daemon lists a host away only when the relay alone sees it
-            // and the account is on the free plan.
-            Some(host) if host.presence() == wire::Presence::Away => {
-                "away: the free plan does not relay between hosts"
-            }
-            Some(_) => "away",
             None => "not listed",
         };
         let ssh = peer.reachabilities.iter().find_map(|way| match &way.kind {
@@ -578,18 +581,18 @@ fn peer_table(trusted: &[PeerEntry], hosts: &[HostEntry]) -> String {
     }
     let mut found = hosts
         .iter()
-        .filter(|host| host.trust() == Trust::Candidate)
+        .filter(|host| host.candidate().is_some())
         .collect::<Vec<_>>();
-    found.sort_by(|a, b| a.name.cmp(&b.name));
+    found.sort_by(|a, b| a.name().cmp(b.name()));
     for candidate in found {
-        let name = if candidate.name.contains(char::is_whitespace) {
-            format!("'{}'", candidate.name)
+        let name = if candidate.name().contains(char::is_whitespace) {
+            format!("'{}'", candidate.name())
         } else {
-            candidate.name.clone()
+            candidate.name().to_owned()
         };
         rows.push([
-            candidate.name.clone(),
-            host(&candidate.host_id),
+            candidate.name().to_owned(),
+            host(candidate.host_id()),
             "found nearby".to_owned(),
             format!("no: amux pair {name}"),
         ]);
@@ -818,21 +821,12 @@ mod tests {
 
     #[test]
     fn peers_list_trusted_hosts_then_hosts_found_nearby() {
-        let online = HostEntry {
-            host_id: vec![1; 16],
-            name: "studio".into(),
-            trust: Trust::Trusted as i32,
-            presence: wire::Presence::Online as i32,
-            via: wire::RouteKind::Relay as i32,
-            ..HostEntry::default()
-        };
-        let nearby = HostEntry {
-            host_id: vec![2; 16],
-            name: "den mac".into(),
-            trust: Trust::Candidate as i32,
-            presence: wire::Presence::Online as i32,
-            ..HostEntry::default()
-        };
+        let online = HostEntry::trusted_host(
+            vec![1; 16],
+            "studio",
+            wire::trusted::Reach::Online(wire::RouteKind::Relay as i32),
+        );
+        let nearby = HostEntry::candidate_host(vec![2; 16], "den mac", Vec::new());
         let trusted = [PeerEntry {
             host_id: vec![1; 16],
             name: "studio".into(),
@@ -851,14 +845,11 @@ mod tests {
     /// account's free plan: the table says so, not a bare "away".
     #[test]
     fn a_peer_away_on_the_free_plan_names_the_plan() {
-        let away = HostEntry {
-            host_id: vec![1; 16],
-            name: "plap".into(),
-            trust: Trust::Trusted as i32,
-            presence: wire::Presence::Away as i32,
-            via: wire::RouteKind::Relay as i32,
-            ..HostEntry::default()
-        };
+        let away = HostEntry::trusted_host(
+            vec![1; 16],
+            "plap",
+            wire::trusted::Reach::Away(wire::Empty {}),
+        );
         let trusted = [PeerEntry {
             host_id: vec![1; 16],
             name: "plap".into(),

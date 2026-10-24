@@ -1425,13 +1425,13 @@ mod tests {
         assert_eq!(daemon.route_kind(DESK), wire::RouteKind::Ssh);
         assert_eq!(
             daemon.reads(DESK),
-            (wire::Presence::Offline, wire::RouteKind::Unspecified),
+            wire::trusted::Reach::Offline(wire::Offline::default()),
             "no channel has opened yet"
         );
         concluded(&mut daemon, DESK, Route::Direct(LinkId(1)), Tried::Opened);
         assert_eq!(
             daemon.reads(DESK),
-            (wire::Presence::Online, wire::RouteKind::Ssh)
+            wire::trusted::Reach::Online(wire::RouteKind::Ssh as i32)
         );
         down(&mut daemon, 1);
         assert_eq!(daemon.route_kind(DESK), wire::RouteKind::Unspecified);
@@ -1454,12 +1454,12 @@ mod tests {
         carried(&mut daemon, CarrierKind::Forwarded);
         assert_eq!(
             daemon.reads(DESK),
-            (wire::Presence::Online, wire::RouteKind::Relay)
+            wire::trusted::Reach::Online(wire::RouteKind::Relay as i32)
         );
         carried(&mut daemon, CarrierKind::Direct);
         assert_eq!(
             daemon.reads(DESK),
-            (wire::Presence::Online, wire::RouteKind::Direct)
+            wire::trusted::Reach::Online(wire::RouteKind::Direct as i32)
         );
     }
 

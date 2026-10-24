@@ -273,7 +273,7 @@ fn listed(events: &[InventoryEvent]) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
     let mut agents = Vec::new();
     for event in events {
         match &event.of {
-            Some(inventory_event::Of::Host(host)) => hosts.push(host.host_id.clone()),
+            Some(inventory_event::Of::Host(host)) => hosts.push(host.host_id().to_vec()),
             Some(inventory_event::Of::HostRemoved(removed)) => hosts.push(removed.host_id.clone()),
             Some(inventory_event::Of::Agent(agent)) => agents.push(agent.agent_id.clone()),
             Some(inventory_event::Of::AgentRemoved(removed)) => {

@@ -105,7 +105,7 @@ fn entry(daemon: &Daemon, id: HostId) -> wire::HostEntry {
     daemon
         .host_set()
         .iter()
-        .find(|entry| entry.host_id == id.0)
+        .find(|entry| entry.host_id() == id.0)
         .cloned()
         .expect("the host is in the host set")
 }
@@ -214,7 +214,7 @@ fn past_the_cap_a_claim_evicts_the_oldest_untrusted_host_held_only_by_a_claim() 
 fn a_hosts_key_replacement_holds_nothing_of_it_until_the_new_key_is_written() {
     let mut daemon = daemon(&[DESK]);
     linked(&mut daemon, 1, DESK, CarrierKind::Direct, &[]);
-    assert_eq!(entry(&daemon, DESK).version.as_deref(), Some("1.2.3"));
+    assert_eq!(entry(&daemon, DESK).version(), Some("1.2.3"));
 
     // Pairing under a new key tears the host down first.
     let out = step(
@@ -265,7 +265,7 @@ fn only_a_channel_begun_after_a_revocation_takes_it_back() {
     let out = step(&mut daemon, Input::ChannelAnswered { channel: after });
     assert!(!daemon.routing.catalogue.revoked(DESK));
     assert!(retried_now(&out, DESK, 0), "tried at once: {out:?}");
-    assert_eq!(entry(&daemon, DESK).revoked, None);
+    assert!(!entry(&daemon, DESK).revoked());
 }
 
 #[test]

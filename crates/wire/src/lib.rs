@@ -177,6 +177,121 @@ impl HostRef {
     }
 }
 
+impl HostEntry {
+    /// A trusted host as `reach` says it reads.
+    pub fn trusted_host(
+        host_id: impl Into<Vec<u8>>,
+        name: impl Into<String>,
+        reach: trusted::Reach,
+    ) -> Self {
+        Self {
+            host: Some(Host {
+                host_id: host_id.into(),
+                name: name.into(),
+                ..Host::default()
+            }),
+            standing: Some(host_entry::Standing::Trusted(Trusted {
+                reach: Some(reach),
+                current: false,
+            })),
+            ..Self::default()
+        }
+    }
+
+    /// A host discovery found at `addrs`, never paired.
+    pub fn candidate_host(
+        host_id: impl Into<Vec<u8>>,
+        name: impl Into<String>,
+        addrs: Vec<String>,
+    ) -> Self {
+        Self {
+            host: Some(Host {
+                host_id: host_id.into(),
+                name: name.into(),
+                ..Host::default()
+            }),
+            standing: Some(host_entry::Standing::Candidate(Candidate { addrs })),
+            ..Self::default()
+        }
+    }
+
+    /// The host's id, as its handshake gave it.
+    pub fn host_id(&self) -> &[u8] {
+        self.host.as_ref().map_or(&[], |host| &host.host_id)
+    }
+
+    pub fn name(&self) -> &str {
+        self.host.as_ref().map_or("", |host| &host.name)
+    }
+
+    /// Paired with this machine, or this machine itself.
+    pub fn trusted(&self) -> Option<&Trusted> {
+        match &self.standing {
+            Some(host_entry::Standing::Trusted(trusted)) => Some(trusted),
+            _ => None,
+        }
+    }
+
+    /// Found by discovery, never paired.
+    pub fn candidate(&self) -> Option<&Candidate> {
+        match &self.standing {
+            Some(host_entry::Standing::Candidate(candidate)) => Some(candidate),
+            _ => None,
+        }
+    }
+
+    /// How a trusted host reads; none for a candidate.
+    pub fn reach(&self) -> Option<&trusted::Reach> {
+        self.trusted()?.reach.as_ref()
+    }
+
+    /// The kind of route a trusted host is online over.
+    pub fn online(&self) -> Option<RouteKind> {
+        match self.reach()? {
+            trusted::Reach::Online(kind) => Some(RouteKind::try_from(*kind).unwrap_or_default()),
+            _ => None,
+        }
+    }
+
+    pub fn away(&self) -> bool {
+        matches!(self.reach(), Some(trusted::Reach::Away(_)))
+    }
+
+    /// Why a trusted host reads offline.
+    pub fn offline(&self) -> Option<&Offline> {
+        match self.reach()? {
+            trusted::Reach::Offline(offline) => Some(offline),
+            _ => None,
+        }
+    }
+
+    /// Whether a trusted host said it no longer trusts this machine.
+    pub fn revoked(&self) -> bool {
+        self.offline().is_some_and(|offline| offline.revoked)
+    }
+
+    /// Whether this machine's copy of a trusted host's agents has caught up.
+    pub fn current(&self) -> bool {
+        self.trusted().is_some_and(|trusted| trusted.current)
+    }
+
+    /// The build the host runs, once it has said.
+    pub fn version(&self) -> Option<&str> {
+        Some(self.host.as_ref()?.version.as_str()).filter(|version| !version.is_empty())
+    }
+
+    pub fn platform(&self) -> Platform {
+        self.host
+            .as_ref()
+            .map_or(Platform::Unspecified, Host::platform)
+    }
+
+    /// Whether the host is signed in to its account, as it said.
+    pub fn account_signed_in(&self) -> Option<bool> {
+        self.host.as_ref()?.account_signed_in
+    }
+}
+
 /// The longest name an agent can have.
 pub const AGENT_NAME_MOST: usize = 64;
 

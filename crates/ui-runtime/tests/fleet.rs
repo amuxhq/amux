@@ -153,11 +153,12 @@ async fn the_fleet_dump_part_writes_no_names_paths_or_status_text() {
     let feed = calls.inventory().await;
     feed.send(wire::InventoryEvent {
         of: Some(wire::inventory_event::Of::Host(wire::HostEntry {
-            host_id: b"host-a".to_vec(),
-            name: HOST.into(),
-            last_dial_error: Some(HOST.into()),
-            addrs: vec![HOST.into()],
-            ..wire::HostEntry::default()
+            host: Some(wire::Host {
+                host_id: b"host-a".to_vec(),
+                name: HOST.into(),
+                ..Default::default()
+            }),
+            ..Default::default()
         })),
     });
     feed.send(inventory_agent(wire::Agent {
@@ -585,14 +586,11 @@ async fn a_chat_on_screen_fetches_its_catalogue_once_per_hash_and_home_never_doe
     calls.none().await;
 }
 
-fn inventory_host(presence: wire::Presence) -> wire::InventoryEvent {
+fn inventory_host(reach: wire::trusted::Reach) -> wire::InventoryEvent {
     wire::InventoryEvent {
-        of: Some(wire::inventory_event::Of::Host(wire::HostEntry {
-            host_id: b"host-a".to_vec(),
-            name: "desk".into(),
-            presence: presence as i32,
-            ..Default::default()
-        })),
+        of: Some(wire::inventory_event::Of::Host(
+            wire::HostEntry::trusted_host(b"host-a".to_vec(), "desk", reach),
+        )),
     }
 }
 
@@ -605,7 +603,9 @@ async fn a_stop_its_host_could_not_take_is_held_and_sent_when_the_host_is_back()
     let (client, mut calls) = runtime();
     let open = tokio::spawn(Fleet::connect(client, clock.clone()));
     let feed = calls.inventory().await;
-    feed.send(inventory_host(wire::Presence::Online));
+    feed.send(inventory_host(wire::trusted::Reach::Online(
+        wire::RouteKind::Direct as i32,
+    )));
     feed.send(inventory_agent(named(b"a")));
     feed.send(inventory_caught_up());
     let fleet = Arc::new(open.await.unwrap().expect("the fleet opens"));
@@ -633,8 +633,10 @@ async fn a_stop_its_host_could_not_take_is_held_and_sent_when_the_host_is_back()
     assert!(fleet.state().stop_held(&key), "the row shows the stop held");
 
     // The host goes and comes back: the stop goes again.
-    feed.send(inventory_host(wire::Presence::Away));
-    feed.send(inventory_host(wire::Presence::Online));
+    feed.send(inventory_host(wire::trusted::Reach::Away(wire::Empty {})));
+    feed.send(inventory_host(wire::trusted::Reach::Online(
+        wire::RouteKind::Direct as i32,
+    )));
     let (request, reply) = calls.stop().await;
     assert_eq!(request.agent_id, b"a");
     reply.send(Ok(())).ok();
@@ -659,8 +661,10 @@ async fn a_stop_its_host_could_not_take_is_held_and_sent_when_the_host_is_back()
         .ok();
     assert_eq!(stopping.await.unwrap().unwrap(), ui_runtime::Stop::Held);
     fleet.cancel_stop(&key);
-    feed.send(inventory_host(wire::Presence::Away));
-    feed.send(inventory_host(wire::Presence::Online));
+    feed.send(inventory_host(wire::trusted::Reach::Away(wire::Empty {})));
+    feed.send(inventory_host(wire::trusted::Reach::Online(
+        wire::RouteKind::Direct as i32,
+    )));
     calls.none().await;
     assert!(!fleet.state().stop_held(&key));
 }

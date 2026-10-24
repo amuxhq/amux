@@ -26,7 +26,7 @@ use wire::client_service_client::ClientServiceClient;
 use wire::{
     Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, Empty, ExitCause, HostEntry, HostRef,
     Kind, Lifecycle, PromptInput, PromptSubmission, ResolveAgentRequest, SendMessageRequest,
-    StopAgentRequest, Trust, attachment, create_agent_request, host_ref, inventory_event,
+    StopAgentRequest, attachment, create_agent_request, host_ref, inventory_event,
 };
 
 use crate::dir;
@@ -236,8 +236,8 @@ impl Server {
         let host_name = |id: &[u8]| {
             hosts
                 .iter()
-                .find(|host| host.host_id == id)
-                .map_or_else(|| interpret::to_hex(id), |host| host.name.clone())
+                .find(|host| host.host_id() == id)
+                .map_or_else(|| interpret::to_hex(id), |host| host.name().to_owned())
         };
         let agent_name = |parent: &AgentRef| {
             agents
@@ -285,13 +285,18 @@ impl Server {
             .map(|agent| agent.host_id.clone());
         let rows = hosts
             .iter()
-            .filter(|host| host.trust() == Trust::Trusted)
+            .filter(|host| host.trusted().is_some())
             .map(|host| {
+                let presence = match host.reach() {
+                    Some(wire::trusted::Reach::Online(_)) => "online",
+                    Some(wire::trusted::Reach::Away(_)) => "away",
+                    _ => "offline",
+                };
                 let mut row = json!({
-                    "name": host.name,
-                    "presence": word(host.presence().as_str_name(), "PRESENCE_"),
+                    "name": host.name(),
+                    "presence": presence,
                 });
-                if here.as_deref() == Some(host.host_id.as_slice()) {
+                if here.as_deref() == Some(host.host_id()) {
                     row["this_host"] = json!(true);
                 }
                 row
@@ -435,11 +440,11 @@ impl Server {
             while let Some(event) = stream.message().await? {
                 match event.of {
                     Some(inventory_event::Of::Host(host)) => {
-                        hosts.retain(|known| known.host_id != host.host_id);
+                        hosts.retain(|known| known.host_id() != host.host_id());
                         hosts.push(host);
                     }
                     Some(inventory_event::Of::HostRemoved(removed)) => {
-                        hosts.retain(|known| known.host_id != removed.host_id);
+                        hosts.retain(|known| known.host_id() != removed.host_id);
                     }
                     Some(inventory_event::Of::Agent(agent)) => {
                         agents.retain(|known| {

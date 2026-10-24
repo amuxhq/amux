@@ -193,7 +193,7 @@ async fn route_relay_signing_out_closes_the_links_the_relay_carried_until_signin
         &mut fleet,
         desk,
         "the laptop to read the desk online",
-        |row| row.presence() == wire::Presence::Online,
+        |row| row.online().is_some(),
     )
     .await;
     streams_live(&net, &["laptop"], "worker", said).await;
@@ -207,14 +207,14 @@ async fn route_relay_signing_out_closes_the_links_the_relay_carried_until_signin
         &mut fleet,
         laptop,
         "the laptop to read itself signed out",
-        |row| row.account_signed_in == Some(false),
+        |row| row.account_signed_in() == Some(false),
     )
     .await;
     row_until(
         &mut fleet,
         desk,
         "the laptop to read the desk offline",
-        |row| row.presence() == wire::Presence::Offline,
+        |row| row.offline().is_some(),
     )
     .await;
 
@@ -226,7 +226,7 @@ async fn route_relay_signing_out_closes_the_links_the_relay_carried_until_signin
         &mut fleet,
         desk,
         "the laptop to read the desk online again",
-        |row| row.presence() == wire::Presence::Online,
+        |row| row.online().is_some(),
     )
     .await;
     net.current("laptop", "worker").await.unwrap();
@@ -273,7 +273,7 @@ async fn route_lan_signing_out_keeps_the_direct_link_and_the_session() {
         &mut fleet,
         laptop,
         "the laptop to read itself signed out",
-        |row| row.account_signed_in == Some(false),
+        |row| row.account_signed_in() == Some(false),
     )
     .await;
     let on_the_lan_both_ways = || async {
@@ -292,7 +292,7 @@ async fn route_lan_signing_out_keeps_the_direct_link_and_the_session() {
         &mut fleet,
         desk,
         "the laptop to read the desk online",
-        |row| row.presence() == wire::Presence::Online,
+        |row| row.online().is_some(),
     )
     .await;
 
@@ -436,7 +436,7 @@ async fn entitlement_free_sees_presence_and_carries_nothing_while_lan_and_ssh_re
     // The phone sees the desk, through the relay's listing, and reads it
     // away: the relay refused to forward to it for the plan.
     row_until(&mut fleet, desk, "the phone to read the desk away", |row| {
-        row.presence() == wire::Presence::Away
+        row.away()
     })
     .await;
     let (refused, reason) = tokio::time::timeout(PATIENCE, refusals.recv())
@@ -533,7 +533,7 @@ async fn entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once()
             fleet,
             *peer,
             &format!("{host} to read its peer away"),
-            |row| row.presence() == wire::Presence::Away,
+            |row| row.away(),
         )
         .await;
     }
@@ -759,7 +759,7 @@ async fn row_until(
     let found = |events: &[wire::InventoryEvent]| {
         observe::inventory_hosts(events)
             .into_iter()
-            .find(|row| row.host_id == host.as_bytes())
+            .find(|row| row.host_id() == host.as_bytes())
     };
     fleet
         .observe_until(
@@ -1217,7 +1217,7 @@ async fn revoked_ticket_refused_with_the_revocation() {
         &mut fleet,
         desk,
         "the laptop to read the desk as no longer trusting it",
-        |row| row.revoked == Some(true),
+        |row| row.revoked(),
     )
     .await;
     let refused = open_session(&edge(&net, "laptop"), desk, worker)

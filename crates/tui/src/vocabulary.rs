@@ -337,7 +337,8 @@ pub fn authored_home() -> HomeScene {
     use ui_state::{Activity, ActivityKind, Connection, FleetMsg, FleetState};
     use ui_view::{ActivityLine, AskSubject, AskSummary, SessionLine, StuckReason};
     use wire::inventory_event::Of;
-    use wire::{Kind, Lifecycle, Phase, Presence};
+    use wire::trusted::Reach;
+    use wire::{Kind, Lifecycle, Phase};
 
     const NOW: i64 = 1_800_000_000_000;
     const MINUTE: i64 = 60_000;
@@ -347,18 +348,19 @@ pub fn authored_home() -> HomeScene {
             of: Some(of),
         })))
     };
-    for (id, name, presence) in [
-        (b"desk".as_slice(), "desk", Presence::Online),
-        (b"studio".as_slice(), "studio", Presence::Offline),
+    for (id, name, reach) in [
+        (
+            b"desk".as_slice(),
+            "desk",
+            Reach::Online(wire::RouteKind::Direct as i32),
+        ),
+        (
+            b"studio".as_slice(),
+            "studio",
+            Reach::Offline(wire::Offline::default()),
+        ),
     ] {
-        event(Of::Host(wire::HostEntry {
-            host_id: id.to_vec(),
-            name: name.into(),
-            trust: wire::Trust::Trusted as i32,
-            presence: presence as i32,
-            via: wire::RouteKind::Direct as i32,
-            ..Default::default()
-        }));
+        event(Of::Host(wire::HostEntry::trusted_host(id, name, reach)));
     }
     let mut lines = HashMap::new();
     let line = |ask: Option<AskSubject>, step: Option<&str>, said: Option<&str>| SessionLine {

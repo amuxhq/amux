@@ -232,8 +232,8 @@ impl ProfileRuntime {
             .map(|agent| {
                 let host = hosts
                     .iter()
-                    .find(|host| host.host_id == agent.host_id)
-                    .map(|host| host.name.as_str())
+                    .find(|host| host.host_id() == agent.host_id)
+                    .map(|host| host.name())
                     .filter(|name| !name.is_empty());
                 let alone_there = agents
                     .iter()
@@ -241,7 +241,7 @@ impl ProfileRuntime {
                     .count()
                     == 1;
                 let named_once =
-                    |name: &str| hosts.iter().filter(|host| host.name == name).count() == 1;
+                    |name: &str| hosts.iter().filter(|host| host.name() == name).count() == 1;
                 match host {
                     Some(host) if alone_there && named_once(host) => {
                         format!("{}@{host}", agent.name)

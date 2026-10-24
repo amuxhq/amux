@@ -40,7 +40,7 @@ pub use values::{FleetDelta, HostView};
 pub use wire::Provider;
 use wire::{
     CreateAgentRequest, DeleteAgentRequest, DumpRequest, Kind, ListRepositoriesRequest,
-    ProjectEntry, RenameAgentRequest, Trust,
+    ProjectEntry, RenameAgentRequest,
 };
 
 /// How many rows a chat opens with unless the host says otherwise.
@@ -214,19 +214,24 @@ impl AppRuntime {
         let mut hosts: Vec<HostView> = fleet
             .hosts()
             .map(|host| HostView {
-                host_id: host.host_id.clone(),
-                name: host.name.clone(),
-                local: host.host_id == self.local_host,
-                trusted: host.trust() == Trust::Trusted,
-                candidate: host.trust() == Trust::Candidate,
-                reach: ui_view::reach(&fleet, &self.local_host, &host.host_id),
+                host_id: host.host_id().to_vec(),
+                name: host.name().to_owned(),
+                local: host.host_id() == self.local_host,
+                trusted: host.trusted().is_some(),
+                candidate: host.candidate().is_some(),
+                reach: ui_view::reach(&fleet, &self.local_host, host.host_id()),
                 platform: Some(host.platform())
                     .filter(|platform| *platform != wire::Platform::Unspecified),
-                version: host.version.clone(),
-                last_dial_error: host.last_dial_error.clone(),
-                addrs: host.addrs.clone(),
-                signed_in: host.account_signed_in,
-                current: host.current.unwrap_or(false),
+                version: host.version().map(str::to_owned),
+                last_dial_error: host
+                    .offline()
+                    .and_then(|offline| offline.last_dial_error.clone()),
+                addrs: host
+                    .candidate()
+                    .map(|candidate| candidate.addrs.clone())
+                    .unwrap_or_default(),
+                signed_in: host.account_signed_in(),
+                current: host.current(),
                 providers: host
                     .providers
                     .iter()

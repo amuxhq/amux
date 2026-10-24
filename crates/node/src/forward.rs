@@ -18,7 +18,7 @@ use daemon_core::payload::{
 use store::{AgentRow, StoreError};
 use tonic::{Code, Response, Status};
 use uuid::Uuid;
-use wire::{AmbiguousHostName, ErrorCode, ErrorDetail, HostEntry, Trust};
+use wire::{AmbiguousHostName, ErrorCode, ErrorDetail, HostEntry};
 
 use crate::HostId;
 use crate::driver::Delivered;
@@ -356,31 +356,33 @@ impl ProfileRuntime {
             hosts.push(
                 published
                     .iter()
-                    .find(|entry| entry.host_id == id)
+                    .find(|entry| entry.host_id() == id)
                     .cloned()
-                    .unwrap_or(HostEntry {
-                        host_id: id,
-                        name,
-                        trust: Trust::Trusted as i32,
-                        ..HostEntry::default()
+                    .unwrap_or_else(|| {
+                        HostEntry::trusted_host(
+                            id,
+                            name,
+                            wire::trusted::Reach::Offline(wire::Offline::default()),
+                        )
                     }),
             );
         }
-        let mut matching: Vec<&HostEntry> = hosts.iter().filter(|host| host.name == name).collect();
+        let mut matching: Vec<&HostEntry> =
+            hosts.iter().filter(|host| host.name() == name).collect();
         if matching.is_empty() {
             matching = hosts
                 .iter()
-                .filter(|host| host.name.eq_ignore_ascii_case(name))
+                .filter(|host| host.name().eq_ignore_ascii_case(name))
                 .collect();
         }
         match matching.as_slice() {
-            [host] => Uuid::from_slice(&host.host_id).map_err(|_| HostNameError::NotFound {
+            [host] => Uuid::from_slice(host.host_id()).map_err(|_| HostNameError::NotFound {
                 name: name.to_owned(),
                 known: Vec::new(),
             }),
             [] => Err(HostNameError::NotFound {
                 name: name.to_owned(),
-                known: hosts.iter().map(|host| host.name.clone()).collect(),
+                known: hosts.iter().map(|host| host.name().to_owned()).collect(),
             }),
             several => Err(HostNameError::Ambiguous(AmbiguousHostName {
                 name: name.to_owned(),

@@ -1323,12 +1323,12 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use chrono::Utc;
+    use daemon_core::trust::PairingUpdate;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use super::*;
     use crate::link::resumption::{HOST_TICKETS, SessionTickets};
     use crate::trust::TrustStore;
-    use daemon_core::trust::PairingUpdate;
 
     struct LoopbackPair {
         _client_endpoint: LinkEndpoint,

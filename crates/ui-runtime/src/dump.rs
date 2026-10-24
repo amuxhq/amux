@@ -84,11 +84,9 @@ fn agent(agent: &Agent) -> String {
 
 fn host_entry(host: &HostEntry) -> String {
     format!(
-        "{} {:?} {:?} {:?} generation={}",
-        hex(&host.host_id),
-        host.presence(),
-        host.via(),
-        host.trust(),
+        "{} {:?} generation={}",
+        hex(host.host_id()),
+        host.standing,
         host.generation
     )
 }

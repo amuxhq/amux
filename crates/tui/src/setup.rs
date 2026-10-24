@@ -516,7 +516,7 @@ fn not_signed_in(fleet: &FleetState, host: &[u8], agent: Agent) -> String {
 fn host_name(fleet: &FleetState, host: &[u8]) -> String {
     fleet
         .host(host)
-        .map(|host| host.name.clone())
+        .map(|host| host.name().to_owned())
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| "this machine".into())
 }
@@ -528,29 +528,29 @@ fn hosts(fleet: &FleetState, setup: &Setup, chosen_first: bool) -> Vec<Choice> {
     let chosen = &setup.host[..];
     let mut hosts: Vec<&wire::HostEntry> = fleet
         .hosts()
-        .filter(|host| host.trust() == wire::Trust::Trusted || host.host_id == chosen)
+        .filter(|host| host.trusted().is_some() || host.host_id() == chosen)
         .collect();
     // By name, so the row holds still while the arrows move along it.
     hosts.sort_by(|a, b| {
-        (a.name.to_lowercase(), &a.host_id).cmp(&(b.name.to_lowercase(), &b.host_id))
+        (a.name().to_lowercase(), &a.host_id()).cmp(&(b.name().to_lowercase(), &b.host_id()))
     });
     if chosen_first {
-        hosts.sort_by_key(|host| host.host_id != chosen);
+        hosts.sort_by_key(|host| host.host_id() != chosen);
     }
     hosts
         .into_iter()
         .map(|host| {
-            let (detail, away) = match ui_view::reach(fleet, &setup.local_host, &host.host_id) {
+            let (detail, away) = match ui_view::reach(fleet, &setup.local_host, host.host_id()) {
                 Reach::Online(_) => (String::new(), false),
                 Reach::Away => ("away".to_owned(), true),
                 Reach::Offline(_) => ("offline".to_owned(), true),
             };
             Choice {
-                label: host_name(fleet, &host.host_id),
+                label: host_name(fleet, host.host_id()),
                 detail,
-                value: host_value(&host.host_id),
-                current: host.host_id == chosen,
-                disabled: away && host.host_id != chosen,
+                value: host_value(host.host_id()),
+                current: host.host_id() == chosen,
+                disabled: away && host.host_id() != chosen,
                 typed: false,
             }
         })

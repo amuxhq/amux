@@ -655,7 +655,7 @@ impl Net {
                 .observe_until(
                     |events| {
                         observe::inventory_hosts(events).iter().any(|host| {
-                            host.host_id == far_id.as_bytes() && observe::host_online(host)
+                            host.host_id() == far_id.as_bytes() && observe::host_online(host)
                         })
                     },
                     PATIENCE,
@@ -2918,9 +2918,7 @@ impl Net {
             return false;
         };
         observe::inventory_hosts(events).iter().any(|host| {
-            host.host_id == far_id.as_bytes()
-                && observe::host_online(host)
-                && host.via() == wire::RouteKind::Direct
+            host.host_id() == far_id.as_bytes() && host.online() == Some(wire::RouteKind::Direct)
         })
     }
 

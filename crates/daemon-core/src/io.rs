@@ -918,9 +918,12 @@ mod tests {
                 channel: ChannelId(4),
             },
             Input::OwnHost(Box::new(wire::HostEntry {
-                host_id: vec![1],
-                name: "desk".into(),
-                account_signed_in: Some(true),
+                host: Some(wire::Host {
+                    host_id: vec![1],
+                    name: "desk".into(),
+                    account_signed_in: Some(true),
+                    ..Default::default()
+                }),
                 ..Default::default()
             })),
             Input::Candidates {

@@ -5518,49 +5518,30 @@ impl ::prost::Name for InventoryEvent {
 /// untrust, or when a candidate disappears.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HostEntry {
-    #[prost(bytes = "vec", tag = "1")]
-    pub host_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(string, tag = "2")]
-    pub name: ::prost::alloc::string::String,
-    #[prost(string, optional, tag = "3")]
-    pub version: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(message, optional, tag = "4")]
-    pub capabilities: ::core::option::Option<Capabilities>,
-    /// The outcome of the daemon's last failed dial attempt at this host,
-    /// cleared when a route comes up.
-    #[prost(string, optional, tag = "5")]
-    pub last_dial_error: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(enumeration = "RouteKind", tag = "6")]
-    pub via: i32,
-    #[prost(bool, optional, tag = "7")]
-    pub account_signed_in: ::core::option::Option<bool>,
-    /// The machine's operating system, as it announced itself in the
-    /// handshake.
-    #[prost(enumeration = "Platform", tag = "8")]
-    pub platform: i32,
+    /// The host as it announced itself in its handshake; a paired host's name
+    /// is the one this machine's trust entry keeps for it.
+    #[prost(message, optional, tag = "1")]
+    pub host: ::core::option::Option<Host>,
     /// Bumped only after an unclean reboot of that host.
-    #[prost(uint64, tag = "9")]
+    #[prost(uint64, tag = "2")]
     pub generation: u64,
-    #[prost(enumeration = "Trust", tag = "10")]
-    pub trust: i32,
-    #[prost(enumeration = "Presence", tag = "11")]
-    pub presence: i32,
-    /// Where discovery found a candidate; what pairing dials.
-    #[prost(string, repeated, tag = "12")]
-    pub addrs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// Set when this host closed its link saying it no longer trusts this
-    /// machine; cleared when it links to this machine again.
-    #[prost(bool, optional, tag = "13")]
-    pub revoked: ::core::option::Option<bool>,
-    /// Whether this machine's copy of the host's inventory has caught up on a
-    /// live stream from it: its agents are as the host lists them now, not as
-    /// they were remembered. Cleared when the host is lost; a client that
-    /// reads every trusted host current has reconciled with its fleet.
-    #[prost(bool, optional, tag = "14")]
-    pub current: ::core::option::Option<bool>,
     /// What each provider offers on the host, once the host has asked it.
-    #[prost(message, repeated, tag = "15")]
+    #[prost(message, repeated, tag = "3")]
     pub providers: ::prost::alloc::vec::Vec<ProviderOnHost>,
+    #[prost(oneof = "host_entry::Standing", tags = "4, 5")]
+    pub standing: ::core::option::Option<host_entry::Standing>,
+}
+/// Nested message and enum types in `HostEntry`.
+pub mod host_entry {
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Standing {
+        /// Paired with this machine, or this machine itself.
+        #[prost(message, tag = "4")]
+        Trusted(super::Trusted),
+        /// Found by discovery, never paired.
+        #[prost(message, tag = "5")]
+        Candidate(super::Candidate),
+    }
 }
 impl ::prost::Name for HostEntry {
     const NAME: &'static str = "HostEntry";
@@ -5570,6 +5551,89 @@ impl ::prost::Name for HostEntry {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.HostEntry".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Trusted {
+    /// Whether this machine's copy of the host's inventory has caught up on a
+    /// live stream from it: its agents are as the host lists them now, not as
+    /// they were remembered. Cleared when the host is lost; a client that
+    /// reads every trusted host current has reconciled with its fleet.
+    #[prost(bool, tag = "4")]
+    pub current: bool,
+    /// How the host reads from the daemon that lists it, from the outcome of
+    /// opening a channel to it. A host whose route comes up keeps the reach it
+    /// had until the first channel attempt on that route concludes.
+    #[prost(oneof = "trusted::Reach", tags = "1, 2, 3")]
+    pub reach: ::core::option::Option<trusted::Reach>,
+}
+/// Nested message and enum types in `Trusted`.
+pub mod trusted {
+    /// How the host reads from the daemon that lists it, from the outcome of
+    /// opening a channel to it. A host whose route comes up keeps the reach it
+    /// had until the first channel attempt on that route concludes.
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Reach {
+        /// A channel to the host opened on a route still listed, of this kind;
+        /// unspecified for this machine itself.
+        #[prost(enumeration = "super::RouteKind", tag = "1")]
+        Online(i32),
+        /// The relay refused the channel because the account's plan carries no
+        /// connection between hosts: upgrading reaches this host.
+        #[prost(message, tag = "2")]
+        Away(super::Empty),
+        /// Anything else: no route, or a channel that failed for any reason but
+        /// the plan (no route at the relay, rate limited, shutting down, revoked,
+        /// TLS or identity failure, timeout, link gone).
+        #[prost(message, tag = "3")]
+        Offline(super::Offline),
+    }
+}
+impl ::prost::Name for Trusted {
+    const NAME: &'static str = "Trusted";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Trusted".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Trusted".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Offline {
+    /// The outcome of the daemon's last failed dial attempt at this host,
+    /// cleared when a route comes up.
+    #[prost(string, optional, tag = "1")]
+    pub last_dial_error: ::core::option::Option<::prost::alloc::string::String>,
+    /// The host closed its link saying it no longer trusts this machine;
+    /// cleared when it links to this machine again.
+    #[prost(bool, tag = "2")]
+    pub revoked: bool,
+}
+impl ::prost::Name for Offline {
+    const NAME: &'static str = "Offline";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Offline".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Offline".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Candidate {
+    /// Where discovery found it; what pairing dials.
+    #[prost(string, repeated, tag = "1")]
+    pub addrs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+impl ::prost::Name for Candidate {
+    const NAME: &'static str = "Candidate";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Candidate".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Candidate".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -6949,79 +7013,8 @@ impl ::prost::Name for Rejected {
         "/amux.v1.Rejected".into()
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum Trust {
-    Unspecified = 0,
-    Trusted = 1,
-    /// Found by discovery, never paired.
-    Candidate = 2,
-}
-impl Trust {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "TRUST_UNSPECIFIED",
-            Self::Trusted => "TRUST_TRUSTED",
-            Self::Candidate => "TRUST_CANDIDATE",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "TRUST_UNSPECIFIED" => Some(Self::Unspecified),
-            "TRUST_TRUSTED" => Some(Self::Trusted),
-            "TRUST_CANDIDATE" => Some(Self::Candidate),
-            _ => None,
-        }
-    }
-}
-/// How a host reads from the daemon that lists it, from the outcome of
-/// opening a channel to it. A host whose route comes up keeps the presence it
-/// had until the first channel attempt on that route concludes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum Presence {
-    Unspecified = 0,
-    /// A channel to the host opened on a route still listed.
-    Online = 1,
-    /// Anything else: no route, or a channel that failed for any reason but
-    /// the plan (no route at the relay, rate limited, shutting down, revoked,
-    /// TLS or identity failure, timeout, link gone).
-    Offline = 2,
-    /// The relay refused the channel because the account's plan carries no
-    /// connection between hosts: upgrading reaches this host.
-    Away = 3,
-}
-impl Presence {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "PRESENCE_UNSPECIFIED",
-            Self::Online => "PRESENCE_ONLINE",
-            Self::Offline => "PRESENCE_OFFLINE",
-            Self::Away => "PRESENCE_AWAY",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "PRESENCE_UNSPECIFIED" => Some(Self::Unspecified),
-            "PRESENCE_ONLINE" => Some(Self::Online),
-            "PRESENCE_OFFLINE" => Some(Self::Offline),
-            "PRESENCE_AWAY" => Some(Self::Away),
-            _ => None,
-        }
-    }
-}
 /// How this machine reaches a host, or how a pairing peer was reached. No
-/// value for "no route": Presence says offline.
+/// value for "no route": the host reads offline.
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]

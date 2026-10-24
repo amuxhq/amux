@@ -23,7 +23,7 @@ use ui_view::{
     ActivityLine, AskSubject, AskSummary, ExitCause, FleetRow, FleetSection, FleetView, Offline,
     Reach, SecondLine, SectionKind, SessionLine, StuckReason,
 };
-use wire::{Kind, Lifecycle, SignInState, Trust};
+use wire::{Kind, Lifecycle, SignInState};
 
 use crate::chat::composer::editor_lines;
 use crate::editor::Editor;
@@ -1292,11 +1292,11 @@ impl Home {
         // reason.
         let reaches: Vec<(&str, Reach)> = fleet
             .hosts()
-            .filter(|host| host.trust() == Trust::Trusted && host.host_id != local_host)
+            .filter(|host| host.trusted().is_some() && host.host_id() != local_host)
             .map(|host| {
                 (
-                    host.name.as_str(),
-                    ui_view::reach(fleet, local_host, &host.host_id),
+                    host.name(),
+                    ui_view::reach(fleet, local_host, host.host_id()),
                 )
             })
             .filter(|(_, reach)| !reach.online())
@@ -1307,7 +1307,7 @@ impl Home {
         // older client; only the person can restart it.
         if let Some(running) = fleet
             .host(local_host)
-            .and_then(|host| host.version.as_deref())
+            .and_then(wire::HostEntry::version)
             .filter(|running| !place.version.is_empty() && *running != place.version)
         {
             parts.push((

@@ -14,7 +14,6 @@ use std::time::Duration;
 
 use daemon_core::{Input, Tried};
 use tonic::transport::Channel;
-use wire::Presence;
 
 use crate::HostId;
 use crate::driver::{CoreLinks, core_error};
@@ -318,18 +317,6 @@ impl ConnectionManager {
         self.look(move |core| core.route_kind(host))
             .await
             .map_or(LiveRoute::Offline, LiveRoute::from_wire)
-    }
-
-    /// How `peer` reads, and the route that carries its calls, as every
-    /// client is told: online once a channel to it has opened on a route
-    /// still listed, away while the relay refuses channels to it for the
-    /// account's plan, offline otherwise, with no route then.
-    pub(crate) async fn presence_for(&self, peer: HostId) -> (Presence, LiveRoute) {
-        let host = core_host(peer);
-        match self.look(move |core| core.reads(host)).await {
-            Some((presence, via)) => (presence, LiveRoute::from_wire(via)),
-            None => (Presence::Offline, LiveRoute::Offline),
-        }
     }
 
     pub(crate) async fn teardown_host(&self, peer: HostId) {

@@ -155,7 +155,7 @@ async fn peer_inventory_hosts(from: &Edge, to: Uuid) -> Vec<Vec<u8>> {
             .expect("the inventory streams")
             .expect("the inventory reaches CaughtUp");
         match of {
-            Some(inventory_event::Of::Host(host)) => hosts.push(host.host_id),
+            Some(inventory_event::Of::Host(host)) => hosts.push(host.host_id().to_vec()),
             Some(inventory_event::Of::CaughtUp(_)) => return hosts,
             _ => {}
         }

@@ -779,12 +779,12 @@ mod tests {
     use std::time::Duration;
 
     use chrono::{DateTime, Utc};
+    use daemon_core::trust::PairingUpdate;
     use rustls::pki_types::{CertificateDer, UnixTime};
     use tempfile::TempDir;
 
     use super::*;
     use crate::trust::{Reachability, TrustEntry};
-    use daemon_core::trust::PairingUpdate;
 
     fn temp_data_dir() -> TempDir {
         tempfile::tempdir().unwrap()

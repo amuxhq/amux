@@ -30,7 +30,7 @@ pub async fn inventory(client: &mut Client) -> Result<(Vec<HostEntry>, Vec<Agent
     while let Some(event) = stream.message().await.map_err(crate::plain)? {
         match event.of {
             Some(inventory_event::Of::Host(host)) => {
-                hosts.insert(host.host_id.clone(), host);
+                hosts.insert(host.host_id().to_vec(), host);
             }
             Some(inventory_event::Of::HostRemoved(removed)) => {
                 hosts.remove(&removed.host_id);
@@ -146,8 +146,8 @@ fn ls_table(hosts: &[HostEntry], agents: &[Agent]) -> String {
     let host_name = |id: &[u8]| {
         hosts
             .iter()
-            .find(|host| host.host_id == id)
-            .map(|host| host.name.clone())
+            .find(|host| host.host_id() == id)
+            .map(|host| host.name().to_owned())
             .filter(|name| !name.is_empty())
             .unwrap_or_else(|| short_id(id))
     };
@@ -220,11 +220,11 @@ fn ls_table(hosts: &[HostEntry], agents: &[Agent]) -> String {
 /// heard from the host is not what the agent is doing now.
 fn listed_state(agent: &Agent, hosts: &[HostEntry], host_name: &str) -> String {
     let live = Lifecycle::try_from(agent.lifecycle) != Ok(Lifecycle::Exited);
-    match hosts.iter().find(|host| host.host_id == agent.host_id) {
-        Some(host) if live && host.revoked == Some(true) => {
+    match hosts.iter().find(|host| host.host_id() == agent.host_id) {
+        Some(host) if live && host.revoked() => {
             format!("{host_name} no longer trusts this machine")
         }
-        Some(host) if live && host.presence() != wire::Presence::Online => {
+        Some(host) if live && host.online().is_none() => {
             format!("{host_name} is away")
         }
         _ => state(agent),
@@ -460,12 +460,8 @@ mod tests {
     /// not what the agent is doing now.
     #[test]
     fn ls_says_an_agent_on_an_away_host_is_away_not_its_last_phase() {
-        let host = |id: u8, name: &str, presence: wire::Presence| HostEntry {
-            host_id: vec![id; 16],
-            name: name.into(),
-            trust: wire::Trust::Trusted as i32,
-            presence: presence as i32,
-            ..HostEntry::default()
+        let host = |id: u8, name: &str, reach: wire::trusted::Reach| {
+            HostEntry::trusted_host(vec![id; 16], name, reach)
         };
         let agent = |id: u8, host: u8, name: &str| Agent {
             agent_id: vec![id; 16],
@@ -479,8 +475,12 @@ mod tests {
         };
         let table = ls_table(
             &[
-                host(1, "pdesk", wire::Presence::Online),
-                host(2, "plap", wire::Presence::Away),
+                host(
+                    1,
+                    "pdesk",
+                    wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+                ),
+                host(2, "plap", wire::trusted::Reach::Away(wire::Empty {})),
             ],
             &[agent(1, 1, "here"), agent(2, 2, "c1")],
         );

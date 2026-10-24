@@ -998,7 +998,7 @@ impl SessionState {
     fn host_online(&self) -> bool {
         self.host
             .as_ref()
-            .is_some_and(|host| host.presence() == wire::Presence::Online)
+            .is_some_and(|host| host.online().is_some())
     }
 
     /// The held inputs that left before the newest word that the host can

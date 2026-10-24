@@ -5,32 +5,37 @@
 //! is made of moves: the edge starting, signing in or out, a provider's
 //! offer read again.
 
-use wire::{HostEntry, Presence, Trust};
+use wire::HostEntry;
 
 use crate::runtime::ProfileRuntime;
 
 impl ProfileRuntime {
-    /// This host's entry: always trusted and online to itself, and signed
-    /// in or out of its account as it is now, so a client can say a host
-    /// only the relay reaches is offline because this machine signed out.
+    /// This host's entry as the core lists it: always trusted and online
+    /// to itself, and signed in or out of its account as it is now, so a
+    /// client can say a host only the relay reaches is offline because this
+    /// machine signed out.
     pub fn host_entry(&self) -> HostEntry {
         let edge = self.edge();
         HostEntry {
-            host_id: self.host().as_bytes().to_vec(),
-            name: edge
-                .as_ref()
-                .map(|edge| edge.host_name().to_owned())
-                .unwrap_or_default(),
-            account_signed_in: edge.as_ref().and_then(|edge| edge.account_signed_in()),
+            host: Some(wire::Host {
+                host_id: self.host().as_bytes().to_vec(),
+                name: edge
+                    .as_ref()
+                    .map(|edge| edge.host_name().to_owned())
+                    .unwrap_or_default(),
+                version: crate::version().to_owned(),
+                capabilities: edge.as_ref().map(|edge| edge.capabilities()),
+                platform: crate::routing::local_platform() as i32,
+                account_signed_in: edge.as_ref().and_then(|edge| edge.account_signed_in()),
+            }),
             generation: self.generation(),
-            trust: Trust::Trusted as i32,
-            presence: Presence::Online as i32,
-            version: Some(crate::version().to_owned()),
-            capabilities: edge.as_ref().map(|edge| edge.capabilities()),
-            platform: crate::routing::local_platform() as i32,
-            current: Some(true),
             providers: self.offers().on_host(),
-            ..HostEntry::default()
+            standing: Some(wire::host_entry::Standing::Trusted(wire::Trusted {
+                reach: Some(wire::trusted::Reach::Online(
+                    wire::RouteKind::Unspecified as i32,
+                )),
+                current: true,
+            })),
         }
     }
 
@@ -46,7 +51,7 @@ impl ProfileRuntime {
             .lock()
             .unwrap()
             .iter()
-            .find(|entry| entry.host_id == host.as_bytes())
+            .find(|entry| entry.host_id() == host.as_bytes())
             .cloned()
     }
 

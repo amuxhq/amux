@@ -19,7 +19,7 @@ use support::synthetic::*;
 use support::*;
 use wire::{
     AmbiguousAgentName, ErrorCode, FetchRequest, GetRequest, InventoryEvent, Lifecycle, Phase,
-    Presence, SessionEvent, Step, Trust, inventory_event, session_event,
+    SessionEvent, Step, inventory_event, session_event,
 };
 
 const BIG_SEGMENTS: u64 = 1 << 20;
@@ -738,7 +738,7 @@ fn lose_power(install: &Install, checkpointed: &[u8]) {
     }
 }
 
-async fn host_generation(runtime: &ProfileRuntime) -> (u64, i32, i32) {
+async fn host_generation(runtime: &ProfileRuntime) -> (u64, Option<wire::RouteKind>) {
     let mut inventory = runtime.subscribe_inventory().await.unwrap();
     let mut seen = Vec::new();
     read_inventory_until(&mut inventory, &mut seen, "the host entry", |seen| {
@@ -746,7 +746,7 @@ async fn host_generation(runtime: &ProfileRuntime) -> (u64, i32, i32) {
     })
     .await;
     match &seen[0].of {
-        Some(inventory_event::Of::Host(host)) => (host.generation, host.trust, host.presence),
+        Some(inventory_event::Of::Host(host)) => (host.generation, host.online()),
         other => panic!("the inventory opens with this host, not {other:?}"),
     }
 }
@@ -790,7 +790,7 @@ async fn power_loss_bumps_the_generation_and_re_ingests_from_the_durable_cursor(
     );
     assert_eq!(
         host_generation(&runtime).await,
-        (2, Trust::Trusted as i32, Presence::Online as i32),
+        (2, Some(wire::RouteKind::Unspecified)),
         "this host's entry carries the new generation"
     );
     assert_eq!(
@@ -1129,10 +1129,9 @@ async fn fetch_and_get_are_store_reads() {
 fn describe_inventory(event: &InventoryEvent) -> String {
     match event.of.as_ref().expect("an event") {
         inventory_event::Of::Host(host) => format!(
-            "host generation={} trust={:?} presence={:?}",
+            "host generation={} online={}",
             host.generation,
-            Trust::try_from(host.trust).unwrap(),
-            Presence::try_from(host.presence).unwrap()
+            host.online().is_some()
         ),
         inventory_event::Of::HostRemoved(_) => "host removed".into(),
         inventory_event::Of::Agent(agent) => format!(
@@ -1194,7 +1193,7 @@ async fn the_inventory_streams_hosts_and_rows_then_caught_up_then_deltas() {
     assert_eq!(
         described,
         vec![
-            "host generation=1 trust=Trusted presence=Online",
+            "host generation=1 online=true",
             "agent alpha Exited Starting working_on=None",
             "caught_up",
             "agent beta Exited Starting working_on=None",
@@ -1238,7 +1237,7 @@ async fn a_lagging_inventory_subscriber_is_told_it_lagged() {
     assert_eq!(
         described,
         vec![
-            "host generation=1 trust=Trusted presence=Online",
+            "host generation=1 online=true",
             "agent alpha Exited Starting working_on=None",
             "caught_up",
             "lagged",

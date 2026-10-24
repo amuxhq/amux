@@ -1106,14 +1106,29 @@ fn unknown_renders_one_way() {
 fn host_entry(host: &str, signed_in: Option<bool>) -> FleetMsg {
     FleetMsg::Event(Box::new(wire::InventoryEvent {
         of: Some(wire::inventory_event::Of::Host(wire::HostEntry {
-            host_id: host.as_bytes().to_vec(),
-            name: host.into(),
-            account_signed_in: signed_in,
-            trust: wire::Trust::Trusted as i32,
-            presence: wire::Presence::Online as i32,
-            ..wire::HostEntry::default()
+            host: Some(wire::Host {
+                host_id: host.as_bytes().to_vec(),
+                name: host.into(),
+                account_signed_in: signed_in,
+                ..Default::default()
+            }),
+            standing: Some(wire::host_entry::Standing::Trusted(wire::Trusted {
+                reach: Some(wire::trusted::Reach::Online(
+                    wire::RouteKind::Unspecified as i32,
+                )),
+                current: false,
+            })),
+            ..Default::default()
         })),
     }))
+}
+
+/// A trusted host's entry as reading `reach`.
+fn reads(entry: &mut wire::HostEntry, reach: wire::trusted::Reach) {
+    entry.standing = Some(wire::host_entry::Standing::Trusted(wire::Trusted {
+        reach: Some(reach),
+        current: false,
+    }));
 }
 
 fn set_host(fleet: &mut FleetState, host: &str, change: impl FnOnce(&mut wire::HostEntry)) {
@@ -1136,7 +1151,10 @@ fn a_host_is_reached_by_its_route_or_away_for_the_plan_or_offline_for_what_this_
     // A profile never bound to an account is not signed out.
     fleet.update(host_entry("laptop", None));
     set_host(&mut fleet, "desk", |entry| {
-        entry.via = wire::RouteKind::Relay as i32
+        reads(
+            entry,
+            wire::trusted::Reach::Online(wire::RouteKind::Relay as i32),
+        )
     });
     assert_eq!(
         reach(&fleet, b"laptop", b"desk"),
@@ -1151,31 +1169,30 @@ fn a_host_is_reached_by_its_route_or_away_for_the_plan_or_offline_for_what_this_
     );
 
     set_host(&mut fleet, "desk", |entry| {
-        entry.presence = wire::Presence::Offline as i32
+        reads(
+            entry,
+            wire::trusted::Reach::Offline(wire::Offline::default()),
+        )
     });
     assert_eq!(
         reach(&fleet, b"laptop", b"desk"),
         Reach::Offline(Offline::Plain)
     );
     set_host(&mut fleet, "desk", |entry| {
-        entry.presence = wire::Presence::Unspecified as i32
-    });
-    assert_eq!(
-        reach(&fleet, b"laptop", b"desk"),
-        Reach::Offline(Offline::Plain)
-    );
-    set_host(&mut fleet, "desk", |entry| {
-        entry.presence = wire::Presence::Away as i32
+        reads(entry, wire::trusted::Reach::Away(wire::Empty {}))
     });
     assert_eq!(reach(&fleet, b"laptop", b"desk"), Reach::Away);
 
     // Signed out, a host this machine does not reach is offline for that:
     // with no relay link, nothing the relay refused reads away.
     set_host(&mut fleet, "desk", |entry| {
-        entry.presence = wire::Presence::Offline as i32
+        reads(
+            entry,
+            wire::trusted::Reach::Offline(wire::Offline::default()),
+        )
     });
     set_host(&mut fleet, "laptop", |entry| {
-        entry.account_signed_in = Some(false)
+        entry.host.get_or_insert_default().account_signed_in = Some(false)
     });
     assert_eq!(
         reach(&fleet, b"laptop", b"desk"),
@@ -1186,8 +1203,10 @@ fn a_host_is_reached_by_its_route_or_away_for_the_plan_or_offline_for_what_this_
     assert!(reach(&fleet, b"desk", b"laptop").online());
     // A host reached directly needs no account.
     set_host(&mut fleet, "desk", |entry| {
-        entry.presence = wire::Presence::Online as i32;
-        entry.via = wire::RouteKind::Direct as i32;
+        reads(
+            entry,
+            wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+        )
     });
     assert_eq!(
         reach(&fleet, b"laptop", b"desk"),
@@ -1196,7 +1215,15 @@ fn a_host_is_reached_by_its_route_or_away_for_the_plan_or_offline_for_what_this_
 
     // A host that no longer trusts this machine says so first, whatever
     // route still reaches it.
-    set_host(&mut fleet, "desk", |entry| entry.revoked = Some(true));
+    set_host(&mut fleet, "desk", |entry| {
+        reads(
+            entry,
+            wire::trusted::Reach::Offline(wire::Offline {
+                revoked: true,
+                ..Default::default()
+            }),
+        )
+    });
     assert_eq!(
         reach(&fleet, b"laptop", b"desk"),
         Reach::Offline(Offline::Revoked)
@@ -2240,7 +2267,10 @@ fn each_row_says_what_its_state_calls_for() {
         unreachable!()
     };
     if let Some(wire::inventory_event::Of::Host(entry)) = &mut far.of {
-        entry.presence = wire::Presence::Offline as i32;
+        reads(
+            entry,
+            wire::trusted::Reach::Offline(wire::Offline::default()),
+        );
     }
     fleet.update(FleetMsg::Event(far));
     let entry = |id: &str, phase| fleet_entry("a", id, phase, None, 1);
@@ -3240,7 +3270,7 @@ fn header_counts_leave_out_agents_whose_host_is_out_of_reach() {
     fleet.update(host_entry("desk", None));
     fleet.update(host_entry("laptop", None));
     set_host(&mut fleet, "laptop", |entry| {
-        entry.presence = wire::Presence::Away as i32;
+        reads(entry, wire::trusted::Reach::Away(wire::Empty {}));
     });
     fleet.update(fleet_row("desk", "here", Phase::Working, None, 1));
     fleet.update(fleet_row("laptop", "far-working", Phase::Working, None, 2));
@@ -3661,8 +3691,13 @@ fn agents_on_a_host_that_no_longer_trusts_this_machine_do_not_read_away() {
     fleet.update(host_entry("desk", None));
     fleet.update(host_entry("laptop", None));
     set_host(&mut fleet, "laptop", |entry| {
-        entry.presence = wire::Presence::Away as i32;
-        entry.revoked = Some(true);
+        reads(
+            entry,
+            wire::trusted::Reach::Offline(wire::Offline {
+                revoked: true,
+                ..Default::default()
+            }),
+        );
     });
     fleet.update(fleet_row("laptop", "far", Phase::Working, None, 1));
     let view = fleet_view(&fleet, b"desk", &no_sessions(), &HashSet::new(), &|_| true);

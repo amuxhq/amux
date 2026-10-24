@@ -1100,10 +1100,13 @@ impl ProfileRuntime {
         // A host that announced which kinds it runs is not asked to start
         // another: a phone runs none.
         if let Some(entry) = self.host_entry_of(host)
-            && let Some(capabilities) = &entry.capabilities
+            && let Some(capabilities) = entry
+                .host
+                .as_ref()
+                .and_then(|host| host.capabilities.as_ref())
             && let Some(kind) = request.agent.as_ref().map(|agent| agent.kind())
         {
-            self.runs_kind(capabilities, &entry.name, kind)?;
+            self.runs_kind(capabilities, entry.name(), kind)?;
         }
         // No folder there is a default worth guessing: the caller asks the
         // person or names a path it knows on that host.

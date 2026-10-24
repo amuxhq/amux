@@ -632,8 +632,11 @@ fn a_prompt_sent_while_its_file_attaches_waits_for_the_file() {
 fn a_prompt_sent_while_the_host_is_away_is_handed_on_to_be_held() {
     let mut state = chat(replies(1, 5));
     state.update(Msg::Host(wire::HostEntry {
-        host_id: b"host".to_vec(),
-        name: "studio".into(),
+        host: Some(wire::Host {
+            host_id: b"host".to_vec(),
+            name: "studio".into(),
+            ..Default::default()
+        }),
         ..Default::default()
     }));
     state.update(event(session_event::Of::Detached(wire::Detached {})));
@@ -1007,10 +1010,7 @@ fn a_file_over_the_attachment_limit_is_refused_naming_the_limit() {
 #[test]
 fn choosing_an_away_host_for_a_new_agent_says_why() {
     let mut fleet = home_fleet();
-    inventory(
-        &mut fleet,
-        host(b"d", "desk", wire::Trust::Trusted, wire::Presence::Away),
-    );
+    inventory(&mut fleet, host(b"d", "desk", Reads::Away));
     let mut home = crate::home::Home::default();
     home_at(&mut home, &fleet, W, H);
     home.key(&fleet, key(KeyCode::Char('n')), false);
@@ -1075,8 +1075,11 @@ fn raw_attach_to_a_stopped_agent_says_it_is_stopped() {
 fn a_chat_reconnecting_to_its_own_daemon_does_not_blame_the_agents_host() {
     let mut state = chat(replies(1, 3));
     state.update(Msg::Host(wire::HostEntry {
-        host_id: b"host".to_vec(),
-        name: "desk".into(),
+        host: Some(wire::Host {
+            host_id: b"host".to_vec(),
+            name: "desk".into(),
+            ..Default::default()
+        }),
         ..Default::default()
     }));
     state.update(Msg::Connection(ui_state::Connection::Reconnecting));

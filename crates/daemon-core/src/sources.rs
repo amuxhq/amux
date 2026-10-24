@@ -1701,8 +1701,8 @@ mod tests {
         out.iter().find_map(|output| match output {
             Output::Shell(ShellWork::Hosts { entries }) => entries
                 .iter()
-                .find(|entry| entry.host_id == host)
-                .and_then(|entry| entry.current),
+                .find(|entry| entry.host_id() == host)
+                .map(wire::HostEntry::current),
             _ => None,
         })
     }
@@ -1849,9 +1849,12 @@ mod tests {
     fn sourced(daemon: &mut Daemon) -> (CallId, CallId) {
         let inventory = following(daemon);
         let host = HostEntry {
-            host_id: PEER.to_vec(),
+            host: Some(wire::Host {
+                host_id: PEER.to_vec(),
+                ..Default::default()
+            }),
             generation: 3,
-            ..HostEntry::default()
+            ..Default::default()
         };
         step(
             daemon,

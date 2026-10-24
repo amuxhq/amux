@@ -1501,13 +1501,12 @@ impl Transition<'_> {
             budget: StepBudget::UNLIMITED,
         };
         let entry = wire::HostEntry {
-            host_id: id.0.to_vec(),
-            name: plan.name.clone(),
             generation,
-            trust: wire::Trust::Trusted as i32,
-            presence: wire::Presence::Online as i32,
-            current: Some(true),
-            ..wire::HostEntry::default()
+            ..wire::HostEntry::trusted_host(
+                id.0,
+                plan.name.clone(),
+                wire::trusted::Reach::Online(wire::RouteKind::Unspecified as i32),
+            )
         };
         let trusted = plan.trusted.clone();
         let settings = plan.settings;

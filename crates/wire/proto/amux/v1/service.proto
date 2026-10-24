@@ -49,34 +49,56 @@ message InventoryEvent {
 // presence; candidates come and go with discovery. HostRemoved only on
 // untrust, or when a candidate disappears.
 message HostEntry {
-  bytes host_id = 1;
-  string name = 2;
-  optional string version = 3;
-  optional Capabilities capabilities = 4;
-  // The outcome of the daemon's last failed dial attempt at this host,
-  // cleared when a route comes up.
-  optional string last_dial_error = 5;
-  RouteKind via = 6;
-  optional bool account_signed_in = 7;
-  // The machine's operating system, as it announced itself in the
-  // handshake.
-  Platform platform = 8;
+  // The host as it announced itself in its handshake; a paired host's name
+  // is the one this machine's trust entry keeps for it.
+  Host host = 1;
   // Bumped only after an unclean reboot of that host.
-  uint64 generation = 9;
-  Trust trust = 10;
-  Presence presence = 11;
-  // Where discovery found a candidate; what pairing dials.
-  repeated string addrs = 12;
-  // Set when this host closed its link saying it no longer trusts this
-  // machine; cleared when it links to this machine again.
-  optional bool revoked = 13;
+  uint64 generation = 2;
+  // What each provider offers on the host, once the host has asked it.
+  repeated ProviderOnHost providers = 3;
+  oneof standing {
+    // Paired with this machine, or this machine itself.
+    Trusted trusted = 4;
+    // Found by discovery, never paired.
+    Candidate candidate = 5;
+  }
+}
+
+message Trusted {
+  // How the host reads from the daemon that lists it, from the outcome of
+  // opening a channel to it. A host whose route comes up keeps the reach it
+  // had until the first channel attempt on that route concludes.
+  oneof reach {
+    // A channel to the host opened on a route still listed, of this kind;
+    // unspecified for this machine itself.
+    RouteKind online = 1;
+    // The relay refused the channel because the account's plan carries no
+    // connection between hosts: upgrading reaches this host.
+    Empty away = 2;
+    // Anything else: no route, or a channel that failed for any reason but
+    // the plan (no route at the relay, rate limited, shutting down, revoked,
+    // TLS or identity failure, timeout, link gone).
+    Offline offline = 3;
+  }
   // Whether this machine's copy of the host's inventory has caught up on a
   // live stream from it: its agents are as the host lists them now, not as
   // they were remembered. Cleared when the host is lost; a client that
   // reads every trusted host current has reconciled with its fleet.
-  optional bool current = 14;
-  // What each provider offers on the host, once the host has asked it.
-  repeated ProviderOnHost providers = 15;
+  bool current = 4;
+}
+
+message Offline {
+  // The outcome of the daemon's last failed dial attempt at this host,
+  // cleared when a route comes up.
+  optional string last_dial_error = 1;
+  // The host closed its link saying it no longer trusts this machine;
+  // cleared when it links to this machine again.
+  bool revoked = 2;
+}
+
+message Candidate {
+  // Where discovery found it; what pairing dials.
+  repeated string addrs = 1;
 }
 
 message ProviderOnHost {
@@ -92,31 +114,8 @@ message AmbiguousHostName {
   repeated HostEntry candidates = 2;
 }
 
-enum Trust {
-  TRUST_UNSPECIFIED = 0;
-  TRUST_TRUSTED = 1;
-  // Found by discovery, never paired.
-  TRUST_CANDIDATE = 2;
-}
-
-// How a host reads from the daemon that lists it, from the outcome of
-// opening a channel to it. A host whose route comes up keeps the presence it
-// had until the first channel attempt on that route concludes.
-enum Presence {
-  PRESENCE_UNSPECIFIED = 0;
-  // A channel to the host opened on a route still listed.
-  PRESENCE_ONLINE = 1;
-  // Anything else: no route, or a channel that failed for any reason but
-  // the plan (no route at the relay, rate limited, shutting down, revoked,
-  // TLS or identity failure, timeout, link gone).
-  PRESENCE_OFFLINE = 2;
-  // The relay refused the channel because the account's plan carries no
-  // connection between hosts: upgrading reaches this host.
-  PRESENCE_AWAY = 3;
-}
-
 // How this machine reaches a host, or how a pairing peer was reached. No
-// value for "no route": Presence says offline.
+// value for "no route": the host reads offline.
 enum RouteKind {
   ROUTE_KIND_UNSPECIFIED = 0;
   ROUTE_KIND_DIRECT = 1;

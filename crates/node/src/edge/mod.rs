@@ -702,12 +702,6 @@ impl Edge {
         self.connections.calls_failed(host, error);
     }
 
-    /// How `host` reads now, and the route its calls take while it is not
-    /// offline.
-    pub async fn presence(&self, host: HostId) -> (wire::Presence, LiveRoute) {
-        self.connections.presence_for(host).await
-    }
-
     /// From now on no channel to `host` opens, or opens again, while the
     /// link and the streams it already carries stay up: a call to it fails
     /// before it goes out. For a test network.

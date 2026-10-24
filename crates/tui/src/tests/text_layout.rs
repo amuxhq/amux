@@ -358,10 +358,7 @@ fn fleet_screen_at(view: &mut FleetView, fleet: &FleetState, width: u16, height:
 #[test]
 fn a_refused_rename_keeps_its_reason_and_way_out_at_80_columns() {
     let mut fleet = FleetState::new();
-    inventory(
-        &mut fleet,
-        host(b"a", "studio", wire::Trust::Trusted, wire::Presence::Online),
-    );
+    inventory(&mut fleet, host(b"a", "studio", Reads::Online));
     inventory(
         &mut fleet,
         agent_row(b"p", "brisk-raven", Phase::Idle, None),
@@ -475,10 +472,7 @@ fn a_question_card_draws_inline_code_without_backticks() {
 #[test]
 fn an_idle_rows_background_jobs_are_counted_on_it() {
     let mut fleet = FleetState::new();
-    inventory(
-        &mut fleet,
-        host(b"a", "studio", wire::Trust::Trusted, wire::Presence::Online),
-    );
+    inventory(&mut fleet, host(b"a", "studio", Reads::Online));
     let wire::inventory_event::Of::Agent(mut agent) = agent_row(b"p", "cx-cmd", Phase::Idle, None)
     else {
         unreachable!()

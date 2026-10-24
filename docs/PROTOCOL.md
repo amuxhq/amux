@@ -98,8 +98,8 @@ their own, so they never see a person's laptop or phone and never see each
 other.
 
 Discovery is **never trust or presence**. An unpaired result is only a pairing
-candidate, listed in the inventory as a host entry with `trust = TRUST_CANDIDATE`
-and the addresses pairing will dial. A result claiming a paired host's id is
+candidate, listed in the inventory as a host entry whose standing is
+`Candidate`, carrying the addresses pairing will dial. A result claiming a paired host's id is
 only a dial hint; the pinned handshake must still present that host's key. A
 paired host is online only after a link succeeds. Discovery is queried again
 at startup, after the machine wakes (a monotonic gap of more than 30 seconds),
@@ -199,14 +199,14 @@ A trusted host's presence is the outcome of opening a channel to it, decided in
 one place, the daemon core's presence state (`crates/daemon-core/src/presence.rs`):
 
 - **Online:** a channel to the host opened on a route still listed. The route
-  it opened on is the one the host entry's `via` names.
+  it opened on is the one the host entry's `online` reach names.
 - **Away:** the relay refused the channel with `PAYMENT_REQUIRED`, because the
   account's free plan carries no connection between hosts. Upgrading reaches
   the host; nothing else reads away.
 - **Offline:** everything else. No route is listed, or the channel failed for
   any other reason: no route at the relay, rate limited, shutting down,
   revoked, a TLS, handshake or identity failure, a timeout. A host that said it
-  no longer trusts this one is offline and carries `revoked` on its entry.
+  no longer trusts this one is offline, with `revoked` set on its entry.
 
 Every route that comes up is tried at once: a direct link's first channel opens
 as the link's event is handled, and a relay's claim for a trusted host is tried

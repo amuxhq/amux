@@ -695,19 +695,21 @@ the stops and unknown causes as ended, and every other cause as a failure in
 its words followed by its own. The `Boundary` that ends an incarnation in the
 journal carries the same cause and detail.
 
-`HostEntry` carries the host's name, version, platform and capabilities, its
-`trust` (`TRUST_TRUSTED` or `TRUST_CANDIDATE`), its `presence`
-(`PRESENCE_ONLINE`, `PRESENCE_OFFLINE` or `PRESENCE_AWAY`), how it is reached, and its `generation`, which changes only after an
-unclean reboot of that host (see [the journal and store](JOURNAL_AND_STORE.md)).
-Its `providers` list, per provider the host has been asked about, the hash of
-what that provider offers there and whether it is signed in; a paired host's
-come from that host's own entry. A trusted host is online once a channel to it
-has opened on a route still listed, and `via` names that route; away while the
-relay refuses its channel because the account's free plan carries no
-connection between hosts; and offline otherwise, with `via` unspecified: no
-route, a channel that failed for any other reason, or a host that said it no
-longer trusts this machine (`revoked`). A host whose route has just come up
-keeps its presence until the first channel on it opens or fails
+`HostEntry` carries the host's own word (its `Host`: name, version, platform,
+capabilities and whether it is signed in), its `generation`, which changes
+only after an unclean reboot of that host (see
+[the journal and store](JOURNAL_AND_STORE.md)), and its `providers`: per
+provider the host has been asked about, the hash of what that provider offers
+there and whether it is signed in; a paired host's come from that host's own
+entry. Its `standing` is one of two arms. A pairing candidate is `Candidate`,
+carrying the addresses pairing will dial. A paired host is `Trusted`, whose
+`reach` is one of three: `online` once a channel to it has opened on a route
+still listed, naming that route; `away` while the relay refuses its channel
+because the account's free plan carries no connection between hosts; and
+`offline` otherwise, carrying the last dial error and whether the host said it
+no longer trusts this machine (`revoked`). `current` says whether this
+machine's copy of the host's agents has caught up. A host whose route has just
+come up keeps its reach until the first channel on it opens or fails
 ([presence](PROTOCOL.md#chapter-3-presence)).
 
 `AgentRemoved` carries a `RemovalReason`: why the row left this daemon's
@@ -762,7 +764,7 @@ release.
 Nothing else carries a version integer:
 
 - **Local clients** call `ClientService` with no handshake. A client may
-  compare its own version with its host's `HostEntry.version`; the terminal
+  compare its own version with its host's `HostEntry.host.version`; the terminal
   client shows "amux *version* is running · restart to update" when they
   differ.
 - **`ctl.sock` and the journal** have no version integer at all. Every item

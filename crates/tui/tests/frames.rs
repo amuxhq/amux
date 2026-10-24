@@ -695,7 +695,7 @@ async fn a_fleet_of_every_standing_matches_its_golden() {
             && exited(&crasher).is_some_and(|(lifecycle, _)| lifecycle == wire::Lifecycle::Exited)
             && fleet
                 .hosts()
-                .any(|host| host.name == "studio" && host.presence() == wire::Presence::Offline)
+                .any(|host| host.name() == "studio" && host.offline().is_some())
     })
     .await;
     let lines = session_lines(

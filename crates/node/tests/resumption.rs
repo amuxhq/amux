@@ -208,11 +208,12 @@ async fn a_host_resumed_with_a_ticket_for_a_key_no_longer_pinned_is_refused_as_r
         let revoked = linked
             .laptop_runtime
             .host_entry_of(desk)
-            .and_then(|entry| entry.revoked);
+            .is_some_and(|entry| entry.revoked());
         async move {
-            match revoked {
-                Some(true) => Ok(()),
-                other => Err(format!("{other:?}")),
+            if revoked {
+                Ok(())
+            } else {
+                Err("not revoked yet".to_owned())
             }
         }
     })

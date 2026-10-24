@@ -21,8 +21,8 @@ use tonic::{Request, Response, Status};
 use wire::client_service_server::ClientService;
 use wire::{
     Agent as Row, AgentRef, AgentSpec, AmbiguousAgentName, CreateAgentRequest, Empty, HostEntry,
-    InventoryEvent, Kind, Lifecycle, Phase, Presence, SendInputRequest, SendInputResponse,
-    SendMessageRequest, SendMessageResponse, Trust, create_agent_request, inventory_event,
+    InventoryEvent, Kind, Lifecycle, Phase, SendInputRequest, SendInputResponse,
+    SendMessageRequest, SendMessageResponse, create_agent_request, inventory_event,
 };
 
 const ME: [u8; 16] = [0xa1; 16];
@@ -400,14 +400,8 @@ fn row(id: &[u8], host: &[u8], name: &str) -> Row {
     }
 }
 
-fn host(id: &[u8], name: &str, trust: Trust, presence: Presence) -> HostEntry {
-    HostEntry {
-        host_id: id.to_vec(),
-        name: name.to_owned(),
-        trust: trust as i32,
-        presence: presence as i32,
-        ..Default::default()
-    }
+fn host(id: &[u8], name: &str, reach: wire::trusted::Reach) -> HostEntry {
+    HostEntry::trusted_host(id, name, reach)
 }
 
 /// Me on this host with a child, a reviewer on the studio, and a candidate
@@ -428,9 +422,17 @@ fn fleet() -> Fleet {
     child.exit_cause = wire::ExitCause::Finished as i32;
     Fleet {
         hosts: vec![
-            host(&HERE, "laptop", Trust::Trusted, Presence::Online),
-            host(&STUDIO, "Studio", Trust::Trusted, Presence::Away),
-            host(&[0x03; 16], "stranger", Trust::Candidate, Presence::Online),
+            host(
+                &HERE,
+                "laptop",
+                wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+            ),
+            host(
+                &STUDIO,
+                "Studio",
+                wire::trusted::Reach::Away(wire::Empty {}),
+            ),
+            HostEntry::candidate_host([0x03; 16], "stranger", Vec::new()),
         ],
         agents: vec![me, reviewer, child],
         ..Default::default()

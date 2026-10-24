@@ -344,7 +344,7 @@ impl Daemon {
                 response: Response::Inventory(Arc::new(inventory(of))),
             })
         };
-        for host in hosts.into_iter().filter(|host| carried(&host.host_id)) {
+        for host in hosts.into_iter().filter(|host| carried(host.host_id())) {
             answer(inventory_event::Of::Host(host));
         }
         for row in rows.iter().filter(|row| carried(&row.agent.host)) {
@@ -568,7 +568,7 @@ fn carries(only: Option<&[u8]>, event: &InventoryEvent) -> bool {
         return true;
     };
     match &event.of {
-        Some(inventory_event::Of::Host(host)) => host.host_id == only,
+        Some(inventory_event::Of::Host(host)) => host.host_id() == only,
         Some(inventory_event::Of::HostRemoved(removed)) => removed.host_id == only,
         Some(inventory_event::Of::Agent(agent)) => agent.host_id == only,
         Some(inventory_event::Of::AgentRemoved(removed)) => removed.host_id == only,
@@ -709,13 +709,19 @@ mod tests {
         let mut daemon = daemon();
         // This host's entry as the core lists it, named as the driver says.
         let own = |name: &str| wire::HostEntry {
-            host_id: OWN.to_vec(),
-            name: name.to_owned(),
+            host: Some(wire::Host {
+                host_id: OWN.to_vec(),
+                name: name.to_owned(),
+                ..Default::default()
+            }),
             generation: 7,
-            trust: wire::Trust::Trusted as i32,
-            presence: wire::Presence::Online as i32,
-            current: Some(true),
-            ..wire::HostEntry::default()
+            standing: Some(wire::host_entry::Standing::Trusted(wire::Trusted {
+                reach: Some(wire::trusted::Reach::Online(
+                    wire::RouteKind::Unspecified as i32,
+                )),
+                current: true,
+            })),
+            ..Default::default()
         };
         let answers = |out: Vec<Output>| -> Vec<Output> {
             out.into_iter()
@@ -767,7 +773,10 @@ mod tests {
             answers(step(
                 &mut daemon,
                 Input::OwnHost(Box::new(wire::HostEntry {
-                    name: "desk".into(),
+                    host: Some(wire::Host {
+                        name: "desk".into(),
+                        ..Default::default()
+                    }),
                     ..wire::HostEntry::default()
                 }))
             )),

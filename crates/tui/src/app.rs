@@ -1578,10 +1578,10 @@ impl App {
         let state = chat.session.state();
         let linked = fleet
             .host(&chat.agent.host)
-            .is_some_and(|host| host.trust() == wire::Trust::Trusted);
+            .is_some_and(|host| host.trusted().is_some());
         let host = state
             .host()
-            .map(|host| host.name.clone())
+            .map(|host| host.name().to_owned())
             .filter(|name| !name.is_empty())
             .unwrap_or_else(|| "its host".to_owned());
         let not_found = ended
@@ -1677,7 +1677,7 @@ impl App {
         }
         let host_name = fleet
             .host(&host)
-            .map(|entry| entry.name.clone())
+            .map(|entry| entry.name().to_owned())
             .filter(|name| !name.is_empty())
             .unwrap_or_else(|| "this machine".to_owned());
         drop(fleet);

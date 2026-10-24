@@ -1826,10 +1826,11 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use daemon_core::trust::PairingUpdate;
+
     use super::*;
     use crate::identity::DeviceIdentity;
     use crate::trust::{SharedTrustStore, TrustStore};
-    use daemon_core::trust::PairingUpdate;
 
     /// An in-memory substrate: what was sent, and what to receive next.
     #[derive(Default)]

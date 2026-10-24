@@ -13,13 +13,17 @@ fn body(kind: Kind) -> Vec<u8> {
     ClaudeSdkItem { kind: Some(kind) }.encode_to_vec()
 }
 
-/// `{"command":"ls"}` is 16 bytes, so the call is 26: its name (2 + 4),
-/// its input (2 + 16) and its background flag (2). The item body wraps it
-/// in 2 more: 28.
+/// The input is a shell call whose subject is `ls`: 2 + 2 for the
+/// subject and 2 for the empty shell arm, 6. The call is 17: its name
+/// (2 + 4), its input (a two-byte tag, 1 + 6) and its background flag (2).
+/// The item body wraps it in 2 more: 19.
 fn bash_ls() -> Vec<u8> {
     body(Kind::Tool(ToolCall {
         name: "Bash".into(),
-        input_json: br#"{"command":"ls"}"#.to_vec(),
+        input: Some(wire::ToolInput {
+            subject: "ls".into(),
+            of: Some(wire::tool_input::Of::Shell(wire::ShellInput::default())),
+        }),
         background: true,
         ..ToolCall::default()
     }))
@@ -27,7 +31,7 @@ fn bash_ls() -> Vec<u8> {
 
 #[test]
 fn measures_hand_counted_records() {
-    assert_eq!(bash_ls().len(), 28);
+    assert_eq!(bash_ls().len(), 19);
     let steps = vec![
         Step {
             // The kind, 1 + 1.
@@ -35,7 +39,7 @@ fn measures_hand_counted_records() {
                 kind: wire::Kind::ClaudePty as i32,
                 ..Snapshot::default()
             }),
-            // The key, 2 + 1, and the body, 2 + 28: 33.
+            // The key, 2 + 1, and the body, 2 + 19: 24.
             items: vec![Item {
                 key: "t".into(),
                 body: bash_ls(),
@@ -73,7 +77,7 @@ fn measures_hand_counted_records() {
         },
         // No snapshot: not counted.
         Step {
-            // The first item's 33 and its text, 2 + 1: 36.
+            // The first item's 24 and its text, 2 + 1: 27.
             items: vec![Item {
                 key: "t".into(),
                 body: bash_ls(),
@@ -121,7 +125,7 @@ fn measures_hand_counted_records() {
             background: true,
             items: 2,
             appends: 1,
-            bytes: 33 + 7 + 36,
+            bytes: 24 + 7 + 27,
         }]
     );
 }

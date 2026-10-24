@@ -53,11 +53,10 @@ message Thinking {
 }
 
 message ToolCall {
+  reserved 2, 5;
   string name = 1;
-  bytes input_json = 2;
   ToolState state = 3;
   string outcome_text = 4;
-  bytes outcome_json = 5;
   repeated Attachment attachments = 6;
   ToolClass class = 7;
   // A permission decision is meta on the tool call's own row.
@@ -81,6 +80,76 @@ message ToolCall {
   // When the call began running, after any approval. Its duration is
   // ended_at_ms minus this, else minus the item's at_ms.
   optional int64 started_at_ms = 17;
+  ToolInput input = 18;
+  // A file edit or write that finished: the hunks Claude says it changed.
+  repeated PatchHunk patch = 19;
+}
+
+// What a Claude call was asked to do, read once by the interpreter from the
+// call's input: an arm for each tool the views draw their own way, and the
+// input as Claude sent it for any other.
+message ToolInput {
+  // What the call names: the file, pattern, address, query, path, command
+  // line, description or notebook it is about, else its first string
+  // argument. A shell call's subject is its command line, a subagent's what
+  // it was asked to do.
+  string subject = 1;
+  oneof of {
+    ShellInput shell = 2;
+    EditInput edit = 3;
+    Empty subagent = 4;
+    // Claude's task-list bookkeeping, drawn by no client: the task list
+    // shows what it did.
+    Empty task_list = 5;
+    // A web fetch or search, drawn by its subject.
+    Empty web = 6;
+    // Any other tool's input as Claude sent it.
+    bytes other_json = 7;
+  }
+}
+
+message ShellInput {
+  // What Claude says the command is for.
+  string description = 1;
+}
+
+// A file edit, multi-edit, notebook edit or whole-file write.
+message EditInput {
+  // In order, each text replaced and its replacement. A write is one with
+  // nothing replaced; a notebook cell's old text is known only when its ask
+  // carried it.
+  repeated Replacement replacements = 1;
+  // A whole-file write rather than an edit.
+  bool write = 2;
+  // A notebook edit: which cell, and what happens to it.
+  NotebookCell cell = 3;
+}
+
+message Replacement {
+  string old = 1;
+  string new = 2;
+}
+
+message NotebookCell {
+  string id = 1;
+  NotebookEditMode mode = 2;
+  // "code" or "markdown", as Claude names it; empty for code.
+  string cell_type = 3;
+}
+
+enum NotebookEditMode {
+  NOTEBOOK_EDIT_MODE_UNSPECIFIED = 0;
+  NOTEBOOK_EDIT_MODE_REPLACE = 1;
+  NOTEBOOK_EDIT_MODE_INSERT = 2;
+  NOTEBOOK_EDIT_MODE_DELETE = 3;
+}
+
+// One hunk of a finished edit, as Claude reports it: where it starts in the
+// old and new file, and its lines, each led by '+', '-' or ' '.
+message PatchHunk {
+  uint32 old_start = 1;
+  uint32 new_start = 2;
+  repeated string lines = 3;
 }
 
 enum ToolState {
@@ -371,8 +440,9 @@ message Ask {
 }
 
 message PermissionAsk {
+  reserved 2;
   string tool_name = 1;
-  bytes input_json = 2;
+  ToolInput input = 9;
   // Every scope the provider offered, in order.
   repeated ScopeChoice scopes = 3;
   string reason = 4;

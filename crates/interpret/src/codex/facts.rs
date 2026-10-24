@@ -2458,6 +2458,7 @@ fn mcp_work(call: &McpToolCallItem) -> wire::McpToolCall {
             .as_ref()
             .map(|error| error.message.clone())
             .unwrap_or_default(),
+        subject: crate::shared::first_string(&call.arguments),
     }
 }
 
@@ -2469,6 +2470,7 @@ fn dynamic_work(call: &DynamicToolCallItem) -> wire::McpToolCall {
         arguments_json: compact_json(&call.arguments).into_bytes(),
         result_json: compact_json(&as_written(&call.content_items)).into_bytes(),
         error: String::new(),
+        subject: crate::shared::first_string(&call.arguments),
     }
 }
 

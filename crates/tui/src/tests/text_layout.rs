@@ -307,7 +307,7 @@ fn a_long_commands_choices_stay_on_a_short_screen() {
             item_key: "call-1".into(),
             body: Some(wire::ask::Body::Permission(wire::PermissionAsk {
                 tool_name: "Bash".into(),
-                input_json: input.to_string().into_bytes(),
+                input: Some(interpret::tool_input("Bash", "", &input, "")),
                 scopes: vec![
                     grant(vec![format!("Bash({}:*)", &command[..40])], vec![]),
                     grant(vec![], vec!["/Users/jlw/work".into()]),

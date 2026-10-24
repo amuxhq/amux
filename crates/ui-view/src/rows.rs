@@ -6,11 +6,10 @@ use std::ops::RangeInclusive;
 
 use schemars::JsonSchema;
 use serde::Serialize;
-use serde_json::Value;
 use ui_state::{Fold, Held, ItemBody, Key, PhaseView, SessionState};
 use wire::{
     Attachment, BlobRef, BoundaryKind, DecisionOutcome, EnvelopeKind, FileChangeKind, SendState,
-    ToolCall, ToolState, TurnOutcome,
+    ToolCall, ToolState, TurnOutcome, tool_input,
 };
 
 use crate::ask::{QuestionView, Scope, lift_rule, lifted, question, scope_of};
@@ -526,7 +525,9 @@ pub(crate) fn parent_of(held: &Held) -> Option<Key> {
 pub(crate) fn subject_of(held: &Held) -> String {
     match &held.body {
         ItemBody::ClaudePty(wire::claude_pty_item::Kind::Tool(tool))
-        | ItemBody::ClaudeSdk(wire::claude_sdk_item::Kind::Tool(tool)) => claude_subject(tool),
+        | ItemBody::ClaudeSdk(wire::claude_sdk_item::Kind::Tool(tool)) => {
+            read_input(tool).0.to_owned()
+        }
         ItemBody::Codex(wire::codex_item::Kind::Work(work)) => match &work.of {
             Some(wire::work::Of::Command(command)) => command.command.clone(),
             Some(wire::work::Of::WebSearch(search)) => web_step(search).1,
@@ -1070,18 +1071,6 @@ fn unrecognized(u: &wire::Unrecognized) -> RowKind {
     }
 }
 
-fn input(tool: &ToolCall) -> Value {
-    serde_json::from_slice(&tool.input_json).unwrap_or(Value::Null)
-}
-
-fn field(value: &Value, name: &str) -> String {
-    value
-        .get(name)
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned()
-}
-
 fn lines(text: &str) -> u32 {
     if text.is_empty() {
         0
@@ -1090,25 +1079,12 @@ fn lines(text: &str) -> u32 {
     }
 }
 
-/// What a Claude call is about, for its row and a run's summary.
-fn claude_subject(tool: &ToolCall) -> String {
-    let input = input(tool);
-    for name in [
-        "file_path",
-        "pattern",
-        "url",
-        "query",
-        "path",
-        "command",
-        "description",
-        "notebook_path",
-    ] {
-        let value = field(&input, name);
-        if !value.is_empty() {
-            return value;
-        }
-    }
-    String::new()
+/// What the interpreter read from a call's input: what it names, and the
+/// arm the views draw it by.
+fn read_input(tool: &ToolCall) -> (&str, Option<&tool_input::Of>) {
+    tool.input.as_ref().map_or(("", None), |input| {
+        (input.subject.as_str(), input.of.as_ref())
+    })
 }
 
 /// What a step that only looks says about how it went: why it failed, or
@@ -1158,9 +1134,9 @@ fn claude_tool(
     let decision = decision_view(tool.decision.as_ref(), &state.agent_state().permissions);
     let view = call_phase(state, held, tool.state, decision.as_ref());
     let failed = view == CallPhase::Failed;
-    let input = input(tool);
+    let (named, of) = read_input(tool);
     // Paths in the agent's folder are named from it.
-    let subject = within(&state.agent().cwd, &claude_subject(tool));
+    let subject = within(&state.agent().cwd, named);
     let duration_ms = duration(claude_started(held, tool), tool.ended_at_ms);
     let kind = if let Some(image) = image_of(&tool.attachments) {
         RowKind::Image {
@@ -1172,7 +1148,7 @@ fn claude_tool(
         RowKind::ToolCall {
             server: tool.server.clone(),
             tool: tool.name.clone(),
-            fact: first_fact(&input),
+            fact: named.to_owned(),
             state: view,
             result: tool.outcome_text.clone(),
         }
@@ -1184,17 +1160,17 @@ fn claude_tool(
             result: explore_result(verb, view, &tool.outcome_text),
         }
     } else {
-        match tool.name.as_str() {
-            "Bash" if tool.background => RowKind::Background {
-                command: field(&input, "command"),
+        match of {
+            Some(tool_input::Of::Shell(_)) if tool.background => RowKind::Background {
+                command: named.to_owned(),
                 running: view.in_flight(),
                 duration_ms,
             },
-            "Bash" => {
+            Some(tool_input::Of::Shell(_)) => {
                 let output = terminal_text(&tool.outcome_text);
                 let (output_head, more_lines) = output_head(&output);
                 RowKind::Command {
-                    command: field(&input, "command"),
+                    command: named.to_owned(),
                     state: view,
                     exit_code: tool.exit_code,
                     output_head,
@@ -1204,24 +1180,14 @@ fn claude_tool(
                     duration_ms,
                 }
             }
-            "Edit" | "MultiEdit" | "NotebookEdit" => {
-                let (added, removed) = claude_counts(tool, &input);
-                RowKind::FileChange {
-                    files: vec![FileRow {
-                        path: subject,
-                        change: FileChangeView::Edited,
-                        added,
-                        removed,
-                        line: tool.line,
-                    }],
-                    state: view,
-                }
-            }
-            "Write" => {
-                let content = lines(&field(&input, "content"));
+            Some(tool_input::Of::Edit(edit)) if edit.write => {
+                let content = edit
+                    .replacements
+                    .first()
+                    .map_or(0, |write| lines(&write.new));
                 let (change, (added, removed)) = match tool.created {
                     Some(true) => (FileChangeView::Created { lines: content }, (content, 0)),
-                    Some(false) => (FileChangeView::Edited, claude_counts(tool, &input)),
+                    Some(false) => (FileChangeView::Edited, claude_counts(tool, edit)),
                     None => (FileChangeView::Writing { lines: content }, (content, 0)),
                 };
                 RowKind::FileChange {
@@ -1235,12 +1201,27 @@ fn claude_tool(
                     state: view,
                 }
             }
-            "Agent" | "Task" => subagent(tool, &input, view, exited(state), duration_ms),
-            name if ui_state::is_task_tool(name) => RowKind::Hidden,
-            name => RowKind::ToolCall {
+            Some(tool_input::Of::Edit(edit)) => {
+                let (added, removed) = claude_counts(tool, edit);
+                RowKind::FileChange {
+                    files: vec![FileRow {
+                        path: subject,
+                        change: FileChangeView::Edited,
+                        added,
+                        removed,
+                        line: tool.line,
+                    }],
+                    state: view,
+                }
+            }
+            Some(tool_input::Of::Subagent(_)) => {
+                subagent(tool, named, view, exited(state), duration_ms)
+            }
+            Some(tool_input::Of::TaskList(_)) => RowKind::Hidden,
+            _ => RowKind::ToolCall {
                 server: String::new(),
-                tool: name.to_owned(),
-                fact: first_fact(&input),
+                tool: tool.name.clone(),
+                fact: named.to_owned(),
                 state: view,
                 result: tool.outcome_text.clone(),
             },
@@ -1249,28 +1230,14 @@ fn claude_tool(
     (kind, decision, failed)
 }
 
-/// The first string argument, as the one fact a generic tool row shows.
-fn first_fact(input: &Value) -> String {
-    input
-        .as_object()
-        .and_then(|object| object.values().find_map(Value::as_str))
-        .unwrap_or_default()
-        .to_owned()
-}
-
-/// Added and removed lines: from the provider's patch when it gave one,
-/// else from the replaced and replacing text.
-fn claude_counts(tool: &ToolCall, input: &Value) -> (u32, u32) {
-    let out: Value = serde_json::from_slice(&tool.outcome_json).unwrap_or(Value::Null);
-    if let Some(hunks) = out.get("structuredPatch").and_then(Value::as_array) {
+/// Added and removed lines: from the patch Claude reported when it gave
+/// one, else from the replaced and replacing text.
+fn claude_counts(tool: &ToolCall, edit: &wire::EditInput) -> (u32, u32) {
+    if !tool.patch.is_empty() {
         let mut added = 0;
         let mut removed = 0;
-        for line in hunks
-            .iter()
-            .filter_map(|hunk| hunk.get("lines")?.as_array())
-            .flatten()
-        {
-            match line.as_str().and_then(|line| line.chars().next()) {
+        for line in tool.patch.iter().flat_map(|hunk| &hunk.lines) {
+            match line.chars().next() {
                 Some('+') => added += 1,
                 Some('-') => removed += 1,
                 _ => {}
@@ -1278,17 +1245,14 @@ fn claude_counts(tool: &ToolCall, input: &Value) -> (u32, u32) {
         }
         return (added, removed);
     }
-    let edits = input
-        .get("edits")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_else(|| vec![input.clone()]);
-    edits.iter().fold((0, 0), |(added, removed), edit| {
-        (
-            added + lines(&field(edit, "new_string")) + lines(&field(edit, "new_source")),
-            removed + lines(&field(edit, "old_string")),
-        )
-    })
+    edit.replacements
+        .iter()
+        .fold((0, 0), |(added, removed), replacement| {
+            (
+                added + lines(&replacement.new),
+                removed + lines(&replacement.old),
+            )
+        })
 }
 
 /// The verb a call that only looks is drawn with; none for one drawn its
@@ -1309,7 +1273,7 @@ fn explore_verb(class: i32) -> Option<ExploreVerb> {
 
 fn subagent(
     tool: &ToolCall,
-    input: &Value,
+    description: &str,
     view: CallPhase,
     exited: bool,
     duration_ms: Option<i64>,
@@ -1317,7 +1281,7 @@ fn subagent(
     let progress = tool.subagent.clone().unwrap_or_default();
     // A background subagent outlives its call, but not its agent's exit.
     RowKind::Subagent {
-        description: field(input, "description"),
+        description: description.to_owned(),
         running: view.in_flight() || (tool.background && !progress.finished && !exited),
         tool_count: progress.tool_count,
         last_tool: progress.last_tool,
@@ -1382,9 +1346,7 @@ fn codex_work(
             Some(Of::Mcp(call)) => RowKind::ToolCall {
                 server: call.server.clone(),
                 tool: call.tool.clone(),
-                fact: first_fact(
-                    &serde_json::from_slice(&call.arguments_json).unwrap_or(Value::Null),
-                ),
+                fact: call.subject.clone(),
                 state: view,
                 result: if call.error.is_empty() {
                     String::from_utf8_lossy(&call.result_json).into_owned()
@@ -1587,36 +1549,23 @@ fn patch_lines(lines: Vec<EditLine>) -> Vec<PatchLine> {
 }
 
 fn claude_patch(tool: &ToolCall) -> Option<Vec<PatchLine>> {
-    if !matches!(
-        tool.name.as_str(),
-        "Edit" | "MultiEdit" | "NotebookEdit" | "Write"
-    ) {
+    let (_, Some(tool_input::Of::Edit(edit))) = read_input(tool) else {
         return None;
-    }
-    let out: Value = serde_json::from_slice(&tool.outcome_json).unwrap_or(Value::Null);
-    if let Some(hunks) = out.get("structuredPatch").and_then(Value::as_array)
-        && !hunks.is_empty()
-    {
+    };
+    if !tool.patch.is_empty() {
         let mut lines = Vec::new();
-        for hunk in hunks {
-            let start = |name: &str| hunk.get(name).and_then(Value::as_u64).map(|n| n as u32);
-            let (mut old, mut new) = (start("oldStart"), start("newStart"));
-            for line in hunk
-                .get("lines")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(Value::as_str)
-            {
+        for hunk in &tool.patch {
+            let (mut old, mut new) = (Some(hunk.old_start), Some(hunk.new_start));
+            for line in &hunk.lines {
                 lines.push(numbered(line, &mut old, &mut new));
             }
         }
         return Some(lines);
     }
-    let input = input(tool);
-    if tool.name == "Write" {
+    if edit.write {
+        let content = edit.replacements.first().map_or("", |write| &write.new);
         return Some(
-            field(&input, "content")
+            content
                 .lines()
                 .enumerate()
                 .map(|(i, text)| PatchLine {
@@ -1627,35 +1576,20 @@ fn claude_patch(tool: &ToolCall) -> Option<Vec<PatchLine>> {
                 .collect(),
         );
     }
-    Some(patch_lines(replaced_lines(&input)))
+    Some(patch_lines(replaced_lines(edit)))
 }
 
 /// What a Claude edit replaces and writes, as unnumbered patch lines: each
-/// edit's old text removed, then its new text (or a write's content)
-/// added. There is no file to number them against.
-pub(crate) fn replaced_lines(input: &Value) -> Vec<EditLine> {
-    let edits = input
-        .get("edits")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_else(|| vec![input.clone()]);
+/// replaced text removed, then its replacement added. There is no file to
+/// number them against.
+pub(crate) fn replaced_lines(edit: &wire::EditInput) -> Vec<EditLine> {
     let mut lines = Vec::new();
-    for edit in &edits {
-        let deletes = edit.get("edit_mode").and_then(Value::as_str) == Some("delete");
-        for (name, kind) in [
-            ("old_string", LineKind::Removed),
-            ("new_string", LineKind::Added),
-            ("content", LineKind::Added),
-            // A notebook edit's cell as it stands, which the host read from
-            // the notebook when Claude asked (Claude names only the cell),
-            // then its new source unless the cell is being deleted.
-            ("old_source", LineKind::Removed),
-            ("new_source", LineKind::Added),
+    for replacement in &edit.replacements {
+        for (text, kind) in [
+            (&replacement.old, LineKind::Removed),
+            (&replacement.new, LineKind::Added),
         ] {
-            if deletes && name == "new_source" {
-                continue;
-            }
-            lines.extend(field(edit, name).lines().map(|text| {
+            lines.extend(text.lines().map(|text| {
                 EditLine::Line(PatchLine {
                     number: None,
                     kind,

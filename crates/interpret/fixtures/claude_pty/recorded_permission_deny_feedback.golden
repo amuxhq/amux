@@ -21,10 +21,10 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1790489158563 asks=[ask:1->- permiss
 item 4dea177e-44ea-4480-a62d-76946d9fab36 thinking final at=1790489158499 text=""
 snapshot NEEDS_YOU queue=[] working_on=- at=1790489160471 asks=[ask:1->- permission:Bash/session <MACHINE_PATH> deny-stops] session=2a54dccf-53c0-484d-b8f8-c543cdb95c1d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=36224 tasks=? background=? running=toolu_01CDE89AMC7xR2jvcSMh2RsT Bash since=1790489158528
 ## 45 recorded 43: fact Transcript type=assistant uuid=81d188b1-3248-4a45-8867-7c93a0911348
-item toolu_01CDE89AMC7xR2jvcSMh2RsT tool final at=1790489158745 text="" Bash TOOL_STATE_RUNNING input="{\"command\":\"printf denied > denied.txt\",\"description\":\"Write…"
+item toolu_01CDE89AMC7xR2jvcSMh2RsT tool final at=1790489158745 text="" Bash TOOL_STATE_RUNNING input=shell:"printf denied > denied.txt"
 snapshot NEEDS_YOU queue=[] working_on=- at=1790489160472 asks=[ask:1->toolu_01CDE89AMC7xR2jvcSMh2RsT permission:Bash/session <MACHINE_PATH> deny-stops] session=2a54dccf-53c0-484d-b8f8-c543cdb95c1d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=36224 tasks=? background=? running=toolu_01CDE89AMC7xR2jvcSMh2RsT Bash since=1790489158528
 ## 47 recorded 45: fact Transcript type=user uuid=517eb65b-46bc-474f-8915-f00d50ac6d10
-item toolu_01CDE89AMC7xR2jvcSMh2RsT tool final at=1790489158745 text="" Bash TOOL_STATE_DENIED decision=DECISION_OUTCOME_DENIED elsewhere ended=1790489158889 input="{\"command\":\"printf denied > denied.txt\",\"description\":\"Write…" out="The user doesn't want to proceed with this tool use. The too…"
+item toolu_01CDE89AMC7xR2jvcSMh2RsT tool final at=1790489158745 text="" Bash TOOL_STATE_DENIED decision=DECISION_OUTCOME_DENIED elsewhere ended=1790489158889 input=shell:"printf denied > denied.txt" out="The user doesn't want to proceed with this tool use. The too…"
 snapshot WORKING queue=[] working_on=- at=1790489160473 asks=[] session=2a54dccf-53c0-484d-b8f8-c543cdb95c1d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=36224 tasks=? background=?
 ## 50 recorded 48: fact Transcript type=user uuid=cbcedc43-9485-480d-a7d7-7914fab141d9
 item cbcedc43-9485-480d-a7d7-7914fab141d9 interruption final at=1790489158889 text=""

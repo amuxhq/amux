@@ -109,6 +109,8 @@ message McpToolCall {
   bytes arguments_json = 3;
   bytes result_json = 4;
   string error = 5;
+  // The call's first string argument, the one fact its row shows.
+  string subject = 6;
 }
 
 message WebSearch {

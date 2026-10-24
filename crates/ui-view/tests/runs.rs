@@ -34,7 +34,12 @@ fn item(order: u64, it: &It) -> Item {
     let tool = |name: &str, input: String, state: ToolState, reads: bool, exit: Option<i32>| {
         K::Tool(wire::ToolCall {
             name: name.into(),
-            input_json: input.into_bytes(),
+            input: Some(interpret::tool_input(
+                name,
+                "",
+                &serde_json::from_str(&input).unwrap(),
+                "",
+            )),
             state: state as i32,
             class: if reads {
                 ToolClass::Read

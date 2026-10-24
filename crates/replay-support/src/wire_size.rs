@@ -111,7 +111,7 @@ pub fn measure(steps: &[Step]) -> WireSize {
             let command = &mut commands[at];
             // The newest item says what the call is.
             command.tool = call.name.clone();
-            command.command = shell_command(&call.input_json);
+            command.command = shell_command(&call);
             command.background = call.background;
             command.items += 1;
             command.bytes += item.encoded_len();
@@ -139,7 +139,7 @@ fn tool_call(body: &[u8]) -> Option<wire::ToolCall> {
     }
 }
 
-fn shell_command(input_json: &[u8]) -> Option<String> {
-    let input: serde_json::Value = serde_json::from_slice(input_json).ok()?;
-    Some(input.get("command")?.as_str()?.to_owned())
+fn shell_command(call: &wire::ToolCall) -> Option<String> {
+    let input = call.input.as_ref()?;
+    matches!(input.of, Some(wire::tool_input::Of::Shell(_))).then(|| input.subject.clone())
 }

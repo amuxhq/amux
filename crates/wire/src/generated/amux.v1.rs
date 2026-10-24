@@ -2006,14 +2006,10 @@ impl ::prost::Name for Thinking {
 pub struct ToolCall {
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
-    #[prost(bytes = "vec", tag = "2")]
-    pub input_json: ::prost::alloc::vec::Vec<u8>,
     #[prost(enumeration = "ToolState", tag = "3")]
     pub state: i32,
     #[prost(string, tag = "4")]
     pub outcome_text: ::prost::alloc::string::String,
-    #[prost(bytes = "vec", tag = "5")]
-    pub outcome_json: ::prost::alloc::vec::Vec<u8>,
     #[prost(message, repeated, tag = "6")]
     pub attachments: ::prost::alloc::vec::Vec<Attachment>,
     #[prost(enumeration = "ToolClass", tag = "7")]
@@ -2049,6 +2045,11 @@ pub struct ToolCall {
     /// ended_at_ms minus this, else minus the item's at_ms.
     #[prost(int64, optional, tag = "17")]
     pub started_at_ms: ::core::option::Option<i64>,
+    #[prost(message, optional, tag = "18")]
+    pub input: ::core::option::Option<ToolInput>,
+    /// A file edit or write that finished: the hunks Claude says it changed.
+    #[prost(message, repeated, tag = "19")]
+    pub patch: ::prost::alloc::vec::Vec<PatchHunk>,
 }
 impl ::prost::Name for ToolCall {
     const NAME: &'static str = "ToolCall";
@@ -2058,6 +2059,151 @@ impl ::prost::Name for ToolCall {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.ToolCall".into()
+    }
+}
+/// What a Claude call was asked to do, read once by the interpreter from the
+/// call's input: an arm for each tool the views draw their own way, and the
+/// input as Claude sent it for any other.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ToolInput {
+    /// What the call names: the file, pattern, address, query, path, command
+    /// line, description or notebook it is about, else its first string
+    /// argument. A shell call's subject is its command line, a subagent's what
+    /// it was asked to do.
+    #[prost(string, tag = "1")]
+    pub subject: ::prost::alloc::string::String,
+    #[prost(oneof = "tool_input::Of", tags = "2, 3, 4, 5, 6, 7")]
+    pub of: ::core::option::Option<tool_input::Of>,
+}
+/// Nested message and enum types in `ToolInput`.
+pub mod tool_input {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Of {
+        #[prost(message, tag = "2")]
+        Shell(super::ShellInput),
+        #[prost(message, tag = "3")]
+        Edit(super::EditInput),
+        #[prost(message, tag = "4")]
+        Subagent(super::Empty),
+        /// Claude's task-list bookkeeping, drawn by no client: the task list
+        /// shows what it did.
+        #[prost(message, tag = "5")]
+        TaskList(super::Empty),
+        /// A web fetch or search, drawn by its subject.
+        #[prost(message, tag = "6")]
+        Web(super::Empty),
+        /// Any other tool's input as Claude sent it.
+        #[prost(bytes, tag = "7")]
+        OtherJson(::prost::alloc::vec::Vec<u8>),
+    }
+}
+impl ::prost::Name for ToolInput {
+    const NAME: &'static str = "ToolInput";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ToolInput".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ToolInput".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ShellInput {
+    /// What Claude says the command is for.
+    #[prost(string, tag = "1")]
+    pub description: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ShellInput {
+    const NAME: &'static str = "ShellInput";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ShellInput".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ShellInput".into()
+    }
+}
+/// A file edit, multi-edit, notebook edit or whole-file write.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EditInput {
+    /// In order, each text replaced and its replacement. A write is one with
+    /// nothing replaced; a notebook cell's old text is known only when its ask
+    /// carried it.
+    #[prost(message, repeated, tag = "1")]
+    pub replacements: ::prost::alloc::vec::Vec<Replacement>,
+    /// A whole-file write rather than an edit.
+    #[prost(bool, tag = "2")]
+    pub write: bool,
+    /// A notebook edit: which cell, and what happens to it.
+    #[prost(message, optional, tag = "3")]
+    pub cell: ::core::option::Option<NotebookCell>,
+}
+impl ::prost::Name for EditInput {
+    const NAME: &'static str = "EditInput";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.EditInput".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.EditInput".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Replacement {
+    #[prost(string, tag = "1")]
+    pub old: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub new: ::prost::alloc::string::String,
+}
+impl ::prost::Name for Replacement {
+    const NAME: &'static str = "Replacement";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Replacement".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Replacement".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct NotebookCell {
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(enumeration = "NotebookEditMode", tag = "2")]
+    pub mode: i32,
+    /// "code" or "markdown", as Claude names it; empty for code.
+    #[prost(string, tag = "3")]
+    pub cell_type: ::prost::alloc::string::String,
+}
+impl ::prost::Name for NotebookCell {
+    const NAME: &'static str = "NotebookCell";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.NotebookCell".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.NotebookCell".into()
+    }
+}
+/// One hunk of a finished edit, as Claude reports it: where it starts in the
+/// old and new file, and its lines, each led by '+', '-' or ' '.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PatchHunk {
+    #[prost(uint32, tag = "1")]
+    pub old_start: u32,
+    #[prost(uint32, tag = "2")]
+    pub new_start: u32,
+    #[prost(string, repeated, tag = "3")]
+    pub lines: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+impl ::prost::Name for PatchHunk {
+    const NAME: &'static str = "PatchHunk";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PatchHunk".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.PatchHunk".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -2579,8 +2725,8 @@ impl ::prost::Name for Ask {
 pub struct PermissionAsk {
     #[prost(string, tag = "1")]
     pub tool_name: ::prost::alloc::string::String,
-    #[prost(bytes = "vec", tag = "2")]
-    pub input_json: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "9")]
+    pub input: ::core::option::Option<ToolInput>,
     /// Every scope the provider offered, in order.
     #[prost(message, repeated, tag = "3")]
     pub scopes: ::prost::alloc::vec::Vec<ScopeChoice>,
@@ -3395,6 +3541,38 @@ impl PlanVerdict {
             "PLAN_VERDICT_APPROVED_SWITCHING" => Some(Self::ApprovedSwitching),
             "PLAN_VERDICT_SENT_BACK" => Some(Self::SentBack),
             "PLAN_VERDICT_DISMISSED" => Some(Self::Dismissed),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum NotebookEditMode {
+    Unspecified = 0,
+    Replace = 1,
+    Insert = 2,
+    Delete = 3,
+}
+impl NotebookEditMode {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "NOTEBOOK_EDIT_MODE_UNSPECIFIED",
+            Self::Replace => "NOTEBOOK_EDIT_MODE_REPLACE",
+            Self::Insert => "NOTEBOOK_EDIT_MODE_INSERT",
+            Self::Delete => "NOTEBOOK_EDIT_MODE_DELETE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "NOTEBOOK_EDIT_MODE_UNSPECIFIED" => Some(Self::Unspecified),
+            "NOTEBOOK_EDIT_MODE_REPLACE" => Some(Self::Replace),
+            "NOTEBOOK_EDIT_MODE_INSERT" => Some(Self::Insert),
+            "NOTEBOOK_EDIT_MODE_DELETE" => Some(Self::Delete),
             _ => None,
         }
     }
@@ -4903,6 +5081,9 @@ pub struct McpToolCall {
     pub result_json: ::prost::alloc::vec::Vec<u8>,
     #[prost(string, tag = "5")]
     pub error: ::prost::alloc::string::String,
+    /// The call's first string argument, the one fact its row shows.
+    #[prost(string, tag = "6")]
+    pub subject: ::prost::alloc::string::String,
 }
 impl ::prost::Name for McpToolCall {
     const NAME: &'static str = "McpToolCall";

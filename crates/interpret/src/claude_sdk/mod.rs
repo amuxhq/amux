@@ -39,9 +39,9 @@ use wire::{
 };
 
 use crate::claude_common::{
-    Jobs, Task, Verdict, claude_grant, describe_asks, describe_claude_usage, describe_tasks,
-    describe_tool, file_step_facts, launch_arg, or_dash, permission_scopes, plan_item,
-    question_item, task_list,
+    FileStep, Jobs, Task, Verdict, claude_grant, describe_asks, describe_claude_usage,
+    describe_tasks, describe_tool, file_step, launch_arg, or_dash, permission_scopes, plan_item,
+    question_item, task_list, tool_input,
 };
 use crate::{
     Carrier, Checkpoint, Effect, Emit, Event, FixtureInput, Interpreter, ItemDraft, ItemView,
@@ -957,17 +957,17 @@ impl State {
                 },
             );
         }
-        let (created, line) = if tool.state == ToolState::Succeeded as i32 {
-            file_step_facts(&tool.name, &tool.server, &tool.outcome_json)
+        let step = if tool.state == ToolState::Succeeded as i32 {
+            file_step(&tool.name, &tool.server, &tool.outcome_json)
         } else {
-            (None, None)
+            FileStep::default()
         };
+        let input = serde_json::from_str(&tool.input).unwrap_or(Value::Null);
         let body = item_body(claude_sdk_item::Kind::Tool(ToolCall {
             name: tool.name.clone(),
-            input_json: tool.input.clone().into_bytes(),
+            input: Some(tool_input(&tool.name, &tool.server, &input, "")),
             state: tool.state,
             outcome_text: tool.outcome_text.clone(),
-            outcome_json: tool.outcome_json.clone().into_bytes(),
             attachments: tool.images.clone(),
             class: tool.class,
             decision: tool.decision.as_ref().map(|decision| ToolDecision {
@@ -988,9 +988,10 @@ impl State {
             server: tool.server.clone(),
             exit_code: None,
             ended_at_ms: tool.ended_at_ms,
-            created,
-            line,
+            created: step.created,
+            line: step.line,
             started_at_ms: tool.started_at_ms,
+            patch: step.patch,
         }));
         if body == tool.emitted {
             return;

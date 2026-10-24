@@ -12,10 +12,11 @@ use claude_protocol::stream::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    Ask, Attachment, BackgroundJob, BlobRef, ClaudeGrant, ClaudeUsage, DecisionOutcome, Limit,
-    OfferedCommand, OfferedModel, OfferedPermission, Question, QuestionAsk, QuestionOption,
-    ScopeChoice, ScopeDestination, TaskList, TaskListEntry, TaskListStatus, ToolCall, ToolClass,
-    ToolState, UsageState, attachment, codex_grant, tool_decision,
+    Ask, Attachment, BackgroundJob, BlobRef, ClaudeGrant, ClaudeUsage, DecisionOutcome, EditInput,
+    Limit, NotebookCell, NotebookEditMode, OfferedCommand, OfferedModel, OfferedPermission,
+    PatchHunk, Question, QuestionAsk, QuestionOption, Replacement, ScopeChoice, ScopeDestination,
+    ShellInput, TaskList, TaskListEntry, TaskListStatus, ToolCall, ToolClass, ToolInput, ToolState,
+    UsageState, attachment, codex_grant, tool_decision, tool_input,
 };
 
 use crate::Effect;
@@ -308,23 +309,13 @@ pub(crate) fn split_tool_name(name: &str) -> (String, String) {
 /// asks and adds it to the request's payload under this name.
 pub const NOTEBOOK_OLD_SOURCE: &str = "amux_old_source";
 
-/// The input an ask's card shows: Claude's, plus the notebook cell it
-/// replaces as `old_source` when the host found one. Matching an ask to its
-/// call compares Claude's input alone.
-pub(crate) fn shown_input(input: &Value, extensions: &serde_json::Map<String, Value>) -> Value {
-    let Some(old_source) = extensions.get(NOTEBOOK_OLD_SOURCE) else {
-        return input.clone();
-    };
-    serde_json::to_value(ShownInput { input, old_source }).unwrap_or_else(|_| input.clone())
-}
-
-/// A notebook edit's input as its ask's card shows it: Claude's fields with
-/// the replaced cell's source beside them.
-#[derive(Serialize)]
-struct ShownInput<'a> {
-    #[serde(flatten)]
-    input: &'a Value,
-    old_source: &'a Value,
+/// The notebook cell the host read for an ask, which Claude's input
+/// names but does not carry.
+pub(crate) fn old_source(extensions: &serde_json::Map<String, Value>) -> &str {
+    extensions
+        .get(NOTEBOOK_OLD_SOURCE)
+        .and_then(Value::as_str)
+        .unwrap_or_default()
 }
 
 pub(crate) fn same_json(stored: &str, value: &Value) -> bool {
@@ -428,12 +419,45 @@ pub(crate) fn describe_tool(tool: &ToolCall) -> String {
             ));
         }
     }
-    let input = String::from_utf8_lossy(&tool.input_json);
-    text.push_str(&format!(" input={}", clip(&input, 60)));
+    if let Some(input) = &tool.input {
+        text.push_str(&format!(" input={}", describe_input(input)));
+    }
+    if !tool.patch.is_empty() {
+        let lines = tool
+            .patch
+            .iter()
+            .map(|hunk| hunk.lines.len())
+            .sum::<usize>();
+        text.push_str(&format!(" patch={}/{lines}", tool.patch.len()));
+    }
     if !tool.outcome_text.is_empty() {
         text.push_str(&format!(" out={}", clip(&tool.outcome_text, 60)));
     }
     text
+}
+
+/// A call's input as goldens show it: its arm and subject, or Claude's
+/// JSON for a tool with no arm of its own.
+fn describe_input(input: &ToolInput) -> String {
+    let arm = match &input.of {
+        Some(tool_input::Of::OtherJson(json)) => {
+            return clip(&String::from_utf8_lossy(json), 60);
+        }
+        Some(tool_input::Of::Shell(_)) => "shell",
+        Some(tool_input::Of::Edit(edit)) if edit.write => "write",
+        Some(tool_input::Of::Edit(edit)) => {
+            return format!(
+                "edit:{}x{}",
+                clip(&input.subject, 60),
+                edit.replacements.len()
+            );
+        }
+        Some(tool_input::Of::Subagent(_)) => "subagent",
+        Some(tool_input::Of::TaskList(_)) => "task_list",
+        Some(tool_input::Of::Web(_)) => "web",
+        None => "none",
+    };
+    format!("{arm}:{}", clip(&input.subject, 60))
 }
 
 pub(crate) fn clip(text: &str, chars: usize) -> String {
@@ -827,22 +851,28 @@ struct EditResult {
 
 #[derive(Deserialize)]
 struct Hunk {
+    #[serde(rename = "oldStart", default)]
+    old_start: u32,
     #[serde(rename = "newStart")]
     new_start: u32,
     #[serde(default)]
     lines: Vec<String>,
 }
 
-/// What a finished file write or edit states on its step: whether it made
-/// the file, and the line its first change landed on. Read from Claude's
-/// result, which says both only once the change is made.
-pub(crate) fn file_step_facts(
-    name: &str,
-    server: &str,
-    result: &str,
-) -> (Option<bool>, Option<u32>) {
+/// What a finished file write or edit states on its step. Read from
+/// Claude's result, which says each only once the change is made.
+#[derive(Debug, Default, PartialEq)]
+pub struct FileStep {
+    /// Whether a write made the file, else replaced one.
+    pub created: Option<bool>,
+    /// The line the first change landed on.
+    pub line: Option<u32>,
+    pub patch: Vec<PatchHunk>,
+}
+
+pub fn file_step(name: &str, server: &str, result: &str) -> FileStep {
     if !server.is_empty() || result.is_empty() {
-        return (None, None);
+        return FileStep::default();
     }
     let created = match name {
         "Write" => serde_json::from_str::<WriteResult>(result)
@@ -854,19 +884,181 @@ pub(crate) fn file_step_facts(
             }),
         _ => None,
     };
-    let line = match name {
-        "Write" | "Edit" | "MultiEdit" if created != Some(true) => {
+    let hunks = match name {
+        "Write" | "Edit" | "MultiEdit" | "NotebookEdit" => {
             serde_json::from_str::<EditResult>(result)
-                .ok()
-                .and_then(|edit| {
-                    edit.structured_patch
-                        .iter()
-                        .find_map(|hunk| crate::shared::first_change(hunk.new_start, &hunk.lines))
-                })
+                .map(|edit| edit.structured_patch)
+                .unwrap_or_default()
         }
+        _ => Vec::new(),
+    };
+    let line = match name {
+        "Write" | "Edit" | "MultiEdit" if created != Some(true) => hunks
+            .iter()
+            .find_map(|hunk| crate::shared::first_change(hunk.new_start, &hunk.lines)),
         _ => None,
     };
-    (created, line)
+    FileStep {
+        created,
+        line,
+        patch: hunks
+            .into_iter()
+            .map(|hunk| PatchHunk {
+                old_start: hunk.old_start,
+                new_start: hunk.new_start,
+                lines: hunk.lines,
+            })
+            .collect(),
+    }
+}
+
+/// A call's input as the views draw it, read once here so no view parses
+/// Claude's JSON. `old_source` is a notebook cell's text as it stands,
+/// which the host reads when Claude asks to edit it (Claude names only the
+/// cell); a call carries none.
+pub fn tool_input(name: &str, server: &str, input: &Value, old_source: &str) -> ToolInput {
+    let of = if !server.is_empty() {
+        tool_input::Of::OtherJson(input.to_string().into_bytes())
+    } else {
+        match name {
+            "Bash" => tool_input::Of::Shell(ShellInput {
+                description: read::<BashInput>(input).description,
+            }),
+            "Edit" | "MultiEdit" => {
+                let edit = read::<EditCall>(input);
+                let edits = edit.edits.unwrap_or_else(|| vec![edit.one]);
+                tool_input::Of::Edit(EditInput {
+                    replacements: edits
+                        .into_iter()
+                        .map(|edit| Replacement {
+                            old: edit.old_string,
+                            new: edit.new_string,
+                        })
+                        .collect(),
+                    ..Default::default()
+                })
+            }
+            "Write" => tool_input::Of::Edit(EditInput {
+                replacements: vec![Replacement {
+                    old: String::new(),
+                    new: read::<WriteCall>(input).content,
+                }],
+                write: true,
+                ..Default::default()
+            }),
+            "NotebookEdit" => {
+                let edit = read::<NotebookEditCall>(input);
+                let mode = match edit.edit_mode.as_str() {
+                    "insert" => NotebookEditMode::Insert,
+                    "delete" => NotebookEditMode::Delete,
+                    _ => NotebookEditMode::Replace,
+                };
+                tool_input::Of::Edit(EditInput {
+                    replacements: vec![Replacement {
+                        old: old_source.to_owned(),
+                        new: if mode == NotebookEditMode::Delete {
+                            String::new()
+                        } else {
+                            edit.new_source
+                        },
+                    }],
+                    write: false,
+                    cell: Some(NotebookCell {
+                        id: edit.cell_id,
+                        mode: mode as i32,
+                        cell_type: edit.cell_type,
+                    }),
+                })
+            }
+            "Agent" | "Task" => tool_input::Of::Subagent(wire::Empty {}),
+            "TodoWrite" | "TaskCreate" | "TaskUpdate" | "TaskList" | "TaskGet" => {
+                tool_input::Of::TaskList(wire::Empty {})
+            }
+            "WebFetch" | "WebSearch" => tool_input::Of::Web(wire::Empty {}),
+            _ => tool_input::Of::OtherJson(input.to_string().into_bytes()),
+        }
+    };
+    ToolInput {
+        subject: subject(input),
+        of: Some(of),
+    }
+}
+
+/// A built-in tool's input as its fields; one Claude wrote some other way
+/// reads as empty.
+fn read<T: Default + for<'de> Deserialize<'de>>(input: &Value) -> T {
+    T::deserialize(input).unwrap_or_default()
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct BashInput {
+    description: String,
+}
+
+/// Edit's one replacement, or MultiEdit's list of them.
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct EditCall {
+    edits: Option<Vec<OneEdit>>,
+    #[serde(flatten)]
+    one: OneEdit,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct OneEdit {
+    old_string: String,
+    new_string: String,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct WriteCall {
+    content: String,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct NotebookEditCall {
+    cell_id: String,
+    new_source: String,
+    cell_type: String,
+    edit_mode: String,
+}
+
+/// The fields that say what a call is about, in the order a row prefers
+/// them.
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct Named {
+    file_path: String,
+    pattern: String,
+    url: String,
+    query: String,
+    path: String,
+    command: String,
+    description: String,
+    notebook_path: String,
+}
+
+/// What a call names: the first of the fields that say what it is about,
+/// else its first string argument.
+fn subject(input: &Value) -> String {
+    let named = read::<Named>(input);
+    [
+        named.file_path,
+        named.pattern,
+        named.url,
+        named.query,
+        named.path,
+        named.command,
+        named.description,
+        named.notebook_path,
+    ]
+    .into_iter()
+    .find(|value| !value.is_empty())
+    .unwrap_or_else(|| crate::shared::first_string(input))
 }
 
 /// Every scope choice Claude offered with a permission request, in order.
@@ -1474,32 +1666,61 @@ mod tests {
         assert_eq!(launched_permission(&args(&["--model", "opus"])), None);
     }
 
-    /// The cell source the host read rides into the card's input; the
-    /// input matched against calls is left as Claude sent it.
+    /// The cell source the host read is what a notebook edit replaces; a
+    /// deleted cell is replaced by nothing.
     #[test]
-    fn a_notebook_asks_shown_input_carries_the_cell_the_host_read() {
+    fn a_notebook_edit_replaces_the_cell_the_host_read() {
         let input = serde_json::json!({"notebook_path": "n.ipynb", "new_source": "print(10)"});
-        let mut extensions = serde_json::Map::new();
-        extensions.insert(NOTEBOOK_OLD_SOURCE.into(), "print(1)".into());
-        let shown = shown_input(&input, &extensions);
-        assert_eq!(shown["old_source"], "print(1)");
-        assert_eq!(shown["new_source"], "print(10)");
-        assert_eq!(shown_input(&input, &serde_json::Map::new()), input);
+        let replacements = |input: &Value, old_source: &str| match tool_input(
+            "NotebookEdit",
+            "",
+            input,
+            old_source,
+        )
+        .of
+        {
+            Some(tool_input::Of::Edit(edit)) => edit
+                .replacements
+                .into_iter()
+                .map(|replacement| (replacement.old, replacement.new))
+                .collect::<Vec<_>>(),
+            other => panic!("not an edit: {other:?}"),
+        };
+        assert_eq!(
+            replacements(&input, "print(1)"),
+            [("print(1)".to_owned(), "print(10)".to_owned())]
+        );
+        let deleted = serde_json::json!({"notebook_path": "n.ipynb", "edit_mode": "delete"});
+        assert_eq!(
+            replacements(&deleted, "print(1)"),
+            [("print(1)".to_owned(), String::new())]
+        );
     }
 
     #[test]
     fn a_finished_write_says_whether_it_made_the_file_and_an_edit_where_it_landed() {
         let created =
             r#"{"type":"create","filePath":"/w/a.txt","content":"hi","structuredPatch":[]}"#;
-        assert_eq!(file_step_facts("Write", "", created), (Some(true), None));
+        let facts = |name, server, result| {
+            let step = file_step(name, server, result);
+            (step.created, step.line)
+        };
+        assert_eq!(facts("Write", "", created), (Some(true), None));
         let updated = r#"{"type":"update","filePath":"/w/a.txt","structuredPatch":[{"oldStart":3,"oldLines":3,"newStart":3,"newLines":3,"lines":[" a","-b","+c"]}]}"#;
-        assert_eq!(
-            file_step_facts("Write", "", updated),
-            (Some(false), Some(4))
-        );
+        assert_eq!(facts("Write", "", updated), (Some(false), Some(4)));
         let edit = r#"{"filePath":"/w/a.rs","oldString":"b","newString":"c","structuredPatch":[{"oldStart":40,"oldLines":7,"newStart":40,"newLines":7,"lines":[" x"," y"," z","-b","+c"," p"]}]}"#;
-        assert_eq!(file_step_facts("Edit", "", edit), (None, Some(43)));
-        assert_eq!(file_step_facts("Edit", "server", edit), (None, None));
-        assert_eq!(file_step_facts("Read", "", edit), (None, None));
+        assert_eq!(facts("Edit", "", edit), (None, Some(43)));
+        assert_eq!(
+            file_step("Edit", "", edit).patch,
+            [PatchHunk {
+                old_start: 40,
+                new_start: 40,
+                lines: [" x", " y", " z", "-b", "+c", " p"]
+                    .map(str::to_owned)
+                    .to_vec(),
+            }]
+        );
+        assert_eq!(file_step("Edit", "server", edit), FileStep::default());
+        assert_eq!(file_step("Read", "", edit), FileStep::default());
     }
 }

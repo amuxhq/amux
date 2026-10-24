@@ -34,9 +34,9 @@ snapshot WORKING queue=[] working_on=- at=1788080222815 asks=[] session=2108a7ed
 item 7d0e65d1-38fd-4c61-891b-11adb2d2315a thinking final at=1788080222518 text=""
 snapshot WORKING queue=[] working_on=- at=1788080222887 asks=[] session=2108a7ed-b28f-457f-9480-37df2991fb5e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=34562 tasks=? background=?
 ## 38 recorded 36: fact Transcript type=assistant uuid=34d89cb5-34b1-455b-9ca8-044bc1031850
-item toolu_01Mxtd6WkCNMK9U7KSDpsLGD tool final at=1788080222931 text="" Edit TOOL_STATE_RUNNING started=1788080222931 input="{\"file_path\":\"<MACHINE_PATH>\",\"new_string\":\"VALUE=2\",\"old_st…"
+item toolu_01Mxtd6WkCNMK9U7KSDpsLGD tool final at=1788080222931 text="" Edit TOOL_STATE_RUNNING started=1788080222931 input=edit:"<MACHINE_PATH>"x1
 ## 46 recorded 44: fact Transcript type=user uuid=095aa16e-114a-45c5-bd0a-e05d3017b8f0
-item toolu_01Mxtd6WkCNMK9U7KSDpsLGD tool final at=1788080222931 text="" Edit TOOL_STATE_SUCCEEDED started=1788080222931 ended=1788080222973 line=1 input="{\"file_path\":\"<MACHINE_PATH>\",\"new_string\":\"VALUE=2\",\"old_st…" out="The file /private<MACHINE_PATH> has been updated successfull…"
+item toolu_01Mxtd6WkCNMK9U7KSDpsLGD tool final at=1788080222931 text="" Edit TOOL_STATE_SUCCEEDED started=1788080222931 ended=1788080222973 line=1 input=edit:"<MACHINE_PATH>"x1 patch=1/2 out="The file /private<MACHINE_PATH> has been updated successfull…"
 ## 49 recorded 47: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01KZYaYpW6mGjKYjYSTBax7p
 snapshot WORKING queue=[] working_on=- at=1788080224439 asks=[] session=2108a7ed-b28f-457f-9480-37df2991fb5e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=34562 tasks=? background=? running=toolu_01KZYaYpW6mGjKYjYSTBax7p Bash since=1788080224439
 ## 51 recorded 49: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01KZYaYpW6mGjKYjYSTBax7p
@@ -45,6 +45,6 @@ snapshot WORKING queue=[] working_on=- at=1788080225112 asks=[] session=2108a7ed
 item 9a47d77e-a173-4a51-a3bf-d840f3bf3892 thinking final at=1788080224495 text=""
 snapshot WORKING queue=[] working_on=- at=1788080225148 asks=[] session=2108a7ed-b28f-457f-9480-37df2991fb5e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=34824 tasks=? background=?
 ## 54 recorded 52: fact Transcript type=assistant uuid=7926690b-7218-4fd1-aa45-23199f2bc0ba
-item toolu_01KZYaYpW6mGjKYjYSTBax7p tool final at=1788080224578 text="" Bash TOOL_STATE_RUNNING started=1788080224578 input="{\"command\":\"cat config.txt\",\"description\":\"Display the updat…"
+item toolu_01KZYaYpW6mGjKYjYSTBax7p tool final at=1788080224578 text="" Bash TOOL_STATE_RUNNING started=1788080224578 input=shell:"cat config.txt"
 ## 55 recorded 53: fact Transcript type=user uuid=826887a2-14e0-4a8d-bf8b-21f61094f15f
-item toolu_01KZYaYpW6mGjKYjYSTBax7p tool final at=1788080224578 text="" Bash TOOL_STATE_SUCCEEDED started=1788080224578 ended=1788080225270 input="{\"command\":\"cat config.txt\",\"description\":\"Display the updat…" out="VALUE=2"
+item toolu_01KZYaYpW6mGjKYjYSTBax7p tool final at=1788080224578 text="" Bash TOOL_STATE_SUCCEEDED started=1788080224578 ended=1788080225270 input=shell:"cat config.txt" out="VALUE=2"

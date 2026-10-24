@@ -24,11 +24,11 @@ effect terminal permission of 1 AllowScoped { suggestion: 0 }
 effect reply a1 accepted
 snapshot WORKING queue=[] working_on="test it" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t1 Bash since=1800000000000
 ## 8 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t1","input":{"command":"cargo test"},"name":"Bash","type":"tool_use"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.012Z","type":"assistant","uuid":"a1"}}
-item t1 tool final at=1800000000012 text="" Bash TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED grant=claude(destination=localSettings rules=["Bash(cargo test:*)"]) input="{\"command\":\"cargo test\"}"
+item t1 tool final at=1800000000012 text="" Bash TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED grant=claude(destination=localSettings rules=["Bash(cargo test:*)"]) input=shell:"cargo test"
 ## 9 fact {"channel":"hook","json":{"duration_ms":900,"hook_event_name":"PostToolUse","tool_input":{"command":"cargo test"},"tool_name":"Bash","tool_response":{"stdout":"ok"},"tool_use_id":"t1"}}
 snapshot WORKING queue=[] working_on="test it" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 10 fact {"channel":"transcript","json":{"message":{"content":[{"content":"ok","is_error":false,"tool_use_id":"t1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.014Z","toolUseResult":{"interrupted":false,"stderr":"","stdout":"ok"},"type":"user","uuid":"r1"}}
-item t1 tool final at=1800000000012 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED grant=claude(destination=localSettings rules=["Bash(cargo test:*)"]) started=1800000000012 ended=1800000000014 input="{\"command\":\"cargo test\"}" out="ok"
+item t1 tool final at=1800000000012 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED grant=claude(destination=localSettings rules=["Bash(cargo test:*)"]) started=1800000000012 ended=1800000000014 input=shell:"cargo test" out="ok"
 ## 11 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"command":"rm -rf build"},"tool_name":"Bash","tool_use_id":"t2"}}
 snapshot WORKING queue=[] working_on="test it" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t2 Bash since=1800000000000
 ## 12 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"command":"rm -rf build"},"tool_name":"Bash"}}
@@ -42,9 +42,9 @@ effect terminal permission of 0 Deny { note: "use cargo clean" }
 effect reply a4 accepted
 snapshot WORKING queue=[] working_on="test it" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t2 Bash since=1800000000000
 ## 16 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t2","input":{"command":"rm -rf build"},"name":"Bash","type":"tool_use"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.019Z","type":"assistant","uuid":"a2"}}
-item t2 tool final at=1800000000019 text="" Bash TOOL_STATE_RUNNING decision=DECISION_OUTCOME_DENIED note="use cargo clean" input="{\"command\":\"rm -rf build\"}"
+item t2 tool final at=1800000000019 text="" Bash TOOL_STATE_RUNNING decision=DECISION_OUTCOME_DENIED note="use cargo clean" input=shell:"rm -rf build"
 ## 17 fact {"channel":"transcript","json":{"message":{"content":[{"content":"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.","is_error":true,"tool_use_id":"t2","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.020Z","toolUseResult":"User rejected tool use","type":"user","uuid":"r2"}}
-item t2 tool final at=1800000000019 text="" Bash TOOL_STATE_DENIED decision=DECISION_OUTCOME_DENIED note="use cargo clean" ended=1800000000020 input="{\"command\":\"rm -rf build\"}" out="The user doesn't want to proceed with this tool use. The too…"
+item t2 tool final at=1800000000019 text="" Bash TOOL_STATE_DENIED decision=DECISION_OUTCOME_DENIED note="use cargo clean" ended=1800000000020 input=shell:"rm -rf build" out="The user doesn't want to proceed with this tool use. The too…"
 snapshot WORKING queue=[] working_on="test it" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 18 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode","tool_use_id":"t3"}}
 item t3 plan final at=1800000000000 text="# Plan\n\n- Edit README.md" PLAN_VERDICT_UNDECIDED

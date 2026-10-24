@@ -67,7 +67,12 @@ fn body(kind: Kind, tool: Option<(&str, bool)>, text: bool) -> Vec<u8> {
                 name: name.into(),
                 state: ToolState::Succeeded as i32,
                 class: class(explore),
-                input_json: br#"{"file_path":"src/lib.rs"}"#.to_vec(),
+                input: Some(interpret::tool_input(
+                    name,
+                    "",
+                    &serde_json::json!({"file_path": "src/lib.rs"}),
+                    "",
+                )),
                 ..Default::default()
             };
             if kind == Kind::ClaudePty {
@@ -1945,8 +1950,8 @@ fn tool_item(
         body: wire::ClaudeSdkItem {
             kind: Some(wire::claude_sdk_item::Kind::Tool(wire::ToolCall {
                 name: name.into(),
-                input_json: input.to_string().into_bytes(),
-                outcome_json: outcome.to_string().into_bytes(),
+                input: Some(interpret::tool_input(name, "", &input, "")),
+                patch: interpret::file_step(name, "", &outcome.to_string()).patch,
                 state: state as i32,
                 class: class as i32,
                 ..Default::default()
@@ -2141,7 +2146,12 @@ fn running(order: u64, revision: u64, command: &str) -> Item {
             name: "Bash".into(),
             state: ToolState::Running as i32,
             class: ToolClass::Consequential as i32,
-            input_json: format!(r#"{{"command":"{command}"}}"#).into_bytes(),
+            input: Some(interpret::tool_input(
+                "Bash",
+                "",
+                &serde_json::json!({ "command": command }),
+                "",
+            )),
             ..Default::default()
         }),
         "",
@@ -3036,12 +3046,16 @@ fn edit_ask_path(kind: Kind, cwd: &str, file: &str) -> String {
         item_key: "t1".into(),
         body: Some(wire::ask::Body::Permission(wire::PermissionAsk {
             tool_name: "Edit".into(),
-            input_json: serde_json::to_vec(&serde_json::json!({
-                "file_path": file,
-                "old_string": "CURRENT",
-                "new_string": "UPDATED",
-            }))
-            .unwrap(),
+            input: Some(interpret::tool_input(
+                "Edit",
+                "",
+                &serde_json::json!({
+                    "file_path": file,
+                    "old_string": "CURRENT",
+                    "new_string": "UPDATED",
+                }),
+                "",
+            )),
             ..Default::default()
         })),
         ..Default::default()
@@ -3130,7 +3144,7 @@ fn claude_permission(tool: &str, input: serde_json::Value) -> wire::Ask {
         item_key: "t1".into(),
         body: Some(wire::ask::Body::Permission(wire::PermissionAsk {
             tool_name: tool.into(),
-            input_json: serde_json::to_vec(&input).unwrap(),
+            input: Some(interpret::tool_input(tool, "", &input, "")),
             ..Default::default()
         })),
         ..Default::default()

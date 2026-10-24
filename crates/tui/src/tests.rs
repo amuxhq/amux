@@ -56,7 +56,12 @@ fn item(order: u64, read: Option<&str>) -> Item {
                 name: "Read".into(),
                 state: ToolState::Succeeded as i32,
                 class: ToolClass::Read as i32,
-                input_json: format!(r#"{{"file_path":"{path}"}}"#).into_bytes(),
+                input: Some(interpret::tool_input(
+                    "Read",
+                    "",
+                    &serde_json::json!({ "file_path": path }),
+                    "",
+                )),
                 ..Default::default()
             })),
         },
@@ -3191,7 +3196,12 @@ fn a_folded_run_keeps_a_failure_its_turn_left_unresolved() {
                 name: "Bash".into(),
                 state: ToolState::Succeeded as i32,
                 class: ToolClass::Consequential as i32,
-                input_json: format!(r#"{{"command":"{line}"}}"#).into_bytes(),
+                input: Some(interpret::tool_input(
+                    "Bash",
+                    "",
+                    &serde_json::json!({ "command": line }),
+                    "",
+                )),
                 exit_code: Some(exit),
                 ..Default::default()
             })),
@@ -3250,7 +3260,12 @@ fn tool_steps_switch_between_collapse_show_all_and_hide() {
                 name: "Bash".into(),
                 state: ToolState::Succeeded as i32,
                 class: ToolClass::Consequential as i32,
-                input_json: format!(r#"{{"command":"{line}"}}"#).into_bytes(),
+                input: Some(interpret::tool_input(
+                    "Bash",
+                    "",
+                    &serde_json::json!({ "command": line }),
+                    "",
+                )),
                 exit_code: Some(exit),
                 ..Default::default()
             })),

@@ -17,9 +17,9 @@ snapshot WORKING queue=[] working_on=- at=1790386562858 asks=[] session=0a29d0f0
 item 3f5d9bd6-5f10-4d8b-9df0-fedf0e8580b5 thinking final at=1790386564420 text=""
 snapshot WORKING queue=[] working_on=- at=1790386565426 asks=[] session=0a29d0f0-93fa-4628-8ba1-82e7e20f3ec5 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=36232 tasks=? background=?
 ## 45 recorded 43: fact Transcript type=assistant uuid=ee55d403-67f6-4a92-a4dc-f36bc84ded92
-item toolu_01Q94ZL66KaMkoKdK6a9i5N1 tool final at=1790386565490 text="" Agent TOOL_STATE_RUNNING subagent=0 started=1790386565490 input="{\"description\":\"Read config.txt and report its content\",\"pro…"
+item toolu_01Q94ZL66KaMkoKdK6a9i5N1 tool final at=1790386565490 text="" Agent TOOL_STATE_RUNNING subagent=0 started=1790386565490 input=subagent:"Read config.txt and report its content"
 ## 46 recorded 44: fact Transcript type=user uuid=a3bdceb9-661f-4a48-a846-4ef7b9ef20c1
-item toolu_01Q94ZL66KaMkoKdK6a9i5N1 tool final at=1790386565490 text="" Agent TOOL_STATE_RUNNING background subagent=0 started=1790386565490 input="{\"description\":\"Read config.txt and report its content\",\"pro…"
+item toolu_01Q94ZL66KaMkoKdK6a9i5N1 tool final at=1790386565490 text="" Agent TOOL_STATE_RUNNING background subagent=0 started=1790386565490 input=subagent:"Read config.txt and report its content"
 snapshot WORKING queue=[] working_on=- at=1790386565426 asks=[] session=0a29d0f0-93fa-4628-8ba1-82e7e20f3ec5 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=36232 tasks=? background=[toolu_01Q94ZL66KaMkoKdK6a9i5N1:"Read config.txt and report its content"@1790386565490]
 ## 59 recorded 57: fact Transcript type=assistant uuid=5db8a0b4-c815-4c05-a5d2-50ed6891fc66
 item 5db8a0b4-c815-4c05-a5d2-50ed6891fc66 thinking final at=1790386566842 text=""
@@ -31,9 +31,9 @@ item turn:1 turn final at=1790386567204 text="" #1 TURN_OUTCOME_COMPLETED starte
 snapshot IDLE queue=[] working_on=- at=1790386567177 asks=[] session=0a29d0f0-93fa-4628-8ba1-82e7e20f3ec5 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=36790 tasks=? background=[toolu_01Q94ZL66KaMkoKdK6a9i5N1:"Read config.txt and report its content"@1790386565490]
 turn_end 1 last=ef7a38a1-dee5-4df1-ac5b-39cba3365df4
 ## 67 recorded 65: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_017SdY8dBBFvKb4VHfysNWK9
-item toolu_01Q94ZL66KaMkoKdK6a9i5N1 tool final at=1790386565490 text="" Agent TOOL_STATE_RUNNING background subagent=1 last=Read started=1790386565490 input="{\"description\":\"Read config.txt and report its content\",\"pro…"
+item toolu_01Q94ZL66KaMkoKdK6a9i5N1 tool final at=1790386565490 text="" Agent TOOL_STATE_RUNNING background subagent=1 last=Read started=1790386565490 input=subagent:"Read config.txt and report its content"
 ## 74 recorded 72: fact Transcript type=user uuid=243e90ef-fb16-4e26-8ba7-5bd7a45a9024
-item toolu_01Q94ZL66KaMkoKdK6a9i5N1 tool final at=1790386565490 text="" Agent TOOL_STATE_SUCCEEDED background subagent=1 last=Read finished started=1790386565490 ended=1790386569372 input="{\"description\":\"Read config.txt and report its content\",\"pro…" out="The line says: `VALUE=1`"
+item toolu_01Q94ZL66KaMkoKdK6a9i5N1 tool final at=1790386565490 text="" Agent TOOL_STATE_SUCCEEDED background subagent=1 last=Read finished started=1790386565490 ended=1790386569372 input=subagent:"Read config.txt and report its content" out="The line says: `VALUE=1`"
 snapshot WORKING queue=[] working_on=- at=1790386569337 asks=[] session=0a29d0f0-93fa-4628-8ba1-82e7e20f3ec5 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=36790 tasks=? background=[]
 ## 78 recorded 76: fact Transcript type=assistant uuid=ac02763d-a913-4fdf-98e7-0bc0d45f415b
 item ac02763d-a913-4fdf-98e7-0bc0d45f415b thinking final at=1790386570613 text=""

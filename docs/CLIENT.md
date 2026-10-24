@@ -172,7 +172,12 @@ oracle the incremental upkeep is tested against. A run whose oldest member is th
 history exists is `open_below`: it may continue below the window.
 
 A call's class, including the verb a look is drawn with, is a per-kind fact the interpreter sets from native
-tool kinds, never a text rule in a view; once it is set, run detection and the rows are kind-independent.
+tool kinds, never a text rule in a view; once it is set, run detection and the rows are kind-independent. So is
+a Claude call's input: the interpreter reads Claude's JSON once into a `ToolInput`, which names what the call is
+about (its file, pattern, address, command line) and has an arm for each tool a view draws its own way (a
+shell command, a file edit or write with its replacements, a subagent, task-list bookkeeping, a web fetch or
+search), with Claude's JSON kept only for any other tool. A finished edit carries the hunks Claude reported. No
+view parses a call's JSON or matches on its tool's name.
 
 ### Reading the state
 

@@ -7,28 +7,6 @@ use wire::{self, pb};
 /// A bidirectional byte stream carried by a link.
 pub type ByteStream = super::quic::QuicByteStream;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CarrierKind {
-    Quic,
-    RelayQuic,
-    RelayTcp,
-    Ssh,
-}
-
-impl CarrierKind {
-    /// The path a carrier of this kind runs on, where nothing more is
-    /// known: a QUIC link's address says whether it is on the same network.
-    pub fn path(self) -> super::link_log::PathKind {
-        use super::link_log::PathKind;
-        match self {
-            Self::Quic => PathKind::Direct,
-            Self::RelayQuic => PathKind::RelayUdp,
-            Self::RelayTcp => PathKind::RelayTcp,
-            Self::Ssh => PathKind::Ssh,
-        }
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum OpenError {
     #[error("link closed")]

@@ -530,13 +530,13 @@ mod tests {
     use std::task::{Context, Poll};
     use std::time::Duration;
 
+    use daemon_core::payload::CarrierKind;
     use quinn::AsyncUdpSocket;
     use quinn::udp::RecvMeta;
     use tokio::sync::mpsc;
 
     use super::*;
     use crate::identity::DeviceIdentity;
-    use crate::link::carrier::CarrierKind;
     use crate::link::quic::{DEVICE_SERVER_NAME, LinkEndpoint, QuicCarrier};
     use crate::link::socket::{Datagrams, LinkId, Path, encode_delivered, encode_forwarded};
     use crate::trust::{SharedTrustStore, TrustStore};
@@ -1061,7 +1061,7 @@ mod tests {
             .expect("handshake completes");
             let carrier: Arc<dyn Seen> = Arc::new(QuicCarrier::from_accepted_with_kind(
                 accepted,
-                CarrierKind::RelayQuic,
+                CarrierKind::Relay,
             ));
             let link = index as u64 + 1;
             link_up(&relaying, link, host.host_id, user);

@@ -551,18 +551,21 @@ mod tests {
 
     #[tokio::test]
     async fn framed_quic_link_reports_the_stream_it_runs_over() {
+        use daemon_core::payload::CarrierKind;
         use tokio::io::AsyncReadExt as _;
 
-        use crate::link::CarrierKind;
+        use crate::link::link_log::PathKind;
 
-        for (kind, carrier_kind) in [
-            (FramedKind::RelayTcp, CarrierKind::RelayTcp),
-            (FramedKind::Ssh, CarrierKind::Ssh),
-            (FramedKind::InProcess, CarrierKind::Quic),
+        for (kind, carrier_kind, path) in [
+            (FramedKind::RelayTcp, CarrierKind::Relay, PathKind::RelayTcp),
+            (FramedKind::Ssh, CarrierKind::Ssh, PathKind::Ssh),
+            (FramedKind::InProcess, CarrierKind::Direct, PathKind::Lan),
         ] {
             let (connector, acceptor) = crate::link::quic::stream_pair(kind).await;
             assert_eq!(connector.kind(), carrier_kind);
             assert_eq!(acceptor.kind(), carrier_kind);
+            assert_eq!(connector.path_kind(), path);
+            assert_eq!(acceptor.path_kind(), path);
 
             let mut opened = connector.open_stream().await.unwrap();
             opened.write_all(b"across the stream").await.unwrap();

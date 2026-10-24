@@ -1302,9 +1302,7 @@ fn serve_link_socket(
     let path = dir.join(LINK_SOCKET);
     let mut listener =
         agent_dir::local_socket::LocalListener::bind(&path).map_err(EdgeError::LinkSocket)?;
-    let ctx = ctx
-        .with_carrier(crate::routing::LinkCarrier::Ssh)
-        .with_shutdown(shutdown);
+    let ctx = ctx.with_shutdown(shutdown);
     Ok(tokio::spawn(async move {
         loop {
             match listener.accept().await {

@@ -14,6 +14,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use daemon_core::payload::CarrierKind;
 use tokio::sync::{Notify, RwLock, mpsc};
 use wire::pb;
 
@@ -136,19 +137,6 @@ pub enum LinkRole {
     CloudRelay,
 }
 
-/// What carries a host-to-host link's packets: the network, SSH, or a
-/// forwarder (the relay, or a paired daemon) between the two hosts.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum LinkCarrier {
-    Direct,
-    Ssh,
-    /// A link through a forwarder is the two hosts' own, but takes no part
-    /// in forwarding or in what links are told of their neighbors:
-    /// forwarding is one hop, and the hosts it reaches are the
-    /// forwarder's to tell.
-    Forwarded,
-}
-
 /// How this daemon authenticated a live link. Only token-admitted links
 /// carry entitlement: pinned device links are independent of any account.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -161,7 +149,7 @@ pub(crate) enum LinkAdmission {
 pub(crate) struct LinkProperties {
     pub(crate) role: LinkRole,
     pub(crate) admission: LinkAdmission,
-    pub(crate) carrier: LinkCarrier,
+    pub(crate) carrier: CarrierKind,
     /// The life of the peer's runtime this link was opened by.
     pub(crate) runtime_instance: RuntimeInstance,
     pub(crate) direct_order: Option<DirectLinkOrder>,
@@ -189,7 +177,7 @@ struct LinkWriter {
     closed: Arc<Notify>,
     role: LinkRole,
     admission: LinkAdmission,
-    carrier: LinkCarrier,
+    carrier: CarrierKind,
     native_carrier: Option<Arc<QuicCarrier>>,
 }
 
@@ -242,7 +230,7 @@ impl LinkRegistry {
             LinkProperties {
                 role,
                 admission: LinkAdmission::PinnedKey,
-                carrier: LinkCarrier::Direct,
+                carrier: CarrierKind::Direct,
                 runtime_instance: crate::routing::RuntimeInstance::random(),
                 direct_order: None,
             },
@@ -270,7 +258,7 @@ impl LinkRegistry {
             LinkProperties {
                 role,
                 admission,
-                carrier: LinkCarrier::Direct,
+                carrier: CarrierKind::Direct,
                 runtime_instance: crate::routing::RuntimeInstance::random(),
                 direct_order: None,
             },
@@ -326,7 +314,7 @@ impl LinkRegistry {
         let closed = Arc::new(Notify::new());
         let mut state = self.state.write().await;
         let carrier_for_paths = native_carrier.clone();
-        if carrier == LinkCarrier::Forwarded {
+        if carrier == CarrierKind::Forwarded {
             self.last_refusals
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -355,7 +343,7 @@ impl LinkRegistry {
         // stays and what every link is told of its neighbors; it is asked
         // under the lock, so what it says and the writers held agree.
         let direct = match (role, carrier, direct_order) {
-            (LinkRole::Peer, LinkCarrier::Direct, Some(order)) => Some(relay_core::Direct {
+            (LinkRole::Peer, CarrierKind::Direct, Some(order)) => Some(relay_core::Direct {
                 order,
                 instance: runtime_instance.bytes(),
             }),
@@ -452,7 +440,7 @@ impl LinkRegistry {
         let Some(writer) = state.writers.remove(link) else {
             return;
         };
-        if writer.carrier != LinkCarrier::Forwarded {
+        if writer.carrier != CarrierKind::Forwarded {
             self.report_down(&state, link);
         }
         for carried in state.writers.values().filter(|carried| {
@@ -738,7 +726,7 @@ impl LinkRegistry {
         self.state.read().await.writers.values().any(|writer| {
             writer.host.id == peer
                 && writer.role == LinkRole::Peer
-                && writer.carrier == LinkCarrier::Direct
+                && writer.carrier == CarrierKind::Direct
         })
     }
 
@@ -899,7 +887,7 @@ mod tests {
         LinkProperties {
             role: LinkRole::Peer,
             admission: LinkAdmission::PinnedKey,
-            carrier: LinkCarrier::Direct,
+            carrier: CarrierKind::Direct,
             runtime_instance,
             direct_order: Some(order),
         }
@@ -925,7 +913,7 @@ mod tests {
         let forwarded = || LinkProperties {
             role: LinkRole::Peer,
             admission: LinkAdmission::PinnedKey,
-            carrier: LinkCarrier::Forwarded,
+            carrier: CarrierKind::Forwarded,
             runtime_instance: RuntimeInstance::random(),
             direct_order: None,
         };

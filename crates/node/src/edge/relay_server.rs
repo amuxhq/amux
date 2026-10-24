@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, UNIX_EPOCH};
 
+use daemon_core::payload::CarrierKind;
 use futures_util::{Stream, StreamExt, stream};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
@@ -22,7 +23,7 @@ use crate::link::framed::{FramedKind, FramedPath};
 use crate::link::quic::{stream_carrier_kind, stream_path};
 use crate::link::relaying::Relaying;
 use crate::link::socket::{LinkSocket, Path, PathId};
-use crate::link::{CarrierKind, ChannelPool, LinkEndpoint, QuicCarrier, run_link};
+use crate::link::{ChannelPool, LinkEndpoint, QuicCarrier, run_link};
 use crate::resource_limits::HandshakeAdmission;
 use crate::routing::{
     AuthenticatedLinkContextProvider, AuthenticatedLinkUser, Capabilities, LinkCtx, LinkRegistry,
@@ -337,7 +338,7 @@ impl CloudLinkServer {
                             .with_path(stream_path(FramedKind::RelayTcp))
                         }
                         None => {
-                            QuicCarrier::from_accepted_with_kind(connection, CarrierKind::RelayQuic)
+                            QuicCarrier::from_accepted_with_kind(connection, CarrierKind::Relay)
                         }
                     };
                     let ctx = service
@@ -767,7 +768,7 @@ mod tests {
                 .await
                 .unwrap(),
         );
-        assert_eq!(carrier.kind(), CarrierKind::RelayQuic);
+        assert_eq!(carrier.kind(), CarrierKind::Relay);
         let _near = link(near, carrier, &format!("{account}/pro")).await;
 
         let far = HostId::new_v4();

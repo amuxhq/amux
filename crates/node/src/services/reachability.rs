@@ -19,7 +19,7 @@ use crate::link::framed::{FramedKind, StreamEndpoint};
 use crate::link::quic::DEVICE_SERVER_NAME;
 use crate::link::socket::Path;
 use crate::link::{ChannelError, ChannelPool, QuicCarrier};
-use crate::routing::{Host, LinkCarrier, LinkConnectorCtx, LinkId, LiveLocalHost, Route};
+use crate::routing::{Host, LinkConnectorCtx, LinkId, LiveLocalHost, Route};
 use crate::transport::spawn_ssh_relay;
 use crate::trust::{Reachability, SharedTrustStore};
 
@@ -596,14 +596,8 @@ impl ForwardedDialer {
         .await?
         .map_err(|error| dial_failed(context, peer, error))?;
         let shutdown = inner.direct_shutdown.lock().unwrap().subscribe();
-        let (_, connector_task, abort_on_drop) = establish_carrier(
-            context,
-            peer,
-            Arc::new(dialled),
-            LinkCarrier::Forwarded,
-            shutdown,
-        )
-        .await?;
+        let (_, connector_task, abort_on_drop) =
+            establish_carrier(context, peer, Arc::new(dialled), shutdown).await?;
         tokio::spawn(await_connector(connector_task, abort_on_drop));
         Ok(())
     }
@@ -718,7 +712,6 @@ impl ForwardedDialer {
         let connector_ctx =
             LinkConnectorCtx::new_live(context.local_host.clone(), registry.clone())
                 .with_expected_peer(peer)
-                .with_carrier(LinkCarrier::Direct)
                 .with_incoming_streams(context.incoming_streams_tx.clone());
         let shutdown = inner.direct_shutdown.lock().unwrap().subscribe();
         let pause_shutdown = shutdown.clone();
@@ -908,7 +901,6 @@ async fn establish_reachability_link(
                         &context,
                         attempt.peer,
                         carrier,
-                        LinkCarrier::Direct,
                         shutdown_rx.clone(),
                     )
                     .await
@@ -960,15 +952,7 @@ async fn establish_reachability_link(
                     return None;
                 }
             };
-            match establish_carrier(
-                &context,
-                attempt.peer,
-                carrier,
-                LinkCarrier::Ssh,
-                shutdown_rx,
-            )
-            .await
-            {
+            match establish_carrier(&context, attempt.peer, carrier, shutdown_rx).await {
                 Ok((host, connector_task, abort_on_drop)) => {
                     context
                         .connections
@@ -1088,13 +1072,11 @@ async fn establish_carrier(
     context: &ReachabilityLinkContext,
     peer: HostId,
     native_carrier: Arc<QuicCarrier>,
-    carrier: LinkCarrier,
     shutdown_rx: watch::Receiver<bool>,
 ) -> Result<(Host, JoinHandle<Result<(), tonic::Status>>, AbortTaskOnDrop), DialError> {
     let connector_ctx =
         LinkConnectorCtx::new_live(context.local_host.clone(), context.channels.link_registry())
             .with_expected_peer(peer)
-            .with_carrier(carrier)
             .with_incoming_streams(context.incoming_streams_tx.clone());
     let (connector_task, established_rx) =
         crate::routing::spawn_connector_with_establishment_and_shutdown(

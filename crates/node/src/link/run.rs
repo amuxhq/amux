@@ -12,19 +12,20 @@ use std::time::{Duration, SystemTime};
 
 use agent_dir::SystemClock;
 use bytes::Bytes;
+use daemon_core::payload::CarrierKind;
 use tokio::sync::{mpsc, oneshot, watch};
 use uuid::Uuid;
 use wire::{self, PROTOCOL_VERSION};
 
-use super::link_log::{EarlyData, LinkEvent, LinkTransition, PathKind};
+use super::link_log::{EarlyData, LinkEvent, LinkTransition};
 use super::{QuicCarrier, read_message, write_message};
 use crate::net_error::{self, status as protocol_status};
 use crate::routing::{
-    ConnectHandshake, ConnectHandshakeEvent, Host, LinkAdmission, LinkCarrier as RoutingCarrier,
-    LinkCloseRequest, LinkId, LinkProperties, LinkRegistry, LinkRole, LiveLocalHost, Registration,
-    RuntimeInstance, core_host, host_from_wire, host_to_wire, inbound_host_from_wire,
-    neighbor_down_from_wire, neighbor_up_from_wire, protocol_error_hello_ack,
-    protocol_error_link_close, validate_remote_host,
+    ConnectHandshake, ConnectHandshakeEvent, Host, LinkAdmission, LinkCloseRequest, LinkId,
+    LinkProperties, LinkRegistry, LinkRole, LiveLocalHost, Registration, RuntimeInstance,
+    core_host, host_from_wire, host_to_wire, inbound_host_from_wire, neighbor_down_from_wire,
+    neighbor_up_from_wire, protocol_error_hello_ack, protocol_error_link_close,
+    validate_remote_host,
 };
 use crate::{Clock, HostId};
 
@@ -234,7 +235,6 @@ pub struct LinkCtx {
     /// proved this time: the core decides it before the link answers.
     resumed: Option<Vec<u8>>,
     link_role: LinkRole,
-    routing_carrier: RoutingCarrier,
     acceptor_session: Option<LinkAuthSession>,
     authenticator: Option<Arc<dyn LinkTokenAuthenticator>>,
     authenticated_context_provider: Option<Arc<dyn AuthenticatedLinkContextProvider>>,
@@ -268,7 +268,6 @@ impl LinkCtx {
             authenticated_peer: None,
             resumed: None,
             link_role: LinkRole::Peer,
-            routing_carrier: RoutingCarrier::Direct,
             acceptor_session: None,
             authenticator: None,
             authenticated_context_provider: None,
@@ -317,11 +316,6 @@ impl LinkCtx {
 
     pub fn with_link_role(mut self, role: LinkRole) -> Self {
         self.link_role = role;
-        self
-    }
-
-    pub fn with_carrier(mut self, carrier: RoutingCarrier) -> Self {
-        self.routing_carrier = carrier;
         self
     }
 
@@ -586,20 +580,10 @@ fn addresses_message(own: &crate::routing::OwnAddresses) -> wire::pb::Message {
     }
 }
 
-/// Whether `carrier` is two hosts' own link whose packets a forwarder
-/// carries: the relay, or a paired daemon.
-fn forwarded(carrier: &QuicCarrier) -> bool {
-    carrier.kind() == super::CarrierKind::Quic
-        && matches!(
-            carrier.path_kind(),
-            PathKind::RelayUdp | PathKind::RelayTcp | PathKind::ViaDaemon
-        )
-}
-
 /// The neighbors a link's handshake lists: none on a link through a
 /// forwarder, since forwarding is one hop.
 async fn neighbor_snapshot(ctx: &LinkCtx, carrier: &QuicCarrier) -> Vec<Host> {
-    if forwarded(carrier) {
+    if carrier.kind() == CarrierKind::Forwarded {
         return Vec::new();
     }
     ctx.links.neighbor_snapshot().await
@@ -671,10 +655,11 @@ async fn run_established(
             tier: session.tier(),
         })
         .unwrap_or(LinkAdmission::PinnedKey);
-    let carrier_tag = match carrier.kind() {
-        super::CarrierKind::Ssh => RoutingCarrier::Ssh,
-        _ if forwarded(carrier.as_ref()) => RoutingCarrier::Forwarded,
-        _ => ctx.routing_carrier,
+    // At the relay, a host's link to it is a direct link to that host.
+    let carrier_tag = match (link_role, carrier.kind()) {
+        (LinkRole::CloudRelay, _) => CarrierKind::Relay,
+        (LinkRole::Peer, CarrierKind::Relay) => CarrierKind::Direct,
+        (LinkRole::Peer, kind) => kind,
     };
     let (out_tx, mut out_rx) = mpsc::channel(256);
     let registration = ctx
@@ -688,8 +673,7 @@ async fn run_established(
                 admission,
                 carrier: carrier_tag,
                 runtime_instance: peer_instance,
-                direct_order: (link_role == LinkRole::Peer
-                    && carrier_tag == RoutingCarrier::Direct)
+                direct_order: (link_role == LinkRole::Peer && carrier_tag == CarrierKind::Direct)
                     .then(|| {
                         crate::routing::direct_order(
                             ctx.local_host.id(),
@@ -722,14 +706,7 @@ async fn run_established(
     let up = daemon_core::Input::LinkUp {
         link: link.core(),
         peer: core_host(peer_host.id),
-        kind: match (link_role, carrier_tag) {
-            (LinkRole::CloudRelay, _) => daemon_core::payload::CarrierKind::Relay,
-            (LinkRole::Peer, RoutingCarrier::Ssh) => daemon_core::payload::CarrierKind::Ssh,
-            (LinkRole::Peer, RoutingCarrier::Direct) => daemon_core::payload::CarrierKind::Direct,
-            (LinkRole::Peer, RoutingCarrier::Forwarded) => {
-                daemon_core::payload::CarrierKind::Forwarded
-            }
-        },
+        kind: carrier_tag,
         resumed: ctx.resumed.clone().map(daemon_core::payload::PublicKey),
     };
     match held_ack {

@@ -6,13 +6,12 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::{future, io};
 
+use daemon_core::payload::CarrierKind;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::{mpsc, oneshot, watch};
 use wire::{self, pb};
 
-use super::carrier::{
-    ByteStream, CarrierKind, ControlSink, ControlSource, ControlWrite, OpenError,
-};
+use super::carrier::{ByteStream, ControlSink, ControlSource, ControlWrite, OpenError};
 use super::early::{Early, EarlyRecv, EarlySend};
 use super::framed::{FramedKind, StreamEndpoint};
 use super::link_log::{EarlyData, PathKind};
@@ -342,6 +341,8 @@ fn alternate_families(addrs: impl IntoIterator<Item = SocketAddr>) -> Vec<Socket
 }
 
 pub struct QuicCarrier {
+    /// What the connection is apart from its path: a host's own link, one
+    /// over SSH, or one between a host and a relay (on either end).
     kind: CarrierKind,
     path: PathKind,
     connection: quinn::Connection,
@@ -403,7 +404,7 @@ impl QuicCarrier {
             "QUIC connection established"
         );
         let control = open_control(&connection, None).await?;
-        Ok(Self::new(connection, CarrierKind::Quic, Some(control))
+        Ok(Self::new(connection, CarrierKind::Direct, Some(control))
             .with_path(PathKind::of_addr(addr))
             .following(endpoint.socket.clone()))
     }
@@ -425,7 +426,7 @@ impl QuicCarrier {
             endpoint.connect_to(config, addr, Server::Host(peer), DEVICE_SERVER_NAME)?;
         let (connection, early) = handshake(connecting, RESUMED_HANDSHAKE_TIMEOUT).await?;
         let control = open_control(&connection, early.as_ref()).await?;
-        Ok(Self::new(connection, CarrierKind::Quic, Some(control))
+        Ok(Self::new(connection, CarrierKind::Direct, Some(control))
             .with_path(PathKind::of_addr(addr))
             .following(endpoint.socket.clone())
             .with_early(early))
@@ -449,7 +450,7 @@ impl QuicCarrier {
             endpoint.connect_on_all(config, peer, paths, through_relay, DEVICE_SERVER_NAME)?;
         let (connection, early) = handshake(connecting, RESUMED_HANDSHAKE_TIMEOUT).await?;
         let control = open_control(&connection, early.as_ref()).await?;
-        Ok(Self::new(connection, CarrierKind::Quic, Some(control))
+        Ok(Self::new(connection, CarrierKind::Direct, Some(control))
             .following(endpoint.socket.clone())
             .with_early(early))
     }
@@ -534,7 +535,7 @@ impl QuicCarrier {
         )?;
         let (connection, early) = handshake(connecting, RELAY_QUIC_HANDSHAKE_TIMEOUT).await?;
         let control = open_control(&connection, early.as_ref()).await?;
-        Ok(Self::new(connection, CarrierKind::RelayQuic, Some(control)).with_early(early))
+        Ok(Self::new(connection, CarrierKind::Relay, Some(control)).with_early(early))
     }
 
     /// Dials `peer` through the forwarder at the far end of `through`,
@@ -551,7 +552,7 @@ impl QuicCarrier {
             .connect_through(config, peer, through, DEVICE_SERVER_NAME)?
             .await?;
         let control = open_control(&connection, None).await?;
-        Ok(Self::new(connection, CarrierKind::Quic, Some(control))
+        Ok(Self::new(connection, CarrierKind::Direct, Some(control))
             .with_path(endpoint.forwarded_kind(through))
             .carried_through(Some(through))
             .following(endpoint.socket.clone()))
@@ -639,7 +640,7 @@ impl QuicCarrier {
     }
 
     pub(crate) fn from_accepted(connection: quinn::Connection) -> Self {
-        Self::from_accepted_with_kind(connection, CarrierKind::Quic)
+        Self::from_accepted_with_kind(connection, CarrierKind::Direct)
     }
 
     pub(crate) fn from_accepted_with_kind(
@@ -743,7 +744,11 @@ impl QuicCarrier {
 
         Self {
             kind,
-            path: kind.path(),
+            path: match kind {
+                CarrierKind::Ssh => PathKind::Ssh,
+                CarrierKind::Relay => PathKind::RelayUdp,
+                CarrierKind::Direct | CarrierKind::Forwarded => PathKind::Direct,
+            },
             connection,
             alone: false,
             through: None,
@@ -775,8 +780,18 @@ pub(crate) fn accepted_quic_bidi_stream(
 }
 
 impl QuicCarrier {
+    /// How the link reaches its peer: a host's own link whose path goes
+    /// through a forwarder (the relay, or a paired daemon) is a forwarded
+    /// one, whatever it came up on.
     pub fn kind(&self) -> CarrierKind {
-        self.kind
+        let forwarded = matches!(
+            self.path_kind(),
+            PathKind::RelayUdp | PathKind::RelayTcp | PathKind::ViaDaemon
+        );
+        match self.kind {
+            CarrierKind::Direct if forwarded => CarrierKind::Forwarded,
+            kind => kind,
+        }
     }
 
     pub fn control(&self) -> (ControlSink, ControlSource) {
@@ -1041,9 +1056,9 @@ impl Datagrams for SlowArrivals {
 /// in-process link stands for a direct one.
 pub(crate) fn stream_carrier_kind(kind: FramedKind) -> CarrierKind {
     match kind {
-        FramedKind::RelayTcp => CarrierKind::RelayTcp,
+        FramedKind::RelayTcp => CarrierKind::Relay,
         FramedKind::Ssh => CarrierKind::Ssh,
-        FramedKind::InProcess => CarrierKind::Quic,
+        FramedKind::InProcess => CarrierKind::Direct,
     }
 }
 

@@ -368,6 +368,7 @@ pub fn authored_home() -> HomeScene {
                 kind: ActivityKind::Running { key: "call".into() },
                 since_ms: NOW,
                 elapsed_ms: 0,
+                turn_elapsed_ms: 0,
             },
             step: Some(step.to_owned()),
         }),

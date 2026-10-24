@@ -300,6 +300,7 @@ pub(crate) fn activity(state: &SessionState, now_ms: i64) -> Option<Activity> {
             },
             since_ms: held.item.at_ms,
             elapsed_ms: (now_ms - held.item.at_ms).max(0),
+            turn_elapsed_ms: activity.turn_elapsed_ms,
         },
         None => activity,
     })

@@ -3272,14 +3272,21 @@ pub(crate) fn activity_words(kind: &ActivityKind) -> String {
     }
 }
 
-/// While the agent works, one quiet line that it is, and for how long.
-/// What it is doing shows as live steps in the feed.
+/// While the agent works, one quiet line that it is, and for how long, in
+/// whole seconds once there is one. What it is doing shows as live steps in
+/// the feed, so a call in flight is the turn's work, timed with the turn.
 fn quiet_activity(activity: &ui_state::Activity, width: usize, theme: Theme) -> Line<'static> {
-    let elapsed = text::duration(activity.elapsed_ms - activity.elapsed_ms % 1_000);
+    let ms = match activity.kind {
+        ActivityKind::Working | ActivityKind::Running { .. } => activity.turn_elapsed_ms,
+        _ => activity.elapsed_ms,
+    };
     let words = activity_words(&activity.kind);
     let mut line = Line::from(Span::raw("    "));
     push(&mut line, words, theme.muted(), width);
-    push(&mut line, format!(" · {elapsed}"), theme.faint(), width);
+    if ms >= 1_000 {
+        let elapsed = text::duration(ms - ms % 1_000);
+        push(&mut line, format!(" · {elapsed}"), theme.faint(), width);
+    }
     line
 }
 

@@ -86,7 +86,7 @@
             "reason": "Run the sync tests in release, where the race shows up"
           },
           "outcome": {
-            "ms": 4200,
+            "ms": 2400,
             "output": "test result: ok. 200 passed"
           }
         }
@@ -94,7 +94,7 @@
     },
     {
       "pause": {
-        "ms": 3000
+        "ms": 1000
       }
     },
     {

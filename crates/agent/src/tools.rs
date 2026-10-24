@@ -218,13 +218,13 @@ impl Server {
 
     async fn call(&self, name: &str, arguments: &Value) -> Option<Answer> {
         Some(match name {
-            "agents" => self.agents().await,
-            "hosts" => self.hosts().await,
-            "send" => self.send(arguments).await,
-            "spawn" => self.spawn(arguments).await,
-            "stop" => self.stop(arguments).await,
-            interpret::STATUS_TOOL => status(arguments),
-            "attach" => self.attach(arguments),
+            wire::AGENTS_TOOL => self.agents().await,
+            wire::HOSTS_TOOL => self.hosts().await,
+            wire::SEND_TOOL => self.send(arguments).await,
+            wire::SPAWN_TOOL => self.spawn(arguments).await,
+            wire::STOP_TOOL => self.stop(arguments).await,
+            wire::STATUS_TOOL => status(arguments),
+            wire::ATTACH_TOOL => self.attach(arguments),
             _ => return None,
         })
     }
@@ -796,29 +796,29 @@ fn definitions() -> Value {
     };
     let read_only = json!({ "readOnlyHint": true });
     json!([
-        { "name": "agents", "description": AGENTS, "inputSchema": object(json!({}), &[]),
+        { "name": wire::AGENTS_TOOL, "description": AGENTS, "inputSchema": object(json!({}), &[]),
           "annotations": read_only },
-        { "name": "hosts", "description": HOSTS, "inputSchema": object(json!({}), &[]),
+        { "name": wire::HOSTS_TOOL, "description": HOSTS, "inputSchema": object(json!({}), &[]),
           "annotations": read_only },
-        { "name": interpret::SEND_TOOL, "description": SEND, "inputSchema": object(json!({
+        { "name": wire::SEND_TOOL, "description": SEND, "inputSchema": object(json!({
             "to": { "type": "string", "description": "The recipient agent's name." },
             "text": { "type": "string" },
             "context": { "type": "string", "description": "An optional thread label the recipient sees with the message." },
           }), &["to", "text"]) },
-        { "name": "spawn", "description": SPAWN, "inputSchema": object(json!({
+        { "name": wire::SPAWN_TOOL, "description": SPAWN, "inputSchema": object(json!({
             "kind": { "type": "string", "enum": SPAWNABLE.map(kind_word) },
             "prompt": { "type": "string" },
             "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": wire::AGENT_NAME_MOST, "description": "Lowercase letters, digits and hyphens; one is chosen when omitted." },
             "cwd": { "type": "string", "description": "A path on the host the child runs on; required when that is another host." },
             "host": { "type": "string", "description": "A trusted host's name; this host when omitted." },
           }), &["kind", "prompt"]) },
-        { "name": "stop", "description": STOP, "inputSchema": object(json!({
+        { "name": wire::STOP_TOOL, "description": STOP, "inputSchema": object(json!({
             "name": { "type": "string" },
           }), &["name"]) },
-        { "name": interpret::STATUS_TOOL, "description": STATUS, "inputSchema": object(json!({
+        { "name": wire::STATUS_TOOL, "description": STATUS, "inputSchema": object(json!({
             "working_on": { "type": ["string", "null"] },
           }), &["working_on"]) },
-        { "name": "attach", "description": ATTACH, "inputSchema": object(json!({
+        { "name": wire::ATTACH_TOOL, "description": ATTACH, "inputSchema": object(json!({
             "path": { "type": "string" },
             "name": { "type": "string", "description": "The name viewers see; the file's own name when omitted." },
           }), &["path"]) },

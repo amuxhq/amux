@@ -48,6 +48,8 @@ fn an_in_flight_tool_is_running_named_by_its_call() {
             kind_at(&state, 14_000),
             (ActivityKind::Running { key: "k2".into() }, 12_000)
         );
+        // The turn's own clock runs on under the call, from the prompt.
+        assert_eq!(state.activity(14_000).unwrap().turn_elapsed_ms, 13_000);
         apply_checked(
             &mut state,
             ev_item(command(kind, 2, 3, ToolState::Succeeded)),

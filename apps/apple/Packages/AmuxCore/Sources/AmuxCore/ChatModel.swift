@@ -1262,6 +1262,7 @@ extension RowKind {
         case .explore(_, _, let state, _): state
         case .fileChange(_, let state): state
         case .toolCall(_, _, _, let state, _): state
+        case .helper(_, _, _, _, let state, _): state
         case .subagent(_, let running, _, _, _, _): running ? .running : nil
         default: nil
         }

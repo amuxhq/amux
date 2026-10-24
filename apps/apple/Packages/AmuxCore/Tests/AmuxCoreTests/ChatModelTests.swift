@@ -360,7 +360,7 @@ final class ChatModelTests: XCTestCase {
     /// assigned again only for what else moved.
     func testAFrameMovedOnlyByTheClockIsNotAssigned() {
         var running = frame(phase: .working)
-        running.composer.activity = Activity(kind: .working, sinceMs: 1_000, elapsedMs: 500)
+        running.composer.activity = Activity(kind: .working, sinceMs: 1_000, elapsedMs: 500, turnElapsedMs: 500)
         let source = FakeChat(rows: [row("a", 1)], frame: running)
         let model = ChatModel(source: source)
 
@@ -369,13 +369,13 @@ final class ChatModelTests: XCTestCase {
         model.woke()
         XCTAssertEqual(model.frame?.composer.activity?.elapsedMs, 500)
 
-        source.current.composer.activity = Activity(kind: .thinking, sinceMs: 1_000, elapsedMs: 950)
+        source.current.composer.activity = Activity(kind: .thinking, sinceMs: 1_000, elapsedMs: 950, turnElapsedMs: 950)
         source.pending = ChatChanges(keys: [], reloaded: false, session: true)
         model.woke()
         XCTAssertEqual(model.frame?.composer.activity?.kind, .thinking)
 
         // Without a start to count from, the elapsed time is all there is.
-        source.current.composer.activity = Activity(kind: .thinking, sinceMs: 0, elapsedMs: 1_200)
+        source.current.composer.activity = Activity(kind: .thinking, sinceMs: 0, elapsedMs: 1_200, turnElapsedMs: 1_200)
         source.pending = ChatChanges(keys: [], reloaded: false, session: true)
         model.woke()
         source.current.composer.activity?.elapsedMs = 1_400

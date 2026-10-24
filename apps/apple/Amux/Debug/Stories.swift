@@ -201,7 +201,7 @@ enum StoryFleet {
     }
 
     private static func activity(_ kind: ActivityKind) -> Activity {
-        Activity(kind: kind, sinceMs: ms(minutesAgo: 1), elapsedMs: 60_000)
+        Activity(kind: kind, sinceMs: ms(minutesAgo: 1), elapsedMs: 60_000, turnElapsedMs: 60_000)
     }
 
     private static func ms(minutesAgo: Double) -> Int64 {

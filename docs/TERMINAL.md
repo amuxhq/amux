@@ -264,7 +264,9 @@ The leader then `r`, or `[Diff]` in the header, asks the agent's host for the di
 full-screen review page, frozen as it was when the page opened. The header names the agent and the folder, with
 `review · working tree at 3f2a1c9 │ 42 files · +109 −74` at the right. The changed files are listed on the left,
 grouped by directory with each file's lines added and removed; beside them one stream of every file in that order,
-each under its own landmark, its hunks set apart by their faint `@@` lines and its added and removed lines tinted.
+each under its own landmark, with one column of line numbers (a removed line by its old number, every other by its
+new one, as on the phone), the lines left out between two hunks drawn as a faint dashed rule, and its added and
+removed lines tinted.
 The file the stream is in is highlighted in the list; picking a file in the list takes the stream to it. Tab moves
 the keys between the list and the stream, and `/` filters the list and the stream with it. Below 100 columns the
 list shows only while it has the keys.

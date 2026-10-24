@@ -805,15 +805,14 @@ impl ReviewPage {
             .files
             .iter()
             .flat_map(|file| file.hunks.iter().flat_map(|hunk| &hunk.lines))
-            .flat_map(|line| [line.old_line, line.new_line])
-            .flatten()
+            .filter_map(|line| line.new_line.or(line.old_line))
             .max()
             .unwrap_or(0)
             .to_string()
             .len()
             .max(3);
-        // "▌ " + old + " " + new + " " + sign + " "
-        let gutter = 2 + digits * 2 + 4;
+        // "▌ " + number + " " + sign + " "
+        let gutter = 2 + digits + 3;
         let selected_target = self.target();
         let mut lines: Vec<Line<'static>> = Vec::new();
         let mut selected = (0, 0);
@@ -862,12 +861,16 @@ impl ReviewPage {
                 }
                 Target::Line { file, hunk, line } => {
                     let h = &self.doc.files[file].hunks[hunk];
-                    // Hunks apart by a blank line and their faint @@ line.
+                    // A file's first hunk follows its header after a
+                    // blank; the lines left out between two hunks are a
+                    // dashed hairline, as the phone draws them as a band.
                     if line == 0 {
-                        lines.push(Line::default());
-                        let mut header = Line::from(Span::raw("  "));
-                        push(&mut header, h.header.clone(), theme.faint(), width);
-                        lines.push(header);
+                        let mut gap = Line::from(Span::raw("  "));
+                        if hunk > 0 {
+                            let rule = width.saturating_sub(4);
+                            push(&mut gap, "╌".repeat(rule), theme.hairline(), width);
+                        }
+                        lines.push(gap);
                     }
                     let diff_line = &h.lines[line];
                     let number = |n: Option<u32>| match n {
@@ -879,14 +882,12 @@ impl ReviewPage {
                         LineKind::Removed => ('-', theme.diff_removed()),
                         LineKind::Context => (' ', theme.diff_context()),
                     };
+                    // One column of numbers: a removed line by its old
+                    // number, every other by its new one, as on the phone.
                     let mut row = Line::from(bar);
                     push(
                         &mut row,
-                        format!(
-                            "{} {} ",
-                            number(diff_line.old_line),
-                            number(diff_line.new_line)
-                        ),
+                        format!("{} ", number(diff_line.new_line.or(diff_line.old_line))),
                         theme.muted(),
                         width,
                     );

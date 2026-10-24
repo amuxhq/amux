@@ -180,6 +180,24 @@ impl HostRef {
 /// The longest name an agent can have.
 pub const AGENT_NAME_MOST: usize = 64;
 
+/// The tool server amux's own tools are registered under, with every
+/// provider; the interpreters and the clients' views both recognise its
+/// calls by it.
+pub const AMUX_TOOL_SERVER: &str = "amux";
+/// amux's tool that sets the caller's working_on.
+pub const STATUS_TOOL: &str = "status";
+/// amux's tool that messages another agent.
+pub const SEND_TOOL: &str = "send";
+/// amux's tool that attaches a file to the caller's reply.
+pub const ATTACH_TOOL: &str = "attach";
+/// amux's tool that starts a child agent.
+pub const SPAWN_TOOL: &str = "spawn";
+/// amux's tool that stops one of the caller's children.
+pub const STOP_TOOL: &str = "stop";
+/// amux's tools that list the fleet and the trusted hosts.
+pub const AGENTS_TOOL: &str = "agents";
+pub const HOSTS_TOOL: &str = "hosts";
+
 /// Why a name cannot name an agent. Each client words it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
 pub enum AgentNameProblem {

@@ -111,6 +111,9 @@ pub struct Activity {
     pub kind: ActivityKind,
     pub since_ms: i64,
     pub elapsed_ms: i64,
+    /// How long the turn has run, whatever the kind times: a client that
+    /// words a call in flight as the turn's work times the turn.
+    pub turn_elapsed_ms: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -240,6 +243,7 @@ mod tests {
             },
             since_ms: 10,
             elapsed_ms: 3,
+            turn_elapsed_ms: 8,
         };
         let text = serde_json::to_string(&activity).unwrap();
         assert_eq!(serde_json::from_str::<Activity>(&text).unwrap(), activity);

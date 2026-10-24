@@ -8,6 +8,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use prost::Message as _;
 use serde::{Deserialize, Serialize};
+/// amux's own tools. A send is drawn as the message it sent, never as a
+/// tool call; an attach answers with the attachment's element, which its
+/// step carries as the attachment, never as text.
+pub use wire::{AMUX_TOOL_SERVER, ATTACH_TOOL, SEND_TOOL, STATUS_TOOL};
 use wire::{
     AgentMessage, AgentSpec, Append, Attachment, Bootstrap, Envelope, Item, Phase, PromptInput,
     QueuedInput, Refusal, Rejected, Sender, Snapshot, Step, TurnEnd, bootstrap, child_report,
@@ -15,17 +19,6 @@ use wire::{
 };
 
 use crate::{Effect, Stepped, reply, serde_pb};
-
-/// The tool server name amux's own tools are registered under, and the tool
-/// whose call sets working_on.
-pub const AMUX_TOOL_SERVER: &str = "amux";
-pub const STATUS_TOOL: &str = "status";
-/// amux's tool that messages another agent; its call is drawn as the
-/// message it sent, never as a tool call.
-pub const SEND_TOOL: &str = "send";
-/// amux's tool that attaches a file: it answers with the attachment's
-/// element, which its step carries as the attachment, never as text.
-pub const ATTACH_TOOL: &str = "attach";
 
 /// An open ask as the shared list needs to see it. Implemented by the
 /// per-kind ask messages.

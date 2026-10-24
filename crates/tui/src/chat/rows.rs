@@ -53,6 +53,7 @@ pub fn on_rail(row: &Row) -> bool {
         RowKind::Explore { .. }
             | RowKind::Command { .. }
             | RowKind::ToolCall { .. }
+            | RowKind::Helper { .. }
             | RowKind::FileChange { .. }
             | RowKind::Background { .. }
             | RowKind::Subagent { .. }
@@ -315,6 +316,7 @@ fn body(row: &Row, state: RowState, width: usize, theme: Theme) -> Vec<Line<'sta
         | RowKind::Prose { .. }
         | RowKind::Thinking { .. }
         | RowKind::ToolCall { .. }
+        | RowKind::Helper { .. }
         | RowKind::FileChange { .. }
         | RowKind::Command { .. }
         | RowKind::Explore { .. }

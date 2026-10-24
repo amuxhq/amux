@@ -39,7 +39,6 @@ pub enum FileStatus {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct Hunk {
-    pub header: String,
     pub lines: Vec<DiffLine>,
 }
 
@@ -104,10 +103,7 @@ pub fn review_doc(diff: &Diff, patch: &str, comments: &[ReviewComment]) -> Revie
             let (old, new) = hunk_starts(header);
             old_line = old;
             new_line = new;
-            file.hunks.push(Hunk {
-                header: line.to_owned(),
-                lines: Vec::new(),
-            });
+            file.hunks.push(Hunk { lines: Vec::new() });
             continue;
         }
         let Some(hunk) = file.hunks.last_mut() else {

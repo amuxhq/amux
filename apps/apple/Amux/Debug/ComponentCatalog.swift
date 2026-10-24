@@ -421,15 +421,15 @@ enum ComponentCatalog {
             },
             composer("working", height: 190, rows: [F.runningCommand], frame: ScriptedChat.frame(
                 phase: .working,
-                activity: Activity(kind: .running(key: F.runningCommand.id), sinceMs: 0, elapsedMs: 12_000))),
+                activity: Activity(kind: .running(key: F.runningCommand.id), sinceMs: 0, elapsedMs: 12_000, turnElapsedMs: 12_000))),
             composer("thinking", height: 190, frame: ScriptedChat.frame(
-                phase: .working, activity: Activity(kind: .thinking, sinceMs: 0, elapsedMs: 24_000)),
+                phase: .working, activity: Activity(kind: .thinking, sinceMs: 0, elapsedMs: 24_000, turnElapsedMs: 24_000)),
                 draft: "Also check the Windows path."),
             composer("retrying", height: 190, frame: ScriptedChat.frame(
                 phase: .working,
-                activity: Activity(kind: .retrying(attempt: 2, maxAttempts: 10, retryAtMs: nil), sinceMs: 0, elapsedMs: 3_000))),
+                activity: Activity(kind: .retrying(attempt: 2, maxAttempts: 10, retryAtMs: nil), sinceMs: 0, elapsedMs: 3_000, turnElapsedMs: 3_000))),
             composer("queued", height: 400, frame: ScriptedChat.frame(
-                phase: .working, activity: Activity(kind: .working, sinceMs: 0, elapsedMs: 41_000),
+                phase: .working, activity: Activity(kind: .working, sinceMs: 0, elapsedMs: 41_000, turnElapsedMs: 41_000),
                 queue: [
                     QueuedRow(inputId: [1], text: [.text("Then run the Windows check.")], steered: false, canWithdraw: true, canSendNow: true, fromAgent: nil),
                     QueuedRow(inputId: [2], text: [.text("Use the new error table instead.")], steered: true, canWithdraw: false, canSendNow: false, fromAgent: nil),
@@ -442,7 +442,7 @@ enum ComponentCatalog {
                 RefusedPrompt(inputId: [5], reason: Refusal(reason: .hostUnreachable, detail: nil)),
             ]), refusedWords: [[5]: "Run the focused tests."]),
             composer("sending", height: 280, frame: ScriptedChat.frame(
-                phase: .working, activity: Activity(kind: .working, sinceMs: 0, elapsedMs: 4_000),
+                phase: .working, activity: Activity(kind: .working, sinceMs: 0, elapsedMs: 4_000, turnElapsedMs: 4_000),
                 underway: [
                     SentPrompt(inputId: [6], text: [.text("Run the focused tests.")], lands: .queue, underway: .sending(waiting: false)),
                     SentPrompt(inputId: [7], text: [.text("Then the Windows check.")], lands: .queue, underway: .sending(waiting: true)),
@@ -452,7 +452,7 @@ enum ComponentCatalog {
             composer("detached", height: 180, frame: ScriptedChat.frame(mode: .holds(.detached), caughtUp: false, waiting: .detached),
                      draft: "Also add a test for the new string."),
             composer("catching-up", height: 160, frame: ScriptedChat.frame(mode: .holds(.catchingUp), caughtUp: false, waiting: .catchingUp)),
-            composer("strip", height: 280, frame: ScriptedChat.frame(phase: .working, activity: Activity(kind: .working, sinceMs: 0, elapsedMs: 94_000)),
+            composer("strip", height: 280, frame: ScriptedChat.frame(phase: .working, activity: Activity(kind: .working, sinceMs: 0, elapsedMs: 94_000, turnElapsedMs: 94_000)),
                      strip: ScriptedChat.strip(
                         tasks: F.pairingTasks,
                         context: ContextView(usedTokens: 168_000, nearFull: true, percent: 84, windowTokens: 200_000),
@@ -486,7 +486,7 @@ enum ComponentCatalog {
             // The dock opened: the task list, the agents this one started,
             // then the chip and a queued prompt.
             composer("strip-expanded", height: 1000, frame: ScriptedChat.frame(
-                phase: .working, activity: Activity(kind: .working, sinceMs: 0, elapsedMs: 8_000),
+                phase: .working, activity: Activity(kind: .working, sinceMs: 0, elapsedMs: 8_000, turnElapsedMs: 8_000),
                 queue: [
                     QueuedRow(inputId: [1], text: [.text("Once the suite is green, squash it into one commit.")], steered: false, canWithdraw: true, canSendNow: true, fromAgent: nil),
                 ]),
@@ -575,7 +575,7 @@ enum ComponentCatalog {
                     rows: F.working,
                     frame: ScriptedChat.frame(
                         phase: .working,
-                        activity: Activity(kind: .running(key: "w06"), sinceMs: 0, elapsedMs: 33_000)),
+                        activity: Activity(kind: .running(key: "w06"), sinceMs: 0, elapsedMs: 33_000, turnElapsedMs: 33_000)),
                     strip: ScriptedChat.strip(model: "opus 4.6"))
             }),
             chat("run-open", chat: {

@@ -1564,11 +1564,13 @@ fn the_review_page_lists_files_and_styles_hunks() {
     assert!(screen.contains("notes.md           +1  │"), "{screen}");
     assert!(screen.contains("src/"), "{screen}");
     assert!(screen.contains("lib.rs        +2 −1  │"), "{screen}");
-    assert!(screen.contains("@@ -10,3 +10,4 @@ fn main() {"), "{screen}");
+    // No hunk headers: one column of numbers, a removed line by its old
+    // number and every other by its new one.
+    assert!(!screen.contains("@@"), "{screen}");
     // The page opens on the first changed line.
-    assert!(screen.contains("│▌       1 + hello"), "{screen}");
-    assert!(screen.contains("   11     - let b = 2;"), "{screen}");
-    assert!(screen.contains("       11 + let b = 3;"), "{screen}");
+    assert!(screen.contains("│▌   1 + hello"), "{screen}");
+    assert!(screen.contains("│   11 - let b = 2;"), "{screen}");
+    assert!(screen.contains("│   11 + let b = 3;"), "{screen}");
 
     // Added and removed lines carry the diff tints across the row.
     let row_of = |needle: &str| {
@@ -1589,6 +1591,25 @@ fn the_review_page_lists_files_and_styles_hunks() {
         buffer[(W - 1, context)].bg,
         theme().diff_added().bg.unwrap()
     );
+}
+
+#[test]
+fn the_lines_left_out_between_two_hunks_are_a_dashed_hairline() {
+    let patch = "diff --git a/src/lib.rs b/src/lib.rs\n--- a/src/lib.rs\n+++ b/src/lib.rs\n\
+                 @@ -1,2 +1,2 @@\n a\n-b\n+c\n@@ -20,2 +20,2 @@ fn main() {\n d\n-e\n+f\n";
+    let state = chat(replies(1, 3));
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    view.open_review_at(working_tree_diff(), patch.into(), None);
+    let (screen, _) = review_screen(&mut view, &state);
+    let lines: Vec<&str> = screen.lines().collect();
+    let gap = lines
+        .iter()
+        .position(|line| line.contains("╌╌╌"))
+        .unwrap_or_else(|| panic!("{screen}"));
+    assert!(lines[gap - 1].contains("2 + c"), "{screen}");
+    assert!(lines[gap + 1].contains("20   d"), "{screen}");
+    // The hunk header's scope goes with it.
+    assert!(!screen.contains("fn main"), "{screen}");
 }
 
 #[test]
@@ -2442,6 +2463,7 @@ fn home_keeps_its_order_while_agents_stream_and_moves_one_whose_turn_ended() {
                 kind: ui_state::ActivityKind::Running { key: "call".into() },
                 since_ms: 0,
                 elapsed_ms: 0,
+                turn_elapsed_ms: 0,
             },
             step: Some(subject.to_owned()),
         }),

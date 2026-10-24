@@ -48,8 +48,8 @@ pub use overview::{
 };
 pub use review::{DiffLine, FileStatus, Hunk, LineKind, ReviewDoc, ReviewFile, review_doc};
 pub use rows::{
-    AnswerView, AskRow, CallPhase, ChatOptions, Decision, DecisionView, EditLine, ExploreVerb,
-    FileChangeView, FileRow, Granted, HelperAction, OUTPUT_HEAD_LINES, PatchHead, PatchLine,
+    AnswerView, AskRow, CallPhase, ChatOptions, ChildAction, Decision, DecisionView, EditLine,
+    ExploreVerb, FileChangeView, FileRow, Granted, OUTPUT_HEAD_LINES, PatchHead, PatchLine,
     PermissionGrant, PlanVerdict, Resolution, Row, RowKind, ToolRows, chat_rows, chat_rows_for,
     patch_head,
 };

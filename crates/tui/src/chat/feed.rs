@@ -15,7 +15,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ui_state::Key;
 use ui_view::{
-    AnswerView, AskRow, AttachmentView, CallPhase, DecisionView, FileChangeView, HelperAction,
+    AnswerView, AskRow, AttachmentView, CallPhase, ChildAction, DecisionView, FileChangeView,
     PlanVerdict, QuestionView, Resolution, Row, RowKind, Run, RunCounts, Segment,
 };
 
@@ -352,7 +352,7 @@ pub fn is_step(row: &Row) -> bool {
         RowKind::Explore { .. }
             | RowKind::Command { .. }
             | RowKind::ToolCall { .. }
-            | RowKind::Helper { .. }
+            | RowKind::Child { .. }
             | RowKind::FileChange { .. }
             | RowKind::Background { .. }
             | RowKind::Subagent { .. }
@@ -1051,7 +1051,7 @@ fn step_words(row: &Row) -> (String, String, String) {
             let meta = decided(meta, row, *state == CallPhase::Denied);
             (verb.to_owned(), subject, meta)
         }
-        RowKind::Helper {
+        RowKind::Child {
             action,
             name,
             host,
@@ -1060,19 +1060,19 @@ fn step_words(row: &Row) -> (String, String, String) {
             ..
         } => {
             let verb = match (action, state) {
-                (HelperAction::Start, CallPhase::Failed) => "Could not start",
-                (HelperAction::Stop, CallPhase::Failed) => "Could not stop",
-                (HelperAction::Start, _) => {
+                (ChildAction::Start, CallPhase::Failed) => "Could not start",
+                (ChildAction::Stop, CallPhase::Failed) => "Could not stop",
+                (ChildAction::Start, _) => {
                     call_verb(*state, ["Wants to start", "Starting", "Started"])
                 }
-                (HelperAction::Stop, _) => {
+                (ChildAction::Stop, _) => {
                     call_verb(*state, ["Wants to stop", "Stopping", "Stopped"])
                 }
             };
             // "Started payment-tests on build · Codex": the machine only
             // when it is another one.
             let mut subject = if name.is_empty() {
-                "a helper".to_owned()
+                "a subagent".to_owned()
             } else {
                 name.clone()
             };
@@ -1419,7 +1419,7 @@ fn step_detail(row: &Row, facts: &RowFacts, width: usize, theme: Theme) -> Vec<L
         RowKind::ToolCall { result, .. } if !result.is_empty() => {
             detail(result, width, theme.muted(), DETAIL_LINES, theme)
         }
-        RowKind::Helper { result, .. } if !result.is_empty() => {
+        RowKind::Child { result, .. } if !result.is_empty() => {
             detail(result, width, theme.error(), DETAIL_LINES, theme)
         }
         // Why a read or search failed, or what it found.

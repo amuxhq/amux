@@ -14,7 +14,7 @@ runs on; `~/tally` on `build`, a build server; `~/code/tally` on `laptop`.
 
 | Agent | Kind | Machine | Where it rests |
 |---|---|---|---|
-| `checkout-redesign` | Claude | studio | Working, after starting two helpers |
+| `checkout-redesign` | Claude | studio | Working, after starting two subagents |
 | `payment-tests` | Codex | build | Working; started by `checkout-redesign` |
 | `copy-pass` | Claude | studio | Finished, its report delivered to `checkout-redesign` |
 | `flaky-sync-test` | Codex | build | Asking to run `cargo test -p sync --release` |
@@ -23,7 +23,7 @@ runs on; `~/tally` on `build`, a build server; `~/code/tally` on `laptop`.
 | `deps-bump` | Codex | build | Idle |
 
 Every agent plays a script from `scripts/`, run by the fake Claude and Codex
-providers, so the scene is the same on every start. The helpers are started
+providers, so the scene is the same on every start. The subagents are started
 by `checkout-redesign` through amux's own `spawn` tool and play their
 machine's script. The scripts pause where a model would think, so the fleet's
 ages read as a morning's work; the scene takes about five minutes to come to
@@ -60,7 +60,7 @@ wt exec amux/<tree> -- scripts/with iphone -- just scene film
 real UI. It films three terminal panes with `ctl tui record`:
 
 - the fleet, from the start of the scene;
-- checkout-redesign's chat, as the agent starts its helpers and hears back;
+- checkout-redesign's chat, as the agent starts its subagents and hears back;
 - the review page, with a comment typed onto a line a key at a time.
 
 It also uses the simulator's screen recording to film the phone opening

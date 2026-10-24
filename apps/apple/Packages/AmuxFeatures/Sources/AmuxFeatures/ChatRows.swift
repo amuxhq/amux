@@ -103,7 +103,7 @@ public struct ChatRowView: View {
                 quote: denialNote,
                 detail: expanded && !result.isEmpty ? result : nil,
                 opens: !result.isEmpty, open: expanded, toggle: toggle)
-        case .helper(let action, let name, let host, let kind, let state, let result):
+        case .child(let action, let name, let host, let kind, let state, let result):
             // "Started payment-tests on build · Codex", as the terminal
             // says it: the machine only when it is another one.
             let verb = switch (action, state) {
@@ -116,9 +116,9 @@ public struct ChatRowView: View {
                 state, row, wants: String(localized: "Wants to stop"),
                 doing: String(localized: "Stopping"), done: String(localized: "Stopped"))
             }
-            let who = name.isEmpty ? String(localized: "a helper") : name
+            let who = name.isEmpty ? String(localized: "a subagent") : name
             GridRow(
-                kind: "helper", glyph: glyph(state, action == .start ? "person.badge.plus" : "person.badge.minus"),
+                kind: "child", glyph: glyph(state, action == .start ? "person.badge.plus" : "person.badge.minus"),
                 accented: accented(state), failed: state == .failed,
                 rail: rail, verb: verb, subject: host.isEmpty ? who : String(localized: "\(who) on \(host)"),
                 meta: RowMeta(ChatWords.meta([kind], row, verbPhase: state, note: false)),

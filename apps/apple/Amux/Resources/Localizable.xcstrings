@@ -1381,18 +1381,6 @@
         }
       }
     },
-    "a helper" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatRows.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "a helper"
-          }
-        }
-      }
-    },
     "A name cannot be empty" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
@@ -1437,6 +1425,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A report includes a screenshot and this phone’s diagnostic dump."
+          }
+        }
+      }
+    },
+    "a subagent" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatRows.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "a subagent"
           }
         }
       }

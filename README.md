@@ -76,14 +76,14 @@ hands your terminal straight to it.
 
 ## Agents that work together
 
-Every agent can see the others, message them and start helpers of its own, on any machine
+Every agent can see the others, message them and start subagents of its own, on any machine
 you've paired. Claude can hand a task to Codex, and Codex to Claude: a Claude agent
 redesigning checkout can start a Codex agent on your build server to write the payment tests
 and another Claude to rewrite the error messages, and hears back from each one when it's done.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/readme/chat-dark.png">
-  <img src="images/readme/chat-light.png" alt="A Claude agent's chat: it starts two helpers, then picks up the report its copy-writing helper sent back">
+  <img src="images/readme/chat-light.png" alt="A Claude agent's chat: it starts two subagents, then picks up the report its copy-writing subagent sent back">
 </picture>
 
 ## Private by design

@@ -99,11 +99,11 @@ pub enum RowKind {
         files: Vec<FileRow>,
         state: CallPhase,
     },
-    /// amux's own call that starts or stops a helper agent: "Started
+    /// amux's own call that starts or stops a subagent: "Started
     /// payment-tests on build · Codex". `host` is empty for the caller's own
     /// host, and `kind` empty when the call does not say it.
-    Helper {
-        action: HelperAction,
+    Child {
+        action: ChildAction,
         name: String,
         host: String,
         kind: String,
@@ -360,7 +360,7 @@ impl Row {
     pub fn call_phase(&self) -> Option<CallPhase> {
         match &self.kind {
             RowKind::ToolCall { state, .. }
-            | RowKind::Helper { state, .. }
+            | RowKind::Child { state, .. }
             | RowKind::FileChange { state, .. }
             | RowKind::Command { state, .. }
             | RowKind::Explore { state, .. } => Some(*state),
@@ -370,7 +370,7 @@ impl Row {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
-pub enum HelperAction {
+pub enum ChildAction {
     Start,
     Stop,
 }
@@ -1267,7 +1267,7 @@ fn claude_tool(
 }
 
 /// amux's own calls that a person reads better as what they did than as
-/// a tool call: a helper started or stopped. Listing the fleet or the hosts
+/// a tool call: a subagent started or stopped. Listing the fleet or the hosts
 /// is the agent looking around, and hidden. None for any other call.
 fn amux_call(
     server: &str,
@@ -1281,8 +1281,8 @@ fn amux_call(
     }
     let action = match tool {
         wire::AGENTS_TOOL | wire::HOSTS_TOOL => return Some(RowKind::Hidden),
-        wire::SPAWN_TOOL => HelperAction::Start,
-        wire::STOP_TOOL => HelperAction::Stop,
+        wire::SPAWN_TOOL => ChildAction::Start,
+        wire::STOP_TOOL => ChildAction::Stop,
         _ => return None,
     };
     // A spawn may leave the name to amux; its answer then names the child,
@@ -1306,7 +1306,7 @@ fn amux_call(
         "codex" => crate::fleet::kind_name(wire::Kind::Codex),
         _ => "",
     };
-    Some(RowKind::Helper {
+    Some(RowKind::Child {
         action,
         name,
         host: field(input, "host"),

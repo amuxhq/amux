@@ -1685,6 +1685,11 @@ public struct ChatFrame: Codable, Hashable, Sendable {
     }
 }
 
+public enum ChildAction: String, Codable, Hashable, Sendable, CaseIterable {
+    case start = "Start"
+    case stop = "Stop"
+}
+
 /// One choice, stated as what happens, with the answer it sends.
 public struct Choice: Codable, Hashable, Sendable {
     public var outcome: ChoiceOutcome
@@ -3492,11 +3497,6 @@ public struct Granted: Codable, Hashable, Sendable {
     }
 }
 
-public enum HelperAction: String, Codable, Hashable, Sendable, CaseIterable {
-    case start = "Start"
-    case stop = "Stop"
-}
-
 /// A host in the fleet as a screen lists it.
 public struct HostView: Codable, Hashable, Sendable {
     public var hostId: [UInt8]
@@ -4946,10 +4946,10 @@ public enum RowKind: Codable, Hashable, Sendable {
     case thinking(text: String, open: Bool, durationMs: Int64?)
     case toolCall(server: String, tool: String, fact: String, state: CallPhase, result: String)
     case fileChange(files: [FileRow], state: CallPhase)
-    /// amux's own call that starts or stops a helper agent: "Started
+    /// amux's own call that starts or stops a subagent: "Started
     /// payment-tests on build · Codex". `host` is empty for the caller's own
     /// host, and `kind` empty when the call does not say it.
-    case helper(action: HelperAction, name: String, host: String, kind: String, state: CallPhase, result: String)
+    case child(action: ChildAction, name: String, host: String, kind: String, state: CallPhase, result: String)
     case command(command: String, state: CallPhase, outputHead: [String], moreLines: UInt, outputTrimmed: Bool, outputTail: [String], durationMs: Int64?, exitCode: Int32?)
     case explore(verb: ExploreVerb, subject: String, state: CallPhase, result: String)
     case subagent(description: String, running: Bool, toolCount: UInt32, lastTool: String, answer: String, durationMs: Int64?)
@@ -4977,7 +4977,7 @@ public enum RowKind: Codable, Hashable, Sendable {
         case thinking = "Thinking"
         case toolCall = "ToolCall"
         case fileChange = "FileChange"
-        case helper = "Helper"
+        case child = "Child"
         case command = "Command"
         case explore = "Explore"
         case subagent = "Subagent"
@@ -5025,7 +5025,7 @@ public enum RowKind: Codable, Hashable, Sendable {
         case state
     }
 
-    private enum HelperKeys: String, CodingKey {
+    private enum ChildKeys: String, CodingKey {
         case action
         case name
         case host
@@ -5187,11 +5187,11 @@ public enum RowKind: Codable, Hashable, Sendable {
             self = .fileChange(
                 files: try _fields.decode([FileRow].self, forKey: .files),
                 state: try _fields.decode(CallPhase.self, forKey: .state))
-        case .helper:
+        case .child:
             let _fields = try _container.nestedContainer(
-                keyedBy: HelperKeys.self, forKey: .helper)
-            self = .helper(
-                action: try _fields.decode(HelperAction.self, forKey: .action),
+                keyedBy: ChildKeys.self, forKey: .child)
+            self = .child(
+                action: try _fields.decode(ChildAction.self, forKey: .action),
                 name: try _fields.decode(String.self, forKey: .name),
                 host: try _fields.decode(String.self, forKey: .host),
                 kind: try _fields.decode(String.self, forKey: .kind),
@@ -5348,9 +5348,9 @@ public enum RowKind: Codable, Hashable, Sendable {
             var _fields = _container.nestedContainer(keyedBy: FileChangeKeys.self, forKey: .fileChange)
             try _fields.encode(files, forKey: .files)
             try _fields.encode(state, forKey: .state)
-        case .helper(let action, let name, let host, let kind, let state, let result):
+        case .child(let action, let name, let host, let kind, let state, let result):
             var _container = encoder.container(keyedBy: Tag.self)
-            var _fields = _container.nestedContainer(keyedBy: HelperKeys.self, forKey: .helper)
+            var _fields = _container.nestedContainer(keyedBy: ChildKeys.self, forKey: .child)
             try _fields.encode(action, forKey: .action)
             try _fields.encode(name, forKey: .name)
             try _fields.encode(host, forKey: .host)

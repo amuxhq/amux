@@ -838,12 +838,7 @@ fn the_profile_registry_through_the_c_abi() {
         "{offered}"
     );
 
-    // Only a profile bound to an account has a relay link to pause.
     // SAFETY: the runtime is live; the string lives for the call.
-    phone.started(unsafe { amux_runtime_pause(phone.runtime, other.as_ptr()) });
-    assert!(phone.result()["Err"].is_string());
-
-    // SAFETY: as above.
     phone.started(unsafe { amux_runtime_delete_profile(phone.runtime, other.as_ptr()) });
     let deleted = phone.result();
     assert!(deleted["Ok"].is_null(), "{deleted}");
@@ -862,7 +857,7 @@ fn the_profile_registry_through_the_c_abi() {
     // A profile id that does not parse is refused.
     let nonsense = c("not a profile");
     // SAFETY: as above.
-    phone.started(unsafe { amux_runtime_resume(phone.runtime, nonsense.as_ptr()) });
+    phone.started(unsafe { amux_runtime_sign_out(phone.runtime, nonsense.as_ptr()) });
     assert!(phone.result()["Err"].is_string());
 }
 

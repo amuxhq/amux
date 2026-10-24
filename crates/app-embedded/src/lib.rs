@@ -434,31 +434,6 @@ impl EmbeddedRuntime {
         Ok(profile_view(&info))
     }
 
-    /// Holds a bound profile's relay link down; its direct links and its
-    /// store stay.
-    pub async fn pause(&self, profile: ProfileId) -> Result<ProfileView, EmbeddedError> {
-        let info = self
-            .door()
-            .pause_profile(Request::new(ProfileRequest {
-                profile_id: profile.as_bytes().to_vec(),
-            }))
-            .await?
-            .into_inner();
-        Ok(profile_view(&info))
-    }
-
-    /// Lets a paused profile's relay link come up again.
-    pub async fn resume(&self, profile: ProfileId) -> Result<ProfileView, EmbeddedError> {
-        let info = self
-            .door()
-            .resume_profile(Request::new(ProfileRequest {
-                profile_id: profile.as_bytes().to_vec(),
-            }))
-            .await?
-            .into_inner();
-        Ok(profile_view(&info))
-    }
-
     /// Every profile whose trust store holds `host_id`, oldest first.
     pub async fn trusting(&self, host_id: &[u8]) -> Result<Vec<ProfileId>, EmbeddedError> {
         let Ok(host) = node::HostId::from_slice(host_id) else {

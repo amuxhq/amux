@@ -70,8 +70,7 @@ installation keeps at least one), `amux_runtime_bind` (a sign-in's refresh
 token with the OAuth client it was issued to; a named profile is adopted even
 when it paired machines before, null lets the registry pick the account's own
 profile, else one that holds nothing, else a new one), `amux_runtime_sign_out`
-(the profile stays tied to its account), `amux_runtime_pause` and
-`amux_runtime_resume` (the relay link only), `amux_runtime_access_token` (a
+(the profile stays tied to its account), `amux_runtime_access_token` (a
 bearer for the account service; the profile alone spends the refresh token),
 `amux_runtime_refresh_entitlement` (asks what the account buys now, so a
 purchase lifts the relay's tier at once) and `amux_runtime_trusting_profiles`

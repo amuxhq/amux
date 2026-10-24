@@ -500,16 +500,11 @@ async fn each_account_is_a_profile_and_only_the_resumed_one_holds_a_relay_link()
     .expect("the watch announced bob's profile");
     relay_link(&embedded, bob, RelayLink::Connected).await;
 
-    // Pausing ada leaves bob's the only relay link; resuming brings it back.
-    let paused = embedded.pause(ada).await.unwrap();
-    assert_eq!(paused.account.binding, AccountBinding::Paused);
-    relay_link(&embedded, ada, RelayLink::Off).await;
+    // Both accounts' relay links stay up together.
     assert_eq!(
-        embedded.account(bob).await.unwrap().relay,
+        embedded.account(ada).await.unwrap().relay,
         RelayLink::Connected
     );
-    embedded.resume(ada).await.unwrap();
-    relay_link(&embedded, ada, RelayLink::Connected).await;
 
     // Signing out keeps the profile tied to its account, and signing back
     // in finds it again.
@@ -517,7 +512,7 @@ async fn each_account_is_a_profile_and_only_the_resumed_one_holds_a_relay_link()
     assert_eq!(out.account.binding, AccountBinding::SignedOut);
     assert_eq!(out.subject, "bob");
     assert_eq!(out.account.email, "bob@example.com");
-    // A signed-out profile has no relay link to pause.
+    // A signed-out profile has no relay link.
     relay_link(&embedded, bob, RelayLink::Off).await;
     let again = embedded
         .bind(None, relay.url(), "mobile", &Relay::login("bob"))

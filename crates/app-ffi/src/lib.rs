@@ -978,42 +978,6 @@ pub unsafe extern "C" fn amux_runtime_sign_out(
     }
 }
 
-/// Holds a bound profile's relay link down; its direct links and store
-/// stay. The ticket answers `{"Ok": ProfileView}` or `{"Err": ..}`.
-///
-/// # Safety
-/// As for `amux_runtime_delete_profile`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_runtime_pause(
-    runtime: *const AmuxRuntime,
-    profile: *const c_char,
-) -> u64 {
-    // SAFETY: the caller's contract.
-    unsafe {
-        profile_act(runtime, profile, |embedded, profile| async move {
-            Answered::from(embedded.pause(profile).await)
-        })
-    }
-}
-
-/// Lets a paused profile's relay link come up again. The ticket answers
-/// `{"Ok": ProfileView}` or `{"Err": ..}`.
-///
-/// # Safety
-/// As for `amux_runtime_delete_profile`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_runtime_resume(
-    runtime: *const AmuxRuntime,
-    profile: *const c_char,
-) -> u64 {
-    // SAFETY: the caller's contract.
-    unsafe {
-        profile_act(runtime, profile, |embedded, profile| async move {
-            Answered::from(embedded.resume(profile).await)
-        })
-    }
-}
-
 /// Every profile whose trust store holds a host, by its id as a JSON byte
 /// array, oldest first; the ticket answers `{"Ok": ["<profile id>", ..]}` or
 /// `{"Err": ..}`.

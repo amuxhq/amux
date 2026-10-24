@@ -147,7 +147,7 @@ five minutes, plus a chat a push is bringing current.
 
 App startup does not require an account. The phone is one installation of
 the daemon with one profile per account, as a desktop is; the daemon's
-profile registry creates, binds, signs out, pauses and deletes them.
+profile registry creates, binds, signs out and deletes them.
 
 - With nobody signed in, the installation holds one unbound profile and the
   app shows its fleet. The first sign-in binds that profile, keeping its key,
@@ -157,9 +157,8 @@ profile registry creates, binds, signs out, pauses and deletes them.
   network, and signing back in binds the same profile.
 - Only the profile on screen has its fleet open. Switching account opens the
   other profile's fleet without stopping the installation.
-- Only the profile on screen keeps its relay link: every other bound profile
-  is paused, which holds its relay link down and keeps its direct links and
-  store.
+- Every bound profile keeps its relay link, on screen or not, so a push or
+  a switch of account finds it already linked.
 - The profile on screen keeps a source open for every agent it lists while
   the app is in front of somebody. Every other profile, and the one on screen
   while the app is in the background, opens sources only for the chats that
@@ -280,8 +279,7 @@ on every change. Only the App Store build sends.
 A "needs you" notification's payload names a host and an agent under its
 `amux` key (`PushPayload`). When one wakes the app in the background,
 `RuntimeCoordinator.warm` brings the account whose profile trusts that host
-on screen (pausing the previous one's relay link before resuming its own),
-opens that one chat, waits for it to be current, and returns. A tap on the
+on screen, opens that one chat, waits for it to be current, and returns. A tap on the
 notification opens the chat. A push for a host no profile trusts is left
 alone. In front of somebody the account on screen never changes under them;
 a tap on a notification for another account's host brings that account

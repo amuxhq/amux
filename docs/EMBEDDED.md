@@ -115,18 +115,14 @@ of acts, each under the ticket its act returned when it started.
 ## Profiles
 
 `EmbeddedRuntime` is one installation with one profile per account, exactly
-as a desktop daemon is. Its registry calls create, delete, bind, sign out,
-pause and resume profiles by id, and every per-profile call names the profile
-it is for.
+as a desktop daemon is. Its registry calls create, delete, bind and sign
+out profiles by id, and every per-profile call names the profile it is for.
 
 - **Bind** takes a refresh token a sign-in produced, with the account
   service's address and the OAuth client it was issued to. From then on the
   profile holds and spends that token, fetches relay credentials and keeps
   its relay link up. The client never talks to the account service on the
   profile's behalf; it borrows a bearer (`access_token`) for its own calls.
-- **Pause** holds a signed-in profile's relay link down while keeping its
-  direct links and store; **resume** brings it back. The phone keeps exactly
-  one relay link up this way.
 - **Source policy** (`set_source_policy`) says whether a profile keeps a
   source open for every agent it lists or only for the chats that ask.
 - **Discovered** hands the whole set of machines the platform found on the

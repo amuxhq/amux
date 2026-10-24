@@ -149,20 +149,6 @@ public final class Runtime: @unchecked Sendable {
         }
     }
 
-    /// Holds a bound profile's relay link down; its direct links and store
-    /// stay.
-    public func pause(_ profile: String) async -> Result<ProfileView, RuntimeFailure> {
-        await act(ProfileView.self) { live in
-            profile.withCString { amux_runtime_pause(live, $0) }
-        }
-    }
-
-    public func resume(_ profile: String) async -> Result<ProfileView, RuntimeFailure> {
-        await act(ProfileView.self) { live in
-            profile.withCString { amux_runtime_resume(live, $0) }
-        }
-    }
-
     /// Every profile whose trust store holds a machine, oldest first.
     public func trusting(_ host: HostId) async -> Result<[String], RuntimeFailure> {
         let host = Bridge.json(host.bytes)

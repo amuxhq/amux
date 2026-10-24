@@ -518,7 +518,6 @@ fn cloud_tls_incoming(
             if let Err(error) = stream.set_nodelay(true) {
                 tracing::warn!(error = %error, "failed to set TCP_NODELAY");
             }
-            crate::transport::configure_relay_tcp_keepalive(&stream);
             let acceptor = acceptor.clone();
             let tx = tx.clone();
             tokio::spawn(async move {

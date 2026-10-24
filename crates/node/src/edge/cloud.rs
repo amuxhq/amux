@@ -833,7 +833,6 @@ async fn cloud_routing_stream(
     if let Some(address) = transport {
         let stream = TcpStream::connect(address).await?;
         stream.set_nodelay(true)?;
-        crate::transport::configure_relay_tcp_keepalive(&stream);
         return Ok(Box::new(stream));
     }
     Ok(Box::new(tls_connect_stream(host, port).await?))

@@ -12,7 +12,7 @@ use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{ClientConfig, DigitallySignedStruct, Error as TlsError, SignatureScheme, version};
 use tonic::transport::{Channel, Endpoint};
 
-use super::{channel_from_single_io, configure_tonic_endpoint_keepalive};
+use super::channel_from_single_io;
 use crate::transport::{Result, TransportError};
 
 /// A channel to a host's pairing service over a QUIC connection of its own.
@@ -84,7 +84,7 @@ async fn pairing_quic(connecting: quinn::Connecting) -> Result<PairingQuic> {
     let (send, recv) = connection.open_bi().await.map_err(pairing_dial_error)?;
     Ok(PairingQuic {
         channel: channel_from_single_io(
-            configure_tonic_endpoint_keepalive(Endpoint::from_static("https://pairing")),
+            Endpoint::from_static("https://pairing"),
             "pairing QUIC stream",
             crate::link::accepted_quic_bidi_stream(send, recv),
         ),

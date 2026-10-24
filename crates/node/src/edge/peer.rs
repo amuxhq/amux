@@ -27,7 +27,7 @@ use crate::HostId;
 use crate::grpc::{ClientApi, status};
 use crate::runtime::ProfileRuntime;
 use crate::serve::ServeError;
-use crate::transport::{BoxedGrpcAuth, BoxedGrpcConnectInfo, BoxedGrpcIo, tonic_server_builder};
+use crate::transport::{BoxedGrpcAuth, BoxedGrpcConnectInfo, BoxedGrpcIo};
 
 /// Serves PeerService on the streams whose handshake presented a trusted
 /// key, until shutdown.
@@ -47,7 +47,7 @@ pub(super) fn serve(
         runtime,
     };
     tokio::spawn(async move {
-        let served = tonic_server_builder()
+        let served = tonic::transport::Server::builder()
             .add_service(wire::peer_service_server(service))
             .serve_with_incoming_shutdown(incoming, super::wait_for(shutdown))
             .await;

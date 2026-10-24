@@ -62,7 +62,7 @@ use crate::routing::{
 };
 use crate::runtime::ProfileRuntime;
 use crate::services::{LocalPairingIdentity, PairingService, ReachabilityLinkConnector};
-use crate::transport::{BoxedGrpcIo, tonic_server_builder};
+use crate::transport::BoxedGrpcIo;
 use crate::trust::SharedTrustStore;
 use crate::{Clock, HostId};
 
@@ -1278,7 +1278,7 @@ fn serve_pairing(
             .map(|io| (Ok::<_, std::io::Error>(io), incoming))
     });
     tokio::spawn(async move {
-        let served = tonic_server_builder()
+        let served = tonic::transport::Server::builder()
             .add_service(wire::pairing_service_server::PairingServiceServer::new(
                 service,
             ))

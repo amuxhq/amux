@@ -11,7 +11,6 @@ use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream as ClientTlsStream;
 
-use super::configure_relay_tcp_keepalive;
 use crate::transport::{Result, TransportError};
 
 pub(crate) async fn tls_connect_stream(
@@ -29,7 +28,6 @@ pub(crate) async fn tls_connect_stream(
     let addr = format!("{}:{}", host, port);
     let stream = TcpStream::connect(&addr).await?;
     stream.set_nodelay(true)?;
-    configure_relay_tcp_keepalive(&stream);
 
     let domain = ServerName::try_from(host.to_string())
         .map_err(|_| TransportError::Config(format!("Invalid DNS name: {}", host)))?;

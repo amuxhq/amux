@@ -24,7 +24,7 @@ use crate::dispatcher::TunnelDispatcher;
 use crate::driver::{CoreLinks, core_error};
 use crate::identity::IdentityError;
 use crate::routing::{LinkId, LinkRegistry, Route};
-use crate::transport::{Compressed, channel_from_single_io, configure_tonic_endpoint_keepalive};
+use crate::transport::{Compressed, channel_from_single_io};
 use crate::trust::SharedTrustStore;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize)]
@@ -989,8 +989,11 @@ fn channel_on(
     let stream = crate::transport::ShutdownIo::new_shared(stream, lifetime);
     // The acceptor wraps its end the same way (`TunnelDispatcher`).
     let io = Compressed::new(TrustAnswer::new(stream, ended.clone()));
-    let endpoint = configure_tonic_endpoint_keepalive(Endpoint::from_static("https://peer"));
-    channel_from_single_io(endpoint, "native link channel", io)
+    channel_from_single_io(
+        Endpoint::from_static("https://peer"),
+        "native link channel",
+        io,
+    )
 }
 
 /// A stream a peer opened to this host, from the link it arrived on.
@@ -1157,7 +1160,7 @@ mod tests {
         use crate::link::resumption::{HOST_TICKETS, SessionTickets};
         use crate::link::{LinkEndpoint, QuicCarrier};
         use crate::routing::{Capabilities, Host, LiveLocalHost};
-        use crate::transport::{BoxedGrpcIo, tonic_server_builder};
+        use crate::transport::BoxedGrpcIo;
 
         /// Counts the calls a host answered, by method.
         #[derive(Clone, Default)]
@@ -1328,7 +1331,7 @@ mod tests {
                     served.poll_recv(cx).map(|io| io.map(Ok::<_, io::Error>))
                 });
                 tokio::spawn(
-                    tonic_server_builder()
+                    tonic::transport::Server::builder()
                         .add_service(wire::peer_service_server(answering.clone()))
                         .serve_with_incoming(incoming),
                 );

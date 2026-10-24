@@ -13,7 +13,7 @@ import XCTest
 /// the rectangle read here are the ones VoiceOver and a thumb would get.
 ///
 /// The pages it audits are live ones, reached the way a person reaches them:
-/// `scripts/ios-accessibility.py` serves machines with agents that act, pairs
+/// `testnet journey accessibility` serves machines with agents that act, pairs
 /// the app with one by its code and taps through to each page, then asks this
 /// test to audit what is on screen. The two take turns through files in a
 /// directory both can see, named in `AMUX_AUDIT_DIRECTORY`: the driver writes

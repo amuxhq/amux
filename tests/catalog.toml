@@ -895,7 +895,7 @@ cargo = [
 [[suite]]
 name = "phone-performance-qualification"
 contract = "The optimised iPhone app on the enrolled Mac's simulator, against the served performance network, stays within its budgets for cold launch, store read, reconciliation over none and over 100 ms of latency directly and through the relay with every way to it gated, streaming and idle, and within reviewed drift of the machine's baseline."
-paths = ["scripts/ios-perf.py", "crates/qualification/src/perf/phone.rs", "perf/baselines/phone"]
+paths = ["crates/testnet/src/journey/perf.rs", "crates/qualification/src/perf/phone.rs", "perf/baselines/phone"]
 recipe = "just ios perf"
 boundary = "System composition"
 oracle = "Marks and measurements the app takes itself, read through its door, judged against the budgets in docs/PERFORMANCE.md and the machine's baseline."
@@ -907,7 +907,7 @@ lane = "qualification"
 evidence = "target/ios/perf"
 update = "just ios perf -- --baseline, once every budget passes"
 baselines = ["perf/baselines/phone/pinned-mac.json"]
-cases = ["scripts/ios-perf.py"]
+cases = ["crates/testnet/src/journey/perf.rs"]
 cargo = []
 
 [[suite]]
@@ -1097,7 +1097,7 @@ journeys = ["reach-host", "conversation-decision-claude-pty", "conversation-deci
 [[suite]]
 name = "phone-goldens"
 contract = "Every whole phone screen the golden manifest names, reached through the served door, matches its reviewed image and element geometry in light and dark."
-paths = ["apps/apple/Goldens", "scripts/ios-goldens.py", "journeys/topologies/phone-goldens.json"]
+paths = ["apps/apple/Goldens", "crates/testnet/src/journey/goldens.rs", "journeys/topologies/phone-goldens.json"]
 recipe = "just ios goldens"
 boundary = "Native presentation"
 oracle = "Pixel comparison with declared tolerance, system-chrome and volatile-surface masks, and exact element geometry."
@@ -1113,7 +1113,7 @@ golden_manifests = ["apps/apple/Goldens/manifest.json"]
 [[suite]]
 name = "phone-golden-sensitivity"
 contract = "The phone golden comparison rejects a whole screen drawn with one design token moved."
-paths = ["scripts/ios-goldens-perturb.py"]
+paths = ["crates/testnet/src/journey/goldens.rs"]
 recipe = "just ios goldens-perturb"
 boundary = "Native presentation"
 oracle = "An intentional pixel change must produce a failing comparison and difference image."
@@ -1124,12 +1124,12 @@ capabilities = ["macOS", "Xcode 26.6", "golden iOS simulator"]
 lane = "journey"
 evidence = "target/ios/goldens-perturb"
 update = ""
-cases = ["scripts/ios-goldens-perturb.py"]
+cases = ["crates/testnet/src/journey/goldens.rs"]
 
 [[suite]]
 name = "phone-accessibility-audit"
 contract = "Every drawn phone state gives controls readable VoiceOver names and at least forty-four-point hit targets."
-paths = ["apps/apple/AmuxUITests", "scripts/ios-accessibility.py"]
+paths = ["apps/apple/AmuxUITests", "crates/testnet/src/journey/goldens.rs"]
 recipe = "just ios accessibility"
 boundary = "Native presentation"
 oracle = "Accessibility tree names, frames, and hit-target geometry."

@@ -228,7 +228,7 @@ offload, where each TCP leg is a stream of its own written in 64 KiB batches.
 `just ios perf` measures the iPhone app itself, on this Mac's pinned simulator, against a served network built for
 it: three machines on the phone's local network, signed in to one account at a served relay, forty agents dealt
 across them, and one conversation a thousand rows long that streams on cue (`crates/qualification/src/perf/phone.rs`
-generates the topology; `scripts/ios-perf.py` runs the suite). The app is the `Measured` build: compiled the way
+generates the topology; `testnet journey perf` runs the suite). The app is the `Measured` build: compiled the way
 the shipped build is, with the driving door kept in, because an unoptimised Swift build measures the compiler
 rather than the app. Every packet between the phone and a machine crosses a gate the run can delay (the served
 net's `LanGate` and `LanFaults` verbs), so reaching the fleet is measured over a household network's latency as
@@ -268,7 +268,7 @@ hear that the node was up, which the two intervals now leave out. The fleet-rend
 work between the store read and the first frame should take: the home built from the store's rows, and the rest of
 the shell's first frame, which waits for the same thread.
 
-Where a cold launch goes, from the marks (`scripts/ios-perf.py` prints them per launch): about 300 ms before
+Where a cold launch goes, from the marks (the run prints them per launch): about 300 ms before
 `main` is reached, loading the images; about 100 ms of UIKit building the scene before the app's composition is
 asked for, which an empty app pays too; the composition itself in 2 ms; then the main thread building the shell's
 first frame, which is where the app's own time is. The shell builds the tab somebody is looking at, and a tab is
@@ -331,8 +331,8 @@ a metric with no baseline is judged on its budget alone and the report says so. 
 | --- | --- |
 | `pinned-mac` | `Mac14,6` |
 
-A Mac not in the table is refused, not skipped: `scripts/tests/ios_perf_test.py` holds this page's tables to the
-script's, so enrolling a machine or changing a budget is a change here and there in one commit. The report lands in
+A Mac not in the table is refused, not skipped: the suite's own tests hold this page's tables to
+`crates/testnet/src/journey/perf.rs`, so enrolling a machine or changing a budget is a change here and there in one commit. The report lands in
 `target/ios/perf/report.md` with `verdict.json` and `samples.json` beside it; the served net's own record is under
 `target/ios/perf/journey/`. `just ios verify` runs the suite last, as `just ios measured`; the hosted runners are not
 enrolled, so it is not in `just ios captures`.

@@ -10,7 +10,8 @@
 //! diff` under the pinned simulator's system-chrome masks, and the door's
 //! element geometry against `<label>.elements.txt`. Stories supply the acts
 //! and the assertions; `UPDATE_JOURNEY_GOLDENS=1` rewrites the goldens that
-//! differ.
+//! differ. The whole-screen goldens, the accessibility audit and the
+//! performance suite drive the app through the same driver.
 
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -25,6 +26,7 @@ use regex::Regex;
 use serde_json::{Value, json};
 
 use super::{Record, Story, door, line_diff, root};
+use crate::ctl::session::pin_in;
 use crate::door::{Control, Readiness};
 
 pub(crate) const BUNDLE_ID: &str = "sh.amux.app";
@@ -43,7 +45,7 @@ const OWN_IDENTITY: [&str; 2] = ["you.name", "you.fingerprint"];
 /// directory, an ask's scope) is the same on every run and every machine.
 /// Short: daemons bind Unix sockets under it. Journeys in other checkouts
 /// wait for it on the lock.
-const SCRATCH_DIR: &str = "/tmp/amux-phone-journey";
+pub(crate) const SCRATCH_DIR: &str = "/tmp/amux-phone-journey";
 const SCRATCH_LOCK: &str = "/tmp/amux-phone-journey.lock";
 /// How far either side of a volatile surface its mask reaches, at least:
 /// its words are as wide as they are in this run, and an age that read
@@ -550,6 +552,11 @@ pub(crate) fn simctl(args: &[&str], timeout: Duration) -> Result<String, String>
 /// The udid of the device the golden kind means: the one this command
 /// leased, present, booted and pinned by the simulator pool's own tool.
 pub(crate) fn golden_udid() -> Result<String, String> {
+    golden_device().map(|(_, udid)| udid)
+}
+
+/// The golden device's name and udid.
+pub(crate) fn golden_device() -> Result<(String, String), String> {
     let mut command = Command::new(root().join("scripts/py"));
     command
         .args(["-B", "scripts/ios_simulators.py", SIMULATOR])
@@ -559,14 +566,15 @@ pub(crate) fn golden_udid() -> Result<String, String> {
     said.lines()
         .find_map(|line| {
             let rest = line.strip_prefix(&format!("{SIMULATOR} ("))?;
-            let (_, rest) = rest.split_once("): ")?;
-            rest.split_whitespace().next().map(str::to_owned)
+            let (name, rest) = rest.split_once("): ")?;
+            let udid = rest.split_whitespace().next()?;
+            Some((name.to_owned(), udid.to_owned()))
         })
         .ok_or_else(|| format!("the simulator pool named no {SIMULATOR} device: {said}"))
 }
 
 /// The debug app built for the simulator.
-fn debug_app() -> PathBuf {
+pub(crate) fn debug_app() -> PathBuf {
     root().join("target/ios/DerivedData/Build/Products/Debug-iphonesimulator/Amux.app")
 }
 
@@ -609,19 +617,33 @@ fn undo_on_terminate() {
     });
 }
 
+/// Where a run serves its net from, writes what it found and finds its
+/// goldens, and the build it installs.
+pub(crate) struct Setup {
+    pub topology: PathBuf,
+    pub output: PathBuf,
+    pub goldens: PathBuf,
+    pub app: PathBuf,
+}
+
 pub(crate) struct PhoneJourney {
     pub udid: String,
     pub output: PathBuf,
     /// Where this run's screens are compared, and whether a screen that no
     /// longer matches is rewritten there instead.
     goldens: PathBuf,
-    update: bool,
+    pub update: bool,
     /// Whether every launch turns the app's reduce-transparency setting on,
     /// so each frosted surface is drawn flat. The render server finishes
     /// glass after the app has drawn, on its own schedule, and a photograph
     /// at any fixed moment shows one stage or another of that work; drawn
-    /// flat, the same screens repeat pixel for pixel.
-    flat: bool,
+    /// flat, the same screens repeat pixel for pixel. A run that measures
+    /// the app as it ships, or photographs glass for a person to look at,
+    /// turns this off before it launches.
+    pub flat: bool,
+    /// The build installed: the debug app, or the optimised one the
+    /// performance suite measures.
+    build: PathBuf,
     topology: Value,
     _lock: File,
     process: Option<Child>,
@@ -630,7 +652,11 @@ pub(crate) struct PhoneJourney {
     /// The volatile surfaces on screen when the system last photographed
     /// the app, masked again wherever a report shows that photograph.
     frozen: Vec<Value>,
-    port: u16,
+    /// The app's door, on this Mac.
+    pub port: u16,
+    /// The process id the app was launched as on this Mac, for a profile of
+    /// the Mac to be filtered by.
+    pub pid: u32,
 }
 
 impl PhoneJourney {
@@ -641,13 +667,26 @@ impl PhoneJourney {
             .as_deref()
             .or(story.topology.as_deref())
             .ok_or("the story names no topology")?;
-        let topology_path = root.join(declared);
-        let topology: Value = serde_json::from_str(
-            &std::fs::read_to_string(&topology_path)
-                .map_err(|error| format!("{declared}: {error}"))?,
+        PhoneJourney::serve(
+            Setup {
+                topology: root.join(declared),
+                output: root.join("target/journeys/phone").join(&story.id),
+                goldens: root.join("journeys/goldens/phone").join(&story.id),
+                app: debug_app(),
+            },
+            udid,
         )
-        .map_err(|error| format!("{declared}: {error}"))?;
-        let output = root.join("target/journeys/phone").join(&story.id);
+    }
+
+    pub(crate) fn serve(setup: Setup, udid: &str) -> Result<PhoneJourney, String> {
+        let root = root();
+        let topology_path = setup.topology;
+        let named = |error: &dyn std::fmt::Display| format!("{}: {error}", topology_path.display());
+        let topology: Value = serde_json::from_str(
+            &std::fs::read_to_string(&topology_path).map_err(|error| named(&error))?,
+        )
+        .map_err(|error| named(&error))?;
+        let output = setup.output;
         let _ = std::fs::remove_dir_all(&output);
         std::fs::create_dir_all(&output).map_err(|error| error.to_string())?;
         let lock = File::create(SCRATCH_LOCK).map_err(|error| error.to_string())?;
@@ -708,9 +747,10 @@ impl PhoneJourney {
             .push(format!("ready control={}", ready.control));
         Ok(PhoneJourney {
             udid: udid.to_owned(),
-            goldens: root.join("journeys/goldens/phone").join(&story.id),
+            goldens: setup.goldens,
             update: std::env::var("UPDATE_JOURNEY_GOLDENS").is_ok_and(|value| value == "1"),
             flat: true,
+            build: setup.app,
             output,
             topology,
             _lock: lock,
@@ -719,6 +759,7 @@ impl PhoneJourney {
             record,
             frozen: Vec::new(),
             port: 0,
+            pid: 0,
         })
     }
 
@@ -942,8 +983,8 @@ impl PhoneJourney {
 
     // --- the phone -------------------------------------------------------
 
-    /// The debug app, installed fresh so no earlier run's identity or trust
-    /// is on the phone, launched against this net.
+    /// The app, installed fresh so no earlier run's identity or trust is on
+    /// the phone, launched against this net.
     pub(crate) fn launch(&mut self, launch: Launch) -> Result<(), String> {
         if self.running() {
             simctl(
@@ -956,11 +997,7 @@ impl PhoneJourney {
             Duration::from_secs(120),
         );
         simctl(
-            &[
-                "install",
-                &self.udid,
-                debug_app().to_string_lossy().as_ref(),
-            ],
+            &["install", &self.udid, self.build.to_string_lossy().as_ref()],
             Duration::from_secs(300),
         )?;
         self.relaunch(launch)
@@ -969,7 +1006,8 @@ impl PhoneJourney {
     /// The same installation launched again, as a person reopens it. Its
     /// browser reports the machines named in `found`, every one of the
     /// net's when nothing is said. Without `geometry` the app reports what
-    /// is drawn but not where. A `relay_quic` address is dialled in the
+    /// is drawn but not where, which a measurement wants (see `geometry`).
+    /// A `relay_quic` address is dialled in the
     /// relay's place, QUIC only. When the topology puts any host behind a
     /// router, on a network of its own, the phone dials the relay through
     /// the net's gate unless told otherwise: the relay then sees the phone
@@ -1018,7 +1056,13 @@ impl PhoneJourney {
             // The phone's runtime logs under the same filter as the served
             // hosts, so one run's two logs can be read side by side.
             .env("SIMCTL_CHILD_RUST_LOG", rust_log());
-        run_within(command, Duration::from_secs(120))?;
+        let launched = run_within(command, Duration::from_secs(120))?;
+        // `simctl launch` prints `<bundle id>: <pid>`.
+        self.pid = launched
+            .rsplit(':')
+            .next()
+            .and_then(|pid| pid.trim().parse().ok())
+            .unwrap_or(0);
         self.record.actions.push("launch the app".to_owned());
         // The door answering is the launch; what a capture needs settled it
         // settles itself.
@@ -1192,6 +1236,24 @@ impl PhoneJourney {
             }
         }
         self.record.actions.push(format!("tap {name}"));
+        Ok(())
+    }
+
+    /// Whether every identified element reports its frame. A tap needs the
+    /// frames; producing them costs a real share of the main thread, so a
+    /// measurement launches without them and asks only to tap.
+    pub(crate) fn geometry(&mut self, on: bool) -> Result<(), String> {
+        self.app(json!({"kind": "geometry", "on": on}))?;
+        self.record.actions.push(format!(
+            "element geometry {}",
+            if on { "on" } else { "off" }
+        ));
+        Ok(())
+    }
+
+    pub(crate) fn appearance(&mut self, appearance: &str) -> Result<(), String> {
+        self.app(json!({"kind": "appearance", "appearance": appearance}))?;
+        self.record.actions.push(format!("appearance {appearance}"));
         Ok(())
     }
 
@@ -1413,7 +1475,7 @@ impl PhoneJourney {
 
     /// The display once two photographs a moment apart agree: a transition
     /// or the glass settling behind it is over.
-    fn steady_display(&self, png: &Path) -> Result<(), String> {
+    pub(crate) fn steady_display(&self, png: &Path) -> Result<(), String> {
         let mut previous = Vec::new();
         for _ in 0..20 {
             simctl(
@@ -1583,6 +1645,26 @@ impl Printing {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+/// Any element's label holds `text`.
+pub(crate) fn labelled(drawn: &Drawn, text: &str) -> bool {
+    drawn.iter().any(|(_, element)| {
+        element["label"]
+            .as_str()
+            .is_some_and(|label| label.contains(text))
+    })
+}
+
+/// The six digits a machine's `amux pair` printed.
+pub(crate) fn printed_pin(process: &mut Printing) -> Result<String, String> {
+    process
+        .find(Duration::from_secs(60), |line| {
+            line.contains("Pairing PIN: ")
+                .then(|| pin_in(line))
+                .flatten()
+        })
+        .ok_or_else(|| "the machine printed no pairing PIN".to_owned())
 }
 
 fn elements_of(state: &Value) -> &[Value] {

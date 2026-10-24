@@ -571,7 +571,8 @@ of an ask the phone cannot answer, the screens read most at accessibility3
 question), and a chat through its host's power loss before and after the
 swap.
 
-`scripts/ios-goldens.py` reaches every screen the way a person does. It
+`testnet journey goldens` reaches every screen the way a person does, on the
+journeys' phone driver. It
 serves `journeys/topologies/phone-goldens.json`, installs the debug app
 fresh with the reduce-transparency flag on, pairs with the desk by the code
 it printed, and taps through to each screen while the served network makes

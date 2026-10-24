@@ -8,6 +8,8 @@
 
 mod common;
 mod frame;
+mod goldens;
+mod perf;
 mod phone;
 mod phone_stories;
 mod terminal;
@@ -30,11 +32,11 @@ use crate::door::Control;
 #[command(name = "testnet journey")]
 struct Journey {
     #[command(subcommand)]
-    client: Client,
+    suite: Suite,
 }
 
 #[derive(Subcommand, Debug)]
-enum Client {
+enum Suite {
     /// The terminal client in a private tmux server: one story, or `all`,
     /// one after another, a failure not stopping the rest.
     Terminal { story: String },
@@ -47,6 +49,69 @@ enum Client {
         native: bool,
         stories: Vec<String>,
     },
+    /// The phone's whole screens, reached the way a person reaches them,
+    /// compared with apps/apple/Goldens in light and dark, every frosted
+    /// surface drawn flat.
+    Goldens {
+        /// Photograph only the screens named; the way through every other
+        /// screen is still taken, so each is reached in the same state.
+        #[arg(long, value_name = "ID")]
+        only: Vec<String>,
+        /// Rewrite every golden that differs and leave the rest alone.
+        #[arg(long, conflicts_with = "perturb")]
+        update: bool,
+        /// Move one design colour token (or, named `needs-you-dot`, take
+        /// that one small mark away) before anything is drawn, and fail
+        /// unless every photograph comes back different with a difference
+        /// image.
+        #[arg(long, value_name = "TOKEN")]
+        perturb: Option<String>,
+        /// Take the same way with the flag off and write every screen, glass
+        /// and all, to DIR for a person to look at; nothing is compared.
+        #[arg(long, value_name = "DIR", conflicts_with_all = ["update", "perturb"])]
+        review: Option<PathBuf>,
+    },
+    /// The golden run with something changed on purpose, once per change,
+    /// each required to notice: a suite nobody has seen fail is not
+    /// evidence that it would.
+    GoldensPerturb {
+        #[arg(long, value_name = "ID", default_values = ["fleet"])]
+        only: Vec<String>,
+        /// A design colour token, and the one small mark a driving build can
+        /// hide.
+        #[arg(long = "perturb", value_name = "TOKEN", default_values = ["accent", "needs-you-dot"])]
+        changes: Vec<String>,
+    },
+    /// Every control on the app's live pages audited by a UI test for a
+    /// name VoiceOver can read and at least 44 pt to hit.
+    Accessibility,
+    /// The optimised app measured on the enrolled Mac's simulator against
+    /// the served performance network; budgets and drift per
+    /// docs/PERFORMANCE.md.
+    Perf {
+        /// Say which machine this is and whether its baseline exists.
+        #[arg(long)]
+        describe: bool,
+        #[arg(long, value_enum, value_name = "GROUP")]
+        only: Vec<perf::Group>,
+        /// Record this run's medians as the machine's baseline, after every
+        /// budget passes; needs a whole run.
+        #[arg(long)]
+        baseline: bool,
+        /// Draw every surface flat for the whole run: a diagnostic, never a
+        /// baseline, that says how much of a number is the glass.
+        #[arg(long)]
+        flat: bool,
+        /// Record an Instruments Time Profiler trace (xctrace) through the
+        /// first streaming sample into PATH, a .trace bundle. The recording
+        /// is of the whole Mac, with the app's pid printed to filter by:
+        /// xctrace hangs attaching to a simulator process through the
+        /// simulator device, and on the host it refuses the pid, but a host
+        /// recording of every process carries the app with its symbols and
+        /// thread names.
+        #[arg(long, value_name = "PATH")]
+        trace: Option<PathBuf>,
+    },
 }
 
 /// `testnet journey …` with its own arguments.
@@ -57,10 +122,31 @@ pub fn main(arguments: Vec<String>) -> ExitCode {
         Ok(journey) => journey,
         Err(error) => error.exit(),
     };
-    match journey.client {
-        Client::Terminal { story } if story == "all" => terminal_stories::run_all(),
-        Client::Terminal { story } => terminal_stories::run(&story),
-        Client::Phone { native, stories } => phone_stories::run(native, stories),
+    match journey.suite {
+        Suite::Terminal { story } if story == "all" => terminal_stories::run_all(),
+        Suite::Terminal { story } => terminal_stories::run(&story),
+        Suite::Phone { native, stories } => phone_stories::run(native, stories),
+        Suite::Goldens {
+            only,
+            update,
+            perturb,
+            review,
+        } => goldens::run(only, update, perturb, review),
+        Suite::GoldensPerturb { only, changes } => goldens::perturb(only, changes),
+        Suite::Accessibility => goldens::accessibility(),
+        Suite::Perf {
+            describe,
+            only,
+            baseline,
+            flat,
+            trace,
+        } => perf::run(perf::Asked {
+            describe,
+            only,
+            baseline,
+            flat,
+            trace,
+        }),
     }
 }
 

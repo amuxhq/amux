@@ -4,7 +4,7 @@
 //! to, in two parts. Components are photographed in-process from authored
 //! view data by the component snapshot suite, one sentence each saying what
 //! the picture shows. Screens are whole displays the golden driver
-//! (`scripts/ios-goldens.py`) reaches on a served network through the app's
+//! (`testnet journey goldens`) reaches on a served network through the app's
 //! door, each an image per appearance plus the door's element geometry. This
 //! module is the pixel comparison both the golden driver and the journeys
 //! call, and the check that the manifest and the baselines agree.

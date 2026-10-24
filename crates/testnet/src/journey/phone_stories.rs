@@ -13,13 +13,12 @@ use serde_json::{Value, json};
 
 use super::common::*;
 use super::phone::{
-    AppError, BUNDLE_ID, Drawn, Launch, PhoneJourney, Printing, golden_udid, simctl,
+    AppError, BUNDLE_ID, Drawn, Launch, PhoneJourney, golden_udid, labelled, printed_pin, simctl,
 };
 use super::{
     Proved, items, negative_control, never_sent, phase, prompts, quoted, reflected_once, root,
 };
 use crate::TierDecl;
-use crate::ctl::session::pin_in;
 use crate::door::Control;
 
 type Tell = fn(&mut PhoneJourney) -> Proved;
@@ -152,15 +151,6 @@ fn selected(native: bool, named: Vec<String>) -> Result<Vec<String>, String> {
 }
 
 // --- reading the phone ---------------------------------------------------
-
-/// Any element's label holds `text`.
-fn labelled(drawn: &Drawn, text: &str) -> bool {
-    drawn.iter().any(|(_, element)| {
-        element["label"]
-            .as_str()
-            .is_some_and(|label| label.contains(text))
-    })
-}
 
 /// The ask choice a person reads as `label`.
 fn choice(drawn: &Drawn, label: &str) -> Result<String, String> {
@@ -341,17 +331,6 @@ fn reviewed(chat: &Value, comment: &str) -> Result<Value, String> {
 }
 
 // --- acts ----------------------------------------------------------------
-
-/// The six digits a machine's `amux pair` printed.
-fn printed_pin(process: &mut Printing) -> Result<String, String> {
-    process
-        .find(Duration::from_secs(60), |line| {
-            line.contains("Pairing PIN: ")
-                .then(|| pin_in(line))
-                .flatten()
-        })
-        .ok_or_else(|| "the machine printed no pairing PIN".to_owned())
-}
 
 /// The phone's browser finds `host`; the PIN it printed is typed on the
 /// keypad and the machine it names is trusted.

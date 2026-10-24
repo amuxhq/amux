@@ -119,14 +119,14 @@ component-snapshots-perturb *ARGS:
 # person to look at, comparing nothing.
 # Compare the phone's whole screens with their goldens.
 goldens *ARGS: build tools
-    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 2400 {{python}} -B scripts/ios-goldens.py "$@"
+    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 2400 target/debug/testnet journey goldens "$@"
 
 # Move one design token, then take away the needs-you dot, and require the
 # golden run to fail with a difference image each time. What proves the golden
 # check would notice a change, down to one small mark.
 # Prove the golden comparison notices a moved token and a missing small mark.
 goldens-perturb *ARGS: build tools
-    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 1200 {{python}} -B scripts/ios-goldens-perturb.py "$@"
+    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 1200 target/debug/testnet journey goldens-perturb "$@"
 
 # The app driven the way a person drives it, against a real relay and real
 # daemons started from a committed topology. No arguments runs every journey
@@ -139,8 +139,8 @@ journey *ARGS: build tools
 # name VoiceOver can read and at least 44 pt to hit. A UI test, because that is
 # the only accessibility client an app cannot be for itself.
 # Audit every drawn state for VoiceOver names and 44 pt targets.
-accessibility: build
-    scripts/with iphone -- {{bounded}} 2400 {{python}} -B scripts/ios-accessibility.py
+accessibility: build tools
+    scripts/with iphone -- {{bounded}} 2400 target/debug/testnet journey accessibility
 
 # Link the driving bridge from a bare Swift executable, run it on the
 # simulator, pair it with a machine a served test network runs by the link
@@ -158,7 +158,7 @@ loopback-smoke: tools
 # Measure the phone.
 perf *ARGS: rust tools
     {{bounded}} 1800 {{python}} -B scripts/ios-build.py --configuration Measured
-    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 3600 {{python}} -B scripts/ios-perf.py "$@"
+    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 3600 target/debug/testnet journey perf "$@"
 
 # Inspect the release bundle for excluded platforms and debug-only surfaces.
 # Release links the shipping library, so the package is its input.

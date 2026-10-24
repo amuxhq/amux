@@ -22,15 +22,61 @@ import json
 import os
 import re
 from pathlib import Path
+import select
 import shutil
 import socket
 import subprocess
 import time
 from typing import Callable
 
-from journeys.terminal import AGE, SCRATCH, DoorError, _read_readiness, door
-
 ROOT = Path(__file__).resolve().parents[2]
+
+
+class DoorError(RuntimeError):
+    pass
+
+
+def door(address: str, request: object, timeout: float = 90.0) -> object:
+    """One control request; the reply's value, or DoorError."""
+    host, port = address.rsplit(":", 1)
+    with socket.create_connection((host, int(port)), timeout=timeout) as connection:
+        connection.settimeout(timeout)
+        connection.sendall((json.dumps(request, separators=(",", ":")) + "\n").encode())
+        with connection.makefile("rb") as stream:
+            encoded = stream.readline()
+    if not encoded:
+        raise DoorError(f"the door closed on {request!r}")
+    reply = json.loads(encoded)
+    if "ok" not in reply:
+        raise DoorError(f"door refused {request!r}: {reply!r}")
+    return reply["ok"]
+
+
+def _read_readiness(process: subprocess.Popen[bytes], timeout: float = 120.0) -> dict:
+    assert process.stdout is not None
+    deadline = time.monotonic() + timeout
+    buffered = b""
+    while time.monotonic() < deadline:
+        readable, _, _ = select.select([process.stdout], [], [], 0.5)
+        if not readable:
+            if process.poll() is not None:
+                raise RuntimeError(f"testnet exited before readiness ({process.returncode})")
+            continue
+        chunk = os.read(process.stdout.fileno(), 4096)
+        if not chunk and process.poll() is not None:
+            raise RuntimeError(f"testnet exited before readiness ({process.returncode})")
+        buffered += chunk
+        if b"\n" in buffered:
+            line, _ = buffered.split(b"\n", 1)
+            return json.loads(line)
+    raise RuntimeError("testnet readiness timed out")
+
+
+# Relative ages move with the clock.
+AGE = re.compile(r"\b(just now|\d+[smhd] ago)\b")
+# The served net's scratch directories carry random suffixes of fixed
+# length; masking them keeps every width.
+SCRATCH = re.compile(r"(aj-|testnet)([A-Za-z0-9_]{1,8})(?![A-Za-z0-9_])")
 TESTNET = ROOT / "target/debug/testnet"
 AMUX = ROOT / "target/debug/amux"
 APP = ROOT / "target/ios/DerivedData/Build/Products/Debug-iphonesimulator/Amux.app"

@@ -165,9 +165,9 @@ journey CLIENT NAME *ARGS:
     terminal)
         {{bounded}} 900 cargo build --locked -p amux -p provider-fakes -p testnet --bins {{desktop_features}}
         if [ "{{NAME}}" = all ]; then
-            {{bounded}} 3000 scripts/python -B scripts/terminal-journeys.py
+            {{bounded}} 3000 target/debug/testnet journey terminal all
         else
-            {{bounded}} 600 scripts/python -B scripts/terminal-journey.py "{{NAME}}"
+            {{bounded}} 600 target/debug/testnet journey terminal "{{NAME}}"
         fi
         ;;
     system)

@@ -9,12 +9,12 @@
 //! `session.jsonl`, so what was done, what came back and what was drawn is
 //! kept without anyone asking.
 
-mod door;
+pub(crate) mod door;
 mod evidence;
 mod files;
-mod phone;
-mod session;
-mod tui;
+pub(crate) mod phone;
+pub(crate) mod session;
+pub(crate) mod tui;
 mod world;
 
 use std::path::{Path, PathBuf};

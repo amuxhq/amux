@@ -1080,14 +1080,14 @@ journeys = ["account-sign-in", "purchase-restore", "report", "accessibility", "l
 [[suite]]
 name = "terminal-journeys"
 contract = "A person completes declared terminal stories through the real TUI and production installation front door against a served topology."
-paths = ["scripts/journeys/terminal.py", "scripts/terminal-journey.py", "scripts/terminal-journeys.py", "journeys/manifest.json", "journeys/topologies/terminal-stories.json", "journeys/topologies/terminal-reach.json", "journeys/topologies/terminal-authority.json", "journeys/topologies/terminal-flows.json", "journeys/topologies/terminal-worktree.json", "journeys/goldens/terminal"]
+paths = ["crates/testnet/src/journey", "journeys/manifest.json", "journeys/topologies/terminal-stories.json", "journeys/topologies/terminal-reach.json", "journeys/topologies/terminal-authority.json", "journeys/topologies/terminal-flows.json", "journeys/topologies/terminal-worktree.json", "journeys/goldens/terminal"]
 recipe = "just journey terminal all"
 boundary = "Journeys"
 oracle = "Door observations, exact terminal text and semantic styles, cache contents, process exits, and teardown."
 real = ["amux TUI", "tmux PTY", "installation front door", "SQLite store", "processes"]
 substituted = ["cloud account", "provider"]
 time = "real"
-capabilities = ["Unix", "tmux", "Python 3"]
+capabilities = ["Unix", "tmux"]
 lane = "journey"
 evidence = "target/journeys; target/journeys/summary.txt after `all`"
 update = "UPDATE_JOURNEY_GOLDENS=1 just journey terminal conversation-decision-claude-pty"

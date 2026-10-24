@@ -478,7 +478,7 @@ fn client_command(args: &[&str]) -> String {
     )
 }
 
-fn shell_word(text: &str) -> String {
+pub(crate) fn shell_word(text: &str) -> String {
     format!("'{}'", text.replace('\'', r"'\''"))
 }
 

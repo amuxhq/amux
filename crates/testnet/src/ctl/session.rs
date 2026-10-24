@@ -595,7 +595,7 @@ pub(crate) fn start_pairing(
 }
 
 /// The digits of the PIN `amux pair` printed ("Pairing PIN: 774 749").
-fn pin_in(text: &str) -> Option<String> {
+pub(crate) fn pin_in(text: &str) -> Option<String> {
     let line = text.lines().find(|line| line.contains("PIN"))?;
     let digits: String = line
         .split_once(':')?

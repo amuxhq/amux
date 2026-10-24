@@ -87,9 +87,6 @@ pub(crate) fn info(hosted: &Hosted) -> ProfileInfo {
             .join(PROFILE_SOCKET)
             .to_string_lossy()
             .into_owned(),
-        host_id: hosted.runtime.host().as_bytes().to_vec(),
-        // Profiles carry no revision since the directory became the set.
-        revision: 0,
     }
 }
 

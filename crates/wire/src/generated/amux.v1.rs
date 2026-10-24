@@ -10461,15 +10461,10 @@ pub struct ProfileInfo {
     pub account_name: ::prost::alloc::string::String,
     #[prost(string, tag = "5")]
     pub socket_path: ::prost::alloc::string::String,
-    #[prost(bytes = "vec", tag = "6")]
-    pub host_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(enumeration = "Intent", tag = "7")]
     pub intent: i32,
     #[prost(enumeration = "Observed", tag = "8")]
     pub observed: i32,
-    /// Unused: always zero.
-    #[prost(uint64, tag = "9")]
-    pub revision: u64,
     #[prost(enumeration = "Tier", tag = "10")]
     pub tier: i32,
     #[prost(enumeration = "RelayCarrier", tag = "11")]
@@ -10594,9 +10589,6 @@ impl ::prost::Name for BindProfileRequest {
 pub struct RenameProfileRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub profile_id: ::prost::alloc::vec::Vec<u8>,
-    /// Unused: ignored.
-    #[prost(uint64, tag = "2")]
-    pub expected_revision: u64,
     #[prost(string, optional, tag = "3")]
     pub override_name: ::core::option::Option<::prost::alloc::string::String>,
 }
@@ -10614,9 +10606,6 @@ impl ::prost::Name for RenameProfileRequest {
 pub struct DeleteProfileRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub profile_id: ::prost::alloc::vec::Vec<u8>,
-    /// Unused: ignored.
-    #[prost(uint64, tag = "2")]
-    pub confirm_revision: u64,
 }
 impl ::prost::Name for DeleteProfileRequest {
     const NAME: &'static str = "DeleteProfileRequest";

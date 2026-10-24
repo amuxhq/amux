@@ -387,7 +387,6 @@ impl EmbeddedRuntime {
         self.door()
             .delete_profile(Request::new(DeleteProfileRequest {
                 profile_id: profile.as_bytes().to_vec(),
-                confirm_revision: 0,
             }))
             .await?;
         Ok(())

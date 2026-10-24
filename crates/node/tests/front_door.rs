@@ -215,7 +215,6 @@ async fn rename_and_delete_change_the_listed_profile() {
     let renamed = door
         .rename_profile(Request::new(RenameProfileRequest {
             profile_id: created.id.clone(),
-            expected_revision: 0,
             override_name: Some("kept".to_owned()),
         }))
         .await
@@ -227,7 +226,6 @@ async fn rename_and_delete_change_the_listed_profile() {
 
     door.delete_profile(Request::new(DeleteProfileRequest {
         profile_id: created.id.clone(),
-        confirm_revision: 0,
     }))
     .await
     .unwrap();
@@ -293,10 +291,7 @@ async fn removing_a_profile_ends_a_dump_still_in_flight() {
     let profile_id = created.id.clone();
     let removal = tokio::spawn(async move {
         removing
-            .delete_profile(Request::new(DeleteProfileRequest {
-                profile_id,
-                confirm_revision: created.revision,
-            }))
+            .delete_profile(Request::new(DeleteProfileRequest { profile_id }))
             .await
     });
     // The removal holds nothing of the runtime, and no dump does: this

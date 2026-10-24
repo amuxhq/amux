@@ -2301,13 +2301,11 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     .await
     .unwrap();
     let old_addr = old_edge.lan_addr().unwrap();
-    let revision = profile_info(&net, "desk", &old).await.revision;
     drop(old_edge);
     door(&net, "desk")
         .await
         .delete_profile(wire::DeleteProfileRequest {
             profile_id: old.clone(),
-            confirm_revision: revision,
         })
         .await
         .unwrap();

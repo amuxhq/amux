@@ -78,11 +78,8 @@ message ProfileInfo {
   string email = 3;
   string account_name = 4;
   string socket_path = 5;
-  bytes host_id = 6;
   Intent intent = 7;
   Observed observed = 8;
-  // Unused: always zero.
-  uint64 revision = 9;
   Tier tier = 10;
   RelayCarrier relay_carrier = 11;
   // The bound account's subject at its service, which stays after a
@@ -118,15 +115,11 @@ message BindProfileRequest {
 
 message RenameProfileRequest {
   bytes profile_id = 1;
-  // Unused: ignored.
-  uint64 expected_revision = 2;
   optional string override_name = 3;
 }
 
 message DeleteProfileRequest {
   bytes profile_id = 1;
-  // Unused: ignored.
-  uint64 confirm_revision = 2;
 }
 
 message StartPairingRequest {

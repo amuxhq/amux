@@ -695,16 +695,15 @@ impl Edge {
         &self.first_flights
     }
 
-    /// A call to `host` found no channel within its patience, or the one it
-    /// opened failed, for `error`: the core decides what that says of the
-    /// host.
-    pub(crate) fn calls_failed(&self, host: HostId, error: daemon_core::payload::ChannelError) {
-        self.connections.calls_failed(host, error);
+    /// A call to `host` found no channel within its patience: its links
+    /// close.
+    pub(crate) fn calls_timed_out(&self, host: HostId) {
+        self.connections.calls_timed_out(host);
     }
 
     /// From now on no channel to `host` opens, or opens again, while the
-    /// link and the streams it already carries stay up: a call to it fails
-    /// before it goes out. For a test network.
+    /// streams its link already carries stay up: a call to it fails before
+    /// it goes out, and closes the link it tried. For a test network.
     #[doc(hidden)]
     pub async fn refuse_calls(&self, host: HostId, refuse: bool) {
         self.connections.refuse_calls(host, refuse);

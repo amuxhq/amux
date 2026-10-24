@@ -68,9 +68,6 @@ pub struct Link {
 pub struct Channel {
     pub link: LinkId,
     pub peer: HostId,
-    /// The route it opens on: the peer's own link, or a link to a host
-    /// that claims to reach the peer.
-    pub route: Route,
     pub class: ChannelClass,
     /// Whether the driver reported its handshake done.
     pub open: bool,
@@ -398,7 +395,7 @@ impl Daemon {
             Body::ObservedAddress(observed) if relay => self.observed(&observed.addr, out),
             Body::ForwardRefused(refused) => {
                 if let Some(dst) = HostId::from_slice(&refused.dst) {
-                    self.forward_refused(link, dst, refused.reason(), out);
+                    self.forward_refused(link, dst, refused.reason());
                 }
             }
             Body::HelloAck(_)
@@ -529,14 +526,12 @@ impl Daemon {
             class,
             reason,
         };
-        let Some(route) = self.routing.links.route_over(link, peer) else {
+        if self.routing.links.route_over(link, peer).is_none() {
             out.push(refused(ChannelError::NoLink));
             return;
-        };
+        }
         let Some(pin) = pin else {
             out.push(refused(ChannelError::Unpinned));
-            // As a handshake that found no key would: the attempt failed.
-            self.concluded(peer, route, Err(&ChannelError::Unpinned), out);
             return;
         };
         let begun = self.routing.catalogue.mark();
@@ -548,7 +543,6 @@ impl Daemon {
             Channel {
                 link,
                 peer,
-                route,
                 class,
                 open: false,
                 begun,
@@ -564,31 +558,17 @@ impl Daemon {
     }
 
     /// The driver's handshake on a channel the core asked for verified its
-    /// pin: an attempt on its route that reached the host. One whose link
-    /// went meanwhile is already forgotten.
-    pub(crate) fn channel_opened(&mut self, channel: ChannelId, out: &mut Vec<Output>) {
-        let Some(opened) = self.routing.links.channels.get_mut(&channel) else {
-            return;
-        };
-        opened.open = true;
-        let (peer, route) = (opened.peer, opened.route);
-        self.concluded(peer, route, Ok(()), out);
+    /// pin. One whose link went meanwhile is already forgotten.
+    pub(crate) fn channel_opened(&mut self, channel: ChannelId) {
+        if let Some(opened) = self.routing.links.channels.get_mut(&channel) {
+            opened.open = true;
+        }
     }
 
-    /// A channel closed: one that never opened is an attempt on its route
-    /// that failed, and one that did says nothing of the host by ending.
-    pub(crate) fn channel_closed(
-        &mut self,
-        channel: ChannelId,
-        reason: &ChannelError,
-        out: &mut Vec<Output>,
-    ) {
-        let Some(closed) = self.routing.links.channels.remove(&channel) else {
-            return;
-        };
-        if !closed.open {
-            self.concluded(closed.peer, closed.route, Err(reason), out);
-        }
+    /// A channel closed. Whatever it closed for says nothing of the host:
+    /// its link going is what does.
+    pub(crate) fn channel_closed(&mut self, channel: ChannelId) {
+        self.routing.links.channels.remove(&channel);
     }
 }
 

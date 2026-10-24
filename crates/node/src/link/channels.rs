@@ -516,8 +516,10 @@ impl ChannelPool {
     }
 
     /// From now on every channel to `peer` is refused while `refuse`
-    /// holds, as a far end refusing every stream would refuse it, those
-    /// already opening included, and no cached one is handed out.
+    /// holds, as a link whose far end takes no stream would refuse it,
+    /// those already opening included, and no cached one is handed out.
+    /// The link each refusal was on closes, as any link a stream would not
+    /// open on does.
     pub(crate) fn refuse(&self, peer: HostId, refuse: bool) {
         let mut refused = self
             .refused
@@ -535,6 +537,19 @@ impl ChannelPool {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .contains(&peer)
+    }
+
+    /// A stream would not open on `link` while it stayed up: it closes as
+    /// a dead connection would, so the host reads as the links that remain
+    /// say, and redialling brings it back.
+    fn close_failed(&self, link: LinkId) {
+        tracing::warn!(?link, "no stream opened on the link; closing it");
+        let links = self.links.clone();
+        tokio::spawn(async move {
+            links
+                .close_link(link, crate::routing::LinkCloseRequest::CallsFailed)
+                .await;
+        });
     }
 
     pub fn link_registry(&self) -> Arc<LinkRegistry> {
@@ -622,10 +637,11 @@ impl ChannelPool {
             None => None,
         };
         if refused {
-            let refusal = ChannelError::Refused(pb::ForwardRefusal::NoRoute);
+            let refusal = streams_refused();
             if let Some(telling) = telling {
                 telling.failed(core_error(&refusal));
             }
+            self.close_failed(link);
             return Err(refusal);
         }
         let ended = Arc::new(Ending::default());
@@ -640,11 +656,12 @@ impl ChannelPool {
         // A refusal set while the channel was opening holds for it too, so
         // no channel opens once it is set.
         let secured = match secured {
-            Ok(_) if self.refuses(key.peer) => {
-                Err(ChannelError::Refused(pb::ForwardRefusal::NoRoute))
-            }
+            Ok(_) if self.refuses(key.peer) => Err(streams_refused()),
             secured => secured,
         };
+        if let Err(ChannelError::Handshake(_)) = &secured {
+            self.close_failed(link);
+        }
         if let Some(telling) = telling {
             match &secured {
                 Ok(_) => {
@@ -735,26 +752,34 @@ impl ChannelPool {
                 .ok_or(ChannelError::LinkUnavailable {
                     host_id: link.peer(),
                 }),
-            Route::Via(forwarder) => {
-                if let Some(up) = self.links.native_carrier_to_peer(peer).await {
-                    return Ok(up);
-                }
-                let (through, _) = self
-                    .links
-                    .native_carrier_to_peer(forwarder)
-                    .await
-                    .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })?;
-                let dial = self
-                    .forwarded
-                    .get()
-                    .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })?;
-                dial.dial_through(peer, through).await?;
-                self.links
-                    .native_carrier_to_peer(peer)
-                    .await
-                    .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })
-            }
+            Route::Via(forwarder) => self.dial_through(peer, forwarder).await,
         }
+    }
+
+    /// The link of `peer`'s own that is up, or one dialled now whose
+    /// packets `forwarder` carries.
+    pub(crate) async fn dial_through(
+        &self,
+        peer: HostId,
+        forwarder: HostId,
+    ) -> Result<(LinkId, Arc<dyn LinkCarrier>), ChannelError> {
+        if let Some(up) = self.links.native_carrier_to_peer(peer).await {
+            return Ok(up);
+        }
+        let (through, _) = self
+            .links
+            .native_carrier_to_peer(forwarder)
+            .await
+            .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })?;
+        let dial = self
+            .forwarded
+            .get()
+            .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })?;
+        dial.dial_through(peer, through).await?;
+        self.links
+            .native_carrier_to_peer(peer)
+            .await
+            .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })
     }
 
     /// The channel over a stream of the link: its handshake authenticated
@@ -1023,6 +1048,12 @@ pub(crate) fn serve_inbound_streams(
 /// being replaced.
 fn unpinned(peer: HostId) -> ChannelError {
     ChannelError::Tls(format!("no key is pinned for host {peer}"))
+}
+
+/// What a channel the refusal hook turned away fails with: a stream that
+/// would not open, as on a link whose far end takes none.
+fn streams_refused() -> ChannelError {
+    ChannelError::Handshake("the link refused the stream".to_owned())
 }
 
 fn map_open_error(error: OpenError, route: Route) -> ChannelError {

@@ -364,8 +364,8 @@ impl Daemon {
         let added: Vec<HostId> = trusted.difference(&self.sources.trusted).copied().collect();
         self.sources.trusted = trusted.clone();
         self.sources.told_trust = true;
-        // An attempt on a host a route reached before its trust landed was
-        // abandoned: it is tried again now.
+        // A host a route reached before its trust landed was not dialled
+        // then: it is now.
         for host in added {
             if self.reachable(host) {
                 self.try_again(host, out);

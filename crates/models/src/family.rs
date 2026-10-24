@@ -33,8 +33,8 @@ use daemon_core::payload::{
     PeerFailure, PeerReply, PeerRequest, Response, Status,
 };
 use daemon_core::{
-    AgentId, CallId, Create, Daemon, Ended, Fingerprint, HostId, Input, Job, LinkId, Output, Route,
-    Settings, SourcePolicy, StartOptions, StepBudget, TimerId, Tried,
+    AgentId, CallId, Create, Daemon, Ended, Fingerprint, HostId, Input, Job, LinkId, Output,
+    Settings, SourcePolicy, StartOptions, StepBudget, TimerId,
 };
 use prost::Message as _;
 use store::{AgentKey, Sqlite};
@@ -893,22 +893,6 @@ impl<'a> Transition<'a> {
                         let (call, _) = self.next.at_parent.remove(at);
                         self.next.replies.push((call, reply_of(&status)));
                     }
-                }
-                Output::Attempt { host: to, route } => {
-                    // The driver tries the route: the link carries a channel
-                    // while it is up.
-                    let tried = match (self.next.link, route) {
-                        (Some(link), Route::Direct(on)) if link == on => Tried::Opened,
-                        _ => Tried::Failed(daemon_core::payload::ChannelError::LinkClosed),
-                    };
-                    self.feed(
-                        host,
-                        Input::AttemptConcluded {
-                            host: to,
-                            route,
-                            tried,
-                        },
-                    );
                 }
                 _ => {}
             }

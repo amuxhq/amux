@@ -1493,11 +1493,11 @@ async fn a_held_prompt_is_in_the_kept_draft_before_the_client_quits() {
 }
 
 /// A send that no channel to its host could carry is held, and the host
-/// reads offline (the chat words it "away"): presence is what opening a
-/// channel finds. When a channel opens again the host reads online, and
-/// that alone releases the held prompt, which goes by itself. Before, the
-/// link stayed listed, the host never stopped reading online, and the
-/// prompt waited for good.
+/// reads offline (the chat words it "away"): the call closed the link it
+/// could not open a stream on. When a link comes up again the host reads
+/// online, and that alone releases the held prompt, which goes by itself.
+/// Before, the link stayed listed, the host never stopped reading online,
+/// and the prompt waited for good.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_prompt_held_when_no_call_reaches_its_host_goes_once_one_does() {
     use crossterm::event::KeyCode;

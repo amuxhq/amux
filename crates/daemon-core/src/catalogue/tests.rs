@@ -3,7 +3,7 @@ use wire::message::Body;
 use wire::{Hello, Message, NeighborUp};
 
 use super::*;
-use crate::ids::{CallId, JobId, TimerId};
+use crate::ids::{CallId, JobId};
 use crate::io::{Input, Job};
 use crate::payload::{CarrierKind, ChannelClass, ClientRequest, JobResult, PublicKey};
 use crate::trust::{Reachability, TrustStore};
@@ -163,13 +163,6 @@ fn pair(id: HostId, pubkey: Vec<u8>) -> TrustChange {
     }
 }
 
-fn retried_now(out: &[Output], id: HostId, now: u64) -> bool {
-    out.contains(&Output::ArmTimer {
-        id: TimerId::Retry(id),
-        at_ms: now,
-    })
-}
-
 #[test]
 fn past_the_cap_a_claim_evicts_the_oldest_untrusted_host_held_only_by_a_claim() {
     let mut daemon = daemon(&[DESK]);
@@ -262,9 +255,8 @@ fn only_a_channel_begun_after_a_revocation_takes_it_back() {
     assert!(daemon.routing.catalogue.revoked(DESK));
 
     let after = channel(&mut daemon, 1, DESK);
-    let out = step(&mut daemon, Input::ChannelAnswered { channel: after });
+    step(&mut daemon, Input::ChannelAnswered { channel: after });
     assert!(!daemon.routing.catalogue.revoked(DESK));
-    assert!(retried_now(&out, DESK, 0), "tried at once: {out:?}");
     assert!(!entry(&daemon, DESK).revoked());
 }
 

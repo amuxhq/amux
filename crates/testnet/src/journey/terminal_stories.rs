@@ -1441,14 +1441,15 @@ fn send_rejected(journey: &mut TerminalJourney) -> Proved {
     journey.type_text(&pane, NOT_SENT)?;
     journey.wait_terms(&pane, &[NOT_SENT])?;
     journey.keys(&pane, &["Enter"])?;
-    // The failed call leaves the cabin offline at once (the chat words it
-    // "cabin away") rather than online while nothing reaches it.
+    // The failed call closes the link it could not open a stream on, so
+    // the cabin reads offline at once (the chat words it "cabin away")
+    // rather than online while nothing reaches it.
     journey.wait_terms(&pane, &["cabin away", NOT_SENT, "sends when cabin is back"])?;
     journey.frame(&pane, "not-sent")?;
     std::thread::sleep(Duration::from_secs(2));
     let refused = journey.chat("cabin", "backups", Some("refused"))?;
     never_sent(&refused, NOT_SENT)?;
-    // Once a channel to the cabin opens again it reads online, and the held
+    // Once a link to the cabin is up again it reads online, and the held
     // prompt goes by itself.
     journey.request(refuse_calls("laptop", "cabin", false), None)?;
     journey.wait(

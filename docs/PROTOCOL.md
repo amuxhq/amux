@@ -40,7 +40,7 @@ properties` lists every one. The main machines:
 
 | Chapter | Machine | Some of its promises |
 | --- | --- | --- |
-| [Presence](#chapter-3-presence), [routing](#chapter-4-routing-and-failover) | presence and routing | presence changes only on a concluded attempt on the preferred route; Away only on payment refusal; offline after failed calls until a channel opens; no flap while another route carries traffic; a refused route stops carrying; a host with a working route eventually reads online |
+| [Presence](#chapter-3-presence), [routing](#chapter-4-routing-and-failover) | presence and routing | presence from links; a claimed host is dialled; a host with a working route eventually reads online |
 | [Replica rows](JOURNAL_AND_STORE.md#own-rows-and-replica-rows) | replication | the block is contiguous; the block agrees with the origin; no row survives from another generation; the cursor is complete; a replica whose origin and link fall quiet becomes current |
 | [The family rule](#the-family-rule) | family and deliveries | no child is deleted by a stale listing; an outbox row is deleted only on accept; each report reaches its parent exactly once; nothing is owed after unpair; every descendant of a stopped parent eventually stops on every reachable host |
 | [Paths](#the-link-socket-and-its-paths) | the path machine | a path carries the link only after a probe on it was answered; the link never leaves a working path for another within the hold-down; the relay path stays ready while the link is direct; after a lapse no packet goes on a path across networks; if any path works the link eventually uses one |
@@ -195,36 +195,27 @@ can make an untrusted host a pairing candidate, but does not grant authority or
 make a discovery result online. A trusted host stays in the inventory whatever
 its presence, and only untrusting it removes it.
 
-A trusted host's presence is the outcome of opening a channel to it, decided in
-one place, the daemon core's presence state (`crates/daemon-core/src/presence.rs`):
+A trusted host's presence follows from the links up to it, decided in one
+place, the daemon core's presence state (`crates/daemon-core/src/presence.rs`):
 
-- **Online:** a channel to the host opened on a route still listed. The route
-  it opened on is the one the host entry's `online` reach names.
-- **Away:** the relay refused the channel with `PAYMENT_REQUIRED`, because the
-  account's free plan carries no connection between hosts. Upgrading reaches
-  the host; nothing else reads away.
-- **Offline:** everything else. No route is listed, or the channel failed for
-  any other reason: no route at the relay, rate limited, shutting down,
-  revoked, a TLS, handshake or identity failure, a timeout. A host that said it
-  no longer trusts this one is offline, with `revoked` set on its entry.
+- **Online:** a link of the host's own is up, whether its packets go on the
+  network, over SSH or through a forwarder end to end. The kind of path that
+  link takes is the one the host entry's `online` reach names.
+- **Away:** no such link is up, and the relay last refused to forward to the
+  host with `PAYMENT_REQUIRED`, because the account's free plan carries no
+  connection between hosts. Upgrading reaches the host; nothing else reads
+  away. A link of the host's own coming up, the relay saying it holds no link
+  to the host, or no route listing it any more ends it.
+- **Offline:** everything else. A host that said it no longer trusts this one
+  is offline, with `revoked` set on its entry.
 
-Every route that comes up is tried at once: a direct link's first channel opens
-as the link's event is handled, and a relay's claim for a trusted host is tried
-in the background. Every channel any call opens records its outcome too. A host
-whose route has come up and whose first attempt on it has not concluded keeps
-the presence it had, so a host that connects goes from offline straight to
-online, and one whose link went while the relay still lists it reads online
-until the try on the relay concludes. A failure counts only on the route a
-fresh call would take first by then, and only while no other route carries the
-host's traffic. A channel failing because its link went says nothing: the
-link's end is what decides. A host no channel is open to while a route lists
-it is tried again in the background, one second after the failure and then
-doubling to thirty seconds between tries.
-
-When the account's plan changes, every host the relay carried or refused is
-tried again at once on a fresh channel, so a host away for the plan turns
-online as soon as the account is paid, and one the relay carried stops reading
-online once the plan lapses.
+A host with no link of its own that a relay or a paired daemon claims to reach
+is dialled through it: when the claim comes up, when the host's own last link
+goes while the claim is listed, and, for a host refused for the plan, when the
+account's plan changes. The dialler keeps trying, one second after a failure
+and doubling to thirty seconds between tries, until a link of the host's own
+is up or no host claims it. A host this profile does not trust, or one that
+said it no longer trusts this one, is not dialled.
 
 Each `Host` in a handshake or neighbor message carries the host's name, its
 build version, its capabilities (whether it serves as a cloud relay, and the
@@ -290,17 +281,16 @@ idle timeout are 20 and 60 seconds on iOS, 10 and 30 seconds elsewhere, so a
 desktop notices a link that died silently within about forty seconds (the
 shorter timeout of a link's two ends applies).
 
-Presence says whether a channel to a host opens, so a call that cannot open
-one on a route still listed does not wait for that timeout: the host reads
-offline at once. On the host's own direct or SSH link the call closes the link,
-as the idle timeout would, and redialling and discovery bring it back as they
-do any lost link; the new link's first channel says whether the host is online
-again, so a link that comes back and still carries no call leaves it offline. On
-the relay, or on a link through another host, the channel cached on the route
-is dropped. While a route stays listed and no channel to the host is open, one
-background retry per host tries a fresh channel, one second after the failure
-and doubling to thirty; an away host is retried the same way. A client
-releases what it held for the host when it reads online again.
+Presence says whether a link to a host is up, so a link that cannot carry
+calls must not stay up until that timeout. A call whose stream will not open on
+a link that claims to be up, or that finds no channel within its patience,
+closes the link at once; the host reads as the links that remain say, and
+redialling and discovery bring the link back as they do any lost link. The
+call then tries one other route the core lists, if any. A call refused while
+the link is fine, by the far host or by a forwarder, closes nothing and says
+nothing of the host. A link that comes back and still carries no call reads
+online until its next call fails, and the redial backoff paces any repeat. A
+client releases what it held for the host when it reads online again.
 
 An SSH link reaches the far daemon through `amux relay`, a hidden command the
 SSH session runs, which joins its stdio to the profile's `link.sock`. The QUIC

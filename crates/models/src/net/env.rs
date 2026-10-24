@@ -35,12 +35,12 @@ use std::sync::Arc;
 
 use agent_core::{Agent, AgentValue, ConnId, Resumed};
 use daemon_core::payload::{
-    Answer, CallError, CarrierKind, ChannelError, ClientRequest, GitRefusal, JobResult,
-    MessageFrom, MessageRefusal, PeerFailure, PeerReply, PeerRequest, Response, Status,
+    Answer, CallError, CarrierKind, ClientRequest, GitRefusal, JobResult, MessageFrom,
+    MessageRefusal, PeerFailure, PeerReply, PeerRequest, Response, Status,
 };
 use daemon_core::{
     AgentId, CallId, Daemon, Ended, Fingerprint, HostId, Input, Job, JobId, LinkId, Output,
-    Presence, Route, Settings, StartOptions, StepBudget, TimerId, Tried,
+    Presence, Settings, StartOptions, StepBudget, TimerId,
 };
 use interpret::testkind::TestKind;
 use prost::Message as _;
@@ -53,10 +53,7 @@ use crate::held::{Held, Slot};
 use crate::lifecycle::{
     EXIT_CAUSE_LAST_STEP, EXITS_AT_TURN_END, cause_on_last_step, decided_in_its_time,
 };
-use crate::presence::{
-    AWAY_ONLY_ON_PAYMENT_REFUSAL, CHANGES_ON_A_CONCLUDED_ATTEMPT, ONE_ATTEMPT_IN_FLIGHT,
-    attempt_not_doubled, away_explained, change_prompted,
-};
+use crate::presence::{PRESENCE_FROM_LINKS, reads_by_links};
 use crate::single_daemon::{
     COMMIT_BEFORE_BROADCAST, GENERATION_BUMPS_AFTER_UNCLEAN, GENERATION_BUMPS_ONLY_AFTER_UNCLEAN,
     answered_unheld, bumps_after_unclean, bumps_only_after_unclean,
@@ -134,41 +131,27 @@ fn append(journal: &mut Journal, step: &wire::Step) {
 
 /// What a host's step broke of the promises judged as it steps, if it
 /// broke one: what it answered that its store does not hold, and how it
-/// moved another host's presence, each host having read as `views` before
-/// the step and `concluded` the attempt the step concluded.
+/// reads another host against the links up to it.
 fn judge_step(
     daemon: &Daemon,
     out: &[Output],
     kind: &str,
     name: &str,
     others: &[(HostId, &str)],
-    views: Vec<daemon_core::HostView>,
-    concluded: Option<(HostId, Route)>,
 ) -> Option<(&'static str, String)> {
     if let Some(row) = answered_unheld(daemon, out) {
         let what = format!("{name} answered {row} on {kind} before its store held it");
         return Some((COMMIT_BEFORE_BROADCAST, what));
     }
-    for (&(other, other_name), was) in others.iter().zip(views) {
+    for &(other, other_name) in others {
         let now = daemon.presence().view(other);
-        if now.presence == was.presence {
-            continue;
-        }
-        let change = format!(
-            "{name} read {other_name} {:?} -> {:?} on {kind}",
-            was.presence, now.presence
-        );
-        let on = concluded
-            .filter(|(host, _)| *host == other)
-            .map(|(_, route)| route);
-        // No call in the net waits for a channel: calls are carried
-        // whenever their link is up.
-        if !change_prompted(&now, on, false) {
-            return Some((CHANGES_ON_A_CONCLUDED_ATTEMPT, change));
-        }
-        // Nor does any relay refuse one for the account's plan.
-        if !away_explained(&now, false) {
-            return Some((AWAY_ONLY_ON_PAYMENT_REFUSAL, change));
+        // No relay in the net refuses a host for the account's plan.
+        if !reads_by_links(&now, false) {
+            let what = format!(
+                "{name} read {other_name} {:?} over {:?} after {kind}",
+                now.presence, now.routes
+            );
+            return Some((PRESENCE_FROM_LINKS, what));
         }
     }
     None
@@ -1375,20 +1358,6 @@ impl Transition<'_> {
             for input in inputs {
                 let before = daemon.store().changes();
                 let kind = input.kind();
-                let views: Vec<_> = others
-                    .iter()
-                    .map(|&(other, _)| daemon.presence().view(other))
-                    .collect();
-                // An attempt whose link closed under it concludes on no
-                // route: the route went before it did.
-                let concluded = match &input {
-                    Input::AttemptConcluded { host, route, tried }
-                        if !matches!(tried, Tried::Failed(ChannelError::LinkClosed)) =>
-                    {
-                        Some((*host, *route))
-                    }
-                    _ => None,
-                };
                 let from = out.len();
                 daemon.step(input, &mut out);
                 if daemon.store().changes() != before
@@ -1399,7 +1368,7 @@ impl Transition<'_> {
                     ));
                 }
                 if broke.is_none() {
-                    broke = judge_step(daemon, &out[from..], kind, name, &others, views, concluded);
+                    broke = judge_step(daemon, &out[from..], kind, name, &others);
                 }
             }
             out
@@ -1962,48 +1931,6 @@ impl Transition<'_> {
                 Output::HangUp { call } => self.hang_up(h, call),
                 Output::Answer { call, response } => self.answered(h, call, response),
                 Output::EndCall { call, status } => self.ended(h, call, status),
-                Output::Attempt { host: to, route } => {
-                    let far = self.host_index(to);
-                    let lanes = [far.map(|far| Lane::Link(h, far)), Some(Lane::Local(h))];
-                    let in_flight: BTreeSet<Route> = lanes
-                        .iter()
-                        .flatten()
-                        .filter_map(|lane| self.w.lanes.get(lane))
-                        .flatten()
-                        .filter_map(|delivery| match delivery {
-                            Delivery::Host(_, Dbg(Input::AttemptConcluded { host, route, .. }))
-                                if *host == to =>
-                            {
-                                Some(*route)
-                            }
-                            _ => None,
-                        })
-                        .collect();
-                    if !attempt_not_doubled(&in_flight, route) {
-                        let what = format!(
-                            "{} asked for a second attempt at {} on {route:?}",
-                            self.name(h),
-                            far.map_or("a host it does not know", |far| self.name(far)),
-                        );
-                        self.fail(Failure::Broke(ONE_ATTEMPT_IN_FLIGHT, what));
-                    }
-                    let tried = match (route, far.and_then(|far| self.live_link(h, far))) {
-                        (Route::Direct(link), Some(live)) if link == live => Tried::Opened,
-                        _ => Tried::Failed(ChannelError::LinkClosed),
-                    };
-                    let lane = far.map_or(Lane::Local(h), |far| Lane::Link(h, far));
-                    self.push(
-                        lane,
-                        host(
-                            h,
-                            Input::AttemptConcluded {
-                                host: to,
-                                route,
-                                tried,
-                            },
-                        ),
-                    );
-                }
                 Output::DialAgent { agent } => match self.process_of(agent) {
                     Some(p) => self.push(Lane::Dial(p), Delivery::Dial(p)),
                     None => {
@@ -2038,8 +1965,7 @@ impl Transition<'_> {
                 | Output::CloseChannel { .. }
                 | Output::DropRoute { .. }
                 | Output::Dial { .. }
-                | Output::NextRoute { .. }
-                | Output::CloseLinks { .. }
+                | Output::DialThrough { .. }
                 | Output::LinkControl { .. }
                 | Output::SendFile { .. }
                 | Output::ForgetAgent { .. }
@@ -2718,7 +2644,6 @@ fn timer_kind(id: &TimerId) -> &'static str {
         TimerId::Lane(_) => "Lane",
         TimerId::Notifications => "Notifications",
         TimerId::Checkpoint => "Checkpoint",
-        TimerId::Retry(_) => "Retry",
         TimerId::Refresh(_) => "Refresh",
         TimerId::Follow(_) => "Follow",
         TimerId::Source(..) => "Source",

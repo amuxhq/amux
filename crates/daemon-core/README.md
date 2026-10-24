@@ -40,12 +40,7 @@ constant time per row it touched:
 - an agent's journal is reclaimed only below the cursor of the newest
   checkpoint on the drive;
 - the generation this host's streams open under only ever rises;
-- nothing is committed while a checkpoint moves the WAL into the main file;
-- at most one attempt the core asked for is in flight per host and route;
-- a host reads away only while the relay's refusal for the account's plan is
-  recorded;
-- a host waiting to be retried has its one retry timer armed, and no other
-  host has one.
+- nothing is committed while a checkpoint moves the WAL into the main file.
 
 A step that takes longer than its budget (`StartOptions::budget`, 100 ms by
 default) is logged and appends `Output::Dump` too, one per step that ran

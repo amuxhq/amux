@@ -16,7 +16,7 @@ use crate::payload::{
     ClientRequest, ControlFrame, Hello, JobResult, LinkCloseReason, LinkFrame, PairMessage,
     PeerRequest, PublicKey, Push, Response, Status,
 };
-use crate::presence::{Route, Tried};
+use crate::presence::Route;
 use crate::{DumpReason, codec};
 
 /// Everything that can happen to the daemon, decoded by the driver.
@@ -84,28 +84,8 @@ pub enum Input {
         channel: ChannelId,
         reason: ChannelError,
     },
-    /// The shell's try at an [`Output::Attempt`] concluded.
-    AttemptConcluded {
-        host: HostId,
-        route: Route,
-        tried: Tried,
-    },
     /// The account's plan changed: what the relay carries changed with it.
     PlanChanged,
-    /// A call to the host found no channel within its patience, or the
-    /// channel it opened failed: `error` says why, as the driver saw it.
-    CallsFailed {
-        host: HostId,
-        error: ChannelError,
-    },
-    /// A channel a call opened on `route` failed before it carried
-    /// anything; the core answers with [`Output::NextRoute`], the route the
-    /// call tries next.
-    RouteFailed {
-        host: HostId,
-        route: Route,
-        error: ChannelError,
-    },
     /// Try the host now: what kept channels to it from opening is gone.
     TryAgain {
         host: HostId,
@@ -275,10 +255,7 @@ impl Input {
             Input::WantChannel { .. } => "WantChannel",
             Input::ChannelOpened { .. } => "ChannelOpened",
             Input::ChannelClosed { .. } => "ChannelClosed",
-            Input::AttemptConcluded { .. } => "AttemptConcluded",
             Input::PlanChanged => "PlanChanged",
-            Input::CallsFailed { .. } => "CallsFailed",
-            Input::RouteFailed { .. } => "RouteFailed",
             Input::TryAgain { .. } => "TryAgain",
             Input::HostForgotten { .. } => "HostForgotten",
             Input::TrustRead { .. } => "TrustRead",
@@ -449,12 +426,6 @@ pub enum Output {
     CloseChannel {
         channel: ChannelId,
     },
-    /// Try a calls channel to `host` on `route`, and report how it went as
-    /// [`Input::AttemptConcluded`].
-    Attempt {
-        host: HostId,
-        route: Route,
-    },
     /// `route` no longer carries `host`'s traffic: forget the channels
     /// opened on it, so the next call opens a fresh one.
     DropRoute {
@@ -465,15 +436,10 @@ pub enum Output {
     Dial {
         host: HostId,
     },
-    /// The route the call that reported [`Input::RouteFailed`] tries
-    /// next, if any.
-    NextRoute {
-        host: HostId,
-        route: Option<Route>,
-    },
-    /// Close `host`'s own links, as their idle timeout would, only sooner:
-    /// calls over them find no channel. Redialling brings them back.
-    CloseLinks {
+    /// Dial `host` through a host that claims to reach it, again and
+    /// again with a pause between tries, until a link of its own is up or
+    /// no host claims it.
+    DialThrough {
         host: HostId,
     },
     /// Make `request` of `host` on a channel to it, and report what came
@@ -829,14 +795,6 @@ mod tests {
                 link: LinkId(1),
                 reason: LinkCloseReason::UserShutdown,
             },
-            Input::AttemptConcluded {
-                host: HostId([1; 16]),
-                route: Route::Via(HostId([2; 16])),
-                tried: Tried::Failed(ChannelError::Refused(ForwardRefusal::PaymentRequired)),
-            },
-            Input::Timer {
-                id: TimerId::Retry(HostId([1; 16])),
-            },
             Input::Credential {
                 link: LinkId(1),
                 expires_at_ms: 900_000,
@@ -844,15 +802,6 @@ mod tests {
                 free_every_ms: Some(60_000),
             },
             Input::PlanChanged,
-            Input::CallsFailed {
-                host: HostId([1; 16]),
-                error: ChannelError::Handshake("no channel opened in time".to_owned()),
-            },
-            Input::RouteFailed {
-                host: HostId([1; 16]),
-                route: Route::Direct(LinkId(2)),
-                error: ChannelError::LinkClosed,
-            },
             Input::ClientCall {
                 call: CallId(2),
                 request: ClientRequest::Subscribe {

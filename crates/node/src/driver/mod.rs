@@ -134,12 +134,6 @@ pub(crate) enum Fed {
         want: Input,
         reply: oneshot::Sender<Result<Opened, ChannelError>>,
     },
-    /// A channel a call opened failed, and the call waits for the core to
-    /// name the route it tries next.
-    Route {
-        failed: Input,
-        reply: oneshot::Sender<Option<daemon_core::Route>>,
-    },
     /// A link resuming with a ticket came up, and holds what its peer sent
     /// early until the core says whether it takes the identity the ticket
     /// names: true when it does.
@@ -277,7 +271,6 @@ impl Driver {
             fed,
             reports: reports.clone(),
             channel_reply: None,
-            route_reply: None,
             resumed_reply: None,
             // The drafts and the trust the profile's files hold, and fresh
             // randomness, are the first things the core is told.
@@ -499,20 +492,6 @@ impl Driver {
         value.await.ok()
     }
 
-    /// A channel a call opened to `host` on `route` failed with `error`:
-    /// the route the core names for the call to try next, if any.
-    pub(crate) async fn route_failed(
-        &self,
-        host: HostId,
-        route: daemon_core::Route,
-        error: ChannelError,
-    ) -> Option<daemon_core::Route> {
-        let (reply, word) = oneshot::channel();
-        let failed = Input::RouteFailed { host, route, error };
-        self.inputs.send(Fed::Route { failed, reply }).await.ok()?;
-        word.await.ok().flatten()
-    }
-
     /// Tells the core a link resuming with a ticket came up and waits for
     /// its word: whether it takes the identity the ticket names. Anything
     /// reported before is stepped first.
@@ -628,8 +607,6 @@ pub(crate) struct CoreThread {
     /// Whoever waits for the core's word on the channel the step under way
     /// was asked for.
     channel_reply: Option<oneshot::Sender<Result<Opened, ChannelError>>>,
-    /// Whoever waits for the core to name the route a call tries next.
-    route_reply: Option<oneshot::Sender<Option<daemon_core::Route>>>,
     /// Whoever holds a resumed link's early streams until the core decides
     /// the step under way: told false if it refuses the link.
     resumed_reply: Option<oneshot::Sender<bool>>,
@@ -774,12 +751,6 @@ impl CoreThread {
                 self.channel_reply = None;
                 return true;
             }
-            Fed::Route { failed, reply } => {
-                self.route_reply = Some(reply);
-                self.step(&runtime, failed, &mut out);
-                self.route_reply = None;
-                return true;
-            }
             Fed::Resumed { up, reply } => {
                 self.resumed_reply = Some(reply);
                 self.step(&runtime, up, &mut out);
@@ -858,7 +829,6 @@ impl CoreThread {
             Fed::Wake
             | Fed::Stop
             | Fed::Channel { .. }
-            | Fed::Route { .. }
             | Fed::Resumed { .. }
             | Fed::Forward { .. }
             | Fed::Look(_)
@@ -1219,24 +1189,11 @@ impl CoreThread {
                     let _ = reply.send(Err(reason));
                 }
             }
-            Output::NextRoute { route, .. } => {
-                if let Some(reply) = self.route_reply.take() {
-                    let _ = reply.send(route);
-                }
-            }
-            Output::CloseLinks { host } => {
+            Output::DialThrough { host } => {
                 if let Some(connections) = self.connections() {
-                    connections.close_links(host);
+                    connections.dial_through(host);
                 }
             }
-            Output::Attempt { host, route } => match self.connections() {
-                Some(connections) => connections.attempt(host, route),
-                None => self.again.push_back(Input::AttemptConcluded {
-                    host,
-                    route,
-                    tried: daemon_core::Tried::Failed(daemon_core::payload::ChannelError::NoLink),
-                }),
-            },
             Output::DropRoute { host, route } => {
                 if let Some(connections) = self.connections() {
                     connections.drop_route(host, route);

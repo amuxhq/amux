@@ -88,7 +88,7 @@ impl Daemon {
         };
         let core = (
             &self.routing,
-            &self.presence.canonical(),
+            &self.presence,
             &self.sources.canonical(&ids),
             &self.families.canonical(&ids),
             (&self.pairing, &self.trust.canonical(&ids)),

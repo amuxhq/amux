@@ -1,12 +1,12 @@
 //! Runtime Link establishment from discovery and persisted reachabilities.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures_util::future::BoxFuture;
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{Notify, broadcast, watch};
 use tokio::task::JoinHandle;
 use tracing::Instrument;
 
@@ -50,8 +50,8 @@ pub struct ReachabilityLinkConnector {
     inner: Arc<ReachabilityLinkConnectorInner>,
 }
 
-/// Dials the hosts the profile's core says to, at the addresses discovery
-/// found for them.
+/// Dials the hosts the profile's core says to: at the addresses discovery
+/// found for them, or through a host that claims to reach them.
 pub(crate) struct Dialer(std::sync::Weak<ReachabilityLinkConnectorInner>);
 
 impl Dialer {
@@ -60,12 +60,53 @@ impl Dialer {
             ReachabilityLinkConnector { inner }.dial_found(peer);
         }
     }
+
+    /// Dials `peer` through a host claiming to reach it, again after each
+    /// failure, until a link of its own is up. One such dial runs per
+    /// host: asking again while it waits out a pause ends the pause and
+    /// starts its backoff afresh.
+    pub(crate) fn dial_through(&self, peer: HostId) {
+        let Some(inner) = self.0.upgrade() else {
+            return;
+        };
+        let forwarding = {
+            let mut dialling = inner.forwarding.lock().unwrap();
+            if let Some(forwarding) = dialling.get(&peer) {
+                forwarding.asked.store(true, Ordering::SeqCst);
+                forwarding.hurry.notify_one();
+                return;
+            }
+            let forwarding = Arc::new(Forwarding::default());
+            dialling.insert(peer, forwarding.clone());
+            forwarding
+        };
+        let shutdown_rx = inner.direct_shutdown.lock().unwrap().subscribe();
+        let task = tokio::spawn(dial_through_while_away(
+            Arc::downgrade(&inner),
+            peer,
+            forwarding,
+            shutdown_rx,
+        ));
+        ReachabilityLinkConnector { inner }.retain_task(task);
+    }
+}
+
+/// A host being dialled through forwarders.
+#[derive(Default)]
+struct Forwarding {
+    /// Someone asked for the host to be dialled since the dial's last try
+    /// began, so it is not over yet.
+    asked: AtomicBool,
+    /// Ends the pause between tries.
+    hurry: Notify,
 }
 
 struct ReachabilityLinkConnectorInner {
     context: ReachabilityLinkContext,
     retained_tasks: Mutex<Vec<JoinHandle<()>>>,
     dialing: Arc<Mutex<HashSet<HostId>>>,
+    /// Each host being dialled through forwarders.
+    forwarding: Mutex<HashMap<HostId, Arc<Forwarding>>>,
     queued_found: Arc<Mutex<HashSet<HostId>>>,
     direct_enabled: Arc<AtomicBool>,
     direct_shutdown: Mutex<watch::Sender<bool>>,
@@ -125,6 +166,7 @@ impl ReachabilityLinkConnector {
                 },
                 retained_tasks: Mutex::new(Vec::new()),
                 dialing: Arc::new(Mutex::new(HashSet::new())),
+                forwarding: Mutex::default(),
                 queued_found: Arc::new(Mutex::new(HashSet::new())),
                 direct_enabled: Arc::new(AtomicBool::new(true)),
                 direct_shutdown: Mutex::new(watch::channel(false).0),
@@ -1135,6 +1177,71 @@ async fn redial_while_away(
         redials: redials.saturating_add(1),
     }) {
         connector.retain_task(task);
+    }
+}
+
+/// Dials `peer` through the first host the core lists as claiming to reach
+/// it, pausing after each failure as a direct redial does, until a link of
+/// its own is up, no host claims it, it is no longer trusted, or the
+/// connector shuts down. A refusal for the account's plan fails the try
+/// like any other: the relay goes on refusing while the plan lapses, and
+/// the core reads the host away meanwhile.
+async fn dial_through_while_away(
+    connector: std::sync::Weak<ReachabilityLinkConnectorInner>,
+    peer: HostId,
+    forwarding: Arc<Forwarding>,
+    mut shutdown_rx: watch::Receiver<bool>,
+) {
+    let mut failures: u32 = 0;
+    loop {
+        let Some(inner) = connector.upgrade() else {
+            return;
+        };
+        forwarding.asked.store(false, Ordering::SeqCst);
+        let context = inner.context.clone();
+        drop(inner);
+        let forwarder = context
+            .connections
+            .routes_to(peer)
+            .await
+            .into_iter()
+            .find_map(|route| match route {
+                Route::Via(forwarder) => Some(forwarder),
+                Route::Direct(_) => None,
+            });
+        let tried = match forwarder {
+            Some(forwarder)
+                if !*shutdown_rx.borrow()
+                    && is_trusted(&context.trust_store, peer)
+                    && !has_direct_route(&context, peer).await =>
+            {
+                Some(context.channels.dial_through(peer, forwarder).await)
+            }
+            _ => None,
+        };
+        if let Some(Err(error)) = tried {
+            tracing::debug!(%peer, %error, "dialling through a forwarder failed");
+            let pause = REDIAL_FIRST
+                .saturating_mul(1 << failures.min(5))
+                .min(REDIAL_MAX);
+            failures = failures.saturating_add(1);
+            tokio::select! {
+                () = tokio::time::sleep(pause) => {}
+                () = forwarding.hurry.notified() => failures = 0,
+                _ = shutdown_rx.wait_for(|shutting_down| *shutting_down) => {}
+            }
+            continue;
+        }
+        let Some(inner) = connector.upgrade() else {
+            return;
+        };
+        let mut dialling = inner.forwarding.lock().unwrap();
+        if forwarding.asked.load(Ordering::SeqCst) {
+            failures = 0;
+            continue;
+        }
+        dialling.remove(&peer);
+        return;
     }
 }
 

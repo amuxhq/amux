@@ -100,14 +100,6 @@ impl Route {
             daemon_core::Route::Via(relay) => Route::Via(host_from_core(relay)),
         }
     }
-
-    /// The route as the profile's core names it.
-    pub(crate) fn core(self) -> daemon_core::Route {
-        match self {
-            Route::Direct(link) => daemon_core::Route::Direct(link.core()),
-            Route::Via(relay) => daemon_core::Route::Via(core_host(relay)),
-        }
-    }
 }
 
 impl LiveRoute {

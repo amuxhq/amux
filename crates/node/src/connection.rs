@@ -1,33 +1,23 @@
-//! Outbound channel selection over native link streams, and what a host's
-//! presence is, as the profile's core decides it from how opening channels
-//! to the host went.
+//! Outbound channel selection over native link streams.
 //!
-//! The core lists the routes to each host, picks the one carrying its
-//! traffic, decides how it reads, which route a failed call tries next and
-//! what a call finding no channel does, and retries each host in the
-//! background; this manager reads what the core decided, opens the
-//! channels calls ask for on the route it names, and tries what the core
-//! asks it to try. It keeps nothing of its own about a host.
+//! The profile's core lists the routes to each host and decides how it
+//! reads from the links up to it; this manager opens the channels calls
+//! ask for on the first route the core lists, and dials what the core
+//! says to. A call that fails on a link closes the link and tries one
+//! other listed route. It keeps nothing of its own about a host.
 
-use std::sync::{Arc, Weak};
-use std::time::Duration;
+use std::sync::Arc;
 
-use daemon_core::{Input, Tried};
+use daemon_core::Input;
 use tonic::transport::Channel;
 
 use crate::HostId;
-use crate::driver::{CoreLinks, core_error};
+use crate::driver::CoreLinks;
 use crate::link::{ChannelClass, ChannelError, ChannelKey, ChannelPool};
 use crate::routing::{LinkCloseRequest, LiveRoute, Route, core_host, host_from_core};
 use crate::transport::Replacing;
 
-/// How long one try the core asks for may take to open its channel before
-/// it counts as failed: as long as a call waits to reach a host.
-const ATTEMPT_PATIENCE: Duration = Duration::from_secs(10);
-
 pub struct ConnectionManager {
-    /// This manager, for the tries it runs in the background.
-    me: Weak<ConnectionManager>,
     channels: Arc<ChannelPool>,
     replacing: Replacing,
     analytics: analytics::Analytics,
@@ -37,8 +27,7 @@ pub struct ConnectionManager {
 
 impl ConnectionManager {
     pub(crate) fn new(channels: Arc<ChannelPool>, analytics: analytics::Analytics) -> Arc<Self> {
-        Arc::new_cyclic(|me| Self {
-            me: me.clone(),
+        Arc::new(Self {
             channels,
             replacing: Replacing::default(),
             analytics,
@@ -68,31 +57,6 @@ impl ConnectionManager {
         self.core()?.look(look).await
     }
 
-    /// The core asks for a calls channel to `host` on `route`, and to be
-    /// told how it went.
-    pub(crate) fn attempt(&self, host: daemon_core::HostId, route: daemon_core::Route) {
-        let me = self.me.clone();
-        tokio::spawn(async move {
-            let Some(manager) = me.upgrade() else {
-                return;
-            };
-            let peer = host_from_core(host);
-            let opened = tokio::time::timeout(
-                ATTEMPT_PATIENCE,
-                manager.open_route(peer, Route::from_core(peer, route), ChannelClass::Calls),
-            )
-            .await;
-            let tried = match opened {
-                Ok(Ok(_)) => Tried::Opened,
-                Ok(Err(error)) => Tried::Failed(core_error(&error)),
-                Err(_) => Tried::Failed(daemon_core::payload::ChannelError::Handshake(
-                    "no channel opened in time".to_owned(),
-                )),
-            };
-            manager.report(Input::AttemptConcluded { host, route, tried });
-        });
-    }
-
     /// Discovery resolved `host` in this profile's scope.
     pub(crate) fn discovered(&self, host: HostId, trusted: bool) {
         self.report(Input::Discovered {
@@ -114,6 +78,13 @@ impl ConnectionManager {
         }
     }
 
+    /// The core says to dial `host` through a host claiming to reach it.
+    pub(crate) fn dial_through(&self, host: daemon_core::HostId) {
+        if let Some(dialer) = self.dialer.get() {
+            dialer.dial_through(host_from_core(host));
+        }
+    }
+
     /// The core says `route` no longer carries `host`'s traffic: the
     /// channels cached on it go, so the next call opens a fresh one.
     pub(crate) fn drop_route(&self, host: daemon_core::HostId, route: daemon_core::Route) {
@@ -123,8 +94,8 @@ impl ConnectionManager {
     }
 
     /// From now on no channel to `peer` opens while `refuse` holds,
-    /// whatever route reaches it. Lifting it tries a channel at once, as a
-    /// link that starts carrying calls again would be found to.
+    /// whatever route reaches it, and the link each refused channel was on
+    /// closes. Lifting it tells the core to try the host now.
     pub(crate) fn refuse_calls(&self, peer: HostId, refuse: bool) {
         self.channels.refuse(peer, refuse);
         if !refuse {
@@ -143,21 +114,11 @@ impl ConnectionManager {
         self.channel_to_class(peer, ChannelClass::Calls).await
     }
 
-    /// A call to `peer` found no channel within its patience, or the one
-    /// it opened failed: the core decides what that says of the host.
-    pub(crate) fn calls_failed(&self, peer: HostId, error: daemon_core::payload::ChannelError) {
-        tracing::debug!(%peer, ?error, "a call to the host found no channel");
-        self.report(Input::CallsFailed {
-            host: core_host(peer),
-            error,
-        });
-    }
-
-    /// The core says calls over `host`'s own links find no channel: they
-    /// close, as their idle timeout would close them, only sooner.
-    pub(crate) fn close_links(&self, host: daemon_core::HostId) {
-        let peer = host_from_core(host);
-        tracing::warn!(%peer, "no call channel opened on the host's own link; closing it");
+    /// A call to `peer` found no channel within its patience: its links
+    /// close, as their idle timeout would close them, only sooner, and
+    /// redialling brings them back.
+    pub(crate) fn calls_timed_out(&self, peer: HostId) {
+        tracing::warn!(%peer, "no call channel opened in time; closing the host's links");
         let links = self.channels.link_registry().clone();
         tokio::spawn(async move {
             links.close_host(peer, LinkCloseRequest::CallsFailed).await;
@@ -203,9 +164,9 @@ impl ConnectionManager {
         opened
     }
 
-    /// Opens a channel to `peer` on `route`. A link can close under a call
-    /// that just chose it while the core still lists it: the core is told,
-    /// and the call tries the route it names next, if any.
+    /// Opens a channel to `peer` on `route`. A channel failing on its link,
+    /// the link gone under it or a stream that would not open on it (which
+    /// closes the link), tries one other route the core lists, if any.
     async fn open_route(
         &self,
         peer: HostId,
@@ -213,19 +174,14 @@ impl ConnectionManager {
         class: ChannelClass,
     ) -> Result<Channel, ChannelError> {
         match self.activate_route(peer, route, class).await {
-            Err(error @ ChannelError::LinkUnavailable { .. }) => {
-                let next = match self.core() {
-                    Some(core) => {
-                        core.route_failed(peer, route.core(), core_error(&error))
-                            .await
-                    }
-                    None => None,
-                };
+            Err(error @ (ChannelError::LinkUnavailable { .. } | ChannelError::Handshake(_))) => {
+                let next = self
+                    .routes_to(peer)
+                    .await
+                    .into_iter()
+                    .find(|next| *next != route);
                 match next {
-                    Some(next) => {
-                        self.activate_route(peer, Route::from_core(peer, next), class)
-                            .await
-                    }
+                    Some(next) => self.activate_route(peer, next, class).await,
                     None => Err(error),
                 }
             }
@@ -245,8 +201,7 @@ impl ConnectionManager {
         self.cloud_relay_for(peer).await.is_ok()
     }
 
-    /// Why the last dial to `peer` failed, until a route to it comes up or
-    /// a channel to it opens.
+    /// Why the last dial to `peer` failed, until a route to it comes up.
     pub(crate) async fn stored_reachability_error(&self, peer: HostId) -> Option<String> {
         let host = core_host(peer);
         self.look(move |core| core.last_dial_error(host).map(str::to_owned))

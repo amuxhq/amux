@@ -148,7 +148,7 @@ fn writes(input: &Input, copying: JobId) -> bool {
         Input::PeerCall { request, .. } => peer_writes(request),
         Input::Tick { .. }
         | Input::Timer {
-            id: TimerId::Checkpoint | TimerId::Refresh(_) | TimerId::Retry(_),
+            id: TimerId::Checkpoint | TimerId::Refresh(_),
         }
         | Input::AnswerLagged { .. }
         | Input::LinkUp { .. }
@@ -160,10 +160,7 @@ fn writes(input: &Input, copying: JobId) -> bool {
         | Input::ChannelOpened { .. }
         | Input::ChannelClosed { .. }
         | Input::ChannelAnswered { .. }
-        | Input::AttemptConcluded { .. }
         | Input::PlanChanged
-        | Input::CallsFailed { .. }
-        | Input::RouteFailed { .. }
         | Input::TryAgain { .. }
         | Input::Candidates { .. }
         | Input::DialError { .. }

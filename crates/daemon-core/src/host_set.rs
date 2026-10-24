@@ -90,8 +90,7 @@ impl Daemon {
         }
     }
 
-    /// Why the last dial to `host` failed, until a route to it comes up or
-    /// a channel to it opens.
+    /// Why the last dial to `host` failed, until a route to it comes up.
     pub fn last_dial_error(&self, host: HostId) -> Option<&str> {
         self.host_set.dial_errors.get(&host).map(String::as_str)
     }
@@ -239,9 +238,9 @@ impl Daemon {
     }
 
     /// How `host` reads, as every client is told: online over the kind of
-    /// route its calls take once a channel to it has opened on a route
-    /// still listed, away while the relay refuses channels to it for the
-    /// account's plan, and offline otherwise, with why the last dial failed.
+    /// route its calls take while a link of its own is up, away while the
+    /// relay refuses to forward to it for the account's plan, and offline
+    /// otherwise, with why the last dial failed.
     /// A host that said it no longer trusts this one reads offline as
     /// revoked, whatever route still reaches it.
     pub fn reads(&self, host: HostId) -> trusted::Reach {

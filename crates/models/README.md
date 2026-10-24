@@ -104,24 +104,19 @@ journal's in the same test. The properties are in `src/single_daemon.rs`.
 launch: its links to the account's relay and to one peer are up, and
 neither has said anything of the host, which this daemon remembers and
 dials at once on every path. So the host's own links may come up before
-any claim of it, whether their packets go on the network or through the
-relay end to end (to the core both are the host's own link), every other
-one over SSH; they go, the peer and the relay start and stop claiming to
-reach it, the relay refuses the host's packets for the plan while it
-lapses (and, at the nightly bounds, for no route while its claim lingers),
-each attempt the core asks for opens a channel, is
-refused, times out, is refused by the relay for the account's plan or
-fails because its route went, a call opens a channel of its own on the
-first route (its direct link may go under it, and the call then tries the
-route the core names next), a call finds no channel within its patience
-(the core may close the host's own links for it), the plan is bought and
-lapses (the relay enforces the change at once and this daemon hears of it
-later, so the relay may refuse the host's packets while its route still
-carries them), the retry timer fires, and at any point the world may stop
-changing. The relay
-refuses for the plan for as long as the plan lapses; the model bounds how
-many such refusals come in a row so that a path retrying only the relay
-ends and its liveness is judged. The properties are in `src/presence.rs`.
+any claim of it, alternately on its own connection and over SSH; they go
+(a call failing on one closes it), the peer and the relay start and stop
+claiming to reach it, the relay refuses its packets for no route while its
+claim lingers, and the shell dials the host through the first host
+claiming it whenever the core says to, again after each failed try: a
+dial through the peer brings up a link of the host's own forwarded end to
+end, and so does one through the relay while the plan pays for
+connections between hosts, which the relay refuses for the plan
+otherwise. The plan is bought and lapses (the relay enforces the change
+at once and this daemon hears of it later), and at any point the world
+may stop changing. The model bounds how many refusals for the plan come
+in a row so that a path dialling only the relay ends and its liveness is
+judged. The properties are in `src/presence.rs`.
 
 ## Family and deliveries
 
@@ -309,9 +304,8 @@ model judges it by, over the same stores and cores:
   and link fall quiet becoming current;
 - the lifecycle's exit only at a turn end or a drain deadline, and the exit
   cause on the journal's last step;
-- presence changing only on a concluded attempt on the preferred route,
-  Away only on payment refusal, at most one attempt in flight per host and
-  route, and hosts on a working link reading each other online once the
+- presence from links: a host reads online exactly while a link of its
+  own is up, and hosts on a working link read each other online once the
   world rests;
 - an accepted prompt keeping its row on its host.
 
@@ -339,14 +333,8 @@ observe them:
 - the lifecycle's "a one-shot child runs a queued follow-up before exiting"
   and "a message after the exit decision resumes": both need a parent and
   its one-shot child;
-- presence's "offline after failed calls until a channel opens": no call in
-  the net waits for a channel, since a call is carried whenever its link is
-  up;
-- presence's "no flap while another route carries traffic": each host
-  reaches the other by one route, their link, with no relay or peer to
-  claim another;
-- presence's "a refused route stops carrying": no forwarder in the net
-  refuses a host's packets;
+- presence's "a claimed host is dialled": each host reaches the other by
+  one route, their link, with no relay or peer to claim another;
 - every promise of the family model, which needs a parent and a child;
 - every promise of the supervisor, which is outside the net.
 
@@ -377,7 +365,7 @@ catch, not a verdict the model gives.
 | Replication | 2 keys, cap 1, revisions up to 4, 2 generations, 2 in flight, 1 loss in a row, the opening replayed once | 157,789 | not measured | 50 s | none yet at these bounds (about 233 s projected); at 81,268 states, before the resumed link: 87, 102, 72, 103, 50 and 101 s | 480 s | 3 keys, cap 2, revisions up to 5, 3 in flight | 1,062 s (6,424,651 states, load 45 falling to 16) |
 | Single daemon, and its peer | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag; the peer: 2 frames, 1 checkpoint, 1 crash, power loss or reboot, 1 resumed link, 1 replay, its pin removed | 207,594 and 50,633 | 51 s and 16 s | 74 s and 21 s | 81, 161, 161, 77, 113 and 135 s for the journal; none yet for the peer (about 100 s projected) | 540 s for both | 2 crashes, power losses or reboots, 1 refused commit; the peer around the CI bounds' journal and subscriber | 557 s (2,018,569 states), load about 30; the peer past 4,000 s (not finished at 12 threads, load about 55) |
 | Family and deliveries | 1 turn end, 1 link down, 1 crash, 1 wait | 219,380 | 23 s | 47 s | 178 and 128 s (about 191 s projected); at 396,826 states with the parent's spontaneous exit: 161, 299, 222, 313, 310 and 155 s (the first at 391,552 states, before the first listing predated the parent) | 420 s | the parent's and the child's spontaneous exits, 2 links down, 2 waits | 757 s |
-| Presence and routing | 3 links or claims up, 2 down, 1 refused or timed-out attempt or call finding no channel, 1 call opening its own channel, 2 plan changes, each heard by this daemon after the relay enforces it, 1 refusal for the plan, of a channel or of the host's packets, before anything else happens | 900,130 | not measured | 51 s | none yet at these bounds (about 238 s projected); at 1,040,570 states, before the relay refused packets: 289, 288, 120, 290 and 287 s (339.9 s at 1,233,958 states with 2 refusals for the plan in a row) | 480 s | 3 failures, 2 refusals for the plan in a row, the relay refusing for no route | 140 s (4,352,714 states, the Mac busy at load 18 to 56) |
+| Presence and routing | 4 links or claims up, 3 down, 3 failed dials or refusals for no route, 2 plan changes, each heard by this daemon after the relay enforces it, 2 refusals for the plan in a row | 50,510 | 0.2 s | 0.2 s | none yet | 30 s | 5 up, 4 down, 3 plan changes | 0.4 s (216,602 states) |
 | Agent lifecycle, one-shot child and parentless agent | 3 daemon connections, 3 inputs, 2 messages, 2 asks, 1 unasked provider exit, 2 stops or kills | 1,296,718 and 71,250 | 9 s | 18 s | 45, 28, 44, 29, 41 and 45 s for both | 120 s each | 4 connections, 3 messages, 2 unasked exits | 81 s |
 | Supervisor update, both platforms' swaps | 2 releases, 2 supervisor crashes, 2 daemon crashes, 1 failed start, 5 timers firing, 1 `amux update` | 5,819,060 and 4,850,638 | 7 s | 8 s | 17, 27, 25, 27, 27 and 28 s for both | 60 s each | 3 releases, 2 failed starts, 6 timers firing | 124 s |
 | One open chat | 2 writes, 1 lag, 1 reset, 2 pages over a three-item opening, a tail of 2, pages of 1 | 1,217,819 | 10 s | 24 s | 51, 109, 116, 105, 105 and 107 s | 240 s | 3 writes | 343 s |

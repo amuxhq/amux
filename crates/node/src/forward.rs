@@ -259,21 +259,13 @@ impl ProfileRuntime {
                 host,
                 name: self.host_name(host),
             }),
-            // The core decides what a call finding no channel says of the
-            // host: one listed as reachable that takes no call reads
-            // offline until a channel to it opens again, which is what
-            // releases sends held for the host.
-            Ok(Err(error)) => {
-                edge.calls_failed(host, crate::driver::core_error(&error));
-                Err(not_sent())
-            }
+            // A channel that failed on its link closed the link already;
+            // one that found none in time closes the host's links now. The
+            // host reads offline once none is up, and a link of its own
+            // coming up again is what releases sends held for it.
+            Ok(Err(_)) => Err(not_sent()),
             Err(_) => {
-                edge.calls_failed(
-                    host,
-                    daemon_core::payload::ChannelError::Handshake(
-                        "no channel opened within a call's patience".to_owned(),
-                    ),
-                );
+                edge.calls_timed_out(host);
                 Err(not_sent())
             }
         }

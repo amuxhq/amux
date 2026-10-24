@@ -433,7 +433,8 @@ impl Daemon {
         self.routing.catalogue.replacing.remove(&host);
     }
 
-    /// The mark came off: a trusted host's channels open again at once.
+    /// The mark came off: a trusted host is dialled and its sources open
+    /// again at once.
     fn revocation_cleared(&mut self, host: HostId, out: &mut Vec<Output>) {
         self.touched.host_set = true;
         if self.sources.trusts(host) {
@@ -442,13 +443,12 @@ impl Daemon {
         }
     }
 
-    /// Whether the core asks for no attempt on `host`: one this profile
-    /// does not trust, or one that said it no longer trusts this host,
-    /// while no channel on another route answers for it. Pairing again
-    /// opens one of its own.
-    pub(crate) fn attempt_barred(&self, host: HostId, answering: bool) -> bool {
+    /// Whether the core asks for no dial to `host`: one this profile does
+    /// not trust, or one that said it no longer trusts this host. Pairing
+    /// again opens a link of its own.
+    pub(crate) fn dial_barred(&self, host: HostId) -> bool {
         (self.sources.knows_trust() && !self.sources.trusts(host))
-            || (self.routing.catalogue.revoked(host) && !answering)
+            || self.routing.catalogue.revoked(host)
     }
 }
 

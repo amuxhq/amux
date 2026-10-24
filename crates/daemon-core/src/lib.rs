@@ -59,7 +59,7 @@ pub use io::{
 pub use links::LinkRegistry;
 pub use notifications::Notifications;
 pub use pairing::PairingState;
-pub use presence::{HostView, Presence, PresenceState, Route, Tried};
+pub use presence::{HostView, Presence, PresenceState, Route};
 pub use redact::Redactor;
 pub use retention::{Retain, Retained};
 pub use serve::Answers;
@@ -303,19 +303,9 @@ impl Daemon {
                 class,
                 pin,
             } => self.want_channel(link, peer, class, pin, out),
-            Input::ChannelOpened { channel, .. } => self.channel_opened(channel, out),
-            Input::ChannelClosed { channel, reason } => self.channel_closed(channel, &reason, out),
-            Input::Timer {
-                id: TimerId::Retry(host),
-            } => self.retry_fired(host, out),
-            Input::AttemptConcluded { host, route, tried } => {
-                self.attempt_concluded(host, route, tried, out)
-            }
+            Input::ChannelOpened { channel, .. } => self.channel_opened(channel),
+            Input::ChannelClosed { channel, .. } => self.channel_closed(channel),
             Input::PlanChanged => self.plan_changed(out),
-            Input::CallsFailed { host, error } => self.calls_failed(host, &error, out),
-            Input::RouteFailed { host, route, error } => {
-                self.route_failed(host, route, &error, out)
-            }
             Input::TryAgain { host } => {
                 self.try_again(host, out);
                 self.sources_try_again(host, out);
@@ -325,7 +315,7 @@ impl Daemon {
             Input::Policy(policy) => self.set_policy(policy, out),
             Input::HostForgotten { host } => {
                 self.forget_addresses(host);
-                self.forget_host(host, out)
+                self.forget_host(host)
             }
             Input::Discovered { found } => self.discovered(found, out),
             Input::PairingOpened { session, opened } => self.pairing_opened(session, opened, out),
@@ -352,7 +342,6 @@ impl Daemon {
     /// boundaries the step crossed: each costs constant time per row the
     /// step touched and never scans the block.
     pub fn check_step_invariants(&self) -> Result<(), Violation> {
-        self.check_presence()?;
         for page in &self.touched.paged {
             let PageJoined {
                 agent,
@@ -657,7 +646,7 @@ struct Touched {
     /// The generation an own stream opened under, and the highest one
     /// opened under before it.
     opened_under: Option<(u64, u64)>,
-    /// Each host whose routes, attempts or presence the step moved.
+    /// Each host whose routes or presence the step moved.
     hosts: Vec<HostId>,
     /// Something a host set entry is made of moved.
     host_set: bool,
@@ -699,14 +688,11 @@ impl Touched {
     }
 }
 
-/// Links, the routes they make, and the attempts the core asked for in
-/// flight on them.
+/// Links and the routes they make.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutingState {
     links: LinkRegistry,
     catalogue: catalogue::Catalogue,
-    /// Each attempt under way, by host and route, counted.
-    attempts: std::collections::BTreeMap<(HostId, Route), u32>,
     /// The addresses each trusted host last listed for itself, each with
     /// where it came from: the trust file's, until the host says them
     /// again.

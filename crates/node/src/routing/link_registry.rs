@@ -211,7 +211,7 @@ pub(crate) enum LinkCloseRequest {
     PeerRevoked,
     /// A call could not open a channel on the link while it stayed up: it
     /// closes as a dead connection would, and the host reads offline until
-    /// a channel opens on a link that replaces it.
+    /// a link that replaces it comes up.
     CallsFailed,
 }
 
@@ -521,8 +521,14 @@ impl LinkRegistry {
         host_id: HostId,
         request: LinkCloseRequest,
     ) -> Vec<LinkId> {
-        self.close_where(|writer| writer.host.id == host_id, request)
+        self.close_where(|_, writer| writer.host.id == host_id, request)
             .await
+    }
+
+    /// Requests closure of `link`, for `request`, and waits until it is
+    /// gone from the registry.
+    pub(crate) async fn close_link(&self, link: LinkId, request: LinkCloseRequest) {
+        self.close_where(|id, _| *id == link, request).await;
     }
 
     /// Closes every link to `host` carried through `through`, whose
@@ -542,7 +548,7 @@ impl LinkRegistry {
             .insert(host, reason);
         let _ = self.refusals.send((host, reason));
         self.close_where(
-            |writer| {
+            |_, writer| {
                 writer.host.id == host
                     && writer
                         .native_carrier
@@ -576,7 +582,7 @@ impl LinkRegistry {
 
     async fn close_where(
         &self,
-        closes: impl Fn(&LinkWriter) -> bool,
+        closes: impl Fn(&LinkId, &LinkWriter) -> bool,
         request: LinkCloseRequest,
     ) -> Vec<LinkId> {
         let closing = {
@@ -584,7 +590,7 @@ impl LinkRegistry {
             state
                 .writers
                 .iter()
-                .filter(|(_, writer)| closes(writer))
+                .filter(|(link, writer)| closes(link, writer))
                 .map(|(link, writer)| {
                     let _ = writer.close_tx.try_send(request);
                     (*link, writer.closed.clone())

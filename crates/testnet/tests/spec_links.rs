@@ -198,11 +198,9 @@ async fn route_relay_signing_out_closes_the_links_the_relay_carried_until_signin
     .await;
     streams_live(&net, &["laptop"], "worker", said).await;
 
-    door(&net, "laptop")
+    admin(&net, "laptop")
         .await
-        .logout_profile(wire::ProfileRequest {
-            profile_id: profile(&net, "laptop"),
-        })
+        .sign_out(wire::Empty {})
         .await
         .unwrap();
     row_until(
@@ -266,11 +264,9 @@ async fn route_lan_signing_out_keeps_the_direct_link_and_the_session() {
     net.sign_in("laptop", "ada").await.unwrap();
     let mut fleet = net.observe_inventory("laptop").await.unwrap();
 
-    door(&net, "laptop")
+    admin(&net, "laptop")
         .await
-        .logout_profile(wire::ProfileRequest {
-            profile_id: profile(&net, "laptop"),
-        })
+        .sign_out(wire::Empty {})
         .await
         .unwrap();
     row_until(
@@ -774,13 +770,12 @@ async fn row_until(
         .unwrap_or_else(|stuck| panic!("{what}: {stuck}"));
 }
 
-/// `near` trusts `far` as an SSH pairing commits it, through its front
-/// door, with the target and profile it reaches `far` by.
+/// `near` trusts `far` as an SSH pairing commits it, through its
+/// profile's socket, with the target and profile it reaches `far` by.
 async fn trust_over_ssh(net: &Net, near: &str, far: &str) {
-    door(net, near)
+    admin(net, near)
         .await
         .trust_ssh_peer(wire::TrustSshPeerRequest {
-            profile_id: profile(net, near),
             peer: Some(wire::PairingIdentity {
                 host_id: host_id(net, far).as_bytes().to_vec(),
                 pubkey: edge(net, far).public_key().to_vec(),

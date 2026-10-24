@@ -433,32 +433,30 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                 pin,
                 r#for,
             } => {
-                let door = connect::profiles(connect::front_door(&config).await?);
-                let selected = connect::select(&mut door.clone(), profile).await?;
+                let selected = connect::profile(&config, profile).await?;
+                let admin = connect::admin_of(&selected).await?;
                 if cancel {
-                    pairing::cancel(door, &selected).await
+                    pairing::cancel(admin).await
                 } else if let (Some(pin), Some(ttl)) = (pin, r#for) {
-                    pairing::demo(door, &selected, pin, ttl).await
+                    pairing::demo(admin, pin, ttl).await
                 } else if let Some(link) = link {
-                    pairing::pair_with_link(door, &selected, &link).await
+                    pairing::pair_with_link(admin, &link).await
                 } else if let Some(target) = target {
                     let mut client = connect::client_of(&selected).await?;
                     let target = pairing::Target::parse(&target)?;
-                    pairing::pair(door, &mut client, &selected, target).await
+                    pairing::pair(admin, &mut client, &selected, target).await
                 } else {
-                    pairing::wait(door, &selected, qr, print_link).await
+                    pairing::wait(admin, qr, print_link).await
                 }
             }
             Command::Peers => {
-                let door = connect::profiles(connect::front_door(&config).await?);
-                let selected = connect::select(&mut door.clone(), profile).await?;
+                let selected = connect::profile(&config, profile).await?;
                 let mut client = connect::client_of(&selected).await?;
-                pairing::peers(door, &mut client, &selected).await
+                pairing::peers(connect::admin_of(&selected).await?, &mut client).await
             }
             Command::Unpair { peer, force } => {
-                let door = connect::profiles(connect::front_door(&config).await?);
-                let selected = connect::select(&mut door.clone(), profile).await?;
-                pairing::unpair(door, &selected, &peer, force).await
+                let selected = connect::profile(&config, profile).await?;
+                pairing::unpair(connect::admin_of(&selected).await?, &peer, force).await
             }
             Command::Login { cloud_url } => {
                 let door = connect::profiles(connect::front_door(&config).await?);
@@ -471,22 +469,16 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                 pairing::login(door, selected.as_ref(), &cloud_url).await
             }
             Command::Logout => {
-                let door = connect::profiles(connect::front_door(&config).await?);
-                let selected = connect::select(&mut door.clone(), profile).await?;
-                pairing::logout(door, &selected).await
+                let selected = connect::profile(&config, profile).await?;
+                pairing::logout(connect::admin_of(&selected).await?, &selected).await
             }
             #[cfg(unix)]
             Command::PairRecv => {
-                let door = connect::profiles(connect::front_door(&config).await?);
-                let selected = connect::select(&mut door.clone(), profile).await?;
-                pairing::pair_recv(door, &selected).await
+                let selected = connect::profile(&config, profile).await?;
+                pairing::pair_recv(connect::admin_of(&selected).await?, &selected).await
             }
             #[cfg(unix)]
-            Command::Relay => {
-                let door = connect::profiles(connect::front_door(&config).await?);
-                let selected = connect::select(&mut door.clone(), profile).await?;
-                pairing::relay(&selected).await
-            }
+            Command::Relay => pairing::relay(&connect::profile(&config, profile).await?).await,
             #[cfg(not(unix))]
             Command::PairRecv | Command::Relay => {
                 anyhow::bail!("pairing over SSH needs a Unix host")

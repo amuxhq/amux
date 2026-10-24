@@ -159,13 +159,11 @@ async fn converse(app: &AppRuntime, net: &Net) {
 
 /// Opens pairing mode on the desk: the PIN it shows and where it listens.
 async fn pairing_pin(net: &Net) -> (String, Vec<String>) {
-    let desk = net.host("desk").unwrap();
     let started = net
-        .front_door("desk")
+        .admin("desk")
         .await
         .unwrap()
         .start_pairing(StartPairingRequest {
-            profile_id: desk.profile.as_bytes().to_vec(),
             method: Some(start_pairing_request::Method::Pin(Empty {})),
             ttl_seconds: None,
         })
@@ -248,7 +246,7 @@ async fn a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows() {
         embedded.host_id(other).unwrap(),
         embedded.host_id(phone).unwrap()
     );
-    assert!(embedded.roster(other).await.unwrap().peers.is_empty());
+    assert!(embedded.roster(other).unwrap().peers.is_empty());
     // Two profiles of one installation pair like any two hosts; each
     // trusts the other and nobody else.
     let link = embedded.offer_pairing(other).await.unwrap();
@@ -497,10 +495,7 @@ async fn each_account_is_a_profile_and_only_the_resumed_one_holds_a_relay_link()
     relay_link(&embedded, bob, RelayLink::Connected).await;
 
     // Both accounts' relay links stay up together.
-    assert_eq!(
-        embedded.account(ada).unwrap().relay,
-        RelayLink::Connected
-    );
+    assert_eq!(embedded.account(ada).unwrap().relay, RelayLink::Connected);
 
     // Signing out keeps the profile tied to its account, and signing back
     // in finds it again.

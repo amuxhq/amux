@@ -713,23 +713,20 @@ async fn a_dump_cannot_compute_the_pin_of_a_window_opened_after_it() {
     use daemon_core::payload::{ClientRequest, Response};
     use daemon_core::{CallId, Checkpoint, Daemon, Input, Output, Recorded, StepBudget};
     use tonic::Request;
-    use wire::profile_service_server::ProfileService as _;
-    use wire::{Empty, ProfileRequest, StartPairingRequest, start_pairing_request};
+    use wire::profile_admin_service_server::ProfileAdminService as _;
+    use wire::{Empty, StartPairingRequest, start_pairing_request};
 
     let install = Install::new();
     let daemon = install
         .start("boot-1", support::synthetic::quiet_launch())
         .await;
     let runtime = runtime(&daemon, &install);
-    let door = daemon.front_door();
-    let profile = install.profile.as_bytes().to_vec();
+    let admin = daemon.profile_admin(install.profile);
     let open = || {
-        let door = door.clone();
-        let profile = profile.clone();
+        let admin = admin.clone();
         async move {
-            let window = door
+            let window = admin
                 .start_pairing(Request::new(StartPairingRequest {
-                    profile_id: profile,
                     method: Some(start_pairing_request::Method::Pin(Empty {})),
                     ttl_seconds: None,
                 }))
@@ -754,11 +751,7 @@ async fn a_dump_cannot_compute_the_pin_of_a_window_opened_after_it() {
         })
         .await
         .unwrap();
-    door.cancel_pairing(Request::new(ProfileRequest {
-        profile_id: profile.clone(),
-    }))
-    .await
-    .unwrap();
+    admin.cancel_pairing(Request::new(Empty {})).await.unwrap();
     let second = open().await;
 
     // What the bundle can compute: its checkpoint, every randomness its

@@ -534,13 +534,10 @@ async fn the_own_entry_carries_this_profiles_sign_in() {
         .await
         .unwrap();
 
-    let profile = net.host("laptop").unwrap().profile;
-    net.front_door("laptop")
+    net.admin("laptop")
         .await
         .unwrap()
-        .logout_profile(wire::ProfileRequest {
-            profile_id: profile.as_bytes().to_vec(),
-        })
+        .sign_out(wire::Empty {})
         .await
         .unwrap();
     fleet

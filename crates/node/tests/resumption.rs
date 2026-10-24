@@ -186,7 +186,6 @@ async fn a_host_resumed_with_a_ticket_for_a_key_no_longer_pinned_is_refused_as_r
     linked
         .desk_edge()
         .trust_ssh_peer(wire::TrustSshPeerRequest {
-            profile_id: Vec::new(),
             peer: Some(wire::PairingIdentity {
                 host_id: laptop.as_bytes().to_vec(),
                 pubkey: vec![7; 32],

@@ -6,8 +6,9 @@ import "amux/v1/pairing.proto";
 import "amux/v1/records.proto";
 import "amux/v1/service.proto";
 
-// The installation's front door: its profiles, each profile's pairing and
-// peers, and the installation itself.
+// The installation's front door: its profiles and the installation
+// itself. Each profile's own account connection, pairing and peers are
+// `ProfileAdminService`, on that profile's socket.
 
 // The installation's front door: local Unix socket and in-process only.
 // Calls are not retried by any client; a mutation that loses its reply is
@@ -17,22 +18,31 @@ service ProfileService {
   // Snapshot, CaughtUp, then ordered events; ABORTED requires a fresh watch.
   rpc WatchProfiles(Empty) returns (stream ProfileEvent);
   rpc CreateProfile(CreateProfileRequest) returns (ProfileInfo);
+  // Names a profile, or lets the installation pick or create one.
   rpc BindProfile(BindProfileRequest) returns (ProfileInfo);
-  rpc LogoutProfile(ProfileRequest) returns (ProfileInfo);
-  rpc PauseProfile(ProfileRequest) returns (ProfileInfo);
-  rpc ResumeProfile(ProfileRequest) returns (ProfileInfo);
   rpc RenameProfile(RenameProfileRequest) returns (ProfileInfo);
   rpc DeleteProfile(DeleteProfileRequest) returns (Empty);
+}
+
+// One profile's administration, served on its client socket beside
+// `ClientService` and never on an agent's tools socket or a link: its
+// account connection, its pairing windows, pairings it begins, and the
+// hosts it trusts. The socket names the profile. Not retried, as the front
+// door.
+service ProfileAdminService {
+  rpc SignOut(Empty) returns (ProfileInfo);
+  rpc Pause(Empty) returns (ProfileInfo);
+  rpc Resume(Empty) returns (ProfileInfo);
   rpc StartPairing(StartPairingRequest) returns (PairingWindow);
-  rpc GetPairingStatus(ProfileRequest) returns (PairingStatus);
-  rpc CancelPairing(ProfileRequest) returns (Empty);
+  rpc GetPairingStatus(Empty) returns (PairingStatus);
+  rpc CancelPairing(Empty) returns (Empty);
   rpc BeginPair(BeginPairRequest) returns (PendingPair);
   rpc ConfirmPair(PendingPairRequest) returns (PeerEntry);
   rpc AbandonPair(PendingPairRequest) returns (Empty);
-  rpc GetDeviceIdentity(ProfileRequest) returns (DeviceIdentity);
+  rpc GetDeviceIdentity(Empty) returns (DeviceIdentity);
   rpc TrustSshPeer(TrustSshPeerRequest) returns (Empty);
-  rpc ListPeers(ProfileRequest) returns (ListPeersResponse);
-  rpc GetPeer(GetPeerRequest) returns (PeerEntry);
+  rpc ListPeers(Empty) returns (ListPeersResponse);
+  rpc GetPeer(HostRef) returns (PeerEntry);
   rpc Unpair(UnpairRequest) returns (PeerEntry);
 }
 
@@ -100,7 +110,6 @@ message ProfileEvent {
   }
 }
 
-message ProfileRequest { bytes profile_id = 1; }
 message CreateProfileRequest { optional string label = 1; }
 
 message BindProfileRequest {
@@ -115,7 +124,7 @@ message BindProfileRequest {
 
 message RenameProfileRequest {
   bytes profile_id = 1;
-  optional string override_name = 3;
+  optional string override_name = 2;
 }
 
 message DeleteProfileRequest {
@@ -123,19 +132,18 @@ message DeleteProfileRequest {
 }
 
 message StartPairingRequest {
-  bytes profile_id = 1;
   oneof method {
     // A one-shot PIN the daemon generates.
-    Empty pin = 2;
+    Empty pin = 1;
     // A one-shot secret for a QR code.
-    Empty qr = 3;
+    Empty qr = 2;
     // An operator-chosen reusable PIN for unattended demos: the window is
     // neither consumed by success nor locked out by failures.
-    string demo_pin = 4;
+    string demo_pin = 3;
   }
   // How long the window stays open; absent is the daemon's default for
   // the method.
-  optional uint64 ttl_seconds = 5;
+  optional uint64 ttl_seconds = 4;
 }
 
 message PairingWindow {
@@ -156,13 +164,12 @@ message PairingStatus {
 }
 
 message BeginPairRequest {
-  bytes profile_id = 1;
-  bytes host_id = 2;
+  bytes host_id = 1;
   oneof secret {
-    string pin = 3;
-    bytes qr_secret = 4;
+    string pin = 2;
+    bytes qr_secret = 3;
   }
-  repeated string addrs = 5;
+  repeated string addrs = 4;
 }
 
 message PendingPair {
@@ -172,27 +179,19 @@ message PendingPair {
 }
 
 message PendingPairRequest {
-  bytes profile_id = 1;
-  bytes token = 2;
+  bytes token = 1;
 }
 
 // SSH has already authenticated its peer outside the secret-based pairing
 // protocol, so its identity commit is a separate, SSH-only operation.
 message TrustSshPeerRequest {
-  bytes profile_id = 1;
-  PairingIdentity peer = 2;
-  SshTarget ssh_target = 3;
-}
-
-message GetPeerRequest {
-  bytes profile_id = 1;
-  HostRef peer = 2;
+  PairingIdentity peer = 1;
+  SshTarget ssh_target = 2;
 }
 
 message UnpairRequest {
-  bytes profile_id = 1;
-  HostRef peer = 2;
-  string reason = 3;
+  HostRef peer = 1;
+  string reason = 2;
 }
 
 message InstallationInfo { string version = 1; }

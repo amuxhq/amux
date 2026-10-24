@@ -19,7 +19,8 @@ the relay server), and `crates/node/src/grpc.rs`,
 services). The protobuf source is in
 [`crates/wire/proto/amux/v1/`](../crates/wire/proto/amux/v1/): link control in
 [`link.proto`](../crates/wire/proto/amux/v1/link.proto), pairing in
-[`pairing.proto`](../crates/wire/proto/amux/v1/pairing.proto), the front door in
+[`pairing.proto`](../crates/wire/proto/amux/v1/pairing.proto), the front door
+and each profile's administration in
 [`front_door.proto`](../crates/wire/proto/amux/v1/front_door.proto).
 
 ## The promises, as properties
@@ -119,10 +120,10 @@ account.
 
 Trusted peers call the agent operations of `PeerService`
 ([chapter 7](#chapter-7-the-front-door-and-the-amuxv1-services)).
-Installation lifecycle, profile lifecycle, trust administration and
-pairing-window administration live on the installation front door, or on an
-in-process owner handle where the daemon is embedded; they are never peer
-calls.
+Installation and profile lifecycle live on the installation front door;
+a profile's trust and pairing-window administration live on that profile's
+own socket; where the daemon is embedded, the app calls the same in
+process. None of them is ever a peer call.
 
 ## Chapter 2: Pairing
 
@@ -177,8 +178,8 @@ names no pending pairing reads as every other secret failure. `AbandonPair` send
 and waits for `PairingAbandoned`, which the responder sends after releasing
 the attempt. Abandoning leaves existing trust unchanged and consumes no guess,
 and a token left to expire grants no trust. These calls, with
-`GetDeviceIdentity`, are served only by `ProfileService` on the front door,
-never by a profile socket or a peer stream.
+`GetDeviceIdentity`, are served only by `ProfileAdminService` on the
+profile's own socket, never on an agent's tools socket or a peer stream.
 
 ## Chapter 3: Presence
 
@@ -661,7 +662,7 @@ never does, because its directory and journal are its whole interface (see
 | Endpoint | Services | Who dials it |
 | --- | --- | --- |
 | The installation front door | `ProfileService`, `InstallationService` | the CLI and the terminal client, to find profiles and manage them |
-| A profile's client socket, `<data_dir>/profiles/<id>/sock` | `ClientService` | the terminal client and the CLI, at the path the front door reports as `ProfileInfo.socket_path` |
+| A profile's client socket, `<data_dir>/profiles/<id>/sock` | `ClientService`, `ProfileAdminService` | the terminal client and the CLI, at the path the front door reports as `ProfileInfo.socket_path` |
 | An agent's `agents/<id>/tools.sock` | `ClientService`, with that agent as the caller | the agent's MCP tool server, and nothing else |
 | A profile's `link.sock` | a link, not a service | `amux relay`, carrying an SSH link |
 | A link stream whose handshake presented a pinned key | `PeerService` | paired daemons, including a phone's embedded daemon |
@@ -682,9 +683,9 @@ machine dials `pty.sock` directly for the raw screen; neither crosses a link,
 and a remote host has no raw terminal attach.
 
 On a phone the same daemon runs in the app's process (`crates/app-embedded`).
-It serves no sockets: the app calls the profile `Registry`, `FrontDoor` for
-pairing and `ClientApi` in process,
-and it is an ordinary peer to the desktops it pairs with.
+It serves no sockets: the app calls the profile `Registry`, each profile's
+`Edge` for its pairing and peers, and `ClientApi` in process, and it is an
+ordinary peer to the desktops it pairs with.
 
 A client that finds nothing on the front door does not start a daemon itself.
 Under a supervisor (`supervisor: on`) it starts `amux supervise` if none is
@@ -693,25 +694,30 @@ service manager and waits for it.
 
 ### The front door
 
-`ProfileService` lists, watches, creates, binds, signs out, pauses, resumes,
-renames and deletes profiles; opens, reports and cancels pairing windows
-(`StartPairing`, `GetPairingStatus`, `CancelPairing`); runs the initiator's
-side of pairing (`BeginPair`, `ConfirmPair`, `AbandonPair`); reports this
-device's identity; records a peer an SSH exchange authenticated
-(`TrustSshPeer`); and lists, describes and unpairs peers. A call about one
-profile names it by id, and profile and host ids travel as their 16 bytes; the
-CLI reads and prints their text form. `WatchProfiles` sends every profile,
-`CaughtUp`, then each change in the order it happened; a watcher that falls
-behind is ended with `ABORTED` and watches again. `InstallationService`
-answers `GetInfo` (the daemon's version) and `Shutdown`. None of this is
-reachable from a link. The implementation is
-`crates/node/src/front_door.rs`.
+`ProfileService` lists, watches, creates, binds, renames and deletes
+profiles. A bind names its profile or lets the installation pick the one
+already bound to that account, else one that holds nothing, else a new one.
+A call about one profile names it by id, and profile and host ids travel as
+their 16 bytes; the CLI reads and prints their text form. `WatchProfiles`
+sends every profile, `CaughtUp`, then each change in the order it happened;
+a watcher that falls behind is ended with `ABORTED` and watches again.
+`InstallationService` answers `GetInfo` (the daemon's version) and
+`Shutdown`. The rules behind these calls are `node::Registry`'s; the front
+door (`crates/node/src/front_door.rs`) converts.
 
-No client retries a front-door call. A call whose reply is lost, which on a
+`ProfileAdminService`, on each profile's own socket, is that profile's
+administration, so none of its calls names a profile: it signs the profile
+out, pauses and resumes its relay link; opens, reports and cancels pairing
+windows (`StartPairing`, `GetPairingStatus`, `CancelPairing`); runs the
+initiator's side of pairing (`BeginPair`, `ConfirmPair`, `AbandonPair`);
+reports this device's identity; records a peer an SSH exchange
+authenticated (`TrustSshPeer`); and lists, describes and unpairs peers. The
+implementation is `crates/node/src/profile_admin.rs`.
+
+None of this is reachable from a link or from an agent's tools socket. No
+client retries one of these calls. A call whose reply is lost, which on a
 local socket means the daemon went away, fails, and the person runs the
-command again. Rename and delete carry the revision the caller read and
-refuse a profile that changed since, so a re-run cannot undo a change made
-meanwhile.
+command again.
 
 ### ClientService
 

@@ -1,6 +1,6 @@
 //! The front door: the installation's own socket, where a client lists the
-//! profiles, finds each one's client socket, pairs them with other hosts,
-//! signs them in to an account, and manages the installation.
+//! profiles, finds each one's client socket, creates, names, deletes and
+//! signs them in, and manages the installation.
 
 use std::pin::Pin;
 
@@ -12,20 +12,18 @@ use uuid::Uuid;
 use wire::installation_service_server::{InstallationService, InstallationServiceServer};
 use wire::profile_service_server::{ProfileService, ProfileServiceServer};
 use wire::{
-    BeginPairRequest, BindProfileRequest, CaughtUp, CreateProfileRequest, DeleteProfileRequest,
-    DeviceIdentity, Empty, ErrorCode, GetPeerRequest, InstallationInfo, Intent, ListPeersResponse,
-    ListProfilesResponse, PairingStatus, PairingWindow, PeerEntry, PendingPair, PendingPairRequest,
-    ProfileInfo, ProfileRequest, RenameProfileRequest, StartPairingRequest, TrustSshPeerRequest,
-    UnpairRequest, profile_event,
+    BindProfileRequest, CaughtUp, CreateProfileRequest, DeleteProfileRequest, Empty, ErrorCode,
+    InstallationInfo, Intent, ListProfilesResponse, ProfileInfo, RenameProfileRequest,
+    profile_event,
 };
 
 use crate::Tier;
-use crate::edge::{Binding, Edge, Observed, RelayCarrier};
+use crate::edge::{Binding, Observed, RelayCarrier};
 use crate::grpc::{self, status, wire_error};
 use crate::registry::{ProfileEvent, ProfileRefusal, ProfileState, Registry, SignIn};
 
 /// A profile as the front door describes it.
-fn info(state: ProfileState) -> ProfileInfo {
+pub(crate) fn info(state: ProfileState) -> ProfileInfo {
     let (tier, relay_carrier) = match &state.relay {
         Observed::Connected { tier, carrier } => (
             match tier {
@@ -88,11 +86,6 @@ impl FrontDoor {
     pub(crate) fn new(registry: Registry) -> FrontDoor {
         FrontDoor { registry }
     }
-
-    /// A hosted profile's network edge, named by its id's bytes.
-    fn edge(&self, id: &[u8]) -> Result<std::sync::Arc<Edge>, Status> {
-        Ok(self.registry.edge(profile_id(id)?)?)
-    }
 }
 
 impl From<ProfileRefusal> for Status {
@@ -108,17 +101,6 @@ pub(crate) fn failed(code: ErrorCode, message: impl Into<String>) -> Status {
 fn profile_id(bytes: &[u8]) -> Result<Uuid, Status> {
     Uuid::from_slice(bytes)
         .map_err(|_| failed(ErrorCode::InvalidArgument, "a profile id is 16 bytes"))
-}
-
-/// A pairing's token, which `BeginPair` handed out: never empty.
-fn token(request: &PendingPairRequest) -> Result<&[u8], Status> {
-    if request.token.is_empty() {
-        return Err(failed(
-            ErrorCode::InvalidArgument,
-            "name the pairing by the token BeginPair answered",
-        ));
-    }
-    Ok(&request.token)
 }
 
 type Events = Pin<Box<dyn Stream<Item = Result<wire::ProfileEvent, Status>> + Send>>;
@@ -212,138 +194,6 @@ impl ProfileService for FrontDoor {
             adopt: request.adopt_non_pristine,
         };
         Ok(Response::new(info(self.registry.bind(sign_in).await?)))
-    }
-
-    async fn logout_profile(
-        &self,
-        request: Request<ProfileRequest>,
-    ) -> Result<Response<ProfileInfo>, Status> {
-        let id = profile_id(&request.into_inner().profile_id)?;
-        Ok(Response::new(info(self.registry.sign_out(id).await?)))
-    }
-
-    async fn pause_profile(
-        &self,
-        request: Request<ProfileRequest>,
-    ) -> Result<Response<ProfileInfo>, Status> {
-        let id = profile_id(&request.into_inner().profile_id)?;
-        Ok(Response::new(info(self.registry.set_paused(id, true).await?)))
-    }
-
-    async fn resume_profile(
-        &self,
-        request: Request<ProfileRequest>,
-    ) -> Result<Response<ProfileInfo>, Status> {
-        let id = profile_id(&request.into_inner().profile_id)?;
-        Ok(Response::new(info(
-            self.registry.set_paused(id, false).await?,
-        )))
-    }
-
-    async fn start_pairing(
-        &self,
-        request: Request<StartPairingRequest>,
-    ) -> Result<Response<PairingWindow>, Status> {
-        let request = request.into_inner();
-        let edge = self.edge(&request.profile_id)?;
-        Ok(Response::new(edge.start_pairing(request).await?))
-    }
-
-    async fn get_pairing_status(
-        &self,
-        request: Request<ProfileRequest>,
-    ) -> Result<Response<PairingStatus>, Status> {
-        let edge = self.edge(&request.into_inner().profile_id)?;
-        Ok(Response::new(PairingStatus {
-            active: edge.pairing_active(),
-            locked_out: edge.pairing_locked_out(),
-        }))
-    }
-
-    async fn cancel_pairing(
-        &self,
-        request: Request<ProfileRequest>,
-    ) -> Result<Response<Empty>, Status> {
-        let edge = self.edge(&request.into_inner().profile_id)?;
-        edge.cancel_pairing().await?;
-        Ok(Response::new(Empty {}))
-    }
-
-    async fn begin_pair(
-        &self,
-        request: Request<BeginPairRequest>,
-    ) -> Result<Response<PendingPair>, Status> {
-        let request = request.into_inner();
-        let edge = self.edge(&request.profile_id)?;
-        Ok(Response::new(edge.begin_pair(request).await?))
-    }
-
-    async fn confirm_pair(
-        &self,
-        request: Request<PendingPairRequest>,
-    ) -> Result<Response<PeerEntry>, Status> {
-        let request = request.into_inner();
-        let edge = self.edge(&request.profile_id)?;
-        Ok(Response::new(edge.confirm_pair(token(&request)?).await?))
-    }
-
-    async fn abandon_pair(
-        &self,
-        request: Request<PendingPairRequest>,
-    ) -> Result<Response<Empty>, Status> {
-        let request = request.into_inner();
-        let edge = self.edge(&request.profile_id)?;
-        edge.abandon_pair(token(&request)?).await?;
-        Ok(Response::new(Empty {}))
-    }
-
-    async fn get_device_identity(
-        &self,
-        request: Request<ProfileRequest>,
-    ) -> Result<Response<DeviceIdentity>, Status> {
-        let edge = self.edge(&request.into_inner().profile_id)?;
-        Ok(Response::new(edge.device_identity()))
-    }
-
-    async fn trust_ssh_peer(
-        &self,
-        request: Request<TrustSshPeerRequest>,
-    ) -> Result<Response<Empty>, Status> {
-        let request = request.into_inner();
-        let edge = self.edge(&request.profile_id)?;
-        edge.trust_ssh_peer(request).await?;
-        Ok(Response::new(Empty {}))
-    }
-
-    async fn list_peers(
-        &self,
-        request: Request<ProfileRequest>,
-    ) -> Result<Response<ListPeersResponse>, Status> {
-        let edge = self.edge(&request.into_inner().profile_id)?;
-        Ok(Response::new(ListPeersResponse {
-            peers: edge.list_peers()?,
-        }))
-    }
-
-    async fn get_peer(
-        &self,
-        request: Request<GetPeerRequest>,
-    ) -> Result<Response<PeerEntry>, Status> {
-        let request = request.into_inner();
-        let edge = self.edge(&request.profile_id)?;
-        let peer = request
-            .peer
-            .ok_or_else(|| failed(ErrorCode::InvalidArgument, "name the peer to read"))?;
-        Ok(Response::new(edge.peer_entry(peer)?))
-    }
-
-    async fn unpair(&self, request: Request<UnpairRequest>) -> Result<Response<PeerEntry>, Status> {
-        let request = request.into_inner();
-        let edge = self.edge(&request.profile_id)?;
-        let peer = request
-            .peer
-            .ok_or_else(|| failed(ErrorCode::InvalidArgument, "name the peer to unpair"))?;
-        Ok(Response::new(edge.unpair(peer, request.reason).await?))
     }
 }
 

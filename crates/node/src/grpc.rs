@@ -18,6 +18,7 @@ use tokio::task::JoinHandle;
 use tonic::{Code, Request, Response, Status};
 use uuid::Uuid;
 use wire::client_service_server::ClientService;
+use wire::profile_admin_service_server::ProfileAdminServiceServer;
 use wire::{
     Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, DiffRequest, DumpReport, DumpRequest,
     Empty, ErrorCode, FetchRequest, FetchResponse, GetBlobRequest, GetBlobResponse, GetRequest,
@@ -707,10 +708,15 @@ pub(crate) fn incoming(
     })
 }
 
-/// Serves the client service on a listener until the task is aborted,
+/// Serves the client service on a listener, with the profile's
+/// administration on the profile's own socket, until the task is aborted,
 /// which drops the listener and removes its socket, and closes every
 /// connection it accepted.
-pub(crate) fn serve_client(listener: LocalListener, api: ClientApi) -> JoinHandle<()> {
+pub(crate) fn serve_client(
+    listener: LocalListener,
+    api: ClientApi,
+    admin: Option<ProfileAdminServiceServer<crate::ProfileAdmin>>,
+) -> JoinHandle<()> {
     tokio::spawn(async move {
         // The signal never fires; asking for graceful shutdown at all is
         // what ties each accepted connection to this future. Without it a
@@ -719,6 +725,7 @@ pub(crate) fn serve_client(listener: LocalListener, api: ClientApi) -> JoinHandl
         // socket, where a restarted runtime may already be listening.
         let served = tonic::transport::Server::builder()
             .add_service(wire::client_service_server(api))
+            .add_optional_service(admin)
             .serve_with_incoming_shutdown(incoming(listener), std::future::pending::<()>())
             .await;
         if let Err(error) = served {

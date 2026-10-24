@@ -270,6 +270,22 @@ pub async fn listens(path: &Path) -> bool {
     agent_dir::local_socket::connect(path).await.is_ok()
 }
 
+/// A gRPC channel to a local socket.
+pub async fn local_channel(path: &Path) -> tonic::transport::Channel {
+    let path = path.to_owned();
+    tonic::transport::Endpoint::from_static("http://amux.test")
+        .connect_with_connector(tower::service_fn(move |_| {
+            let path = path.clone();
+            async move {
+                agent_dir::local_socket::connect(&path)
+                    .await
+                    .map(hyper_util::rt::TokioIo::new)
+            }
+        }))
+        .await
+        .expect("the socket answers")
+}
+
 /// Kills every agent the runtime is running, so none outlives its test.
 pub async fn kill_all(runtime: &ProfileRuntime) {
     for id in runtime.live() {

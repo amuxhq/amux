@@ -424,6 +424,16 @@ async fn spawn_writes_spec_one_and_starts_the_agent_process() {
         listens(&dir.join(agent_dir::TOOLS_SOCK)).await,
         "the daemon listens on the agent's tools socket"
     );
+    // The tools socket is the agent's client surface and never its
+    // profile's administration: an agent cannot pair, unpair or sign its
+    // profile out.
+    let refused = wire::profile_admin_service_client::ProfileAdminServiceClient::new(
+        local_channel(&dir.join(agent_dir::TOOLS_SOCK)).await,
+    )
+    .list_peers(wire::Empty {})
+    .await
+    .expect_err("no administration on an agent's tools socket");
+    assert_eq!(refused.code(), tonic::Code::Unimplemented);
 
     let spec = spec(&dir, 1);
     assert_eq!(spec.agent_id, id.as_bytes().to_vec());

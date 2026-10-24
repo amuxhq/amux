@@ -10531,21 +10531,6 @@ impl ::prost::Name for ProfileEvent {
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ProfileRequest {
-    #[prost(bytes = "vec", tag = "1")]
-    pub profile_id: ::prost::alloc::vec::Vec<u8>,
-}
-impl ::prost::Name for ProfileRequest {
-    const NAME: &'static str = "ProfileRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ProfileRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ProfileRequest".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateProfileRequest {
     #[prost(string, optional, tag = "1")]
     pub label: ::core::option::Option<::prost::alloc::string::String>,
@@ -10589,7 +10574,7 @@ impl ::prost::Name for BindProfileRequest {
 pub struct RenameProfileRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub profile_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(string, optional, tag = "3")]
+    #[prost(string, optional, tag = "2")]
     pub override_name: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for RenameProfileRequest {
@@ -10619,13 +10604,11 @@ impl ::prost::Name for DeleteProfileRequest {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct StartPairingRequest {
-    #[prost(bytes = "vec", tag = "1")]
-    pub profile_id: ::prost::alloc::vec::Vec<u8>,
     /// How long the window stays open; absent is the daemon's default for
     /// the method.
-    #[prost(uint64, optional, tag = "5")]
+    #[prost(uint64, optional, tag = "4")]
     pub ttl_seconds: ::core::option::Option<u64>,
-    #[prost(oneof = "start_pairing_request::Method", tags = "2, 3, 4")]
+    #[prost(oneof = "start_pairing_request::Method", tags = "1, 2, 3")]
     pub method: ::core::option::Option<start_pairing_request::Method>,
 }
 /// Nested message and enum types in `StartPairingRequest`.
@@ -10633,14 +10616,14 @@ pub mod start_pairing_request {
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Method {
         /// A one-shot PIN the daemon generates.
-        #[prost(message, tag = "2")]
+        #[prost(message, tag = "1")]
         Pin(super::Empty),
         /// A one-shot secret for a QR code.
-        #[prost(message, tag = "3")]
+        #[prost(message, tag = "2")]
         Qr(super::Empty),
         /// An operator-chosen reusable PIN for unattended demos: the window is
         /// neither consumed by success nor locked out by failures.
-        #[prost(string, tag = "4")]
+        #[prost(string, tag = "3")]
         DemoPin(::prost::alloc::string::String),
     }
 }
@@ -10708,21 +10691,19 @@ impl ::prost::Name for PairingStatus {
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BeginPairRequest {
     #[prost(bytes = "vec", tag = "1")]
-    pub profile_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes = "vec", tag = "2")]
     pub host_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(string, repeated, tag = "5")]
+    #[prost(string, repeated, tag = "4")]
     pub addrs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(oneof = "begin_pair_request::Secret", tags = "3, 4")]
+    #[prost(oneof = "begin_pair_request::Secret", tags = "2, 3")]
     pub secret: ::core::option::Option<begin_pair_request::Secret>,
 }
 /// Nested message and enum types in `BeginPairRequest`.
 pub mod begin_pair_request {
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Secret {
-        #[prost(string, tag = "3")]
+        #[prost(string, tag = "2")]
         Pin(::prost::alloc::string::String),
-        #[prost(bytes, tag = "4")]
+        #[prost(bytes, tag = "3")]
         QrSecret(::prost::alloc::vec::Vec<u8>),
     }
 }
@@ -10758,8 +10739,6 @@ impl ::prost::Name for PendingPair {
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PendingPairRequest {
     #[prost(bytes = "vec", tag = "1")]
-    pub profile_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes = "vec", tag = "2")]
     pub token: ::prost::alloc::vec::Vec<u8>,
 }
 impl ::prost::Name for PendingPairRequest {
@@ -10776,11 +10755,9 @@ impl ::prost::Name for PendingPairRequest {
 /// protocol, so its identity commit is a separate, SSH-only operation.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct TrustSshPeerRequest {
-    #[prost(bytes = "vec", tag = "1")]
-    pub profile_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(message, optional, tag = "2")]
+    #[prost(message, optional, tag = "1")]
     pub peer: ::core::option::Option<PairingIdentity>,
-    #[prost(message, optional, tag = "3")]
+    #[prost(message, optional, tag = "2")]
     pub ssh_target: ::core::option::Option<SshTarget>,
 }
 impl ::prost::Name for TrustSshPeerRequest {
@@ -10794,29 +10771,10 @@ impl ::prost::Name for TrustSshPeerRequest {
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct GetPeerRequest {
-    #[prost(bytes = "vec", tag = "1")]
-    pub profile_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(message, optional, tag = "2")]
-    pub peer: ::core::option::Option<HostRef>,
-}
-impl ::prost::Name for GetPeerRequest {
-    const NAME: &'static str = "GetPeerRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.GetPeerRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.GetPeerRequest".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UnpairRequest {
-    #[prost(bytes = "vec", tag = "1")]
-    pub profile_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(message, optional, tag = "2")]
+    #[prost(message, optional, tag = "1")]
     pub peer: ::core::option::Option<HostRef>,
-    #[prost(string, tag = "3")]
+    #[prost(string, tag = "2")]
     pub reason: ::prost::alloc::string::String,
 }
 impl ::prost::Name for UnpairRequest {
@@ -11249,6 +11207,7 @@ pub mod profile_service_client {
                 .insert(GrpcMethod::new("amux.v1.ProfileService", "CreateProfile"));
             self.inner.unary(req, path, codec).await
         }
+        /// Names a profile, or lets the installation pick or create one.
         pub async fn bind_profile(
             &mut self,
             request: impl tonic::IntoRequest<super::BindProfileRequest>,
@@ -11268,69 +11227,6 @@ pub mod profile_service_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("amux.v1.ProfileService", "BindProfile"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn logout_profile(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::ProfileInfo>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileService/LogoutProfile",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileService", "LogoutProfile"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn pause_profile(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::ProfileInfo>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileService/PauseProfile",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileService", "PauseProfile"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn resume_profile(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::ProfileInfo>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileService/ResumeProfile",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileService", "ResumeProfile"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn rename_profile(
@@ -11375,240 +11271,6 @@ pub mod profile_service_client {
                 .insert(GrpcMethod::new("amux.v1.ProfileService", "DeleteProfile"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn start_pairing(
-            &mut self,
-            request: impl tonic::IntoRequest<super::StartPairingRequest>,
-        ) -> std::result::Result<tonic::Response<super::PairingWindow>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileService/StartPairing",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileService", "StartPairing"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn get_pairing_status(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::PairingStatus>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileService/GetPairingStatus",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileService", "GetPairingStatus"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn cancel_pairing(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileService/CancelPairing",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileService", "CancelPairing"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn begin_pair(
-            &mut self,
-            request: impl tonic::IntoRequest<super::BeginPairRequest>,
-        ) -> std::result::Result<tonic::Response<super::PendingPair>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileService/BeginPair",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileService", "BeginPair"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn confirm_pair(
-            &mut self,
-            request: impl tonic::IntoRequest<super::PendingPairRequest>,
-        ) -> std::result::Result<tonic::Response<super::PeerEntry>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileService/ConfirmPair",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileService", "ConfirmPair"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn abandon_pair(
-            &mut self,
-            request: impl tonic::IntoRequest<super::PendingPairRequest>,
-        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileService/AbandonPair",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileService", "AbandonPair"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn get_device_identity(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::DeviceIdentity>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileService/GetDeviceIdentity",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileService", "GetDeviceIdentity"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn trust_ssh_peer(
-            &mut self,
-            request: impl tonic::IntoRequest<super::TrustSshPeerRequest>,
-        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileService/TrustSshPeer",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileService", "TrustSshPeer"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn list_peers(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ProfileRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ListPeersResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileService/ListPeers",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileService", "ListPeers"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn get_peer(
-            &mut self,
-            request: impl tonic::IntoRequest<super::GetPeerRequest>,
-        ) -> std::result::Result<tonic::Response<super::PeerEntry>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileService/GetPeer",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileService", "GetPeer"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn unpair(
-            &mut self,
-            request: impl tonic::IntoRequest<super::UnpairRequest>,
-        ) -> std::result::Result<tonic::Response<super::PeerEntry>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileService/Unpair",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileService", "Unpair"));
-            self.inner.unary(req, path, codec).await
-        }
     }
 }
 /// Generated server implementations.
@@ -11650,21 +11312,10 @@ pub mod profile_service_server {
             &self,
             request: tonic::Request<super::CreateProfileRequest>,
         ) -> std::result::Result<tonic::Response<super::ProfileInfo>, tonic::Status>;
+        /// Names a profile, or lets the installation pick or create one.
         async fn bind_profile(
             &self,
             request: tonic::Request<super::BindProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::ProfileInfo>, tonic::Status>;
-        async fn logout_profile(
-            &self,
-            request: tonic::Request<super::ProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::ProfileInfo>, tonic::Status>;
-        async fn pause_profile(
-            &self,
-            request: tonic::Request<super::ProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::ProfileInfo>, tonic::Status>;
-        async fn resume_profile(
-            &self,
-            request: tonic::Request<super::ProfileRequest>,
         ) -> std::result::Result<tonic::Response<super::ProfileInfo>, tonic::Status>;
         async fn rename_profile(
             &self,
@@ -11674,53 +11325,6 @@ pub mod profile_service_server {
             &self,
             request: tonic::Request<super::DeleteProfileRequest>,
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
-        async fn start_pairing(
-            &self,
-            request: tonic::Request<super::StartPairingRequest>,
-        ) -> std::result::Result<tonic::Response<super::PairingWindow>, tonic::Status>;
-        async fn get_pairing_status(
-            &self,
-            request: tonic::Request<super::ProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::PairingStatus>, tonic::Status>;
-        async fn cancel_pairing(
-            &self,
-            request: tonic::Request<super::ProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
-        async fn begin_pair(
-            &self,
-            request: tonic::Request<super::BeginPairRequest>,
-        ) -> std::result::Result<tonic::Response<super::PendingPair>, tonic::Status>;
-        async fn confirm_pair(
-            &self,
-            request: tonic::Request<super::PendingPairRequest>,
-        ) -> std::result::Result<tonic::Response<super::PeerEntry>, tonic::Status>;
-        async fn abandon_pair(
-            &self,
-            request: tonic::Request<super::PendingPairRequest>,
-        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
-        async fn get_device_identity(
-            &self,
-            request: tonic::Request<super::ProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::DeviceIdentity>, tonic::Status>;
-        async fn trust_ssh_peer(
-            &self,
-            request: tonic::Request<super::TrustSshPeerRequest>,
-        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
-        async fn list_peers(
-            &self,
-            request: tonic::Request<super::ProfileRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ListPeersResponse>,
-            tonic::Status,
-        >;
-        async fn get_peer(
-            &self,
-            request: tonic::Request<super::GetPeerRequest>,
-        ) -> std::result::Result<tonic::Response<super::PeerEntry>, tonic::Status>;
-        async fn unpair(
-            &self,
-            request: tonic::Request<super::UnpairRequest>,
-        ) -> std::result::Result<tonic::Response<super::PeerEntry>, tonic::Status>;
     }
     /// The installation's front door: local Unix socket and in-process only.
     /// Calls are not retried by any client; a mutation that loses its reply is
@@ -11980,141 +11584,6 @@ pub mod profile_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ProfileService/LogoutProfile" => {
-                    #[allow(non_camel_case_types)]
-                    struct LogoutProfileSvc<T: ProfileService>(pub Arc<T>);
-                    impl<
-                        T: ProfileService,
-                    > tonic::server::UnaryService<super::ProfileRequest>
-                    for LogoutProfileSvc<T> {
-                        type Response = super::ProfileInfo;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ProfileRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ProfileService>::logout_profile(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = LogoutProfileSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.ProfileService/PauseProfile" => {
-                    #[allow(non_camel_case_types)]
-                    struct PauseProfileSvc<T: ProfileService>(pub Arc<T>);
-                    impl<
-                        T: ProfileService,
-                    > tonic::server::UnaryService<super::ProfileRequest>
-                    for PauseProfileSvc<T> {
-                        type Response = super::ProfileInfo;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ProfileRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ProfileService>::pause_profile(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = PauseProfileSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.ProfileService/ResumeProfile" => {
-                    #[allow(non_camel_case_types)]
-                    struct ResumeProfileSvc<T: ProfileService>(pub Arc<T>);
-                    impl<
-                        T: ProfileService,
-                    > tonic::server::UnaryService<super::ProfileRequest>
-                    for ResumeProfileSvc<T> {
-                        type Response = super::ProfileInfo;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ProfileRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ProfileService>::resume_profile(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = ResumeProfileSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
                 "/amux.v1.ProfileService/RenameProfile" => {
                     #[allow(non_camel_case_types)]
                     struct RenameProfileSvc<T: ProfileService>(pub Arc<T>);
@@ -12205,11 +11674,727 @@ pub mod profile_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ProfileService/StartPairing" => {
+                _ => {
+                    Box::pin(async move {
+                        let mut response = http::Response::new(
+                            tonic::body::Body::default(),
+                        );
+                        let headers = response.headers_mut();
+                        headers
+                            .insert(
+                                tonic::Status::GRPC_STATUS,
+                                (tonic::Code::Unimplemented as i32).into(),
+                            );
+                        headers
+                            .insert(
+                                http::header::CONTENT_TYPE,
+                                tonic::metadata::GRPC_CONTENT_TYPE,
+                            );
+                        Ok(response)
+                    })
+                }
+            }
+        }
+    }
+    impl<T> Clone for ProfileServiceServer<T> {
+        fn clone(&self) -> Self {
+            let inner = self.inner.clone();
+            Self {
+                inner,
+                accept_compression_encodings: self.accept_compression_encodings,
+                send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
+            }
+        }
+    }
+    /// Generated gRPC service name
+    pub const SERVICE_NAME: &str = "amux.v1.ProfileService";
+    impl<T> tonic::server::NamedService for ProfileServiceServer<T> {
+        const NAME: &'static str = SERVICE_NAME;
+    }
+}
+/// Generated client implementations.
+#[cfg(feature = "grpc")]
+pub mod profile_admin_service_client {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
+    /// One profile's administration, served on its client socket beside
+    /// `ClientService` and never on an agent's tools socket or a link: its
+    /// account connection, its pairing windows, pairings it begins, and the
+    /// hosts it trusts. The socket names the profile. Not retried, as the front
+    /// door.
+    #[derive(Debug, Clone)]
+    pub struct ProfileAdminServiceClient<T> {
+        inner: tonic::client::Grpc<T>,
+    }
+    impl<T> ProfileAdminServiceClient<T>
+    where
+        T: tonic::client::GrpcService<tonic::body::Body>,
+        T::Error: Into<StdError>,
+        T::ResponseBody: Body<Data = Bytes> + std::marker::Send + 'static,
+        <T::ResponseBody as Body>::Error: Into<StdError> + std::marker::Send,
+    {
+        pub fn new(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> ProfileAdminServiceClient<InterceptedService<T, F>>
+        where
+            F: tonic::service::Interceptor,
+            T::ResponseBody: Default,
+            T: tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+                Response = http::Response<
+                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                >,
+            >,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+        {
+            ProfileAdminServiceClient::new(InterceptedService::new(inner, interceptor))
+        }
+        /// Compress requests with the given encoding.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
+            self
+        }
+        /// Enable decompressing responses.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
+        pub async fn sign_out(
+            &mut self,
+            request: impl tonic::IntoRequest<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::ProfileInfo>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.ProfileAdminService/SignOut",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "SignOut"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn pause(
+            &mut self,
+            request: impl tonic::IntoRequest<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::ProfileInfo>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.ProfileAdminService/Pause",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "Pause"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn resume(
+            &mut self,
+            request: impl tonic::IntoRequest<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::ProfileInfo>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.ProfileAdminService/Resume",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "Resume"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn start_pairing(
+            &mut self,
+            request: impl tonic::IntoRequest<super::StartPairingRequest>,
+        ) -> std::result::Result<tonic::Response<super::PairingWindow>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.ProfileAdminService/StartPairing",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "StartPairing"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_pairing_status(
+            &mut self,
+            request: impl tonic::IntoRequest<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::PairingStatus>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.ProfileAdminService/GetPairingStatus",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("amux.v1.ProfileAdminService", "GetPairingStatus"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn cancel_pairing(
+            &mut self,
+            request: impl tonic::IntoRequest<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.ProfileAdminService/CancelPairing",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "CancelPairing"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn begin_pair(
+            &mut self,
+            request: impl tonic::IntoRequest<super::BeginPairRequest>,
+        ) -> std::result::Result<tonic::Response<super::PendingPair>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.ProfileAdminService/BeginPair",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "BeginPair"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn confirm_pair(
+            &mut self,
+            request: impl tonic::IntoRequest<super::PendingPairRequest>,
+        ) -> std::result::Result<tonic::Response<super::PeerEntry>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.ProfileAdminService/ConfirmPair",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "ConfirmPair"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn abandon_pair(
+            &mut self,
+            request: impl tonic::IntoRequest<super::PendingPairRequest>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.ProfileAdminService/AbandonPair",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "AbandonPair"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_device_identity(
+            &mut self,
+            request: impl tonic::IntoRequest<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::DeviceIdentity>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.ProfileAdminService/GetDeviceIdentity",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("amux.v1.ProfileAdminService", "GetDeviceIdentity"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn trust_ssh_peer(
+            &mut self,
+            request: impl tonic::IntoRequest<super::TrustSshPeerRequest>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.ProfileAdminService/TrustSshPeer",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "TrustSshPeer"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn list_peers(
+            &mut self,
+            request: impl tonic::IntoRequest<super::Empty>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListPeersResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.ProfileAdminService/ListPeers",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "ListPeers"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_peer(
+            &mut self,
+            request: impl tonic::IntoRequest<super::HostRef>,
+        ) -> std::result::Result<tonic::Response<super::PeerEntry>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.ProfileAdminService/GetPeer",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "GetPeer"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn unpair(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UnpairRequest>,
+        ) -> std::result::Result<tonic::Response<super::PeerEntry>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.ProfileAdminService/Unpair",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "Unpair"));
+            self.inner.unary(req, path, codec).await
+        }
+    }
+}
+/// Generated server implementations.
+#[cfg(feature = "grpc")]
+pub mod profile_admin_service_server {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    /// Generated trait containing gRPC methods that should be implemented for use with ProfileAdminServiceServer.
+    #[async_trait]
+    pub trait ProfileAdminService: std::marker::Send + std::marker::Sync + 'static {
+        async fn sign_out(
+            &self,
+            request: tonic::Request<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::ProfileInfo>, tonic::Status>;
+        async fn pause(
+            &self,
+            request: tonic::Request<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::ProfileInfo>, tonic::Status>;
+        async fn resume(
+            &self,
+            request: tonic::Request<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::ProfileInfo>, tonic::Status>;
+        async fn start_pairing(
+            &self,
+            request: tonic::Request<super::StartPairingRequest>,
+        ) -> std::result::Result<tonic::Response<super::PairingWindow>, tonic::Status>;
+        async fn get_pairing_status(
+            &self,
+            request: tonic::Request<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::PairingStatus>, tonic::Status>;
+        async fn cancel_pairing(
+            &self,
+            request: tonic::Request<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
+        async fn begin_pair(
+            &self,
+            request: tonic::Request<super::BeginPairRequest>,
+        ) -> std::result::Result<tonic::Response<super::PendingPair>, tonic::Status>;
+        async fn confirm_pair(
+            &self,
+            request: tonic::Request<super::PendingPairRequest>,
+        ) -> std::result::Result<tonic::Response<super::PeerEntry>, tonic::Status>;
+        async fn abandon_pair(
+            &self,
+            request: tonic::Request<super::PendingPairRequest>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
+        async fn get_device_identity(
+            &self,
+            request: tonic::Request<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::DeviceIdentity>, tonic::Status>;
+        async fn trust_ssh_peer(
+            &self,
+            request: tonic::Request<super::TrustSshPeerRequest>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
+        async fn list_peers(
+            &self,
+            request: tonic::Request<super::Empty>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListPeersResponse>,
+            tonic::Status,
+        >;
+        async fn get_peer(
+            &self,
+            request: tonic::Request<super::HostRef>,
+        ) -> std::result::Result<tonic::Response<super::PeerEntry>, tonic::Status>;
+        async fn unpair(
+            &self,
+            request: tonic::Request<super::UnpairRequest>,
+        ) -> std::result::Result<tonic::Response<super::PeerEntry>, tonic::Status>;
+    }
+    /// One profile's administration, served on its client socket beside
+    /// `ClientService` and never on an agent's tools socket or a link: its
+    /// account connection, its pairing windows, pairings it begins, and the
+    /// hosts it trusts. The socket names the profile. Not retried, as the front
+    /// door.
+    #[derive(Debug)]
+    pub struct ProfileAdminServiceServer<T> {
+        inner: Arc<T>,
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
+    }
+    impl<T> ProfileAdminServiceServer<T> {
+        pub fn new(inner: T) -> Self {
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
+            Self {
+                inner,
+                accept_compression_encodings: Default::default(),
+                send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
+            }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
+        where
+            F: tonic::service::Interceptor,
+        {
+            InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
+    }
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for ProfileAdminServiceServer<T>
+    where
+        T: ProfileAdminService,
+        B: Body + std::marker::Send + 'static,
+        B::Error: Into<StdError> + std::marker::Send + 'static,
+    {
+        type Response = http::Response<tonic::body::Body>;
+        type Error = std::convert::Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<std::result::Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            match req.uri().path() {
+                "/amux.v1.ProfileAdminService/SignOut" => {
                     #[allow(non_camel_case_types)]
-                    struct StartPairingSvc<T: ProfileService>(pub Arc<T>);
+                    struct SignOutSvc<T: ProfileAdminService>(pub Arc<T>);
                     impl<
-                        T: ProfileService,
+                        T: ProfileAdminService,
+                    > tonic::server::UnaryService<super::Empty> for SignOutSvc<T> {
+                        type Response = super::ProfileInfo;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::Empty>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ProfileAdminService>::sign_out(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SignOutSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.ProfileAdminService/Pause" => {
+                    #[allow(non_camel_case_types)]
+                    struct PauseSvc<T: ProfileAdminService>(pub Arc<T>);
+                    impl<
+                        T: ProfileAdminService,
+                    > tonic::server::UnaryService<super::Empty> for PauseSvc<T> {
+                        type Response = super::ProfileInfo;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::Empty>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ProfileAdminService>::pause(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = PauseSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.ProfileAdminService/Resume" => {
+                    #[allow(non_camel_case_types)]
+                    struct ResumeSvc<T: ProfileAdminService>(pub Arc<T>);
+                    impl<
+                        T: ProfileAdminService,
+                    > tonic::server::UnaryService<super::Empty> for ResumeSvc<T> {
+                        type Response = super::ProfileInfo;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::Empty>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ProfileAdminService>::resume(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ResumeSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.ProfileAdminService/StartPairing" => {
+                    #[allow(non_camel_case_types)]
+                    struct StartPairingSvc<T: ProfileAdminService>(pub Arc<T>);
+                    impl<
+                        T: ProfileAdminService,
                     > tonic::server::UnaryService<super::StartPairingRequest>
                     for StartPairingSvc<T> {
                         type Response = super::PairingWindow;
@@ -12223,7 +12408,8 @@ pub mod profile_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ProfileService>::start_pairing(&inner, request).await
+                                <T as ProfileAdminService>::start_pairing(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -12250,12 +12436,12 @@ pub mod profile_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ProfileService/GetPairingStatus" => {
+                "/amux.v1.ProfileAdminService/GetPairingStatus" => {
                     #[allow(non_camel_case_types)]
-                    struct GetPairingStatusSvc<T: ProfileService>(pub Arc<T>);
+                    struct GetPairingStatusSvc<T: ProfileAdminService>(pub Arc<T>);
                     impl<
-                        T: ProfileService,
-                    > tonic::server::UnaryService<super::ProfileRequest>
+                        T: ProfileAdminService,
+                    > tonic::server::UnaryService<super::Empty>
                     for GetPairingStatusSvc<T> {
                         type Response = super::PairingStatus;
                         type Future = BoxFuture<
@@ -12264,11 +12450,14 @@ pub mod profile_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ProfileRequest>,
+                            request: tonic::Request<super::Empty>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ProfileService>::get_pairing_status(&inner, request)
+                                <T as ProfileAdminService>::get_pairing_status(
+                                        &inner,
+                                        request,
+                                    )
                                     .await
                             };
                             Box::pin(fut)
@@ -12296,13 +12485,12 @@ pub mod profile_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ProfileService/CancelPairing" => {
+                "/amux.v1.ProfileAdminService/CancelPairing" => {
                     #[allow(non_camel_case_types)]
-                    struct CancelPairingSvc<T: ProfileService>(pub Arc<T>);
+                    struct CancelPairingSvc<T: ProfileAdminService>(pub Arc<T>);
                     impl<
-                        T: ProfileService,
-                    > tonic::server::UnaryService<super::ProfileRequest>
-                    for CancelPairingSvc<T> {
+                        T: ProfileAdminService,
+                    > tonic::server::UnaryService<super::Empty> for CancelPairingSvc<T> {
                         type Response = super::Empty;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -12310,11 +12498,12 @@ pub mod profile_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ProfileRequest>,
+                            request: tonic::Request<super::Empty>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ProfileService>::cancel_pairing(&inner, request).await
+                                <T as ProfileAdminService>::cancel_pairing(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -12341,11 +12530,11 @@ pub mod profile_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ProfileService/BeginPair" => {
+                "/amux.v1.ProfileAdminService/BeginPair" => {
                     #[allow(non_camel_case_types)]
-                    struct BeginPairSvc<T: ProfileService>(pub Arc<T>);
+                    struct BeginPairSvc<T: ProfileAdminService>(pub Arc<T>);
                     impl<
-                        T: ProfileService,
+                        T: ProfileAdminService,
                     > tonic::server::UnaryService<super::BeginPairRequest>
                     for BeginPairSvc<T> {
                         type Response = super::PendingPair;
@@ -12359,7 +12548,8 @@ pub mod profile_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ProfileService>::begin_pair(&inner, request).await
+                                <T as ProfileAdminService>::begin_pair(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -12386,11 +12576,11 @@ pub mod profile_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ProfileService/ConfirmPair" => {
+                "/amux.v1.ProfileAdminService/ConfirmPair" => {
                     #[allow(non_camel_case_types)]
-                    struct ConfirmPairSvc<T: ProfileService>(pub Arc<T>);
+                    struct ConfirmPairSvc<T: ProfileAdminService>(pub Arc<T>);
                     impl<
-                        T: ProfileService,
+                        T: ProfileAdminService,
                     > tonic::server::UnaryService<super::PendingPairRequest>
                     for ConfirmPairSvc<T> {
                         type Response = super::PeerEntry;
@@ -12404,7 +12594,8 @@ pub mod profile_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ProfileService>::confirm_pair(&inner, request).await
+                                <T as ProfileAdminService>::confirm_pair(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -12431,11 +12622,11 @@ pub mod profile_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ProfileService/AbandonPair" => {
+                "/amux.v1.ProfileAdminService/AbandonPair" => {
                     #[allow(non_camel_case_types)]
-                    struct AbandonPairSvc<T: ProfileService>(pub Arc<T>);
+                    struct AbandonPairSvc<T: ProfileAdminService>(pub Arc<T>);
                     impl<
-                        T: ProfileService,
+                        T: ProfileAdminService,
                     > tonic::server::UnaryService<super::PendingPairRequest>
                     for AbandonPairSvc<T> {
                         type Response = super::Empty;
@@ -12449,7 +12640,8 @@ pub mod profile_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ProfileService>::abandon_pair(&inner, request).await
+                                <T as ProfileAdminService>::abandon_pair(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -12476,12 +12668,12 @@ pub mod profile_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ProfileService/GetDeviceIdentity" => {
+                "/amux.v1.ProfileAdminService/GetDeviceIdentity" => {
                     #[allow(non_camel_case_types)]
-                    struct GetDeviceIdentitySvc<T: ProfileService>(pub Arc<T>);
+                    struct GetDeviceIdentitySvc<T: ProfileAdminService>(pub Arc<T>);
                     impl<
-                        T: ProfileService,
-                    > tonic::server::UnaryService<super::ProfileRequest>
+                        T: ProfileAdminService,
+                    > tonic::server::UnaryService<super::Empty>
                     for GetDeviceIdentitySvc<T> {
                         type Response = super::DeviceIdentity;
                         type Future = BoxFuture<
@@ -12490,11 +12682,14 @@ pub mod profile_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ProfileRequest>,
+                            request: tonic::Request<super::Empty>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ProfileService>::get_device_identity(&inner, request)
+                                <T as ProfileAdminService>::get_device_identity(
+                                        &inner,
+                                        request,
+                                    )
                                     .await
                             };
                             Box::pin(fut)
@@ -12522,11 +12717,11 @@ pub mod profile_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ProfileService/TrustSshPeer" => {
+                "/amux.v1.ProfileAdminService/TrustSshPeer" => {
                     #[allow(non_camel_case_types)]
-                    struct TrustSshPeerSvc<T: ProfileService>(pub Arc<T>);
+                    struct TrustSshPeerSvc<T: ProfileAdminService>(pub Arc<T>);
                     impl<
-                        T: ProfileService,
+                        T: ProfileAdminService,
                     > tonic::server::UnaryService<super::TrustSshPeerRequest>
                     for TrustSshPeerSvc<T> {
                         type Response = super::Empty;
@@ -12540,7 +12735,8 @@ pub mod profile_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ProfileService>::trust_ssh_peer(&inner, request).await
+                                <T as ProfileAdminService>::trust_ssh_peer(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -12567,13 +12763,12 @@ pub mod profile_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ProfileService/ListPeers" => {
+                "/amux.v1.ProfileAdminService/ListPeers" => {
                     #[allow(non_camel_case_types)]
-                    struct ListPeersSvc<T: ProfileService>(pub Arc<T>);
+                    struct ListPeersSvc<T: ProfileAdminService>(pub Arc<T>);
                     impl<
-                        T: ProfileService,
-                    > tonic::server::UnaryService<super::ProfileRequest>
-                    for ListPeersSvc<T> {
+                        T: ProfileAdminService,
+                    > tonic::server::UnaryService<super::Empty> for ListPeersSvc<T> {
                         type Response = super::ListPeersResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -12581,11 +12776,12 @@ pub mod profile_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ProfileRequest>,
+                            request: tonic::Request<super::Empty>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ProfileService>::list_peers(&inner, request).await
+                                <T as ProfileAdminService>::list_peers(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -12612,13 +12808,12 @@ pub mod profile_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ProfileService/GetPeer" => {
+                "/amux.v1.ProfileAdminService/GetPeer" => {
                     #[allow(non_camel_case_types)]
-                    struct GetPeerSvc<T: ProfileService>(pub Arc<T>);
+                    struct GetPeerSvc<T: ProfileAdminService>(pub Arc<T>);
                     impl<
-                        T: ProfileService,
-                    > tonic::server::UnaryService<super::GetPeerRequest>
-                    for GetPeerSvc<T> {
+                        T: ProfileAdminService,
+                    > tonic::server::UnaryService<super::HostRef> for GetPeerSvc<T> {
                         type Response = super::PeerEntry;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -12626,11 +12821,11 @@ pub mod profile_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetPeerRequest>,
+                            request: tonic::Request<super::HostRef>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ProfileService>::get_peer(&inner, request).await
+                                <T as ProfileAdminService>::get_peer(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -12657,11 +12852,11 @@ pub mod profile_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ProfileService/Unpair" => {
+                "/amux.v1.ProfileAdminService/Unpair" => {
                     #[allow(non_camel_case_types)]
-                    struct UnpairSvc<T: ProfileService>(pub Arc<T>);
+                    struct UnpairSvc<T: ProfileAdminService>(pub Arc<T>);
                     impl<
-                        T: ProfileService,
+                        T: ProfileAdminService,
                     > tonic::server::UnaryService<super::UnpairRequest>
                     for UnpairSvc<T> {
                         type Response = super::PeerEntry;
@@ -12675,7 +12870,7 @@ pub mod profile_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ProfileService>::unpair(&inner, request).await
+                                <T as ProfileAdminService>::unpair(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -12724,7 +12919,7 @@ pub mod profile_service_server {
             }
         }
     }
-    impl<T> Clone for ProfileServiceServer<T> {
+    impl<T> Clone for ProfileAdminServiceServer<T> {
         fn clone(&self) -> Self {
             let inner = self.inner.clone();
             Self {
@@ -12737,8 +12932,8 @@ pub mod profile_service_server {
         }
     }
     /// Generated gRPC service name
-    pub const SERVICE_NAME: &str = "amux.v1.ProfileService";
-    impl<T> tonic::server::NamedService for ProfileServiceServer<T> {
+    pub const SERVICE_NAME: &str = "amux.v1.ProfileAdminService";
+    impl<T> tonic::server::NamedService for ProfileAdminServiceServer<T> {
         const NAME: &'static str = SERVICE_NAME;
     }
 }

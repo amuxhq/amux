@@ -131,9 +131,7 @@ impl ProfileRefusal {
         let code = match self {
             Self::Stopping | Self::NotInService | Self::Unreachable(_) => ErrorCode::Unavailable,
             Self::NoProfile(_) => ErrorCode::NotFound,
-            Self::NoName | Self::BadService(_) | Self::NoRefreshToken => {
-                ErrorCode::InvalidArgument
-            }
+            Self::NoName | Self::BadService(_) | Self::NoRefreshToken => ErrorCode::InvalidArgument,
             Self::NameTaken(_) | Self::AccountElsewhere => ErrorCode::AlreadyExists,
             Self::LastProfile
             | Self::AgentsRunning

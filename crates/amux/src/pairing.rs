@@ -1,6 +1,7 @@
-//! Pairing, peers and sign-in: the selected profile's calls on the front
-//! door, and the two hidden commands SSH runs on the far host of an SSH
-//! pairing (`amux pair-recv`) and of every SSH link after it (`amux relay`).
+//! Pairing, peers and sign-in: the selected profile's calls on its own
+//! socket, a sign-in on the front door, and the two hidden commands SSH
+//! runs on the far host of an SSH pairing (`amux pair-recv`) and of every
+//! SSH link after it (`amux relay`).
 
 use std::io::{IsTerminal as _, Write as _};
 use std::net::SocketAddr;
@@ -11,15 +12,18 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use tonic::transport::Channel;
 use uuid::Uuid;
 use wire::client_service_client::ClientServiceClient;
+use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::profile_service_client::ProfileServiceClient;
 use wire::{
-    BeginPairRequest, BindProfileRequest, Empty, GetPeerRequest, HostEntry, HostRef,
-    PairingIdentity, PairingWindow, PeerEntry, PendingPair, PendingPairRequest, ProfileInfo,
-    ProfileRequest, RouteKind, StartPairingRequest, Trust, TrustSshPeerRequest, UnpairRequest,
-    begin_pair_request, host_ref, pairing_window, peer_reachability, start_pairing_request,
+    BeginPairRequest, BindProfileRequest, Empty, HostEntry, HostRef, PairingIdentity,
+    PairingWindow, PeerEntry, PendingPair, PendingPairRequest, ProfileInfo, RouteKind,
+    StartPairingRequest, Trust, TrustSshPeerRequest, UnpairRequest, begin_pair_request, host_ref,
+    pairing_window, peer_reachability, start_pairing_request,
 };
 
 type Door = ProfileServiceClient<Channel>;
+/// The selected profile's administration, on its own socket.
+pub type Admin = ProfileAdminServiceClient<Channel>;
 
 /// How often a waiting pairing mode asks whether it is still open.
 const PAIRING_POLL: Duration = Duration::from_secs(1);
@@ -58,7 +62,7 @@ impl Target {
 /// Opens pairing mode on this host and waits until another host pairs, it
 /// expires, or the command is ended (Ctrl+C, its terminal closing, a kill),
 /// which closes it.
-pub async fn wait(mut door: Door, profile: &ProfileInfo, qr: bool, link: bool) -> Result<()> {
+pub async fn wait(mut admin: Admin, qr: bool, link: bool) -> Result<()> {
     let method = if qr {
         start_pairing_request::Method::Qr(Empty {})
     } else {
@@ -69,9 +73,8 @@ pub async fn wait(mut door: Door, profile: &ProfileInfo, qr: bool, link: bool) -
     // One that arrives while it opens is kept and closes it at once.
     let ended = ended()?;
     tokio::pin!(ended);
-    let started = door
+    let started = admin
         .start_pairing(StartPairingRequest {
-            profile_id: profile.id.clone(),
             method: Some(method),
             ttl_seconds: None,
         })
@@ -81,7 +84,7 @@ pub async fn wait(mut door: Door, profile: &ProfileInfo, qr: bool, link: bool) -
     match invitation(&started, link) {
         Ok(lines) => lines.iter().for_each(|line| println!("{line}")),
         Err(error) => {
-            cancel(door, profile).await?;
+            cancel(admin).await?;
             return Err(error);
         }
     }
@@ -93,12 +96,10 @@ pub async fn wait(mut door: Door, profile: &ProfileInfo, qr: bool, link: bool) -
     let deadline = tokio::time::Instant::now() + ttl;
     loop {
         tokio::select! {
-            () = &mut ended => return cancel(door, profile).await,
+            () = &mut ended => return cancel(admin).await,
             () = tokio::time::sleep(PAIRING_POLL) => {
-                let status = door
-                    .get_pairing_status(ProfileRequest {
-                        profile_id: profile.id.clone(),
-                    })
+                let status = admin
+                    .get_pairing_status(Empty {})
                     .await
                     .map_err(plain)?
                     .into_inner();
@@ -122,10 +123,9 @@ pub async fn wait(mut door: Door, profile: &ProfileInfo, qr: bool, link: bool) -
 /// through, until it expires, `amux pair --cancel` closes it, or the daemon
 /// restarts. For an unattended demo, such as an app reviewer pairing a
 /// phone with a machine nobody watches.
-pub async fn demo(mut door: Door, profile: &ProfileInfo, pin: String, ttl: Duration) -> Result<()> {
-    let started = door
+pub async fn demo(mut admin: Admin, pin: String, ttl: Duration) -> Result<()> {
+    let started = admin
         .start_pairing(StartPairingRequest {
-            profile_id: profile.id.clone(),
             method: Some(start_pairing_request::Method::DemoPin(pin)),
             ttl_seconds: Some(ttl.as_secs()),
         })
@@ -292,12 +292,8 @@ fn terminal_qr(payload: &str) -> Result<String> {
 }
 
 /// Closes this host's pairing mode.
-pub async fn cancel(mut door: Door, profile: &ProfileInfo) -> Result<()> {
-    door.cancel_pairing(ProfileRequest {
-        profile_id: profile.id.clone(),
-    })
-    .await
-    .map_err(plain)?;
+pub async fn cancel(mut admin: Admin) -> Result<()> {
+    admin.cancel_pairing(Empty {}).await.map_err(plain)?;
     // The terminal may be gone (SIGHUP): saying so must not fail the close.
     let _ = writeln!(std::io::stdout(), "Pairing mode closed.");
     Ok(())
@@ -306,13 +302,13 @@ pub async fn cancel(mut door: Door, profile: &ProfileInfo) -> Result<()> {
 /// Pairs with a host found nearby or at an address with the PIN its person
 /// reads out, or with a host over SSH.
 pub async fn pair(
-    door: Door,
+    admin: Admin,
     client: &mut ClientServiceClient<Channel>,
     profile: &ProfileInfo,
     target: Target,
 ) -> Result<()> {
     let (host_id, addrs) = match target {
-        Target::Ssh(target) => return pair_over_ssh(door, profile, target).await,
+        Target::Ssh(target) => return pair_over_ssh(admin, profile, target).await,
         Target::Addr(addr) => (Vec::new(), vec![addr.to_string()]),
         Target::Found(name) => {
             let (hosts, _) = crate::verbs::inventory(client).await?;
@@ -324,9 +320,8 @@ pub async fn pair(
     let secret =
         begin_pair_request::Secret::Pin(pin.chars().filter(char::is_ascii_digit).collect());
     confirm(
-        door,
+        admin,
         BeginPairRequest {
-            profile_id: profile.id.clone(),
             host_id,
             secret: Some(secret),
             addrs,
@@ -336,12 +331,11 @@ pub async fn pair(
 }
 
 /// Pairs with the host whose QR code's link this is.
-pub async fn pair_with_link(door: Door, profile: &ProfileInfo, link: &str) -> Result<()> {
+pub async fn pair_with_link(admin: Admin, link: &str) -> Result<()> {
     let invitation = node::parse_pair_link(link).context("the pairing link")?;
     confirm(
-        door,
+        admin,
         BeginPairRequest {
-            profile_id: profile.id.clone(),
             host_id: invitation.host_id.as_bytes().to_vec(),
             secret: Some(begin_pair_request::Secret::QrSecret(invitation.secret)),
             addrs: invitation.addrs.iter().map(ToString::to_string).collect(),
@@ -370,20 +364,18 @@ fn candidate<'a>(hosts: &'a [HostEntry], name: &str) -> Result<&'a HostEntry> {
     }
 }
 
-async fn confirm(mut door: Door, pairing: BeginPairRequest) -> Result<()> {
+async fn confirm(mut admin: Admin, pairing: BeginPairRequest) -> Result<()> {
     let secret = match pairing.secret {
         Some(begin_pair_request::Secret::QrSecret(_)) => "pairing link",
         _ => "PIN",
     };
-    let profile_id = pairing.profile_id.clone();
-    let pending = door
+    let pending = admin
         .begin_pair(pairing)
         .await
         .map_err(|status| refused(status, secret))?
         .into_inner();
-    let peer = door
+    let peer = admin
         .confirm_pair(PendingPairRequest {
-            profile_id,
             token: pending.token.clone(),
         })
         .await
@@ -452,14 +444,15 @@ fn profile_dir(profile: &ProfileInfo) -> Result<PathBuf> {
         })
 }
 
-/// The trust an SSH pairing establishes, stored through the front door.
-struct DoorAdmin {
-    door: Door,
+/// The trust an SSH pairing establishes, stored through the profile's
+/// administration.
+struct SocketAdmin {
+    admin: Admin,
     profile: Uuid,
 }
 
 #[async_trait::async_trait]
-impl node::PairingAdmin for DoorAdmin {
+impl node::PairingAdmin for SocketAdmin {
     fn profile_id(&self) -> node::ProfileId {
         self.profile
     }
@@ -469,10 +462,9 @@ impl node::PairingAdmin for DoorAdmin {
         peer: node::SshPairingPeer,
         target: Option<node::SshTarget>,
     ) -> Result<(), String> {
-        self.door
+        self.admin
             .clone()
             .trust_ssh_peer(TrustSshPeerRequest {
-                profile_id: self.profile.as_bytes().to_vec(),
                 peer: Some(PairingIdentity {
                     host_id: peer.host_id.as_bytes().to_vec(),
                     pubkey: peer.pubkey,
@@ -490,25 +482,23 @@ impl node::PairingAdmin for DoorAdmin {
     }
 }
 
-async fn admin(door: &Door, profile: &ProfileInfo) -> Result<(DoorAdmin, String)> {
-    let name = door
+async fn ssh_admin(admin: Admin, profile: &ProfileInfo) -> Result<(SocketAdmin, String)> {
+    let name = admin
         .clone()
-        .get_device_identity(ProfileRequest {
-            profile_id: profile.id.clone(),
-        })
+        .get_device_identity(Empty {})
         .await
         .map_err(plain)?
         .into_inner()
         .name;
-    let admin = DoorAdmin {
-        door: door.clone(),
+    let admin = SocketAdmin {
+        admin,
         profile: Uuid::from_slice(&profile.id).context("the profile id")?,
     };
     Ok((admin, name))
 }
 
-async fn pair_over_ssh(door: Door, profile: &ProfileInfo, target: String) -> Result<()> {
-    let (admin, name) = admin(&door, profile).await?;
+async fn pair_over_ssh(admin: Admin, profile: &ProfileInfo, target: String) -> Result<()> {
+    let (admin, name) = ssh_admin(admin, profile).await?;
     let peer = node::pair_via_ssh_target(profile_dir(profile)?, name, target, &admin).await?;
     println!(
         "Paired with {} ({}) over SSH.",
@@ -520,8 +510,8 @@ async fn pair_over_ssh(door: Door, profile: &ProfileInfo, target: String) -> Res
 /// `amux pair-recv`, run by SSH on this host: the identity exchange's far
 /// end, over stdin and stdout.
 #[cfg(unix)]
-pub async fn pair_recv(door: Door, profile: &ProfileInfo) -> Result<()> {
-    let (admin, name) = admin(&door, profile).await?;
+pub async fn pair_recv(admin: Admin, profile: &ProfileInfo) -> Result<()> {
+    let (admin, name) = ssh_admin(admin, profile).await?;
     node::pair_via_ssh_responder_stdio(profile_dir(profile)?, name, &admin).await?;
     Ok(())
 }
@@ -536,15 +526,9 @@ pub async fn relay(profile: &ProfileInfo) -> Result<()> {
 }
 
 /// The trusted hosts and the hosts found nearby that could be paired.
-pub async fn peers(
-    mut door: Door,
-    client: &mut ClientServiceClient<Channel>,
-    profile: &ProfileInfo,
-) -> Result<()> {
-    let trusted = door
-        .list_peers(ProfileRequest {
-            profile_id: profile.id.clone(),
-        })
+pub async fn peers(mut admin: Admin, client: &mut ClientServiceClient<Channel>) -> Result<()> {
+    let trusted = admin
+        .list_peers(Empty {})
         .await
         .map_err(plain)?
         .into_inner()
@@ -637,18 +621,15 @@ fn peer_table(trusted: &[PeerEntry], hosts: &[HostEntry]) -> String {
 }
 
 /// Stops trusting a paired host, asking first unless forced.
-pub async fn unpair(mut door: Door, profile: &ProfileInfo, peer: &str, force: bool) -> Result<()> {
+pub async fn unpair(mut admin: Admin, peer: &str, force: bool) -> Result<()> {
     let reference = HostRef {
         of: Some(match Uuid::parse_str(peer) {
             Ok(id) => host_ref::Of::HostId(id.as_bytes().to_vec()),
             Err(_) => host_ref::Of::Name(peer.to_owned()),
         }),
     };
-    let entry = door
-        .get_peer(GetPeerRequest {
-            profile_id: profile.id.clone(),
-            peer: Some(reference.clone()),
-        })
+    let entry = admin
+        .get_peer(reference.clone())
         .await
         .map_err(plain)?
         .into_inner();
@@ -666,9 +647,8 @@ pub async fn unpair(mut door: Door, profile: &ProfileInfo, peer: &str, force: bo
             return Ok(());
         }
     }
-    let removed = door
+    let removed = admin
         .unpair(UnpairRequest {
-            profile_id: profile.id.clone(),
             peer: Some(reference),
             reason: "user".to_owned(),
         })
@@ -724,12 +704,8 @@ pub async fn login(mut door: Door, profile: Option<&ProfileInfo>, cloud_url: &st
 }
 
 /// Signs a profile out; its agents and paired hosts stay.
-pub async fn logout(mut door: Door, profile: &ProfileInfo) -> Result<()> {
-    door.logout_profile(ProfileRequest {
-        profile_id: profile.id.clone(),
-    })
-    .await
-    .map_err(plain)?;
+pub async fn logout(mut admin: Admin, profile: &ProfileInfo) -> Result<()> {
+    admin.sign_out(Empty {}).await.map_err(plain)?;
     println!(
         "Signed {} out; its agents and paired hosts stay.",
         profile.label

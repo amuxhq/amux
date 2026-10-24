@@ -1321,7 +1321,6 @@ async fn the_ssh_stand_in_carries_a_link_into_the_far_hosts_link_socket() {
     net.edge("laptop")
         .unwrap()
         .trust_ssh_peer(wire::TrustSshPeerRequest {
-            profile_id: Vec::new(),
             peer: Some(wire::PairingIdentity {
                 host_id: desk.host_id.as_bytes().to_vec(),
                 pubkey: desk_edge.public_key().to_vec(),

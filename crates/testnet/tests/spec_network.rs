@@ -145,8 +145,9 @@ async fn a_relay_link_whose_credential_lapses_at_the_relay_first_comes_back_on_a
 /// Pauses and resumes the host's profile, which closes its relay link and
 /// dials a new one, and waits for the new one.
 async fn reconnect(net: &Net, host: &str) {
-    let mut door = door(net, host).await;
-    door.pause_profile(profile_request(net, host))
+    let mut admin = admin(net, host).await;
+    admin
+        .pause(wire::Empty {})
         .await
         .expect("the profile pauses");
     until(&format!("{host}'s relay link to close"), || async {
@@ -157,7 +158,8 @@ async fn reconnect(net: &Net, host: &str) {
     })
     .await
     .unwrap();
-    door.resume_profile(profile_request(net, host))
+    admin
+        .resume(wire::Empty {})
         .await
         .expect("the profile resumes");
     until(&format!("{host}'s relay link to come back"), || async {
@@ -266,10 +268,9 @@ async fn a_pairing_window_is_one_shot_attempt_capped_and_expires() {
         assert!(peer.expires_at_ms <= now_ms + 5 * 60 * 1000 + 1000);
         assert!(edge(&net, "desk").trusted().is_empty());
         assert!(edge(&net, "laptop").trusted().is_empty());
-        door(&net, "laptop")
+        admin(&net, "laptop")
             .await
             .abandon_pair(wire::PendingPairRequest {
-                profile_id: profile(&net, "laptop"),
                 token: pending.token,
             })
             .await
@@ -457,9 +458,9 @@ async fn a_pairing_rerun_after_the_daemon_restarts_opens_a_fresh_window() {
     // The daemon crashes mid-pairing, before the PIN reaches anyone.
     net.kill_daemon("desk").await.unwrap();
     net.restart_daemon("desk").await.unwrap();
-    let open = door(&net, "desk")
+    let open = admin(&net, "desk")
         .await
-        .get_pairing_status(profile_request(&net, "desk"))
+        .get_pairing_status(wire::Empty {})
         .await
         .unwrap()
         .into_inner()
@@ -1243,9 +1244,9 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     start_pairing(&net, "desk", qr_window())
         .await
         .expect_err("the desk's PIN window is still open");
-    door(&net, "desk")
+    admin(&net, "desk")
         .await
-        .cancel_pairing(profile_request(&net, "desk"))
+        .cancel_pairing(wire::Empty {})
         .await
         .unwrap();
     let qr = start_pairing(&net, "desk", qr_window()).await.unwrap();
@@ -1263,9 +1264,9 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     .expect_err("no pairing route for a QR secret either");
     assert_eq!(across_qr.code(), across.code());
     assert_eq!(across_qr.message(), across.message());
-    door(&net, "desk")
+    admin(&net, "desk")
         .await
-        .cancel_pairing(profile_request(&net, "desk"))
+        .cancel_pairing(wire::Empty {})
         .await
         .unwrap();
     let started = start_pairing(&net, "desk", pin_window()).await.unwrap();
@@ -1302,12 +1303,11 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     let work_edge = net.profile_edge("desk", work_profile).unwrap();
     assert_ne!(work_edge.host_id(), desk);
     assert_ne!(work_edge.public_key(), edge(&net, "desk").public_key());
-    let work_start = door(&net, "desk")
+    let work_start = net
+        .admin_of("desk", work_profile)
         .await
-        .start_pairing(wire::StartPairingRequest {
-            profile_id: work.id.clone(),
-            ..pin_window()
-        })
+        .unwrap()
+        .start_pairing(pin_window())
         .await
         .expect("the work profile opens its own window beside the desk's")
         .into_inner();
@@ -1380,14 +1380,22 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     assert_eq!(work_edge.via(laptop).await, LiveRoute::Offline);
     println!("work profile {work_profile}: own key, own window, the desk's peers refused");
 
-    // Administration is the installation's: a trusted peer's tunnel and a
-    // profile's client socket serve neither profiles nor pairing.
+    // Administration stays on this machine: a trusted peer's tunnel serves
+    // neither the installation's profiles nor a profile's pairing, and a
+    // profile's socket serves its own pairing (the work profile's window
+    // above opened there) but not the installation's profiles.
     let tunnel = edge(&net, "laptop").channel(desk).await.unwrap();
-    let over_tunnel = wire::profile_service_client::ProfileServiceClient::new(tunnel)
+    let over_tunnel = wire::profile_service_client::ProfileServiceClient::new(tunnel.clone())
         .list_profiles(wire::Empty {})
         .await
         .expect_err("no profile administration over a peer tunnel");
     assert_eq!(over_tunnel.code(), tonic::Code::Unimplemented);
+    let pairing_over_tunnel =
+        wire::profile_admin_service_client::ProfileAdminServiceClient::new(tunnel)
+            .start_pairing(pin_window())
+            .await
+            .expect_err("no pairing administration over a peer tunnel");
+    assert_eq!(pairing_over_tunnel.code(), tonic::Code::Unimplemented);
     let socket = node::profile_dir(
         &net.host("desk").unwrap().data_dir,
         net.host("desk").unwrap().profile,
@@ -1396,12 +1404,9 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     let on_socket = wire::profile_service_client::ProfileServiceClient::new(
         testnet::local_channel(&socket).await.unwrap(),
     )
-    .start_pairing(wire::StartPairingRequest {
-        profile_id: profile(&net, "desk"),
-        ..pin_window()
-    })
+    .list_profiles(wire::Empty {})
     .await
-    .expect_err("no pairing administration on a profile's client socket");
+    .expect_err("no installation administration on a profile's socket");
     assert_eq!(on_socket.code(), tonic::Code::Unimplemented);
 
     // Each profile's socket is its own client surface: two clients, one on
@@ -2125,11 +2130,9 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
 
     // Pausing closes the cloud link only: the laptop's direct link stays.
     // Resuming, twice over, brings back one link.
-    door(&net, "desk")
+    admin(&net, "desk")
         .await
-        .pause_profile(wire::ProfileRequest {
-            profile_id: main.clone(),
-        })
+        .pause(wire::Empty {})
         .await
         .unwrap();
     until("Ada's relay link to close", || async {
@@ -2143,11 +2146,9 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     .unwrap();
     assert_eq!(edge(&net, "desk").via(laptop).await, LiveRoute::Direct);
     for _ in 0..2 {
-        door(&net, "desk")
+        admin(&net, "desk")
             .await
-            .resume_profile(wire::ProfileRequest {
-                profile_id: main.clone(),
-            })
+            .resume(wire::Empty {})
             .await
             .unwrap();
     }
@@ -2173,11 +2174,9 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     // the identity and the paired laptop. Signing in again finds the same
     // host.
     let key = edge(&net, "desk").public_key().to_vec();
-    door(&net, "desk")
+    admin(&net, "desk")
         .await
-        .logout_profile(wire::ProfileRequest {
-            profile_id: main.clone(),
-        })
+        .sign_out(wire::Empty {})
         .await
         .unwrap();
     until("Ada's relay link to close", || async {
@@ -2419,9 +2418,9 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
         |row| row.account_signed_in == Some(false),
     )
     .await;
-    door(&net, "desk")
+    admin(&net, "desk")
         .await
-        .logout_profile(profile_request(&net, "desk"))
+        .sign_out(wire::Empty {})
         .await
         .unwrap();
     net.sever_link("desk", "laptop").unwrap();
@@ -2503,11 +2502,9 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
     assert_eq!(edge(&net, "desk").public_key(), key.as_slice());
     // What the desk says of itself is what the laptop pinned, and asking
     // opens no pairing window.
-    let identity = door(&net, "desk")
+    let identity = admin(&net, "desk")
         .await
-        .get_device_identity(wire::ProfileRequest {
-            profile_id: profile(&net, "desk"),
-        })
+        .get_device_identity(wire::Empty {})
         .await
         .unwrap()
         .into_inner();

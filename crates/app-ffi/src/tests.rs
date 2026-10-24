@@ -415,13 +415,11 @@ impl Drop for Phone {
 }
 
 fn pin(net: &Net, tokio: &tokio::runtime::Runtime) -> (String, Vec<String>) {
-    let desk = net.host("desk").unwrap();
     let started = tokio.block_on(async {
-        net.front_door("desk")
+        net.admin("desk")
             .await
             .unwrap()
             .start_pairing(StartPairingRequest {
-                profile_id: desk.profile.as_bytes().to_vec(),
                 method: Some(start_pairing_request::Method::Pin(Empty {})),
                 ttl_seconds: None,
             })

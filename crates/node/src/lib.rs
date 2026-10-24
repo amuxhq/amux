@@ -34,6 +34,7 @@ mod net_error;
 mod offers;
 mod outbox;
 mod pairing;
+mod profile_admin;
 mod profiles;
 mod registry;
 mod relay;
@@ -68,18 +69,14 @@ pub use dump::{
     DUMP_SEGMENTS, DumpError, MANIFEST, pack,
 };
 pub use edge::{
-    ACCOUNT_FILE, Binding, CloudLinkServer, CloudOptions, DUAL_STACK_ANY, DiscoveryFactory, Edge, EdgeError,
-    EdgeOptions, FREE_TIER_REFRESH_INTERVAL, JwtCloudLinkAuthenticator, LAN_PORT_FILE, LINK_SOCKET,
-    LanOptions, LoopbackLink, NetworkChange, Observed, RELAY_TOKEN_FILE, RelayCarrier,
+    ACCOUNT_FILE, Binding, CloudLinkServer, CloudOptions, DUAL_STACK_ANY, DiscoveryFactory, Edge,
+    EdgeError, EdgeOptions, FREE_TIER_REFRESH_INTERVAL, JwtCloudLinkAuthenticator, LAN_PORT_FILE,
+    LINK_SOCKET, LanOptions, LoopbackLink, NetworkChange, Observed, RELAY_TOKEN_FILE, RelayCarrier,
     RelayIdentity, RelayQuic, RelayServing, UDP_BLOCKED_MEMORY, interface_addrs, mdns_discovery,
     test_interfaces,
 };
 pub use forward::{ForwardError, HostNameError, Owner};
 pub use front_door::FrontDoor;
-pub use registry::{
-    AccountState, FellBehind, ProfileEvent, ProfileRefusal, ProfileState, ProfileWatch, Registry,
-    SignIn,
-};
 pub use generation::{Generation, boot_id};
 pub use grpc::{ClientApi, status};
 pub use identity::{LinkLiveness, quic_endpoint, quic_endpoint_config};
@@ -103,8 +100,13 @@ pub use pairing::ssh::{
 };
 #[cfg(unix)]
 pub use pairing::ssh::{pair_via_ssh_responder_stdio, relay_stdio_to_unix_socket};
+pub use profile_admin::ProfileAdmin;
 pub use profiles::{
     PROFILE_SOCKET, ProfileEntry, ProfileId, create_profile, create_profile_as, profile_dir,
+};
+pub use registry::{
+    AccountState, FellBehind, ProfileEvent, ProfileRefusal, ProfileState, ProfileWatch, Registry,
+    SignIn,
 };
 pub use relay::RelayError;
 pub use replicas::{InventoryHook, SourceHook, SourcePolicy, SourceVerdict};

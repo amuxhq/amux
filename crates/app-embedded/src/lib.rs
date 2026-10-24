@@ -17,9 +17,9 @@
 mod log;
 mod phone;
 
+use std::collections::VecDeque;
 use std::io;
 use std::net::SocketAddr;
-use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -32,19 +32,16 @@ use app_runtime::values::{
 pub use app_runtime::values::{PairRequest, ProfileView, StartConfig, UsageEvent};
 use client::{Client, Clock, InProcess};
 use node::{
-    Binding, ClientApi, CloudOptions, Daemon, DiscoveryFactory, EdgeOptions, FrontDoor, LanOptions,
-    Observed, ProfileRefusal, ProfileRuntime, ProfileState, ProfileWatch, Registry, SignIn,
-    SourcePolicy, StartError, StartOptions, Tier,
+    Binding, ClientApi, CloudOptions, Daemon, DiscoveryFactory, EdgeOptions, LanOptions, Observed,
+    ProfileRefusal, ProfileRuntime, ProfileState, ProfileWatch, Registry, SignIn, SourcePolicy,
+    StartError, StartOptions, Tier,
 };
 pub use node::{Cores, ProfileId};
 pub use phone::Phone;
 use sha2::{Digest, Sha256};
-use tonic::Request;
-use wire::profile_service_server::ProfileService as _;
 use wire::{
-    BeginPairRequest, Empty, HostRef, PeerEntry, PendingPairRequest, ProfileRequest,
-    StartPairingRequest, UnpairRequest, begin_pair_request, host_ref, pairing_window,
-    start_pairing_request,
+    BeginPairRequest, Empty, HostRef, PeerEntry, StartPairingRequest, begin_pair_request, host_ref,
+    pairing_window, start_pairing_request,
 };
 
 /// What a test or a driving build changes about the network edge.
@@ -140,7 +137,6 @@ pub struct EmbeddedRuntime {
     // Held for its shutdown and to find a profile's runtime.
     daemon: Mutex<Option<Daemon>>,
     registry: Registry,
-    door: FrontDoor,
     data_dir: PathBuf,
     clock: Arc<dyn Clock>,
     /// The app's telemetry setting, read before every upload.
@@ -247,7 +243,6 @@ impl EmbeddedRuntime {
         let daemon = node::start(options, None).await?;
         Ok(EmbeddedRuntime {
             registry: daemon.registry(),
-            door: daemon.front_door(),
             data_dir: daemon.data_dir().to_owned(),
             analytics: daemon.analytics_flusher(),
             daemon: Mutex::new(Some(daemon)),
@@ -471,10 +466,6 @@ impl EmbeddedRuntime {
         Ok(self.runtime(profile)?.source_policy())
     }
 
-    fn door(&self) -> &FrontDoor {
-        &self.door
-    }
-
     /// Reaches a machine by the PIN its person reads out or the link its QR
     /// code carries, and authenticates it; nothing is trusted until the
     /// attempt is confirmed.
@@ -489,7 +480,6 @@ impl EmbeddedRuntime {
                 pin,
                 addrs,
             } => BeginPairRequest {
-                profile_id: profile.as_bytes().to_vec(),
                 host_id: host_id.clone(),
                 secret: Some(begin_pair_request::Secret::Pin(
                     pin.chars().filter(char::is_ascii_digit).collect(),
@@ -499,18 +489,13 @@ impl EmbeddedRuntime {
             PairRequest::Link(link) => {
                 let invitation = node::parse_pair_link(link)?;
                 BeginPairRequest {
-                    profile_id: profile.as_bytes().to_vec(),
                     host_id: invitation.host_id.as_bytes().to_vec(),
                     secret: Some(begin_pair_request::Secret::QrSecret(invitation.secret)),
                     addrs: invitation.addrs.iter().map(ToString::to_string).collect(),
                 }
             }
         };
-        let pending = self
-            .door()
-            .begin_pair(Request::new(pairing))
-            .await?
-            .into_inner();
+        let pending = self.edge(profile)?.begin_pair(pairing).await?;
         let via = pending.via();
         let peer = pending.peer.unwrap_or_default();
         Ok(PendingPair {
@@ -529,14 +514,12 @@ impl EmbeddedRuntime {
     /// two of its profiles.
     pub async fn offer_pairing(&self, profile: ProfileId) -> Result<String, EmbeddedError> {
         let started = self
-            .door()
-            .start_pairing(Request::new(StartPairingRequest {
-                profile_id: profile.as_bytes().to_vec(),
+            .edge(profile)?
+            .start_pairing(StartPairingRequest {
                 method: Some(start_pairing_request::Method::Qr(Empty {})),
                 ttl_seconds: None,
-            }))
-            .await?
-            .into_inner();
+            })
+            .await?;
         let Some(pairing_window::Secret::QrSecret(secret)) = &started.secret else {
             return Err(EmbeddedError::Relay(
                 "pairing mode opened without a link secret".into(),
@@ -566,14 +549,7 @@ impl EmbeddedRuntime {
         profile: ProfileId,
         token: &[u8],
     ) -> Result<PeerEntry, EmbeddedError> {
-        Ok(self
-            .door()
-            .confirm_pair(Request::new(PendingPairRequest {
-                profile_id: profile.as_bytes().to_vec(),
-                token: token.to_vec(),
-            }))
-            .await?
-            .into_inner())
+        Ok(self.edge(profile)?.confirm_pair(token).await?)
     }
 
     /// Turns away the machine an attempt reached, telling it so.
@@ -582,13 +558,7 @@ impl EmbeddedRuntime {
         profile: ProfileId,
         token: &[u8],
     ) -> Result<(), EmbeddedError> {
-        self.door()
-            .abandon_pair(Request::new(PendingPairRequest {
-                profile_id: profile.as_bytes().to_vec(),
-                token: token.to_vec(),
-            }))
-            .await?;
-        Ok(())
+        Ok(self.edge(profile)?.abandon_pair(token).await?)
     }
 
     /// Pairs in one step, trusting whoever the secret reaches.
@@ -602,23 +572,11 @@ impl EmbeddedRuntime {
     }
 
     /// A profile's identity and the machines it trusts, sorted by name.
-    pub async fn roster(&self, profile: ProfileId) -> Result<Roster, EmbeddedError> {
-        let request = || {
-            Request::new(ProfileRequest {
-                profile_id: profile.as_bytes().to_vec(),
-            })
-        };
-        let identity = self
-            .door()
-            .get_device_identity(request())
-            .await?
-            .into_inner();
-        let mut peers: Vec<PairedPeer> = self
-            .door()
-            .list_peers(request())
-            .await?
-            .into_inner()
-            .peers
+    pub fn roster(&self, profile: ProfileId) -> Result<Roster, EmbeddedError> {
+        let edge = self.edge(profile)?;
+        let identity = edge.device_identity();
+        let mut peers: Vec<PairedPeer> = edge
+            .list_peers()?
             .into_iter()
             .map(|peer| PairedPeer {
                 fingerprint: fingerprint(&peer.pubkey),
@@ -722,14 +680,13 @@ impl EmbeddedRuntime {
     /// Stops trusting a paired machine, telling it so where it can be
     /// reached.
     pub async fn unpair(&self, profile: ProfileId, host_id: &[u8]) -> Result<(), EmbeddedError> {
-        self.door()
-            .unpair(Request::new(UnpairRequest {
-                profile_id: profile.as_bytes().to_vec(),
-                peer: Some(HostRef {
+        self.edge(profile)?
+            .unpair(
+                HostRef {
                     of: Some(host_ref::Of::HostId(host_id.to_vec())),
-                }),
-                reason: String::new(),
-            }))
+                },
+                String::new(),
+            )
             .await?;
         Ok(())
     }

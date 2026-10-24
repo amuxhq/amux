@@ -21,12 +21,12 @@ use tokio::task::JoinHandle;
 
 use crate::activation::{ActivationError, ActivationPipe};
 use crate::edge::EdgeOptions;
-use crate::registry::{self, ProfileEvent};
 use crate::generation::{self, Generation};
 use crate::grpc::{self, ClientApi};
 use crate::install::{InstallationLock, LockError, REPORTS, STORE, private_dir};
 use crate::outbox::PushSender;
 use crate::profiles::{self, PROFILE_SOCKET, ProfileEntry, ProfileId};
+use crate::registry::{self, ProfileEvent};
 use crate::runtime::{Launch, Looked, Profile, ProfileRuntime, RegistryError, SweepReport};
 use crate::telemetry::{self, Telemetry};
 
@@ -168,8 +168,12 @@ impl Installation {
         }))
     }
 
-    /// Binds a profile's client socket when the daemon serves sockets.
-    fn bind(&self, runtime: &Arc<ProfileRuntime>) -> Result<Option<JoinHandle<()>>, StartError> {
+    /// Binds a profile's client socket, which also serves its
+    /// administration, when the daemon serves sockets.
+    fn bind(
+        self: &Arc<Self>,
+        runtime: &Arc<ProfileRuntime>,
+    ) -> Result<Option<JoinHandle<()>>, StartError> {
         if self.front_door.is_none() {
             return Ok(None);
         }
@@ -181,6 +185,13 @@ impl Installation {
         Ok(Some(grpc::serve_client(
             listener,
             ClientApi::new(runtime, None).opened_as(analytics::Client::Terminal),
+            Some(
+                crate::ProfileAdmin::new(
+                    crate::Registry::new(Arc::downgrade(self)),
+                    runtime.profile(),
+                )
+                .server(),
+            ),
         )))
     }
 
@@ -554,10 +565,16 @@ impl Daemon {
             .map(|hosted| hosted.runtime.clone())
     }
 
-    /// The front door's services in process: profiles, pairing, peers and
-    /// accounts, for an embedder that serves no socket.
+    /// The front door's services in process: the installation's profiles,
+    /// as its socket serves them.
     pub fn front_door(&self) -> crate::FrontDoor {
         crate::FrontDoor::new(self.registry())
+    }
+
+    /// A profile's administration, called in process as its socket serves
+    /// it.
+    pub fn profile_admin(&self, profile: ProfileId) -> crate::ProfileAdmin {
+        crate::ProfileAdmin::new(self.registry(), profile)
     }
 
     /// The installation's profiles, called in process.

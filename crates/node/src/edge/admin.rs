@@ -1,4 +1,4 @@
-//! What a person does to a profile's edge through the front door: pairing
+//! What a person does to a profile's edge through its socket: pairing
 //! in both directions, the paired hosts, and the account the profile signs
 //! in with. The pairing window, the exchange and every trust change are the
 //! profile's core's; what is left here is reading the request, dialling the

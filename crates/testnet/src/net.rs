@@ -28,6 +28,7 @@ use store::AgentKey;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 use wire::client_service_server::ClientService as _;
+use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::profile_service_client::ProfileServiceClient;
 use wire::{
     AgentRef, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
@@ -600,22 +601,18 @@ impl Net {
         Ok(())
     }
 
-    /// Pairs `a` with `b` the way a person does, through their front doors:
+    /// Pairs `a` with `b` the way a person does, through their profiles'
+    /// sockets:
     /// `b` opens a pairing window, `a` dials it with the PIN at the gate the
     /// net keeps for the pair, so the link they make can be cut there.
     async fn pair_for_real(&mut self, a: &str, b: &str) -> Result<(), NetError> {
         let gate = self.pair_gate(a, b)?;
-        let (profile_a, profile_b, id_b) = (
-            self.host(a)?.profile,
-            self.host(b)?.profile,
-            self.host(b)?.host_id,
-        );
+        let id_b = self.host(b)?.host_id;
         let refused = |status: tonic::Status| NetError::Refused(Box::new(status));
         let window = self
-            .front_door(b)
+            .admin(b)
             .await?
             .start_pairing(wire::StartPairingRequest {
-                profile_id: profile_b.as_bytes().to_vec(),
                 method: Some(wire::start_pairing_request::Method::Pin(wire::Empty {})),
                 ..wire::StartPairingRequest::default()
             })
@@ -628,10 +625,9 @@ impl Net {
                 error: "its pairing window has no PIN".to_owned(),
             });
         };
-        let mut door_a = self.front_door(a).await?;
-        let pending = door_a
+        let mut admin_a = self.admin(a).await?;
+        let pending = admin_a
             .begin_pair(wire::BeginPairRequest {
-                profile_id: profile_a.as_bytes().to_vec(),
                 host_id: id_b.as_bytes().to_vec(),
                 secret: Some(wire::begin_pair_request::Secret::Pin(pin)),
                 addrs: vec![gate.to_string()],
@@ -639,9 +635,8 @@ impl Net {
             .await
             .map_err(refused)?
             .into_inner();
-        door_a
+        admin_a
             .confirm_pair(wire::PendingPairRequest {
-                profile_id: profile_a.as_bytes().to_vec(),
                 token: pending.token,
             })
             .await
@@ -889,8 +884,8 @@ impl Net {
             })
     }
 
-    /// The installation's front door on `name`: profiles, pairing, peers
-    /// and accounts, as a person's client calls them.
+    /// The installation's front door on `name`: its profiles, as a
+    /// person's client calls them.
     pub async fn front_door(
         &self,
         name: &str,
@@ -902,6 +897,33 @@ impl Net {
                 error: error.to_string(),
             })?;
         Ok(ProfileServiceClient::new(channel))
+    }
+
+    /// The administration of `name`'s profile on its own socket: its
+    /// pairing, peers and account connection, as a person's client calls
+    /// them.
+    pub async fn admin(
+        &self,
+        name: &str,
+    ) -> Result<ProfileAdminServiceClient<tonic::transport::Channel>, NetError> {
+        self.admin_of(name, self.host(name)?.profile).await
+    }
+
+    /// The administration of another of `name`'s profiles.
+    pub async fn admin_of(
+        &self,
+        name: &str,
+        profile: node::ProfileId,
+    ) -> Result<ProfileAdminServiceClient<tonic::transport::Channel>, NetError> {
+        let host = self.host(name)?;
+        let socket = node::profile_dir(&host.data_dir, profile).join(node::PROFILE_SOCKET);
+        let channel = local_channel(&socket)
+            .await
+            .map_err(|error| NetError::Host {
+                host: name.to_owned(),
+                error: error.to_string(),
+            })?;
+        Ok(ProfileAdminServiceClient::new(channel))
     }
 
     pub fn agent(&self, name: &str) -> Result<&NetAgent, NetError> {
@@ -2001,11 +2023,9 @@ impl Net {
                         error,
                     })?;
             } else {
-                let request = wire::ProfileRequest {
-                    profile_id: profile.as_bytes().to_vec(),
-                };
-                let mut door = self.front_door(&host).await?;
-                door.pause_profile(request.clone())
+                let mut admin = self.admin(&host).await?;
+                admin
+                    .pause(wire::Empty {})
                     .await
                     .map_err(|status| NetError::Refused(Box::new(status)))?;
                 let kept = node::profile_dir(&self.host(&host)?.data_dir, profile)
@@ -2016,7 +2036,8 @@ impl Net {
                     }
                     _ => {}
                 }
-                door.resume_profile(request)
+                admin
+                    .resume(wire::Empty {})
                     .await
                     .map_err(|status| NetError::Refused(Box::new(status)))?;
             }
@@ -2209,11 +2230,9 @@ impl Net {
     pub async fn untrust(&mut self, a: &str, b: &str) -> Result<Ack, NetError> {
         let peer = self.host(b)?.host_id;
         if self.process(a)?.is_some() {
-            let profile = self.host(a)?.profile;
-            self.front_door(a)
+            self.admin(a)
                 .await?
                 .unpair(wire::UnpairRequest {
-                    profile_id: profile.as_bytes().to_vec(),
                     peer: Some(wire::HostRef {
                         of: Some(wire::host_ref::Of::HostId(peer.as_bytes().to_vec())),
                     }),

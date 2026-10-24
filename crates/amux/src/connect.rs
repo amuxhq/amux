@@ -149,13 +149,23 @@ pub async fn profile(config: &InstallationConfig, profile: Option<&str>) -> Resu
     select(&mut profiles(door), profile).await
 }
 
+/// The socket of a profile the front door described.
+async fn profile_channel(profile: &ProfileInfo) -> Result<Channel> {
+    let socket = Path::new(&profile.socket_path);
+    channel(socket)
+        .await
+        .with_context(|| format!("connecting to {}", socket.display()))
+}
+
 /// The client service of a profile the front door described.
 pub async fn client_of(profile: &ProfileInfo) -> Result<ClientServiceClient<Channel>> {
-    let socket = Path::new(&profile.socket_path);
-    let channel = channel(socket)
-        .await
-        .with_context(|| format!("connecting to {}", socket.display()))?;
-    Ok(wire::client_service_client(channel))
+    Ok(wire::client_service_client(profile_channel(profile).await?))
+}
+
+/// The administration of a profile the front door described: its pairing,
+/// peers and sign-out.
+pub async fn admin_of(profile: &ProfileInfo) -> Result<crate::pairing::Admin> {
+    Ok(crate::pairing::Admin::new(profile_channel(profile).await?))
 }
 
 /// The client service of the selected profile.

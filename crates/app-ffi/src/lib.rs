@@ -1486,7 +1486,7 @@ pub unsafe extern "C" fn amux_profile_roster(profile: *const AmuxProfile) -> u64
             return 0;
         };
         let (embedded, id) = (profile.shared.embedded().clone(), profile.profile);
-        profile.act(async move { Answered::from(embedded.roster(id).await) })
+        profile.act(async move { Answered::from(embedded.roster(id)) })
     })
 }
 

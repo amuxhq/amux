@@ -1390,6 +1390,7 @@ impl ProfileRuntime {
         Ok(crate::grpc::serve_client(
             listener,
             ClientApi::weak(self.me.clone(), Some(id)),
+            None,
         ))
     }
 

@@ -105,6 +105,8 @@ pub struct EdgeOptions {
     /// The machine's interface addresses, when a test stands in for them;
     /// unset, the system's are read.
     pub interfaces: Option<Vec<std::net::IpAddr>>,
+    /// How this host's links notice a silent peer.
+    pub liveness: crate::identity::LinkLiveness,
 }
 
 pub type DiscoveryFactory = Arc<dyn Fn() -> Result<Arc<dyn Discovery>, String> + Send + Sync>;
@@ -165,6 +167,7 @@ impl Default for EdgeOptions {
             link_socket: false,
             cloud: CloudOptions::default(),
             interfaces: None,
+            liveness: Default::default(),
         }
     }
 }
@@ -323,7 +326,8 @@ impl Edge {
         runtime: Weak<ProfileRuntime>,
         analytics: analytics::Analytics,
     ) -> Result<Arc<Self>, EdgeError> {
-        let identity = crate::identity::load_or_create_device_identity_in(dir, host)?;
+        let mut identity = crate::identity::load_or_create_device_identity_in(dir, host)?;
+        identity.liveness = options.liveness;
         // The core holds the trust store; the edge reads it as the core
         // publishes it. A trust file that does not read stops the edge.
         let read = crate::trust::load_or_create_in(dir)?;

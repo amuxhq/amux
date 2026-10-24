@@ -838,11 +838,17 @@ async fn an_input_refused_because_the_host_was_unreachable_is_held_and_sent_agai
             .send(Ok(rejected(wire::Refusal::HostUnreachable)))
             .ok();
         // The verdict lands; the input is held, not rejected.
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        let held = session.state().input_state(&id);
-        assert!(
-            !matches!(held, Some(InputState::Rejected(_))),
-            "{act}: an input that never left was rejected: {held:?}"
+        let held = until(session.changed(), || {
+            session
+                .state()
+                .input_state(&id)
+                .filter(|state| *state != InputState::Sent)
+        })
+        .await;
+        assert_eq!(
+            held,
+            InputState::Held,
+            "{act}: an input that never left is held"
         );
         // The host comes back: the chat reconnects and catches up.
         let feed = reconnect(&clock, &session, &mut calls, feed).await;

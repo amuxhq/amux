@@ -208,6 +208,7 @@ impl EmbeddedRuntime {
             link_socket: false,
             cloud: overrides.cloud,
             interfaces: None,
+            liveness: Default::default(),
         };
         let telemetry = Arc::new(AtomicBool::new(config.telemetry));
         let analytics = match overrides.recording {

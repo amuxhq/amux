@@ -2744,12 +2744,16 @@ fn undiscovered_lan_host(name: &str, scope: &str) -> testnet::HostDecl {
 /// holding desk in process and box as a real daemon process, paired by
 /// address with desk dialling and box answering, and discovery off on both.
 async fn paired_without_discovery() -> Net {
+    paired_without_discovery_with(testnet::NetOptions::default()).await
+}
+
+async fn paired_without_discovery_with(options: testnet::NetOptions) -> Net {
     let mut net = Net::start_with(
         Topology::new(),
         testnet::NetOptions {
             clock: testnet::ClockMode::Wall,
             gated_lan: true,
-            ..testnet::NetOptions::default()
+            ..options
         },
     )
     .await
@@ -2825,24 +2829,35 @@ async fn hosts_paired_by_address_link_again_after_the_lan_between_them_comes_bac
 }
 
 /// A paired host whose link goes silently dead (every datagram dropped, no
-/// close) is shown away within about half a minute, not after QUIC's
-/// two-minute idle timeout: until then every client keeps showing the far
-/// host's agents as live and current, answers sent to it sit unconfirmed,
-/// and a phone keeps saying "reachable" (QA: hosts and the phone looked
-/// current for 70 s to 3 min after a total cut). The bound is desktop
-/// keepalive 10 s and idle timeout 30 s, as the phone's 20 s / 60 s are
-/// already shorter than the desktop's 30 s / 120 s. QUIC restarts the idle
-/// timer when it sends the first keepalive after the last packet it
-/// received, so a link is closed at most keepalive plus idle, forty
-/// seconds, after the cut; the window adds a few seconds for the close to
-/// reach the inventory and for the poll.
+/// close) is shown away once the link's keepalive and idle timeout run
+/// out, not left for QUIC's default two-minute idle timeout: until then
+/// every client keeps showing the far host's agents as live and current,
+/// answers sent to it sit unconfirmed, and a phone keeps saying
+/// "reachable" (QA: hosts and the phone looked current for 70 s to 3 min
+/// after a total cut). A link closes at most keepalive plus idle after
+/// the cut, forty seconds with a desktop's pair (`node::LinkLiveness`);
+/// the desk here runs a pair of a quarter and one second, so the story
+/// takes about one. The shorter timeout of a link's two ends wins, so the
+/// box's own pair does not matter.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_host_notices_a_silently_dead_link_within_forty_seconds() {
-    let mut net = paired_without_discovery().await;
+async fn a_host_notices_a_silently_dead_link_at_its_keepalive_and_idle_timeout() {
+    let liveness = node::LinkLiveness {
+        keep_alive: Duration::from_millis(250),
+        idle_timeout: Duration::from_secs(1),
+    };
+    let mut net = paired_without_discovery_with(testnet::NetOptions {
+        edge: Some(std::sync::Arc::new(move |host, edge| {
+            if host == "desk" {
+                edge.liveness = liveness;
+            }
+        })),
+        ..testnet::NetOptions::default()
+    })
+    .await;
 
     net.sever_link("desk", "box").unwrap();
     println!("every datagram between desk and box is dropped from now on");
-    until_link(&net, "desk", "box", false, Duration::from_secs(45)).await;
+    until_link(&net, "desk", "box", false, Duration::from_secs(10)).await;
 
     net.shutdown().await.unwrap();
 }

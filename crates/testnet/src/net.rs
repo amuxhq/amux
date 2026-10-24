@@ -1826,6 +1826,7 @@ impl Net {
             // never lists, and has no interfaces of its own to list after
             // a network change either.
             interfaces: Some(Vec::new()),
+            liveness: Default::default(),
         };
         if let Some(relay) = &self.relay {
             edge.cloud = relay.cloud_options(&self.udp[name]);

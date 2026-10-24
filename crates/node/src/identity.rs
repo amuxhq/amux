@@ -77,6 +77,51 @@ pub struct DeviceIdentity {
     pub host_id: HostId,
     private_key_pkcs8: Vec<u8>,
     pubkey: Vec<u8>,
+    /// How the links this identity makes and accepts notice a silent peer.
+    pub(crate) liveness: LinkLiveness,
+}
+
+/// How a QUIC link notices its peer went silent: it sends a keepalive
+/// every `keep_alive` and closes after `idle_timeout` with nothing heard.
+/// QUIC restarts the idle timer at the first keepalive after the last
+/// packet received, so a dead link closes at most `keep_alive` plus
+/// `idle_timeout` after the cut, and the shorter timeout of a link's two
+/// ends wins.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LinkLiveness {
+    pub keep_alive: std::time::Duration,
+    pub idle_timeout: std::time::Duration,
+}
+
+#[cfg(test)]
+mod liveness_tests {
+    /// A desktop notices a silently dead link within forty seconds: its
+    /// keepalive and idle timeout sum to that bound.
+    #[cfg(not(target_os = "ios"))]
+    #[test]
+    fn a_desktop_notices_a_dead_link_within_forty_seconds() {
+        let liveness = super::LinkLiveness::default();
+        assert!(liveness.keep_alive + liveness.idle_timeout <= std::time::Duration::from_secs(40));
+    }
+}
+
+impl Default for LinkLiveness {
+    /// A link that died silently (a cut cable, a sleeping laptop, a
+    /// firewall eating datagrams) is noticed only at the idle timeout, and
+    /// until then its host's agents read live and current. Ten seconds of
+    /// keepalive under a thirty-second timeout notices within forty seconds
+    /// and costs a few packets a minute. A phone keeps a longer pair for
+    /// its battery.
+    fn default() -> Self {
+        #[cfg(target_os = "ios")]
+        let (keep_alive, idle_timeout) = (20, 60);
+        #[cfg(not(target_os = "ios"))]
+        let (keep_alive, idle_timeout) = (10, 30);
+        Self {
+            keep_alive: std::time::Duration::from_secs(keep_alive),
+            idle_timeout: std::time::Duration::from_secs(idle_timeout),
+        }
+    }
 }
 
 impl DeviceIdentity {
@@ -109,6 +154,7 @@ impl DeviceIdentity {
             host_id,
             private_key_pkcs8,
             pubkey: key_pair.public_key().as_ref().to_vec(),
+            liveness: LinkLiveness::default(),
         })
     }
 
@@ -179,7 +225,7 @@ impl DeviceIdentity {
         tickets: &std::sync::Arc<SessionTickets>,
     ) -> Result<quinn::ServerConfig, IdentityError> {
         let tls = self.server_tls_config(trust_store)?;
-        quic_server_config_issuing(tls, tickets).map_err(IdentityError::TlsConfig)
+        quic_server_config_issuing(tls, tickets, self.liveness).map_err(IdentityError::TlsConfig)
     }
 
     pub(crate) fn quic_client_config_for_peer(
@@ -215,7 +261,7 @@ impl DeviceIdentity {
         let crypto = quinn::crypto::rustls::QuicClientConfig::try_from(tls)
             .map_err(|error| IdentityError::TlsConfig(error.to_string()))?;
         let mut config = quinn::ClientConfig::new(std::sync::Arc::new(crypto));
-        config.transport_config(quic_transport_config());
+        config.transport_config(quic_transport_config(self.liveness));
         Ok(config)
     }
 }
@@ -228,6 +274,7 @@ impl DeviceIdentity {
 pub(crate) fn quic_server_config_issuing(
     mut tls: ServerConfig,
     tickets: &std::sync::Arc<SessionTickets>,
+    liveness: LinkLiveness,
 ) -> Result<quinn::ServerConfig, String> {
     tls.alpn_protocols = vec![QUIC_ALPN.to_vec()];
     tls.session_storage = tickets.clone();
@@ -240,30 +287,15 @@ pub(crate) fn quic_server_config_issuing(
     let crypto = quinn::crypto::rustls::QuicServerConfig::try_from(tls)
         .map_err(|error| error.to_string())?;
     let mut config = quinn::ServerConfig::new(std::sync::Arc::new(crypto), tickets.token_key());
-    config.transport_config(quic_transport_config());
+    config.transport_config(quic_transport_config(liveness));
     config.migration(true);
     crate::link::validation::issue_tokens(&mut config);
     Ok(config)
 }
 
-pub(crate) fn quic_transport_config() -> std::sync::Arc<quinn::TransportConfig> {
-    #[cfg(target_os = "ios")]
-    let (keep_alive, idle_timeout) = (
-        std::time::Duration::from_secs(20),
-        std::time::Duration::from_secs(60),
-    );
-    // A link that died silently (a cut cable, a sleeping laptop, a
-    // firewall eating datagrams) is noticed only at the idle timeout, and
-    // until then its host's agents read live and current. Ten seconds of
-    // keepalive under a thirty-second timeout notices within forty seconds
-    // and costs a few packets a minute. A phone keeps its longer pair for
-    // its battery; the shorter timeout of the two ends wins on a link.
-    #[cfg(not(target_os = "ios"))]
-    let (keep_alive, idle_timeout) = (
-        std::time::Duration::from_secs(10),
-        std::time::Duration::from_secs(30),
-    );
-
+pub(crate) fn quic_transport_config(
+    liveness: LinkLiveness,
+) -> std::sync::Arc<quinn::TransportConfig> {
     // A launch's first flight is every host's inventory and the fleet's
     // session openings at once; through a relay they all ride one fresh
     // connection. The ten-packet initial window of RFC 9002 holds about a
@@ -273,9 +305,10 @@ pub(crate) fn quic_transport_config() -> std::sync::Arc<quinn::TransportConfig> 
     congestion.initial_window(32 * 1200);
     let mut transport = quic_transport_base();
     transport
-        .keep_alive_interval(Some(keep_alive))
+        .keep_alive_interval(Some(liveness.keep_alive))
         .max_idle_timeout(Some(
-            idle_timeout
+            liveness
+                .idle_timeout
                 .try_into()
                 .expect("QUIC idle timeout fits in a QUIC variable integer"),
         ))

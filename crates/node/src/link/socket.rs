@@ -2232,7 +2232,10 @@ mod tests {
 
     #[test]
     fn socket_transport_keeps_every_datagram_at_the_one_size() {
-        let config = format!("{:?}", crate::identity::quic_transport_config());
+        let config = format!(
+            "{:?}",
+            crate::identity::quic_transport_config(Default::default())
+        );
         for field in [
             "initial_mtu: 1200",
             "min_mtu: 1200",
@@ -3164,7 +3167,7 @@ mod tests {
     /// there carries it at the new address under either stand-in.
     #[tokio::test]
     async fn socket_accepting_side_keeps_a_peer_that_rebinds() {
-        let link = loopback(crate::identity::quic_transport_config()).await;
+        let link = loopback(crate::identity::quic_transport_config(Default::default())).await;
         let dialler = link.client_socket.own();
         let first = link.server.remote_address();
         assert!(link.server_socket.name(first, dialler));
@@ -3192,7 +3195,7 @@ mod tests {
     /// A receive error is skipped: the endpoint goes on driving its links.
     #[tokio::test]
     async fn socket_receive_error_leaves_the_endpoint_running() {
-        let link = loopback(crate::identity::quic_transport_config()).await;
+        let link = loopback(crate::identity::quic_transport_config(Default::default())).await;
         link.server_net.recv_errors.store(5, Ordering::SeqCst);
         assert_eq!(round_trip(&link, b"after errors").await, b"after errors");
         assert_eq!(link.server_socket.drops().receive_errors, 5);

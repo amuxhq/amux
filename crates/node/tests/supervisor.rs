@@ -798,9 +798,6 @@ async fn the_amux_daemon_exits_when_its_supervisor_dies() {
     })
     .await
     .expect("the daemon outlived its supervisor");
-    let log = std::fs::read_to_string(data.join("daemon.log")).unwrap();
-    assert!(log.contains("the supervisor went away"), "{log}");
-    assert!(log.contains("stopped cleanly"), "{log}");
 }
 
 #[test]

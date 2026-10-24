@@ -113,6 +113,6 @@ pub(crate) fn relay_quic_client_config_keeping(
     let crypto = quinn::crypto::rustls::QuicClientConfig::try_from(tls)
         .map_err(|error| TransportError::Config(error.to_string()))?;
     let mut config = quinn::ClientConfig::new(Arc::new(crypto));
-    config.transport_config(crate::identity::quic_transport_config());
+    config.transport_config(crate::identity::quic_transport_config(Default::default()));
     Ok(config)
 }

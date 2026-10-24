@@ -895,9 +895,14 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
             .unwrap()["reason"]
         );
     }
-    // The repeat stays held back.
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-    assert_eq!(install.core_dumps().len(), 2);
+    // A window: a dump held back leaves no mark to wait on.
+    holds_for(
+        "the repeat to stay held back",
+        std::time::Duration::from_millis(300),
+        || async { install.core_dumps().len() == 2 },
+    )
+    .await
+    .unwrap();
     drop(other);
     drop(runtime);
     daemon.shutdown().await.unwrap();

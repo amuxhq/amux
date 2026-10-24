@@ -1262,18 +1262,15 @@ async fn words_typed_into_a_chat_that_closes_under_the_person_end_no_other_agent
             .find(healthy.as_bytes())
             .is_none_or(|agent| agent.lifecycle() != wire::Lifecycle::Live)
     };
-    let mut changed = app.fleet.changed();
-    let stopped_by_typing = tokio::time::timeout(Duration::from_secs(3), async {
-        while !ended(&app) {
-            changed.changed().await.unwrap();
-        }
-    })
+    // A window: a key that home swallows leaves no mark to wait on.
+    testnet::holds_for(
+        "the words typed as the chat closed to leave healthy running",
+        Duration::from_millis(300),
+        || std::future::ready(!ended(&app)),
+    )
     .await
-    .is_ok();
-    assert!(
-        !stopped_by_typing,
-        "the words typed as the chat closed ended healthy"
-    );
+    .expect("the words typed as the chat closed ended healthy");
+    let mut changed = app.fleet.changed();
     // After half a second with no key, home's keys act again.
     tokio::time::sleep(Duration::from_millis(600)).await;
     press(&mut app, KeyCode::Char('x'));

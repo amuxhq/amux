@@ -170,6 +170,7 @@ fn edge_options(config: &InstallationConfig) -> node::EdgeOptions {
         link_socket: true,
         cloud: node::CloudOptions::default(),
         interfaces: node::test_interfaces(),
+        liveness: Default::default(),
     }
 }
 

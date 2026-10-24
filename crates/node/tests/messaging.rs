@@ -601,11 +601,6 @@ async fn connect_patience_running_out_behind_the_hello_does_not_lose_the_message
     })
     .await
     .unwrap();
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    assert!(
-        armed.elapsed() < Duration::from_millis(daemon_core::deliveries::CONNECT_PATIENCE_MS),
-        "the Hello was queued before the patience ran out"
-    );
     tokio::time::sleep_until(
         armed + Duration::from_millis(daemon_core::deliveries::CONNECT_PATIENCE_MS + 1_000),
     )

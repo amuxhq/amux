@@ -18,15 +18,15 @@ use ui_view::{
 use wire::{BlobRef, send_input_response};
 
 use crate::coalesce::{Coalescer, WakeFn};
+use crate::delta::Sent;
 use crate::values::{
-    ActOutcome, ChatChanges, ChatFrame, CommandOutcome, Draft, FrozenReview, PageOutcome,
+    ActOutcome, AskMoved, ChatDelta, ChatFrame, CommandOutcome, Draft, FrozenReview, PageOutcome,
     SendOutcome,
 };
 
-/// An open chat. Row ids are item keys and never move, so the host's id
-/// sequence changes only at its two edges: newer keys above the newest it
-/// holds, older ones below its oldest, and while the reader follows, the
-/// oldest dropped as the window trims to its cap; until a reload.
+/// An open chat. The host hears what moved as [`ChatDelta`]s: the window's
+/// keys at their edges, the rows that changed, and the views around them,
+/// each only when it moved.
 pub struct Chat {
     id: u64,
     agent: AgentKey,
@@ -49,6 +49,9 @@ pub struct Chat {
     kept: Option<Draft>,
     /// The draft as it last stood, for the saver to hand the daemon.
     draft: watch::Sender<Option<wire::ComposerDraft>>,
+    /// What the host was last handed; None until its model opens on the
+    /// chat, and no delta is computed before.
+    sent: Mutex<Option<Sent>>,
 }
 
 impl Chat {
@@ -83,6 +86,7 @@ impl Chat {
             open_runs: Mutex::new(HashSet::new()),
             kept,
             draft,
+            sent: Mutex::new(None),
         });
         // Spawned once the chat exists, so every change it sees finds the
         // chat; it ends when the chat is dropped or the session ends.
@@ -115,32 +119,6 @@ impl Chat {
         self.session.state().transcript().keys().cloned().collect()
     }
 
-    /// Keys newer than `newest`, oldest first; None when `newest` is not
-    /// held, and the host reads [`Chat::keys`] again.
-    pub fn keys_above(&self, newest: &str) -> Option<Vec<Key>> {
-        let state = self.session.state();
-        let transcript = state.transcript();
-        let order = transcript.get(newest)?.item.order;
-        Some(
-            transcript
-                .range(order.saturating_add(1)..=u64::MAX)
-                .map(|held| held.item.key.clone())
-                .collect(),
-        )
-    }
-
-    /// The oldest key the window holds: while the reader follows, the
-    /// window drops its oldest rows as new ones arrive, and the host drops
-    /// the keys before this one.
-    pub fn oldest_key(&self) -> Option<Key> {
-        let state = self.session.state();
-        state
-            .transcript()
-            .iter()
-            .next()
-            .map(|held| held.item.key.clone())
-    }
-
     /// The draft this device kept for the agent when the chat opened.
     pub fn kept_draft(&self) -> Option<Draft> {
         self.kept.clone()
@@ -160,23 +138,6 @@ impl Chat {
         self.session.follow(following);
     }
 
-    /// Keys older than `oldest`, oldest first; None when `oldest` is not
-    /// held.
-    pub fn keys_below(&self, oldest: &str) -> Option<Vec<Key>> {
-        let state = self.session.state();
-        let transcript = state.transcript();
-        let order = transcript.get(oldest)?.item.order;
-        if order == 0 {
-            return Some(Vec::new());
-        }
-        Some(
-            transcript
-                .range(0..=order - 1)
-                .map(|held| held.item.key.clone())
-                .collect(),
-        )
-    }
-
     /// Rows for these keys, in order, skipping keys not held, each run
     /// folded to its newest step unless the reader opened it.
     pub fn rows_for(&self, keys: &[Key]) -> Vec<Row> {
@@ -187,11 +148,26 @@ impl Chat {
         ui_view::chat_rows_for(&self.session.state(), keys, &opts)
     }
 
-    /// Opens or closes the run `member` belongs to; every row read after
-    /// draws it so.
+    /// Opens or closes the run `member` belongs to; the next delta carries
+    /// its rows drawn so, and every row read after draws it so.
     pub fn toggle_run(&self, member: &str) {
-        let mut open = self.open_runs.lock().unwrap();
-        ui_view::toggle_run(&self.session.state(), &member.to_owned(), &mut open);
+        let steps: Vec<Key> = {
+            let mut open = self.open_runs.lock().unwrap();
+            let state = self.session.state();
+            ui_view::toggle_run(&state, &member.to_owned(), &mut open);
+            let transcript = state.transcript();
+            transcript
+                .get(member)
+                .and_then(|held| transcript.run_span(held.item.order))
+                .map(|span| {
+                    transcript
+                        .range(span)
+                        .map(|held| held.item.key.clone())
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        self.changes.push(steps, false, false);
     }
 
     pub fn ask_card(&self) -> Option<AskCard> {
@@ -234,23 +210,65 @@ impl Chat {
         frame(&state, self.clock.now_ms(), ended, &first_drawn)
     }
 
-    /// Everything that changed since the last take; the next change wakes
-    /// the host again.
-    pub fn take_changes(&self) -> ChatChanges {
+    /// The chat whole, for the host's model opening on it: every key, the
+    /// frame and the views around it. Every delta after it says what moved
+    /// since.
+    pub fn opening(&self) -> ChatDelta {
+        let mut sent = self.sent.lock().unwrap();
+        let sent = sent.insert(Sent::default());
         let batch = self.changes.take();
+        self.moved(sent, true, &batch.keys)
+    }
+
+    /// What moved since the host last heard, or None when nothing did or
+    /// its model has not opened on the chat; the next change wakes the host
+    /// again.
+    pub fn delta(&self) -> Option<ChatDelta> {
+        let mut sent = self.sent.lock().unwrap();
+        let sent = sent.as_mut()?;
+        let batch = self.changes.take();
+        let delta = self.moved(sent, batch.reloaded, &batch.keys);
+        let moved = delta.keys.is_some()
+            || !delta.rows.is_empty()
+            || delta.frame.is_some()
+            || delta.ask.is_some()
+            || delta.overview.is_some()
+            || delta.settings.is_some();
+        moved.then_some(delta)
+    }
+
+    /// Everything that moved against `sent`, from one read of the session.
+    fn moved(&self, sent: &mut Sent, reloaded: bool, changed: &[Key]) -> ChatDelta {
+        let ended = self.session.ended().map(|error| error.to_string());
+        let files = self.changed_files.lock().unwrap().clone();
+        let mut open = self.open_runs.lock().unwrap();
+        let state = self.session.state();
         // Each open run is re-held on its newest step before rows are read,
         // so it stays open as it grows, older steps page in, or the window
         // trims it.
-        if batch.reloaded || !batch.keys.is_empty() {
-            let mut open = self.open_runs.lock().unwrap();
-            if !open.is_empty() {
-                ui_view::keep_open_runs(&self.session.state(), &mut open);
-            }
+        if !open.is_empty() && (reloaded || !changed.is_empty()) {
+            ui_view::keep_open_runs(&state, &mut open);
         }
-        ChatChanges {
-            keys: batch.keys,
-            reloaded: batch.reloaded,
-            session: batch.other,
+        let (keys, wanted) = sent.keys_moved(state.transcript(), reloaded, changed);
+        let opts = ChatOptions {
+            tools: ToolRows::Collapse { open: &open },
+        };
+        let rows = ui_view::chat_rows_for(&state, &wanted, &opts);
+        let frame = {
+            let mut first_drawn = self.first_drawn.lock().unwrap();
+            note_drawn(&state, &mut first_drawn);
+            frame(&state, self.clock.now_ms(), ended, &first_drawn)
+        };
+        ChatDelta {
+            chat: self.id,
+            keys,
+            rows,
+            frame: sent.frame(frame),
+            ask: sent
+                .ask(ui_view::ask_card(&state))
+                .map(|card| AskMoved { card }),
+            overview: sent.overview(ui_view::overview(&state, files.as_ref())),
+            settings: sent.settings(ui_view::settings(&state)),
         }
     }
 

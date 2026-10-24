@@ -648,6 +648,19 @@ public struct AskCard: Codable, Hashable, Sendable {
     }
 }
 
+/// The head ask moved: the card waiting now, if any.
+public struct AskMoved: Codable, Hashable, Sendable {
+    public var card: AskCard?
+
+    public init(card: AskCard?) {
+        self.card = card
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case card
+    }
+}
+
 public enum AskRow: Codable, Hashable, Sendable {
     /// A plan the agent proposed, and what the person decided: its title,
     /// lifted from an opening heading that names it, and the rest as its
@@ -1575,25 +1588,39 @@ public struct Changes: Codable, Hashable, Sendable {
     }
 }
 
-/// What changed in a chat since the host last took its changes.
-public struct ChatChanges: Codable, Hashable, Sendable {
-    /// Rows to fetch again, each once.
-    public var keys: [String]
-    /// Every row id may be new: read the keys again.
-    public var reloaded: Bool
-    /// Something beside the rows moved: the frame, the overview or the ask.
-    public var session: Bool
+/// What moved in an open chat since the host last heard: each field only
+/// when it moved.
+public struct ChatDelta: Codable, Hashable, Sendable {
+    /// The chat's id within its fleet.
+    public var chat: UInt64
+    /// The rows that changed among those held, and every row new at the
+    /// newest edge, each run folded as the reader left it. A row paged in
+    /// below, or held through a reload, is read when it is drawn.
+    public var rows: [Row]
+    public var ask: AskMoved?
+    public var frame: ChatFrame?
+    public var keys: KeysMoved?
+    public var overview: Overview?
+    public var settings: SettingsView?
 
-    public init(keys: [String], reloaded: Bool, session: Bool) {
+    public init(chat: UInt64, rows: [Row], ask: AskMoved?, frame: ChatFrame?, keys: KeysMoved?, overview: Overview?, settings: SettingsView?) {
+        self.chat = chat
+        self.rows = rows
+        self.ask = ask
+        self.frame = frame
         self.keys = keys
-        self.reloaded = reloaded
-        self.session = session
+        self.overview = overview
+        self.settings = settings
     }
 
     private enum CodingKeys: String, CodingKey {
+        case chat
+        case rows
+        case ask
+        case frame
         case keys
-        case reloaded
-        case session
+        case overview
+        case settings
     }
 }
 
@@ -2983,21 +3010,23 @@ public struct FleetCard: Codable, Hashable, Sendable {
     }
 }
 
-/// What changed in the fleet since the host last took its changes.
-public struct FleetChanges: Codable, Hashable, Sendable {
-    /// Agents whose card or family attention may differ.
-    public var agents: [AgentKey]
-    /// The host list moved.
-    public var hosts: Bool
+/// What moved in a profile's fleet since the host last heard: each field
+/// only when it moved.
+public struct FleetDelta: Codable, Hashable, Sendable {
+    /// Every host, this device first: whenever the host list moved, even
+    /// where no view of a host did.
+    public var hosts: [HostView]?
+    /// Home's sections.
+    public var view: FleetView?
 
-    public init(agents: [AgentKey], hosts: Bool) {
-        self.agents = agents
+    public init(hosts: [HostView]?, view: FleetView?) {
         self.hosts = hosts
+        self.view = view
     }
 
     private enum CodingKeys: String, CodingKey {
-        case agents
         case hosts
+        case view
     }
 }
 
@@ -3688,6 +3717,60 @@ public struct JobRow: Codable, Hashable, Sendable {
         case startedAtMs = "started_at_ms"
         case kind
         case step
+    }
+}
+
+/// How the window's keys moved. Row ids are item keys and never move, so
+/// the window's sequence changes only at its two edges until a reload.
+public enum KeysMoved: Codable, Hashable, Sendable {
+    /// Every key may be new: the whole window, oldest first.
+    case reload([String])
+    case edges(above: [String], below: [String], dropped: UInt32)
+
+    private enum Tag: String, CodingKey {
+        case reload = "Reload"
+        case edges = "Edges"
+    }
+
+    private enum EdgesKeys: String, CodingKey {
+        case above
+        case below
+        case dropped
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a KeysMoved names exactly one variant"))
+        }
+        switch _tag {
+        case .reload:
+            self = .reload(try _container.decode([String].self, forKey: .reload))
+        case .edges:
+            let _fields = try _container.nestedContainer(
+                keyedBy: EdgesKeys.self, forKey: .edges)
+            self = .edges(
+                above: try _fields.decode([String].self, forKey: .above),
+                below: try _fields.decode([String].self, forKey: .below),
+                dropped: try _fields.decode(UInt32.self, forKey: .dropped))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .reload(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .reload)
+        case .edges(let above, let below, let dropped):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: EdgesKeys.self, forKey: .edges)
+            try _fields.encode(above, forKey: .above)
+            try _fields.encode(below, forKey: .below)
+            try _fields.encode(dropped, forKey: .dropped)
+        }
     }
 }
 

@@ -3,30 +3,25 @@ import Foundation
 import Observation
 
 /// What a chat screen reads and acts on: an open chat on the runtime, or a
-/// scripted stand-in where there is no runtime to open one on.
+/// scripted stand-in where there is no runtime to open one on. The chat
+/// opens whole; after that, whoever owns the model hands it each
+/// `ChatDelta` the source moves by.
 public protocol ChatSource: AnyObject, Sendable {
-    func keys() -> [String]
-    func keys(above newest: String) -> [String]?
-    func keys(below oldest: String) -> [String]?
-    /// The oldest key the window holds: while the reader follows, the window
-    /// drops its oldest rows as new ones arrive.
-    func oldestKey() -> String?
+    /// The chat whole, for a model opening on it: every key, the frame and
+    /// the views around it. Every delta after it says what moved since.
+    func opening() -> ChatDelta
     /// Where the reader is: at the newest row, or in history.
     func follow(_ following: Bool)
     /// Rows for these keys, each run folded to its newest step unless the
-    /// reader opened it.
+    /// reader opened it: for a cell drawn for the first time, or after a
+    /// reload.
     func rows(for keys: [String]) -> [Row]
-    func askCard() -> AskCard?
-    func overview() -> Overview?
-    func settings() -> SettingsView?
-    func frame() -> ChatFrame?
-    func takeChanges() -> ChatChanges
     func send(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure>
     func answer(_ ask: String, choice: Int, note: String?) async -> ActOutcome?
     func answer(_ ask: String, responses: [QuestionResponse]) async -> ActOutcome?
     func replyInstead(_ ask: String, text: String, soFar: [QuestionResponse]) async -> ActOutcome?
-    /// Opens or closes the run `member` sits in; rows read after draw it
-    /// so, and it stays open as it grows.
+    /// Opens or closes the run `member` sits in; the next delta carries its
+    /// rows drawn so, and it stays open as it grows.
     func toggleRun(_ member: String)
     func answerForm(_ ask: String, values: [FormValue]) async -> ActOutcome?
     func withdraw(_ input: [UInt8]) async -> ActOutcome?
@@ -42,7 +37,7 @@ public protocol ChatSource: AnyObject, Sendable {
     func putBlob(_ data: Data, name: String, mime: String) async -> Result<BlobRef, RuntimeFailure>
     func blob(_ hash: [UInt8]) -> Data?
     func review(_ comparison: Comparison) async -> Result<FrozenReview, RuntimeFailure>
-    /// Fetches the files changed for `comparison`; `overview()` lists them
+    /// Fetches the files changed for `comparison`; the overview lists them
     /// from then on.
     func openOverview(_ comparison: Comparison) async -> Result<Overview, RuntimeFailure>
     /// Runs a draft that names a command the client runs itself (`/model`,
@@ -106,12 +101,12 @@ public enum ChatPaging: Equatable, Sendable {
 
 /// One open chat as the phone's list holds it.
 ///
-/// The chat holds the sequence of row keys, which changes only at its two
-/// edges, and each cell reads its row by key when it is first drawn. An
-/// update names the keys it changed; only cells already read are read
-/// again, and only those cells redraw. A Reset's swap, or the reload of a
-/// head that moved on while the reader was in history, is the one time the
-/// whole sequence is read again.
+/// The chat holds the sequence of row keys as the runtime's deltas move it,
+/// only ever at its two edges until a reload, and each cell holds its row:
+/// read by key when the cell is first drawn, and handed over again by the
+/// delta of every change to it, so only that cell redraws. A Reset's swap,
+/// or the reload of a head that moved on while the reader was in history,
+/// is the one time the whole sequence is handed over again.
 ///
 /// The sequence is the session's window. While the reader follows, the
 /// window keeps the newest rows up to its cap and drops the oldest as new
@@ -232,32 +227,28 @@ public final class ChatModel {
     ///   saying it is loading; zero says so from the first frame.
     public init(source: ChatSource, loadingHintAfter: Duration = ChatModel.loadingHintDelay) {
         self.source = source
-        // Taken before reading, so a change that lands while the chat is
-        // read wakes it again rather than being taken with the rest.
-        _ = source.takeChanges()
-        hold(keys: source.keys())
-        readSession()
+        let opening = source.opening()
+        if case .reload(let keys)? = opening.keys { hold(keys: keys) }
+        show(opening)
         if ids.isEmpty { waitForRows(loadingHintAfter) }
     }
 
     // MARK: - Reading
 
-    /// The runtime moved: extend the sequence at its edges, read the changed
-    /// cells again, and read the frame, the card and the strip.
-    public func woke() {
-        let changes = source.takeChanges()
-        if changes.reloaded || !changes.keys.isEmpty {
+    /// What moved in the chat since the last delta: the sequence at its
+    /// edges or whole, the rows that changed, and the frame, the card and
+    /// the strip where they moved.
+    public func apply(_ delta: ChatDelta) {
+        if delta.keys != nil || !delta.rows.isEmpty {
             Signposts.emit(.transcriptCommit)
         }
-        if changes.reloaded {
-            swap()
-        } else if !changes.keys.isEmpty {
-            // New keys, or a change to the oldest row, which is how the
-            // window dropping rows from its top shows.
-            if changes.keys.contains(where: { places[$0] == nil || $0 == ids.first }) { extend() }
-            refresh(changes.keys.filter { cells[$0] != nil }, onlyChanged: true)
+        switch delta.keys {
+        case .reload(let keys)?: swap(keys)
+        case .edges(let above, let below, let dropped)?: move(above: above, below: below, dropped: Int(dropped))
+        case nil: break
         }
-        if changes.session || changes.reloaded || !changes.keys.isEmpty { readSession() }
+        fill(delta.rows)
+        show(delta)
     }
 
     /// The cell for a key, its row read now if it never was.
@@ -302,24 +293,28 @@ public final class ChatModel {
         return nil
     }
 
-    /// Opens or closes a row's own detail, or a subagent's steps.
+    /// Opens or closes a row's own detail, or a subagent's steps. Every
+    /// drawn row is measured again, since what draws moved without the rows
+    /// themselves changing.
     public func toggle(_ id: String) {
         if expanded.contains(id) {
             expanded.remove(id)
         } else {
             expanded.insert(id)
         }
-        refresh(Array(cells.keys))
+        guard !cells.isEmpty else { return }
+        revision += 1
+        for cell in cells.values { cell.revision = revision }
     }
 
     public func isExpanded(_ id: String) -> Bool {
         expanded.contains(id)
     }
 
-    /// Opens or closes a run, by the shared fold; its rows say which.
+    /// Opens or closes a run, by the shared fold; its rows say which, as
+    /// the next delta hands them over.
     public func toggleRun(_ run: Run) {
         source.toggleRun(run.last)
-        refresh(Array(cells.keys))
     }
 
     /// What a run's steps did: carried on its newest step's row only.
@@ -333,32 +328,19 @@ public final class ChatModel {
         source.blob(blob.hash)
     }
 
-    private func extend() {
-        guard let newest = ids.last, let oldest = ids.first else {
-            swap()
-            return
+    /// The window moved at its edges: keys new above the newest, a page
+    /// below the oldest, and the oldest the window dropped as it trimmed.
+    private func move(above: [String], below: [String], dropped: Int) {
+        var moved = dropOlder(than: dropped)
+        if !below.isEmpty {
+            ids.insert(contentsOf: below, at: 0)
+            firstPlace -= below.count
+            for (offset, key) in below.enumerated() { places[key] = firstPlace + offset }
+            moved = true
         }
-        guard let newer = source.keys(above: newest) else {
-            swap()
-            return
-        }
-        var moved = false
-        if let older = source.keys(below: oldest) {
-            if !older.isEmpty {
-                ids.insert(contentsOf: older, at: 0)
-                firstPlace -= older.count
-                for (offset, key) in older.enumerated() { places[key] = firstPlace + offset }
-                moved = true
-            }
-        } else if let first = source.oldestKey(), let place = places[first] {
-            moved = dropOlder(than: place - firstPlace)
-        } else {
-            swap()
-            return
-        }
-        if !newer.isEmpty {
-            for (offset, key) in newer.enumerated() { places[key] = firstPlace + ids.count + offset }
-            ids.append(contentsOf: newer)
+        if !above.isEmpty {
+            for (offset, key) in above.enumerated() { places[key] = firstPlace + ids.count + offset }
+            ids.append(contentsOf: above)
             loadingHint = false
             moved = true
         }
@@ -381,8 +363,8 @@ public final class ChatModel {
     /// A Reset's transcript was swapped in: every key may be new. Cells the
     /// new sequence keeps are read again in place, and the list goes to the
     /// newest row.
-    private func swap() {
-        hold(keys: source.keys())
+    private func swap(_ keys: [String]) {
+        hold(keys: keys)
         cells = cells.filter { places[$0.key] != nil }
         refresh(Array(cells.keys))
         loadingHint = false
@@ -412,19 +394,33 @@ public final class ChatModel {
         if empty != ids.isEmpty { empty = ids.isEmpty }
     }
 
-    /// Reads these cells again and stamps them, so the list measures them
-    /// again. A wake passes over a row that reads as it did: an item
-    /// arrives as it streams and again whole, usually drawing the same
-    /// row, and measuring it again would lay the whole list out again for
-    /// nothing. Opening a row or swapping the transcript stamps every cell,
-    /// since what draws moves without the rows themselves changing.
-    private func refresh(_ keys: [String], onlyChanged: Bool = false) {
+    /// Reads every held cell again in place and stamps it, so the list
+    /// measures it again: after a swap, what each kept key draws may have
+    /// moved.
+    private func refresh(_ keys: [String]) {
         guard !keys.isEmpty else { return }
         let rows = source.rows(for: keys)
+        revision += 1
+        for row in rows {
+            guard let cell = cells[row.id] else { continue }
+            cell.row = row
+            cell.revision = revision
+        }
+    }
+
+    /// Rows a delta handed over, each into its cell if it was drawn; a
+    /// cell drawn later reads its row then. Making cells here for rows the
+    /// list has not drawn costs it more layout than the reads it saves. A
+    /// row that reads as it did passes: an item arrives as it streams and
+    /// again whole, usually drawing the same row, and measuring it again
+    /// would lay the whole list out again for nothing.
+    private func fill(_ rows: [Row]) {
         let next = revision + 1
         var moved = false
         for row in rows {
-            guard let cell = cells[row.id], !onlyChanged || cell.row != row else { continue }
+            guard places[row.id] != nil else { continue }
+            guard let cell = cells[row.id] else { continue }
+            guard cell.row != row else { continue }
             cell.row = row
             cell.revision = next
             moved = true
@@ -432,46 +428,26 @@ public final class ChatModel {
         if moved { revision = next }
     }
 
-    /// Each view is assigned only when it differs: an assignment redraws
-    /// everything that reads it, and most wakes are rows arriving under a
-    /// frame, a card and a strip that did not move.
-    private func readSession() {
+    /// The views a delta says moved. The runtime hands over only what
+    /// moved, since an assignment redraws everything that reads it.
+    private func show(_ delta: ChatDelta) {
         let before = frame
-        var frame = source.frame()
-        if let refused = frame?.refused, !refused.isEmpty {
-            refused.forEach(takeBack)
-            frame = source.frame()
+        if var frame = delta.frame {
+            if !frame.refused.isEmpty {
+                frame.refused.forEach(takeBack)
+                frame.refused = []
+            }
+            self.frame = frame
+            keepHeld(frame)
         }
-        if self.frame.map(Self.drawn) != frame.map(Self.drawn) { self.frame = frame }
-        if let frame { keepHeld(frame) }
-        // The frame is read from the session as it is now, but rows arrive
-        // with the change that names them, which can come a wake later. A
-        // chat that has just caught up says the draft can go, so the rows
-        // it caught up on are taken now, not after it says so.
-        if frame?.caughtUp == true, before?.caughtUp != true, !ids.isEmpty || !source.keys().isEmpty {
-            extend()
+        if let moved = delta.ask {
+            ask = moved.card
+            if let kept = questionKept?.ask, kept != ask?.key { questionKept = nil }
+            if let kept = formKept?.ask, kept != ask?.key { formKept = nil }
         }
-        let ask = source.askCard()
-        if self.ask != ask { self.ask = ask }
-        if let kept = questionKept?.ask, kept != ask?.key { questionKept = nil }
-        if let kept = formKept?.ask, kept != ask?.key { formKept = nil }
-        let overview = source.overview()
-        if self.overview != overview { self.overview = overview }
-        let settings = source.settings()
-        if self.settings != settings { self.settings = settings }
+        if let overview = delta.overview { self.overview = overview }
+        if let settings = delta.settings { self.settings = settings }
         if frame?.git != before?.git { listChangedFiles() }
-    }
-
-    /// The frame as the screen draws it. A running activity's elapsed time
-    /// is read off the clock with every frame, so every frame differs; the
-    /// activity line counts it from when the activity began, so a frame that
-    /// moved only with the clock redraws nothing and is not assigned.
-    private static func drawn(_ frame: ChatFrame) -> ChatFrame {
-        var frame = frame
-        if let activity = frame.composer.activity, activity.sinceMs > 0 {
-            frame.composer.activity?.elapsedMs = 0
-        }
-        return frame
     }
 
     // MARK: - Changes
@@ -582,7 +558,6 @@ public final class ChatModel {
             case .failed(let reason)?: paging = .failed(reason)
             case nil: paging = .failed("the chat is closed")
             }
-            woke()
         }
     }
 
@@ -700,7 +675,6 @@ public final class ChatModel {
             case nil:
                 notice = Self.closed
             }
-            woke()
         }
     }
 
@@ -742,7 +716,6 @@ public final class ChatModel {
                 restore(sent)
                 notice = failure.description
             }
-            woke()
         }
     }
 
@@ -771,7 +744,6 @@ public final class ChatModel {
             case .notConfirmed?: notice = Self.notConfirmed
             case nil: notice = Self.closed
             }
-            woke()
         }
     }
 
@@ -1016,13 +988,11 @@ public final class ChatModel {
         notice = nil
         Task {
             _ = await source.resend(input)
-            woke()
         }
     }
 
     public func discard(_ input: [UInt8]) {
         source.discard(input)
-        woke()
     }
 
     /// Takes back a prompt held while its host could not be reached: it
@@ -1145,7 +1115,6 @@ public final class ChatModel {
         let source = self.source
         Task {
             let outcome = await body(source)
-            woke()
             switch outcome {
             case .done?: done?()
             // Held by the library until the host is back; what holds it says

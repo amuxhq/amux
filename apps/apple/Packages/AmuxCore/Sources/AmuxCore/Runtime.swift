@@ -232,11 +232,11 @@ public final class Runtime: @unchecked Sendable {
     // MARK: - Profiles
 
     /// Opens a profile's fleet; blocks, on the core queue, until it has
-    /// caught up with the profile's store, so the first read draws what this
-    /// phone holds. The wake is told on the main actor a chat's id when it
-    /// moved, or 0 when the fleet did.
+    /// caught up with the profile's store, so its opening draws what this
+    /// phone holds. `moved` is told on the main actor what moved in the
+    /// fleet or one of its chats, once each has opened.
     public func open(
-        _ profile: String, wake: @escaping @MainActor @Sendable (UInt64) -> Void
+        _ profile: String, moved: @escaping @MainActor @Sendable (Moved) -> Void
     ) throws(RuntimeFailure) -> Profile {
         let opened = loop.blocking { [self, loop] () -> Result<Profile, RuntimeFailure> in
             guard let live = loop.live else {
@@ -247,9 +247,9 @@ public final class Runtime: @unchecked Sendable {
                 return .failure(Bridge.failure(error, otherwise: "the profile did not open"))
             }
             let open = Profile(id: profile, handle: opened, runtime: self, loop: loop)
-            // Registered on the queue before the next step, so no redraw of
-            // the new fleet goes unheard.
-            loop.watch(open, wake: wake)
+            // Registered on the queue before the next step, so nothing that
+            // moved in the new fleet goes unheard.
+            loop.watch(open, moved: moved)
             return .success(open)
         }
         return try opened.get()
@@ -266,12 +266,18 @@ public final class Runtime: @unchecked Sendable {
     }
 }
 
+/// What moved in an open profile, as a step hands it over.
+public enum Moved: Sendable {
+    case fleet(FleetDelta)
+    case chat(ChatDelta)
+}
+
 /// One profile's fleet and chats, open while it is on screen.
 public final class Profile: @unchecked Sendable {
     /// The profile's id in the installation's registry.
     public let id: String
     private let handle: OpaquePointer
-    /// The number the library's redraws name this fleet by.
+    /// The number the library's deltas name this fleet by.
     let fleet: UInt64
     /// The runtime it was opened from, which outlives it.
     public let runtime: Runtime
@@ -311,24 +317,26 @@ public final class Profile: @unchecked Sendable {
 
     // MARK: - The fleet
 
-    /// Home's sections, each family placed by its loudest member, with the
-    /// members of the families `toggleFamily` listed under their heads,
-    /// narrowed by the last `filter`.
-    public func fleetView() -> FleetView {
-        call(FleetView(sections: [], needYou: 0, working: 0)) { live in
-            Bridge.read(FleetView.self, amux_fleet_view(live))
-                ?? FleetView(sections: [], needYou: 0, working: 0)
+    /// The fleet whole: home's sections, each family placed by its loudest
+    /// member, with the members of the families `toggleFamily` listed under
+    /// their heads, narrowed by the last `filter`; and every host, this
+    /// phone first. Every delta after it says what moved since.
+    public func fleetOpening() -> FleetDelta {
+        call(FleetDelta(hosts: nil, view: nil)) { live in
+            Bridge.read(FleetDelta.self, amux_fleet_opening(live)) ?? FleetDelta(hosts: nil, view: nil)
         }
     }
 
-    /// Lists a family's members under its head, or folds them away again.
+    /// Lists a family's members under its head, or folds them away again;
+    /// the next delta lists them so.
     public func toggleFamily(_ head: AgentKey) {
         call(()) { live in
             Bridge.json(head.agent).withCString { amux_fleet_toggle_family(live, $0) }
         }
     }
 
-    /// Narrows home's list to what `filter` keeps.
+    /// Narrows home's list to what `filter` keeps, as the next delta lists
+    /// it.
     public func filter(_ filter: FleetFilter) {
         call(()) { live in Bridge.json(filter).withCString { amux_fleet_filter(live, $0) } }
     }
@@ -355,22 +363,6 @@ public final class Profile: @unchecked Sendable {
             Bridge.json(agent).withCString {
                 Bridge.read(FamilyHeader?.self, amux_fleet_family(live, $0))
             } ?? nil
-        }
-    }
-
-    /// Every host in the fleet, this phone first.
-    public func hosts() -> [HostView] {
-        call([]) { live in
-            Bridge.read([HostView].self, amux_fleet_hosts(live)) ?? []
-        }
-    }
-
-    /// What moved in the fleet since the last take; the next change wakes
-    /// the owner again.
-    public func takeFleetChanges() -> FleetChanges {
-        call(FleetChanges(agents: [], hosts: false)) { live in
-            Bridge.read(FleetChanges.self, amux_fleet_take_changes(live))
-                ?? FleetChanges(agents: [], hosts: false)
         }
     }
 
@@ -542,9 +534,9 @@ struct Live: @unchecked Sendable {
 /// it makes a descriptor readable; a dispatch source watching that
 /// descriptor from this queue steps, and what the step hands back is
 /// carried out from here: each act's answer goes to whoever awaits its
-/// ticket, and the fleets and chats to redraw, and the profile list when it
-/// moved, go to the main actor: the list ahead of the answers, so whoever
-/// awaits an act that moved it finds it in place. The cores' timers sleep on the library's own
+/// ticket, and what moved in the fleets and chats, and the profile list
+/// when it moved, go to the main actor ahead of the answers, so whoever
+/// awaits an act finds what it moved in place. The cores' timers sleep on the library's own
 /// thread and come back as ordinary inputs that make the descriptor
 /// readable, so nothing here arms one.
 final class CoreLoop: @unchecked Sendable {
@@ -562,8 +554,8 @@ final class CoreLoop: @unchecked Sendable {
     // Under the lock: written on the queue and by a close, read on the main
     // actor.
     private let lock = NSLock()
-    /// Each open fleet's wake, by the number redraws name it by.
-    private var wakes: [UInt64: @MainActor @Sendable (UInt64) -> Void] = [:]
+    /// Where each open fleet's deltas go, by the number they name it by.
+    private var moves: [UInt64: @MainActor @Sendable (Moved) -> Void] = [:]
     /// The profiles opened, closed before the runtime stops.
     private let opened = NSHashTable<Profile>.weakObjects()
 
@@ -638,17 +630,17 @@ final class CoreLoop: @unchecked Sendable {
         for continuation in unanswered.values { continuation.resume(returning: Bridge.stoppedAnswer) }
     }
 
-    func watch(_ profile: Profile, wake: @escaping @MainActor @Sendable (UInt64) -> Void) {
+    func watch(_ profile: Profile, moved: @escaping @MainActor @Sendable (Moved) -> Void) {
         lock.withLock {
             opened.add(profile)
-            wakes[profile.fleet] = wake
+            moves[profile.fleet] = moved
         }
     }
 
     func forget(_ profile: Profile) {
         lock.withLock {
             opened.remove(profile)
-            wakes[profile.fleet] = nil
+            moves[profile.fleet] = nil
         }
     }
 
@@ -658,15 +650,17 @@ final class CoreLoop: @unchecked Sendable {
             return
         }
         // Queued on the main actor before any answer resumes its waiter
-        // there, so an act that moved the profile list is answered after the
-        // list is in place.
-        if stepped.profiles != nil || !stepped.redraws.isEmpty {
+        // there, so an act is answered after what it moved is in place.
+        if stepped.profiles != nil || !stepped.fleets.isEmpty || !stepped.chats.isEmpty {
             DispatchQueue.main.async { [self] in
                 MainActor.assumeIsolated {
                     // Read here, not on the queue: a fleet closed since the
-                    // step is not woken.
-                    for redraw in stepped.redraws {
-                        lock.withLock { wakes[redraw.fleet] }?(redraw.chat)
+                    // step hears nothing.
+                    for moved in stepped.fleets {
+                        lock.withLock { moves[moved.fleet] }?(.fleet(moved.delta))
+                    }
+                    for moved in stepped.chats {
+                        lock.withLock { moves[moved.fleet] }?(.chat(moved.delta))
                     }
                     if let profiles = stepped.profiles { profilesMoved(profiles) }
                 }
@@ -679,9 +673,14 @@ final class CoreLoop: @unchecked Sendable {
 
     /// What a step hands back.
     private struct Stepped: Decodable, Sendable {
-        struct Redraw: Decodable, Sendable {
+        struct FleetMoved: Decodable, Sendable {
             let fleet: UInt64
-            let chat: UInt64
+            let delta: FleetDelta
+        }
+
+        struct ChatMoved: Decodable, Sendable {
+            let fleet: UInt64
+            let delta: ChatDelta
         }
 
         struct Answer: Decodable, Sendable {
@@ -690,7 +689,8 @@ final class CoreLoop: @unchecked Sendable {
         }
 
         let profiles: [ProfileView]?
-        let redraws: [Redraw]
+        let fleets: [FleetMoved]
+        let chats: [ChatMoved]
         let answers: [Answer]
     }
 

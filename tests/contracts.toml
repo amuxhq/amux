@@ -463,7 +463,7 @@ section = "Session state"
 claim = "The window grows only at its edges."
 tests = [
   "ui-state/spec::window::pages_extend_the_low_edge_and_never_the_top",
-  "swift:AmuxCoreTests/ChatModelTests/testNewRowsExtendTheSequenceAtItsEdgesAndOnlyChangedDrawnCellsAreReadAgain",
+  "swift:AmuxCoreTests/ChatModelTests/testNewRowsExtendTheSequenceAtItsEdgesAndChangedRowsComeWithTheDelta",
 ]
 
 [[contract]]
@@ -746,8 +746,7 @@ tests = [
   "model/lib::tests::every_shared_value_has_a_schema_for_the_swift_mirrors",
   "ui-runtime/session::closing_drops_the_stream_and_a_late_result_changes_nothing",
   "swift:AmuxCoreTests/RuntimeCoordinatorTests/testASecondAccountGetsItsOwnProfileAndBothStaySignedIn",
-  "swift:AmuxCoreTests/ChatModelTraceTests/testEveryRecordedTraceProjectsTheSameRowsAsTheRustModel",
-  "app-runtime/lib::traces::the_phones_trace_fixtures_are_the_client_models_current_traces",
+  "app-runtime/lib::schedules::a_hosts_keys_follow_the_window_through_every_schedule",
 ]
 
 [[contract]]

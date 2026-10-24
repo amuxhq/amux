@@ -588,23 +588,21 @@ event and frame the app tells the session whether the anchor is pinned to the bo
 line under a scrolled-back feed reads `arrivals_held()`.
 
 **The phone is retained mode.** [`app-runtime`](../crates/app-runtime/src/chat.rs) watches each open chat's session's
-change signal and gathers `take_changes()` into a coalescer that wakes the host once per main-thread turn, however many
-updates land. The Swift `ChatModel` holds the id sequence, which changes only at its two edges
-(`keys(above:)`, `keys(below:)`, and `oldestKey()` for the rows a following window dropped), reads a cell's row by
-key when the cell is first drawn, and re-reads only the cells whose keys changed, so a streaming append costs one
-cell. A `reloaded` change reads the whole sequence again. The top of the list coming into view asks for an older
-page. `AppRuntime::set_foreground` hands the app's foreground to the fleet, and dropping a `Chat` closes it to
+change signal and gathers `take_changes()` into a coalescer that wakes the host once per turn, however many updates
+land. On the host's step it hands over one `ChatDelta` per chat that moved, computed against what it last handed
+over: the keys at their edges (new above the newest held, a page below the oldest, and how many of the oldest a
+following window dropped) or, after a reload, all of them; the rows of the keys it held that changed; and the frame, the head ask, the overview and the settings only when they moved, the frame not for the clock
+alone. The Swift `ChatModel` applies each delta and reads a row by key only when its cell is first drawn or after a
+reload, so a streaming append costs one cell and nothing is read back on the main thread. The fleet is handed over
+the same way, as a `FleetDelta`. The top of the list coming into view asks for an older page. `AppRuntime::set_foreground` hands the app's foreground to the fleet, and dropping a `Chat` closes it to
 the fleet. `ChatModel.following` is told to the session with `follow(_:)` whenever it changes, and New activity shows
 from the frame's `arrivals_held`. [IOS.md](IOS.md) and
 [EMBEDDED.md](EMBEDDED.md) cover the phone side.
 
-`ChatModel`'s edge logic is the one place a chat's rows move by rules written a second time, so it is held equal to
-the Rust session by traces. [`app-runtime/src/traces.rs`](../crates/app-runtime/src/traces.rs) walks seeded schedules
-of the client model (`models::client`) and records, at every wake, the changes `take_changes()` would gather, the held
-keys, every row and the frame; `just client-traces` writes them to
-`apps/apple/Packages/AmuxCore/Tests/AmuxCoreTests/Fixtures/client-traces`, and app-runtime's tests fail while they
-differ from the model. `ChatModelTraceTests` replays each through `ChatModel` and asserts the same keys and rows at
-every cut.
+The edges are computed once, in Rust, and the phone only applies them.
+[`app-runtime/src/schedules.rs`](../crates/app-runtime/src/schedules.rs) walks seeded schedules of the client model
+(`models::client`) and, at every cut, applies the delta to a copy of the host's keys and holds it equal to the
+session's window, with a row handed over for every changed key the host held and none for a key new at an edge.
 
 ## Replay and redaction
 

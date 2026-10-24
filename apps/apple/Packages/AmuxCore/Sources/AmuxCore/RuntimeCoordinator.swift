@@ -281,9 +281,9 @@ public final class RuntimeCoordinator {
             let expected = opening
             if !markedStoreRead { Signposts.emit(.fleetOpenBegan) }
             do {
-                let opened = try runtime.open(id) { [weak self] chat in
+                let opened = try runtime.open(id) { [weak self] moved in
                     guard self?.opening == expected else { return }
-                    stores.woke(chat)
+                    stores.moved(moved)
                 }
                 profile = opened
                 fed = stores

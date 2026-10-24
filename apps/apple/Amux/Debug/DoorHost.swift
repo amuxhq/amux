@@ -436,11 +436,14 @@ final class DoorHost {
                 rows: model.ids.compactMap { model.cell(for: $0).row }, ask: model.ask))
         }
         do {
-            let chat = try stores.openChat(row.id) {}
+            let chat = try stores.openChat(row.id) { _ in }
             defer { stores.closeChat(chat) }
+            let opening = chat.opening()
+            // An opening always hands the window over whole.
+            let keys = if case .reload(let keys)? = opening.keys { keys } else { [String]() }
             return .conversation(ConversationReading(
-                agent: agent, frame: chat.frame(), rows: chat.rows(for: chat.keys()),
-                ask: chat.askCard()))
+                agent: agent, frame: opening.frame, rows: chat.rows(for: keys),
+                ask: opening.ask?.card))
         } catch {
             return .error(error.description)
         }

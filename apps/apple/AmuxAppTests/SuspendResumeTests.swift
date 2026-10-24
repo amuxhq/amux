@@ -27,7 +27,7 @@ final class SuspendResumeTests: XCTestCase {
     }
 
     private func trusts(_ coordinator: RuntimeCoordinator, _ host: [UInt8]) -> Bool {
-        coordinator.profile?.hosts().contains { $0.hostId == host && $0.trusted } == true
+        coordinator.stores.fleet.machines.contains { $0.hostId == host && $0.trusted }
     }
 
     private func eventually(

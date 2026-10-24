@@ -9,8 +9,8 @@ use model::{AgentKey, Connection, InputState, Key, PhaseView, Refusal, Waiting};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ui_view::{
-    ComposerView, ContextView, ControlsSummary, PLACEHOLDER, QueuedRow, Reach, RefusedPrompt,
-    SentPrompt, SignInView,
+    AskCard, ComposerView, ContextView, ControlsSummary, FleetView, Overview, PLACEHOLDER,
+    QueuedRow, Reach, RefusedPrompt, Row, SentPrompt, SettingsView, SignInView,
 };
 use wire::{BlobRef, Kind, Platform, RouteKind};
 
@@ -64,15 +64,44 @@ fn default_tail() -> u32 {
     crate::DEFAULT_TAIL
 }
 
-/// What changed in a chat since the host last took its changes.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct ChatChanges {
-    /// Rows to fetch again, each once.
-    pub keys: Vec<Key>,
-    /// Every row id may be new: read the keys again.
-    pub reloaded: bool,
-    /// Something beside the rows moved: the frame, the overview or the ask.
-    pub session: bool,
+/// What moved in an open chat since the host last heard: each field only
+/// when it moved.
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+pub struct ChatDelta {
+    /// The chat's id within its fleet.
+    pub chat: u64,
+    pub keys: Option<KeysMoved>,
+    /// The rows that changed among those the host held, each run folded as
+    /// the reader left it. A row new at either edge, or held through a
+    /// reload, is read when it is drawn.
+    pub rows: Vec<Row>,
+    pub frame: Option<ChatFrame>,
+    pub ask: Option<AskMoved>,
+    pub overview: Option<Overview>,
+    pub settings: Option<SettingsView>,
+}
+
+/// How the window's keys moved. Row ids are item keys and never move, so
+/// the window's sequence changes only at its two edges until a reload.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+pub enum KeysMoved {
+    /// Every key may be new: the whole window, oldest first.
+    Reload(Vec<Key>),
+    Edges {
+        /// Keys newer than the newest held, oldest first.
+        above: Vec<Key>,
+        /// Keys older than the oldest held, oldest first: a page.
+        below: Vec<Key>,
+        /// How many of the oldest held keys the window dropped, as it
+        /// trims to its cap while the reader follows.
+        dropped: u32,
+    },
+}
+
+/// The head ask moved: the card waiting now, if any.
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+pub struct AskMoved {
+    pub card: Option<AskCard>,
 }
 
 /// Everything around a chat's rows that a screen draws at once.
@@ -365,13 +394,15 @@ pub struct ProviderSignIn {
     pub signed_in: bool,
 }
 
-/// What changed in the fleet since the host last took its changes.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
-pub struct FleetChanges {
-    /// Agents whose card or family attention may differ.
-    pub agents: Vec<AgentKey>,
-    /// The host list moved.
-    pub hosts: bool,
+/// What moved in a profile's fleet since the host last heard: each field
+/// only when it moved.
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+pub struct FleetDelta {
+    /// Home's sections.
+    pub view: Option<FleetView>,
+    /// Every host, this device first: whenever the host list moved, even
+    /// where no view of a host did.
+    pub hosts: Option<Vec<HostView>>,
 }
 
 /// Pairing with a machine: the PIN its person reads out, or the link its

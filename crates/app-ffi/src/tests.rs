@@ -3,11 +3,11 @@
 //! and steps on its own thread the way the app's queue does.
 
 use std::cell::RefCell;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::{CStr, CString, c_char};
 use std::time::{Duration, Instant};
 
-use app_runtime::values::{ActOutcome, ChatChanges, CommandOutcome, PageOutcome};
+use app_runtime::values::{ActOutcome, CommandOutcome, PageOutcome};
 use node::link_log::LinkTransition;
 use provider_fakes::script::{Ask, Question, Step, Tool, ToolClass};
 use serde_json::{Value, json};
@@ -78,11 +78,62 @@ fn c(text: &str) -> CString {
     CString::new(text).unwrap()
 }
 
+/// A chat as the phone's model holds it: opened whole, then moved only by
+/// the deltas the steps hand over.
+struct Mirror {
+    keys: Vec<String>,
+    frame: Value,
+    ask: Value,
+    overview: Value,
+}
+
+impl Mirror {
+    fn opened(opening: &Value) -> Mirror {
+        let mut mirror = Mirror {
+            keys: Vec::new(),
+            frame: Value::Null,
+            ask: Value::Null,
+            overview: Value::Null,
+        };
+        assert!(opening["keys"]["Reload"].is_array(), "{opening}");
+        mirror.apply(opening);
+        mirror
+    }
+
+    fn apply(&mut self, delta: &Value) {
+        let keys =
+            |keys: &Value| -> Vec<String> { serde_json::from_value(keys.clone()).expect("keys") };
+        let moved = &delta["keys"];
+        if moved["Reload"].is_array() {
+            self.keys = keys(&moved["Reload"]);
+        } else if let Some(edges) = moved.get("Edges") {
+            let dropped = edges["dropped"].as_u64().unwrap() as usize;
+            self.keys.drain(..dropped);
+            self.keys.splice(0..0, keys(&edges["below"]));
+            self.keys.extend(keys(&edges["above"]));
+        }
+        if !delta["frame"].is_null() {
+            self.frame = delta["frame"].clone();
+        }
+        if !delta["ask"].is_null() {
+            self.ask = delta["ask"]["card"].clone();
+        }
+        if !delta["overview"].is_null() {
+            self.overview = delta["overview"].clone();
+        }
+    }
+}
+
 /// What the steps handed the app and it has not dealt with yet.
 #[derive(Default)]
 struct Seen {
-    /// Fleet and chat numbers, in the order the steps named them.
-    redraws: VecDeque<(u64, u64)>,
+    /// The fleets (chat 0) and chats that moved, by their numbers, in the
+    /// order the steps handed them over.
+    moved: VecDeque<(u64, u64)>,
+    /// Each open fleet's view and hosts, as the deltas left them.
+    fleets: HashMap<u64, (Value, Value)>,
+    /// Each open chat, by its fleet's number and its own.
+    chats: HashMap<(u64, u64), Mirror>,
     /// The acts' answers, in the order they came.
     answers: VecDeque<(u64, Value)>,
     /// The profile list the latest step that carried one handed over.
@@ -193,22 +244,67 @@ impl Phone {
         };
         assert_eq!(profiles.as_array().unwrap().len(), 1, "{profiles}");
         let id = c(profiles[0]["id"].as_str().unwrap());
-        let mut error = std::ptr::null_mut();
-        // SAFETY: the runtime is live; the strings live for the call.
-        let profile = unsafe { amux_profile_open(runtime, id.as_ptr(), &mut error) };
-        assert!(!profile.is_null());
-        // SAFETY: the profile is open.
-        let fleet = unsafe { amux_profile_fleet_id(profile) };
-        Phone {
+        let mut phone = Phone {
             runtime,
-            profile,
-            fleet,
+            profile: std::ptr::null_mut(),
+            fleet: 0,
             id,
             seen: RefCell::default(),
             queue: Some(queue),
             tickets: RefCell::default(),
             dir,
+        };
+        (phone.profile, phone.fleet) = phone.open_profile(&phone.id.clone());
+        phone
+    }
+
+    /// Opens a profile's fleet as the app does: its opening whole, then
+    /// moved by the deltas the steps hand over.
+    fn open_profile(&self, id: &CStr) -> (*mut AmuxProfile, u64) {
+        let mut error = std::ptr::null_mut();
+        // SAFETY: the runtime is live; the strings live for the call.
+        let profile = unsafe { amux_profile_open(self.runtime, id.as_ptr(), &mut error) };
+        assert!(!profile.is_null());
+        // SAFETY: the profile is open.
+        let fleet = unsafe { amux_profile_fleet_id(profile) };
+        // SAFETY: as above.
+        let opening = take(unsafe { amux_fleet_opening(profile) });
+        self.seen
+            .borrow_mut()
+            .fleets
+            .insert(fleet, (opening["view"].clone(), opening["hosts"].clone()));
+        (profile, fleet)
+    }
+
+    /// Opens a chat as the app's model does; null when it does not open.
+    fn open_chat(&self, profile: *const AmuxProfile, agent: &CStr, tail: u32) -> *mut AmuxChat {
+        let mut error = std::ptr::null_mut();
+        // SAFETY: the profile is open; the strings live for the call.
+        let chat = unsafe { amux_session_open(profile, agent.as_ptr(), tail, &mut error) };
+        if chat.is_null() {
+            return chat;
         }
+        // SAFETY: the chat is open.
+        let (fleet, id) = unsafe { (amux_profile_fleet_id(profile), amux_session_id(chat)) };
+        // SAFETY: as above.
+        let opening = take(unsafe { amux_session_opening(chat) });
+        self.seen
+            .borrow_mut()
+            .chats
+            .insert((fleet, id), Mirror::opened(&opening));
+        chat
+    }
+
+    /// Home's sections as the phone's own fleet's deltas left them.
+    fn view(&self) -> Value {
+        self.seen.borrow().fleets[&self.fleet].0.clone()
+    }
+
+    /// An open chat of the phone's own fleet, as the deltas left it.
+    fn chat<T>(&self, chat: *const AmuxChat, read: impl FnOnce(&Mirror) -> T) -> T {
+        // SAFETY: the chat is open.
+        let id = unsafe { amux_session_id(chat) };
+        read(&self.seen.borrow().chats[&(self.fleet, id)])
     }
 
     /// Keeps what the queue's steps handed back, waiting up to `within`
@@ -228,12 +324,26 @@ impl Phone {
         if !stepped["profiles"].is_null() {
             seen.profiles = Some(stepped["profiles"].clone());
         }
-        for redraw in stepped["redraws"].as_array().unwrap() {
-            let named = (
-                redraw["fleet"].as_u64().unwrap(),
-                redraw["chat"].as_u64().unwrap(),
-            );
-            seen.redraws.push_back(named);
+        for moved in stepped["fleets"].as_array().unwrap() {
+            let fleet = moved["fleet"].as_u64().unwrap();
+            let delta = &moved["delta"];
+            let held = seen.fleets.get_mut(&fleet).expect("an open fleet moved");
+            if !delta["view"].is_null() {
+                held.0 = delta["view"].clone();
+            }
+            if !delta["hosts"].is_null() {
+                held.1 = delta["hosts"].clone();
+            }
+            seen.moved.push_back((fleet, 0));
+        }
+        for moved in stepped["chats"].as_array().unwrap() {
+            let fleet = moved["fleet"].as_u64().unwrap();
+            let delta = &moved["delta"];
+            let chat = delta["chat"].as_u64().unwrap();
+            if let Some(mirror) = seen.chats.get_mut(&(fleet, chat)) {
+                mirror.apply(delta);
+            }
+            seen.moved.push_back((fleet, chat));
         }
         for answer in stepped["answers"].as_array().unwrap() {
             let json = serde_json::from_str(answer["json"].as_str().unwrap()).unwrap();
@@ -265,14 +375,15 @@ impl Phone {
         }
     }
 
-    /// The next redraw naming `fleet`, within `within`.
+    /// The next view of `fleet` that moved (0 for the fleet itself),
+    /// within `within`.
     fn redrawn(&self, fleet: u64, within: Duration) -> Option<u64> {
         let deadline = Instant::now() + within;
         loop {
             {
                 let mut seen = self.seen.borrow_mut();
-                if let Some(at) = seen.redraws.iter().position(|(of, _)| *of == fleet) {
-                    return seen.redraws.remove(at).map(|(_, chat)| chat);
+                if let Some(at) = seen.moved.iter().position(|(of, _)| *of == fleet) {
+                    return seen.moved.remove(at).map(|(_, chat)| chat);
                 }
             }
             if Instant::now() >= deadline {
@@ -282,37 +393,12 @@ impl Phone {
         }
     }
 
-    /// Waits for a redraw naming `chat` of the phone's fleet, and takes
-    /// that one's changes.
-    fn turn(&self, chat: u64, open: *const AmuxChat) {
-        let deadline = Instant::now() + PATIENCE;
-        loop {
-            let left = deadline.saturating_duration_since(Instant::now());
-            let redrawn = self.redrawn(self.fleet, left).expect("redrawn");
-            if redrawn == chat {
-                break;
-            }
-            if redrawn == 0 {
-                // SAFETY: the runtime is live.
-                take(unsafe { amux_fleet_take_changes(self.profile) });
-            }
-        }
-        if chat == 0 {
-            // SAFETY: the runtime is live.
-            take(unsafe { amux_fleet_take_changes(self.profile) });
-        } else {
-            // SAFETY: the chat is open.
-            let changes: ChatChanges =
-                serde_json::from_value(take(unsafe { amux_session_take_changes(open) })).unwrap();
-            let _ = changes;
-        }
-    }
-
-    fn until(&self, chat: u64, open: *const AmuxChat, what: &str, check: impl Fn() -> bool) {
+    /// Keeps what the steps hand over until `check` holds.
+    fn until(&self, what: &str, check: impl Fn() -> bool) {
         let deadline = Instant::now() + PATIENCE;
         while !check() {
             assert!(Instant::now() < deadline, "never saw {what}");
-            self.turn(chat, open);
+            self.pump(Duration::from_millis(50));
         }
     }
 }
@@ -375,18 +461,19 @@ fn pair_desk(phone: &Phone, net: &Net, tokio: &tokio::runtime::Runtime) -> Strin
     fingerprint
 }
 
-fn says(chat: *const AmuxChat, wanted: &str) -> bool {
-    // SAFETY: the chat is open.
-    let keys = take(unsafe { amux_session_keys(chat) });
-    let keys = c(&keys.to_string());
+/// Whether the rows for the keys the phone holds say `wanted`; each key it
+/// holds is one the chat holds.
+fn says(phone: &Phone, chat: *const AmuxChat, wanted: &str) -> bool {
+    let held = phone.chat(chat, |mirror| mirror.keys.clone());
+    let keys = c(&json!(held).to_string());
     // SAFETY: the chat is open; the strings live for the call.
     let rows = take(unsafe { amux_session_rows_for(chat, keys.as_ptr()) });
+    assert_eq!(rows.as_array().unwrap().len(), held.len(), "a key not held");
     rows.to_string().contains(wanted)
 }
 
-fn card(chat: *const AmuxChat) -> Value {
-    // SAFETY: the chat is open.
-    take(unsafe { amux_session_ask_card(chat) })
+fn card(phone: &Phone, chat: *const AmuxChat) -> Value {
+    phone.chat(chat, |mirror| mirror.ask.clone())
 }
 
 #[test]
@@ -459,10 +546,8 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
         "agent": worker.id.as_bytes().to_vec(),
     });
     let agent_c = c(&agent.to_string());
-    phone.until(0, std::ptr::null(), "the desk's agent", || {
-        // SAFETY: the runtime is live.
-        let view = take(unsafe { amux_fleet_view(phone.profile) });
-        view["sections"][0]["rows"]
+    phone.until("the desk's agent", || {
+        phone.view()["sections"][0]["rows"]
             .as_array()
             .is_some_and(|rows| rows.len() == 1)
     });
@@ -470,8 +555,7 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     let card_json = take(unsafe { amux_fleet_card(phone.profile, agent_c.as_ptr()) });
     assert_eq!(card_json["name"], "worker");
     assert_eq!(card_json["host"], "desk");
-    // SAFETY: the runtime is live.
-    let hosts = take(unsafe { amux_fleet_hosts(phone.profile) });
+    let hosts = phone.seen.borrow().fleets[&phone.fleet].1.clone();
     assert_eq!(hosts[0]["local"], true, "{hosts}");
     assert!(hosts.to_string().contains("\"desk\""));
     let desk_id = c(&json!(desk.host_id.as_bytes().to_vec()).to_string());
@@ -493,7 +577,7 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
         amux_profile_agent_act(phone.profile, agent_c.as_ptr(), rename.as_ptr())
     });
     assert!(phone.result().get("Ok").is_some());
-    phone.until(0, std::ptr::null(), "the new name", || {
+    phone.until("the new name", || {
         // SAFETY: the runtime is live; the string lives for the call.
         take(unsafe { amux_fleet_card(phone.profile, agent_c.as_ptr()) })["name"] == "builder"
     });
@@ -503,7 +587,7 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
         amux_profile_agent_act(phone.profile, agent_c.as_ptr(), rename.as_ptr())
     });
     assert!(phone.result().get("Ok").is_some());
-    phone.until(0, std::ptr::null(), "the name back", || {
+    phone.until("the name back", || {
         // SAFETY: the runtime is live; the string lives for the call.
         take(unsafe { amux_fleet_card(phone.profile, agent_c.as_ptr()) })["name"] == "worker"
     });
@@ -522,38 +606,28 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     assert_eq!(embedded.source_policy(id).unwrap(), SourcePolicy::Listed);
 
     // A chat: rows by key, a prompt, a permission answered by position.
-    let mut error = std::ptr::null_mut();
-    // SAFETY: the runtime is live; the string lives for the call.
-    let chat = unsafe { amux_session_open(phone.profile, agent_c.as_ptr(), 0, &mut error) };
+    let chat = phone.open_chat(phone.profile, &agent_c, 0);
     assert!(!chat.is_null());
-    // SAFETY: the chat is open.
-    let id = unsafe { amux_session_id(chat) };
     // The rows can be on screen before the chat is caught up: the switch to
     // on-demand above may have closed the replica's source, and the one
     // reopened for listed agents serves the held rows as detached until its
     // catch-up lands.
-    phone.until(id, chat, "the first turn, caught up", || {
-        // SAFETY: the chat is open.
-        says(chat, "turn one") && take(unsafe { amux_session_frame(chat) })["caught_up"] == true
+    phone.until("the first turn, caught up", || {
+        says(&phone, chat, "turn one") && phone.chat(chat, |held| held.frame["caught_up"] == true)
     });
-    // SAFETY: the chat is open.
-    let frame = take(unsafe { amux_session_frame(chat) });
+    let frame = phone.chat(chat, |held| held.frame.clone());
     assert_eq!(frame["name"], "worker", "{frame}");
-    assert_eq!(frame["caught_up"], true, "{frame}");
-    // SAFETY: the chat is open.
-    let overview = take(unsafe { amux_session_overview(chat) });
+    let overview = phone.chat(chat, |held| held.overview.clone());
     assert!(overview.is_object(), "{overview}");
-    // SAFETY: the chat is open.
-    let keys = take(unsafe { amux_session_keys(chat) });
-    let newest = c(keys.as_array().unwrap().last().unwrap().as_str().unwrap());
+    let before = phone.chat(chat, |held| held.keys.clone());
 
     let draft = c(&json!({"parts": [{"Text": "please run it"}]}).to_string());
     // SAFETY: the chat is open; the string lives for the call.
     phone.started(unsafe { amux_session_send(chat, draft.as_ptr()) });
     let sent = phone.result();
     assert!(sent["Ok"]["input_id"].is_array(), "{sent}");
-    phone.until(id, chat, "the permission ask", || !card(chat).is_null());
-    let ask = card(chat);
+    phone.until("the permission ask", || !card(&phone, chat).is_null());
+    let ask = card(&phone, chat);
     let allow = ask["choices"]
         .as_array()
         .unwrap()
@@ -567,34 +641,30 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     });
     let acted: ActOutcome = outcome(phone.result());
     assert_eq!(acted, ActOutcome::Done);
-    phone.until(id, chat, "the call to run", || {
-        card(chat).is_null() && says(chat, "ran it")
+    phone.until("the call to run", || {
+        card(&phone, chat).is_null() && says(&phone, chat, "ran it")
     });
     // The new rows arrived above the newest the phone held.
-    // SAFETY: the chat is open; the string lives for the call.
-    let above = take(unsafe { amux_session_new_keys_above(chat, newest.as_ptr()) });
+    let after = phone.chat(chat, |held| held.keys.clone());
     assert!(
-        above.as_array().is_some_and(|keys| !keys.is_empty()),
-        "{above}"
+        after.len() > before.len() && after.starts_with(&before),
+        "{before:?} then {after:?}"
     );
-    let unknown = c("no such key");
-    // SAFETY: the chat is open; the string lives for the call.
-    assert!(take(unsafe { amux_session_new_keys_above(chat, unknown.as_ptr()) }).is_null());
 
     // A question, answered with picks.
     let draft = c(&json!({"parts": [{"Text": "ask me"}]}).to_string());
     // SAFETY: the chat is open; the string lives for the call.
     phone.started(unsafe { amux_session_send(chat, draft.as_ptr()) });
     phone.result();
-    phone.until(id, chat, "the question", || !card(chat).is_null());
-    let ask = card(chat);
+    phone.until("the question", || !card(&phone, chat).is_null());
+    let ask = card(&phone, chat);
     assert!(ask["body"]["Question"].is_array(), "{ask}");
     let ask_key = c(ask["key"].as_str().unwrap());
     let picks = c(&json!([{"pick": {"Options": [1]}}]).to_string());
     // SAFETY: the chat is open; the strings live for the call.
     phone.started(unsafe { amux_session_answer_questions(chat, ask_key.as_ptr(), picks.as_ptr()) });
     assert_eq!(outcome::<ActOutcome>(phone.result()), ActOutcome::Done);
-    phone.until(id, chat, "the answer", || says(chat, "answered"));
+    phone.until("the answer", || says(&phone, chat, "answered"));
 
     // A draft naming one of the client's own commands answers with the
     // command's outcome itself, which is what the phone decodes.
@@ -623,26 +693,25 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     phone
         .started(unsafe { amux_profile_agent_act(phone.profile, agent_c.as_ptr(), stop.as_ptr()) });
     assert!(phone.result().get("Ok").is_some());
-    phone.until(0, std::ptr::null(), "the agent exited", || {
+    phone.until("the agent exited", || {
         // SAFETY: the runtime is live; the string lives for the call.
         let card = take(unsafe { amux_fleet_card(phone.profile, agent_c.as_ptr()) });
         card.to_string().contains("Exited")
     });
-    // SAFETY: the runtime is live; the string lives for the call.
-    let chat = unsafe { amux_session_open(phone.profile, agent_c.as_ptr(), 1, &mut error) };
+    let chat = phone.open_chat(phone.profile, &agent_c, 1);
     assert!(!chat.is_null());
-    // SAFETY: the chat is open.
-    let held = take(unsafe { amux_session_keys(chat) });
-    let oldest = c(held[0].as_str().unwrap());
+    let held = phone.chat(chat, |held| held.keys.clone());
+    assert_eq!(held.len(), 1, "{held:?}");
     // SAFETY: the chat is open; the string lives for the call.
     phone.started(unsafe { amux_session_page_older(chat, 2) });
     assert_eq!(
         outcome::<PageOutcome>(phone.result()),
         PageOutcome::Arrived(2)
     );
-    // SAFETY: the chat is open; the string lives for the call.
-    let below = take(unsafe { amux_session_new_keys_below(chat, oldest.as_ptr()) });
-    assert_eq!(below.as_array().map(Vec::len), Some(2), "{below}");
+    // The page arrived below, handed over before the act's answer.
+    let paged = phone.chat(chat, |held| held.keys.clone());
+    assert_eq!(paged.len(), 3, "{paged:?}");
+    assert_eq!(paged[2], held[0]);
 
     // A dump carries the fleet and the open chat.
     let reason = c("asked for in a test");
@@ -665,7 +734,7 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     miri,
     ignore = "starts an installation: SQLite's C code, files and sockets, which Miri cannot run"
 )]
-fn no_redraw_names_a_closed_profile_or_chat_while_its_acts_are_in_flight() {
+fn nothing_closed_is_handed_over_while_its_acts_are_in_flight() {
     let tokio = tokio::runtime::Runtime::new().unwrap();
     let net = tokio.block_on(Net::start(topology())).unwrap();
     let phone = Phone::start();
@@ -676,28 +745,19 @@ fn no_redraw_names_a_closed_profile_or_chat_while_its_acts_are_in_flight() {
         "agent": worker.id.as_bytes().to_vec(),
     })
     .to_string());
-    phone.until(0, std::ptr::null(), "the desk's agent", || {
-        // SAFETY: the runtime is live.
-        let view = take(unsafe { amux_fleet_view(phone.profile) });
-        view["sections"][0]["rows"]
+    phone.until("the desk's agent", || {
+        phone.view()["sections"][0]["rows"]
             .as_array()
             .is_some_and(|rows| rows.len() == 1)
     });
 
     // A second handle on the same profile, the one to close, redrawn under
     // a number of its own; the phone's first handle watches the same moves.
-    let mut error = std::ptr::null_mut();
-    // SAFETY: the runtime is live; the strings live for the call.
-    let closing = unsafe { amux_profile_open(phone.runtime, phone.id.as_ptr(), &mut error) };
-    assert!(!closing.is_null());
-    // SAFETY: the profile is open.
-    let closing_fleet = unsafe { amux_profile_fleet_id(closing) };
+    let (closing, closing_fleet) = phone.open_profile(&phone.id);
     assert_ne!(closing_fleet, phone.fleet);
-    // SAFETY: the profile is open; the string lives for the call.
-    let chat = unsafe { amux_session_open(closing, agent.as_ptr(), 0, &mut error) };
+    let chat = phone.open_chat(closing, &agent, 0);
     assert!(!chat.is_null());
-    // SAFETY: as above.
-    let watching = unsafe { amux_session_open(phone.profile, agent.as_ptr(), 0, &mut error) };
+    let watching = phone.open_chat(phone.profile, &agent, 0);
     assert!(!watching.is_null());
 
     // With the agent frozen, a send waits on it for seconds, holding the
@@ -706,22 +766,20 @@ fn no_redraw_names_a_closed_profile_or_chat_while_its_acts_are_in_flight() {
     let draft = c(&json!({"parts": [{"Text": "are you there"}]}).to_string());
     // SAFETY: the chat is open; the string lives for the call.
     phone.started(unsafe { amux_session_send(chat, draft.as_ptr()) });
-    settle(&phone, closing_fleet, closing, chat);
+    settle(&phone, closing_fleet);
     // SAFETY: from `amux_session_open`, not used again.
     unsafe { amux_session_close(chat) };
     rename(&phone, &agent, watching, "renamed");
-    // The fleet moved too, and may be redrawn; the chat may not.
-    while let Some(redrawn) = phone.redrawn(closing_fleet, Duration::from_secs(1)) {
-        assert_eq!(redrawn, 0, "a closed chat was redrawn");
-        // SAFETY: the profile is open.
-        take(unsafe { amux_fleet_take_changes(closing) });
+    // The fleet moved too, and may be handed over; the chat may not.
+    while let Some(moved) = phone.redrawn(closing_fleet, Duration::from_secs(1)) {
+        assert_eq!(moved, 0, "a closed chat was handed over");
     }
 
     // And a dump waits on it too, holding the fleet past its close.
     let reason = c("closing under an act");
     // SAFETY: the profile is open; the string lives for the call.
     phone.started(unsafe { amux_profile_dump(closing, reason.as_ptr()) });
-    settle(&phone, closing_fleet, closing, std::ptr::null());
+    settle(&phone, closing_fleet);
     // SAFETY: from `amux_profile_open`, not used again.
     unsafe { amux_profile_close(closing) };
     assert!(
@@ -732,7 +790,7 @@ fn no_redraw_names_a_closed_profile_or_chat_while_its_acts_are_in_flight() {
     assert_eq!(
         phone.redrawn(closing_fleet, Duration::from_secs(1)),
         None,
-        "a closed profile was redrawn"
+        "a closed profile was handed over"
     );
 
     // The acts are still answered once the agent answers.
@@ -746,19 +804,9 @@ fn no_redraw_names_a_closed_profile_or_chat_while_its_acts_are_in_flight() {
     tokio.block_on(net.shutdown()).unwrap();
 }
 
-/// Takes what a fleet's redraws name until none comes for half a second,
-/// so its next change names it again.
-fn settle(phone: &Phone, fleet: u64, profile: *const AmuxProfile, chat: *const AmuxChat) {
-    while let Some(moved) = phone.redrawn(fleet, Duration::from_millis(500)) {
-        // SAFETY: both are open, or the chat is null and not named.
-        unsafe {
-            if moved == 0 {
-                take(amux_fleet_take_changes(profile));
-            } else {
-                take(amux_session_take_changes(chat));
-            }
-        }
-    }
+/// Keeps what moved in a fleet until nothing has for half a second.
+fn settle(phone: &Phone, fleet: u64) {
+    while phone.redrawn(fleet, Duration::from_millis(500)).is_some() {}
 }
 
 /// Renames the agent from the phone's own handle and waits until its fleet
@@ -768,13 +816,10 @@ fn rename(phone: &Phone, agent: &CStr, chat: *const AmuxChat, name: &str) {
     // SAFETY: the runtime is live; the strings live for the call.
     phone.started(unsafe { amux_profile_agent_act(phone.profile, agent.as_ptr(), act.as_ptr()) });
     assert!(phone.result().get("Ok").is_some());
-    // SAFETY: the chat is open.
-    let id = unsafe { amux_session_id(chat) };
-    phone.until(id, chat, "the chat renamed", || {
-        // SAFETY: the chat is open.
-        take(unsafe { amux_session_frame(chat) })["name"] == name
+    phone.until("the chat renamed", || {
+        phone.chat(chat, |held| held.frame["name"] == name)
     });
-    phone.until(0, std::ptr::null(), "the fleet renamed", || {
+    phone.until("the fleet renamed", || {
         // SAFETY: the runtime is live; the string lives for the call.
         take(unsafe { amux_fleet_card(phone.profile, agent.as_ptr()) })["name"] == name
     });
@@ -821,17 +866,9 @@ fn the_profile_registry_through_the_c_abi() {
     );
 
     // Each profile has its own identity and its own source policy.
-    let mut error = std::ptr::null_mut();
-    // SAFETY: the runtime is live; the strings live for the call.
-    let opened = unsafe { amux_profile_open(phone.runtime, other.as_ptr(), &mut error) };
-    assert!(!opened.is_null());
-    // SAFETY: both profiles are open.
-    let (mine, theirs) = unsafe {
-        (
-            take(amux_fleet_hosts(phone.profile)),
-            take(amux_fleet_hosts(opened)),
-        )
-    };
+    let (opened, theirs) = phone.open_profile(&other);
+    let hosts = |fleet| phone.seen.borrow().fleets[&fleet].1.clone();
+    let (mine, theirs) = (hosts(phone.fleet), hosts(theirs));
     assert_ne!(mine[0]["host_id"], theirs[0]["host_id"], "{mine} {theirs}");
     // SAFETY: the runtime is live; the string lives for the call.
     unsafe { amux_runtime_list_sources(phone.runtime, phone.id.as_ptr()) };
@@ -1025,7 +1062,8 @@ fn outbox() -> (Arc<Outbox>, Arc<AtomicU64>) {
     let outbox = Arc::new(Outbox {
         tickets: AtomicU64::new(0),
         fleets: AtomicU64::new(0),
-        waiting: Mutex::new(Stepped::default()),
+        waiting: Mutex::new(Waiting::default()),
+        open: Mutex::new(HashMap::new()),
         ring: Box::new(move || {
             ringing.fetch_add(1, Ordering::SeqCst);
         }),
@@ -1254,9 +1292,9 @@ fn every_stop_leaves_the_installation_marked_clean() {
 #[test]
 fn null_handles_read_as_nothing_and_null_results_free_as_nothing() {
     // SAFETY: null chats and fleets read as nothing.
-    assert!(unsafe { amux_session_keys(std::ptr::null()) }.is_null());
+    assert!(unsafe { amux_session_opening(std::ptr::null()) }.is_null());
     // SAFETY: as above.
-    assert!(unsafe { amux_fleet_view(std::ptr::null()) }.is_null());
+    assert!(unsafe { amux_fleet_opening(std::ptr::null()) }.is_null());
     // SAFETY: a null chat or fleet ignores what it is told.
     unsafe { amux_session_toggle_run(std::ptr::null(), c"k".as_ptr()) };
     // SAFETY: as above.

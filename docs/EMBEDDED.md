@@ -108,9 +108,10 @@ and come back as inputs.
 A call that waits for the cores to do something (starting, stopping, a
 profile or chat opening) runs its work on the transport thread and steps the
 cores on the calling thread meanwhile, so it never waits on a queue the
-calling thread holds. Through the C ABI a step answers JSON naming the
-fleets and chats to redraw, whether the profile list moved, and the results
-of acts, each under the ticket its act returned when it started.
+calling thread holds. Through the C ABI a step answers JSON with what moved
+in each open fleet and chat as a delta, the profile list when it moved, and
+the results of acts, each under the ticket its act returned when it started
+and after the deltas of what it moved.
 
 ## Profiles
 
@@ -260,6 +261,6 @@ slice sizes to `target/ios/size.txt`.
 
 | Command | What it proves |
 | --- | --- |
-| `cargo test -p app-runtime` | The host is woken once however many updates land and takes every changed key together; older rows arrive below the oldest held; collapsed runs and the chat frame read as the views say; a settings pick reaches the agent |
+| `cargo test -p app-runtime` | The host is woken once however many updates land and hears them as one delta; a host's keys moved only by deltas follow the window through every seeded schedule of the client model, and through a trim to the cap; new rows arrive above the newest held and older ones below the oldest, each read when drawn; collapsed runs and the chat frame read as the views say; a settings pick reaches the agent |
 | `cargo test -p app-embedded` | A phone pairs by PIN and reads a machine's agents from its own rows; relinks when its browser finds the machine again; each account is a profile and only the resumed one holds a relay link; a signed-in phone reaches its hosts over the relay; a dump carries the runtime's log, redacted |
-| `cargo test -p app-ffi` | Through the C functions: pairing by PIN, the fleet, a chat's rows by key, a permission answered by position and a question by picks, paging and a dump; and no wake reaches a closed profile or chat while its acts are in flight |
+| `cargo test -p app-ffi` | Through the C functions, with the phone's state held only from openings and deltas: pairing by PIN, the fleet, a chat's rows by key, a permission answered by position and a question by picks, paging (handed over before its answer) and a dump; and nothing closed is handed over while its acts are in flight |

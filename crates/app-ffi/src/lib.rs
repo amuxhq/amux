@@ -7,10 +7,13 @@
 //! from the Rust definitions (`cargo run -p xtask -- swift-types`), so the
 //! two sides share one definition of every value.
 //!
-//! Rows are handed out by item key. A chat's id sequence changes only at
-//! its two edges, newer keys above the newest the host holds and older ones
-//! below its oldest, until a change batch says `reloaded`; there is no slot
-//! identity to keep in step.
+//! A profile's fleet and each open chat open with the whole of what they
+//! show (`amux_fleet_opening`, `amux_session_opening`); after that a step
+//! hands over what moved in each as a delta, only what moved. Rows are
+//! handed out by item key: a chat's id sequence changes only at its two
+//! edges, newer keys above the newest the host holds and older ones below
+//! its oldest, until a delta reloads it; there is no slot identity to keep
+//! in step.
 //!
 //! Threads: the app owns the loop. The daemon cores step on whichever
 //! queue calls `amux_runtime_step`; links, channels and gRPC run on one
@@ -19,8 +22,8 @@
 //! answers becomes readable, and the app steps when it sees it. Reads
 //! return at once. An act that waits on the agent returns a ticket at
 //! once, and its JSON result comes back from a later step under that
-//! ticket; a step also names the fleets (chat 0) and chats whose changes
-//! wait to be taken, and carries the profile list when it moved. The calls
+//! ticket, after the deltas of what it moved; a step also carries the
+//! fleets' and chats' deltas, and the profile list when it moved. The calls
 //! that block until the cores have done something (start, stop, a profile
 //! or chat opening, a lifecycle input) step the cores on the calling
 //! thread while they wait.
@@ -29,18 +32,19 @@
 //! and every byte buffer with `amux_bytes_free`. A null return means the
 //! call failed; the reason goes to the log.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::ffi::{CStr, CString, c_char, c_int};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 use app_embedded::{
     EdgeOverrides, EmbeddedRuntime, PairRequest, Phone, ProfileEvent, ProfileId, ProfileView,
     StartConfig, UsageEvent,
 };
 use app_runtime::values::{
-    ActOutcome, AgentAct, CommandOutcome, Draft, Found, FrozenReview, NewAgent,
+    ActOutcome, AgentAct, ChatDelta, CommandOutcome, Draft, FleetDelta, Found, FrozenReview,
+    NewAgent,
 };
 use app_runtime::{AppRuntime, Chat, Wake};
 use model::{AgentKey, Key};
@@ -97,9 +101,8 @@ struct Shared {
 /// One profile's fleet and chats.
 pub struct AmuxProfile {
     profile: ProfileId,
-    /// The number redraws name this fleet by.
+    /// The number deltas name this fleet by.
     fleet: u64,
-    gate: Arc<Gate>,
     shared: Arc<Shared>,
     app: Arc<AppRuntime>,
     tail: u32,
@@ -109,19 +112,7 @@ pub struct AmuxProfile {
 pub struct AmuxChat {
     chat: Arc<Chat>,
     fleet: u64,
-    gate: Arc<Gate>,
     shared: Arc<Shared>,
-}
-
-/// What of a fleet is closed: nothing closed is named in a redraw again,
-/// however many of its acts are still in flight.
-#[derive(Default)]
-struct Gate(Mutex<Shut>);
-
-#[derive(Default)]
-struct Shut {
-    fleet: bool,
-    chats: HashSet<u64>,
 }
 
 impl AmuxRuntime {
@@ -143,12 +134,20 @@ impl AmuxRuntime {
 }
 
 impl AmuxProfile {
+    /// Starts an act on the profile; what it moved in the fleet is handed
+    /// over before its answer.
     fn act<T, F>(&self, act: F) -> u64
     where
-        T: Serialize,
+        T: Serialize + Send + 'static,
         F: Future<Output = T> + Send + 'static,
     {
-        self.shared.act(act)
+        let outbox = self.shared.outbox.clone();
+        let fleet = self.fleet;
+        self.shared.act(async move {
+            let answer = act.await;
+            outbox.redraw(fleet, 0);
+            answer
+        })
     }
 }
 
@@ -189,14 +188,32 @@ impl Shared {
     }
 }
 
-/// What the transport left for the app's next step: which views to
-/// redraw, and the answers to acts it started. Nothing here calls the
-/// app; each change rings the wake descriptor instead.
+/// What the transport left for the app's next step: which views moved,
+/// and the answers to acts it started. Nothing here calls the app; each
+/// change rings the wake descriptor instead.
 struct Outbox {
     tickets: AtomicU64,
     fleets: AtomicU64,
-    waiting: Mutex<Stepped>,
+    waiting: Mutex<Waiting>,
+    /// The fleets and chats open, by the numbers deltas name them by (a
+    /// fleet as chat 0): nothing closed is handed over again, however many
+    /// of its acts are still in flight.
+    open: Mutex<HashMap<(u64, u64), View>>,
     ring: Box<dyn Fn() + Send + Sync>,
+}
+
+#[derive(Clone)]
+enum View {
+    Fleet(Weak<AppRuntime>),
+    Chat(Weak<Chat>),
+}
+
+#[derive(Default)]
+struct Waiting {
+    profiles: Option<Vec<ProfileView>>,
+    /// The fleets (chat 0) and chats that moved.
+    moved: BTreeSet<(u64, u64)>,
+    answers: Vec<Answer>,
 }
 
 /// What a step hands the app, as JSON.
@@ -205,16 +222,22 @@ struct Stepped {
     /// Every profile, oldest first, when the list moved since the last
     /// step.
     profiles: Option<Vec<ProfileView>>,
-    /// The fleets (chat 0) and chats whose changes wait to be taken.
-    redraws: BTreeSet<Redraw>,
-    /// The acts that ended since the last step.
+    fleets: Vec<FleetMoved>,
+    chats: Vec<ChatMoved>,
+    /// The acts that ended since the last step, after what they moved.
     answers: Vec<Answer>,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-struct Redraw {
+#[derive(Serialize)]
+struct FleetMoved {
     fleet: u64,
-    chat: u64,
+    delta: FleetDelta,
+}
+
+#[derive(Serialize)]
+struct ChatMoved {
+    fleet: u64,
+    delta: ChatDelta,
 }
 
 #[derive(Serialize)]
@@ -225,7 +248,7 @@ struct Answer {
 }
 
 impl Outbox {
-    fn post(&self, post: impl FnOnce(&mut Stepped)) {
+    fn post(&self, post: impl FnOnce(&mut Waiting)) {
         post(&mut self.waiting.lock().unwrap_or_else(|p| p.into_inner()));
         (self.ring)();
     }
@@ -238,36 +261,59 @@ impl Outbox {
         }
     }
 
+    /// What waits for the app, each view that moved as its delta. Called
+    /// inside the runtime, since reading a row can start a fetch.
     fn take(&self) -> Stepped {
-        std::mem::take(&mut self.waiting.lock().unwrap_or_else(|p| p.into_inner()))
+        let waiting = std::mem::take(&mut *self.waiting.lock().unwrap_or_else(|p| p.into_inner()));
+        let mut stepped = Stepped {
+            profiles: waiting.profiles,
+            answers: waiting.answers,
+            ..Stepped::default()
+        };
+        for (fleet, chat) in waiting.moved {
+            let view = self
+                .open
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .get(&(fleet, chat))
+                .cloned();
+            match view {
+                Some(View::Fleet(app)) => {
+                    if let Some(delta) = app.upgrade().and_then(|app| app.fleet_delta()) {
+                        stepped.fleets.push(FleetMoved { fleet, delta });
+                    }
+                }
+                Some(View::Chat(open)) => {
+                    if let Some(delta) = open.upgrade().and_then(|open| open.delta()) {
+                        stepped.chats.push(ChatMoved { fleet, delta });
+                    }
+                }
+                None => {}
+            }
+        }
+        stepped
     }
 
-    /// Names a fleet (chat 0) or chat in the next step, unless it closed;
-    /// the gate is held across, so a close waits for a redraw under way.
-    fn redraw(&self, gate: &Gate, fleet: u64, chat: u64) {
-        let shut = gate.0.lock().unwrap_or_else(|p| p.into_inner());
-        if shut.fleet || shut.chats.contains(&chat) {
-            return;
-        }
+    /// Names a fleet (chat 0) or chat in the next step.
+    fn redraw(&self, fleet: u64, chat: u64) {
         self.post(|waiting| {
-            waiting.redraws.insert(Redraw { fleet, chat });
+            waiting.moved.insert((fleet, chat));
         });
     }
 
-    /// Closes a fleet, or one chat of it, and forgets what waits for it.
-    fn close(&self, gate: &Gate, fleet: u64, chat: Option<u64>) {
-        let mut shut = gate.0.lock().unwrap_or_else(|p| p.into_inner());
-        match chat {
-            Some(chat) => {
-                shut.chats.insert(chat);
-            }
-            None => shut.fleet = true,
-        }
-        self.waiting
+    fn opened(&self, fleet: u64, chat: u64, view: View) {
+        self.open
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .redraws
-            .retain(|redraw| redraw.fleet != fleet || chat.is_some_and(|chat| redraw.chat != chat));
+            .insert((fleet, chat), view);
+    }
+
+    /// Closes a fleet with every chat of it, or one chat.
+    fn close(&self, fleet: u64, chat: Option<u64>) {
+        self.open
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .retain(|(of, open), _| *of != fleet || chat.is_some_and(|chat| *open != chat));
     }
 
     fn act<T, F>(self: &Arc<Self>, handle: &Handle, act: F) -> u64
@@ -335,7 +381,8 @@ pub fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<Box<AmuxR
     let outbox = Arc::new(Outbox {
         tickets: AtomicU64::new(0),
         fleets: AtomicU64::new(0),
-        waiting: Mutex::new(Stepped::default()),
+        waiting: Mutex::new(Waiting::default()),
+        open: Mutex::new(HashMap::new()),
         ring: Box::new(phone.bell()),
     });
     // The list as the start left it waits for the first step, so the app
@@ -374,8 +421,6 @@ pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<Amu
     let embedded = shared.embedded().clone();
     let outbox = shared.outbox.clone();
     let fleet = outbox.fleets.fetch_add(1, Ordering::SeqCst) + 1;
-    let gate = Arc::new(Gate::default());
-    let passing = gate.clone();
     let app = shared
         .phone
         .wait(async move {
@@ -384,7 +429,7 @@ pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<Amu
                     Wake::Fleet => 0,
                     Wake::Chat(id) => id,
                 };
-                outbox.redraw(&passing, fleet, chat)
+                outbox.redraw(fleet, chat)
             });
             let client = embedded
                 .client(profile)
@@ -397,12 +442,15 @@ pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<Amu
                 .map_err(|error| error.to_string())
         })
         .ok_or("the runtime has stopped")??;
+    let app = Arc::new(app);
+    shared
+        .outbox
+        .opened(fleet, 0, View::Fleet(Arc::downgrade(&app)));
     Ok(Box::new(AmuxProfile {
         profile,
         fleet,
-        gate,
         shared,
-        app: Arc::new(app),
+        app,
         tail: runtime.tail,
     }))
 }
@@ -708,6 +756,7 @@ pub unsafe extern "C" fn amux_runtime_step(runtime: *const AmuxRuntime) -> *mut 
             return std::ptr::null_mut();
         };
         runtime.shared.phone.step();
+        let _entered = runtime.handle().enter();
         owned(&runtime.shared.outbox.take())
     })
 }
@@ -1259,9 +1308,9 @@ pub unsafe extern "C" fn amux_profile_open(
     }
 }
 
-/// Closes a profile's fleet. No redraw names it once this returns, however
-/// many acts are still in flight; they are answered all the same. Close
-/// its chats first.
+/// Closes a profile's fleet. No step hands over its delta, or its chats',
+/// once this returns, however many acts are still in flight; they are
+/// answered all the same. Close its chats first.
 ///
 /// # Safety
 /// `profile` is null or from `amux_profile_open`, and not used again.
@@ -1270,14 +1319,14 @@ pub unsafe extern "C" fn amux_profile_close(profile: *mut AmuxProfile) {
     if !profile.is_null() {
         // SAFETY: the caller's contract.
         let open = unsafe { Box::from_raw(profile) };
-        open.shared.outbox.close(&open.gate, open.fleet, None);
+        open.shared.outbox.close(open.fleet, None);
         let shared = open.shared.clone();
         let _entered = shared.handle().enter();
         drop(open);
     }
 }
 
-/// The number redraws name this fleet by.
+/// The number deltas name this fleet by.
 ///
 /// # Safety
 /// `profile` is null or from `amux_profile_open`.
@@ -1626,20 +1675,22 @@ unsafe fn fleet_read<T: Serialize>(
     })
 }
 
-/// Home's `FleetView`: its sections, families listed under the roots
-/// `amux_fleet_toggle_family` opened, narrowed by the last
-/// `amux_fleet_filter`.
+/// The fleet whole as a `FleetDelta`: home's sections, families listed
+/// under the roots `amux_fleet_toggle_family` opened, narrowed by the last
+/// `amux_fleet_filter`, and every host, this device first. Steps after it
+/// hand over what moved since.
 ///
 /// # Safety
 /// `profile` is from `amux_profile_open`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_fleet_view(profile: *const AmuxProfile) -> *mut c_char {
+pub unsafe extern "C" fn amux_fleet_opening(profile: *const AmuxProfile) -> *mut c_char {
     // SAFETY: the caller's contract.
-    unsafe { fleet_read(profile, AppRuntime::fleet_view) }
+    unsafe { fleet_read(profile, AppRuntime::fleet_opening) }
 }
 
 /// Lists a family's members under its root, named by the root's agent id
-/// as a JSON byte array, or folds them away again.
+/// as a JSON byte array, or folds them away again; the next step hands
+/// over the list as it then stands.
 ///
 /// # Safety
 /// `profile` is from `amux_profile_open`; `root` is a NUL-terminated string.
@@ -1653,11 +1704,11 @@ pub unsafe extern "C" fn amux_fleet_toggle_family(
         return;
     };
     // SAFETY: the caller's contract.
-    let _ = unsafe { fleet_read(profile, |app| app.toggle_family(&root)) };
+    unsafe { fleet_moved(profile, |app| app.toggle_family(&root)) };
 }
 
 /// Narrows home's list to what a `FleetFilter`, as JSON, keeps; null keeps
-/// every agent.
+/// every agent. The next step hands over the list as it then stands.
 ///
 /// # Safety
 /// `profile` is from `amux_profile_open`; `filter` is null or a
@@ -1667,7 +1718,22 @@ pub unsafe extern "C" fn amux_fleet_filter(profile: *const AmuxProfile, filter: 
     // SAFETY: the caller's contract.
     let filter: ui_view::FleetFilter = unsafe { parse(filter) }.unwrap_or_default();
     // SAFETY: the caller's contract.
-    let _ = unsafe { fleet_read(profile, |app| app.set_filter(filter)) };
+    unsafe { fleet_moved(profile, |app| app.set_filter(filter)) };
+}
+
+/// Changes what home lists, and names the fleet in the next step.
+///
+/// # Safety
+/// As for [`live_profile`].
+unsafe fn fleet_moved(profile: *const AmuxProfile, change: impl FnOnce(&AppRuntime)) {
+    guard((), || {
+        // SAFETY: the caller's contract.
+        let Some(profile) = (unsafe { live_profile(profile) }) else {
+            return;
+        };
+        change(&profile.app);
+        profile.shared.outbox.redraw(profile.fleet, 0);
+    })
 }
 
 /// One agent's `FleetCard`, or null JSON when it is not listed.
@@ -1705,33 +1771,12 @@ pub unsafe extern "C" fn amux_fleet_family(
     unsafe { fleet_read(profile, |app| app.family_header(&agent)) }
 }
 
-/// Every host in the fleet as `[HostView]`, this device first.
-///
-/// # Safety
-/// `profile` is from `amux_profile_open`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_fleet_hosts(profile: *const AmuxProfile) -> *mut c_char {
-    // SAFETY: the caller's contract.
-    unsafe { fleet_read(profile, AppRuntime::hosts) }
-}
-
-/// The fleet's `FleetChanges` since the last take; the next change wakes
-/// the host again.
-///
-/// # Safety
-/// `profile` is from `amux_profile_open`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_fleet_take_changes(profile: *const AmuxProfile) -> *mut c_char {
-    // SAFETY: the caller's contract.
-    unsafe { fleet_read(profile, AppRuntime::take_fleet_changes) }
-}
-
 // --- a chat ----------------------------------------------------------------
 
 /// Opens a chat on a fleet agent, named by its `AgentKey` as JSON, with
 /// `tail` rows (the configured tail when zero). Blocks until the snapshot
-/// and the rows this device holds are applied, so the first read is
-/// correct even with the agent's host away. Null on failure, with the
+/// and the rows this device holds are applied, so the opening is whole
+/// even with the agent's host away. Null on failure, with the
 /// reason in `error` when it is not null.
 ///
 /// # Safety
@@ -1757,10 +1802,13 @@ pub unsafe extern "C" fn amux_session_open(
             .wait(async move { app.open_chat(&agent, tail).await })
             .ok_or("the runtime has stopped")?
             .map_err(|error| error.to_string())?;
+        profile
+            .shared
+            .outbox
+            .opened(profile.fleet, chat.id(), View::Chat(Arc::downgrade(&chat)));
         Ok(AmuxChat {
             chat,
             fleet: profile.fleet,
-            gate: profile.gate.clone(),
             shared: profile.shared.clone(),
         })
     });
@@ -1774,7 +1822,7 @@ pub unsafe extern "C" fn amux_session_open(
     }
 }
 
-/// The number redraws name this chat by, within its fleet.
+/// The number deltas name this chat by, within its fleet.
 ///
 /// # Safety
 /// `chat` is from `amux_session_open`.
@@ -1784,8 +1832,8 @@ pub unsafe extern "C" fn amux_session_id(chat: *const AmuxChat) -> u64 {
     unsafe { held_chat(chat) }.map_or(0, |open| open.chat.id())
 }
 
-/// Closes a chat. No redraw names it once this returns, however many of
-/// its acts are still in flight; they are answered all the same.
+/// Closes a chat. No step hands over its delta once this returns, however
+/// many of its acts are still in flight; they are answered all the same.
 ///
 /// # Safety
 /// `chat` is null or from `amux_session_open`, and not used again.
@@ -1794,51 +1842,23 @@ pub unsafe extern "C" fn amux_session_close(chat: *mut AmuxChat) {
     if !chat.is_null() {
         // SAFETY: the caller's contract.
         let open = unsafe { Box::from_raw(chat) };
-        open.shared
-            .outbox
-            .close(&open.gate, open.fleet, Some(open.chat.id()));
+        open.shared.outbox.close(open.fleet, Some(open.chat.id()));
         let shared = open.shared.clone();
         let _entered = shared.handle().enter();
         drop(open);
     }
 }
 
-/// The held window's keys, oldest first: `[String]`.
+/// The chat whole as a `ChatDelta`, for the app's model opening on it:
+/// every key, the frame and the views around it. No step hands over a
+/// delta of the chat before this; every one after says what moved since.
 ///
 /// # Safety
 /// `chat` is from `amux_session_open`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_keys(chat: *const AmuxChat) -> *mut c_char {
+pub unsafe extern "C" fn amux_session_opening(chat: *const AmuxChat) -> *mut c_char {
     // SAFETY: the caller's contract.
-    unsafe { read(chat, Chat::keys) }
-}
-
-/// Keys newer than `newest`, oldest first; null JSON when `newest` is not
-/// held, and the host reads every key again.
-///
-/// # Safety
-/// `chat` is from `amux_session_open`; `newest` is a NUL-terminated string.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_new_keys_above(
-    chat: *const AmuxChat,
-    newest: *const c_char,
-) -> *mut c_char {
-    // SAFETY: the caller's contract.
-    let newest = unsafe { text(newest) }.unwrap_or_default().to_owned();
-    // SAFETY: the caller's contract.
-    unsafe { read(chat, |chat| chat.keys_above(&newest)) }
-}
-
-/// The oldest key the window holds, as a JSON string; null JSON when it
-/// holds none. While the reader follows, the window drops its oldest rows
-/// as new ones arrive, and the host drops the keys before this one.
-///
-/// # Safety
-/// `chat` is from `amux_session_open`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_oldest_key(chat: *const AmuxChat) -> *mut c_char {
-    // SAFETY: the caller's contract.
-    unsafe { read(chat, Chat::oldest_key) }
+    unsafe { read(chat, Chat::opening) }
 }
 
 /// Tells the chat whether the reader is at the newest row (true) or has
@@ -1878,25 +1898,10 @@ pub unsafe extern "C" fn amux_session_keep_draft(chat: *const AmuxChat, draft: *
     let _ = unsafe { read(chat, |chat| chat.keep_draft(&draft)) };
 }
 
-/// Keys older than `oldest`, oldest first; null JSON when `oldest` is not
-/// held.
-///
-/// # Safety
-/// As for `amux_session_new_keys_above`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_new_keys_below(
-    chat: *const AmuxChat,
-    oldest: *const c_char,
-) -> *mut c_char {
-    // SAFETY: the caller's contract.
-    let oldest = unsafe { text(oldest) }.unwrap_or_default().to_owned();
-    // SAFETY: the caller's contract.
-    unsafe { read(chat, |chat| chat.keys_below(&oldest)) }
-}
-
 /// `[Row]` for these keys (a JSON array of strings), in order, skipping
 /// keys not held, each run folded to its newest step unless
-/// `amux_session_toggle_run` opened it.
+/// `amux_session_toggle_run` opened it: for a row drawn for the first
+/// time, or after a reload.
 ///
 /// # Safety
 /// `chat` is from `amux_session_open`; `keys` is NUL-terminated or null.
@@ -1911,9 +1916,9 @@ pub unsafe extern "C" fn amux_session_rows_for(
     unsafe { read(chat, |chat| chat.rows_for(&keys)) }
 }
 
-/// Opens or closes the run the row `member` belongs to; rows read after
-/// draw it so. The chat keeps an open run open as it grows, older steps
-/// page in, or the window trims it.
+/// Opens or closes the run the row `member` belongs to; the next step
+/// hands over its rows drawn so. The chat keeps an open run open as it
+/// grows, older steps page in, or the window trims it.
 ///
 /// # Safety
 /// `chat` is from `amux_session_open`; `member` is NUL-terminated or null.
@@ -1925,66 +1930,14 @@ pub unsafe extern "C" fn amux_session_toggle_run(chat: *const AmuxChat, member: 
     let _ = unsafe { read(chat, |chat| chat.toggle_run(&member)) };
 }
 
-/// The head `AskCard`, or null JSON.
-///
-/// # Safety
-/// `chat` is from `amux_session_open`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_ask_card(chat: *const AmuxChat) -> *mut c_char {
-    // SAFETY: the caller's contract.
-    unsafe { read(chat, Chat::ask_card) }
-}
-
-/// The chat's `Overview`, with the changed files the last
-/// `amux_session_open_overview` fetched.
-///
-/// # Safety
-/// `chat` is from `amux_session_open`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_overview(chat: *const AmuxChat) -> *mut c_char {
-    // SAFETY: the caller's contract.
-    unsafe { read(chat, Chat::overview) }
-}
-
-/// The `SettingsView`: what the agent offers to change, the current values
-/// marked, and why a setting cannot change from here.
-///
-/// # Safety
-/// `chat` is from `amux_session_open`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_settings(chat: *const AmuxChat) -> *mut c_char {
-    // SAFETY: the caller's contract.
-    unsafe { read(chat, Chat::settings) }
-}
-
-/// The `ChatFrame`: phase, composer, settings in force, git and context.
-///
-/// # Safety
-/// `chat` is from `amux_session_open`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_frame(chat: *const AmuxChat) -> *mut c_char {
-    // SAFETY: the caller's contract.
-    unsafe { read(chat, Chat::frame) }
-}
-
-/// The chat's `ChatChanges` since the last take; the next change wakes the
-/// host again.
-///
-/// # Safety
-/// `chat` is from `amux_session_open`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_take_changes(chat: *const AmuxChat) -> *mut c_char {
-    // SAFETY: the caller's contract.
-    unsafe { read(chat, Chat::take_changes) }
-}
-
-/// Starts an act on the chat and answers its ticket.
+/// Starts an act on the chat and answers its ticket, after the step that
+/// hands over what it moved.
 ///
 /// # Safety
 /// `chat` is from `amux_session_open`.
 unsafe fn act<T, F, Fut>(chat: *const AmuxChat, act: F) -> u64
 where
-    T: Serialize,
+    T: Serialize + Send + 'static,
     F: FnOnce(Arc<Chat>) -> Fut,
     Fut: Future<Output = T> + Send + 'static,
 {
@@ -1993,7 +1946,14 @@ where
         let Some(open) = (unsafe { held_chat(chat) }) else {
             return 0;
         };
-        open.shared.act(act(open.chat.clone()))
+        let acting = act(open.chat.clone());
+        let outbox = open.shared.outbox.clone();
+        let (fleet, id) = (open.fleet, open.chat.id());
+        open.shared.act(async move {
+            let answer = acting.await;
+            outbox.redraw(fleet, id);
+            answer
+        })
     })
 }
 

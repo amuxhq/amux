@@ -1046,18 +1046,18 @@ cargo = [
 
 [[suite]]
 name = "phone-unit-tests"
-contract = "Swift packages and the app-hosted suite preserve bridge schemas, stores, features, design tokens, shell navigation, and test fixtures; the chat model replays the Rust client model's traces (ChatModelTraceTests) and holds the same keys and rows at every cut."
+contract = "Swift packages and the app-hosted suite preserve bridge schemas, stores, features, design tokens, shell navigation, and test fixtures; the chat model applies the runtime's chat deltas."
 paths = ["apps/apple/Packages/*/Tests", "apps/apple/AmuxAppTests"]
 recipe = "just ios unit"
 boundary = "Store, effects, bridge"
-oracle = "Swift Testing and XCTest assertions over production package and app-hosted behavior; ChatModelTraceTests compares against the client traces app-runtime records and checks are current."
+oracle = "Swift Testing and XCTest assertions over production package and app-hosted behavior."
 real = ["built Swift packages", "Rust bridge", "signed simulator app for app-hosted tests"]
 substituted = ["cloud account", "providers"]
 time = "real"
 capabilities = ["macOS", "Xcode 26.6", "iOS 26.5 golden simulator"]
 lane = "fast"
 evidence = "target/ios/DerivedData"
-update = "just client-traces rewrites the chat model's trace fixtures from the Rust client model; review the diff."
+update = ""
 swift = ["AmuxAppTests", "AmuxCoreTests", "AmuxDesignTests", "AmuxFeaturesTests", "AmuxShellTests", "AmuxTestSupportTests"]
 
 [[suite]]

@@ -82,11 +82,9 @@ A fixed seed keeps a run repeatable.
 
 No protocol rule is written twice. The rules live only in the cores' code; there is no abstract model of the
 protocol to keep in step with it and no conformance copy. A property states what must be true and the checker
-runs the real code to find out. The one second implementation is the phone's Swift chat model, which keeps its own
-rows for the platform's list view: it is held equal to the Rust client model by replaying the same traces.
-`just client-traces` writes traces of the client model's seeded schedules (what the runtime hands the phone at
-every wake), app-runtime's tests fail while the committed traces differ from the model, and the Swift
-`ChatModelTraceTests` replay each one and assert the same keys, rows and frame at every cut.
+runs the real code to find out. The phone's Swift chat model writes none of them again: it applies the deltas the
+runtime computes, and app-runtime's tests walk the client model's seeded schedules and hold the keys those deltas
+leave equal to the session's window at every cut.
 
 ## A plant round before deletion
 

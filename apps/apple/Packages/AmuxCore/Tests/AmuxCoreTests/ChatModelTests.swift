@@ -4,6 +4,18 @@ import XCTest
 @testable import AmuxCore
 
 /// A chat source that records what the model asks it for.
+/// What changed in a chat since the last delta, as the session gathers it:
+/// the keys whose rows arrived or changed, whether every key may be new,
+/// and whether anything beside the rows moved.
+struct ChatChanges {
+    var keys: [String]
+    var reloaded: Bool
+    var session: Bool
+}
+
+/// A chat as the runtime hands it over: opened whole, then each delta
+/// computed, as the runtime computes it, against the keys and views it
+/// last handed over.
 private final class FakeChat: ChatSource, @unchecked Sendable {
     var ordered: [Row]
     var current: ChatFrame
@@ -46,9 +58,93 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
     /// Rows the session holds apart while the reader is in history.
     var held: [Row] = []
 
+    /// What the model was last handed.
+    private var sentKeys: [String] = []
+    private var sentFrame: ChatFrame?
+    private var sentCard: AskCard??
+    private var sentFacts: Overview??
+    private var sentOffered: SettingsView??
+
     init(rows: [Row], frame: ChatFrame) {
         ordered = rows
         current = frame
+    }
+
+    func opening() -> ChatDelta {
+        pending = ChatChanges(keys: [], reloaded: false, session: false)
+        sentKeys = ordered.map(\.id)
+        (sentFrame, sentCard, sentFacts, sentOffered) = (Self.drawn(current), card, facts, offered)
+        return ChatDelta(
+            chat: 0, rows: [], ask: AskMoved(card: card), frame: current,
+            keys: .reload(sentKeys), overview: facts, settings: offered)
+    }
+
+    /// What moved since the last delta, or nil when nothing did.
+    func delta() -> ChatDelta? {
+        defer { pending = ChatChanges(keys: [], reloaded: false, session: false) }
+        let now = ordered.map(\.id)
+        var keys: KeysMoved?
+        var wanted = Set<String>()
+        if !pending.reloaded, let (above, below, dropped) = Self.edges(from: sentKeys, to: now) {
+            if !above.isEmpty || !below.isEmpty || dropped > 0 {
+                keys = .edges(above: above, below: below, dropped: UInt32(dropped))
+            }
+            wanted = Set(pending.keys).intersection(now).subtracting(below).subtracting(above)
+        } else if pending.reloaded || !sentKeys.isEmpty || !now.isEmpty {
+            keys = .reload(now)
+        }
+        sentKeys = now
+        let rows = ordered.filter { wanted.contains($0.id) }
+        let frame = Self.drawn(current) == sentFrame ? nil : current
+        sentFrame = Self.drawn(current)
+        let ask = sentCard == .some(card) ? nil : AskMoved(card: card)
+        sentCard = card
+        let overview = sentFacts == .some(facts) ? nil : facts
+        sentFacts = facts
+        let settings = sentOffered == .some(offered) ? nil : offered
+        sentOffered = offered
+        guard keys != nil || !rows.isEmpty || frame != nil || ask != nil || overview != nil
+            || settings != nil
+        else { return nil }
+        return ChatDelta(
+            chat: 0, rows: rows, ask: ask, frame: frame, keys: keys, overview: overview,
+            settings: settings)
+    }
+
+    /// Hands the model what moved since the last delta, if anything did.
+    @MainActor
+    func deliver(to model: ChatModel) {
+        if let delta = delta() { model.apply(delta) }
+    }
+
+    /// The keys new above the newest handed over and below the oldest, and
+    /// how many of the oldest went; nil when the window moved otherwise.
+    private static func edges(
+        from sent: [String], to now: [String]
+    ) -> (above: [String], below: [String], dropped: Int)? {
+        guard let newest = sent.last, let at = now.firstIndex(of: newest), let first = now.first
+        else { return nil }
+        let above = Array(now[(at + 1)...])
+        var below: [String] = []
+        var dropped = 0
+        if let oldest = now.firstIndex(of: sent[0]) {
+            below = Array(now[..<oldest])
+        } else {
+            guard let kept = sent.firstIndex(of: first) else { return nil }
+            dropped = kept
+        }
+        guard sent.count - dropped + above.count + below.count == now.count else { return nil }
+        return (above, below, dropped)
+    }
+
+    /// A frame moved only by the clock is not handed over, as the runtime
+    /// hands it over.
+    private static func drawn(_ frame: ChatFrame) -> ChatFrame {
+        var frame = frame
+        if let activity = frame.composer.activity, activity.sinceMs > 0 {
+            frame.composer.activity?.elapsedMs = 0
+        }
+        return frame
     }
 
     /// Rows arriving at the head as the session takes them: while the
@@ -90,33 +186,9 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
         held = []
     }
 
-    func oldestKey() -> String? { ordered.first?.id }
-
-    func keys() -> [String] { ordered.map(\.id) }
-
-    func keys(above newest: String) -> [String]? {
-        guard let index = ordered.firstIndex(where: { $0.id == newest }) else { return nil }
-        return ordered[(index + 1)...].map(\.id)
-    }
-
-    func keys(below oldest: String) -> [String]? {
-        guard let index = ordered.firstIndex(where: { $0.id == oldest }) else { return nil }
-        return ordered[..<index].map(\.id)
-    }
-
     func rows(for keys: [String]) -> [Row] {
         fetched.append(keys)
         return ordered.filter { keys.contains($0.id) }
-    }
-
-    func askCard() -> AskCard? { card }
-    func overview() -> Overview? { facts }
-    func settings() -> SettingsView? { offered }
-    func frame() -> ChatFrame? { current }
-
-    func takeChanges() -> ChatChanges {
-        defer { pending = ChatChanges(keys: [], reloaded: false, session: false) }
-        return pending
     }
 
     /// Sends are held, as for a host that cannot be reached: each is listed
@@ -146,12 +218,13 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
         return .done
     }
     /// Opens or closes a run as the runtime does: every row of it says so
-    /// from then on.
+    /// from then on, handed over by the next delta.
     func toggleRun(_ member: String) {
         toggled.append(member)
         guard let last = ordered.first(where: { $0.id == member })?.run?.last else { return }
         for index in ordered.indices where ordered[index].run?.last == last {
             ordered[index].run?.open.toggle()
+            pending.keys.append(ordered[index].id)
         }
     }
     func answerForm(_ ask: String, values: [FormValue]) async -> ActOutcome? { .done }
@@ -264,7 +337,7 @@ final class ChatModelTests: XCTestCase {
         XCTAssertEqual(source.fetched, [["b"]], "a drawn cell is not read again unchanged")
     }
 
-    func testNewRowsExtendTheSequenceAtItsEdgesAndOnlyChangedDrawnCellsAreReadAgain() {
+    func testNewRowsExtendTheSequenceAtItsEdgesAndChangedRowsComeWithTheDelta() {
         let source = FakeChat(rows: [row("b", 2), row("c", 3)], frame: frame())
         let model = ChatModel(source: source)
         let b = model.cell(for: "b")
@@ -274,16 +347,16 @@ final class ChatModelTests: XCTestCase {
         // A streamed revision of c and a new row d above the newest.
         source.ordered = [row("b", 2), row("c", 3, "c, longer"), row("d", 4)]
         source.pending = ChatChanges(keys: ["c", "d"], reloaded: false, session: false)
-        model.woke()
+        source.deliver(to: model)
         XCTAssertEqual(model.ids, ["b", "c", "d"])
-        XCTAssertEqual(source.fetched, [["c"]], "only the drawn cell that changed is read")
+        XCTAssertEqual(source.fetched, [], "the changed row came with the delta; nothing is read")
         XCTAssertEqual(model.cell(for: "c").row?.kind, row("c", 3, "c, longer").kind)
         XCTAssertTrue(model.cell(for: "b") === b, "an unchanged cell keeps its identity")
 
         // A page of older rows below the oldest.
         source.ordered.insert(row("a", 1), at: 0)
         source.pending = ChatChanges(keys: ["a"], reloaded: false, session: false)
-        model.woke()
+        source.deliver(to: model)
         XCTAssertEqual(model.ids, ["a", "b", "c", "d"])
     }
 
@@ -297,10 +370,10 @@ final class ChatModelTests: XCTestCase {
         // different drawn cell.
         source.ordered = [row("a", 1, "a, longer"), row("b", 2), row("c", 3)]
         source.pending = ChatChanges(keys: ["a"], reloaded: false, session: false)
-        model.woke()
+        source.deliver(to: model)
         source.ordered = [row("a", 1, "a, longer"), row("b", 2), row("c", 3, "c, longer")]
         source.pending = ChatChanges(keys: ["c"], reloaded: false, session: false)
-        model.woke()
+        source.deliver(to: model)
 
         XCTAssertGreaterThan(model.revision, laidOut)
         XCTAssertGreaterThan(model.revision(of: "a"), laidOut, "the first wake's row is still to measure")
@@ -318,68 +391,16 @@ final class ChatModelTests: XCTestCase {
         let laidOut = model.revision
 
         source.pending = ChatChanges(keys: ["b"], reloaded: false, session: false)
-        model.woke()
+        source.deliver(to: model)
         XCTAssertEqual(model.revision, laidOut)
         XCTAssertEqual(model.revision(of: "b"), laidOut)
 
         source.ordered = [row("a", 1), row("b", 2, "b, longer")]
         source.pending = ChatChanges(keys: ["b"], reloaded: false, session: false)
-        model.woke()
+        source.deliver(to: model)
         XCTAssertGreaterThan(model.revision(of: "b"), laidOut, "a row that changed is measured again")
     }
 
-    /// The frame is read from the session as it is now, while the rows it
-    /// caught up on are named by a change that can come a wake later: the
-    /// chat never offers to send the draft without those rows.
-    func testAChatThatCaughtUpHoldsTheRowsItCaughtUpOnBeforeItCanSend() {
-        let source = FakeChat(rows: [row("a", 1)], frame: frame(caughtUp: false))
-        let model = ChatModel(source: source)
-        model.draft = "Pick up where we left off."
-        XCTAssertFalse(model.canSend)
-
-        // The session caught up on b, and a wake for the connection reads
-        // the frame before the change naming b has come.
-        source.ordered.append(row("b", 2))
-        source.current.caughtUp = true
-        source.pending = ChatChanges(keys: [], reloaded: false, session: true)
-        model.woke()
-        XCTAssertTrue(model.canSend)
-        XCTAssertEqual(model.ids, ["a", "b"], "the rows it caught up on are held once it can send")
-
-        // The change naming b comes after: nothing is added twice.
-        source.pending = ChatChanges(keys: ["b"], reloaded: false, session: false)
-        model.woke()
-        XCTAssertEqual(model.ids, ["a", "b"])
-    }
-
-    /// A running activity's elapsed time moves with every frame read; the
-    /// activity line counts it from when the activity began, so the frame is
-    /// assigned again only for what else moved.
-    func testAFrameMovedOnlyByTheClockIsNotAssigned() {
-        var running = frame(phase: .working)
-        running.composer.activity = Activity(kind: .working, sinceMs: 1_000, elapsedMs: 500)
-        let source = FakeChat(rows: [row("a", 1)], frame: running)
-        let model = ChatModel(source: source)
-
-        source.current.composer.activity?.elapsedMs = 900
-        source.pending = ChatChanges(keys: [], reloaded: false, session: true)
-        model.woke()
-        XCTAssertEqual(model.frame?.composer.activity?.elapsedMs, 500)
-
-        source.current.composer.activity = Activity(kind: .thinking, sinceMs: 1_000, elapsedMs: 950)
-        source.pending = ChatChanges(keys: [], reloaded: false, session: true)
-        model.woke()
-        XCTAssertEqual(model.frame?.composer.activity?.kind, .thinking)
-
-        // Without a start to count from, the elapsed time is all there is.
-        source.current.composer.activity = Activity(kind: .thinking, sinceMs: 0, elapsedMs: 1_200)
-        source.pending = ChatChanges(keys: [], reloaded: false, session: true)
-        model.woke()
-        source.current.composer.activity?.elapsedMs = 1_400
-        source.pending = ChatChanges(keys: [], reloaded: false, session: true)
-        model.woke()
-        XCTAssertEqual(model.frame?.composer.activity?.elapsedMs, 1_400)
-    }
 
     func testAResetSwapsTheWholeSequenceInAtOnceAndFollowsTheNewestRow() {
         let source = FakeChat(rows: [row("a", 1), row("b", 2)], frame: frame())
@@ -389,7 +410,7 @@ final class ChatModelTests: XCTestCase {
 
         source.ordered = [row("b", 20, "b again"), row("x", 21), row("y", 22)]
         source.pending = ChatChanges(keys: [], reloaded: true, session: true)
-        model.woke()
+        source.deliver(to: model)
         XCTAssertEqual(model.ids, ["b", "x", "y"])
         XCTAssertTrue(model.cell(for: "b") === b, "a kept key keeps its cell")
         XCTAssertEqual(model.cell(for: "b").row?.order, 20, "and the cell holds the new row")
@@ -404,7 +425,7 @@ final class ChatModelTests: XCTestCase {
         let sequence = model.sequence
         source.ordered = numbered(1...700)
         source.pending = ChatChanges(keys: [], reloaded: true, session: true)
-        model.woke()
+        source.deliver(to: model)
         XCTAssertTrue(model.following)
         XCTAssertGreaterThan(model.sequence, sequence)
         XCTAssertEqual(model.ids.last, "m700")
@@ -413,19 +434,17 @@ final class ChatModelTests: XCTestCase {
     /// The list watches the sequence's edition, not the keys: an arrival
     /// bumps it once, a wake that moved nothing leaves it alone, and the
     /// frame, card and strip are assigned only when they differ.
-    func testTheSequenceEditionMovesOncePerChangeAndUnchangedViewsAreNotAssigned() {
+    func testTheSequenceEditionMovesOncePerChange() {
         let source = FakeChat(rows: numbered(1...3), frame: frame())
         let model = ChatModel(source: source)
         let sequence = model.sequence
-        let frameBefore = model.frame
         source.arrive([row("m4", 4)])
-        model.woke()
+        source.deliver(to: model)
         XCTAssertEqual(model.sequence, sequence + 1)
         XCTAssertEqual(model.ids.count, 4)
         XCTAssertFalse(model.empty)
-        model.woke()
+        source.deliver(to: model)
         XCTAssertEqual(model.sequence, sequence + 1, "a wake with nothing new moves nothing")
-        XCTAssertEqual(model.frame, frameBefore)
     }
 
     func testRowsArrivingBelowAReaderWhoScrolledUpAreOfferedRatherThanFollowed() {
@@ -434,14 +453,14 @@ final class ChatModelTests: XCTestCase {
         model.reading(atNewest: false)
         let before = model.toNewest
         source.arrive([row("b", 2)])
-        model.woke()
+        source.deliver(to: model)
         XCTAssertTrue(model.newActivity, "shown from the session's report")
         XCTAssertEqual(model.ids, ["a"], "the session holds the arrival apart")
         XCTAssertEqual(model.toNewest, before, "the list is not moved under the reader")
         model.jumpToNewest()
         XCTAssertFalse(model.newActivity)
         XCTAssertEqual(model.toNewest, before + 1)
-        model.woke()
+        source.deliver(to: model)
         XCTAssertEqual(model.ids, ["a", "b"], "the return releases it")
     }
 
@@ -476,7 +495,7 @@ final class ChatModelTests: XCTestCase {
         let model = ChatModel(source: source)
         for n in 1_001...1_300 {
             source.arrive([row("m\(n)", UInt64(n))])
-            model.woke()
+            source.deliver(to: model)
             model.reading(atNewest: true)
         }
         await settle()
@@ -484,7 +503,6 @@ final class ChatModelTests: XCTestCase {
         XCTAssertEqual(model.ids, (1_101...1_300).map { "m\($0)" })
         XCTAssertEqual(source.follows, [])
     }
-
 
     // MARK: - History and paging
 
@@ -501,7 +519,7 @@ final class ChatModelTests: XCTestCase {
 
         for n in 601...650 {
             source.arrive([row("m\(n)", UInt64(n))])
-            model.woke()
+            source.deliver(to: model)
         }
         XCTAssertEqual(model.sequence, sequence, "arrivals leave the sequence alone")
         XCTAssertTrue(model.newActivity)
@@ -511,7 +529,7 @@ final class ChatModelTests: XCTestCase {
         model.reading(atNewest: true)
         XCTAssertTrue(model.following)
         XCTAssertFalse(model.newActivity)
-        model.woke()
+        source.deliver(to: model)
         XCTAssertEqual(model.ids, (451...650).map { "m\($0)" })
         XCTAssertEqual(model.toNewest, toNewest, "the list keeps the bottom itself while following")
         XCTAssertTrue(source.paged.isEmpty, "coming back down asks for nothing")
@@ -525,7 +543,7 @@ final class ChatModelTests: XCTestCase {
         source.cap = 200
         model.reading(atNewest: false)
         source.arrive(numbered(601...1_000))
-        model.woke()
+        source.deliver(to: model)
         XCTAssertTrue(model.newActivity)
         let toNewest = model.toNewest
         model.jumpToNewest()
@@ -533,7 +551,7 @@ final class ChatModelTests: XCTestCase {
         XCTAssertFalse(model.newActivity)
         XCTAssertEqual(model.toNewest, toNewest + 1)
         // More arrived than the window holds: the head is reloaded.
-        model.woke()
+        source.deliver(to: model)
         XCTAssertEqual(model.ids, (801...1_000).map { "m\($0)" })
     }
 
@@ -552,6 +570,7 @@ final class ChatModelTests: XCTestCase {
         await settle()
         XCTAssertEqual(source.paged.count, 1, "a page on its way is not asked for twice")
         XCTAssertEqual(model.paging, .idle)
+        source.deliver(to: model)
         XCTAssertEqual(model.ids.first, "m961", "the page the reader waited for lands above")
         for _ in 0..<5 { await settle() }
         XCTAssertEqual(source.paged.count, 1, "a page landing asks for no other")
@@ -559,6 +578,7 @@ final class ChatModelTests: XCTestCase {
         model.reachedTop()
         await settle()
         XCTAssertEqual(source.paged.count, 2)
+        source.deliver(to: model)
         XCTAssertEqual(model.ids.first, "m921")
         XCTAssertEqual(model.ids.count, 100)
     }
@@ -570,7 +590,7 @@ final class ChatModelTests: XCTestCase {
         XCTAssertNil(model.row(below: "m300"))
         source.ordered.append(row("m301", 301))
         source.pending = ChatChanges(keys: ["m301"], reloaded: false, session: false)
-        model.woke()
+        source.deliver(to: model)
         XCTAssertEqual(model.row(below: "m300")?.id, "m301")
     }
 
@@ -592,7 +612,7 @@ final class ChatModelTests: XCTestCase {
             recent: nil)
         source.ordered[0] = row("r", 5, run: huge)
         source.pending = ChatChanges(keys: ["r"], reloaded: false, session: false)
-        model.woke()
+        source.deliver(to: model)
         model.reachedTop()
         await settle()
         XCTAssertEqual(source.paged.last, ChatModel.largestPage)
@@ -722,7 +742,7 @@ final class ChatModelTests: XCTestCase {
         model.draft = "Run the tests."
         model.send()
         await settle()
-        model.woke()
+        source.deliver(to: model)
         XCTAssertEqual(model.draft, "", "the composer is free for the next prompt")
         XCTAssertEqual(kept.last?.words, "Run the tests.", "the held prompt is kept in the draft")
 
@@ -731,7 +751,7 @@ final class ChatModelTests: XCTestCase {
 
         source.current.underway[0].underway = .sending(waiting: false)
         source.pending.session = true
-        model.woke()
+        source.deliver(to: model)
         XCTAssertEqual(kept.last?.words, "Then the lint.", "a released prompt leaves the kept draft")
     }
 
@@ -773,7 +793,7 @@ final class ChatModelTests: XCTestCase {
         source.offered = offer(current: "sonnet")
         source.current.controls.model = "sonnet"
         source.pending.session = true
-        model.woke()
+        source.deliver(to: model)
         XCTAssertEqual(model.settings?.models.first { $0.current }?.value, "sonnet")
         XCTAssertEqual(model.frame?.controls.model, "sonnet")
     }
@@ -931,11 +951,11 @@ final class ChatModelTests: XCTestCase {
         XCTAssertTrue(model.loadingHint)
         source.ordered = [row("a", 1)]
         source.pending = ChatChanges(keys: ["a"], reloaded: false, session: false)
-        model.woke()
+        source.deliver(to: model)
         XCTAssertFalse(model.loadingHint)
     }
 
-    func testOpeningARunAsksTheRuntimeAndRedrawsEveryDrawnRow() {
+    func testOpeningARunAsksTheRuntimeAndItsRowsComeWithTheNextDelta() {
         let run = Run(
             first: "a", last: "b", steps: 2, live: false, openBelow: false,
             unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 2, searches: 0, subagents: 0, other: 0),
@@ -946,10 +966,12 @@ final class ChatModelTests: XCTestCase {
         _ = model.cell(for: "c")
         model.toggleRun(run)
         XCTAssertEqual(source.toggled, ["b"], "the run is named by its newest step")
+        source.deliver(to: model)
         XCTAssertEqual(a.row?.run?.open, true, "a drawn row of the run reads open")
         XCTAssertEqual(model.cell(for: "b").row?.run?.open, true)
         XCTAssertTrue(model.expanded.isEmpty, "a run is not a row's own detail")
         model.toggleRun(run)
+        source.deliver(to: model)
         XCTAssertEqual(a.row?.run?.open, false)
     }
 
@@ -1006,19 +1028,19 @@ final class ChatModelTests: XCTestCase {
         XCTAssertNil(model.questionDraft(onAsk: "ask:2"), "only the head ask keeps progress")
 
         source.pending = ChatChanges(keys: [], reloaded: false, session: true)
-        model.woke()
+        source.deliver(to: model)
         await settle()
         XCTAssertEqual(model.questionDraft(onAsk: "ask:1"), picked, "the ask is still open")
 
         source.card = card("ask:2")
         source.pending = ChatChanges(keys: [], reloaded: false, session: true)
-        model.woke()
+        source.deliver(to: model)
         await settle()
         XCTAssertNil(model.questionDraft(onAsk: "ask:1"), "the ask closed")
 
         source.card = card("ask:1")
         source.pending = ChatChanges(keys: [], reloaded: false, session: true)
-        model.woke()
+        source.deliver(to: model)
         await settle()
         XCTAssertNil(model.questionDraft(onAsk: "ask:1"), "gone for good once closed")
     }
@@ -1042,13 +1064,13 @@ final class ChatModelTests: XCTestCase {
         XCTAssertNil(model.formDraft(onAsk: "ask:2"), "only the head ask keeps values")
 
         source.pending = ChatChanges(keys: [], reloaded: false, session: true)
-        model.woke()
+        source.deliver(to: model)
         await settle()
         XCTAssertEqual(model.formDraft(onAsk: "ask:1"), typed, "the ask is still open")
 
         source.card = card("ask:2")
         source.pending = ChatChanges(keys: [], reloaded: false, session: true)
-        model.woke()
+        source.deliver(to: model)
         await settle()
         XCTAssertNil(model.formDraft(onAsk: "ask:1"), "the ask closed")
         XCTAssertNil(model.formDraft(onAsk: "ask:2"), "a new form starts empty")
@@ -1102,7 +1124,7 @@ final class ChatModelTests: XCTestCase {
 
         // A wake that moves nothing asks nothing again.
         source.pending = ChatChanges(keys: [], reloaded: false, session: true)
-        model.woke()
+        source.deliver(to: model)
         await model.listing?.value
         XCTAssertEqual(source.listings, [.uncommitted])
 
@@ -1111,7 +1133,7 @@ final class ChatModelTests: XCTestCase {
             uncommitted: ChangeTotals(files: 2, added: 5, removed: 0),
             onBranch: ChangeTotals(files: 2, added: 9, removed: 1))
         source.pending = ChatChanges(keys: [], reloaded: false, session: true)
-        model.woke()
+        source.deliver(to: model)
         await model.listing?.value
         XCTAssertEqual(source.listings, [.uncommitted, .uncommitted])
 

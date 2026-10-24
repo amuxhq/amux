@@ -249,12 +249,6 @@ parked-check:
 models-nightly *TARGETS:
     if [ "${1-}" = -- ]; then shift; fi; targets=--tests; [ $# -eq 0 ] || targets=$(printf -- '--test %s ' "$@"); {{bounded}} 4800 cargo test --locked -p models $targets -- --ignored --nocapture
 
-# Write the client model's traces that the phone's chat model replays
-# (ChatModelTraceTests) to the Swift tests' fixtures. A test run never
-# writes them; app-runtime's tests fail while they differ from the model.
-client-traces:
-    {{bounded}} 900 cargo test --locked -p app-runtime --lib -- --ignored --exact traces::write_client_traces --nocapture
-
 # Walk the testnet's simulated stories by seed: every suite tests/catalog.toml
 # declares a simulated mode for, under TESTNET_MODE=simulated, a few seeds per
 # story. `--seed N` reruns one seed (a failure prints its command), `--seeds N`

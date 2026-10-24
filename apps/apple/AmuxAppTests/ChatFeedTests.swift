@@ -139,7 +139,7 @@ final class ChatFeedTests: XCTestCase {
         let before = try onScreen()
         let sequence = model.sequence
         source.append(Self.messages(601...640))
-        model.woke()
+        source.deliver(to: model)
         await spin()
         try assertStill(before, "rows arriving")
         XCTAssertEqual(model.sequence, sequence, "the session holds them apart")
@@ -163,7 +163,7 @@ final class ChatFeedTests: XCTestCase {
         let before = try onScreen()
         let photographed = try rowsBand()
         source.prepend(Self.messages(921...960))
-        model.woke()
+        source.deliver(to: model)
         await spin(1)
         XCTAssertEqual(model.paging, .idle)
         try assertStill(before, "a page landing")
@@ -181,7 +181,7 @@ final class ChatFeedTests: XCTestCase {
         let list = try list()
         for n in 301...340 {
             source.append(Self.messages(n...n))
-            model.woke()
+            source.deliver(to: model)
             await spin(0.05)
         }
         await spin()
@@ -203,7 +203,7 @@ final class ChatFeedTests: XCTestCase {
         let list = try list()
         for n in 201...260 {
             source.append(Self.messages(n...n))
-            model.woke()
+            source.deliver(to: model)
             await spin(0.03)
         }
         await spin()
@@ -230,7 +230,7 @@ final class ChatFeedTests: XCTestCase {
         let before = try XCTUnwrap(list.cellForItem(at: path)).bounds.height
         let longer = "message 38: " + String(repeating: "a much longer reply that runs on ", count: 12)
         source.revise([ScriptedChat.row("m38", 38, .prose(text: [.text(longer)], streaming: true, workingNote: false))])
-        model.woke()
+        source.deliver(to: model)
         await spin()
         let cell = try XCTUnwrap(list.cellForItem(at: path))
         XCTAssertGreaterThan(cell.bounds.height, before + 40, "the row did not grow")
@@ -247,11 +247,11 @@ final class ChatFeedTests: XCTestCase {
         let list = try list()
         await scrollUp(list, model, screens: 3)
         source.append(Self.messages(601...620))
-        model.woke()
+        source.deliver(to: model)
         await spin()
         XCTAssertTrue(model.newActivity)
         model.jumpToNewest()
-        model.woke()
+        source.deliver(to: model)
         await spin(1)
         XCTAssertTrue(model.following)
         XCTAssertEqual(model.ids.last, "m620")

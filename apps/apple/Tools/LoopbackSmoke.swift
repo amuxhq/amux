@@ -126,7 +126,8 @@ private func smoke() throws {
     })
 
     let host = try until(runtime, "\(machine) online and trusted") { () -> [String: Any]? in
-        let hosts = try read(amux_fleet_hosts(profile)) as? [[String: Any]] ?? []
+        let opening = try read(amux_fleet_opening(profile)) as? [String: Any] ?? [:]
+        let hosts = opening["hosts"] as? [[String: Any]] ?? []
         return hosts.first {
             $0["name"] as? String == machine && $0["trusted"] as? Bool == true
                 && ($0["reach"] as? [String: Any])?["Online"] != nil
@@ -134,7 +135,8 @@ private func smoke() throws {
     }
     let via = (host["reach"] as? [String: Any])?["Online"] ?? "none"
     let names = try until(runtime, "\(agent) in the fleet") { () -> [String]? in
-        let view = try read(amux_fleet_view(profile)) as? [String: Any] ?? [:]
+        let opening = try read(amux_fleet_opening(profile)) as? [String: Any] ?? [:]
+        let view = opening["view"] as? [String: Any] ?? [:]
         let sections = view["sections"] as? [[String: Any]] ?? []
         let rows = sections.flatMap { $0["rows"] as? [[String: Any]] ?? [] }
         let names = rows.compactMap { ($0["card"] as? [String: Any])?["name"] as? String }

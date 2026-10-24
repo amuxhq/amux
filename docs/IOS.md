@@ -59,10 +59,11 @@ Swift owns the loop. The library's cores step on one serial queue,
 `CoreLoop`'s in `Runtime.swift`; links, channels and gRPC run on one confined
 Rust thread, which never calls into Swift. Whenever something waits for a
 step, the library makes a descriptor readable, and a dispatch source watching
-it from the core queue steps there. A step hands back what to do: the fleets
-and chats that moved, which go to the main actor by fleet and chat number;
-the answers to acts, each to whoever awaits its ticket; and whether to read
-the profile list again. The cores' timers sleep on the confined Rust thread
+it from the core queue steps there. A step hands back what to do: what moved
+in each open fleet and chat, as deltas decoded on the core queue and applied
+on the main actor; the answers to acts, each to whoever awaits its ticket,
+after the deltas of what the act moved; and the profile list when it moved.
+The cores' timers sleep on the confined Rust thread
 and come back as ordinary inputs that make the descriptor readable, so Swift
 arms none. Reads return at once on the main thread. Every call that blocks
 until the cores have done something (starting and stopping, opening a profile
@@ -70,15 +71,18 @@ or a chat, the profile list, a moment of the app's life) steps them on the
 thread that makes it, so it is made on the core queue, never on the main
 thread, even when the main thread waits for it.
 
-A redraw names the fleet or the chat that moved. The bundle takes that one's
-changes and reads again only what changed. A chat is a `ChatModel` over an
-open `Chat`:
+The fleet and each chat open whole, and after that the runtime hands over only
+what moved in them, each field of a delta only when it changed: home's
+sections and the hosts for the fleet; for a chat its keys, the rows that
+changed, the frame, the head ask, the overview and the settings. Rust keeps
+what it last handed over, so nothing is read back or compared on the main
+thread. A chat is a `ChatModel` over an open `Chat`:
 
-- It holds the chat's row keys, oldest first: the session's window. Keys
-  never move, and the list changes only at its two edges: newer keys above
-  the newest it holds, older ones below its oldest when the reader scrolls
-  up, and while the reader follows, the oldest keys the window drops as it
-  trims to its cap of 200 rows.
+- It holds the chat's row keys, oldest first, as the deltas move them: the
+  session's window. Keys never move, and the list changes only at its two
+  edges: newer keys above the newest it holds, older ones below its oldest
+  when the reader scrolls up, and while the reader follows, the oldest keys
+  the window drops as it trims to its cap of 200 rows.
 - `following` is told to the session whenever it changes: leaving the newest
   row, and returning to it by reaching the bottom, New activity, or a send.
   In history the session holds arrivals apart from the window, and New
@@ -92,12 +96,14 @@ open `Chat`:
   A page is asked for only when fewer than a page of held rows are left
   above the run, one per arrival at the top. New activity, a send and a
   Reset draw the newest run again.
-- Each row is a `RowCell` read by key when it is first drawn. An update names
-  the keys it changed, and only cells already drawn are read again, so one
-  changed item redraws one cell.
-- The whole list is read again only when a change batch says it was reloaded,
-  which is what a Reset's swap and the reload of a head that moved on do: the
-  rows on screen stay until the rebuilt transcript replaces them.
+- Each row is a `RowCell`, read by key when it is first drawn. A delta hands
+  over the row of every key it held that changed, so one changed item
+  redraws one cell; a new row is read as it is drawn.
+  Opening or closing a run is handed over the same way, by the next delta.
+- The whole list is handed over again only when a delta reloads it, which is
+  what a Reset's swap and the reload of a head that moved on do: the rows on
+  screen stay until the rebuilt transcript replaces them, and the cells kept
+  are read again in place.
 - It keeps the head ask's unsent answers and a review in progress for as
   long as the chat is open, so leaving the page loses none of them. The
   draft and its attachments last longer: the chat hands each one, as it

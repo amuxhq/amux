@@ -1,19 +1,21 @@
 //! The phone's chats and fleet over the local runtime.
 //!
 //! [`AppRuntime`] hosts the fleet driver, which holds one session per live
-//! agent, and gathers what they change until the host's main thread runs
-//! next: a host is woken once per turn with the chat or the fleet that
-//! moved, and takes every changed key together. A chat borrows the fleet's
-//! session for its agent; leaving the foreground closes every session. Views are asked for by row key, so a
-//! host reconfigures only the cells an update changed.
+//! agent, and gathers what they change until the host runs next: a host is
+//! woken once per turn with the chat or the fleet that moved, and takes
+//! what moved as one delta, computed against what it was last handed. A
+//! chat borrows the fleet's session for its agent; leaving the foreground
+//! closes every session. Rows are handed over by key, so a host
+//! reconfigures only the cells an update changed.
 //!
 //! Nothing here opens a store or knows the node: the runtime is reached
 //! through a [`client::Client`], in process on the phone.
 
 mod chat;
 mod coalesce;
+mod delta;
 #[cfg(test)]
-mod traces;
+mod schedules;
 pub mod values;
 
 use std::collections::HashSet;
@@ -31,7 +33,7 @@ pub use ui_runtime::OpenError;
 use ui_runtime::{Fleet, Window};
 use ui_view::{FamilyHeader, FleetCard, FleetView};
 use values::{AgentAct, Directories, Directory, Draft, NewAgent, ProviderSignIn};
-pub use values::{FleetChanges, HostView};
+pub use values::{FleetDelta, HostView};
 /// The provider whose catalogue `host_catalogue` reads, named here so the
 /// phone's bridge passes it on without a dependency of its own on the wire
 /// crate.
@@ -74,6 +76,9 @@ pub struct AppRuntime {
     expanded: Mutex<HashSet<Vec<u8>>>,
     /// What home's list is narrowed to.
     filter: Mutex<ui_view::FleetFilter>,
+    /// The view and hosts the host was last handed; None until it opens on
+    /// the fleet, and no delta is computed before.
+    fleet_sent: Mutex<Option<(FleetView, Vec<HostView>)>>,
 }
 
 impl AppRuntime {
@@ -101,6 +106,7 @@ impl AppRuntime {
             next_chat: AtomicU64::new(1),
             expanded: Mutex::new(HashSet::new()),
             filter: Mutex::new(ui_view::FleetFilter::default()),
+            fleet_sent: Mutex::new(None),
         })
     }
 
@@ -235,12 +241,36 @@ impl AppRuntime {
         hosts
     }
 
-    pub fn take_fleet_changes(&self) -> FleetChanges {
-        let batch = self.fleet_changes.take();
-        FleetChanges {
-            agents: batch.keys,
-            hosts: batch.other,
+    /// Home's view and every host, for the host opening on the fleet; every
+    /// delta after it says what moved since.
+    pub fn fleet_opening(&self) -> FleetDelta {
+        self.fleet_changes.take();
+        let (view, hosts) = (self.fleet_view(), self.hosts());
+        *self.fleet_sent.lock().unwrap() = Some((view.clone(), hosts.clone()));
+        FleetDelta {
+            view: Some(view),
+            hosts: Some(hosts),
         }
+    }
+
+    /// What moved in the fleet since the host last heard, or None when
+    /// nothing did or it has not opened on the fleet; the next change wakes
+    /// the host again.
+    pub fn fleet_delta(&self) -> Option<FleetDelta> {
+        let mut sent = self.fleet_sent.lock().unwrap();
+        let (view, hosts) = sent.as_mut()?;
+        let hosts_moved = self.fleet_changes.take().other;
+        let delta = FleetDelta {
+            view: Some(self.fleet_view()).filter(|now| now != view),
+            hosts: Some(self.hosts()).filter(|now| hosts_moved || now != hosts),
+        };
+        if let Some(now) = &delta.view {
+            *view = now.clone();
+        }
+        if let Some(now) = &delta.hosts {
+            *hosts = now.clone();
+        }
+        (delta.view.is_some() || delta.hosts.is_some()).then_some(delta)
     }
 
     /// Starts an agent on a host and returns it as the fleet names it.
@@ -387,22 +417,55 @@ impl Drop for AppRuntime {
     }
 }
 
+/// The least time between two of the fleet's wakes for its agents alone. A
+/// working agent's step moves its line on home many times a second while
+/// it streams, and each delta lays out the whole home on the host's main
+/// thread; agents' changes soon after a wake wait out the rest of this and
+/// one delta takes them all. A host moving wakes the host at once, since
+/// that is what a reconnecting fleet is waiting on.
+const FLEET_SPACING: std::time::Duration = std::time::Duration::from_millis(250);
+
 /// Gathers the fleet's changes for the host. The fleet keeps its sessions'
 /// entries and hosts current itself.
 async fn watch_fleet(fleet: Weak<Fleet>, changes: Arc<Coalescer<AgentKey>>) {
     let Some(mut changed) = fleet.upgrade().map(|fleet| fleet.changed()) else {
         return;
     };
+    let mut woke: Option<tokio::time::Instant> = None;
+    let mut hosts_owed = false;
     loop {
-        let Some(fleet) = fleet.upgrade() else {
+        let Some(held) = fleet.upgrade() else {
             return;
         };
-        let agents = fleet.take_changed();
-        let hosts = fleet.take_hosts_changed();
-        changes.push(agents, false, hosts);
-        drop(fleet);
+        let agents = held.take_changed();
+        let hosts = std::mem::take(&mut hosts_owed) | held.take_hosts_changed();
+        if !agents.is_empty() || hosts {
+            changes.push(agents, false, hosts);
+            woke = Some(tokio::time::Instant::now());
+        }
+        drop(held);
         if changed.changed().await.is_err() {
             return;
+        }
+        let Some(woke) = woke else { continue };
+        let spaced = tokio::time::sleep_until(woke + FLEET_SPACING);
+        tokio::pin!(spaced);
+        loop {
+            tokio::select! {
+                () = &mut spaced => break,
+                moved = changed.changed() => {
+                    if moved.is_err() {
+                        return;
+                    }
+                    let Some(held) = fleet.upgrade() else {
+                        return;
+                    };
+                    if held.take_hosts_changed() {
+                        hosts_owed = true;
+                        break;
+                    }
+                }
+            }
         }
     }
 }

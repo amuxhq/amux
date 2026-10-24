@@ -25,23 +25,27 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
     }
 
     func close() { closed = true }
-    func keys() -> [String] { ["a"] }
-    func keys(above newest: String) -> [String]? { [] }
-    func keys(below oldest: String) -> [String]? { [] }
-    func oldestKey() -> String? { "a" }
+    func opening() -> ChatDelta {
+        ChatDelta(
+            chat: id, rows: [], ask: AskMoved(card: nil), frame: frame(), keys: .reload(["a"]),
+            overview: nil, settings: nil)
+    }
+
+    /// The frame as it now stands, as the delta that hands it over.
+    func moved() -> ChatDelta {
+        ChatDelta(
+            chat: id, rows: [], ask: nil, frame: frame(), keys: nil, overview: nil, settings: nil)
+    }
+
     func follow(_ following: Bool) {}
     func rows(for keys: [String]) -> [Row] { [] }
-    func askCard() -> AskCard? { nil }
-    func overview() -> Overview? { nil }
-    func settings() -> SettingsView? { nil }
-    func frame() -> ChatFrame? {
+    private func frame() -> ChatFrame {
         ChatFrame(
             agent: agent, name: "a", kind: .claudeSdk, phase: .needsYou,
             composer: ComposerView(mode: .send, switchedAway: false, activity: nil), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live, caughtUp: current,
             hasOlder: false, arrivalsHeld: false, queue: [], underway: underway, refused: [], askInput: nil, context: nil, ended: nil, git: nil,
             signIn: nil, waiting: nil)
     }
-    func takeChanges() -> ChatChanges { ChatChanges(keys: [], reloaded: false, session: true) }
     func send(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> { .failure(RuntimeFailure("no")) }
     func answer(_ ask: String, choice: Int, note: String?) async -> ActOutcome? { nil }
     func answer(_ ask: String, responses: [QuestionResponse]) async -> ActOutcome? { nil }
@@ -168,7 +172,7 @@ final class StoreBundleSessionTests: XCTestCase {
         XCTAssertFalse(opened[0].closed, "the chat a push is bringing current keeps its session")
 
         opened[0].current = true
-        stores.woke(opened[0].id)
+        stores.moved(.chat(opened[0].moved()))
         let warmed = await warming.value
         XCTAssertTrue(warmed)
         XCTAssertTrue(opened[0].closed, "once current it is kept or closed like any other chat")
@@ -189,7 +193,7 @@ final class StoreBundleSessionTests: XCTestCase {
         session.underway = [
             SentPrompt(inputId: [1], text: [.text("Run the tests.")], lands: .feed, underway: .held)
         ]
-        model.woke()
+        model.apply(session.moved())
         stores.leave(agent)
 
         clock = Cards.now.addingTimeInterval(301)
@@ -197,7 +201,7 @@ final class StoreBundleSessionTests: XCTestCase {
         XCTAssertTrue(stores.holds(agent), "a chat holding a prompt stays open")
 
         session.underway[0].underway = .sending(waiting: false)
-        model.woke()
+        model.apply(session.moved())
         stores.keepSessions()
         XCTAssertFalse(stores.holds(agent), "once the prompt is sent the chat closes as usual")
         XCTAssertNil(daemon[agent], "and the kept draft no longer holds it")

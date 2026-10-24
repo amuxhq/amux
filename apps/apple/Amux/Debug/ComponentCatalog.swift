@@ -580,8 +580,9 @@ enum ComponentCatalog {
             }),
             chat("run-open", chat: {
                 ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(phase: .idle), strip: ScriptedChat.strip(model: "opus 4.6"))
-            }) { model, _ in
+            }) { model, source in
                 if let run = model.cell(for: "c14").row?.run { model.toggleRun(run) }
+                source.deliver(to: model)
             },
             // The header pill stops growing past the largest ordinary size;
             // the step rows stack their verb, file and counts.
@@ -607,7 +608,7 @@ enum ComponentCatalog {
             }) { model, source in
                 model.reading(atNewest: false)
                 source.append([ScriptedChat.row("n1", 100, .prose(text: [.text("Done. The three arms are one now.")], streaming: false, workingNote: false))])
-                model.woke()
+                source.deliver(to: model)
             },
             chat("paging-unreachable", readiness: ("chat.paging", "unreachable"), chat: {
                 let source = ScriptedChat(rows: Array(F.conversation.prefix(3)), frame: ScriptedChat.frame(hasOlder: true))

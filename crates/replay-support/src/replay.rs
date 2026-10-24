@@ -15,7 +15,7 @@ use std::fmt;
 use std::path::Path;
 
 use daemon_core::{AgentId, Checkpoint, Daemon, Input, Output, Recorded, StepBudget};
-use models::single_daemon::{REPRODUCES, judge_step};
+use models::single_daemon::{REPRODUCES, judge_step, stepped};
 use redaction::{EMAIL_PLACEHOLDER, IDENTIFIER_PLACEHOLDER, PATH_PLACEHOLDER, SECRET_PLACEHOLDER};
 use store::Sqlite;
 use ui_state::{Msg, SessionState};
@@ -578,29 +578,6 @@ fn lay_out(dir: &Path, journal: &[(u64, Vec<u8>)], seen: u64) -> Result<(), Bund
         std::fs::write(journal::segment_path(dir, *start), &bytes[..kept]).map_err(io)?;
     }
     Ok(())
-}
-
-/// Steps the core with one input, refusing any commit the step makes when
-/// the live step's failed, as the drive refused it.
-fn stepped(daemon: &mut Daemon, input: Input, refuse: Option<&str>, out: &mut Vec<Output>) {
-    let refusing = refuse.and_then(|why| {
-        let why = why.replace('\'', "''");
-        daemon
-            .store()
-            .connection()
-            .execute_batch(&format!(
-                "CREATE TEMP TRIGGER replay_refuse BEFORE INSERT ON agents \
-                 BEGIN SELECT RAISE(ABORT, '{why}'); END;"
-            ))
-            .ok()
-    });
-    daemon.step(input, out);
-    if refusing.is_some() {
-        let _ = daemon
-            .store()
-            .connection()
-            .execute_batch("DROP TRIGGER replay_refuse;");
-    }
 }
 
 /// Where the steps an interpreter replayed first differ from the journal's

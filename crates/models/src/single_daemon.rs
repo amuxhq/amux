@@ -896,7 +896,12 @@ impl SingleDaemon {
             let mut daemon = scratch.daemon(&run.core, &next.store, &next.journal);
             let listed = daemon.links().routes_to(PEER);
             let mut out = Vec::new();
-            stepped(&mut daemon, input.clone(), refuse, &mut out);
+            stepped(
+                &mut daemon,
+                input.clone(),
+                refuse.then_some(REFUSAL),
+                &mut out,
+            );
             run.held = daemon.checkpoints().held();
             // Each row a step answered, and whether the store holds it.
             let uncommitted = answered_uncommitted(&out, daemon.store(), &[agent()]);
@@ -984,21 +989,23 @@ impl SingleDaemon {
     }
 }
 
-/// Steps the core with one input, its store refusing every write when the
-/// drive does.
-fn stepped(daemon: &mut Daemon, input: Input, refuse: bool, out: &mut Vec<Output>) {
-    if refuse {
+/// Steps the core with one input, its store refusing every write with
+/// `refuse` when the drive does. The model and a dump's replay both step
+/// the core through here.
+pub fn stepped(daemon: &mut Daemon, input: Input, refuse: Option<&str>, out: &mut Vec<Output>) {
+    if let Some(why) = refuse {
+        let why = why.replace('\'', "''");
         daemon
             .store()
             .connection()
             .execute_batch(&format!(
                 "CREATE TEMP TRIGGER refuse BEFORE INSERT ON agents \
-                 BEGIN SELECT RAISE(ABORT, '{REFUSAL}'); END;"
+                 BEGIN SELECT RAISE(ABORT, '{why}'); END;"
             ))
             .expect("the refusal installs");
     }
     daemon.step(input, out);
-    if refuse {
+    if refuse.is_some() {
         daemon
             .store()
             .connection()
@@ -1080,7 +1087,12 @@ fn replay(live: &State) -> Option<String> {
         let mut out = Vec::new();
         for (input, journal, refuse) in &live.ring.inputs {
             scratch.lay_out(journal);
-            stepped(&mut daemon, input.clone(), *refuse, &mut out);
+            stepped(
+                &mut daemon,
+                input.clone(),
+                refuse.then_some(REFUSAL),
+                &mut out,
+            );
             out.clear();
             // The step may have reclaimed segments.
             scratch.read_back();

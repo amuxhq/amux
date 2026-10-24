@@ -111,6 +111,10 @@ pub struct Script {
     /// streams them, as a model writing does.
     #[serde(default)]
     pub chunk_ms: u64,
+    /// How long each completed turn says it took (headless Claude's result
+    /// `duration_ms`, which a chat shows as "Worked 6m"); 1 ms when unset.
+    #[serde(default)]
+    pub turn_ms: Option<u64>,
     /// File tools change the files they name, as the real tools do: a
     /// Write writes its content, an Edit replaces its old string, a Codex
     /// patch writes each file it adds. Off by default, so a script's paths

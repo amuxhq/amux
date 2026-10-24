@@ -18,6 +18,18 @@ default:
 logo *ARGS:
     {{bounded}} 120 uv run --script scripts/logo.py "$@"
 
+# The scene comes up in ~/.local/state/amux-marketing/<tree>/launch, its
+# clones in /Users/Shared; `shots` starts it afresh, waits for the agents to
+# come to rest and photographs the terminal client, and the phone when run
+# under a simulator lease. Waits for agents, so only its steps are bounded.
+# Start or photograph the README's launch scene (marketing/README.md).
+scene *ARGS:
+    scripts/py -B marketing/scene.py "$@"
+
+# Compose the README's pictures from the scene's shots into images/readme/.
+compose *ARGS:
+    {{bounded}} 300 uv run --script marketing/compose.py "$@"
+
 # The iPhone app's recipes: `just ios build`, `just ios verify`, ... (`just --list ios`).
 mod ios 'apps/apple/justfile'
 

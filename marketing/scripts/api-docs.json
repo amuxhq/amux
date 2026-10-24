@@ -1,0 +1,66 @@
+{
+  "chunk_ms": 25,
+  "edit_files": true,
+  "model": "claude-opus-5-5",
+  "steps": [
+    {
+      "pause": {
+        "ms": 60000
+      }
+    },
+    {
+      "tool": {
+        "name": "Read",
+        "class": "exploration",
+        "input": {
+          "file_path": "docs/api/invoices.md"
+        },
+        "outcome": {
+          "output": ""
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "Edit",
+        "class": "consequential",
+        "input": {
+          "file_path": "docs/api/invoices.md",
+          "old_string": "## GET /invoices/:id\n\nReturns one invoice.\n",
+          "new_string": "## GET /invoices/:id\n\nReturns one invoice with its line items and payment status.\n\n## POST /invoices/:id/checkout\n\nPays an invoice. Send `saved_card_id` to charge one of the client's saved\ncards, or `card_token` for a new card.\n\n| Error | Meaning |\n|---|---|\n| `card_declined` | The bank declined the card |\n| `authentication_required` | The bank needs the payer to confirm |\n"
+        },
+        "outcome": {
+          "output": ""
+        }
+      }
+    },
+    {
+      "text": {
+        "chunks": [
+          "Updated the API referenc",
+          "e: the checkout endpoint",
+          ", saved cards, and the t",
+          "wo payment errors client",
+          "s need to handle."
+        ]
+      }
+    },
+    "turn_end"
+  ],
+  "models": [
+    {
+      "value": "claude-opus-5-5",
+      "display_name": "Opus 5.5",
+      "description": "Most capable",
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_effort": "high"
+    }
+  ],
+  "turn_ms": 95000
+}

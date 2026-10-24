@@ -150,8 +150,9 @@ fake waits for a prompt or an injected message, then plays steps until `turn_end
 | `exit` | Exit the provider process with a code. |
 | `repeat` | Play some steps a number of times, without writing them out. |
 
-A script can also set the `model`, the `models` and `commands` a session offers, and, for terminal Claude,
-`offers_auto_mode` and `untrusted_folder`. A script that asks a provider for an ask kind it cannot raise fails to
+A script can also set the `model`, the `models` and `commands` a session offers, `turn_ms`, how long headless
+Claude says each finished turn took (the chat's "Worked 4m"), and, for terminal Claude, `offers_auto_mode` and
+`untrusted_folder`. A Codex command that asks gives the `reason` in its input as the request's reason. A script that asks a provider for an ask kind it cannot raise fails to
 load.
 
 ## Real providers

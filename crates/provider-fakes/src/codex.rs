@@ -1274,7 +1274,11 @@ impl Engine {
                         "itemId": id,
                         "kind": "command",
                         "proposedExecpolicyAmendment": command.split_whitespace().collect::<Vec<_>>(),
-                        "reason": "The script asks before running this.",
+                        "reason": tool
+                            .input
+                            .as_ref()
+                            .and_then(|input| input["reason"].as_str())
+                            .unwrap_or("The script asks before running this."),
                         "startedAtMs": now_ms(),
                         "threadId": thread,
                         "turnId": turn,

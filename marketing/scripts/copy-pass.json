@@ -1,0 +1,73 @@
+{
+  "chunk_ms": 25,
+  "edit_files": true,
+  "model": "claude-opus-5-5",
+  "steps": [
+    {
+      "tool": {
+        "name": "Read",
+        "class": "exploration",
+        "input": {
+          "file_path": "web/src/checkout/messages.ts"
+        },
+        "outcome": {
+          "output": "export const messages: Record<string, string> = {\n  card_declined: \"Payment failed.\",\n  expired_card: \"Card error.\",\n  incorrect_cvc: \"Invalid CVC.\",\n  insufficient_funds: \"Payment failed.\",\n  processing_error: \"Something went wrong.\",\n  authentication_required: \"Authentication error.\",\n  rate_limited: \"Too many requests.\",\n  network: \"Network error.\",\n  unknown: \"Something went wrong.\",\n};\n"
+        }
+      }
+    },
+    {
+      "thinking": {
+        "text": "Every message should say what happened and the next step, and reassure about charges where relevant."
+      }
+    },
+    {
+      "pause": {
+        "ms": 140000
+      }
+    },
+    {
+      "tool": {
+        "name": "Write",
+        "class": "consequential",
+        "input": {
+          "file_path": "web/src/checkout/messages.ts",
+          "content": "export const messages: Record<string, string> = {\n  card_declined: \"Your card was declined. Try another card or contact your bank.\",\n  expired_card: \"This card has expired. Choose another card.\",\n  incorrect_cvc: \"The security code doesn't match. Check the 3 digits on the back.\",\n  insufficient_funds: \"Not enough funds on this card. Try another card.\",\n  processing_error: \"We couldn't process the payment. You haven't been charged; try again.\",\n  authentication_required: \"Your bank needs to confirm this payment. Follow the prompt from your bank.\",\n  rate_limited: \"Too many attempts. Wait a minute, then try again.\",\n  network: \"You're offline. Reconnect and try again; you haven't been charged.\",\n  unknown: \"Something went wrong and you haven't been charged. Try again.\",\n};\n"
+        },
+        "outcome": {
+          "output": ""
+        }
+      }
+    },
+    {
+      "text": {
+        "chunks": [
+          "Rewrote all nine checkou",
+          "t error messages in `mes",
+          "sages.ts`. Each says wha",
+          "t went wrong and what to",
+          " do next, and the ones t",
+          "hat can happen before a ",
+          "charge say you haven't b",
+          "een charged."
+        ]
+      }
+    },
+    "turn_end"
+  ],
+  "models": [
+    {
+      "value": "claude-opus-5-5",
+      "display_name": "Opus 5.5",
+      "description": "Most capable",
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_effort": "high"
+    }
+  ],
+  "turn_ms": 138000
+}

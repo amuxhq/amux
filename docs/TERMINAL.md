@@ -265,8 +265,10 @@ full-screen review page, frozen as it was when the page opened. The header names
 `review · working tree at 3f2a1c9 │ 42 files · +109 −74` at the right. The changed files are listed on the left,
 grouped by directory with each file's lines added and removed; beside them one stream of every file in that order,
 each under its own landmark, with one column of line numbers (a removed line by its old number, every other by its
-new one, as on the phone), the lines left out between two hunks drawn as a faint dashed rule, and its added and
-removed lines tinted.
+new one, as on the phone), and its added and removed lines tinted. Where the patch leaves lines out before a hunk,
+the hunk opens on a break: `⋯` in the number column, the line git names as where the hunk is (usually the enclosing
+function, as after a hunk header's second `@@`; git's ranges are not shown), and a hairline to the margin. The phone
+draws the same break as a band.
 The file the stream is in is highlighted in the list; picking a file in the list takes the stream to it. Tab moves
 the keys between the list and the stream, and `/` filters the list and the stream with it. Below 100 columns the
 list shows only while it has the keys.

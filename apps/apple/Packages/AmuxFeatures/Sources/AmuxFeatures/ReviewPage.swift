@@ -220,11 +220,7 @@ public struct ReviewPage: View {
                         .padding(.vertical, 8)
                 }
                 ForEach(file.hunks.indices, id: \.self) { hunk in
-                    // Lines the patch leaves out between two hunks.
-                    if hunk > 0 {
-                        Rectangle().fill(design.sunken.color).frame(height: 10)
-                            .accessibilityHidden(true)
-                    }
+                    if file.hunks[hunk].skips { HunkBreak(scope: file.hunks[hunk].scope) }
                     ForEach(file.hunks[hunk].lines.indices, id: \.self) { line in
                         self.line(ReviewLine(file: index, hunk: hunk, line: line))
                     }
@@ -544,6 +540,33 @@ private struct DiffLineRow: View {
         case .removed: design.removed.color.opacity(0.12)
         case .context: line.comments.isEmpty ? .clear : design.sunken.color
         }
+    }
+}
+
+/// Lines the patch leaves out before a hunk: a sunken band with "⋯" in the
+/// number column and git's name for where the hunk is, as the terminal's
+/// break does.
+private struct HunkBreak: View {
+    @Environment(\.design) private var design
+    let scope: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text(verbatim: "⋯")
+                .frame(width: 32, alignment: .trailing)
+                .padding(.trailing, 8 + 12)
+            Text(verbatim: scope)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .designFont(.monoSmall, design)
+        .foregroundStyle(design.inkFaint.color)
+        .padding(.leading, 4)
+        .padding(.trailing, 22)
+        .padding(.vertical, 4)
+        .background(design.sunken.color)
+        .accessibilityHidden(true)
     }
 }
 

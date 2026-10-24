@@ -1508,6 +1508,7 @@
       {"literal": "\"\\(parent)/\\(name)\"", "context": "return parent.isEmpty ? name : \"\\(parent)/\\(name)\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ReviewPage.swift": [
+      {"literal": "\"⋯\"", "context": "Text(verbatim: \"⋯\")", "reason": "A glyph standing for lines left out, not copy.", "count": 1},
       {"literal": "\"review.against\"", "context": ".identified(\"review.against\", label: against)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"review\"", "context": ".reported(\"review\", value: \"\\(model.count)\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"\\(model.count)\"", "context": ".reported(\"review\", value: \"\\(model.count)\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},

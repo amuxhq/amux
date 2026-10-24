@@ -650,6 +650,10 @@ fn the_review_document_parses_files_hunks_and_places_comments() {
         (a.path.as_str(), a.status, a.added, a.removed),
         ("src/a.rs", FileStatus::Modified, 2, 1)
     );
+    // A hunk carries git's name for where it is, not its ranges; one that
+    // starts at a file's top leaves nothing out before it.
+    assert_eq!((a.hunks[0].skips, a.hunks[0].scope.as_str()), (true, "fn a()"));
+    assert_eq!((doc.files[1].hunks[0].skips, doc.files[1].hunks[0].scope.as_str()), (false, ""));
     let lines = &a.hunks[0].lines;
     assert_eq!(lines[0].old_line, Some(10));
     assert_eq!(

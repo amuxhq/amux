@@ -1594,22 +1594,35 @@ fn the_review_page_lists_files_and_styles_hunks() {
 }
 
 #[test]
-fn the_lines_left_out_between_two_hunks_are_a_dashed_hairline() {
+fn a_hunk_after_left_out_lines_opens_on_a_break_naming_where_it_is() {
     let patch = "diff --git a/src/lib.rs b/src/lib.rs\n--- a/src/lib.rs\n+++ b/src/lib.rs\n\
-                 @@ -1,2 +1,2 @@\n a\n-b\n+c\n@@ -20,2 +20,2 @@ fn main() {\n d\n-e\n+f\n";
+                 @@ -1,2 +1,2 @@\n a\n-b\n+c\n@@ -20,2 +20,2 @@ fn main() {\n d\n-e\n+f\n\
+                 @@ -40,2 +40,2 @@\n g\n-h\n+i\n";
     let state = chat(replies(1, 3));
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
     view.open_review_at(working_tree_diff(), patch.into(), None);
     let (screen, _) = review_screen(&mut view, &state);
-    let lines: Vec<&str> = screen.lines().collect();
-    let gap = lines
-        .iter()
-        .position(|line| line.contains("╌╌╌"))
-        .unwrap_or_else(|| panic!("{screen}"));
-    assert!(lines[gap - 1].contains("2 + c"), "{screen}");
-    assert!(lines[gap + 1].contains("20   d"), "{screen}");
-    // The hunk header's scope goes with it.
-    assert!(!screen.contains("fn main"), "{screen}");
+    // The page beside the file list.
+    let lines: Vec<&str> = screen
+        .lines()
+        .map(|line| line.rsplit_once('│').map_or(line, |(_, page)| page))
+        .collect();
+    let at = |needle: &str| {
+        lines
+            .iter()
+            .position(|line| line.contains(needle))
+            .unwrap_or_else(|| panic!("{needle} in {screen}"))
+    };
+    // The first hunk starts at the top, so nothing is left out before it.
+    assert!(lines[at("1   a") - 1].trim().is_empty(), "{screen}");
+    // The next opens on its scope; git's ranges are not shown.
+    let named = at("⋯   fn main() { ──");
+    assert!(lines[named - 1].trim().is_empty(), "{screen}");
+    assert!(lines[named + 1].contains("20   d"), "{screen}");
+    assert!(!screen.contains("@@"), "{screen}");
+    // A hunk git names nothing for still opens on the break.
+    let bare = at("40   g") - 1;
+    assert!(lines[bare].trim_start().starts_with("⋯   ──"), "{screen}");
 }
 
 #[test]

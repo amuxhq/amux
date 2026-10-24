@@ -3558,13 +3558,23 @@ public struct HostView: Codable, Hashable, Sendable {
 }
 
 public struct Hunk: Codable, Hashable, Sendable {
+    /// Lines the patch leaves out come before this one: every hunk but a
+    /// file's first when that starts at the top.
+    public var skips: Bool
+    /// The line git names after the header's second `@@`, its guess at the
+    /// enclosing function or type; empty when it names none.
+    public var scope: String
     public var lines: [DiffLine]
 
-    public init(lines: [DiffLine]) {
+    public init(skips: Bool, scope: String, lines: [DiffLine]) {
+        self.skips = skips
+        self.scope = scope
         self.lines = lines
     }
 
     private enum CodingKeys: String, CodingKey {
+        case skips
+        case scope
         case lines
     }
 }

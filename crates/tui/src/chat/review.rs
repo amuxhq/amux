@@ -861,16 +861,25 @@ impl ReviewPage {
                 }
                 Target::Line { file, hunk, line } => {
                     let h = &self.doc.files[file].hunks[hunk];
-                    // A file's first hunk follows its header after a
-                    // blank; the lines left out between two hunks are a
-                    // dashed hairline, as the phone draws them as a band.
+                    // A hunk follows a blank. Where the patch leaves lines
+                    // out before it, a break says so: "⋯" in the number
+                    // column, git's name for where the hunk is, and a
+                    // hairline to the margin, as the phone's band does.
                     if line == 0 {
-                        let mut gap = Line::from(Span::raw("  "));
-                        if hunk > 0 {
-                            let rule = width.saturating_sub(4);
-                            push(&mut gap, "╌".repeat(rule), theme.hairline(), width);
+                        lines.push(Line::default());
+                        if h.skips {
+                            let mut gap = Line::from(Span::raw("  "));
+                            push(&mut gap, format!("{:>digits$}   ", "⋯"), theme.muted(), width);
+                            if !h.scope.is_empty() {
+                                let room = width.saturating_sub(text::line_width(&gap) + 4);
+                                let scope = h.scope.replace('\t', "    ");
+                                push(&mut gap, text::clip_to_width(&scope, room), theme.muted(), width);
+                                push(&mut gap, " ", theme.faint(), width);
+                            }
+                            let rule = width.saturating_sub(text::line_width(&gap) + 2);
+                            push(&mut gap, "─".repeat(rule), theme.hairline(), width);
+                            lines.push(gap);
                         }
-                        lines.push(gap);
                     }
                     let diff_line = &h.lines[line];
                     let number = |n: Option<u32>| match n {

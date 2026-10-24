@@ -1,4 +1,4 @@
-# The README's pictures
+# The README's pictures and the launch film's takes
 
 The images in `images/readme/` are taken from a running amux, not drawn. A
 scene of scripted agents runs on a test network of three machines, the
@@ -48,6 +48,28 @@ shots land in `~/.local/state/amux-marketing/<tree>/launch/images`.
 
 `just compose` redraws the terminal frames at twice the renderer's size, puts
 them in windows and the phone screens in a device outline, and writes the
-README's light and dark images. `just scene up` starts the scene to look at
+README's light and dark images.
+
+## Filming the takes
+
+```sh
+wt exec amux/<tree> -- scripts/with iphone -- just scene film
+```
+
+`just scene film` films the takes the launch film is cut from, all of them
+real UI. It films three terminal panes with `ctl tui record`:
+
+- the fleet, from the start of the scene;
+- checkout-redesign's chat, as the agent starts its helpers and hears back;
+- the review page, with a comment typed onto a line a key at a time.
+
+It also uses the simulator's screen recording to film the phone opening
+flaky-sync-test's request and allowing it. The fleet is filmed at the same
+moment, so the film can show the terminal keeping up.
+
+`takes/takes.json` puts every take and every scripted action on the scene's
+one clock. The film itself lives in its own repository, `amux-film`.
+
+`just scene up` starts the scene to look at
 (`testnet ctl tui watch PANE` from its folder), and `just scene down` stops it
 and removes its clones.

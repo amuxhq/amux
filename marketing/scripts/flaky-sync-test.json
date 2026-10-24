@@ -91,6 +91,21 @@
         }
       }
     },
+    {
+      "pause": {
+        "ms": 3000
+      }
+    },
+    {
+      "text": {
+        "chunks": [
+          "All 200 sync tests ",
+          "pass in release. The ",
+          "fix is in ",
+          "`crates/sync/src/ledger.rs`."
+        ]
+      }
+    },
     "turn_end"
   ],
   "models": [
@@ -106,5 +121,6 @@
       ],
       "default_effort": "high"
     }
-  ]
+  ],
+  "turn_ms": 214000
 }

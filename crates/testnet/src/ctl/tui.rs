@@ -85,6 +85,18 @@ pub enum TuiCommand {
     /// end of a line is not kept, and the font has no CJK or emoji glyphs,
     /// so those draw as boxes. The text beside it (.txt) is exact.
     Shot { pane: String },
+    /// Film the pane: its frame (as a shot writes it) each time the screen
+    /// changes, checked every --every (default 50ms), one JSON line per
+    /// frame with the milliseconds since the start, appended to FILE until
+    /// --for has passed (default until stopped) or the pane closes.
+    Record {
+        pane: String,
+        file: PathBuf,
+        #[arg(long, default_value = "50ms")]
+        every: String,
+        #[arg(long = "for")]
+        lasting: Option<String>,
+    },
     /// Resize the pane's terminal to COLSxROWS.
     Resize { pane: String, size: String },
     /// Open the agent's native view (Claude's own interface for terminal
@@ -300,6 +312,18 @@ pub(crate) fn run(folder: &Folder, command: TuiCommand) -> Result<Outcome, Strin
             )
             .with_files(vec![png, text]))
         }
+        TuiCommand::Record {
+            pane,
+            file,
+            every,
+            lasting,
+        } => record(
+            folder,
+            &pane,
+            &folder.input(&file),
+            &every,
+            lasting.as_deref(),
+        ),
         TuiCommand::Resize { pane, size: wanted } => {
             known(folder, &pane)?;
             let (cols, rows) = size(&wanted)?;
@@ -745,6 +769,65 @@ pub(crate) fn shot(folder: &Folder, pane: &str) -> Result<(PathBuf, PathBuf), St
         shot::rasterize(&buffer, ::tui::Theme::default()).map_err(|error| error.to_string())?;
     shot::write_png(&raster, &png).map_err(|error| error.to_string())?;
     Ok((png, text))
+}
+
+/// Films `pane` into `path` until `lasting` has passed or the pane closes:
+/// a frame only when the screen changed, so a still screen costs nothing
+/// and each line's time is when that picture appeared.
+fn record(
+    folder: &Folder,
+    pane: &str,
+    path: &Path,
+    every: &str,
+    lasting: Option<&str>,
+) -> Result<Outcome, String> {
+    use std::io::Write as _;
+    let known = known(folder, pane)?;
+    let every = Duration::from_millis(super::duration_ms(every)?);
+    let lasting = lasting
+        .map(super::duration_ms)
+        .transpose()?
+        .map(Duration::from_millis);
+    let (fg, bg) = known.theme.ink();
+    let mut out = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|error| format!("opening {}: {error}", path.display()))?;
+    let start = std::time::Instant::now();
+    let mut last = String::new();
+    let mut frames = 0;
+    while lasting.is_none_or(|lasting| start.elapsed() < lasting) {
+        let Ok(styled) = tmux(folder, &["capture-pane", "-p", "-e", "-t", pane]) else {
+            break;
+        };
+        let (x, y, shown) = cursor(folder, pane)?;
+        let seen = format!("{styled}{x},{y},{shown}");
+        if seen != last {
+            let dims = tmux(
+                folder,
+                &[
+                    "display-message",
+                    "-p",
+                    "-t",
+                    pane,
+                    "#{pane_width}x#{pane_height}",
+                ],
+            )?;
+            let (cols, rows) = size(dims.trim())?;
+            let frame = frame(&styled, cols, rows, fg, bg, shown.then_some((x, y)));
+            let line = json!({"ms": start.elapsed().as_millis() as u64, "frame": frame});
+            writeln!(out, "{line}").map_err(|error| error.to_string())?;
+            out.flush().map_err(|error| error.to_string())?;
+            last = seen;
+            frames += 1;
+        }
+        std::thread::sleep(every);
+    }
+    Ok(Outcome::new(
+        format!("recorded {frames} frames of {pane} into {}", path.display()),
+        json!({"frames": frames, "file": path}),
+    ))
 }
 
 /// One cell's style as the frame names it.

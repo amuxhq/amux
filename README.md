@@ -42,8 +42,8 @@ comes back.
 ## Never leave an agent waiting
 
 An agent that stops to ask for permission, present a plan or ask a question sits idle until
-you answer. With amux the question finds you: your phone gets a notification, and you can
-approve the command, accept the plan or answer from wherever you are. The phone is a full
+you answer. With amux every agent waiting on you is at the top of the list on your phone, and
+you can approve the command, accept the plan or answer from wherever you are. The phone is a full
 client, not a remote control: it shows the same agents and chats and can do everything the
 terminal can.
 

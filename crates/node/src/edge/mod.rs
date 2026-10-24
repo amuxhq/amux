@@ -90,7 +90,7 @@ pub struct EdgeOptions {
     /// Listen for direct links on the LAN.
     pub lan: Option<LanOptions>,
     /// Advertise and browse the local network. Each profile gets its own
-    /// advertisement from this factory.
+    /// advertisement from this factory; the browsing behind them is shared.
     pub discovery: Option<DiscoveryFactory>,
     /// Discovery candidates are listed and dialled only when their scope
     /// equals this one.
@@ -110,10 +110,12 @@ pub struct EdgeOptions {
 pub type DiscoveryFactory = Arc<dyn Fn() -> Result<Arc<dyn Discovery>, String> + Send + Sync>;
 
 /// The platform's local-network discovery: mDNS, except where only the
-/// system may browse (the phone hands its results over instead). A debug
-/// build can swap in a scripted stand-in with `AMUX_TEST_DISCOVERY_MODE`.
+/// system may browse (the phone hands its results over instead), with one
+/// browser for every profile the factory serves. A debug build can swap in
+/// a scripted stand-in with `AMUX_TEST_DISCOVERY_MODE`.
 pub fn mdns_discovery() -> DiscoveryFactory {
-    Arc::new(|| {
+    let shared = crate::discovery::MdnsShared::default();
+    Arc::new(move || {
         #[cfg(all(debug_assertions, not(target_os = "ios")))]
         match std::env::var("AMUX_TEST_DISCOVERY_MODE").as_deref() {
             Ok("scripted" | "disabled") => {
@@ -125,7 +127,8 @@ pub fn mdns_discovery() -> DiscoveryFactory {
             Ok(mode) => return Err(format!("unknown test discovery mode {mode:?}")),
             Err(error) => return Err(format!("invalid test discovery mode: {error}")),
         }
-        crate::discovery::MdnsDiscovery::new()
+        shared
+            .handle()
             .map(|discovery| Arc::new(discovery) as Arc<dyn Discovery>)
             .map_err(|error| error.to_string())
     })

@@ -99,15 +99,14 @@ fn sign_in_analytics(
     installation: &Installation,
     profile: Option<crate::ProfileId>,
 ) -> Option<analytics::Analytics> {
-    let hosted = installation.hosted.lock().unwrap();
     profile
-        .and_then(|profile| hosted.get(&profile))
-        .or_else(|| {
+        .and_then(|profile| {
+            let hosted = installation.hosted.lock().unwrap();
             hosted
-                .values()
-                .min_by_key(|hosted| (hosted.entry.created_ms, hosted.entry.id))
+                .get(&profile)
+                .map(|hosted| hosted.runtime.analytics().clone())
         })
-        .map(|hosted| hosted.runtime.analytics().clone())
+        .or_else(|| installation.first_analytics())
 }
 
 /// Why a sign-in failed, as analytics reads the refusal.

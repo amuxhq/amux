@@ -58,6 +58,29 @@ impl MdnsDiscovery {
     }
 }
 
+/// One mDNS daemon for every profile on the machine: one socket, one
+/// browse and one wake monitor, however many profiles advertise. Each
+/// handle it gives out advertises and withdraws a record of its own.
+#[derive(Default)]
+pub struct MdnsShared(Mutex<Weak<Inner>>);
+
+impl MdnsShared {
+    /// A handle on the daemon the live handles share, or on a new one
+    /// when none is live.
+    pub fn handle(&self) -> Result<MdnsDiscovery, DiscoveryError> {
+        let mut shared = self.0.lock().unwrap();
+        if let Some(inner) = shared.upgrade() {
+            return Ok(MdnsDiscovery {
+                inner,
+                advertised_fullname: Mutex::new(None),
+            });
+        }
+        let discovery = MdnsDiscovery::new()?;
+        *shared = Arc::downgrade(&discovery.inner);
+        Ok(discovery)
+    }
+}
+
 impl Discovery for MdnsDiscovery {
     fn advertise(&self, advert: Advertisement) -> Result<(), DiscoveryError> {
         let service = service_info(&advert)?;

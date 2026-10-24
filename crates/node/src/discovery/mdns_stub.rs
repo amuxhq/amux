@@ -13,6 +13,16 @@ impl MdnsDiscovery {
     }
 }
 
+/// iOS has no daemon to share; see [`MdnsDiscovery`].
+#[derive(Default)]
+pub struct MdnsShared;
+
+impl MdnsShared {
+    pub fn handle(&self) -> Result<MdnsDiscovery, DiscoveryError> {
+        MdnsDiscovery::new()
+    }
+}
+
 impl Discovery for MdnsDiscovery {
     fn advertise(&self, _advert: Advertisement) -> Result<(), DiscoveryError> {
         Err(DiscoveryError::Unavailable(

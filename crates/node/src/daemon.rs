@@ -286,8 +286,8 @@ impl Installation {
     }
 
     /// The oldest profile's analytics, which records what happens to the
-    /// installation as a whole.
-    fn first_analytics(&self) -> Option<analytics::Analytics> {
+    /// installation as a whole: every event is filed under a host id.
+    pub(crate) fn first_analytics(&self) -> Option<analytics::Analytics> {
         self.hosted
             .lock()
             .unwrap()

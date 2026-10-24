@@ -608,17 +608,17 @@ mod tests {
                 },
             }))
         };
-        for (planted, removed) in [(
-            compared(b"+token = PLANTED\n"),
+        let planted = compared(b"+token = PLANTED\n");
+        let in_hex = hex(PLANTED);
+        let carries = |line: &Recorded| serde_json::to_string(line).unwrap().contains(&in_hex);
+        assert!(carries(&planted), "the line carries the content in hex");
+        let redacted = planted.redacted(&redactor);
+        assert!(!carries(&redacted), "the planted word is gone");
+        assert_eq!(
+            redacted,
             compared(b"+token = REMOVED\n"),
-        )] {
-            let in_hex = hex(PLANTED);
-            let carries = |line: &Recorded| serde_json::to_string(line).unwrap().contains(&in_hex);
-            assert!(carries(&planted), "the line carries the content in hex");
-            let redacted = planted.redacted(&redactor);
-            assert!(!carries(&redacted), "the planted word is gone");
-            assert_eq!(redacted, removed, "only the content's text changed");
-        }
+            "only the content's text changed"
+        );
 
         let binary = [0xff, 0xfe, b'P', b'L', b'A', b'N', b'T', b'E', b'D'];
         assert_eq!(

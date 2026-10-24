@@ -145,7 +145,7 @@ async fn converse(app: &AppRuntime, net: &Net) {
     let chat = app.open_chat(&agent, 50).await.unwrap();
     let says = |wanted: &str| {
         let keys = chat.keys();
-        chat.rows_for(&keys, &Default::default())
+        chat.rows_for(&keys)
             .iter()
             .any(|row| format!("{:?}", row.kind).contains(wanted))
     };
@@ -294,7 +294,7 @@ async fn a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows() {
     chat.send(&Draft::words("still there?")).await;
     eventually(&app, "the desk's answer after the return", || {
         let keys = chat.keys();
-        chat.rows_for(&keys, &Default::default())
+        chat.rows_for(&keys)
             .iter()
             .any(|row| format!("{:?}", row.kind).contains("answered after the phone came back"))
     })
@@ -696,7 +696,7 @@ async fn shown(app: &AppRuntime, agent: &AgentKey) -> (FleetCard, Vec<String>) {
     let chat = app.open_chat(agent, 50).await.unwrap();
     let rows = || {
         let keys = chat.keys();
-        chat.rows_for(&keys, &Default::default())
+        chat.rows_for(&keys)
             .iter()
             .map(|row| format!("{:?}", row.kind))
             .collect::<Vec<_>>()

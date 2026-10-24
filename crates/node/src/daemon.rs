@@ -21,7 +21,7 @@ use tokio::task::JoinHandle;
 
 use crate::activation::{ActivationError, ActivationPipe};
 use crate::edge::EdgeOptions;
-use crate::front_door::{self, ProfileEvent};
+use crate::registry::{self, ProfileEvent};
 use crate::generation::{self, Generation};
 use crate::grpc::{self, ClientApi};
 use crate::install::{InstallationLock, LockError, REPORTS, STORE, private_dir};
@@ -213,7 +213,7 @@ impl Installation {
             })
         };
         let socket = self.bind(&runtime)?;
-        let info = {
+        let state = {
             let mut all = self.hosted.lock().unwrap();
             let hosted = Hosted {
                 runtime,
@@ -221,11 +221,11 @@ impl Installation {
                 socket,
                 observer: Some(observer),
             };
-            let info = front_door::info(&hosted);
+            let state = registry::state(&hosted);
             all.insert(hosted.entry.id, hosted);
-            info
+            state
         };
-        self.publish(ProfileEvent::Upserted(Box::new(info)));
+        self.publish(ProfileEvent::Upserted(Box::new(state)));
         Ok(())
     }
 
@@ -270,14 +270,14 @@ impl Installation {
 
     /// Tells the front door's watchers a profile's description moved.
     pub(crate) fn republish(&self, profile: ProfileId) {
-        let info = self
+        let state = self
             .hosted
             .lock()
             .unwrap()
             .get(&profile)
-            .map(front_door::info);
-        if let Some(info) = info {
-            self.publish(ProfileEvent::Upserted(Box::new(info)));
+            .map(registry::state);
+        if let Some(state) = state {
+            self.publish(ProfileEvent::Upserted(Box::new(state)));
         }
     }
 
@@ -519,7 +519,10 @@ fn bind_front_door(
         private_dir(parent).map_err(bind)?;
     }
     let listener = LocalListener::bind(path).map_err(bind)?;
-    Ok(front_door::serve(listener, Arc::downgrade(installation)))
+    Ok(crate::front_door::serve(
+        listener,
+        crate::Registry::new(Arc::downgrade(installation)),
+    ))
 }
 
 impl Daemon {
@@ -554,7 +557,12 @@ impl Daemon {
     /// The front door's services in process: profiles, pairing, peers and
     /// accounts, for an embedder that serves no socket.
     pub fn front_door(&self) -> crate::FrontDoor {
-        crate::FrontDoor::new(Arc::downgrade(&self.installation))
+        crate::FrontDoor::new(self.registry())
+    }
+
+    /// The installation's profiles, called in process.
+    pub fn registry(&self) -> crate::Registry {
+        crate::Registry::new(Arc::downgrade(&self.installation))
     }
 
     /// What the startup sweep found, per profile.

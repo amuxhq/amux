@@ -35,6 +35,7 @@ mod offers;
 mod outbox;
 mod pairing;
 mod profiles;
+mod registry;
 mod relay;
 pub mod release;
 mod replicas;
@@ -67,7 +68,7 @@ pub use dump::{
     DUMP_SEGMENTS, DumpError, MANIFEST, pack,
 };
 pub use edge::{
-    ACCOUNT_FILE, CloudLinkServer, CloudOptions, DUAL_STACK_ANY, DiscoveryFactory, Edge, EdgeError,
+    ACCOUNT_FILE, Binding, CloudLinkServer, CloudOptions, DUAL_STACK_ANY, DiscoveryFactory, Edge, EdgeError,
     EdgeOptions, FREE_TIER_REFRESH_INTERVAL, JwtCloudLinkAuthenticator, LAN_PORT_FILE, LINK_SOCKET,
     LanOptions, LoopbackLink, NetworkChange, Observed, RELAY_TOKEN_FILE, RelayCarrier,
     RelayIdentity, RelayQuic, RelayServing, UDP_BLOCKED_MEMORY, interface_addrs, mdns_discovery,
@@ -75,6 +76,10 @@ pub use edge::{
 };
 pub use forward::{ForwardError, HostNameError, Owner};
 pub use front_door::FrontDoor;
+pub use registry::{
+    AccountState, FellBehind, ProfileEvent, ProfileRefusal, ProfileState, ProfileWatch, Registry,
+    SignIn,
+};
 pub use generation::{Generation, boot_id};
 pub use grpc::{ClientApi, status};
 pub use identity::{LinkLiveness, quic_endpoint, quic_endpoint_config};

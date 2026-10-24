@@ -29,7 +29,7 @@ use std::sync::{Arc, Mutex, Weak};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-pub use account::ACCOUNT_FILE;
+pub use account::{ACCOUNT_FILE, Binding};
 pub(crate) use account::{Account, AccountCredentials};
 pub use cloud::{FREE_TIER_REFRESH_INTERVAL, UDP_BLOCKED_MEMORY};
 use futures_util::stream;
@@ -830,10 +830,10 @@ impl Edge {
     /// on its own network never reads as signed out. A paused connection
     /// is still signed in; the person chose to stay off the relay.
     pub fn account_signed_in(&self) -> Option<bool> {
-        match self.account.intent() {
-            wire::Intent::Bound | wire::Intent::Paused => Some(true),
-            wire::Intent::LoggedOut => Some(false),
-            wire::Intent::Unbound | wire::Intent::Unspecified => None,
+        match self.account.binding() {
+            Binding::SignedIn | Binding::Paused => Some(true),
+            Binding::SignedOut => Some(false),
+            Binding::Unbound => None,
         }
     }
 

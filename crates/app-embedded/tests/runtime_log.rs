@@ -74,7 +74,7 @@ async fn app(embedded: &EmbeddedRuntime, profile: ProfileId) -> AppRuntime {
 
 /// The one profile a fresh installation has.
 async fn only_profile(embedded: &EmbeddedRuntime) -> ProfileId {
-    let profiles = embedded.profiles().await.unwrap();
+    let profiles = embedded.profiles().unwrap();
     assert_eq!(profiles.len(), 1, "{profiles:?}");
     profiles[0].id.parse().unwrap()
 }

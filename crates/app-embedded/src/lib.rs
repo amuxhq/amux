@@ -19,8 +19,8 @@ mod phone;
 
 use std::io;
 use std::net::SocketAddr;
+use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -31,10 +31,10 @@ use app_runtime::values::{
 };
 pub use app_runtime::values::{PairRequest, ProfileView, StartConfig, UsageEvent};
 use client::{Client, Clock, InProcess};
-use futures_util::{Stream, StreamExt};
 use node::{
-    ClientApi, CloudOptions, Daemon, DiscoveryFactory, EdgeOptions, FrontDoor, LanOptions,
-    ProfileRuntime, SourcePolicy, StartError, StartOptions,
+    Binding, ClientApi, CloudOptions, Daemon, DiscoveryFactory, EdgeOptions, FrontDoor, LanOptions,
+    Observed, ProfileRefusal, ProfileRuntime, ProfileState, ProfileWatch, Registry, SignIn,
+    SourcePolicy, StartError, StartOptions, Tier,
 };
 pub use node::{Cores, ProfileId};
 pub use phone::Phone;
@@ -42,10 +42,9 @@ use sha2::{Digest, Sha256};
 use tonic::Request;
 use wire::profile_service_server::ProfileService as _;
 use wire::{
-    BeginPairRequest, BindProfileRequest, CreateProfileRequest, DeleteProfileRequest, Empty,
-    HostRef, Intent, Observed, PeerEntry, PendingPairRequest, ProfileInfo, ProfileRequest,
-    StartPairingRequest, Tier, UnpairRequest, begin_pair_request, host_ref, pairing_window,
-    profile_event, start_pairing_request,
+    BeginPairRequest, Empty, HostRef, PeerEntry, PendingPairRequest, ProfileRequest,
+    StartPairingRequest, UnpairRequest, begin_pair_request, host_ref, pairing_window,
+    start_pairing_request,
 };
 
 /// What a test or a driving build changes about the network edge.
@@ -111,6 +110,8 @@ pub enum EmbeddedError {
     NoProfile(ProfileId),
     #[error("{}", .0.message())]
     Refused(#[from] tonic::Status),
+    #[error("{0}")]
+    Profile(#[from] ProfileRefusal),
     #[error(transparent)]
     Link(#[from] node::QrPairingError),
     #[error("{0}")]
@@ -138,6 +139,7 @@ pub struct NetworkChangeReport {
 pub struct EmbeddedRuntime {
     // Held for its shutdown and to find a profile's runtime.
     daemon: Mutex<Option<Daemon>>,
+    registry: Registry,
     door: FrontDoor,
     data_dir: PathBuf,
     clock: Arc<dyn Clock>,
@@ -156,19 +158,21 @@ pub enum ProfileEvent {
 }
 
 /// The registry's changes, from a snapshot of every profile on.
-pub struct ProfileEvents(
-    Pin<Box<dyn Stream<Item = Result<wire::ProfileEvent, tonic::Status>> + Send>>,
-);
+pub struct ProfileEvents {
+    opening: VecDeque<ProfileEvent>,
+    watch: ProfileWatch,
+}
 
 impl ProfileEvents {
     /// The next change, or none once the daemon stops or the watch falls
     /// too far behind, when the list has to be read again.
     pub async fn next(&mut self) -> Option<ProfileEvent> {
-        let event = self.0.next().await?.ok()?.of?;
-        Some(match event {
-            profile_event::Of::Upserted(info) => ProfileEvent::Upserted(profile_view(&info)),
-            profile_event::Of::RemovedId(id) => ProfileEvent::Removed(id_text(&id)),
-            profile_event::Of::CaughtUp(_) => ProfileEvent::CaughtUp,
+        if let Some(event) = self.opening.pop_front() {
+            return Some(event);
+        }
+        Some(match self.watch.next().await?.ok()? {
+            node::ProfileEvent::Upserted(state) => ProfileEvent::Upserted(profile_view(&state)),
+            node::ProfileEvent::Removed(id) => ProfileEvent::Removed(id.to_string()),
         })
     }
 }
@@ -242,6 +246,7 @@ impl EmbeddedRuntime {
         };
         let daemon = node::start(options, None).await?;
         Ok(EmbeddedRuntime {
+            registry: daemon.registry(),
             door: daemon.front_door(),
             data_dir: daemon.data_dir().to_owned(),
             analytics: daemon.analytics_flusher(),
@@ -339,58 +344,35 @@ impl EmbeddedRuntime {
     // --- the registry ------------------------------------------------------
 
     /// Every profile, oldest first.
-    pub async fn profiles(&self) -> Result<Vec<ProfileView>, EmbeddedError> {
-        Ok(self
-            .door()
-            .list_profiles(Request::new(Empty {}))
-            .await?
-            .into_inner()
-            .profiles
-            .iter()
-            .map(profile_view)
-            .collect())
+    pub fn profiles(&self) -> Result<Vec<ProfileView>, EmbeddedError> {
+        Ok(self.registry.list()?.iter().map(profile_view).collect())
     }
 
     /// One profile as the registry lists it.
-    pub async fn profile(&self, profile: ProfileId) -> Result<ProfileView, EmbeddedError> {
-        self.profiles()
-            .await?
-            .into_iter()
-            .find(|view| view.id == profile.to_string())
-            .ok_or(EmbeddedError::NoProfile(profile))
+    pub fn profile(&self, profile: ProfileId) -> Result<ProfileView, EmbeddedError> {
+        Ok(profile_view(&self.registry.profile(profile)?))
     }
 
     /// Every profile as it is now, then each change as it happens.
-    pub async fn watch_profiles(&self) -> Result<ProfileEvents, EmbeddedError> {
-        Ok(ProfileEvents(
-            self.door()
-                .watch_profiles(Request::new(Empty {}))
-                .await?
-                .into_inner(),
-        ))
+    pub fn watch_profiles(&self) -> Result<ProfileEvents, EmbeddedError> {
+        let mut watch = self.registry.watch()?;
+        let opening = std::mem::take(&mut watch.listed)
+            .iter()
+            .map(|state| ProfileEvent::Upserted(profile_view(state)))
+            .chain([ProfileEvent::CaughtUp])
+            .collect();
+        Ok(ProfileEvents { opening, watch })
     }
 
     /// A new profile nobody has signed in on.
     pub async fn create_profile(&self, label: Option<&str>) -> Result<ProfileView, EmbeddedError> {
-        let info = self
-            .door()
-            .create_profile(Request::new(CreateProfileRequest {
-                label: label.map(str::to_owned),
-            }))
-            .await?
-            .into_inner();
-        Ok(profile_view(&info))
+        Ok(profile_view(&self.registry.create(label).await?))
     }
 
     /// Deletes a profile: its key, the machines it trusts and its store.
     /// The installation keeps at least one.
     pub async fn delete_profile(&self, profile: ProfileId) -> Result<(), EmbeddedError> {
-        self.door()
-            .delete_profile(Request::new(DeleteProfileRequest {
-                profile_id: profile.as_bytes().to_vec(),
-            }))
-            .await?;
-        Ok(())
+        Ok(self.registry.delete(profile).await?)
     }
 
     /// Binds a profile to an account with the refresh token the app's
@@ -407,43 +389,35 @@ impl EmbeddedRuntime {
         client_id: &str,
         refresh_token: &str,
     ) -> Result<ProfileView, EmbeddedError> {
-        let info = self
-            .door()
-            .bind_profile(Request::new(BindProfileRequest {
-                profile_id: profile.map(|profile| profile.as_bytes().to_vec()),
+        let bound = self
+            .registry
+            .bind(SignIn {
+                profile,
                 cloud_url: cloud_url.to_owned(),
-                staged_refresh_token: refresh_token.to_owned(),
-                adopt_non_pristine: profile.is_some(),
+                refresh_token: refresh_token.to_owned(),
                 client_id: client_id.to_owned(),
-            }))
-            .await?
-            .into_inner();
-        Ok(profile_view(&info))
+                adopt: profile.is_some(),
+            })
+            .await?;
+        Ok(profile_view(&bound))
     }
 
     /// Signs a profile out: its relay link goes down and its refresh token
     /// is forgotten, but it stays tied to its account.
     pub async fn sign_out(&self, profile: ProfileId) -> Result<ProfileView, EmbeddedError> {
-        let info = self
-            .door()
-            .logout_profile(Request::new(ProfileRequest {
-                profile_id: profile.as_bytes().to_vec(),
-            }))
-            .await?
-            .into_inner();
-        Ok(profile_view(&info))
+        Ok(profile_view(&self.registry.sign_out(profile).await?))
     }
 
     /// Every profile whose trust store holds `host_id`, oldest first.
-    pub async fn trusting(&self, host_id: &[u8]) -> Result<Vec<ProfileId>, EmbeddedError> {
+    pub fn trusting(&self, host_id: &[u8]) -> Result<Vec<ProfileId>, EmbeddedError> {
         let Ok(host) = node::HostId::from_slice(host_id) else {
             return Ok(Vec::new());
         };
         Ok(self
-            .profiles()
-            .await?
+            .registry
+            .list()?
             .into_iter()
-            .filter_map(|view| view.id.parse::<ProfileId>().ok())
+            .map(|state| state.id)
             .filter(|profile| self.edge(*profile).is_ok_and(|edge| edge.is_trusted(host)))
             .collect())
     }
@@ -716,8 +690,8 @@ impl EmbeddedRuntime {
     }
 
     /// The account a profile is bound to, and its relay link.
-    pub async fn account(&self, profile: ProfileId) -> Result<AccountView, EmbeddedError> {
-        Ok(self.profile(profile).await?.account)
+    pub fn account(&self, profile: ProfileId) -> Result<AccountView, EmbeddedError> {
+        Ok(self.profile(profile)?.account)
     }
 
     /// A bearer for the account service, refreshed by the profile when it
@@ -787,46 +761,34 @@ fn fingerprint(pubkey: &[u8]) -> String {
         .collect()
 }
 
-/// A profile id as the app holds it: its text form.
-fn id_text(id: &[u8]) -> String {
-    ProfileId::from_slice(id).map_or_else(|_| String::new(), |id| id.to_string())
-}
-
-fn profile_view(info: &ProfileInfo) -> ProfileView {
+fn profile_view(state: &ProfileState) -> ProfileView {
+    let account = state.account.clone().unwrap_or_default();
     ProfileView {
-        id: id_text(&info.id),
-        label: info.label.clone(),
-        subject: info.account_subject.clone(),
-        account: account_view(info),
-    }
-}
-
-fn account_view(info: &ProfileInfo) -> AccountView {
-    let binding = match info.intent() {
-        Intent::Bound => AccountBinding::SignedIn,
-        Intent::LoggedOut => AccountBinding::SignedOut,
-        Intent::Paused => AccountBinding::Paused,
-        Intent::Unbound | Intent::Unspecified => AccountBinding::Unbound,
-    };
-    let relay = match info.observed() {
-        Observed::Unspecified | Observed::Local => RelayLink::Off,
-        Observed::Connecting => RelayLink::Connecting,
-        Observed::Connected => RelayLink::Connected,
-        Observed::Retrying => RelayLink::Retrying,
-        Observed::AuthenticationRequired => RelayLink::SignInAgain,
-        Observed::VersionMismatch => RelayLink::VersionMismatch,
-    };
-    let pro = match info.tier() {
-        Tier::Pro => Some(true),
-        Tier::Free => Some(false),
-        Tier::Unspecified => None,
-    };
-    AccountView {
-        binding,
-        email: info.email.clone(),
-        name: info.account_name.clone(),
-        picture: info.account_picture.clone(),
-        pro,
-        relay,
+        id: state.id.to_string(),
+        label: state.label.clone(),
+        subject: account.subject,
+        account: AccountView {
+            binding: match state.binding {
+                Binding::Unbound => AccountBinding::Unbound,
+                Binding::SignedIn => AccountBinding::SignedIn,
+                Binding::SignedOut => AccountBinding::SignedOut,
+                Binding::Paused => AccountBinding::Paused,
+            },
+            email: account.email.unwrap_or_default(),
+            name: account.name.unwrap_or_default(),
+            picture: account.picture.unwrap_or_default(),
+            pro: match &state.relay {
+                Observed::Connected { tier, .. } => Some(*tier == Tier::Pro),
+                _ => None,
+            },
+            relay: match state.relay {
+                Observed::Local => RelayLink::Off,
+                Observed::Connecting => RelayLink::Connecting,
+                Observed::Connected { .. } => RelayLink::Connected,
+                Observed::Retrying => RelayLink::Retrying,
+                Observed::AuthenticationRequired => RelayLink::SignInAgain,
+                Observed::VersionMismatch => RelayLink::VersionMismatch,
+            },
+        },
     }
 }

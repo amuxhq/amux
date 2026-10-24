@@ -182,7 +182,7 @@ impl Shared {
         let outbox = self.outbox.clone();
         self.act(async move {
             let answer = act.await;
-            outbox.post_profiles(&embedded).await;
+            outbox.post_profiles(&embedded);
             answer
         })
     }
@@ -255,8 +255,8 @@ impl Outbox {
 
     /// Posts the profile list as it stands now; a list that cannot be read
     /// is left for the registry's watch to post.
-    async fn post_profiles(&self, embedded: &EmbeddedRuntime) {
-        if let Ok(profiles) = embedded.profiles().await {
+    fn post_profiles(&self, embedded: &EmbeddedRuntime) {
+        if let Ok(profiles) = embedded.profiles() {
             self.post(|waiting| waiting.profiles = Some(profiles));
         }
     }
@@ -387,21 +387,18 @@ pub fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<Box<AmuxR
     });
     // The list as the start left it waits for the first step, so the app
     // has it before anything else the runtime hands over.
-    let embedded = phone.embedded().clone();
-    if let Some(Ok(profiles)) = phone.wait(async move { embedded.profiles().await }) {
-        outbox.post(|waiting| waiting.profiles = Some(profiles));
-    }
+    outbox.post_profiles(phone.embedded());
     let watching = phone.embedded().clone();
     let posting = outbox.clone();
     let watch = phone.handle().spawn(async move {
         // A watch that falls behind ends; the list is read again from a
         // fresh one, and handed to the app once it has caught up.
-        while let Ok(mut events) = watching.watch_profiles().await {
+        while let Ok(mut events) = watching.watch_profiles() {
             let mut caught_up = false;
             while let Some(event) = events.next().await {
                 caught_up |= event == ProfileEvent::CaughtUp;
                 if caught_up {
-                    posting.post_profiles(&watching).await;
+                    posting.post_profiles(&watching);
                 }
             }
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -1093,7 +1090,7 @@ pub unsafe extern "C" fn amux_runtime_trusting_profiles(
             let Some(host_id) = host_id else {
                 return Answered::Err("the host id is not a byte array".into());
             };
-            Answered::from(embedded.trusting(&host_id).await.map(|profiles| {
+            Answered::from(embedded.trusting(&host_id).map(|profiles| {
                 profiles
                     .iter()
                     .map(ProfileId::to_string)
@@ -1506,7 +1503,7 @@ pub unsafe extern "C" fn amux_profile_account(profile: *const AmuxProfile) -> u6
             return 0;
         };
         let (embedded, id) = (profile.shared.embedded().clone(), profile.profile);
-        profile.act(async move { Answered::from(embedded.account(id).await) })
+        profile.act(async move { Answered::from(embedded.account(id)) })
     })
 }
 

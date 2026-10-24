@@ -3,11 +3,9 @@
 //! signs them in to an account, and manages the installation.
 
 use std::pin::Pin;
-use std::sync::{Arc, Weak};
 
 use agent_dir::local_socket::LocalListener;
 use futures_util::Stream;
-use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
@@ -22,29 +20,14 @@ use wire::{
 };
 
 use crate::Tier;
-use crate::daemon::{Hosted, Installation};
-use crate::edge::{Edge, Observed, RelayCarrier, account};
+use crate::edge::{Binding, Edge, Observed, RelayCarrier};
 use crate::grpc::{self, status, wire_error};
-use crate::profiles::{self, PROFILE_SOCKET, profile_dir};
+use crate::registry::{ProfileEvent, ProfileRefusal, ProfileState, Registry, SignIn};
 
-/// How long a profile's removal waits for its store to close before it
-/// removes the profile's files.
-const PROFILE_CLOSES_WITHIN: std::time::Duration = std::time::Duration::from_secs(5);
-
-/// A change the front door's watchers see.
-#[derive(Clone, Debug)]
-pub(crate) enum ProfileEvent {
-    Upserted(Box<ProfileInfo>),
-    Removed(Uuid),
-}
-
-/// A hosted profile as the front door describes it.
-pub(crate) fn info(hosted: &Hosted) -> ProfileInfo {
-    let edge = hosted.runtime.edge();
-    let record = edge.as_ref().and_then(|edge| edge.account().record());
-    let observed = edge.as_ref().map(|edge| edge.observed());
-    let (tier, relay_carrier) = match &observed {
-        Some(Observed::Connected { tier, carrier }) => (
+/// A profile as the front door describes it.
+fn info(state: ProfileState) -> ProfileInfo {
+    let (tier, relay_carrier) = match &state.relay {
+        Observed::Connected { tier, carrier } => (
             match tier {
                 Tier::Free => wire::Tier::Free,
                 Tier::Pro => wire::Tier::Pro,
@@ -56,72 +39,32 @@ pub(crate) fn info(hosted: &Hosted) -> ProfileInfo {
         ),
         _ => (wire::Tier::Unspecified, wire::RelayCarrier::Unspecified),
     };
+    let intent = match state.binding {
+        Binding::Unbound => Intent::Unbound,
+        Binding::SignedIn => Intent::Bound,
+        Binding::SignedOut => Intent::LoggedOut,
+        Binding::Paused => Intent::Paused,
+    };
+    let account = state.account.unwrap_or_default();
     ProfileInfo {
-        email: record
-            .as_ref()
-            .and_then(|record| record.email.clone())
-            .unwrap_or_default(),
-        account_name: record
-            .as_ref()
-            .and_then(|record| record.name.clone())
-            .unwrap_or_default(),
-        account_subject: record
-            .as_ref()
-            .map(|record| record.subject.clone())
-            .unwrap_or_default(),
-        account_picture: record
-            .as_ref()
-            .and_then(|record| record.picture.clone())
-            .unwrap_or_default(),
-        intent: edge
-            .as_ref()
-            .map_or(Intent::Unbound, |edge| edge.account().intent()) as i32,
-        observed: observed.map_or(wire::Observed::Local, |observed| observed.to_wire()) as i32,
+        email: account.email.unwrap_or_default(),
+        account_name: account.name.unwrap_or_default(),
+        account_subject: account.subject,
+        account_picture: account.picture.unwrap_or_default(),
+        intent: intent as i32,
+        observed: state.relay.to_wire() as i32,
         tier: tier as i32,
         relay_carrier: relay_carrier as i32,
-        id: hosted.entry.id.as_bytes().to_vec(),
-        label: hosted.entry.label.clone(),
-        socket_path: hosted
-            .runtime
-            .dir()
-            .join(PROFILE_SOCKET)
-            .to_string_lossy()
-            .into_owned(),
-    }
-}
-
-/// The analytics a sign-in's outcome is recorded on: the profile it bound
-/// or named, else the oldest.
-fn sign_in_analytics(
-    installation: &Installation,
-    profile: Option<crate::ProfileId>,
-) -> Option<analytics::Analytics> {
-    profile
-        .and_then(|profile| {
-            let hosted = installation.hosted.lock().unwrap();
-            hosted
-                .get(&profile)
-                .map(|hosted| hosted.runtime.analytics().clone())
-        })
-        .or_else(|| installation.first_analytics())
-}
-
-/// Why a sign-in failed, as analytics reads the refusal.
-fn sign_in_failure(status: &Status) -> analytics::SignInFailure {
-    use analytics::SignInFailure;
-    match crate::net_error::code_of(status) {
-        Some(ErrorCode::Unauthenticated) => SignInFailure::Rejected,
-        Some(ErrorCode::Unavailable) => SignInFailure::Unreachable,
-        Some(ErrorCode::AlreadyExists) => SignInFailure::AccountElsewhere,
-        Some(ErrorCode::FailedPrecondition) => SignInFailure::ProfileConflict,
-        _ => SignInFailure::Other,
+        id: state.id.as_bytes().to_vec(),
+        label: state.label,
+        socket_path: state.socket.to_string_lossy().into_owned(),
     }
 }
 
 /// Serves the profile and installation services on the front door until
 /// the task is aborted.
-pub(crate) fn serve(listener: LocalListener, installation: Weak<Installation>) -> JoinHandle<()> {
-    let door = FrontDoor::new(installation);
+pub(crate) fn serve(listener: LocalListener, registry: Registry) -> JoinHandle<()> {
+    let door = FrontDoor::new(registry);
     tokio::spawn(async move {
         let served = tonic::transport::Server::builder()
             .add_service(ProfileServiceServer::new(door.clone()))
@@ -135,15 +78,26 @@ pub(crate) fn serve(listener: LocalListener, installation: Weak<Installation>) -
 }
 
 /// The profile and installation services, served on the front door's
-/// socket or called in process by an embedder that serves no sockets.
+/// socket.
 #[derive(Clone)]
 pub struct FrontDoor {
-    installation: Weak<Installation>,
+    registry: Registry,
 }
 
 impl FrontDoor {
-    pub(crate) fn new(installation: Weak<Installation>) -> FrontDoor {
-        FrontDoor { installation }
+    pub(crate) fn new(registry: Registry) -> FrontDoor {
+        FrontDoor { registry }
+    }
+
+    /// A hosted profile's network edge, named by its id's bytes.
+    fn edge(&self, id: &[u8]) -> Result<std::sync::Arc<Edge>, Status> {
+        Ok(self.registry.edge(profile_id(id)?)?)
+    }
+}
+
+impl From<ProfileRefusal> for Status {
+    fn from(refusal: ProfileRefusal) -> Status {
+        status(refusal.to_wire())
     }
 }
 
@@ -167,67 +121,6 @@ fn token(request: &PendingPairRequest) -> Result<&[u8], Status> {
     Ok(&request.token)
 }
 
-impl FrontDoor {
-    fn installation(&self) -> Result<Arc<Installation>, Status> {
-        self.installation
-            .upgrade()
-            .ok_or_else(|| Status::unavailable("the daemon is shutting down"))
-    }
-
-    /// Every hosted profile, oldest first.
-    fn list(installation: &Installation) -> Vec<ProfileInfo> {
-        let hosted = installation.hosted.lock().unwrap();
-        let mut hosted: Vec<&Hosted> = hosted.values().collect();
-        hosted.sort_by_key(|hosted| (hosted.entry.created_ms, hosted.entry.id));
-        hosted.into_iter().map(info).collect()
-    }
-
-    /// A hosted profile's network edge.
-    fn edge(installation: &Installation, id: &[u8]) -> Result<(Uuid, Arc<Edge>), Status> {
-        let id = profile_id(id)?;
-        let edge = installation
-            .hosted
-            .lock()
-            .unwrap()
-            .get(&id)
-            .ok_or_else(|| failed(ErrorCode::NotFound, format!("no profile {id}")))?
-            .runtime
-            .edge()
-            .ok_or_else(|| failed(ErrorCode::Unavailable, "the profile is not in service"))?;
-        Ok((id, edge))
-    }
-
-    async fn set_paused(
-        &self,
-        request: ProfileRequest,
-        paused: bool,
-    ) -> Result<Response<ProfileInfo>, Status> {
-        let installation = self.installation()?;
-        let (id, edge) = Self::edge(&installation, &request.profile_id)?;
-        if edge.account().record().is_none() {
-            return Err(failed(
-                ErrorCode::FailedPrecondition,
-                "the profile is not bound to an account",
-            ));
-        }
-        edge.set_paused(paused)
-            .await
-            .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
-        installation.republish(id);
-        Ok(Response::new(Self::one(&installation, id)?))
-    }
-
-    fn one(installation: &Installation, id: Uuid) -> Result<ProfileInfo, Status> {
-        installation
-            .hosted
-            .lock()
-            .unwrap()
-            .get(&id)
-            .map(info)
-            .ok_or_else(|| failed(ErrorCode::NotFound, format!("no profile {id}")))
-    }
-}
-
 type Events = Pin<Box<dyn Stream<Item = Result<wire::ProfileEvent, Status>> + Send>>;
 
 #[tonic::async_trait]
@@ -238,9 +131,8 @@ impl ProfileService for FrontDoor {
         &self,
         _request: Request<Empty>,
     ) -> Result<Response<ListProfilesResponse>, Status> {
-        let installation = self.installation()?;
         Ok(Response::new(ListProfilesResponse {
-            profiles: Self::list(&installation),
+            profiles: self.registry.list()?.into_iter().map(info).collect(),
         }))
     }
 
@@ -248,44 +140,28 @@ impl ProfileService for FrontDoor {
         &self,
         _request: Request<Empty>,
     ) -> Result<Response<Self::WatchProfilesStream>, Status> {
-        let installation = self.installation()?;
-        // The publishing lock is held while every change is published, so
-        // the list read under it is exactly the state before the first
-        // event the receiver sees.
-        let (profiles, events) = {
-            let _publishing = installation.publishing.lock().unwrap();
-            let events = installation.events.subscribe();
-            (Self::list(&installation), events)
-        };
-        let opening = profiles
+        let mut watch = self.registry.watch()?;
+        let opening = std::mem::take(&mut watch.listed)
             .into_iter()
-            .map(profile_event::Of::Upserted)
+            .map(|state| profile_event::Of::Upserted(info(state)))
             .chain(std::iter::once(profile_event::Of::CaughtUp(CaughtUp {
                 revision: 0,
             })))
             .map(|of| Ok(wire::ProfileEvent { of: Some(of) }))
             .collect::<Vec<_>>();
-        let live = futures_util::stream::unfold(Some(events), |events| async move {
-            let mut events = events?;
-            match events.recv().await {
+        let live = futures_util::stream::unfold(Some(watch), |watch| async move {
+            let mut watch = watch?;
+            match watch.next().await? {
                 Ok(event) => {
                     let of = match event {
-                        ProfileEvent::Upserted(info) => profile_event::Of::Upserted(*info),
+                        ProfileEvent::Upserted(state) => profile_event::Of::Upserted(info(*state)),
                         ProfileEvent::Removed(id) => {
                             profile_event::Of::RemovedId(id.as_bytes().to_vec())
                         }
                     };
-                    Some((Ok(wire::ProfileEvent { of: Some(of) }), Some(events)))
+                    Some((Ok(wire::ProfileEvent { of: Some(of) }), Some(watch)))
                 }
-                // A watcher that fell behind watches again for a fresh list.
-                Err(RecvError::Lagged(_)) => Some((
-                    Err(failed(
-                        ErrorCode::Aborted,
-                        "the watch fell behind; watch again",
-                    )),
-                    None,
-                )),
-                Err(RecvError::Closed) => None,
+                Err(behind) => Some((Err(failed(ErrorCode::Aborted, behind.to_string())), None)),
             }
         });
         Ok(Response::new(Box::pin(futures_util::StreamExt::chain(
@@ -298,123 +174,28 @@ impl ProfileService for FrontDoor {
         &self,
         request: Request<CreateProfileRequest>,
     ) -> Result<Response<ProfileInfo>, Status> {
-        let installation = self.installation()?;
-        let label = request
-            .into_inner()
-            .label
-            .filter(|label| !label.trim().is_empty())
-            .unwrap_or_else(|| "profile".to_owned());
-        let _change = installation.profile_changes.lock().await;
-        let id = installation
-            .create(label.trim())
-            .await
-            .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
-        Ok(Response::new(Self::one(&installation, id)?))
+        let label = request.into_inner().label;
+        Ok(Response::new(info(
+            self.registry.create(label.as_deref()).await?,
+        )))
     }
 
     async fn rename_profile(
         &self,
         request: Request<RenameProfileRequest>,
     ) -> Result<Response<ProfileInfo>, Status> {
-        let installation = self.installation()?;
         let request = request.into_inner();
         let id = profile_id(&request.profile_id)?;
-        let label = request
-            .override_name
-            .map(|name| name.trim().to_owned())
-            .filter(|name| !name.is_empty())
-            .ok_or_else(|| failed(ErrorCode::InvalidArgument, "a profile needs a name"))?;
-        let _change = installation.profile_changes.lock().await;
-        let profiles = profiles::list(&installation.data_dir)
-            .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
-        if profiles
-            .iter()
-            .any(|entry| entry.id != id && entry.label == label)
-        {
-            return Err(failed(
-                ErrorCode::AlreadyExists,
-                format!("another profile is named {label}"),
-            ));
-        }
-        let mut entry = profiles
-            .into_iter()
-            .find(|entry| entry.id == id)
-            .ok_or_else(|| failed(ErrorCode::NotFound, format!("no profile {id}")))?;
-        entry.label = label;
-        profiles::write_entry(&installation.data_dir, &entry)
-            .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
-        let info = {
-            let mut hosted = installation.hosted.lock().unwrap();
-            let hosted = hosted
-                .get_mut(&id)
-                .ok_or_else(|| failed(ErrorCode::NotFound, format!("no profile {id}")))?;
-            hosted.entry = entry;
-            info(hosted)
-        };
-        installation.publish(crate::front_door::ProfileEvent::Upserted(Box::new(
-            info.clone(),
-        )));
-        Ok(Response::new(info))
+        let label = request.override_name.unwrap_or_default();
+        Ok(Response::new(info(self.registry.rename(id, &label).await?)))
     }
 
     async fn delete_profile(
         &self,
         request: Request<DeleteProfileRequest>,
     ) -> Result<Response<Empty>, Status> {
-        let installation = self.installation()?;
-        let request = request.into_inner();
-        let id = profile_id(&request.profile_id)?;
-        let _change = installation.profile_changes.lock().await;
-        let profiles = profiles::list(&installation.data_dir)
-            .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
-        if !profiles.iter().any(|entry| entry.id == id) {
-            return Err(failed(ErrorCode::NotFound, format!("no profile {id}")));
-        }
-        if profiles.len() == 1 {
-            return Err(failed(
-                ErrorCode::FailedPrecondition,
-                "an installation keeps at least one profile",
-            ));
-        }
-        let runtime = installation
-            .hosted
-            .lock()
-            .unwrap()
-            .get(&id)
-            .map(|hosted| hosted.runtime.clone());
-        if runtime
-            .as_ref()
-            .is_some_and(|runtime| !runtime.live().is_empty())
-        {
-            return Err(failed(
-                ErrorCode::FailedPrecondition,
-                "the profile has running agents; stop them first",
-            ));
-        }
-        let hosted = installation.hosted.lock().unwrap().remove(&id);
-        let closed = runtime.as_ref().map(|runtime| runtime.driver().closed());
-        if let Some(hosted) = hosted {
-            hosted
-                .runtime
-                .stop_edge(wire::LinkCloseReason::UserShutdown)
-                .await;
-            // As at shutdown: a dump in flight would hold the runtime and
-            // its store open past the directory's removal.
-            hosted.runtime.finish_dumps().await;
-            hosted.runtime.stop_background().await;
-            hosted.runtime.stop_watching().await;
-        }
-        drop(runtime);
-        // Some systems refuse to remove a file still open: the directory
-        // goes once the store and the ring are closed, which may be on the
-        // core thread after a step under way. A handle held elsewhere past
-        // the wait leaves the removal to fail on such a system.
-        if let Some(closed) = closed {
-            let _ = tokio::time::timeout(PROFILE_CLOSES_WITHIN, closed).await;
-        }
-        std::fs::remove_dir_all(profile_dir(&installation.data_dir, id))
-            .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
-        installation.publish(ProfileEvent::Removed(id));
+        let id = profile_id(&request.into_inner().profile_id)?;
+        self.registry.delete(id).await?;
         Ok(Response::new(Empty {}))
     }
 
@@ -422,61 +203,49 @@ impl ProfileService for FrontDoor {
         &self,
         request: Request<BindProfileRequest>,
     ) -> Result<Response<ProfileInfo>, Status> {
-        let installation = self.installation()?;
         let request = request.into_inner();
-        let explicit = request.profile_id.as_deref().map(profile_id).transpose()?;
-        let bound = account::bind(&installation, explicit, request).await;
-        // A failure that named no profile is the installation's: its oldest
-        // profile records it.
-        let profile = bound.as_ref().ok().copied().or(explicit);
-        if let Some(analytics) = sign_in_analytics(&installation, profile) {
-            analytics.record(match &bound {
-                Ok(_) => analytics::Event::SignedIn,
-                Err(status) => analytics::Event::SignInFailed {
-                    reason: sign_in_failure(status),
-                },
-            });
-        }
-        let id = bound?;
-        installation.republish(id);
-        Ok(Response::new(Self::one(&installation, id)?))
+        let sign_in = SignIn {
+            profile: request.profile_id.as_deref().map(profile_id).transpose()?,
+            cloud_url: request.cloud_url,
+            refresh_token: request.staged_refresh_token,
+            client_id: request.client_id,
+            adopt: request.adopt_non_pristine,
+        };
+        Ok(Response::new(info(self.registry.bind(sign_in).await?)))
     }
 
     async fn logout_profile(
         &self,
         request: Request<ProfileRequest>,
     ) -> Result<Response<ProfileInfo>, Status> {
-        let installation = self.installation()?;
-        let (id, edge) = Self::edge(&installation, &request.into_inner().profile_id)?;
-        edge.sign_out()
-            .await
-            .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
-        edge.analytics().record(analytics::Event::SignedOut);
-        installation.republish(id);
-        Ok(Response::new(Self::one(&installation, id)?))
+        let id = profile_id(&request.into_inner().profile_id)?;
+        Ok(Response::new(info(self.registry.sign_out(id).await?)))
     }
 
     async fn pause_profile(
         &self,
         request: Request<ProfileRequest>,
     ) -> Result<Response<ProfileInfo>, Status> {
-        self.set_paused(request.into_inner(), true).await
+        let id = profile_id(&request.into_inner().profile_id)?;
+        Ok(Response::new(info(self.registry.set_paused(id, true).await?)))
     }
 
     async fn resume_profile(
         &self,
         request: Request<ProfileRequest>,
     ) -> Result<Response<ProfileInfo>, Status> {
-        self.set_paused(request.into_inner(), false).await
+        let id = profile_id(&request.into_inner().profile_id)?;
+        Ok(Response::new(info(
+            self.registry.set_paused(id, false).await?,
+        )))
     }
 
     async fn start_pairing(
         &self,
         request: Request<StartPairingRequest>,
     ) -> Result<Response<PairingWindow>, Status> {
-        let installation = self.installation()?;
         let request = request.into_inner();
-        let (_, edge) = Self::edge(&installation, &request.profile_id)?;
+        let edge = self.edge(&request.profile_id)?;
         Ok(Response::new(edge.start_pairing(request).await?))
     }
 
@@ -484,8 +253,7 @@ impl ProfileService for FrontDoor {
         &self,
         request: Request<ProfileRequest>,
     ) -> Result<Response<PairingStatus>, Status> {
-        let installation = self.installation()?;
-        let (_, edge) = Self::edge(&installation, &request.into_inner().profile_id)?;
+        let edge = self.edge(&request.into_inner().profile_id)?;
         Ok(Response::new(PairingStatus {
             active: edge.pairing_active(),
             locked_out: edge.pairing_locked_out(),
@@ -496,8 +264,7 @@ impl ProfileService for FrontDoor {
         &self,
         request: Request<ProfileRequest>,
     ) -> Result<Response<Empty>, Status> {
-        let installation = self.installation()?;
-        let (_, edge) = Self::edge(&installation, &request.into_inner().profile_id)?;
+        let edge = self.edge(&request.into_inner().profile_id)?;
         edge.cancel_pairing().await?;
         Ok(Response::new(Empty {}))
     }
@@ -506,9 +273,8 @@ impl ProfileService for FrontDoor {
         &self,
         request: Request<BeginPairRequest>,
     ) -> Result<Response<PendingPair>, Status> {
-        let installation = self.installation()?;
         let request = request.into_inner();
-        let (_, edge) = Self::edge(&installation, &request.profile_id)?;
+        let edge = self.edge(&request.profile_id)?;
         Ok(Response::new(edge.begin_pair(request).await?))
     }
 
@@ -516,9 +282,8 @@ impl ProfileService for FrontDoor {
         &self,
         request: Request<PendingPairRequest>,
     ) -> Result<Response<PeerEntry>, Status> {
-        let installation = self.installation()?;
         let request = request.into_inner();
-        let (_, edge) = Self::edge(&installation, &request.profile_id)?;
+        let edge = self.edge(&request.profile_id)?;
         Ok(Response::new(edge.confirm_pair(token(&request)?).await?))
     }
 
@@ -526,9 +291,8 @@ impl ProfileService for FrontDoor {
         &self,
         request: Request<PendingPairRequest>,
     ) -> Result<Response<Empty>, Status> {
-        let installation = self.installation()?;
         let request = request.into_inner();
-        let (_, edge) = Self::edge(&installation, &request.profile_id)?;
+        let edge = self.edge(&request.profile_id)?;
         edge.abandon_pair(token(&request)?).await?;
         Ok(Response::new(Empty {}))
     }
@@ -537,8 +301,7 @@ impl ProfileService for FrontDoor {
         &self,
         request: Request<ProfileRequest>,
     ) -> Result<Response<DeviceIdentity>, Status> {
-        let installation = self.installation()?;
-        let (_, edge) = Self::edge(&installation, &request.into_inner().profile_id)?;
+        let edge = self.edge(&request.into_inner().profile_id)?;
         Ok(Response::new(edge.device_identity()))
     }
 
@@ -546,9 +309,8 @@ impl ProfileService for FrontDoor {
         &self,
         request: Request<TrustSshPeerRequest>,
     ) -> Result<Response<Empty>, Status> {
-        let installation = self.installation()?;
         let request = request.into_inner();
-        let (_, edge) = Self::edge(&installation, &request.profile_id)?;
+        let edge = self.edge(&request.profile_id)?;
         edge.trust_ssh_peer(request).await?;
         Ok(Response::new(Empty {}))
     }
@@ -557,8 +319,7 @@ impl ProfileService for FrontDoor {
         &self,
         request: Request<ProfileRequest>,
     ) -> Result<Response<ListPeersResponse>, Status> {
-        let installation = self.installation()?;
-        let (_, edge) = Self::edge(&installation, &request.into_inner().profile_id)?;
+        let edge = self.edge(&request.into_inner().profile_id)?;
         Ok(Response::new(ListPeersResponse {
             peers: edge.list_peers()?,
         }))
@@ -568,9 +329,8 @@ impl ProfileService for FrontDoor {
         &self,
         request: Request<GetPeerRequest>,
     ) -> Result<Response<PeerEntry>, Status> {
-        let installation = self.installation()?;
         let request = request.into_inner();
-        let (_, edge) = Self::edge(&installation, &request.profile_id)?;
+        let edge = self.edge(&request.profile_id)?;
         let peer = request
             .peer
             .ok_or_else(|| failed(ErrorCode::InvalidArgument, "name the peer to read"))?;
@@ -578,9 +338,8 @@ impl ProfileService for FrontDoor {
     }
 
     async fn unpair(&self, request: Request<UnpairRequest>) -> Result<Response<PeerEntry>, Status> {
-        let installation = self.installation()?;
         let request = request.into_inner();
-        let (_, edge) = Self::edge(&installation, &request.profile_id)?;
+        let edge = self.edge(&request.profile_id)?;
         let peer = request
             .peer
             .ok_or_else(|| failed(ErrorCode::InvalidArgument, "name the peer to unpair"))?;
@@ -594,14 +353,14 @@ impl InstallationService for FrontDoor {
         &self,
         _request: Request<Empty>,
     ) -> Result<Response<InstallationInfo>, Status> {
-        self.installation()?;
+        self.registry.installation()?;
         Ok(Response::new(InstallationInfo {
             version: crate::version().to_owned(),
         }))
     }
 
     async fn shutdown(&self, _request: Request<Empty>) -> Result<Response<Empty>, Status> {
-        self.installation()?.request_shutdown();
+        self.registry.installation()?.request_shutdown();
         Ok(Response::new(Empty {}))
     }
 }

@@ -303,16 +303,13 @@ async fn a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows() {
 
     // In the background only the chats asked for keep a source.
     assert_eq!(embedded.source_policy(phone).unwrap(), SourcePolicy::Listed);
-    embedded
-        .set_source_policy(phone, SourcePolicy::OnDemand)
-        .unwrap();
+    embedded.list_sources(None);
     assert_eq!(
         embedded.source_policy(phone).unwrap(),
         SourcePolicy::OnDemand
     );
-    embedded
-        .set_source_policy(phone, SourcePolicy::Listed)
-        .unwrap();
+    embedded.list_sources(Some(phone));
+    assert_eq!(embedded.source_policy(phone).unwrap(), SourcePolicy::Listed);
 
     embedded
         .unpair(phone, desk.host_id.as_bytes())

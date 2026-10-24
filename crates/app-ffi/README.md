@@ -33,7 +33,6 @@ gives a form one `FormValue` per field, and the answer is built in Rust.
 AmuxRuntime *rt = amux_runtime_start(config_json, &error);
 int fd = amux_runtime_wake_fd(rt);                   /* watch for readable */
 char *stepped = amux_runtime_step(rt);               /* on every wake */
-char *profiles = amux_runtime_profiles(rt);          /* [ProfileView] */
 AmuxProfile *p = amux_profile_open(rt, profile_id, &error);
 AmuxChat *chat = amux_session_open(p, agent_key_json, 0, &error);
 ...
@@ -47,10 +46,11 @@ calls `amux_runtime_step`; links, channels and gRPC run on one confined Rust
 thread, which posts what it decodes onto the cores' queues and never calls
 into the app. Whenever something waits for a step, the descriptor
 `amux_runtime_wake_fd` answers becomes readable; the app watches it from the
-queue it steps on. A step answers JSON: `profiles` (read
-`amux_runtime_profiles` again), `redraws` (each a profile id and a chat id,
-0 for the fleet, whose changes wait to be taken) and `answers` (each an act's
-ticket and its result as JSON text).
+queue it steps on. A step answers JSON: `profiles` (every profile as
+`[ProfileView]`, oldest first, when the list moved: once the registry is read
+after the start, and before the answer of any act that moved it), `redraws`
+(each a profile id and a chat id, 0 for the fleet, whose changes wait to be
+taken) and `answers` (each an act's ticket and its result as JSON text).
 
 `amux_runtime_start` takes a `StartConfig` and blocks until every profile's
 store is open. Every call that blocks until the cores have done something
@@ -80,9 +80,9 @@ pairing link, so tests can pair two profiles. `amux_runtime_discovered` hands
 the whole set the phone's own browser found on the local network, which only
 the system may browse, to every profile.
 
-`amux_runtime_set_source_policy(rt, profile, listed)` keeps a source open for
-every listed agent of the profile on screen in the foreground, and only for
-the chats that open for every other profile and in the background.
+`amux_runtime_list_sources(rt, profile)` keeps a source open for every listed
+agent of the profile on screen, and only for the chats that open for every
+other profile; null, for the app in the background, lists none.
 
 Product analytics ([what is sent](../../docs/ANALYTICS.md)) is the
 runtime's; the app tells it what only the app knows.
@@ -106,7 +106,7 @@ other build records nothing unless `AMUX_ANALYTICS_URL` names a server.
 Reads return at once: `amux_session_keys`, `amux_session_rows_for`,
 `amux_session_ask_card`, `amux_session_overview`, `amux_session_settings`,
 `amux_session_frame`, `amux_fleet_view` (home's sections), `amux_fleet_card`, `amux_fleet_family`, `amux_fleet_hosts`,
-`amux_runtime_profiles`, `amux_runtime_source_policy_listed`. Some reads need
+`amux_runtime_source_policy_listed`. Some reads need
 no handle, because they are the shared rules applied to values the phone
 already holds: `amux_agent_name_problem` (why a name cannot name an agent),
 `amux_new_agent_settings` and `amux_new_agent_pick` (a new agent's pickers

@@ -43,6 +43,19 @@ private func ask(_ runtime: OpaquePointer, _ what: String, _ ticket: UInt64) thr
     throw fail(6, "no answer to \(what) within 30 seconds")
 }
 
+/// Steps until a step hands over the profile list, as one does once the
+/// registry has been read, and returns it.
+private func profiles(_ runtime: OpaquePointer) throws -> [[String: Any]] {
+    let deadline = Date().addingTimeInterval(30)
+    var watched = pollfd(fd: amux_runtime_wake_fd(runtime), events: Int16(POLLIN), revents: 0)
+    while Date() < deadline {
+        guard poll(&watched, 1, 50) > 0 else { continue }
+        let stepped = try read(amux_runtime_step(runtime)) as? [String: Any] ?? [:]
+        if let listed = stepped["profiles"] as? [[String: Any]] { return listed }
+    }
+    throw fail(3, "no profile list within 30 seconds")
+}
+
 private func read(_ bytes: UnsafeMutablePointer<CChar>?) throws -> Any {
     guard let bytes else { throw fail(4, "the bridge answered nothing") }
     defer { amux_string_free(bytes) }
@@ -88,7 +101,7 @@ private func smoke() throws {
     }
     defer { amux_runtime_stop(runtime) }
     // A fresh installation has one profile, nobody signed in on it.
-    let listed = try read(amux_runtime_profiles(runtime)) as? [[String: Any]] ?? []
+    let listed = try profiles(runtime)
     guard let id = listed.first?["id"] as? String else {
         throw fail(3, "the installation lists no profile")
     }
@@ -121,7 +134,7 @@ private func smoke() throws {
     }
     let via = (host["reach"] as? [String: Any])?["Online"] ?? "none"
     let names = try until(runtime, "\(agent) in the fleet") { () -> [String]? in
-        let view = try read(amux_fleet_view(profile, nil, nil)) as? [String: Any] ?? [:]
+        let view = try read(amux_fleet_view(profile)) as? [String: Any] ?? [:]
         let sections = view["sections"] as? [[String: Any]] ?? []
         let rows = sections.flatMap { $0["rows"] as? [[String: Any]] ?? [] }
         let names = rows.compactMap { ($0["card"] as? [String: Any])?["name"] as? String }

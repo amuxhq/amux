@@ -85,7 +85,8 @@ struct Seen {
     redraws: VecDeque<(u64, u64)>,
     /// The acts' answers, in the order they came.
     answers: VecDeque<(u64, Value)>,
-    profiles: usize,
+    /// The profile list the latest step that carried one handed over.
+    profiles: Option<Value>,
 }
 
 /// A runtime handed to the queue's thread, which uses it only until the
@@ -179,8 +180,17 @@ impl Phone {
             ..EdgeOverrides::default()
         };
         let runtime = Box::into_raw(start(&config, overrides).unwrap());
-        // SAFETY: the runtime is live.
-        let profiles = take(unsafe { amux_runtime_profiles(runtime) });
+        let queue = Queue::start(runtime);
+        // The list comes with a step once the registry's watch has caught up.
+        let profiles = loop {
+            let stepped = queue
+                .stepped
+                .recv_timeout(PATIENCE)
+                .expect("a step hands over the profile list");
+            if !stepped["profiles"].is_null() {
+                break stepped["profiles"].clone();
+            }
+        };
         assert_eq!(profiles.as_array().unwrap().len(), 1, "{profiles}");
         let id = c(profiles[0]["id"].as_str().unwrap());
         let mut error = std::ptr::null_mut();
@@ -195,7 +205,7 @@ impl Phone {
             fleet,
             id,
             seen: RefCell::default(),
-            queue: Some(Queue::start(runtime)),
+            queue: Some(queue),
             tickets: RefCell::default(),
             dir,
         }
@@ -215,8 +225,8 @@ impl Phone {
 
     fn keep(&self, stepped: &Value) {
         let mut seen = self.seen.borrow_mut();
-        if stepped["profiles"] == json!(true) {
-            seen.profiles += 1;
+        if !stepped["profiles"].is_null() {
+            seen.profiles = Some(stepped["profiles"].clone());
         }
         for redraw in stepped["redraws"].as_array().unwrap() {
             let named = (
@@ -500,7 +510,7 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
 
     // Called from a thread outside the pool, as the app's main thread is.
     // SAFETY: the runtime is live.
-    unsafe { amux_runtime_set_source_policy(phone.runtime, phone.id.as_ptr(), false) };
+    unsafe { amux_runtime_list_sources(phone.runtime, std::ptr::null()) };
     // SAFETY: the runtime is live and not stopped until the phone drops.
     let embedded = unsafe { &*phone.runtime }.embedded().clone();
     let id: ProfileId = phone.id.to_str().unwrap().parse().unwrap();
@@ -508,7 +518,7 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     // SAFETY: the runtime is live.
     assert!(!unsafe { amux_runtime_source_policy_listed(phone.runtime, phone.id.as_ptr()) });
     // SAFETY: the runtime is live.
-    unsafe { amux_runtime_set_source_policy(phone.runtime, phone.id.as_ptr(), true) };
+    unsafe { amux_runtime_list_sources(phone.runtime, phone.id.as_ptr()) };
     assert_eq!(embedded.source_policy(id).unwrap(), SourcePolicy::Listed);
 
     // A chat: rows by key, a prompt, a permission answered by position.
@@ -771,15 +781,17 @@ fn rename(phone: &Phone, agent: &CStr, chat: *const AmuxChat, name: &str) {
 }
 
 impl Phone {
-    /// Waits for the runtime to say the profile list moved, and reads it.
+    /// The profile list the steps handed over since it was last taken,
+    /// waiting for one.
     fn profiles_after_a_wake(&self) -> Value {
         let deadline = Instant::now() + PATIENCE;
-        while std::mem::take(&mut self.seen.borrow_mut().profiles) == 0 {
+        loop {
+            if let Some(profiles) = self.seen.borrow_mut().profiles.take() {
+                return profiles;
+            }
             assert!(Instant::now() < deadline, "the profile list never moved");
             self.pump(Duration::from_millis(100));
         }
-        // SAFETY: the runtime is live.
-        take(unsafe { amux_runtime_profiles(self.runtime) })
     }
 }
 
@@ -793,6 +805,10 @@ fn the_profile_registry_through_the_c_abi() {
     // SAFETY: the runtime is live.
     phone.started(unsafe { amux_runtime_create_profile(phone.runtime) });
     let created = phone.result();
+    assert!(
+        phone.seen.borrow().profiles.is_some(),
+        "the list the act left comes no later than its answer"
+    );
     let other = c(created["Ok"]["id"].as_str().unwrap());
     assert_eq!(created["Ok"]["account"]["binding"], "Unbound", "{created}");
     assert_eq!(created["Ok"]["subject"], "", "{created}");
@@ -818,7 +834,7 @@ fn the_profile_registry_through_the_c_abi() {
     };
     assert_ne!(mine[0]["host_id"], theirs[0]["host_id"], "{mine} {theirs}");
     // SAFETY: the runtime is live; the string lives for the call.
-    unsafe { amux_runtime_set_source_policy(phone.runtime, other.as_ptr(), false) };
+    unsafe { amux_runtime_list_sources(phone.runtime, phone.id.as_ptr()) };
     // SAFETY: as above.
     assert!(!unsafe { amux_runtime_source_policy_listed(phone.runtime, other.as_ptr()) });
     // SAFETY: as above.
@@ -1121,12 +1137,6 @@ mod confinement {
         // SAFETY: the runtime is live for the test.
         let shared = unsafe { live_runtime(runtime) }.unwrap().shared.clone();
         // SAFETY: the runtime is live.
-        let profile = take(unsafe { amux_runtime_profiles(runtime) })[0]["id"]
-            .as_str()
-            .unwrap()
-            .parse::<ProfileId>()
-            .unwrap();
-        // SAFETY: the runtime is live.
         let fd = unsafe { amux_runtime_wake_fd(runtime) };
         let readable = |within: i32| {
             let mut watched = libc::pollfd {
@@ -1139,16 +1149,27 @@ mod confinement {
                 libc::poll(&mut watched, 1, within) == 1 && watched.revents & libc::POLLIN != 0
             }
         };
-        // Stepped until nothing waits, the descriptor reads quiet.
+        // Stepped until the profile list came and nothing waits, the
+        // descriptor reads quiet.
         let deadline = Instant::now() + PATIENCE;
+        let mut profiles = Value::Null;
         loop {
             // SAFETY: the runtime is live.
-            take(unsafe { amux_runtime_step(runtime) });
-            if !readable(200) {
+            let stepped = take(unsafe { amux_runtime_step(runtime) });
+            if !stepped["profiles"].is_null() {
+                profiles = stepped["profiles"].clone();
+            }
+            let quiet = !readable(200);
+            if quiet && !profiles.is_null() {
                 break;
             }
             assert!(Instant::now() < deadline, "the runtime never went quiet");
         }
+        let profile = profiles[0]["id"]
+            .as_str()
+            .unwrap()
+            .parse::<ProfileId>()
+            .unwrap();
 
         // Another thread posts work onto the profile's core and waits on it.
         let (stepped_on, stepped) = std::sync::mpsc::channel();

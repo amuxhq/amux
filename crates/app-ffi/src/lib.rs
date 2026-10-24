@@ -20,10 +20,10 @@
 //! return at once. An act that waits on the agent returns a ticket at
 //! once, and its JSON result comes back from a later step under that
 //! ticket; a step also names the fleets (chat 0) and chats whose changes
-//! wait to be taken, and whether the profile list moved. The calls that
-//! block until the cores have done something (start, stop, a profile or
-//! chat opening, the profile list, a lifecycle input) step the cores on
-//! the calling thread while they wait.
+//! wait to be taken, and carries the profile list when it moved. The calls
+//! that block until the cores have done something (start, stop, a profile
+//! or chat opening, a lifecycle input) step the cores on the calling
+//! thread while they wait.
 //!
 //! Every returned string is the caller's to free with `amux_string_free`,
 //! and every byte buffer with `amux_bytes_free`. A null return means the
@@ -36,8 +36,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use app_embedded::{
-    EdgeOverrides, EmbeddedRuntime, PairRequest, Phone, ProfileEvent, ProfileId, StartConfig,
-    UsageEvent,
+    EdgeOverrides, EmbeddedRuntime, PairRequest, Phone, ProfileEvent, ProfileId, ProfileView,
+    StartConfig, UsageEvent,
 };
 use app_runtime::values::{
     ActOutcome, AgentAct, CommandOutcome, Draft, Found, FrozenReview, NewAgent,
@@ -170,6 +170,23 @@ impl Shared {
     {
         self.outbox.act(self.handle(), act)
     }
+
+    /// Starts an act that changes the profile list. The list as the act
+    /// left it is posted before the act's answer, so the app holds it by
+    /// the time it hears the answer.
+    fn act_on_profiles<T, F>(&self, act: F) -> u64
+    where
+        T: Serialize + Send + 'static,
+        F: Future<Output = T> + Send + 'static,
+    {
+        let embedded = self.embedded().clone();
+        let outbox = self.outbox.clone();
+        self.act(async move {
+            let answer = act.await;
+            outbox.post_profiles(&embedded).await;
+            answer
+        })
+    }
 }
 
 /// What the transport left for the app's next step: which views to
@@ -185,8 +202,9 @@ struct Outbox {
 /// What a step hands the app, as JSON.
 #[derive(Default, Serialize)]
 struct Stepped {
-    /// The profile list moved: read it again.
-    profiles: bool,
+    /// Every profile, oldest first, when the list moved since the last
+    /// step.
+    profiles: Option<Vec<ProfileView>>,
     /// The fleets (chat 0) and chats whose changes wait to be taken.
     redraws: BTreeSet<Redraw>,
     /// The acts that ended since the last step.
@@ -210,6 +228,14 @@ impl Outbox {
     fn post(&self, post: impl FnOnce(&mut Stepped)) {
         post(&mut self.waiting.lock().unwrap_or_else(|p| p.into_inner()));
         (self.ring)();
+    }
+
+    /// Posts the profile list as it stands now; a list that cannot be read
+    /// is left for the registry's watch to post.
+    async fn post_profiles(&self, embedded: &EmbeddedRuntime) {
+        if let Ok(profiles) = embedded.profiles().await {
+            self.post(|waiting| waiting.profiles = Some(profiles));
+        }
     }
 
     fn take(&self) -> Stepped {
@@ -312,17 +338,23 @@ pub fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<Box<AmuxR
         waiting: Mutex::new(Stepped::default()),
         ring: Box::new(phone.bell()),
     });
+    // The list as the start left it waits for the first step, so the app
+    // has it before anything else the runtime hands over.
+    let embedded = phone.embedded().clone();
+    if let Some(Ok(profiles)) = phone.wait(async move { embedded.profiles().await }) {
+        outbox.post(|waiting| waiting.profiles = Some(profiles));
+    }
     let watching = phone.embedded().clone();
     let posting = outbox.clone();
     let watch = phone.handle().spawn(async move {
         // A watch that falls behind ends; the list is read again from a
-        // fresh one, and the app told once it has caught up.
+        // fresh one, and handed to the app once it has caught up.
         while let Ok(mut events) = watching.watch_profiles().await {
             let mut caught_up = false;
             while let Some(event) = events.next().await {
                 caught_up |= event == ProfileEvent::CaughtUp;
                 if caught_up {
-                    posting.post(|waiting| waiting.profiles = true);
+                    posting.post_profiles(&watching).await;
                 }
             }
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -852,31 +884,39 @@ where
     })
 }
 
-// --- the profile registry ------------------------------------------------
-
-/// Every profile, oldest first, as `[ProfileView]`.
+/// As [`profile_act`], for an act that changes the profile list: the list
+/// it left is posted before its answer.
 ///
 /// # Safety
-/// `runtime` is from `amux_runtime_start`. Not called from the runtime's
-/// own threads.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_runtime_profiles(runtime: *const AmuxRuntime) -> *mut c_char {
-    guard(std::ptr::null_mut(), || {
+/// As for [`profile_act`].
+unsafe fn profile_act_on_profiles<T, F, Fut>(
+    runtime: *const AmuxRuntime,
+    profile: *const c_char,
+    act: F,
+) -> u64
+where
+    T: Serialize + Send + 'static,
+    F: FnOnce(Arc<EmbeddedRuntime>, ProfileId) -> Fut,
+    Fut: Future<Output = Answered<T>> + Send + 'static,
+{
+    guard(0, || {
         // SAFETY: the caller's contract.
         let Some(runtime) = (unsafe { live_runtime(runtime) }) else {
-            return std::ptr::null_mut();
+            return 0;
         };
-        let embedded = runtime.embedded().clone();
-        match runtime
-            .shared
-            .phone
-            .wait(async move { embedded.profiles().await })
-        {
-            Some(Ok(profiles)) => owned(&profiles),
-            _ => std::ptr::null_mut(),
+        // SAFETY: the caller's contract.
+        match unsafe { profile_id(profile) } {
+            Some(profile) => runtime
+                .shared
+                .act_on_profiles(act(runtime.embedded().clone(), profile)),
+            None => {
+                runtime.act(async { Answered::<T>::Err("the profile is not a profile id".into()) })
+            }
         }
     })
 }
+
+// --- the profile registry ------------------------------------------------
 
 /// Creates a profile nobody has signed in on; the ticket answers
 /// `{"Ok": ProfileView}` or `{"Err": ..}`.
@@ -891,7 +931,9 @@ pub unsafe extern "C" fn amux_runtime_create_profile(runtime: *const AmuxRuntime
             return 0;
         };
         let embedded = runtime.embedded().clone();
-        runtime.act(async move { Answered::from(embedded.create_profile(None).await) })
+        runtime
+            .shared
+            .act_on_profiles(async move { Answered::from(embedded.create_profile(None).await) })
     })
 }
 
@@ -909,7 +951,7 @@ pub unsafe extern "C" fn amux_runtime_delete_profile(
 ) -> u64 {
     // SAFETY: the caller's contract.
     unsafe {
-        profile_act(runtime, profile, |embedded, profile| async move {
+        profile_act_on_profiles(runtime, profile, |embedded, profile| async move {
             Answered::from(embedded.delete_profile(profile).await)
         })
     }
@@ -949,7 +991,7 @@ pub unsafe extern "C" fn amux_runtime_bind(
             .unwrap_or_default()
             .to_owned();
         let embedded = runtime.embedded().clone();
-        runtime.act(async move {
+        runtime.shared.act_on_profiles(async move {
             let profile = match named.map(|named| named.parse::<ProfileId>()) {
                 None => None,
                 Some(Ok(profile)) => Some(profile),
@@ -972,7 +1014,7 @@ pub unsafe extern "C" fn amux_runtime_sign_out(
 ) -> u64 {
     // SAFETY: the caller's contract.
     unsafe {
-        profile_act(runtime, profile, |embedded, profile| async move {
+        profile_act_on_profiles(runtime, profile, |embedded, profile| async move {
             Answered::from(embedded.sign_out(profile).await)
         })
     }
@@ -1034,18 +1076,18 @@ pub unsafe extern "C" fn amux_runtime_offer_pairing(
     }
 }
 
-/// `listed` for the profile in front of somebody: every listed agent keeps
-/// a source. Not `listed` for every other profile, and in the background:
-/// only the chats that open keep one.
+/// Every listed agent of the profile in front of somebody keeps a source
+/// open; every other profile's, and every profile's when `profile` is null
+/// (the app in the background), opens sources only for the chats that
+/// open.
 ///
 /// # Safety
-/// `runtime` is from `amux_runtime_start`; `profile` is a NUL-terminated
-/// string.
+/// `runtime` is from `amux_runtime_start`; `profile` is null or a
+/// NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_runtime_set_source_policy(
+pub unsafe extern "C" fn amux_runtime_list_sources(
     runtime: *const AmuxRuntime,
     profile: *const c_char,
-    listed: bool,
 ) {
     guard((), || {
         // SAFETY: the caller's contract.
@@ -1053,26 +1095,18 @@ pub unsafe extern "C" fn amux_runtime_set_source_policy(
             return;
         };
         // SAFETY: the caller's contract.
-        let Some(profile) = (unsafe { profile_id(profile) }) else {
-            return;
-        };
+        let shown = unsafe { profile_id(profile) };
         // Switching opens and closes sources, which run on the pool.
         let _entered = runtime.handle().enter();
-        let _ = runtime.embedded().set_source_policy(
-            profile,
-            if listed {
-                SourcePolicy::Listed
-            } else {
-                SourcePolicy::OnDemand
-            },
-        );
+        runtime.embedded().list_sources(shown);
     });
 }
 
 /// Whether every listed agent of a profile keeps a source open.
 ///
 /// # Safety
-/// As for `amux_runtime_set_source_policy`.
+/// `runtime` is from `amux_runtime_start`; `profile` is a NUL-terminated
+/// string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn amux_runtime_source_policy_listed(
     runtime: *const AmuxRuntime,

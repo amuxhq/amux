@@ -480,13 +480,17 @@ impl EmbeddedRuntime {
 
     /// `Listed`: every listed agent keeps a source, for the profile in
     /// front of somebody. `OnDemand`: only the agents a chat asks for.
-    pub fn set_source_policy(
-        &self,
-        profile: ProfileId,
-        policy: SourcePolicy,
-    ) -> Result<(), EmbeddedError> {
-        self.runtime(profile)?.set_source_policy(policy);
-        Ok(())
+    /// Every listed agent of the profile on screen keeps a source open;
+    /// every other profile's, and every profile's when none is shown,
+    /// opens sources only for the chats that open.
+    pub fn list_sources(&self, shown: Option<ProfileId>) {
+        for runtime in self.hosted() {
+            runtime.set_source_policy(if Some(runtime.profile()) == shown {
+                SourcePolicy::Listed
+            } else {
+                SourcePolicy::OnDemand
+            });
+        }
     }
 
     pub fn source_policy(&self, profile: ProfileId) -> Result<SourcePolicy, EmbeddedError> {

@@ -338,7 +338,6 @@ final class RuntimeCoordinatorTests: XCTestCase {
             }
             host = HostId(bytes: paired.hostId)
         }
-        coordinator.profilesMoved()
         return try XCTUnwrap(host)
     }
 

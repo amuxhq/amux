@@ -47,16 +47,17 @@ public final class RuntimeCoordinator {
         }
     }
 
-    /// Starts an installation, telling the closure it is handed on the main
-    /// actor whenever the profile list moves.
-    public typealias Starter = @Sendable (StartConfig, @escaping @MainActor @Sendable () -> Void)
-        throws(RuntimeFailure) -> Runtime
+    /// Starts an installation, handing the closure it is given the profile
+    /// list on the main actor whenever it moves.
+    public typealias Starter = @Sendable (
+        StartConfig, @escaping @MainActor @Sendable ([ProfileView]) -> Void
+    ) throws(RuntimeFailure) -> Runtime
 
     /// The installation, once started.
     public private(set) var runtime: Runtime?
     /// The fleet of the profile on screen.
     public private(set) var profile: Profile?
-    /// The installation's profiles as last read.
+    /// The installation's profiles as the runtime last handed them over.
     public private(set) var profiles: [ProfileView] = []
     /// Why the runtime is not running, when it failed to start.
     public private(set) var failure: String?
@@ -180,7 +181,9 @@ public final class RuntimeCoordinator {
                 try FileManager.default.createDirectory(
                     at: directory, withIntermediateDirectories: true)
                 Signposts.emit(.storeReadBegan)
-                started = .success(try starter(config) { [weak self] in self?.profilesMoved() })
+                started = .success(try starter(config) { [weak self] listed in
+                    self?.profilesMoved(listed, launch: expected)
+                })
                 Signposts.emit(.nodeStarted)
             } catch let failure as RuntimeFailure {
                 started = .failure(failure)
@@ -209,7 +212,10 @@ public final class RuntimeCoordinator {
                 Task { @MainActor in self?.networkChanged() }
             }
             if !found.isEmpty { runtime.discovered(found.map(\.found)) }
-            profilesMoved()
+            if !profiles.isEmpty {
+                registry.show(profiles)
+                place()
+            }
             answer(runtime)
         case .failure(let reason):
             failure = reason.description
@@ -249,12 +255,14 @@ public final class RuntimeCoordinator {
         return await withCheckedContinuation { waiting.append($0) }
     }
 
-    /// Reads the profile list again, and puts the one on screen in front.
-    public func profilesMoved() {
-        guard let runtime else { return }
-        let listed = runtime.profiles()
+    /// Takes the profile list as this launch's runtime hands it over, and
+    /// puts the one on screen in front. A list that comes before the runtime
+    /// is in place waits for it there.
+    private func profilesMoved(_ listed: [ProfileView], launch expected: Int) {
+        guard expected == launch else { return }
         let added = Set(listed.map(\.id)).subtracting(profiles.map(\.id))
         profiles = listed
+        guard let runtime else { return }
         // A profile made since the browser last reported has not been told
         // what is on the network.
         if !added.isEmpty, !found.isEmpty { runtime.discovered(found.map(\.found)) }
@@ -297,10 +305,7 @@ public final class RuntimeCoordinator {
     /// sessions drop their streams, except a chat that opens.
     private func listSources() {
         guard let runtime else { return }
-        let onScreen = registry.profile
-        for view in profiles {
-            runtime.setSourcePolicy(view.id, listed: view.id == onScreen && active)
-        }
+        runtime.listSources(of: active ? registry.profile : nil)
         profile?.setForeground(active)
     }
 
@@ -357,7 +362,6 @@ public final class RuntimeCoordinator {
         guard case .success(let view) = bound else {
             return bound.map { _ in Nothing() }
         }
-        profilesMoved()
         registry.select(AccountId(view.subject))
         await stores.refreshAccount()
         return .success(Nothing())
@@ -369,7 +373,6 @@ public final class RuntimeCoordinator {
         guard let runtime = await started(),
               let entry = registry.accounts.first(where: { $0.id == account }) else { return }
         _ = await runtime.signOut(entry.profile)
-        profilesMoved()
         await stores.refreshAccount()
     }
 
@@ -382,11 +385,9 @@ public final class RuntimeCoordinator {
               let entry = registry.accounts.first(where: { $0.id == account }) else { return }
         if profiles.count == 1 {
             _ = await runtime.createProfile()
-            profilesMoved()
         }
         registry.leave(account)
         _ = await runtime.deleteProfile(entry.profile)
-        profilesMoved()
     }
 
     /// Stops the installation, closing the fleet and every chat on it first.

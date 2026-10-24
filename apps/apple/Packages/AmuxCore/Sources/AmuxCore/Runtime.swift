@@ -37,14 +37,15 @@ public enum Lifecycle: String, Sendable {
 /// The app owns the loop: the library's cores step on one serial queue,
 /// `CoreLoop`'s, and nothing in the library ever calls into Swift. Reads
 /// return at once, on any thread. The calls that block until the cores have
-/// done something (starting, stopping, opening a profile or a chat, the
-/// profile list, a moment of the app's life) step the cores on the thread
+/// done something (starting, stopping, opening a profile or a chat, a
+/// moment of the app's life) step the cores on the thread
 /// that makes them, so they are made on that queue, never on the main
 /// thread. Acts are `async`: each starts on the queue and is answered by a
 /// later step.
 ///
-/// The profile list moving is told on the main actor; the owner reads it
-/// again. A profile's fleet and chats are a `Profile` opened from here.
+/// The profile list is handed to the main actor whenever it moved, before
+/// the answer of the act that moved it. A profile's fleet and chats are a
+/// `Profile` opened from here.
 public final class Runtime: @unchecked Sendable {
     private let handle: OpaquePointer
     private let loop: CoreLoop
@@ -59,10 +60,10 @@ public final class Runtime: @unchecked Sendable {
     }
 
     /// Starts the runtime; blocks, on the core queue, until every profile's
-    /// store is open. `profilesMoved` is told on the main actor whenever the
-    /// profile list moved.
+    /// store is open. `profilesMoved` is handed the profile list on the main
+    /// actor whenever it moved, the first time once the registry is read.
     public static func start(
-        _ config: StartConfig, profilesMoved: @escaping @MainActor @Sendable () -> Void
+        _ config: StartConfig, profilesMoved: @escaping @MainActor @Sendable ([ProfileView]) -> Void
     ) throws(RuntimeFailure) -> Runtime {
         let loop = CoreLoop(profilesMoved: profilesMoved)
         let config = Bridge.json(config)
@@ -99,13 +100,6 @@ public final class Runtime: @unchecked Sendable {
     deinit { stop() }
 
     // MARK: - The profile registry
-
-    /// Every profile, oldest first.
-    public func profiles() -> [ProfileView] {
-        loop.blocking { [loop] in
-            loop.live.flatMap { Bridge.read([ProfileView].self, amux_runtime_profiles($0)) } ?? []
-        }
-    }
 
     /// A new profile nobody has signed in on.
     public func createProfile() async -> Result<ProfileView, RuntimeFailure> {
@@ -165,13 +159,11 @@ public final class Runtime: @unchecked Sendable {
         }
     }
 
-    /// Listed for the profile in front of somebody: every listed agent keeps
-    /// a source open. Not listed for every other profile, and in the
-    /// background: only the chats that open keep one.
-    public func setSourcePolicy(_ profile: String, listed: Bool) {
-        call(()) { live in
-            profile.withCString { amux_runtime_set_source_policy(live, $0, listed) }
-        }
+    /// Every listed agent of the profile in front of somebody keeps a source
+    /// open; every other profile, and every profile when nil (the app in the
+    /// background), keeps one only for the chats that open.
+    public func listSources(of profile: String?) {
+        call(()) { live in Bridge.optional(profile) { amux_runtime_list_sources(live, $0) } }
     }
 
     /// Whether every listed agent of a profile keeps a source open now.
@@ -384,13 +376,6 @@ public final class Profile: @unchecked Sendable {
 
     // MARK: - The profile
 
-    /// Listed in the foreground: every listed agent keeps a source open.
-    /// Not listed when a push woke the app in the background: only the chats
-    /// that open keep one.
-    public func setSourcePolicy(listed: Bool) {
-        runtime.setSourcePolicy(id, listed: listed)
-    }
-
     /// Whether every listed agent keeps a source open now.
     public var listsSources: Bool { runtime.listsSources(id) }
 
@@ -557,14 +542,15 @@ struct Live: @unchecked Sendable {
 /// it makes a descriptor readable; a dispatch source watching that
 /// descriptor from this queue steps, and what the step hands back is
 /// carried out from here: each act's answer goes to whoever awaits its
-/// ticket, and the fleets and chats to redraw, and whether the profile list
-/// moved, go to the main actor. The cores' timers sleep on the library's own
+/// ticket, and the fleets and chats to redraw, and the profile list when it
+/// moved, go to the main actor: the list ahead of the answers, so whoever
+/// awaits an act that moved it finds it in place. The cores' timers sleep on the library's own
 /// thread and come back as ordinary inputs that make the descriptor
 /// readable, so nothing here arms one.
 final class CoreLoop: @unchecked Sendable {
     private let queue = DispatchQueue(label: "amux.core", qos: .userInitiated)
     private let onQueue = DispatchSpecificKey<Bool>()
-    private let profilesMoved: @MainActor @Sendable () -> Void
+    private let profilesMoved: @MainActor @Sendable ([ProfileView]) -> Void
 
     // On the queue only.
     /// The runtime, from its start until its stop.
@@ -581,7 +567,7 @@ final class CoreLoop: @unchecked Sendable {
     /// The profiles opened, closed before the runtime stops.
     private let opened = NSHashTable<Profile>.weakObjects()
 
-    init(profilesMoved: @escaping @MainActor @Sendable () -> Void) {
+    init(profilesMoved: @escaping @MainActor @Sendable ([ProfileView]) -> Void) {
         self.profilesMoved = profilesMoved
         queue.setSpecific(key: onQueue, value: true)
     }
@@ -624,7 +610,9 @@ final class CoreLoop: @unchecked Sendable {
         }
     }
 
-    /// Watches a started runtime's descriptor. On the queue.
+    /// Watches a started runtime's descriptor. On the queue. Steps once at
+    /// once, so what the start left, the profile list, reaches the main
+    /// actor ahead of whoever learns there that the runtime started.
     func run(_ runtime: OpaquePointer) {
         dispatchPrecondition(condition: .onQueue(queue))
         live = runtime
@@ -633,6 +621,7 @@ final class CoreLoop: @unchecked Sendable {
         source.setEventHandler { [weak self] in self?.step() }
         source.resume()
         self.source = source
+        step()
     }
 
     /// Closes every profile still open, stops the runtime, and answers every
@@ -668,19 +657,23 @@ final class CoreLoop: @unchecked Sendable {
         guard let live, let stepped = Bridge.read(Stepped.self, amux_runtime_step(live)) else {
             return
         }
+        // Queued on the main actor before any answer resumes its waiter
+        // there, so an act that moved the profile list is answered after the
+        // list is in place.
+        if stepped.profiles != nil || !stepped.redraws.isEmpty {
+            DispatchQueue.main.async { [self] in
+                MainActor.assumeIsolated {
+                    // Read here, not on the queue: a fleet closed since the
+                    // step is not woken.
+                    for redraw in stepped.redraws {
+                        lock.withLock { wakes[redraw.fleet] }?(redraw.chat)
+                    }
+                    if let profiles = stepped.profiles { profilesMoved(profiles) }
+                }
+            }
+        }
         for answer in stepped.answers {
             waiting.removeValue(forKey: answer.ticket)?.resume(returning: answer.json)
-        }
-        guard stepped.profiles || !stepped.redraws.isEmpty else { return }
-        DispatchQueue.main.async { [self] in
-            MainActor.assumeIsolated {
-                // Read here, not on the queue: a fleet closed since the step
-                // is not woken.
-                for redraw in stepped.redraws {
-                    lock.withLock { wakes[redraw.fleet] }?(redraw.chat)
-                }
-                if stepped.profiles { profilesMoved() }
-            }
         }
     }
 
@@ -696,7 +689,7 @@ final class CoreLoop: @unchecked Sendable {
             let json: String
         }
 
-        let profiles: Bool
+        let profiles: [ProfileView]?
         let redraws: [Redraw]
         let answers: [Answer]
     }

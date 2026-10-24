@@ -29,6 +29,19 @@ private func answer(_ runtime: OpaquePointer, _ what: String, _ ticket: UInt64) 
     throw fail(6, "no answer to \(what) within 30 seconds")
 }
 
+/// Steps until a step hands over the profile list, as one does once the
+/// registry has been read, and returns it.
+private func profiles(_ runtime: OpaquePointer) throws -> [[String: Any]] {
+    let deadline = Date().addingTimeInterval(30)
+    var watched = pollfd(fd: amux_runtime_wake_fd(runtime), events: Int16(POLLIN), revents: 0)
+    while Date() < deadline {
+        guard poll(&watched, 1, 50) > 0 else { continue }
+        let stepped = try read(amux_runtime_step(runtime)) as? [String: Any] ?? [:]
+        if let listed = stepped["profiles"] as? [[String: Any]] { return listed }
+    }
+    throw fail(3, "no profile list within 30 seconds")
+}
+
 private func read(_ bytes: UnsafeMutablePointer<CChar>?) throws -> Any {
     guard let bytes else { throw fail(4, "the bridge answered nothing") }
     defer { amux_string_free(bytes) }
@@ -61,7 +74,7 @@ private func smoke() throws {
         throw fail(3, "the runtime did not start: \(reason)")
     }
     defer { amux_runtime_stop(runtime) }
-    let listed = try read(amux_runtime_profiles(runtime)) as? [[String: Any]] ?? []
+    let listed = try profiles(runtime)
     guard let id = listed.first?["id"] as? String else { throw fail(3, "the installation lists no profile") }
     print("installation started by the shipping mobile library")
 

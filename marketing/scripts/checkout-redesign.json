@@ -132,7 +132,7 @@
         "name": "mcp__amux__spawn",
         "class": "consequential",
         "input": {
-          "kind": "claude_sdk",
+          "kind": "claude",
           "name": "copy-pass",
           "prompt": "Rewrite the checkout error messages in web/src/checkout/messages.ts: short, specific, and say what to do next."
         },

@@ -56,6 +56,7 @@
           "command": "cargo test -p payments --test checkout"
         },
         "outcome": {
+          "ms": 2600,
           "output": "test checkout::case_{piece} ... ok\n",
           "pieces": 3
         },

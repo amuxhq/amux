@@ -1305,6 +1305,7 @@ impl Engine {
                 .await;
             }
         }
+        let started = std::time::Instant::now();
         self.run_tool(tool).await;
         let output = tool.outcome.text();
         if tool.outcome.pieces.is_none() && !output.is_empty() {
@@ -1315,7 +1316,7 @@ impl Engine {
             .await;
         }
         item["aggregatedOutput"] = json!(output);
-        item["durationMs"] = json!(0);
+        item["durationMs"] = json!(started.elapsed().as_millis() as u64);
         item["exitCode"] = json!(if tool.outcome.error { 1 } else { 0 });
         item["status"] = json!(if tool.outcome.error {
             "failed"
@@ -1446,13 +1447,14 @@ impl Engine {
             "type": "mcpToolCall",
         });
         self.item(turn, "item/started", &item).await;
+        let started = std::time::Instant::now();
         self.run_tool(tool).await;
         let answer = self
             .servers
             .call(server, name, &arguments)
             .await
             .unwrap_or_else(|| Ok(tool.outcome.text()));
-        item["durationMs"] = json!(0);
+        item["durationMs"] = json!(started.elapsed().as_millis() as u64);
         match answer {
             Ok(text) => {
                 item["result"] = json!({
@@ -1473,6 +1475,10 @@ impl Engine {
     /// A call held until its file exists keeps taking the host's frames
     /// while it runs; an interrupt stops waiting for it.
     async fn run_tool(&mut self, tool: &Tool) {
+        let until = tool.outcome.until();
+        while tokio::time::Instant::now() < until && !self.interrupted {
+            self.pump().await;
+        }
         let Some(path) = &tool.wait_for else { return };
         while !path.exists() && !self.interrupted {
             self.pump().await;

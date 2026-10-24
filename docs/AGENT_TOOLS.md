@@ -80,8 +80,8 @@ reached`, or the daemon's own message.
 ### agents
 
 Every agent in the fleet, own and replicated from paired hosts. Each row has
-`name` (the id in hex when the agent has no name), `id`, `kind` (`claude_pty`,
-`claude_sdk` or `codex`), `host` (the host's name), `live`, and `phase`
+`name` (the id in hex when the agent has no name), `id`, `kind` (`claude` or
+`codex`, however Claude is driven), `host` (the host's name), `live`, and `phase`
 (`starting`, `idle`, `working` or `needs_you`); and, when they apply,
 `working_on`, `exit_cause` (how an exited agent ended: the cause's name, then
 its own words when it has any, as `finished`, `stopped` or
@@ -115,7 +115,10 @@ tool's description tells it to reply with `send` to that agent's name.
 
 ### spawn
 
-Starts a child agent of `kind` with `prompt` as its first input: the create
+Starts a child agent of `kind` (`claude` or `codex`) with `prompt` as its
+first input. A Claude child is always headless Claude (`claude_sdk`): people
+read a child in amux's chat, so how its Claude is driven is not the parent's
+choice. The create
 carries it as a prompt submission, which can hold nothing but a prompt, and
 names the kind by its arm with that kind's default settings. `name` names it. `host` is a trusted host's name, as a person would say it; the daemon
 resolves it, and omitted it means the caller's own host. `cwd` is a path on

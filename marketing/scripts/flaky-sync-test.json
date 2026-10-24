@@ -86,6 +86,7 @@
             "reason": "Run the sync tests in release, where the race shows up"
           },
           "outcome": {
+            "ms": 4200,
             "output": "test result: ok. 200 passed"
           }
         }

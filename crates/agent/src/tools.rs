@@ -47,8 +47,8 @@ and which one is this host. Spawn on another host by its name.";
 const SEND: &str = "Send a message to another amux agent by name. It answers once the \
 recipient's provider has the message, or says why it could not. When a message reaches you \
 from an amux agent, reply with this tool to that agent's name.";
-const SPAWN: &str = "Start a child agent of any kind with a first prompt: claude_pty (Claude \
-in a terminal), claude_sdk (headless Claude) or codex. It runs on this host unless you name \
+const SPAWN: &str = "Start a child agent with a first prompt: claude or codex. It runs on \
+this host unless you name \
 another trusted host, in your working directory unless you give one. On another host, give \
 a folder there: ask the person which one if you do not know one. The child does \
 its work and stops; you are sent its last message when it finishes, and a later send to it \
@@ -347,8 +347,8 @@ impl Server {
     async fn spawn(&self, arguments: &Value) -> Answer {
         let kind = required(arguments, "kind")?;
         let Some(kind) = kind_named(&kind) else {
-            let [first, second, last] = SPAWNABLE.map(kind_word);
-            return Err(format!("no agent kind {kind:?}; use {first}, {second} or {last}").into());
+            let [first, last] = SPAWNABLE.map(kind_word);
+            return Err(format!("no agent kind {kind:?}; use {first} or {last}").into());
         };
         let prompt = required(arguments, "prompt")?;
         let name = optional(arguments, "name");
@@ -681,8 +681,10 @@ fn plain(status: &Status) -> String {
     }
 }
 
-/// The kinds an agent may spawn.
-const SPAWNABLE: [Kind; 3] = [Kind::ClaudePty, Kind::ClaudeSdk, Kind::Codex];
+/// The kinds an agent may spawn. A Claude child runs headless: people read
+/// a child in amux's chat, so how its Claude is driven is no business of
+/// the parent's.
+const SPAWNABLE: [Kind; 2] = [Kind::ClaudeSdk, Kind::Codex];
 
 /// An enum value as the tools say it: its protobuf name without the enum's
 /// prefix, in lowercase, so the tools' words are the wire's own.
@@ -690,11 +692,13 @@ fn word(name: &str, prefix: &str) -> String {
     name.trim_start_matches(prefix).to_ascii_lowercase()
 }
 
-/// A kind as the tools say it: `claude_pty`, `claude_sdk`, `codex`.
+/// A kind as the tools say it: `claude` or `codex`. Both ways of driving
+/// Claude are `claude`, for the same reason a parent cannot pick one.
 fn kind_word(kind: Kind) -> String {
     match kind {
         Kind::Unspecified => "unknown".to_owned(),
-        known => word(known.as_str_name(), "KIND_"),
+        Kind::ClaudePty | Kind::ClaudeSdk => "claude".to_owned(),
+        Kind::Codex => "codex".to_owned(),
     }
 }
 

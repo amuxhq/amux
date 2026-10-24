@@ -781,6 +781,10 @@ impl Engine {
     /// A call held until its file exists keeps taking the host's frames
     /// while it runs; an interrupt stops waiting for it.
     async fn run_tool(&mut self, tool: &Tool) {
+        let until = tool.outcome.until();
+        while tokio::time::Instant::now() < until && self.cut != Some(Cut::Interrupted) {
+            self.pump().await;
+        }
         let Some(path) = &tool.wait_for else { return };
         while !path.exists() && self.cut != Some(Cut::Interrupted) {
             self.pump().await;
@@ -1292,7 +1296,10 @@ impl Engine {
                     .await;
                 let Some(answer) = answer else { return };
                 let outcome = match allowed(&answer) {
-                    Ok(()) => Ok(tool.outcome.text()),
+                    Ok(()) => {
+                        self.run_tool(&tool).await;
+                        Ok(tool.outcome.text())
+                    }
                     Err(refusal) => Err(refusal),
                 };
                 self.tool_result(&id, &tool, &input, outcome).await;

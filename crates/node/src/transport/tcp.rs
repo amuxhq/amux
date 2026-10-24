@@ -5,7 +5,6 @@ use std::io;
 use futures_util::{Stream, stream};
 use tokio::net::{TcpListener, TcpStream};
 
-#[allow(dead_code)]
 pub(crate) fn tcp_incoming(
     listener: TcpListener,
 ) -> impl Stream<Item = io::Result<TcpStream>> + Send + 'static {

@@ -19,9 +19,6 @@ fn ssh_program() -> std::ffi::OsString {
 const AMUX_RELAY_COMMAND: [&str; 2] = ["amux", "relay"];
 const AMUX_PAIR_RECV_COMMAND: [&str; 2] = ["amux", "pair-recv"];
 
-#[allow(dead_code)]
-pub(crate) type SshRelayIo = SshChildIo;
-
 pub(crate) type SshPairRecvIo = SshChildIo;
 
 pub(crate) struct SshChildIo {
@@ -30,7 +27,7 @@ pub(crate) struct SshChildIo {
     stdin: ChildStdin,
 }
 
-pub(crate) fn spawn_ssh_relay(target: &str, profile: crate::ProfileId) -> Result<SshRelayIo> {
+pub(crate) fn spawn_ssh_relay(target: &str, profile: crate::ProfileId) -> Result<SshChildIo> {
     let profile = profile.to_string();
     spawn_ssh_amux_command(
         target,

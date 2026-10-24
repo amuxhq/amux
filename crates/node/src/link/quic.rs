@@ -276,7 +276,6 @@ pub enum ConnectError {
     #[error("device identity configuration failed: {0}")]
     Identity(#[from] IdentityError),
     #[error("could not resolve {host}:{port}: {source}")]
-    #[allow(dead_code)]
     Resolve {
         host: String,
         port: u16,

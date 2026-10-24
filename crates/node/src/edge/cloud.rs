@@ -124,11 +124,9 @@ impl UdpBlockedMemory {
     }
 }
 
-#[allow(dead_code)]
 pub struct CloudLink {
     stop_tx: watch::Sender<bool>,
     refresher: Option<Refresher>,
-    status: RuntimeStatus,
     task: JoinHandle<()>,
 }
 
@@ -301,11 +299,7 @@ pub(crate) fn establish_cloud_link(
     );
     CloudLink {
         stop_tx,
-        refresher: Some(Refresher {
-            refresh_tx,
-            status: status.clone(),
-        }),
-        status,
+        refresher: Some(Refresher { refresh_tx, status }),
         task,
     }
 }

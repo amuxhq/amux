@@ -47,7 +47,7 @@ const REDIAL_MAX: Duration = Duration::from_secs(30);
 
 #[derive(Clone)]
 pub struct ReachabilityLinkConnector {
-    mode: ReachabilityLinkConnectorMode,
+    inner: Arc<ReachabilityLinkConnectorInner>,
 }
 
 /// Dials the hosts the profile's core says to, at the addresses discovery
@@ -57,19 +57,9 @@ pub(crate) struct Dialer(std::sync::Weak<ReachabilityLinkConnectorInner>);
 impl Dialer {
     pub(crate) fn dial(&self, peer: HostId) {
         if let Some(inner) = self.0.upgrade() {
-            ReachabilityLinkConnector {
-                mode: ReachabilityLinkConnectorMode::Enabled(inner),
-            }
-            .dial_found(peer);
+            ReachabilityLinkConnector { inner }.dial_found(peer);
         }
     }
-}
-
-#[derive(Clone)]
-enum ReachabilityLinkConnectorMode {
-    Enabled(Arc<ReachabilityLinkConnectorInner>),
-    #[allow(dead_code)]
-    Disabled,
 }
 
 struct ReachabilityLinkConnectorInner {
@@ -121,26 +111,24 @@ impl ReachabilityLinkConnector {
         incoming_streams_tx: tokio::sync::mpsc::Sender<crate::link::InboundStream>,
     ) -> Self {
         Self {
-            mode: ReachabilityLinkConnectorMode::Enabled(Arc::new(
-                ReachabilityLinkConnectorInner {
-                    context: ReachabilityLinkContext {
-                        identity,
-                        trust_store,
-                        local_host,
-                        channels,
-                        connections,
-                        incoming_streams_tx,
-                        runtime: Arc::new(Mutex::new(None)),
-                        quic_endpoint: Arc::new(Mutex::new(None)),
-                        quic_transport: Arc::new(Mutex::new(None)),
-                    },
-                    retained_tasks: Mutex::new(Vec::new()),
-                    dialing: Arc::new(Mutex::new(HashSet::new())),
-                    queued_found: Arc::new(Mutex::new(HashSet::new())),
-                    direct_enabled: Arc::new(AtomicBool::new(true)),
-                    direct_shutdown: Mutex::new(watch::channel(false).0),
+            inner: Arc::new(ReachabilityLinkConnectorInner {
+                context: ReachabilityLinkContext {
+                    identity,
+                    trust_store,
+                    local_host,
+                    channels,
+                    connections,
+                    incoming_streams_tx,
+                    runtime: Arc::new(Mutex::new(None)),
+                    quic_endpoint: Arc::new(Mutex::new(None)),
+                    quic_transport: Arc::new(Mutex::new(None)),
                 },
-            )),
+                retained_tasks: Mutex::new(Vec::new()),
+                dialing: Arc::new(Mutex::new(HashSet::new())),
+                queued_found: Arc::new(Mutex::new(HashSet::new())),
+                direct_enabled: Arc::new(AtomicBool::new(true)),
+                direct_shutdown: Mutex::new(watch::channel(false).0),
+            }),
         }
     }
 
@@ -151,9 +139,7 @@ impl ReachabilityLinkConnector {
         quic_endpoint: crate::link::LinkEndpoint,
         scope: String,
     ) {
-        let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
-            return;
-        };
+        let inner = &self.inner;
         let dialer = Arc::new(ForwardedDialer {
             inner: Arc::downgrade(inner),
             dialing: Mutex::default(),
@@ -169,9 +155,7 @@ impl ReachabilityLinkConnector {
     }
 
     pub(crate) fn spawn_startup_links(&self) -> Vec<JoinHandle<()>> {
-        let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
-            return Vec::new();
-        };
+        let inner = &self.inner;
         let attempts = match snapshot_attempts(&inner.context) {
             Ok(attempts) => attempts,
             Err(()) => {
@@ -195,9 +179,7 @@ impl ReachabilityLinkConnector {
         mut events: broadcast::Receiver<DiscoveryEvent>,
         dial: bool,
     ) -> JoinHandle<()> {
-        let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
-            return tokio::spawn(async {});
-        };
+        let inner = &self.inner;
         let context = inner.context.clone();
         if dial {
             context
@@ -261,14 +243,10 @@ impl ReachabilityLinkConnector {
     }
 
     fn dial_found(&self, peer: HostId) {
-        if let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode
-            && !inner.direct_enabled.load(Ordering::SeqCst)
-        {
+        let inner = &self.inner;
+        if !inner.direct_enabled.load(Ordering::SeqCst) {
             return;
         }
-        let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
-            return;
-        };
         let addrs = direct_candidates(&inner.context, peer);
         if let Some(task) = self.spawn_attempt(ReachabilityLinkAttempt {
             peer,
@@ -312,18 +290,14 @@ impl ReachabilityLinkConnector {
     /// remembers for it, where there are any, redialling while it is
     /// away: what a host the first flight did not reach is left to.
     pub(crate) fn dial_direct(&self, peer: HostId) {
-        let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
-            return;
-        };
+        let inner = &self.inner;
         if !direct_candidates(&inner.context, peer).is_empty() {
             self.dial_found(peer);
         }
     }
 
     pub(crate) fn requery(&self) {
-        let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
-            return;
-        };
+        let inner = &self.inner;
         if let Some(runtime) = inner.context.runtime.lock().unwrap().clone() {
             runtime.discovery.requery();
         }
@@ -333,9 +307,7 @@ impl ReachabilityLinkConnector {
     /// hands one over and then asks what it may pair with is answered from
     /// that set rather than from whatever the browse task has caught up with.
     pub(crate) fn hand_over_found(&self, found: Vec<crate::discovery::Advertisement>) {
-        let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
-            return;
-        };
+        let inner = &self.inner;
         if let Some(runtime) = inner.context.runtime.lock().unwrap().as_ref() {
             runtime.found_hosts.hand_over(found);
             inner
@@ -346,9 +318,7 @@ impl ReachabilityLinkConnector {
     }
 
     pub fn found_addrs(&self, peer: HostId) -> Vec<std::net::SocketAddr> {
-        let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
-            return Vec::new();
-        };
+        let inner = &self.inner;
         inner
             .context
             .runtime
@@ -360,9 +330,7 @@ impl ReachabilityLinkConnector {
     }
 
     pub(crate) async fn close_direct_links(&self) {
-        let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
-            return;
-        };
+        let inner = &self.inner;
         inner.direct_enabled.store(false, Ordering::SeqCst);
         inner.direct_shutdown.lock().unwrap().send_replace(true);
         inner
@@ -387,9 +355,7 @@ impl ReachabilityLinkConnector {
     }
 
     fn spawn_attempt(&self, attempt: ReachabilityLinkAttempt) -> Option<JoinHandle<()>> {
-        let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
-            return None;
-        };
+        let inner = &self.inner;
         let direct = matches!(attempt.reachability, Reachability::Direct { .. });
         if direct {
             if !inner.direct_enabled.load(Ordering::SeqCst) {
@@ -445,10 +411,7 @@ impl ReachabilityLinkConnector {
     }
 
     fn retain_task(&self, task: JoinHandle<()>) {
-        let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
-            task.abort();
-            return;
-        };
+        let inner = &self.inner;
         let Ok(mut tasks) = inner.retained_tasks.lock() else {
             task.abort();
             tracing::warn!("failed to retain reachability Link task");
@@ -1162,9 +1125,7 @@ async fn redial_while_away(
     let Some(inner) = connector.upgrade() else {
         return;
     };
-    let connector = ReachabilityLinkConnector {
-        mode: ReachabilityLinkConnectorMode::Enabled(inner),
-    };
+    let connector = ReachabilityLinkConnector { inner };
     if let Some(task) = connector.spawn_attempt(ReachabilityLinkAttempt {
         peer,
         reachability: Reachability::Direct {

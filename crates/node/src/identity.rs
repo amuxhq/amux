@@ -125,7 +125,6 @@ impl Default for LinkLiveness {
 }
 
 impl DeviceIdentity {
-    #[allow(dead_code)]
     pub fn public_key(&self) -> &[u8] {
         &self.pubkey
     }

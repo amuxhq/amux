@@ -6,14 +6,12 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::{future, io};
 
-use futures_util::future::BoxFuture;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::{mpsc, oneshot, watch};
 use wire::{self, pb};
 
 use super::carrier::{
-    AsyncStream, ByteStream, CarrierKind, ControlSink, ControlSource, ControlWrite, LinkCarrier,
-    OpenError,
+    ByteStream, CarrierKind, ControlSink, ControlSource, ControlWrite, OpenError,
 };
 use super::early::{Early, EarlyRecv, EarlySend};
 use super::framed::{FramedKind, StreamEndpoint};
@@ -718,7 +716,7 @@ impl QuicCarrier {
             // Every stream after the control stream belongs to the host at
             // the other end: the link's handshake authenticated it.
             while let Ok((send, recv)) = driver_connection.accept_bi().await {
-                let stream = Box::new(QuicByteStream::plain(send, recv)) as ByteStream;
+                let stream = QuicByteStream::plain(send, recv);
                 if inbound_tx.send(stream).is_err() {
                     return;
                 }
@@ -764,10 +762,6 @@ impl QuicCarrier {
             closed,
         }
     }
-
-    async fn next_inbound(&self) -> Option<ByteStream> {
-        self.inbound.lock().await.recv().await
-    }
 }
 
 /// Adapts one accepted QUIC bidirectional stream to Tokio IO: the pairing
@@ -777,15 +771,15 @@ pub(crate) fn accepted_quic_bidi_stream(
     send: quinn::SendStream,
     recv: quinn::RecvStream,
 ) -> ByteStream {
-    Box::new(QuicByteStream::plain(send, recv))
+    QuicByteStream::plain(send, recv)
 }
 
-impl LinkCarrier for QuicCarrier {
-    fn kind(&self) -> CarrierKind {
+impl QuicCarrier {
+    pub fn kind(&self) -> CarrierKind {
         self.kind
     }
 
-    fn control(&self) -> (ControlSink, ControlSource) {
+    pub fn control(&self) -> (ControlSink, ControlSource) {
         self.control
             .lock()
             .expect("control stream lock poisoned")
@@ -793,26 +787,25 @@ impl LinkCarrier for QuicCarrier {
             .expect("a link control stream can only be taken once")
     }
 
-    fn open_stream(&self) -> BoxFuture<'_, Result<ByteStream, OpenError>> {
-        Box::pin(async move {
-            let (send, recv) = match &self.early {
-                Some(early) => early.open().await,
-                None => self
-                    .connection
-                    .open_bi()
-                    .await
-                    .map(|(send, recv)| (EarlySend::plain(send), EarlyRecv::plain(recv))),
-            }
-            .map_err(map_connection_open_error)?;
-            Ok(Box::new(QuicByteStream { send, recv }) as ByteStream)
-        })
+    pub async fn open_stream(&self) -> Result<ByteStream, OpenError> {
+        let (send, recv) = match &self.early {
+            Some(early) => early.open().await,
+            None => self
+                .connection
+                .open_bi()
+                .await
+                .map(|(send, recv)| (EarlySend::plain(send), EarlyRecv::plain(recv))),
+        }
+        .map_err(map_connection_open_error)?;
+        Ok(QuicByteStream { send, recv })
     }
 
-    fn accept_stream(&self) -> BoxFuture<'_, Option<ByteStream>> {
-        Box::pin(self.next_inbound())
+    /// The next stream the far end opened, or none once the link ended.
+    pub async fn accept_stream(&self) -> Option<ByteStream> {
+        self.inbound.lock().await.recv().await
     }
 
-    fn close(&self, reason: pb::LinkCloseReason) {
+    pub fn close(&self, reason: pb::LinkCloseReason) {
         self.closed.send_replace(Some(reason));
         let close = {
             let connection = self.connection.clone();
@@ -844,22 +837,22 @@ impl LinkCarrier for QuicCarrier {
         }
     }
 
-    fn remote_address(&self) -> Option<SocketAddr> {
+    pub fn remote_address(&self) -> Option<SocketAddr> {
         (!self.alone).then(|| self.connection.remote_address())
     }
 
-    fn accepted(&self) -> bool {
+    pub fn accepted(&self) -> bool {
         self.connection.side().is_server()
     }
 
-    fn path_kind(&self) -> PathKind {
+    pub fn path_kind(&self) -> PathKind {
         self.follows
             .as_ref()
             .and_then(|socket| socket.kind_of(socket.path_of(self.connection.remote_address())?))
             .unwrap_or(self.path)
     }
 
-    fn forwarded_through(&self) -> Option<super::socket::LinkId> {
+    pub fn forwarded_through(&self) -> Option<super::socket::LinkId> {
         let routed = self
             .follows
             .as_ref()
@@ -871,14 +864,14 @@ impl LinkCarrier for QuicCarrier {
         }
     }
 
-    fn early_data(&self) -> EarlyData {
+    pub fn early_data(&self) -> EarlyData {
         self.early
             .as_ref()
             .and_then(|early| early.outcome())
             .unwrap_or(EarlyData::None)
     }
 
-    fn path_stats(&self) -> String {
+    pub fn path_stats(&self) -> String {
         let stats = self.connection.stats();
         format!(
             "rtt={}ms min_rtt={}ms sent={} lost={} congestion_events={} cwnd={}",
@@ -891,7 +884,7 @@ impl LinkCarrier for QuicCarrier {
         )
     }
 
-    fn close_reason(&self) -> Option<pb::LinkCloseReason> {
+    pub fn close_reason(&self) -> Option<pb::LinkCloseReason> {
         let noted = *self.closed.borrow();
         noted.or_else(|| {
             self.connection
@@ -900,18 +893,17 @@ impl LinkCarrier for QuicCarrier {
         })
     }
 
-    fn closed(&self) -> BoxFuture<'_, pb::LinkCloseReason> {
-        Box::pin(async move {
-            let mut closed = self.closed.subscribe();
-            loop {
-                if let Some(reason) = *closed.borrow_and_update() {
-                    return reason;
-                }
-                if closed.changed().await.is_err() {
-                    return pb::LinkCloseReason::Unspecified;
-                }
+    /// Why the link closed, once it has.
+    pub async fn closed(&self) -> pb::LinkCloseReason {
+        let mut closed = self.closed.subscribe();
+        loop {
+            if let Some(reason) = *closed.borrow_and_update() {
+                return reason;
             }
-        })
+            if closed.changed().await.is_err() {
+                return pb::LinkCloseReason::Unspecified;
+            }
+        }
     }
 }
 
@@ -1262,7 +1254,7 @@ fn map_connection_open_error(error: quinn::ConnectionError) -> OpenError {
 }
 
 /// One bidirectional stream of a link.
-struct QuicByteStream {
+pub struct QuicByteStream {
     send: EarlySend,
     recv: EarlyRecv,
 }
@@ -1304,14 +1296,17 @@ impl AsyncWrite for QuicByteStream {
     }
 }
 
-impl AsyncStream for QuicByteStream {
-    fn reset(&mut self) {
+impl QuicByteStream {
+    /// Abandons the stream both ways: the far end's reads and writes fail.
+    pub fn reset(&mut self) {
         let code = quinn::VarInt::from_u32(0);
         self.send.reset(code);
         self.recv.stop(code);
     }
 
-    fn arrived_early(&self) -> bool {
+    /// Whether the far end opened the stream in early data, before the
+    /// link's handshake had finished.
+    pub fn arrived_early(&self) -> bool {
         self.recv.is_0rtt()
     }
 }

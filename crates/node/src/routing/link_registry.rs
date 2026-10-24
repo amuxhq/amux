@@ -18,7 +18,7 @@ use tokio::sync::{Notify, RwLock, mpsc};
 use wire::pb;
 
 use crate::driver::CoreLinks;
-use crate::link::LinkCarrier as NativeLinkCarrier;
+use crate::link::QuicCarrier;
 use crate::link::link_log::PathKind;
 use crate::link::paths::PathDriver;
 use crate::link::relaying::Relaying;
@@ -75,7 +75,7 @@ impl LinkRegistry {
         link: &LinkId,
         host: HostId,
         role: LinkRole,
-        carrier: Option<&Arc<dyn NativeLinkCarrier>>,
+        carrier: Option<&Arc<QuicCarrier>>,
     ) {
         if let (LinkRole::Peer, Some(carrier), Some(paths)) = (role, carrier, self.paths()) {
             paths.link_up(link.core(), host, carrier.as_ref());
@@ -190,7 +190,7 @@ struct LinkWriter {
     role: LinkRole,
     admission: LinkAdmission,
     carrier: LinkCarrier,
-    native_carrier: Option<Arc<dyn NativeLinkCarrier>>,
+    native_carrier: Option<Arc<QuicCarrier>>,
 }
 
 /// A local request for the link's connect task to close the link. Distinct
@@ -289,7 +289,7 @@ impl LinkRegistry {
         outgoing_tx: LinkOutputTx,
         properties: LinkProperties,
         advertised_snapshot: &[HostId],
-        native_carrier: Option<Arc<dyn NativeLinkCarrier>>,
+        native_carrier: Option<Arc<QuicCarrier>>,
     ) -> Option<mpsc::Receiver<LinkCloseRequest>> {
         self.register_displacing(
             link,
@@ -313,7 +313,7 @@ impl LinkRegistry {
         outgoing_tx: LinkOutputTx,
         properties: LinkProperties,
         advertised_snapshot: &[HostId],
-        native_carrier: Option<Arc<dyn NativeLinkCarrier>>,
+        native_carrier: Option<Arc<QuicCarrier>>,
     ) -> Option<Registration> {
         let LinkProperties {
             role,
@@ -646,7 +646,7 @@ impl LinkRegistry {
             .map(|writer| writer.admission)
     }
 
-    pub(crate) async fn native_carrier(&self, link: &LinkId) -> Option<Arc<dyn NativeLinkCarrier>> {
+    pub(crate) async fn native_carrier(&self, link: &LinkId) -> Option<Arc<QuicCarrier>> {
         self.state
             .read()
             .await
@@ -655,10 +655,7 @@ impl LinkRegistry {
             .and_then(|writer| writer.native_carrier.clone())
     }
 
-    pub async fn native_carrier_to_peer(
-        &self,
-        peer: HostId,
-    ) -> Option<(LinkId, Arc<dyn NativeLinkCarrier>)> {
+    pub async fn native_carrier_to_peer(&self, peer: HostId) -> Option<(LinkId, Arc<QuicCarrier>)> {
         self.state
             .read()
             .await
@@ -677,10 +674,7 @@ impl LinkRegistry {
     }
 
     /// The link `carrier` carries, while it is registered.
-    pub(crate) async fn link_carried_by(
-        &self,
-        carrier: &Arc<dyn NativeLinkCarrier>,
-    ) -> Option<LinkId> {
+    pub(crate) async fn link_carried_by(&self, carrier: &Arc<QuicCarrier>) -> Option<LinkId> {
         self.state
             .read()
             .await
@@ -913,7 +907,7 @@ mod tests {
 
     /// A link to a host carried through a forwarder: one end of a QUIC
     /// pair, marked as carried through `through`.
-    async fn carried_through(through: LinkId) -> Arc<dyn NativeLinkCarrier> {
+    async fn carried_through(through: LinkId) -> Arc<QuicCarrier> {
         let (near, _far) =
             crate::link::quic::stream_pair(crate::link::framed::FramedKind::InProcess).await;
         let near = Arc::try_unwrap(near).unwrap_or_else(|_| panic!("one holder"));

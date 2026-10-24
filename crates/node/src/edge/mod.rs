@@ -53,9 +53,7 @@ use crate::link::paths::PathDriver;
 use crate::link::quic::DEVICE_SERVER_NAME;
 use crate::link::resumption::{HOST_TICKETS, SessionTickets, TICKETS_DIR};
 use crate::link::socket::{Datagrams, LinkSocket};
-use crate::link::{
-    ChannelPool, LinkCarrier, LinkEndpoint, QuicCarrier, run_link, serve_inbound_streams,
-};
+use crate::link::{ChannelPool, LinkEndpoint, QuicCarrier, run_link, serve_inbound_streams};
 use crate::routing::{
     Capabilities, ConnectRole, LinkConnectorCtx, LinkCtx, LinkRegistry, LiveLocalHost, LiveRoute,
     local_host,

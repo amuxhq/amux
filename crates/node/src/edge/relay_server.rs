@@ -610,7 +610,6 @@ mod tests {
 
     use super::*;
     use crate::Tier;
-    use crate::link::LinkCarrier as _;
     use crate::link::run::spawn_connector_with_auth_establishment_and_shutdown;
     use crate::link::socket::LinkId;
     use crate::routing::{LinkConnectorAuth, LinkConnectorToken, LinkConnectorTokenRefresher};

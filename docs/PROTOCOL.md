@@ -264,8 +264,8 @@ and so is the host set the inventory carries
 
 ### Carriers
 
-Every link is a QUIC connection behind the same link interface
-(`crates/node/src/link/carrier.rs`): one control stream, open and accept for
+Every link is one QUIC connection (`QuicCarrier`,
+`crates/node/src/link/quic.rs`): one control stream, open and accept for
 additional streams, finish and typed reset, and link close.
 
 | Link | Paths it may take | Link admission |

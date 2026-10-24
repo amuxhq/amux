@@ -19,7 +19,6 @@ use daemon_core::payload::ForwardRefusal;
 use relay_core::{Input, Output, Relay};
 use wire::pb;
 
-use super::carrier::LinkCarrier;
 use super::forwarder::{ForwardLinks, Forwarder, HoldLimits, LinkLimits};
 use super::link_log::PathKind;
 use super::socket::{ForwardSink, LinkSocket};
@@ -193,7 +192,7 @@ impl Relaying {
         link: daemon_core::LinkId,
         tx: LinkOutputTx,
         host: HostId,
-        carrier: Arc<dyn LinkCarrier>,
+        carrier: Arc<dyn Seen>,
         through: Option<PathKind>,
     ) {
         let (Some(forwarding), Some(stand_in)) = (self.forwarding.get(), carrier.remote_address())
@@ -308,13 +307,31 @@ struct Admitted {
     senders: HashMap<SocketAddr, daemon_core::LinkId>,
 }
 
+/// What the relay reads of a link it admitted: where quinn hears the far
+/// end now (its stand-in on the socket, which moves when the far end's
+/// network does), and whether the far end dialled it.
+pub(crate) trait Seen: Send + Sync + 'static {
+    fn remote_address(&self) -> Option<SocketAddr>;
+    fn accepted(&self) -> bool;
+}
+
+impl Seen for super::QuicCarrier {
+    fn remote_address(&self) -> Option<SocketAddr> {
+        super::QuicCarrier::remote_address(self)
+    }
+
+    fn accepted(&self) -> bool {
+        super::QuicCarrier::accepted(self)
+    }
+}
+
 struct Entry {
     tx: LinkOutputTx,
     host: HostId,
     /// Weak: the connection holds its endpoint and so the socket, whose
     /// forward sink holds these links. The link registry holds it while
     /// the link lives.
-    carrier: Weak<dyn LinkCarrier>,
+    carrier: Weak<dyn Seen>,
     /// The stand-in the connection was last seen at.
     at: SocketAddr,
     /// The link is a host's this relay forwards for, not one to a
@@ -513,14 +530,13 @@ mod tests {
     use std::task::{Context, Poll};
     use std::time::Duration;
 
-    use futures_util::future::BoxFuture;
     use quinn::AsyncUdpSocket;
     use quinn::udp::RecvMeta;
     use tokio::sync::mpsc;
 
     use super::*;
     use crate::identity::DeviceIdentity;
-    use crate::link::carrier::{CarrierKind, ControlSink, ControlSource, OpenError};
+    use crate::link::carrier::CarrierKind;
     use crate::link::quic::{DEVICE_SERVER_NAME, LinkEndpoint, QuicCarrier};
     use crate::link::socket::{Datagrams, LinkId, Path, encode_delivered, encode_forwarded};
     use crate::trust::{SharedTrustStore, TrustStore};
@@ -603,31 +619,7 @@ mod tests {
         }
     }
 
-    impl LinkCarrier for Dialled {
-        fn kind(&self) -> CarrierKind {
-            CarrierKind::RelayQuic
-        }
-
-        fn control(&self) -> (ControlSink, ControlSource) {
-            let (tx, _) = mpsc::channel(1);
-            let (_, rx) = mpsc::channel(1);
-            (ControlSink { tx }, ControlSource { rx })
-        }
-
-        fn open_stream(&self) -> BoxFuture<'_, Result<crate::link::ByteStream, OpenError>> {
-            Box::pin(async { Err(OpenError::LinkClosed) })
-        }
-
-        fn accept_stream(&self) -> BoxFuture<'_, Option<crate::link::ByteStream>> {
-            Box::pin(async { None })
-        }
-
-        fn close(&self, _reason: pb::LinkCloseReason) {}
-
-        fn closed(&self) -> BoxFuture<'_, pb::LinkCloseReason> {
-            Box::pin(std::future::pending())
-        }
-
+    impl Seen for Dialled {
         fn remote_address(&self) -> Option<SocketAddr> {
             Some(*lock(&self.0))
         }
@@ -1067,7 +1059,7 @@ mod tests {
             })
             .await
             .expect("handshake completes");
-            let carrier: Arc<dyn LinkCarrier> = Arc::new(QuicCarrier::from_accepted_with_kind(
+            let carrier: Arc<dyn Seen> = Arc::new(QuicCarrier::from_accepted_with_kind(
                 accepted,
                 CarrierKind::RelayQuic,
             ));

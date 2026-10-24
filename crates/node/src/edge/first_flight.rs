@@ -16,7 +16,7 @@ use tokio::time::Instant;
 use super::Edge;
 use crate::HostId;
 use crate::link::link_log::{EarlyData, LinkEvent, LinkTransition};
-use crate::link::{EarlyCall, EarlyReply, LinkCarrier};
+use crate::link::{EarlyCall, EarlyReply, QuicCarrier};
 use crate::trust::Reachability;
 
 /// How long an answer the core has not asked for is kept: past it, the
@@ -51,7 +51,7 @@ pub(crate) struct CatchUp {
     own: HostId,
     peer: HostId,
     sent: Instant,
-    carrier: Arc<dyn LinkCarrier>,
+    carrier: Arc<QuicCarrier>,
     early_data: EarlyData,
 }
 

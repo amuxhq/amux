@@ -17,7 +17,7 @@ use uuid::Uuid;
 use wire::{self, PROTOCOL_VERSION};
 
 use super::link_log::{EarlyData, LinkEvent, LinkTransition, PathKind};
-use super::{LinkCarrier as Carrier, read_message, write_message};
+use super::{QuicCarrier, read_message, write_message};
 use crate::net_error::{self, status as protocol_status};
 use crate::routing::{
     ConnectHandshake, ConnectHandshakeEvent, Host, LinkAdmission, LinkCarrier as RoutingCarrier,
@@ -345,7 +345,7 @@ impl LinkCtx {
     /// address carries it, which a byte stream's packets do not.
     fn observed(
         &self,
-        carrier: &dyn Carrier,
+        carrier: &QuicCarrier,
         session: Option<&LinkAuthSession>,
     ) -> Option<std::net::SocketAddr> {
         let socket = self.observes.as_ref()?;
@@ -389,10 +389,10 @@ impl LinkCtx {
     }
 }
 
-/// Runs one complete link for either side of any `LinkCarrier`.
+/// Runs one complete link for either side of a QUIC connection.
 pub async fn run_link(
     mut ctx: LinkCtx,
-    carrier: Arc<dyn Carrier>,
+    carrier: Arc<QuicCarrier>,
     role: crate::routing::ConnectRole,
 ) -> Result<(), LinkError> {
     let (mut sink, mut source) = carrier.control();
@@ -588,7 +588,7 @@ fn addresses_message(own: &crate::routing::OwnAddresses) -> wire::pb::Message {
 
 /// Whether `carrier` is two hosts' own link whose packets a forwarder
 /// carries: the relay, or a paired daemon.
-fn forwarded(carrier: &dyn Carrier) -> bool {
+fn forwarded(carrier: &QuicCarrier) -> bool {
     carrier.kind() == super::CarrierKind::Quic
         && matches!(
             carrier.path_kind(),
@@ -598,7 +598,7 @@ fn forwarded(carrier: &dyn Carrier) -> bool {
 
 /// The neighbors a link's handshake lists: none on a link through a
 /// forwarder, since forwarding is one hop.
-async fn neighbor_snapshot(ctx: &LinkCtx, carrier: &dyn Carrier) -> Vec<Host> {
+async fn neighbor_snapshot(ctx: &LinkCtx, carrier: &QuicCarrier) -> Vec<Host> {
     if forwarded(carrier) {
         return Vec::new();
     }
@@ -633,7 +633,7 @@ async fn authenticate_hello(
 
 async fn run_established(
     ctx: LinkCtx,
-    carrier: Arc<dyn Carrier>,
+    carrier: Arc<QuicCarrier>,
     mut sink: super::ControlSink,
     mut source: super::ControlSource,
     (mut handshake, held_ack): (ConnectHandshake, Option<wire::pb::Message>),
@@ -1430,14 +1430,14 @@ fn signal_establishment(sender: Option<EstablishmentSender>, result: Result<Host
 
 pub fn spawn_connector_with_establishment(
     ctx: LinkConnectorCtx,
-    carrier: Arc<dyn Carrier>,
+    carrier: Arc<QuicCarrier>,
 ) -> (ConnectorTask, EstablishmentReceiver) {
     spawn_connector(ctx, carrier, None, None, None)
 }
 
 pub(crate) fn spawn_connector_with_establishment_and_shutdown(
     ctx: LinkConnectorCtx,
-    carrier: Arc<dyn Carrier>,
+    carrier: Arc<QuicCarrier>,
     shutdown_rx: watch::Receiver<bool>,
 ) -> (ConnectorTask, EstablishmentReceiver) {
     spawn_connector(ctx, carrier, None, Some(shutdown_rx), None)
@@ -1445,7 +1445,7 @@ pub(crate) fn spawn_connector_with_establishment_and_shutdown(
 
 pub(crate) fn spawn_connector_with_auth_establishment_and_shutdown(
     ctx: LinkConnectorCtx,
-    carrier: Arc<dyn Carrier>,
+    carrier: Arc<QuicCarrier>,
     auth: LinkConnectorAuth,
     shutdown_rx: watch::Receiver<bool>,
     refresh_rx: Option<LinkConnectorRefreshReceiver>,
@@ -1455,7 +1455,7 @@ pub(crate) fn spawn_connector_with_auth_establishment_and_shutdown(
 
 fn spawn_connector(
     mut ctx: LinkConnectorCtx,
-    carrier: Arc<dyn Carrier>,
+    carrier: Arc<QuicCarrier>,
     auth: Option<LinkConnectorAuth>,
     shutdown_rx: Option<watch::Receiver<bool>>,
     refresh_rx: Option<LinkConnectorRefreshReceiver>,
@@ -1496,7 +1496,7 @@ fn link_error_status(error: LinkError) -> tonic::Status {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::link::{ControlSink, ControlSource, LinkCarrier, QuicCarrier};
+    use crate::link::{ControlSink, ControlSource, QuicCarrier};
     use crate::routing::Capabilities;
 
     #[derive(Clone)]

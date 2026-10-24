@@ -18,7 +18,7 @@ use tonic::codegen::http;
 use tonic::transport::{Channel, Endpoint};
 use wire::pb;
 
-use super::{ByteStream, LinkCarrier, OpenError};
+use super::{ByteStream, OpenError, QuicCarrier};
 use crate::HostId;
 use crate::dispatcher::TunnelDispatcher;
 use crate::driver::{CoreLinks, core_error};
@@ -224,13 +224,13 @@ pub struct ResumedLink {
     pub early_data: super::link_log::EarlyData,
     pub replies: Vec<EarlyReply>,
     /// What carries the link, which names the path it came up on.
-    pub(crate) carrier: Arc<dyn LinkCarrier>,
+    pub(crate) carrier: Arc<QuicCarrier>,
 }
 
 /// A link a resumed dial has started: its carrier already carries data,
 /// and its connector has written the Hello.
 pub(crate) struct Resuming {
-    pub(crate) carrier: Arc<dyn LinkCarrier>,
+    pub(crate) carrier: Arc<QuicCarrier>,
     /// Resolves with the link once the host has answered the Hello and the
     /// link is registered, or with why it did not come up.
     pub(crate) established: BoxFuture<'static, Result<LinkId, ChannelError>>,
@@ -742,7 +742,7 @@ impl ChannelPool {
         &self,
         peer: HostId,
         route: Route,
-    ) -> Result<(LinkId, Arc<dyn LinkCarrier>), ChannelError> {
+    ) -> Result<(LinkId, Arc<QuicCarrier>), ChannelError> {
         match route {
             Route::Direct(link) => self
                 .links
@@ -762,7 +762,7 @@ impl ChannelPool {
         &self,
         peer: HostId,
         forwarder: HostId,
-    ) -> Result<(LinkId, Arc<dyn LinkCarrier>), ChannelError> {
+    ) -> Result<(LinkId, Arc<QuicCarrier>), ChannelError> {
         if let Some(up) = self.links.native_carrier_to_peer(peer).await {
             return Ok(up);
         }

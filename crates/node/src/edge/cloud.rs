@@ -24,8 +24,8 @@ use crate::auth::CredentialProvider;
 use crate::auth::cloud::{
     CloudError, CloudRoutingConnectionDetails, fetch_routing_connection_details,
 };
+use crate::link::QuicCarrier;
 use crate::link::framed::FramedKind;
-use crate::link::{LinkCarrier, QuicCarrier};
 use crate::routing::{
     Host, LinkConnectorAuth, LinkConnectorCtx, LinkConnectorRefreshReceiver,
     LinkConnectorRefreshRequest, LinkConnectorToken, LinkConnectorTokenRefresher,
@@ -436,7 +436,7 @@ fn forget_kept(ctx: &CloudConnectionContext) {
     }
 }
 
-pub(crate) type CloudDialResult = Result<Arc<dyn LinkCarrier>, String>;
+pub(crate) type CloudDialResult = Result<Arc<QuicCarrier>, String>;
 
 pub(crate) async fn select_cloud_carrier<Q, T>(
     host: &str,
@@ -444,7 +444,7 @@ pub(crate) async fn select_cloud_carrier<Q, T>(
     fallback_delay: Duration,
     quic: Q,
     tcp: T,
-) -> Result<(Arc<dyn LinkCarrier>, RelayCarrier), String>
+) -> Result<(Arc<QuicCarrier>, RelayCarrier), String>
 where
     Q: Future<Output = CloudDialResult> + Send + 'static,
     T: Future<Output = CloudDialResult> + Send,
@@ -586,7 +586,7 @@ async fn run_cloud_connection_with_details(
                 QuicCarrier::connect_relay(&quic_endpoint, &quic_host, quic_port, quic_client).await
             }
         }
-        .map(|carrier| Arc::new(carrier) as Arc<dyn LinkCarrier>)
+        .map(Arc::new)
         .map_err(|error| error.to_string())
     };
     let tcp_host = details.host.clone();
@@ -605,7 +605,7 @@ async fn run_cloud_connection_with_details(
             &tcp_host,
         )
         .await
-        .map(|carrier| Arc::new(carrier) as Arc<dyn LinkCarrier>)
+        .map(Arc::new)
         .map_err(|error| error.to_string())
     };
     let (carrier, relay_carrier) = tokio::time::timeout(

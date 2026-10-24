@@ -553,7 +553,7 @@ mod tests {
     async fn framed_quic_link_reports_the_stream_it_runs_over() {
         use tokio::io::AsyncReadExt as _;
 
-        use crate::link::{CarrierKind, LinkCarrier};
+        use crate::link::CarrierKind;
 
         for (kind, carrier_kind) in [
             (FramedKind::RelayTcp, CarrierKind::RelayTcp),

@@ -15,8 +15,7 @@ pub mod socket;
 pub(crate) mod validation;
 
 pub use carrier::{
-    ByteStream, CarrierKind, ControlSink, ControlSource, LinkCarrier, OpenError, read_message,
-    write_message,
+    ByteStream, CarrierKind, ControlSink, ControlSource, OpenError, read_message, write_message,
 };
 pub use channels::{
     ChannelClass, ChannelError, ChannelPool, Cursor, EarlyAnswer, EarlyCall, EarlyReply,

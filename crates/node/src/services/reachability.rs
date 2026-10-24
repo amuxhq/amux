@@ -18,7 +18,7 @@ use crate::link::channels::{ForwardedDial, ResumedDial, Resuming, says_revoked};
 use crate::link::framed::{FramedKind, StreamEndpoint};
 use crate::link::quic::DEVICE_SERVER_NAME;
 use crate::link::socket::Path;
-use crate::link::{ChannelError, ChannelPool, LinkCarrier as NativeLinkCarrier, QuicCarrier};
+use crate::link::{ChannelError, ChannelPool, QuicCarrier};
 use crate::routing::{Host, LinkCarrier, LinkConnectorCtx, LinkId, LiveLocalHost, Route};
 use crate::transport::spawn_ssh_relay;
 use crate::trust::{Reachability, SharedTrustStore};
@@ -755,7 +755,7 @@ impl ForwardedDialer {
             // dialled meanwhile may have won the crossing, and this link
             // was then refused or displaced. What the flight sent early
             // rides this link alone, so it is handed to no call then.
-            let flown: Arc<dyn NativeLinkCarrier> = link_carrier.clone();
+            let flown: Arc<QuicCarrier> = link_carrier.clone();
             let link = registry.link_carried_by(&flown).await.ok_or_else(|| {
                 ChannelError::Handshake("a link to the host is already up".to_owned())
             })?;
@@ -997,7 +997,7 @@ async fn prepare_ssh_carrier(
     peer: HostId,
     target: &str,
     profile: crate::ProfileId,
-) -> Result<Arc<dyn NativeLinkCarrier>, DialError> {
+) -> Result<Arc<QuicCarrier>, DialError> {
     let failed = |error: &dyn std::fmt::Display| DialError::Failed(error.to_string());
     let io = spawn_ssh_relay(target, profile).map_err(|error| failed(&error))?;
     let stream = StreamEndpoint::new(io, FramedKind::Ssh, None).map_err(|error| failed(&error))?;
@@ -1007,7 +1007,7 @@ async fn prepare_ssh_carrier(
         .map_err(|error| failed(&error))?;
     QuicCarrier::connect_over_stream(stream, config, DEVICE_SERVER_NAME)
         .await
-        .map(|carrier| Arc::new(carrier) as Arc<dyn NativeLinkCarrier>)
+        .map(Arc::new)
         .map_err(|error| dial_failed(context, peer, error))
 }
 
@@ -1015,7 +1015,7 @@ async fn prepare_direct_carrier(
     context: &ReachabilityLinkContext,
     peer: HostId,
     addr: std::net::SocketAddr,
-) -> Result<Arc<dyn NativeLinkCarrier>, DialError> {
+) -> Result<Arc<QuicCarrier>, DialError> {
     let endpoint = context
         .quic_endpoint
         .lock()
@@ -1032,7 +1032,7 @@ async fn prepare_direct_carrier(
         transport,
     )
     .await
-    .map(|carrier| Arc::new(carrier) as Arc<dyn NativeLinkCarrier>)
+    .map(Arc::new)
     .map_err(|error| dial_failed(context, peer, error))
 }
 
@@ -1087,7 +1087,7 @@ fn dial_failed(
 async fn establish_carrier(
     context: &ReachabilityLinkContext,
     peer: HostId,
-    native_carrier: Arc<dyn NativeLinkCarrier>,
+    native_carrier: Arc<QuicCarrier>,
     carrier: LinkCarrier,
     shutdown_rx: watch::Receiver<bool>,
 ) -> Result<(Host, JoinHandle<Result<(), tonic::Status>>, AbortTaskOnDrop), DialError> {

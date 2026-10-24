@@ -17,7 +17,7 @@ use wire::{BlobRef, send_input_response};
 
 use crate::coalesce::{Coalescer, WakeFn};
 use crate::values::{
-    ActOutcome, ChatChanges, ChatFrame, CommandOutcome, Draft, FrozenReview, GitView, PageOutcome,
+    ActOutcome, ChatChanges, ChatFrame, CommandOutcome, Draft, FrozenReview, PageOutcome,
     RowOptions, SendOutcome,
 };
 
@@ -529,7 +529,7 @@ pub(crate) fn frame(
         composer: ui_view::composer(state, now_ms),
         waiting: ui_view::waiting(state),
         controls: ui_view::controls(state),
-        git: agent.git.as_ref().map(GitView::of),
+        git: agent.git.clone(),
         context: ui_view::context(state),
         sign_in: ui_view::sign_in(state),
         connection: state.connection(),

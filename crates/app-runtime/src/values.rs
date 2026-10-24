@@ -10,8 +10,8 @@ use model::{AgentKey, Connection, InputState, Key, PhaseView, Refusal, Waiting};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ui_view::{
-    ChangeTotals, ComposerView, ContextView, ControlsSummary, PLACEHOLDER, QueuedRow, Reach,
-    RefusedPrompt, SentPrompt, SignInView, ToolRows,
+    ComposerView, ContextView, ControlsSummary, PLACEHOLDER, QueuedRow, Reach, RefusedPrompt,
+    SentPrompt, SignInView, ToolRows,
 };
 use wire::{BlobRef, Kind, Platform, RouteKind};
 
@@ -90,7 +90,7 @@ pub struct ChatFrame {
     pub controls: ControlsSummary,
     /// The agent's branch and change totals as of its last turn end; None
     /// outside a repository.
-    pub git: Option<GitView>,
+    pub git: Option<wire::Git>,
     pub context: Option<ContextView>,
     /// Only a problem; it replaces the composer with a foot card.
     pub sign_in: Option<SignInView>,
@@ -114,34 +114,6 @@ pub struct ChatFrame {
     pub ask_input: Option<Vec<u8>>,
     /// The runtime no longer serves this chat: the agent is gone.
     pub ended: Option<String>,
-}
-
-/// Where an agent works in its repository, and what it has changed there:
-/// the header's totals for either comparison.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
-pub struct GitView {
-    /// None on a detached head.
-    pub branch: Option<String>,
-    /// What the branch is compared against on it; None when not known.
-    pub base_branch: Option<String>,
-    pub uncommitted: Option<ChangeTotals>,
-    pub on_branch: Option<ChangeTotals>,
-}
-
-impl GitView {
-    pub fn of(git: &wire::Git) -> GitView {
-        let totals = |totals: &wire::ChangeTotals| ChangeTotals {
-            files: totals.files,
-            added: totals.added,
-            removed: totals.removed,
-        };
-        GitView {
-            branch: git.branch.clone(),
-            base_branch: git.base_branch.clone(),
-            uncommitted: git.uncommitted.as_ref().map(totals),
-            on_branch: git.on_branch.as_ref().map(totals),
-        }
-    }
 }
 
 /// How rows are asked for.

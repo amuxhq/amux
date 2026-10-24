@@ -72,7 +72,7 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         public var controls: ControlsSummary
         public var context: ContextView?
         public var signIn: SignInView?
-        public var git: GitView?
+        public var git: Git?
         /// What the overview lists once it asks for the changed files.
         public var changes: Changes?
 
@@ -91,7 +91,7 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         tasks: TasksView? = nil, context: ContextView? = nil, model: String? = nil,
         effort: String? = nil, mode: String? = nil, usage: UsageView? = nil,
         failedServers: [ServerView] = [], signIn: SignInView? = nil, background: UInt32? = nil,
-        git: GitView? = nil, changes: Changes? = nil
+        git: Git? = nil, changes: Changes? = nil
     ) -> Surroundings {
         let jobs = (0..<(background ?? 0)).map {
             JobRow(command: "job \($0 + 1)", startedAtMs: 0, kind: .shell, step: nil)

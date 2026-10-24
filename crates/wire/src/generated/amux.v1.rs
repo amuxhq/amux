@@ -510,6 +510,7 @@ impl ::prost::Name for Snapshot {
     }
 }
 /// What a row says about the git repository an agent works in.
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Git {
     /// Absent on a detached head.
@@ -537,6 +538,7 @@ impl ::prost::Name for Git {
         "/amux.v1.Git".into()
     }
 }
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ChangeTotals {
     #[prost(uint32, tag = "1")]

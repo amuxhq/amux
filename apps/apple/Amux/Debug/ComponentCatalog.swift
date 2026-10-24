@@ -937,7 +937,7 @@ enum CatalogFixtures {
     /// The catalogue's clock, where a view reads ages and resets against it.
     static let now = Date(timeIntervalSince1970: 1_790_000_000)
 
-    static let git = GitView(
+    static let git = Git(
         baseBranch: "main", branch: "refactor-auth",
         onBranch: ChangeTotals(files: 6, added: 120, removed: 30),
         uncommitted: ChangeTotals(files: 5, added: 56, removed: 20))

@@ -1630,12 +1630,12 @@ public struct ChatFrame: Codable, Hashable, Sendable {
     public var ended: String?
     /// The agent's branch and change totals as of its last turn end; None
     /// outside a repository.
-    public var git: GitView?
+    public var git: Git?
     /// Only a problem; it replaces the composer with a foot card.
     public var signIn: SignInView?
     public var waiting: Waiting?
 
-    public init(agent: AgentKey, name: String, kind: Kind, phase: PhaseView, composer: ComposerView, controls: ControlsSummary, connection: Connection, caughtUp: Bool, hasOlder: Bool, arrivalsHeld: Bool, queue: [QueuedRow], underway: [SentPrompt], refused: [RefusedPrompt], askInput: [UInt8]?, context: ContextView?, ended: String?, git: GitView?, signIn: SignInView?, waiting: Waiting?) {
+    public init(agent: AgentKey, name: String, kind: Kind, phase: PhaseView, composer: ComposerView, controls: ControlsSummary, connection: Connection, caughtUp: Bool, hasOlder: Bool, arrivalsHeld: Bool, queue: [QueuedRow], underway: [SentPrompt], refused: [RefusedPrompt], askInput: [UInt8]?, context: ContextView?, ended: String?, git: Git?, signIn: SignInView?, waiting: Waiting?) {
         self.agent = agent
         self.name = name
         self.kind = kind
@@ -3440,14 +3440,17 @@ public struct FrozenReview: Codable, Hashable, Sendable {
     }
 }
 
-/// Where an agent works in its repository, and what it has changed there:
-/// the header's totals for either comparison.
-public struct GitView: Codable, Hashable, Sendable {
-    /// What the branch is compared against on it; None when not known.
+/// What a row says about the git repository an agent works in.
+public struct Git: Codable, Hashable, Sendable {
+    /// The branch a worktree amux made was made from, else the repository's
+    /// default branch; absent when neither is known.
     public var baseBranch: String?
-    /// None on a detached head.
+    /// Absent on a detached head.
     public var branch: String?
+    /// From where the branch left its base to the working tree, so uncommitted
+    /// work counts.
     public var onBranch: ChangeTotals?
+    /// Working tree against HEAD.
     public var uncommitted: ChangeTotals?
 
     public init(baseBranch: String?, branch: String?, onBranch: ChangeTotals?, uncommitted: ChangeTotals?) {

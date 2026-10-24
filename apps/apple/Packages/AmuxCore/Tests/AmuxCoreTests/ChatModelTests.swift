@@ -1070,8 +1070,8 @@ final class ChatModelTests: XCTestCase {
         XCTAssertNil(model.formDraft(onAsk: "ask:2"), "a new form starts empty")
     }
 
-    private func git(uncommitted: ChangeTotals?, onBranch: ChangeTotals?, base: String? = "main") -> GitView {
-        GitView(baseBranch: base, branch: "fix", onBranch: onBranch, uncommitted: uncommitted)
+    private func git(uncommitted: ChangeTotals?, onBranch: ChangeTotals?, base: String? = "main") -> Git {
+        Git(baseBranch: base, branch: "fix", onBranch: onBranch, uncommitted: uncommitted)
     }
 
     func testTheHeaderCountsTheChosenComparisonFromTheFrame() async {

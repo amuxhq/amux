@@ -26,7 +26,7 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
     func keys(below oldest: String) -> [String]? { [] }
     func oldestKey() -> String? { "a" }
     func follow(_ following: Bool) {}
-    func rows(for keys: [String], options: RowOptions?) -> [Row] { [] }
+    func rows(for keys: [String]) -> [Row] { [] }
     func askCard() -> AskCard? { nil }
     func overview() -> Overview? { nil }
     func settings() -> SettingsView? { nil }
@@ -42,10 +42,7 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
     func answer(_ ask: String, choice: Int, note: String?) async -> ActOutcome? { nil }
     func answer(_ ask: String, responses: [QuestionResponse]) async -> ActOutcome? { nil }
     func replyInstead(_ ask: String, text: String, soFar: [QuestionResponse]) async -> ActOutcome? { nil }
-    func toggleRun(_ member: String, open: [String]) -> [String] {
-        open.contains(member) ? open.filter { $0 != member } : open + [member]
-    }
-    func keepOpenRuns(_ open: [String]) -> [String] { open }
+    func toggleRun(_ member: String) {}
     func answerForm(_ ask: String, values: [FormValue]) async -> ActOutcome? { nil }
     func withdraw(_ input: [UInt8]) async -> ActOutcome? { nil }
     func sendNow(_ input: [UInt8]) async -> ActOutcome? { nil }

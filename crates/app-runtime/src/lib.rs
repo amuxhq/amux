@@ -16,9 +16,10 @@ mod coalesce;
 mod traces;
 pub mod values;
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, Mutex, Weak};
 
 pub use chat::Chat;
 use client::{Client, RpcError};
@@ -69,6 +70,10 @@ pub struct AppRuntime {
     fleet_changes: Arc<Coalescer<AgentKey>>,
     fleet_watcher: JoinHandle<()>,
     next_chat: AtomicU64,
+    /// The family roots whose members home lists under them, by agent id.
+    expanded: Mutex<HashSet<Vec<u8>>>,
+    /// What home's list is narrowed to.
+    filter: Mutex<ui_view::FleetFilter>,
 }
 
 impl AppRuntime {
@@ -94,6 +99,8 @@ impl AppRuntime {
             fleet_changes,
             fleet_watcher,
             next_chat: AtomicU64::new(1),
+            expanded: Mutex::new(HashSet::new()),
+            filter: Mutex::new(ui_view::FleetFilter::default()),
         })
     }
 
@@ -135,11 +142,26 @@ impl AppRuntime {
         Ok(chat)
     }
 
-    /// Home's sections: families under their roots, expanded where
-    /// `expand` names the root's agent id, each row with its second line,
-    /// listing the agents `filter` keeps.
-    pub fn fleet_view(&self, expand: &[Vec<u8>], filter: &ui_view::FleetFilter) -> FleetView {
-        let expand = expand.iter().cloned().collect();
+    /// Lists a family's members under its root, by the root's agent id,
+    /// or folds them away again.
+    pub fn toggle_family(&self, root: &[u8]) {
+        let mut expanded = self.expanded.lock().unwrap();
+        if !expanded.remove(root) {
+            expanded.insert(root.to_vec());
+        }
+    }
+
+    /// Narrows home's list to what `filter` keeps.
+    pub fn set_filter(&self, filter: ui_view::FleetFilter) {
+        *self.filter.lock().unwrap() = filter;
+    }
+
+    /// Home's sections: families under their roots, expanded where the
+    /// person listed their members, each row with its second line, listing
+    /// the agents the filter keeps.
+    pub fn fleet_view(&self) -> FleetView {
+        let expand = self.expanded.lock().unwrap().clone();
+        let filter = self.filter.lock().unwrap().clone();
         let now_ms = self.clock.now_ms();
         // Each session is read on its own, before the fleet is.
         let lines = self

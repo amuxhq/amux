@@ -11,14 +11,14 @@ use ui_runtime::{Fleet, InputError, PageError, Session};
 use ui_state::{InputOutcome, InputState, Key, Refusal, RefusalReason, SessionState};
 use ui_view::{
     AskCard, ChatOptions, Comparison, FormValue, Overview, QuestionResponse, Row, SettingChange,
-    SettingsView,
+    SettingsView, ToolRows,
 };
 use wire::{BlobRef, send_input_response};
 
 use crate::coalesce::{Coalescer, WakeFn};
 use crate::values::{
     ActOutcome, ChatChanges, ChatFrame, CommandOutcome, Draft, FrozenReview, PageOutcome,
-    RowOptions, SendOutcome,
+    SendOutcome,
 };
 
 /// An open chat. Row ids are item keys and never move, so the host's id
@@ -39,6 +39,9 @@ pub struct Chat {
     /// Where each of this client's prompts was first drawn: true at the
     /// feed's end. A prompt stays where it was first drawn until it lands.
     first_drawn: Mutex<HashMap<Vec<u8>, bool>>,
+    /// The runs the reader opened, each held by one of its steps: rows
+    /// fold every other run to its newest step.
+    open_runs: Mutex<HashSet<Key>>,
 }
 
 impl Chat {
@@ -65,6 +68,7 @@ impl Chat {
             clock,
             changed_files: Mutex::new(None),
             first_drawn: Mutex::new(HashMap::new()),
+            open_runs: Mutex::new(HashSet::new()),
         });
         // Spawned once the chat exists, so every change it sees finds the
         // chat; it ends when the chat is dropped or the session ends.
@@ -145,30 +149,21 @@ impl Chat {
         )
     }
 
-    /// Rows for these keys, in order, skipping keys not held.
-    pub fn rows_for(&self, keys: &[Key], options: &RowOptions) -> Vec<Row> {
-        let open = options.open();
+    /// Rows for these keys, in order, skipping keys not held, each run
+    /// folded to its newest step unless the reader opened it.
+    pub fn rows_for(&self, keys: &[Key]) -> Vec<Row> {
+        let open = self.open_runs.lock().unwrap();
         let opts = ChatOptions {
-            tools: options.tool_rows(&open),
+            tools: ToolRows::Collapse { open: &open },
         };
         ui_view::chat_rows_for(&self.session.state(), keys, &opts)
     }
 
-    /// Opens or closes the run `member` belongs to in a folding view's open
-    /// set, and answers the set to ask for rows with.
-    pub fn toggle_run(&self, member: &str, open: &[Key]) -> Vec<Key> {
-        let mut open = open.iter().cloned().collect();
+    /// Opens or closes the run `member` belongs to; every row read after
+    /// draws it so.
+    pub fn toggle_run(&self, member: &str) {
+        let mut open = self.open_runs.lock().unwrap();
         ui_view::toggle_run(&self.session.state(), &member.to_owned(), &mut open);
-        open.into_iter().collect()
-    }
-
-    /// The open set re-held on each open run's newest step, so a run stays
-    /// open as it grows, older steps page in, or the window trims it. Asked
-    /// before rows are read.
-    pub fn keep_open_runs(&self, open: &[Key]) -> Vec<Key> {
-        let mut open = open.iter().cloned().collect();
-        ui_view::keep_open_runs(&self.session.state(), &mut open);
-        open.into_iter().collect()
     }
 
     pub fn ask_card(&self) -> Option<AskCard> {
@@ -215,6 +210,15 @@ impl Chat {
     /// the host again.
     pub fn take_changes(&self) -> ChatChanges {
         let batch = self.changes.take();
+        // Each open run is re-held on its newest step before rows are read,
+        // so it stays open as it grows, older steps page in, or the window
+        // trims it.
+        if batch.reloaded || !batch.keys.is_empty() {
+            let mut open = self.open_runs.lock().unwrap();
+            if !open.is_empty() {
+                ui_view::keep_open_runs(&self.session.state(), &mut open);
+            }
+        }
         ChatChanges {
             keys: batch.keys,
             reloaded: batch.reloaded,

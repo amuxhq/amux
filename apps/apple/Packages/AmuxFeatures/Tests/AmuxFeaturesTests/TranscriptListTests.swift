@@ -207,7 +207,7 @@ private final class StubChat: ChatSource, @unchecked Sendable {
     }
     func oldestKey() -> String? { ordered.first?.id }
     func follow(_ following: Bool) {}
-    func rows(for keys: [String], options: RowOptions?) -> [Row] {
+    func rows(for keys: [String]) -> [Row] {
         let wanted = Set(keys)
         return ordered.filter { wanted.contains($0.id) }
     }
@@ -229,10 +229,7 @@ private final class StubChat: ChatSource, @unchecked Sendable {
     func answer(_ ask: String, choice: Int, note: String?) async -> ActOutcome? { nil }
     func answer(_ ask: String, responses: [QuestionResponse]) async -> ActOutcome? { nil }
     func replyInstead(_ ask: String, text: String, soFar: [QuestionResponse]) async -> ActOutcome? { nil }
-    func toggleRun(_ member: String, open: [String]) -> [String] {
-        open.contains(member) ? open.filter { $0 != member } : open + [member]
-    }
-    func keepOpenRuns(_ open: [String]) -> [String] { open }
+    func toggleRun(_ member: String) {}
     func answerForm(_ ask: String, values: [FormValue]) async -> ActOutcome? { nil }
     func withdraw(_ input: [UInt8]) async -> ActOutcome? { nil }
     func draft(of input: [UInt8]) -> Draft? { nil }

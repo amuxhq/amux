@@ -5438,19 +5438,6 @@ public enum RowKind: Codable, Hashable, Sendable {
     }
 }
 
-/// How rows are asked for.
-public struct RowOptions: Codable, Hashable, Sendable {
-    public var tools: ToolRowsOption
-
-    public init(tools: ToolRowsOption) {
-        self.tools = tools
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case tools
-    }
-}
-
 /// A row's place in its run.
 public struct Run: Codable, Hashable, Sendable {
     /// The run's oldest held step, where an opened run draws its header.
@@ -5468,19 +5455,23 @@ public struct Run: Codable, Hashable, Sendable {
     /// This step failed and nothing later in its turn redid it, and the
     /// turn has ended: it stays in view when the run folds.
     public var unresolvedFailure: Bool
+    /// The reader opened it: a folding view's open set holds one of its
+    /// steps. Always false for a view that does not fold.
+    public var open: Bool
     /// What the run's steps did, on its newest step's row only.
     public var counts: RunCounts?
     /// For one of the run's newest steps, how many steps follow it (none for
     /// the newest); absent for the rest.
     public var recent: UInt32?
 
-    public init(first: String, last: String, steps: UInt32, live: Bool, openBelow: Bool, unresolvedFailure: Bool, counts: RunCounts?, recent: UInt32?) {
+    public init(first: String, last: String, steps: UInt32, live: Bool, openBelow: Bool, unresolvedFailure: Bool, open: Bool, counts: RunCounts?, recent: UInt32?) {
         self.first = first
         self.last = last
         self.steps = steps
         self.live = live
         self.openBelow = openBelow
         self.unresolvedFailure = unresolvedFailure
+        self.open = open
         self.counts = counts
         self.recent = recent
     }
@@ -5492,6 +5483,7 @@ public struct Run: Codable, Hashable, Sendable {
         case live
         case openBelow = "open_below"
         case unresolvedFailure = "unresolved_failure"
+        case open
         case counts
         case recent
     }
@@ -6088,66 +6080,6 @@ public struct TasksView: Codable, Hashable, Sendable {
         case total
         case current
         case entries
-    }
-}
-
-public enum ToolRowsOption: Codable, Hashable, Sendable {
-    case showAll
-    case hide
-    /// Each run folds to its newest step unless one of its steps is here:
-    /// hold its newest, and re-hold the newest as the run grows.
-    case collapse(open: [String])
-
-    private enum Tag: String, CodingKey {
-        case collapse = "Collapse"
-    }
-
-    private enum CollapseKeys: String, CodingKey {
-        case open
-    }
-
-    public init(from decoder: any Decoder) throws {
-        if let _single = try? decoder.singleValueContainer(),
-           let _name = try? _single.decode(String.self)
-        {
-            switch _name {
-            case "ShowAll": self = .showAll
-            case "Hide": self = .hide
-            default:
-                throw DecodingError.dataCorruptedError(
-                    in: _single, debugDescription: "no ToolRowsOption is named \(_name)")
-            }
-            return
-        }
-        let _container = try decoder.container(keyedBy: Tag.self)
-        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
-            throw DecodingError.dataCorrupted(
-                .init(
-                    codingPath: decoder.codingPath,
-                    debugDescription: "a ToolRowsOption names exactly one variant"))
-        }
-        switch _tag {
-        case .collapse:
-            let _fields = try _container.nestedContainer(
-                keyedBy: CollapseKeys.self, forKey: .collapse)
-            self = .collapse(
-                open: try _fields.decode([String].self, forKey: .open))
-        }
-    }
-
-    public func encode(to encoder: any Encoder) throws {
-        switch self {
-        case .showAll:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("ShowAll")
-        case .hide:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("Hide")
-        case .collapse(let open):
-            var _container = encoder.container(keyedBy: Tag.self)
-            var _fields = _container.nestedContainer(keyedBy: CollapseKeys.self, forKey: .collapse)
-            try _fields.encode(open, forKey: .open)
-        }
     }
 }
 

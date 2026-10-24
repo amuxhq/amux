@@ -20,7 +20,7 @@ cargo run -p xtask -- swift-types --check  # fail when the committed file differ
 ```
 
 Rows, ask cards, the overview and fleet cards are the `ui-view` values the
-terminal renders; `ChatFrame`, `ChatChanges`, `Draft`, `RowOptions`,
+terminal renders; `ChatFrame`, `ChatChanges`, `Draft`,
 `HostView` and the act outcomes are `app-runtime::values`. Byte strings such
 as agent and input ids are JSON arrays of numbers. Answers never carry a
 provider's answer body: the phone names a choice by its position on the
@@ -105,16 +105,19 @@ other build records nothing unless `AMUX_ANALYTICS_URL` names a server.
 
 Reads return at once: `amux_session_keys`, `amux_session_rows_for`,
 `amux_session_ask_card`, `amux_session_overview`, `amux_session_settings`,
-`amux_session_frame`, `amux_session_toggle_run` and
-`amux_session_keep_open_runs` (a folding view's open set, opened or closed on
-one run, and re-held on each open run's newest step before rows are read),
-`amux_fleet_view` (home's sections, narrowed by a `FleetFilter`), `amux_fleet_card`, `amux_fleet_family`, `amux_fleet_hosts`,
+`amux_session_frame`, `amux_fleet_view` (home's sections), `amux_fleet_card`, `amux_fleet_family`, `amux_fleet_hosts`,
 `amux_runtime_profiles`, `amux_runtime_source_policy_listed`. Some reads need
 no handle, because they are the shared rules applied to values the phone
 already holds: `amux_agent_name_problem` (why a name cannot name an agent),
 `amux_new_agent_settings` and `amux_new_agent_pick` (a new agent's pickers
 from a host's catalogue), and `amux_form_problems` (each field's
 `FieldProblem` for a form's `FormField`s and the `FormValue`s entered).
+
+What a view folds is held in Rust, so a read needs nothing passed in: a chat
+draws each run folded to its newest step until `amux_session_toggle_run`
+opens it, and keeps an open run open as it grows, pages in older steps or
+trims its oldest; a fleet lists a family's members under its root once
+`amux_fleet_toggle_family` opens it, narrowed by the last `amux_fleet_filter`.
 
 Rows are handed out by item key, which never moves. The host's id sequence
 changes only at its two edges: `amux_session_new_keys_above(chat, newest)` for

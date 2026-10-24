@@ -19,7 +19,8 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
     var withdrawn: [[UInt8]] = []
     var discarded: [[UInt8]] = []
     /// The open sets asked to be re-held, in order.
-    var kept: [[String]] = []
+    /// The runs the model opened or closed, by the member it named.
+    var toggled: [String] = []
     /// The question responses sent, answered or with a reply, in order.
     var responded: [[QuestionResponse]] = []
     var replied: [String] = []
@@ -103,7 +104,7 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
         return ordered[..<index].map(\.id)
     }
 
-    func rows(for keys: [String], options: RowOptions?) -> [Row] {
+    func rows(for keys: [String]) -> [Row] {
         fetched.append(keys)
         return ordered.filter { keys.contains($0.id) }
     }
@@ -144,18 +145,14 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
         responded.append(soFar)
         return .done
     }
-    /// The shared fold's rule: a run is held by any of its steps; opening
-    /// holds its newest, closing forgets every step held.
-    func toggleRun(_ member: String, open: [String]) -> [String] {
-        guard let run = ordered.first(where: { $0.id == member })?.run else { return open }
-        let members = Set(ordered.filter { $0.run?.last == run.last }.map(\.id))
-        let held = open.filter(members.contains)
-        return held.isEmpty ? open + [run.last] : open.filter { !members.contains($0) }
-    }
-
-    func keepOpenRuns(_ open: [String]) -> [String] {
-        kept.append(open)
-        return open.map { key in ordered.first { $0.id == key }?.run?.last ?? key }
+    /// Opens or closes a run as the runtime does: every row of it says so
+    /// from then on.
+    func toggleRun(_ member: String) {
+        toggled.append(member)
+        guard let last = ordered.first(where: { $0.id == member })?.run?.last else { return }
+        for index in ordered.indices where ordered[index].run?.last == last {
+            ordered[index].run?.open.toggle()
+        }
     }
     func answerForm(_ ask: String, values: [FormValue]) async -> ActOutcome? { .done }
 
@@ -580,7 +577,7 @@ final class ChatModelTests: XCTestCase {
     func testAPageIsTheUsualSizeExceptAtACollapsedRunThatContinuesBelow() async {
         let run = Run(
             first: "q", last: "r", steps: 300, live: false, openBelow: true,
-            unresolvedFailure: false, counts: RunCounts(commands: 0, edits: 0, reads: 300, searches: 0, subagents: 0, other: 0),
+            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 300, searches: 0, subagents: 0, other: 0),
             recent: nil)
         let source = FakeChat(rows: [row("r", 5, run: run), row("s", 6)], frame: frame(hasOlder: true))
         let model = ChatModel(source: source)
@@ -591,7 +588,7 @@ final class ChatModelTests: XCTestCase {
 
         let huge = Run(
             first: "q", last: "r", steps: 5_000, live: false, openBelow: true,
-            unresolvedFailure: false, counts: RunCounts(commands: 0, edits: 0, reads: 5_000, searches: 0, subagents: 0, other: 0),
+            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 5_000, searches: 0, subagents: 0, other: 0),
             recent: nil)
         source.ordered[0] = row("r", 5, run: huge)
         source.pending = ChatChanges(keys: ["r"], reloaded: false, session: false)
@@ -938,48 +935,35 @@ final class ChatModelTests: XCTestCase {
         XCTAssertFalse(model.loadingHint)
     }
 
-    func testARunOpensAsAWholeAndStaysOpenAsItGrows() {
+    func testOpeningARunAsksTheRuntimeAndRedrawsEveryDrawnRow() {
         let run = Run(
             first: "a", last: "b", steps: 2, live: false, openBelow: false,
-            unresolvedFailure: false, counts: RunCounts(commands: 0, edits: 0, reads: 2, searches: 0, subagents: 0, other: 0),
+            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 2, searches: 0, subagents: 0, other: 0),
             recent: nil)
-        let source = FakeChat(rows: [row("a", 1, run: run), row("b", 2, run: run)], frame: frame())
+        let source = FakeChat(rows: [row("a", 1, run: run), row("b", 2, run: run), row("c", 3)], frame: frame())
         let model = ChatModel(source: source)
-        _ = model.cell(for: "a")
-        _ = model.cell(for: "b")
-        model.toggleRun(run)
-        XCTAssertTrue(model.isOpen(run))
-        XCTAssertEqual(model.options, RowOptions(tools: .collapse(open: ["b"])))
-        XCTAssertTrue(model.expanded.isEmpty, "a run is not a row's own detail")
-
-        let grown = Run(
-            first: "a", last: "c", steps: 3, live: false, openBelow: false,
-            unresolvedFailure: false, counts: RunCounts(commands: 0, edits: 0, reads: 3, searches: 0, subagents: 0, other: 0),
-            recent: nil)
-        source.ordered = [row("a", 1, run: grown), row("b", 2, run: grown), row("c", 3, run: grown)]
-        source.pending = ChatChanges(keys: ["a", "b", "c"], reloaded: false, session: false)
-        model.woke()
-        XCTAssertEqual(source.kept, [["b"]], "the open set is re-held before rows are read")
-        XCTAssertEqual(model.options, RowOptions(tools: .collapse(open: ["c"])))
+        let a = model.cell(for: "a")
         _ = model.cell(for: "c")
-        XCTAssertTrue(model.isOpen(grown), "the grown run is still open")
-        XCTAssertFalse(model.isExpanded("b"), "an earlier step is not opened by its run")
-        model.toggleRun(grown)
-        XCTAssertFalse(model.isOpen(grown))
-        XCTAssertEqual(model.options, RowOptions(tools: .collapse(open: [])))
+        model.toggleRun(run)
+        XCTAssertEqual(source.toggled, ["b"], "the run is named by its newest step")
+        XCTAssertEqual(a.row?.run?.open, true, "a drawn row of the run reads open")
+        XCTAssertEqual(model.cell(for: "b").row?.run?.open, true)
+        XCTAssertTrue(model.expanded.isEmpty, "a run is not a row's own detail")
+        model.toggleRun(run)
+        XCTAssertEqual(a.row?.run?.open, false)
     }
 
     func testARowInsideARunOpensItsOwnDetailNotTheRun() {
         let run = Run(
             first: "a", last: "b", steps: 2, live: false, openBelow: false,
-            unresolvedFailure: false, counts: RunCounts(commands: 0, edits: 0, reads: 1, searches: 0, subagents: 1, other: 0),
+            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 1, searches: 0, subagents: 1, other: 0),
             recent: nil)
         let source = FakeChat(rows: [row("a", 1, run: run), row("b", 2, run: run)], frame: frame())
         let model = ChatModel(source: source)
         _ = model.cell(for: "a")
         model.toggle("a")
         XCTAssertTrue(model.isExpanded("a"))
-        XCTAssertEqual(model.options, RowOptions(tools: .collapse(open: [])), "the run stays folded")
+        XCTAssertTrue(source.toggled.isEmpty, "the run stays folded")
     }
 
     func testAQuestionCardIsAnsweredOrRepliedToInsteadPerQuestion() async {

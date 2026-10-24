@@ -55,10 +55,9 @@ private final class TraceChat: ChatSource, @unchecked Sendable {
 
     func follow(_ following: Bool) {}
 
-    func rows(for keys: [String], options: RowOptions?) -> [Row] {
-        // The trace holds rows read with every run folded and none open,
-        // which is what the chat model asks for until the reader opens one.
-        precondition(options == RowOptions(tools: .collapse(open: [])), "rows asked with \(String(describing: options))")
+    func rows(for keys: [String]) -> [Row] {
+        // The trace holds rows read with every run folded and none open:
+        // the person in it never opens one.
         let asked = Set(keys)
         return cut.rows.filter { asked.contains($0.id) }
     }
@@ -78,8 +77,7 @@ private final class TraceChat: ChatSource, @unchecked Sendable {
     func answer(_ ask: String, choice: Int, note: String?) async -> ActOutcome? { nil }
     func answer(_ ask: String, responses: [QuestionResponse]) async -> ActOutcome? { nil }
     func replyInstead(_ ask: String, text: String, soFar: [QuestionResponse]) async -> ActOutcome? { nil }
-    func toggleRun(_ member: String, open: [String]) -> [String] { open }
-    func keepOpenRuns(_ open: [String]) -> [String] { open }
+    func toggleRun(_ member: String) {}
     func answerForm(_ ask: String, values: [FormValue]) async -> ActOutcome? { nil }
     func withdraw(_ input: [UInt8]) async -> ActOutcome? { nil }
     func draft(of input: [UInt8]) -> Draft? { nil }

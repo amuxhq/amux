@@ -214,6 +214,8 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     public private(set) var follows: [Bool] = []
     private var following = true
     private var held: [Row] = []
+    /// The runs the reader opened, by their newest step.
+    private var openRuns: Set<String> = []
 
     public func follow(_ following: Bool) {
         lock.withLock {
@@ -228,23 +230,25 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         }
     }
 
-    public func rows(for keys: [String], options: RowOptions?) -> [Row] {
+    public func rows(for keys: [String]) -> [Row] {
         lock.withLock {
             let wanted = Set(keys)
-            return ordered.filter { wanted.contains($0.id) }.map { Self.folding($0, options) }
+            return ordered.filter { wanted.contains($0.id) }.map { Self.folding($0, open: openRuns) }
         }
     }
 
-    /// A row as the shared fold leaves it for these options: a finished
-    /// run shows its newest step and the failures its turn left unfixed, a
-    /// live run its newest few, and an open run every step.
-    static func folding(_ row: Row, _ options: RowOptions?) -> Row {
-        guard case .collapse(let open)? = options?.tools, let run = row.run else { return row }
+    /// A row as the shared fold leaves it: a finished run shows its newest
+    /// step and the failures its turn left unfixed, a live run its newest
+    /// few, and an open run every step.
+    static func folding(_ row: Row, open: Set<String>) -> Row {
+        guard var run = row.run else { return row }
         let shown = run.live
             ? run.recent.map { $0 < 3 } ?? false
             : run.recent == 0 || run.unresolvedFailure
+        run.open = open.contains(run.last)
         var row = row
-        row.collapsed = row.collapsed || (!shown && !open.contains(run.last))
+        row.run = run
+        row.collapsed = row.collapsed || (!shown && !run.open)
         return row
     }
 
@@ -275,7 +279,7 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
             let after = index.map { total - 1 - UInt32($0) }
             row.run = Run(
                 first: first.id, last: last.id, steps: total, live: live, openBelow: openBelow,
-                unresolvedFailure: failed.contains(row.id),
+                unresolvedFailure: failed.contains(row.id), open: false,
                 counts: row.id == last.id ? counts : nil,
                 recent: after.flatMap { $0 < 3 ? $0 : nil })
             return row
@@ -302,10 +306,13 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     public func answer(_ ask: String, choice: Int, note: String?) async -> ActOutcome? { .done }
     public func answer(_ ask: String, responses: [QuestionResponse]) async -> ActOutcome? { .done }
     public func replyInstead(_ ask: String, text: String, soFar: [QuestionResponse]) async -> ActOutcome? { .done }
-    public func toggleRun(_ member: String, open: [String]) -> [String] {
-        open.contains(member) ? open.filter { $0 != member } : open + [member]
+    /// Opens or closes a run by its newest step; a script's runs do not grow.
+    public func toggleRun(_ member: String) {
+        lock.withLock {
+            guard let last = ordered.first(where: { $0.id == member })?.run?.last else { return }
+            if openRuns.remove(last) == nil { openRuns.insert(last) }
+        }
     }
-    public func keepOpenRuns(_ open: [String]) -> [String] { open }
     public func answerForm(_ ask: String, values: [FormValue]) async -> ActOutcome? { .done }
     public func withdraw(_ input: [UInt8]) async -> ActOutcome? { .done }
     public func sendNow(_ input: [UInt8]) async -> ActOutcome? { .done }

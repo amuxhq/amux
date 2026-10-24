@@ -2,7 +2,6 @@
 //! what a host asks for and what an act came to. Like the views, they cross
 //! as JSON and their Swift mirrors are generated from these definitions.
 
-use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
@@ -11,7 +10,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ui_view::{
     ComposerView, ContextView, ControlsSummary, PLACEHOLDER, QueuedRow, Reach, RefusedPrompt,
-    SentPrompt, SignInView, ToolRows,
+    SentPrompt, SignInView,
 };
 use wire::{BlobRef, Kind, Platform, RouteKind};
 
@@ -114,42 +113,6 @@ pub struct ChatFrame {
     pub ask_input: Option<Vec<u8>>,
     /// The runtime no longer serves this chat: the agent is gone.
     pub ended: Option<String>,
-}
-
-/// How rows are asked for.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct RowOptions {
-    pub tools: ToolRowsOption,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub enum ToolRowsOption {
-    #[default]
-    ShowAll,
-    Hide,
-    /// Each run folds to its newest step unless one of its steps is here:
-    /// hold its newest, and re-hold the newest as the run grows.
-    Collapse {
-        open: Vec<Key>,
-    },
-}
-
-impl RowOptions {
-    /// The open runs a folding view borrows, when there are any.
-    pub fn open(&self) -> HashSet<Key> {
-        match &self.tools {
-            ToolRowsOption::Collapse { open } => open.iter().cloned().collect(),
-            ToolRowsOption::ShowAll | ToolRowsOption::Hide => HashSet::new(),
-        }
-    }
-
-    pub fn tool_rows<'a>(&self, open: &'a HashSet<Key>) -> ToolRows<'a> {
-        match &self.tools {
-            ToolRowsOption::ShowAll => ToolRows::ShowAll,
-            ToolRowsOption::Hide => ToolRows::Hide,
-            ToolRowsOption::Collapse { .. } => ToolRows::Collapse { open },
-        }
-    }
 }
 
 /// A prompt as the composer holds it: runs of words and attachments in

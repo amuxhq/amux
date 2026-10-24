@@ -149,10 +149,6 @@ final class FleetStoreTests: XCTestCase {
             Cards.row(3, "other"),
         ], needYou: 1), hosts: [])
         XCTAssertTrue(fleet.rows[0].speaksForAMember)
-        fleet.toggle(Cards.key(1))
-        XCTAssertEqual(fleet.expanded, [Cards.key(1).agent])
-        fleet.toggle(Cards.key(1))
-        XCTAssertTrue(fleet.expanded.isEmpty)
     }
 
     func testActivitySinceTheLastOpeningIsUnread() {

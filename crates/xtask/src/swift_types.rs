@@ -63,7 +63,6 @@ pub fn definitions() -> Map<String, Value> {
         app_runtime::values::StartConfig,
         app_runtime::values::ChatChanges,
         app_runtime::values::ChatFrame,
-        app_runtime::values::RowOptions,
         app_runtime::values::Draft,
         app_runtime::values::FrozenReview,
         app_runtime::values::SendOutcome,
@@ -777,7 +776,7 @@ mod tests {
         const STAY_IN_RUST: &[&str] = &[
             // The answer body a choice sends: the phone names the choice.
             "Answer",
-            // Borrowed option types; RowOptions carries them across.
+            // Borrowed option types; the chat holds its own open runs.
             "ToolRows",
             "ChatOptions",
             // A landed edit's first patch lines, which only the terminal

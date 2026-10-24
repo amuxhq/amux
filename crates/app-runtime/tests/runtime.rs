@@ -7,9 +7,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use app_runtime::values::{
-    ActOutcome, AgentAct, ChatChanges, Draft, NewAgent, PageOutcome, RowOptions,
-};
+use app_runtime::values::{ActOutcome, AgentAct, ChatChanges, Draft, NewAgent, PageOutcome};
 use app_runtime::{AppRuntime, Chat, Wake};
 use client::{Client, InProcess, SystemClock};
 use model::{AgentKey, InputState, PhaseView, Refusal, RefusalReason};
@@ -168,7 +166,7 @@ async fn until(host: &mut Host, chat: &Chat, what: &str, check: impl Fn(&Chat) -
     if found.is_err() {
         let keys = chat.keys();
         let rows: Vec<String> = chat
-            .rows_for(&keys, &RowOptions::default())
+            .rows_for(&keys)
             .iter()
             .map(|row| format!("{:?}", row.kind))
             .collect();
@@ -181,7 +179,7 @@ async fn until(host: &mut Host, chat: &Chat, what: &str, check: impl Fn(&Chat) -
 
 fn says(chat: &Chat, wanted: &str) -> bool {
     let keys = chat.keys();
-    chat.rows_for(&keys, &RowOptions::default())
+    chat.rows_for(&keys)
         .iter()
         .any(|row| format!("{:?}", row.kind).contains(wanted))
 }
@@ -190,7 +188,7 @@ fn says(chat: &Chat, wanted: &str) -> bool {
 async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
     let net = Net::start(topology()).await.unwrap();
     let (runtime, mut host) = open(&net).await;
-    let fleet = runtime.fleet_view(&[], &ui_view::FleetFilter::default());
+    let fleet = runtime.fleet_view();
     assert_eq!(fleet.sections.len(), 1, "{fleet:?}");
     let rows = &fleet.sections[0].rows;
     assert_eq!(rows.len(), 1, "{fleet:?}");
@@ -241,7 +239,7 @@ async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
     let above = chat.keys_above(&newest).unwrap();
     assert!(!above.is_empty());
     assert_eq!(chat.keys(), [before.clone(), above.clone()].concat());
-    let rows = chat.rows_for(&above, &RowOptions::default());
+    let rows = chat.rows_for(&above);
     assert_eq!(
         rows.iter().map(|row| row.id.clone()).collect::<Vec<_>>(),
         above
@@ -271,7 +269,7 @@ async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
     })
     .await;
     let decided = chat
-        .rows_for(&chat.keys(), &RowOptions::default())
+        .rows_for(&chat.keys())
         .into_iter()
         .find(|row| row.decision.is_some())
         .expect("the decision lands as a row");
@@ -307,7 +305,7 @@ async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
         chat.ask_card().is_none() && says(chat, "answered")
     })
     .await;
-    let rows = chat.rows_for(&chat.keys(), &RowOptions::default());
+    let rows = chat.rows_for(&chat.keys());
     let answered = format!("{rows:?}");
     assert!(answered.contains("full"), "{answered}");
     assert!(answered.contains("windows"), "{answered}");

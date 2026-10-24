@@ -466,20 +466,23 @@ pub fn chat_rows_for(state: &SessionState, keys: &[Key], opts: &ChatOptions) -> 
 fn row(state: &SessionState, held: &Held, opts: &ChatOptions) -> Row {
     let item = &held.item;
     let (kind, decision, failed) = kind_of(state, held);
-    let run = crate::run::run_of(state, held, &kind, failed);
+    let mut run = crate::run::run_of(state, held, &kind, failed);
+    if let (ToolRows::Collapse { open }, Some(run)) = (&opts.tools, run.as_mut()) {
+        run.open = crate::run::run_is_open(state, item.order, open);
+    }
     let step = held.class.fold() == Fold::Step;
     let kept = run.as_ref().is_some_and(|run| run.unresolved_failure);
     let collapsed = matches!(kind, RowKind::Hidden)
         || match opts.tools {
             ToolRows::ShowAll => false,
             ToolRows::Hide => step && !kept,
-            ToolRows::Collapse { open } => run.as_ref().is_some_and(|run| {
+            ToolRows::Collapse { .. } => run.as_ref().is_some_and(|run| {
                 let shown = if run.live {
                     run.shows_live()
                 } else {
                     run.is_last() || kept
                 };
-                !shown && !crate::run::run_is_open(state, item.order, open)
+                !shown && !run.open
             }),
         };
     let asked = asked(state, held);

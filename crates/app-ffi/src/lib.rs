@@ -40,7 +40,7 @@ use app_embedded::{
     UsageEvent,
 };
 use app_runtime::values::{
-    ActOutcome, AgentAct, CommandOutcome, Draft, Found, FrozenReview, NewAgent, RowOptions,
+    ActOutcome, AgentAct, CommandOutcome, Draft, Found, FrozenReview, NewAgent,
 };
 use app_runtime::{AppRuntime, Chat, Wake};
 use model::{AgentKey, Key};
@@ -1592,25 +1592,48 @@ unsafe fn fleet_read<T: Serialize>(
     })
 }
 
-/// Home's `FleetView`: its sections, expanded under the roots whose agent
-/// ids `expand` lists (a JSON array of byte arrays, or null), listing the
-/// agents `filter` keeps (a JSON `FleetFilter`, or null for every agent).
+/// Home's `FleetView`: its sections, families listed under the roots
+/// `amux_fleet_toggle_family` opened, narrowed by the last
+/// `amux_fleet_filter`.
 ///
 /// # Safety
-/// `profile` is from `amux_profile_open`; `expand` and `filter` are null or
-/// NUL-terminated strings.
+/// `profile` is from `amux_profile_open`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_fleet_view(
-    profile: *const AmuxProfile,
-    expand: *const c_char,
-    filter: *const c_char,
-) -> *mut c_char {
+pub unsafe extern "C" fn amux_fleet_view(profile: *const AmuxProfile) -> *mut c_char {
     // SAFETY: the caller's contract.
-    let expand: Vec<Vec<u8>> = unsafe { parse(expand) }.unwrap_or_default();
+    unsafe { fleet_read(profile, AppRuntime::fleet_view) }
+}
+
+/// Lists a family's members under its root, named by the root's agent id
+/// as a JSON byte array, or folds them away again.
+///
+/// # Safety
+/// `profile` is from `amux_profile_open`; `root` is a NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_fleet_toggle_family(
+    profile: *const AmuxProfile,
+    root: *const c_char,
+) {
+    // SAFETY: the caller's contract.
+    let Some(root) = (unsafe { parse::<Vec<u8>>(root) }) else {
+        return;
+    };
+    // SAFETY: the caller's contract.
+    let _ = unsafe { fleet_read(profile, |app| app.toggle_family(&root)) };
+}
+
+/// Narrows home's list to what a `FleetFilter`, as JSON, keeps; null keeps
+/// every agent.
+///
+/// # Safety
+/// `profile` is from `amux_profile_open`; `filter` is null or a
+/// NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_fleet_filter(profile: *const AmuxProfile, filter: *const c_char) {
     // SAFETY: the caller's contract.
     let filter: ui_view::FleetFilter = unsafe { parse(filter) }.unwrap_or_default();
     // SAFETY: the caller's contract.
-    unsafe { fleet_read(profile, |app| app.fleet_view(&expand, &filter)) }
+    let _ = unsafe { fleet_read(profile, |app| app.set_filter(filter)) };
 }
 
 /// One agent's `FleetCard`, or null JSON when it is not listed.
@@ -1812,61 +1835,34 @@ pub unsafe extern "C" fn amux_session_new_keys_below(
 }
 
 /// `[Row]` for these keys (a JSON array of strings), in order, skipping
-/// keys not held; `options` is a `RowOptions` as JSON, or null.
+/// keys not held, each run folded to its newest step unless
+/// `amux_session_toggle_run` opened it.
 ///
 /// # Safety
-/// `chat` is from `amux_session_open`; the strings are NUL-terminated or
-/// null.
+/// `chat` is from `amux_session_open`; `keys` is NUL-terminated or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn amux_session_rows_for(
     chat: *const AmuxChat,
     keys: *const c_char,
-    options: *const c_char,
 ) -> *mut c_char {
     // SAFETY: the caller's contract.
     let keys: Vec<Key> = unsafe { parse(keys) }.unwrap_or_default();
     // SAFETY: the caller's contract.
-    let options: RowOptions = unsafe { parse(options) }.unwrap_or_default();
-    // SAFETY: the caller's contract.
-    unsafe { read(chat, |chat| chat.rows_for(&keys, &options)) }
+    unsafe { read(chat, |chat| chat.rows_for(&keys)) }
 }
 
-/// Opens or closes the run the row `member` belongs to: `open` is the
-/// folding view's open set as a JSON array of keys, or null; answers the
-/// new set.
+/// Opens or closes the run the row `member` belongs to; rows read after
+/// draw it so. The chat keeps an open run open as it grows, older steps
+/// page in, or the window trims it.
 ///
 /// # Safety
-/// `chat` is from `amux_session_open`; the strings are NUL-terminated or
-/// null.
+/// `chat` is from `amux_session_open`; `member` is NUL-terminated or null.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_toggle_run(
-    chat: *const AmuxChat,
-    member: *const c_char,
-    open: *const c_char,
-) -> *mut c_char {
+pub unsafe extern "C" fn amux_session_toggle_run(chat: *const AmuxChat, member: *const c_char) {
     // SAFETY: the caller's contract.
     let member = unsafe { text(member) }.unwrap_or_default().to_owned();
     // SAFETY: the caller's contract.
-    let open: Vec<Key> = unsafe { parse(open) }.unwrap_or_default();
-    // SAFETY: the caller's contract.
-    unsafe { read(chat, |chat| chat.toggle_run(&member, &open)) }
-}
-
-/// The open set, a JSON array of keys or null, re-held on each open run's
-/// newest step: what to ask rows with, so an open run stays open as it
-/// grows or its oldest steps leave the window.
-///
-/// # Safety
-/// `chat` is from `amux_session_open`; `open` is NUL-terminated or null.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_keep_open_runs(
-    chat: *const AmuxChat,
-    open: *const c_char,
-) -> *mut c_char {
-    // SAFETY: the caller's contract.
-    let open: Vec<Key> = unsafe { parse(open) }.unwrap_or_default();
-    // SAFETY: the caller's contract.
-    unsafe { read(chat, |chat| chat.keep_open_runs(&open)) }
+    let _ = unsafe { read(chat, |chat| chat.toggle_run(&member)) };
 }
 
 /// The head `AskCard`, or null JSON.

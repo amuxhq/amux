@@ -159,7 +159,7 @@ public final class StoreBundle {
         guard let profile else { return }
         owed = false
         let views = profile.hosts()
-        fleet.show(profile.fleetView(expanding: Array(fleet.expanded), filter: fleet.filter), hosts: views)
+        fleet.show(profile.fleetView(), hosts: views)
         hosts.show(views)
         if !markedReconciled {
             let trusted = views.filter { $0.trusted && !$0.local }
@@ -205,12 +205,13 @@ public final class StoreBundle {
     /// Narrows the list to what `filter` keeps.
     public func filterFleet(_ filter: FleetFilter) {
         fleet.filter = filter
+        profile?.filter(filter)
         read(hostsMoved: false)
     }
 
     /// Lists or folds a family's members.
     public func toggleFamily(_ head: AgentKey) {
-        fleet.toggle(head)
+        profile?.toggleFamily(head)
         read(hostsMoved: false)
     }
 

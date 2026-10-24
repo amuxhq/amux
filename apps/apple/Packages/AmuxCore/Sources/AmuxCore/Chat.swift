@@ -79,35 +79,16 @@ public final class Chat: ChatSource, @unchecked Sendable {
         call(()) { live in amux_session_follow(live, following) }
     }
 
-    public func rows(for keys: [String], options: RowOptions? = nil) -> [Row] {
+    public func rows(for keys: [String]) -> [Row] {
         call([]) { live in
-            Bridge.json(keys).withCString { keys in
-                if let options {
-                    return Bridge.json(options).withCString {
-                        Bridge.read([Row].self, amux_session_rows_for(live, keys, $0))
-                    }
-                }
-                return Bridge.read([Row].self, amux_session_rows_for(live, keys, nil))
+            Bridge.json(keys).withCString {
+                Bridge.read([Row].self, amux_session_rows_for(live, $0))
             } ?? []
         }
     }
 
-    public func toggleRun(_ member: String, open: [String]) -> [String] {
-        call(open) { live in
-            member.withCString { member in
-                Bridge.json(open).withCString {
-                    Bridge.read([String].self, amux_session_toggle_run(live, member, $0))
-                }
-            } ?? open
-        }
-    }
-
-    public func keepOpenRuns(_ open: [String]) -> [String] {
-        call(open) { live in
-            Bridge.json(open).withCString {
-                Bridge.read([String].self, amux_session_keep_open_runs(live, $0))
-            } ?? open
-        }
+    public func toggleRun(_ member: String) {
+        call(()) { live in member.withCString { amux_session_toggle_run(live, $0) } }
     }
 
     public func askCard() -> AskCard? {

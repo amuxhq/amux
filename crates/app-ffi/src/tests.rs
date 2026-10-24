@@ -370,7 +370,7 @@ fn says(chat: *const AmuxChat, wanted: &str) -> bool {
     let keys = take(unsafe { amux_session_keys(chat) });
     let keys = c(&keys.to_string());
     // SAFETY: the chat is open; the strings live for the call.
-    let rows = take(unsafe { amux_session_rows_for(chat, keys.as_ptr(), std::ptr::null()) });
+    let rows = take(unsafe { amux_session_rows_for(chat, keys.as_ptr()) });
     rows.to_string().contains(wanted)
 }
 
@@ -451,8 +451,7 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     let agent_c = c(&agent.to_string());
     phone.until(0, std::ptr::null(), "the desk's agent", || {
         // SAFETY: the runtime is live.
-        let view =
-            take(unsafe { amux_fleet_view(phone.profile, std::ptr::null(), std::ptr::null()) });
+        let view = take(unsafe { amux_fleet_view(phone.profile) });
         view["sections"][0]["rows"]
             .as_array()
             .is_some_and(|rows| rows.len() == 1)
@@ -669,8 +668,7 @@ fn no_redraw_names_a_closed_profile_or_chat_while_its_acts_are_in_flight() {
     .to_string());
     phone.until(0, std::ptr::null(), "the desk's agent", || {
         // SAFETY: the runtime is live.
-        let view =
-            take(unsafe { amux_fleet_view(phone.profile, std::ptr::null(), std::ptr::null()) });
+        let view = take(unsafe { amux_fleet_view(phone.profile) });
         view["sections"][0]["rows"]
             .as_array()
             .is_some_and(|rows| rows.len() == 1)
@@ -1237,11 +1235,11 @@ fn null_handles_read_as_nothing_and_null_results_free_as_nothing() {
     // SAFETY: null chats and fleets read as nothing.
     assert!(unsafe { amux_session_keys(std::ptr::null()) }.is_null());
     // SAFETY: as above.
-    assert!(
-        unsafe { amux_fleet_view(std::ptr::null(), std::ptr::null(), std::ptr::null()) }.is_null()
-    );
+    assert!(unsafe { amux_fleet_view(std::ptr::null()) }.is_null());
+    // SAFETY: a null chat or fleet ignores what it is told.
+    unsafe { amux_session_toggle_run(std::ptr::null(), c"k".as_ptr()) };
     // SAFETY: as above.
-    assert!(unsafe { amux_session_keep_open_runs(std::ptr::null(), std::ptr::null()) }.is_null());
+    unsafe { amux_fleet_toggle_family(std::ptr::null(), c"[1]".as_ptr()) };
     // SAFETY: as above.
     let blob = unsafe { amux_session_blob(std::ptr::null(), c"[1]".as_ptr()) };
     assert!(blob.data.is_null() && blob.len == 0);

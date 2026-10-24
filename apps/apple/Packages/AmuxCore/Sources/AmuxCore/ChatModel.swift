@@ -13,7 +13,9 @@ public protocol ChatSource: AnyObject, Sendable {
     func oldestKey() -> String?
     /// Where the reader is: at the newest row, or in history.
     func follow(_ following: Bool)
-    func rows(for keys: [String], options: RowOptions?) -> [Row]
+    /// Rows for these keys, each run folded to its newest step unless the
+    /// reader opened it.
+    func rows(for keys: [String]) -> [Row]
     func askCard() -> AskCard?
     func overview() -> Overview?
     func settings() -> SettingsView?
@@ -23,11 +25,9 @@ public protocol ChatSource: AnyObject, Sendable {
     func answer(_ ask: String, choice: Int, note: String?) async -> ActOutcome?
     func answer(_ ask: String, responses: [QuestionResponse]) async -> ActOutcome?
     func replyInstead(_ ask: String, text: String, soFar: [QuestionResponse]) async -> ActOutcome?
-    /// Opens or closes the run `member` sits in, in an open set of keys,
-    /// and answers the new set.
-    func toggleRun(_ member: String, open: [String]) -> [String]
-    /// The open set with each open run re-held on its newest step.
-    func keepOpenRuns(_ open: [String]) -> [String]
+    /// Opens or closes the run `member` sits in; rows read after draw it
+    /// so, and it stays open as it grows.
+    func toggleRun(_ member: String)
     func answerForm(_ ask: String, values: [FormValue]) async -> ActOutcome?
     func withdraw(_ input: [UInt8]) async -> ActOutcome?
     /// A queued or sent prompt as the draft it came from, attachments whole.
@@ -168,8 +168,6 @@ public final class ChatModel {
     public private(set) var settings: SettingsView?
     /// Rows the reader opened: a subagent's steps, or a row's detail.
     public private(set) var expanded: Set<String> = []
-    /// The runs the reader opened, each held by one of its steps.
-    public private(set) var openRuns: Set<String> = []
     public private(set) var paging: ChatPaging = .idle
     /// The chat is still empty a moment after opening.
     public private(set) var loadingHint = false
@@ -239,11 +237,6 @@ public final class ChatModel {
     /// cells again, and read the frame, the card and the strip.
     public func woke() {
         let changes = source.takeChanges()
-        // An open run is held by its newest step, re-held before rows are
-        // read so it stays open as it grows or the window trims it.
-        if !openRuns.isEmpty, changes.reloaded || !changes.keys.isEmpty {
-            openRuns = Set(source.keepOpenRuns(openRuns.sorted()))
-        }
         if changes.reloaded || !changes.keys.isEmpty {
             Signposts.emit(.transcriptCommit)
         }
@@ -262,7 +255,7 @@ public final class ChatModel {
     public func cell(for id: String) -> RowCell {
         if let cell = cells[id] { return cell }
         let cell = RowCell(
-            id: id, row: source.rows(for: [id], options: options).first, revision: revision)
+            id: id, row: source.rows(for: [id]).first, revision: revision)
         cells[id] = cell
         return cell
     }
@@ -300,10 +293,6 @@ public final class ChatModel {
         return nil
     }
 
-    public var options: RowOptions {
-        RowOptions(tools: .collapse(open: openRuns.sorted()))
-    }
-
     /// Opens or closes a row's own detail, or a subagent's steps.
     public func toggle(_ id: String) {
         if expanded.contains(id) {
@@ -318,15 +307,10 @@ public final class ChatModel {
         expanded.contains(id)
     }
 
-    /// Opens or closes a run, by the shared fold: open while the open set
-    /// holds any of its steps, which the session holds by its newest.
+    /// Opens or closes a run, by the shared fold; its rows say which.
     public func toggleRun(_ run: Run) {
-        openRuns = Set(source.toggleRun(run.last, open: openRuns.sorted()))
+        source.toggleRun(run.last)
         refresh(Array(cells.keys))
-    }
-
-    public func isOpen(_ run: Run) -> Bool {
-        openRuns.contains(run.last)
     }
 
     /// What a run's steps did: carried on its newest step's row only.
@@ -427,7 +411,7 @@ public final class ChatModel {
     /// since what draws moves without the rows themselves changing.
     private func refresh(_ keys: [String], onlyChanged: Bool = false) {
         guard !keys.isEmpty else { return }
-        let rows = source.rows(for: keys, options: options)
+        let rows = source.rows(for: keys)
         let next = revision + 1
         var moved = false
         for row in rows {
@@ -598,7 +582,7 @@ public final class ChatModel {
     public var pageSize: UInt32 {
         let top = ids.lazy.compactMap { self.cell(for: $0).row }.first { self.shows($0) }
         guard let top, let run = top.run, run.openBelow, top.id == run.last,
-            !isOpen(run)
+            !run.open
         else { return Self.pageRows }
         return min(max(run.steps, Self.pageRows), Self.largestPage)
     }

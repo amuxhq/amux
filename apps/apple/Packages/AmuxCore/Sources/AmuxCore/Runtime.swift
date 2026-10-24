@@ -320,16 +320,25 @@ public final class Profile: @unchecked Sendable {
     // MARK: - The fleet
 
     /// Home's sections, each family placed by its loudest member, with the
-    /// members of the families whose root agent ids `expanding` names
-    /// under their heads, listing the agents `filter` keeps.
-    public func fleetView(expanding: [[UInt8]] = [], filter: FleetFilter? = nil) -> FleetView {
+    /// members of the families `toggleFamily` listed under their heads,
+    /// narrowed by the last `filter`.
+    public func fleetView() -> FleetView {
         call(FleetView(sections: [], needYou: 0, working: 0)) { live in
-            Bridge.json(expanding).withCString { expand in
-                Bridge.json(filter).withCString {
-                    Bridge.read(FleetView.self, amux_fleet_view(live, expand, $0))
-                }
-            } ?? FleetView(sections: [], needYou: 0, working: 0)
+            Bridge.read(FleetView.self, amux_fleet_view(live))
+                ?? FleetView(sections: [], needYou: 0, working: 0)
         }
+    }
+
+    /// Lists a family's members under its head, or folds them away again.
+    public func toggleFamily(_ head: AgentKey) {
+        call(()) { live in
+            Bridge.json(head.agent).withCString { amux_fleet_toggle_family(live, $0) }
+        }
+    }
+
+    /// Narrows home's list to what `filter` keeps.
+    public func filter(_ filter: FleetFilter) {
+        call(()) { live in Bridge.json(filter).withCString { amux_fleet_filter(live, $0) } }
     }
 
     /// The app leaving (false) or returning to (true) the foreground: every

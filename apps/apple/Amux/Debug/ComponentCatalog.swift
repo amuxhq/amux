@@ -166,9 +166,9 @@ enum ComponentCatalog {
                 durationMs: nil, exitCode: nil), attention: true)),
             row("explore", r("e1", 17, .explore(verb: .read, subject: "crates/wire/src/codes.rs", state: .succeeded, result: ""))),
             row("run", r("e2", 18, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded, result: ""),
-                run: Run(first: "e0", last: "e2", steps: 6, live: false, openBelow: false, unresolvedFailure: false, counts: RunCounts(commands: 0, edits: 0, reads: 4, searches: 2, subagents: 0, other: 0), recent: nil))),
+                run: Run(first: "e0", last: "e2", steps: 6, live: false, openBelow: false, unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 4, searches: 2, subagents: 0, other: 0), recent: nil))),
             row("run-open-below", r("e3", 19, .explore(verb: .read, subject: "src/lib.rs", state: .succeeded, result: ""),
-                run: Run(first: "e0", last: "e3", steps: 40, live: false, openBelow: true, unresolvedFailure: false, counts: RunCounts(commands: 0, edits: 0, reads: 40, searches: 0, subagents: 0, other: 0), recent: nil))),
+                run: Run(first: "e0", last: "e3", steps: 40, live: false, openBelow: true, unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 40, searches: 0, subagents: 0, other: 0), recent: nil))),
             row("subagent-running", r("a1", 20, .subagent(
                 description: "Find every INVALID_PIN reader", running: true, toolCount: 12,
                 lastTool: "Read wire/src/codes.rs", answer: "", durationMs: 48_000))),

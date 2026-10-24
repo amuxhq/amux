@@ -29,8 +29,10 @@ machine's script. The scripts pause where a model would think, so the fleet's
 ages read as a morning's work; the scene takes about five minutes to come to
 rest.
 
-The clones live in `/Users/Shared`, so both clients write them as a person's
-home folders: the phone writes any `/Users/<name>/...` as `~/...`.
+The clones live in your home folder (`~/src/tally`, `~/tally` and
+`~/code/tally`), so both clients write them as a person's. Each carries a mark
+in its `.git`: the scene refuses to start over a folder there that isn't one
+of its clones, and `just scene down` removes only its own.
 
 ## Taking the pictures
 

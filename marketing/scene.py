@@ -30,12 +30,12 @@ TESTNET = ROOT / "target/debug/testnet"
 FOLDER = Path.home() / ".local/state/amux-marketing" / ROOT.name / "launch"
 
 # Each machine keeps its clone of Tally where its owner would, on the branch
-# its agents work on. The clones live in a home directory of their own, for
-# the clients to write them as a person's: the terminal client runs with HOME
-# set to it, and the phone writes any `/Users/<name>/...` as `~/...`, so the
-# home has to sit directly under /Users. /Users/Shared is the one such
-# directory anyone may write to.
-HOME = Path("/Users/Shared")
+# its agents work on, in this account's home directory: the clients write a
+# folder under a home as `~/...`, and the phone knows a home only as
+# `/Users/<name>`. Each clone carries a mark in its .git, and the scene
+# replaces or removes only folders that carry it, never a person's own.
+HOME = Path.home()
+MARK = ".git/amux-scene"
 # Where the pictures land, light and dark beside each other.
 IMAGES = FOLDER / "images"
 # Where the film's takes land.
@@ -86,10 +86,13 @@ def clone(host: str) -> Path:
     then checked out on the host's branch."""
     folder, branch = HOSTS[host]
     path = HOME / folder
-    subprocess.run(["rm", "-rf", str(path)], check=True)
+    if path.exists() and not (path / MARK).exists():
+        raise SystemExit(f"scene: {path} is not one of the scene's clones; move it and try again")
+    shutil.rmtree(path, ignore_errors=True)
     shutil.copytree(HERE / "repo", path)
     git = ["git", "-C", str(path), "-c", "user.name=Ada", "-c", "user.email=ada@example.com"]
     subprocess.run([*git, "init", "-q", "-b", "main"], check=True)
+    (path / MARK).write_text("A clone marketing/scene.py made, and removes on `scene down`.\n")
     subprocess.run([*git, "add", "-A"], check=True)
     subprocess.run([*git, "commit", "-q", "-m", "Tally"], check=True)
     if branch != "main":
@@ -451,7 +454,8 @@ def main(arguments: list[str]) -> int:
     if verb == "down":
         code = ctl("down")
         for folder, _ in HOSTS.values():
-            shutil.rmtree(HOME / folder, ignore_errors=True)
+            if (HOME / folder / MARK).exists():
+                shutil.rmtree(HOME / folder)
             parent = (HOME / folder).parent
             if parent != HOME and parent.exists() and not any(parent.iterdir()):
                 parent.rmdir()

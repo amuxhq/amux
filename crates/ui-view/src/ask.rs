@@ -66,6 +66,9 @@ pub enum CardState {
 pub enum AskBody {
     Command {
         command: String,
+        /// Where the command runs, in full, only when that is not the
+        /// agent's own folder: there it says nothing the chat's title does
+        /// not, and elsewhere it is part of what is being allowed.
         cwd: String,
         reason: String,
         description: String,
@@ -744,7 +747,7 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
         Some(codex_ask::Body::Command(c)) => (
             AskBody::Command {
                 command: c.command.clone(),
-                cwd: c.cwd.clone(),
+                cwd: elsewhere(&state.agent().cwd, &c.cwd),
                 reason: c.reason.clone(),
                 description: String::new(),
             },
@@ -1022,6 +1025,16 @@ pub fn shown_prefix(words: &[String]) -> Vec<String> {
     }
 }
 
+/// `cwd` unless it is the agent's own folder `home`, else empty.
+fn elsewhere(home: &str, cwd: &str) -> String {
+    let trim = |path: &str| path.trim_end_matches('/').to_owned();
+    if cwd.is_empty() || trim(cwd) == trim(home) {
+        String::new()
+    } else {
+        cwd.to_owned()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1118,6 +1131,19 @@ mod tests {
         assert_eq!(
             pretty(&serde_json::json!({"path": "a.txt"})),
             "{\n  \"path\": \"a.txt\"\n}"
+        );
+    }
+
+    #[test]
+    fn an_asked_commands_folder_shows_only_when_it_is_not_the_agents() {
+        assert_eq!(
+            super::elsewhere("/Users/ada/tally", "/Users/ada/tally/"),
+            ""
+        );
+        assert_eq!(super::elsewhere("/Users/ada/tally", ""), "");
+        assert_eq!(
+            super::elsewhere("/Users/ada/tally", "/Users/ada/other"),
+            "/Users/ada/other"
         );
     }
 }

@@ -6,7 +6,8 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Weak};
 
-use tokio::sync::broadcast::{self, error::RecvError};
+use tokio::sync::broadcast;
+use tokio::sync::broadcast::error::RecvError;
 use wire::ErrorCode;
 
 use crate::ProfileId;

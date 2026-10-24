@@ -17,7 +17,6 @@ use serde::ser::{
     self, Serialize, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant,
     SerializeTuple, SerializeTupleStruct, SerializeTupleVariant, Serializer,
 };
-
 pub use store::redact::Redactor;
 
 use crate::io::{Input, Recorded};

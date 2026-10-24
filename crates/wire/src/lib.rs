@@ -235,7 +235,7 @@ mod tests {
     }
 
     #[test]
-    fn services_are_the_client_peer_pairing_profile_and_installation_surfaces() {
+    fn services_are_the_client_peer_pairing_profile_admin_and_installation_surfaces() {
         let set = descriptor();
         let services = set
             .file
@@ -251,6 +251,7 @@ mod tests {
                     "InstallationService",
                     "PairingService",
                     "PeerService",
+                    "ProfileAdminService",
                     "ProfileService"
                 ]
                 .map(str::to_owned)

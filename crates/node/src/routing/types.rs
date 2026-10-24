@@ -24,10 +24,9 @@ pub struct Host {
     pub capabilities: Capabilities,
     /// Whether this host's profile is bound to an account.
     pub signed_in: Option<bool>,
-    /// What kind of machine this is, in its own words. A host that says
-    /// nothing is not the same as one that claims to be nothing in
-    /// particular.
-    pub platform: Option<String>,
+    /// The operating system this machine runs, or unspecified when it
+    /// does not say.
+    pub platform: pb::Platform,
 }
 
 /// Local identity of one link: the authenticated peer plus a connection
@@ -160,18 +159,19 @@ pub fn host_to_wire(host: &Host) -> pb::Host {
         version: host.version.clone(),
         capabilities: Some(host.capabilities.clone()),
         account_signed_in: host.signed_in,
-        platform: host.platform.clone(),
+        platform: host.platform as i32,
     }
 }
 
 pub(crate) fn host_from_wire(host: pb::Host) -> Result<Host, String> {
+    let platform = host.platform();
     Ok(Host {
         id: uuid_from_bytes("host_id", host.host_id)?,
         name: host.name,
         version: host.version,
         capabilities: host.capabilities.unwrap_or_default(),
         signed_in: host.account_signed_in,
-        platform: host.platform,
+        platform,
     })
 }
 

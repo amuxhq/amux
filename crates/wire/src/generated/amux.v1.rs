@@ -1326,10 +1326,8 @@ pub struct Host {
     pub version: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]
     pub capabilities: ::core::option::Option<Capabilities>,
-    /// What kind of machine this is, in the host's own words: the operating
-    /// system it runs, as it named itself when it was built.
-    #[prost(string, optional, tag = "5")]
-    pub platform: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(enumeration = "Platform", tag = "5")]
+    pub platform: i32,
     #[prost(bool, optional, tag = "6")]
     pub account_signed_in: ::core::option::Option<bool>,
 }
@@ -1413,6 +1411,44 @@ impl LinkCloseReason {
             "LINK_CLOSE_REASON_PROTOCOL_ERROR" => Some(Self::ProtocolError),
             "LINK_CLOSE_REASON_VERSION_MISMATCH" => Some(Self::VersionMismatch),
             "LINK_CLOSE_REASON_USER_REVOKED" => Some(Self::UserRevoked),
+            _ => None,
+        }
+    }
+}
+/// The operating system a machine runs, as its build knows it.
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Platform {
+    /// Not said: a host never adjacent, or a system amux does not name.
+    Unspecified = 0,
+    Macos = 1,
+    Linux = 2,
+    Windows = 3,
+    Ios = 4,
+}
+impl Platform {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "PLATFORM_UNSPECIFIED",
+            Self::Macos => "PLATFORM_MACOS",
+            Self::Linux => "PLATFORM_LINUX",
+            Self::Windows => "PLATFORM_WINDOWS",
+            Self::Ios => "PLATFORM_IOS",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "PLATFORM_UNSPECIFIED" => Some(Self::Unspecified),
+            "PLATFORM_MACOS" => Some(Self::Macos),
+            "PLATFORM_LINUX" => Some(Self::Linux),
+            "PLATFORM_WINDOWS" => Some(Self::Windows),
+            "PLATFORM_IOS" => Some(Self::Ios),
             _ => None,
         }
     }
@@ -5496,10 +5532,10 @@ pub struct HostEntry {
     pub via: i32,
     #[prost(bool, optional, tag = "7")]
     pub account_signed_in: ::core::option::Option<bool>,
-    /// The machine's kind, as it announced itself in the handshake. Unset for a
-    /// host that has never been adjacent.
-    #[prost(string, optional, tag = "8")]
-    pub platform: ::core::option::Option<::prost::alloc::string::String>,
+    /// The machine's operating system, as it announced itself in the
+    /// handshake.
+    #[prost(enumeration = "Platform", tag = "8")]
+    pub platform: i32,
     /// Bumped only after an unclean reboot of that host.
     #[prost(uint64, tag = "9")]
     pub generation: u64,
@@ -10429,6 +10465,7 @@ pub struct ProfileInfo {
     pub intent: i32,
     #[prost(enumeration = "Observed", tag = "8")]
     pub observed: i32,
+    /// Unused: always zero.
     #[prost(uint64, tag = "9")]
     pub revision: u64,
     #[prost(enumeration = "Tier", tag = "10")]
@@ -10555,6 +10592,7 @@ impl ::prost::Name for BindProfileRequest {
 pub struct RenameProfileRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub profile_id: ::prost::alloc::vec::Vec<u8>,
+    /// Unused: ignored.
     #[prost(uint64, tag = "2")]
     pub expected_revision: u64,
     #[prost(string, optional, tag = "3")]
@@ -10574,6 +10612,7 @@ impl ::prost::Name for RenameProfileRequest {
 pub struct DeleteProfileRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub profile_id: ::prost::alloc::vec::Vec<u8>,
+    /// Unused: ignored.
     #[prost(uint64, tag = "2")]
     pub confirm_revision: u64,
 }
@@ -11079,8 +11118,7 @@ pub mod profile_service_client {
     use tonic::codegen::http::Uri;
     /// The installation's front door: local Unix socket and in-process only.
     /// Calls are not retried by any client; a mutation that loses its reply is
-    /// re-run by the person, and the revision checks on rename and delete
-    /// refuse a re-run against a profile that changed meanwhile.
+    /// re-run by the person.
     #[derive(Debug, Clone)]
     pub struct ProfileServiceClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -11695,8 +11733,7 @@ pub mod profile_service_server {
     }
     /// The installation's front door: local Unix socket and in-process only.
     /// Calls are not retried by any client; a mutation that loses its reply is
-    /// re-run by the person, and the revision checks on rename and delete
-    /// refuse a re-run against a profile that changed meanwhile.
+    /// re-run by the person.
     #[derive(Debug)]
     pub struct ProfileServiceServer<T> {
         inner: Arc<T>,

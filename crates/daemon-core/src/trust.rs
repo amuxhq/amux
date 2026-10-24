@@ -47,8 +47,8 @@ pub struct TrustEntry {
     pub paired_at: DateTime<Utc>,
     pub reachabilities: Vec<Reachability>,
     pub signed_in: Option<bool>,
-    /// What kind of machine the peer announced itself as, last it said.
-    pub platform: Option<String>,
+    /// The operating system the peer announced, last it said one.
+    pub platform: wire::Platform,
     /// Every address the peer last listed for itself, with where each came
     /// from. The address it last answered at is its `Direct` reachability.
     pub listed: Vec<PeerAddress>,
@@ -122,8 +122,8 @@ mod forms {
         reachabilities: Vec<Reachability>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         signed_in: Option<bool>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        platform: Option<String>,
+        #[serde(default, skip_serializing_if = "unspecified")]
+        platform: wire::Platform,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         listed: Vec<PeerAddress>,
     }
@@ -135,8 +135,12 @@ mod forms {
         paired_at: DateTime<Utc>,
         reachabilities: Vec<Reachability>,
         signed_in: Option<bool>,
-        platform: Option<String>,
+        platform: wire::Platform,
         listed: Vec<PeerAddress>,
+    }
+
+    fn unspecified(platform: &wire::Platform) -> bool {
+        *platform == wire::Platform::Unspecified
     }
 
     macro_rules! entry {
@@ -281,7 +285,7 @@ impl TrustStore {
                         paired_at: DateTime::<Utc>::UNIX_EPOCH,
                         reachabilities: Vec::new(),
                         signed_in: None,
-                        platform: None,
+                        platform: wire::Platform::Unspecified,
                         listed: Vec::new(),
                     },
                 )
@@ -374,7 +378,7 @@ impl TrustStore {
                         paired_at,
                         reachabilities: reachability.into_iter().collect(),
                         signed_in: None,
-                        platform: None,
+                        platform: wire::Platform::Unspecified,
                         listed: Vec::new(),
                     },
                 );
@@ -412,7 +416,7 @@ impl TrustStore {
                 entry.paired_at = paired_at;
                 entry.reachabilities = reachability.into_iter().collect();
                 entry.signed_in = None;
-                entry.platform = None;
+                entry.platform = wire::Platform::Unspecified;
                 entry.listed.clear();
                 Ok(PairingUpdate::ReplacedPubkey)
             }
@@ -425,7 +429,7 @@ impl TrustStore {
                         paired_at,
                         reachabilities: reachability.into_iter().collect(),
                         signed_in: None,
-                        platform: None,
+                        platform: wire::Platform::Unspecified,
                         listed: Vec::new(),
                     },
                 );
@@ -496,16 +500,16 @@ impl TrustStore {
         true
     }
 
-    /// Keeps the machine kind a peer announced, so an offline peer still
-    /// says what it is. A peer that announces none leaves the last one.
-    pub fn remember_platform(&mut self, host_id: Uuid, platform: Option<&str>) -> bool {
-        let (Some(entry), Some(platform)) = (self.entries.get_mut(&host_id), platform) else {
+    /// Keeps the operating system a peer announced, so an offline peer
+    /// still says what it is. A peer that announces none leaves the last.
+    pub fn remember_platform(&mut self, host_id: Uuid, platform: wire::Platform) -> bool {
+        let Some(entry) = self.entries.get_mut(&host_id) else {
             return false;
         };
-        if entry.platform.as_deref() == Some(platform) {
+        if platform == wire::Platform::Unspecified || entry.platform == platform {
             return false;
         }
-        entry.platform = Some(platform.to_owned());
+        entry.platform = platform;
         true
     }
 
@@ -571,7 +575,7 @@ pub enum TrustChange {
     Remember {
         host: Uuid,
         signed_in: Option<bool>,
-        platform: Option<String>,
+        platform: wire::Platform,
     },
     /// Put `host`'s entry back as it was: a pairing's commit undone.
     Restore {
@@ -770,7 +774,7 @@ impl Daemon {
                 platform,
             } => {
                 let signed_in = staged.remember_signed_in(*host, *signed_in);
-                let platform = staged.remember_platform(*host, platform.as_deref());
+                let platform = staged.remember_platform(*host, *platform);
                 Ok(if signed_in || platform {
                     TrustChanged::Remembered
                 } else {

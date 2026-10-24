@@ -58,9 +58,9 @@ message HostEntry {
   optional string last_dial_error = 5;
   RouteKind via = 6;
   optional bool account_signed_in = 7;
-  // The machine's kind, as it announced itself in the handshake. Unset for a
-  // host that has never been adjacent.
-  optional string platform = 8;
+  // The machine's operating system, as it announced itself in the
+  // handshake.
+  Platform platform = 8;
   // Bumped only after an unclean reboot of that host.
   uint64 generation = 9;
   Trust trust = 10;

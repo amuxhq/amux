@@ -168,7 +168,7 @@ impl Daemon {
                     last_dial_error: self.host_set.dial_errors.get(&host).cloned(),
                     via: via as i32,
                     account_signed_in: trusted.signed_in,
-                    platform: trusted.platform.clone(),
+                    platform: trusted.platform as i32,
                     revoked: revoked.then_some(true),
                     trust: Trust::Trusted as i32,
                     presence: presence as i32,

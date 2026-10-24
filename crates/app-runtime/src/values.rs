@@ -13,7 +13,7 @@ use ui_view::{
     ChangeTotals, ComposerView, ContextView, ControlsSummary, PLACEHOLDER, QueuedRow, Reach,
     RefusedPrompt, SentPrompt, SignInView, ToolRows,
 };
-use wire::{BlobRef, Kind, RouteKind};
+use wire::{BlobRef, Kind, Platform, RouteKind};
 
 /// What an embedded runtime starts from.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -401,7 +401,8 @@ pub struct HostView {
     pub candidate: bool,
     /// How this device reaches it now, and over which route.
     pub reach: Reach,
-    pub platform: Option<String>,
+    /// The operating system it runs, when it said.
+    pub platform: Option<Platform>,
     pub version: Option<String>,
     pub last_dial_error: Option<String>,
     /// Where discovery found it; what pairing dials.

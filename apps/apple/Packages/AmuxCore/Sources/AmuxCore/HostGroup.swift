@@ -30,6 +30,20 @@ extension Reach {
     }
 }
 
+extension Platform {
+    /// The system's name for itself, as a person reads it; nil when the
+    /// host never said.
+    public var name: String? {
+        switch self {
+        case .macos: "macOS"
+        case .linux: "Linux"
+        case .windows: "Windows"
+        case .ios: "iOS"
+        case .unspecified: nil
+        }
+    }
+}
+
 extension HostView: Identifiable {
     public var id: HostId? { HostId(bytes: hostId) }
 

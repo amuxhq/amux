@@ -153,8 +153,16 @@ message Host {
   string name = 2;
   string version = 3;
   Capabilities capabilities = 4;
-  // What kind of machine this is, in the host's own words: the operating
-  // system it runs, as it named itself when it was built.
-  optional string platform = 5;
+  Platform platform = 5;
   optional bool account_signed_in = 6;
+}
+
+// The operating system a machine runs, as its build knows it.
+enum Platform {
+  // Not said: a host never adjacent, or a system amux does not name.
+  PLATFORM_UNSPECIFIED = 0;
+  PLATFORM_MACOS = 1;
+  PLATFORM_LINUX = 2;
+  PLATFORM_WINDOWS = 3;
+  PLATFORM_IOS = 4;
 }

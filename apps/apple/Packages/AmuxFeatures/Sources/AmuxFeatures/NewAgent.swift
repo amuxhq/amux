@@ -168,7 +168,7 @@ public struct NewAgent: View {
         case .onThisNetwork, .throughTheRelay:
             let route = host.group == .onThisNetwork
                 ? String(localized: "direct") : String(localized: "via relay")
-            return [host.platform, route].compactMap { $0 }.joined(separator: " · ")
+            return [host.platform?.name, route].compactMap { $0 }.joined(separator: " · ")
         }
     }
 

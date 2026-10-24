@@ -1527,7 +1527,7 @@ mod tests {
                 version: "test".to_string(),
                 capabilities: Capabilities::default(),
                 signed_in: Some(false),
-                platform: None,
+                platform: wire::Platform::Unspecified,
             }
         }
 

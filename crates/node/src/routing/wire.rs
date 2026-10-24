@@ -75,7 +75,7 @@ mod tests {
 
     fn host(id: u128) -> Host {
         Host {
-            platform: None,
+            platform: wire::Platform::Unspecified,
             id: HostId::from_u128(id),
             name: format!("host-{id}"),
             version: "test".to_string(),

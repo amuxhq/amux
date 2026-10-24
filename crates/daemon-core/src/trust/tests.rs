@@ -137,7 +137,7 @@ fn the_trust_file_round_trips_and_names_its_reachabilities() {
                 profile: Uuid::from_u128(42),
             }],
             signed_in: Some(false),
-            platform: Some("Linux".into()),
+            platform: wire::Platform::Linux,
             listed: vec![crate::payload::PeerAddress {
                 addr: "192.0.2.7:7000".parse().unwrap(),
                 source: crate::payload::Source::Listed,
@@ -168,13 +168,13 @@ fn trust_store_remembers_a_peers_signed_in_fact_and_platform() {
     assert!(!store.remember_signed_in(OTHER, Some(true)));
     // An offline peer still says what kind of machine it is: the last
     // platform it announced is kept, and one announcing none keeps it.
-    assert!(store.remember_platform(PEER, Some("Linux")));
-    assert!(!store.remember_platform(PEER, Some("Linux")));
-    assert!(!store.remember_platform(PEER, None));
-    assert!(!store.remember_platform(OTHER, Some("macOS")));
+    assert!(store.remember_platform(PEER, wire::Platform::Linux));
+    assert!(!store.remember_platform(PEER, wire::Platform::Linux));
+    assert!(!store.remember_platform(PEER, wire::Platform::Unspecified));
+    assert!(!store.remember_platform(OTHER, wire::Platform::Macos));
     let entry = store.entry(PEER).unwrap();
     assert_eq!(entry.signed_in, Some(false));
-    assert_eq!(entry.platform.as_deref(), Some("Linux"));
+    assert_eq!(entry.platform, wire::Platform::Linux);
 }
 
 #[test]
@@ -188,7 +188,7 @@ fn trust_store_rejects_wrong_length_pubkey_on_load_and_save() {
             paired_at: at(200),
             reachabilities: vec![Reachability::Cloud],
             signed_in: None,
-            platform: None,
+            platform: wire::Platform::Unspecified,
             listed: Vec::new(),
         },
     );
@@ -374,7 +374,7 @@ fn a_remembered_fact_that_did_not_move_writes_nothing() {
     let remember = TrustChange::Remember {
         host: PEER,
         signed_in: None,
-        platform: None,
+        platform: wire::Platform::Unspecified,
     };
     let out = step(&mut daemon, Input::ChangeTrust(remember));
     assert_eq!(job(&out), None);

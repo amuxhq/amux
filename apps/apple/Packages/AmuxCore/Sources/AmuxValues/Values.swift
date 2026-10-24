@@ -3508,13 +3508,14 @@ public struct HostView: Codable, Hashable, Sendable {
     /// signed in there.
     public var providers: [ProviderSignIn]
     public var lastDialError: String?
-    public var platform: String?
+    /// The operating system it runs, when it said.
+    public var platform: Platform?
     /// For this device: whether it is signed in to the account its profile
     /// is bound to; None while it was never bound.
     public var signedIn: Bool?
     public var version: String?
 
-    public init(hostId: [UInt8], name: String, local: Bool, trusted: Bool, candidate: Bool, reach: Reach, addrs: [String], current: Bool, providers: [ProviderSignIn], lastDialError: String?, platform: String?, signedIn: Bool?, version: String?) {
+    public init(hostId: [UInt8], name: String, local: Bool, trusted: Bool, candidate: Bool, reach: Reach, addrs: [String], current: Bool, providers: [ProviderSignIn], lastDialError: String?, platform: Platform?, signedIn: Bool?, version: String?) {
         self.hostId = hostId
         self.name = name
         self.local = local
@@ -4499,6 +4500,16 @@ public enum PlanVerdict: String, Codable, Hashable, Sendable, CaseIterable {
     case dismissed = "Dismissed"
     /// Approved, switching to another permission from then on.
     case approvedSwitching = "ApprovedSwitching"
+}
+
+/// The operating system a machine runs, as its build knows it.
+public enum Platform: String, Codable, Hashable, Sendable, CaseIterable {
+    case macos = "Macos"
+    case linux = "Linux"
+    case windows = "Windows"
+    case ios = "Ios"
+    /// Not said: a host never adjacent, or a system amux does not name.
+    case unspecified = "Unspecified"
 }
 
 /// One of this device's profiles, one per account it signed in to, and the

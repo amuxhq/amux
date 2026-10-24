@@ -27,7 +27,7 @@ impl ProfileRuntime {
             presence: Presence::Online as i32,
             version: Some(crate::version().to_owned()),
             capabilities: edge.as_ref().map(|edge| edge.capabilities()),
-            platform: Some(crate::routing::local_platform().to_owned()),
+            platform: crate::routing::local_platform() as i32,
             current: Some(true),
             providers: self.offers().on_host(),
             ..HostEntry::default()

@@ -579,11 +579,11 @@ public struct PairConfirmation: View {
         }
     }
 
-    /// "MacBook Air · on this network": what the machine is, where this
+    /// "macOS · on this network": what the machine is, where this
     /// phone knows it, and how it would be reached.
     private func about(_ peer: PendingPair) -> String {
         var parts: [String] = []
-        if let machine = model.machine, machine.hostId == peer.hostId, let platform = machine.platform {
+        if let machine = model.machine, machine.hostId == peer.hostId, let platform = machine.platform?.name {
             parts.append(platform)
         }
         switch peer.via {

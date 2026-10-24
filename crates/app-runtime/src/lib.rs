@@ -179,7 +179,8 @@ impl AppRuntime {
                 trusted: host.trust() == Trust::Trusted,
                 candidate: host.trust() == Trust::Candidate,
                 reach: ui_view::reach(&fleet, &self.local_host, &host.host_id),
-                platform: host.platform.clone(),
+                platform: Some(host.platform())
+                    .filter(|platform| *platform != wire::Platform::Unspecified),
                 version: host.version.clone(),
                 last_dial_error: host.last_dial_error.clone(),
                 addrs: host.addrs.clone(),

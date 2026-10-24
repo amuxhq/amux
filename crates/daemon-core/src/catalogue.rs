@@ -42,7 +42,7 @@ pub struct Said {
     pub version: String,
     pub cloud_relay: bool,
     pub kinds: Vec<i32>,
-    pub platform: Option<String>,
+    pub platform: wire::Platform,
     pub signed_in: Option<bool>,
 }
 
@@ -53,7 +53,7 @@ impl Said {
             version: host.version.clone(),
             cloud_relay: capabilities.cloud_relay,
             kinds: capabilities.kinds,
-            platform: host.platform.clone(),
+            platform: host.platform(),
             signed_in: host.account_signed_in,
         }
     }
@@ -373,17 +373,15 @@ impl Daemon {
         let uuid = Uuid::from_bytes(host.0);
         let moved = self.trust.store().entry(uuid).is_some_and(|entry| {
             entry.signed_in != said.account_signed_in
-                || said
-                    .platform
-                    .as_deref()
-                    .is_some_and(|platform| entry.platform.as_deref() != Some(platform))
+                || (said.platform() != wire::Platform::Unspecified
+                    && entry.platform != said.platform())
         });
         if moved {
             self.change_trust(
                 TrustChange::Remember {
                     host: uuid,
                     signed_in: said.account_signed_in,
-                    platform: said.platform.clone(),
+                    platform: said.platform(),
                 },
                 None,
                 out,

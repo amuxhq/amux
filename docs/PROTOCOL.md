@@ -229,8 +229,8 @@ Each `Host` in a handshake or neighbor message carries the host's name, its
 build version, its capabilities (whether it serves as a cloud relay, and the
 agent kinds its platform runs: terminal Claude only where there is a Unix
 terminal), whether it is signed in to an account, and `platform`, the operating
-system it was built for in its own words. `platform` is optional: a host that
-does not announce it is shown as unknown rather than as a guess. Nothing
+system it was built for: macOS, Linux, Windows or iOS. A host that announces
+none (`PLATFORM_UNSPECIFIED`) is shown as unknown rather than as a guess. Nothing
 routes or authorizes on these fields; they exist so a client can tell one
 device from another and say why a host is out of reach.
 

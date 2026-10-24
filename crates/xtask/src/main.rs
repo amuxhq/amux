@@ -63,6 +63,7 @@ const VIEW_VALUES: &[&str] = &[
     "amux.v1.OfferedMode",
     "amux.v1.OfferedModel",
     "amux.v1.OfferedPermission",
+    "amux.v1.Platform",
     "amux.v1.Provider",
     "amux.v1.ReviewComment",
     "amux.v1.ReviewStatus",

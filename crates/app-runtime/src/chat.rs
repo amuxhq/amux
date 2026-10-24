@@ -5,7 +5,9 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 
+use client::Client;
 use model::AgentKey;
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use ui_runtime::{Fleet, InputError, PageError, Session};
 use ui_state::{InputOutcome, InputState, Key, Refusal, RefusalReason, SessionState};
@@ -42,9 +44,15 @@ pub struct Chat {
     /// The runs the reader opened, each held by one of its steps: rows
     /// fold every other run to its newest step.
     open_runs: Mutex<HashSet<Key>>,
+    /// The draft this device's daemon kept for the agent when the chat
+    /// opened.
+    kept: Option<Draft>,
+    /// The draft as it last stood, for the saver to hand the daemon.
+    draft: watch::Sender<Option<wire::ComposerDraft>>,
 }
 
 impl Chat {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn start(
         id: u64,
         agent: AgentKey,
@@ -52,12 +60,16 @@ impl Chat {
         fleet: Weak<Fleet>,
         wake: WakeFn,
         clock: Arc<dyn client::Clock>,
+        client: Arc<dyn Client>,
+        kept: Option<Draft>,
     ) -> Arc<Chat> {
         // Subscribed here, the receiver has seen the opening: its rows are
         // the host's first read, not news. Anything after is, even a change
         // that lands before the watcher first runs, so the watcher must not
         // mark the channel seen itself.
         let mut changed = session.changed();
+        let (draft, saving) = watch::channel(None);
+        tokio::spawn(save_drafts(client, agent.agent.clone(), saving));
         let chat = Arc::new(Chat {
             id,
             agent,
@@ -69,6 +81,8 @@ impl Chat {
             changed_files: Mutex::new(None),
             first_drawn: Mutex::new(HashMap::new()),
             open_runs: Mutex::new(HashSet::new()),
+            kept,
+            draft,
         });
         // Spawned once the chat exists, so every change it sees finds the
         // chat; it ends when the chat is dropped or the session ends.
@@ -125,6 +139,20 @@ impl Chat {
             .iter()
             .next()
             .map(|held| held.item.key.clone())
+    }
+
+    /// The draft this device kept for the agent when the chat opened.
+    pub fn kept_draft(&self) -> Option<Draft> {
+        self.kept.clone()
+    }
+
+    /// Keeps the draft as it now stands with this device's daemon, so it
+    /// outlives the chat and the app; an empty one is forgotten. Saves go
+    /// in order, and one overtaken before it is sent is never sent.
+    pub fn keep_draft(&self, draft: &Draft) {
+        let (text, attachments) = draft.to_prompt();
+        self.draft
+            .send_replace(Some(wire::ComposerDraft { text, attachments }));
     }
 
     /// Where the reader is: at the newest row, or in history.
@@ -495,6 +523,28 @@ impl Drop for Chat {
         }
         if let Some(fleet) = self.fleet.upgrade() {
             fleet.close(&self.agent);
+        }
+    }
+}
+
+/// Hands the daemon each draft the chat keeps, newest last, until the chat
+/// is gone and its last draft saved. A save that fails loses only what the
+/// phone still shows.
+async fn save_drafts(
+    client: Arc<dyn Client>,
+    agent_id: Vec<u8>,
+    mut drafts: watch::Receiver<Option<wire::ComposerDraft>>,
+) {
+    while drafts.changed().await.is_ok() {
+        let Some(draft) = drafts.borrow_and_update().clone() else {
+            continue;
+        };
+        let request = wire::SaveDraftRequest {
+            agent_id: agent_id.clone(),
+            draft: Some(draft),
+        };
+        if let Err(error) = client.save_draft(request).await {
+            tracing::warn!(%error, "cannot keep the draft");
         }
     }
 }

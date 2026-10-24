@@ -51,6 +51,10 @@ public protocol ChatSource: AnyObject, Sendable {
     func command(_ draft: Draft) async -> CommandOutcome?
     /// Brings terminal Claude's own view back to this agent's conversation.
     func switchBack() async -> ActOutcome?
+    /// The draft this device kept for the agent when the chat opened.
+    func keptDraft() -> Draft?
+    /// Keeps the draft as it now stands, past the chat and the app.
+    func keep(_ draft: Draft)
 }
 
 extension ChatSource {
@@ -59,6 +63,10 @@ extension ChatSource {
     /// A source whose agent never leaves its conversation has nothing to
     /// switch back to.
     public func switchBack() async -> ActOutcome? { .done }
+    /// A source that keeps no drafts opens with none and forgets what is
+    /// typed.
+    public func keptDraft() -> Draft? { nil }
+    public func keep(_ draft: Draft) {}
 }
 
 /// What a client command asks of the screen: a picker or the rename card.
@@ -186,7 +194,8 @@ public final class ChatModel {
         didSet { if attachments != oldValue { keepDraft() } }
     }
     /// Told the draft as it stands each time it changes, so it can be kept
-    /// past the session and the app: the phone's drafts live on the device.
+    /// past the session and the app: the phone's drafts live with its own
+    /// daemon.
     /// It carries the words of prompts held for a host that cannot be
     /// reached too, ahead of what is typed: a held prompt goes back to the
     /// draft if the phone closes before the host is back.

@@ -448,6 +448,42 @@ async fn a_reopened_chat_of_an_exited_agent_holds_its_rows_at_once() {
     net.shutdown().await.unwrap();
 }
 
+/// What this device's daemon keeps for an agent, once it holds `wanted`.
+async fn kept_with_the_daemon(runtime: &AppRuntime, agent: &AgentKey, wanted: &str) {
+    let request = wire::GetDraftRequest {
+        agent_id: agent.agent.clone(),
+    };
+    tokio::time::timeout(PATIENCE, async {
+        while runtime.client().get_draft(request.clone()).await.unwrap().text != wanted {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("the daemon never kept {wanted:?}"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_draft_outlives_its_chat_with_this_devices_daemon() {
+    let net = Net::start(topology()).await.unwrap();
+    let (runtime, _host) = open(&net).await;
+    let agent = worker(&net);
+    let chat = runtime.open_chat(&agent, 50).await.unwrap();
+    assert_eq!(chat.kept_draft(), None, "nothing was kept yet");
+    chat.keep_draft(&Draft::words("first"));
+    chat.keep_draft(&Draft::words("half typed"));
+    drop(chat);
+    kept_with_the_daemon(&runtime, &agent, "half typed").await;
+
+    let chat = runtime.open_chat(&agent, 50).await.unwrap();
+    assert_eq!(chat.kept_draft(), Some(Draft::words("half typed")));
+    chat.keep_draft(&Draft::default());
+    drop(chat);
+    kept_with_the_daemon(&runtime, &agent, "").await;
+    let chat = runtime.open_chat(&agent, 50).await.unwrap();
+    assert_eq!(chat.kept_draft(), None, "an emptied draft is forgotten");
+    net.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_dump_carries_the_fleet_and_every_open_chat() {
     let net = Net::start(topology()).await.unwrap();

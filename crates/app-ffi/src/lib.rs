@@ -1818,6 +1818,32 @@ pub unsafe extern "C" fn amux_session_follow(chat: *const AmuxChat, following: b
     let _ = unsafe { read(chat, |chat| chat.follow(following)) };
 }
 
+/// The `Draft` this device kept for the agent when the chat opened, or
+/// null JSON.
+///
+/// # Safety
+/// `chat` is from `amux_session_open`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_session_kept_draft(chat: *const AmuxChat) -> *mut c_char {
+    // SAFETY: the caller's contract.
+    unsafe { read(chat, Chat::kept_draft) }
+}
+
+/// Keeps a `Draft`, as JSON, with this device's daemon as it now stands,
+/// so it outlives the chat and the app; an empty one is forgotten.
+///
+/// # Safety
+/// `chat` is from `amux_session_open`; `draft` is a NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_session_keep_draft(chat: *const AmuxChat, draft: *const c_char) {
+    // SAFETY: the caller's contract.
+    let Some(draft) = (unsafe { parse::<Draft>(draft) }) else {
+        return;
+    };
+    // SAFETY: the caller's contract.
+    let _ = unsafe { read(chat, |chat| chat.keep_draft(&draft)) };
+}
+
 /// Keys older than `oldest`, oldest first; null JSON when `oldest` is not
 /// held.
 ///

@@ -30,7 +30,7 @@ use tokio::task::JoinHandle;
 pub use ui_runtime::OpenError;
 use ui_runtime::{Fleet, Window};
 use ui_view::{FamilyHeader, FleetCard, FleetView};
-use values::{AgentAct, Directories, Directory, NewAgent, ProviderSignIn};
+use values::{AgentAct, Directories, Directory, Draft, NewAgent, ProviderSignIn};
 pub use values::{FleetChanges, HostView};
 /// The provider whose catalogue `host_catalogue` reads, named here so the
 /// phone's bridge passes it on without a dependency of its own on the wire
@@ -129,6 +129,17 @@ impl AppRuntime {
             cap: DEFAULT_CAP.max(tail),
         };
         let session = self.fleet.open(agent, window).await?;
+        // A draft that cannot be read is one the person never sees again,
+        // not a chat that cannot open.
+        let kept = self
+            .client
+            .get_draft(wire::GetDraftRequest {
+                agent_id: agent.agent.clone(),
+            })
+            .await
+            .ok()
+            .map(|draft| Draft::kept(&draft))
+            .filter(|draft| !draft.parts.is_empty());
         let id = self.next_chat.fetch_add(1, Ordering::Relaxed);
         let wake = self.wake.clone();
         let chat = Chat::start(
@@ -138,6 +149,8 @@ impl AppRuntime {
             Arc::downgrade(&self.fleet),
             Arc::new(move || wake(Wake::Chat(id))),
             self.clock.clone(),
+            self.client.clone(),
+            kept,
         );
         Ok(chat)
     }

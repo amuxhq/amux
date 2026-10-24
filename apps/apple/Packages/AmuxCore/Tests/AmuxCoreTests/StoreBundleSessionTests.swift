@@ -14,6 +14,10 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
     /// Prompts on their way, as the frame lists them, and their drafts.
     var underway: [SentPrompt] = []
     var drafts: [[UInt8]: Draft] = [:]
+    /// What the profile's daemon kept for the agent as the chat opened, and
+    /// where the chat keeps its draft from then on.
+    var kept: Draft?
+    var keeps: (@MainActor (Draft) -> Void)?
 
     init(id: UInt64, agent: AgentKey) {
         self.id = id
@@ -59,6 +63,8 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
     func blob(_ hash: [UInt8]) -> Data? { nil }
     func review(_ comparison: Comparison) async -> Result<FrozenReview, RuntimeFailure> { .failure(RuntimeFailure("no")) }
     func openOverview(_ comparison: Comparison) async -> Result<Overview, RuntimeFailure> { .failure(RuntimeFailure("no")) }
+    func keptDraft() -> Draft? { kept }
+    func keep(_ draft: Draft) { MainActor.assumeIsolated { keeps?(draft) } }
 }
 
 @MainActor
@@ -66,6 +72,9 @@ final class StoreBundleSessionTests: XCTestCase {
     private var clock = Cards.now
     private var opened: [CaughtUpSession] = []
     private var current = true
+    /// The drafts the phone's daemon keeps, by agent, across every bundle a
+    /// test opens, as a relaunch finds them; an empty draft is forgotten.
+    private var daemon: [AgentKey: Draft] = [:]
 
     private func bundle(
         account: String = "a",
@@ -77,6 +86,10 @@ final class StoreBundleSessionTests: XCTestCase {
             opener: { [unowned self] agent in
                 let session = CaughtUpSession(id: UInt64(opened.count + 1), agent: agent)
                 session.current = current
+                session.kept = daemon[agent]
+                session.keeps = { [unowned self] draft in
+                    daemon[agent] = draft.parts.isEmpty ? nil : draft
+                }
                 opened.append(session)
                 return session
             },
@@ -187,7 +200,7 @@ final class StoreBundleSessionTests: XCTestCase {
         model.woke()
         stores.keepSessions()
         XCTAssertFalse(stores.holds(agent), "once the prompt is sent the chat closes as usual")
-        XCTAssertNil(stores.drafts.draft(for: agent), "and the kept draft no longer holds it")
+        XCTAssertNil(daemon[agent], "and the kept draft no longer holds it")
     }
 
     /// A half-typed message outlives its chat's session: the phone keeps
@@ -223,19 +236,22 @@ final class StoreBundleSessionTests: XCTestCase {
             "the draft was lost when the app was reopened")
     }
 
-    /// A deleted agent's draft goes with it: the phone kept it on its
-    /// shelf for good, and the chat still on screen until its page left
-    /// went on keeping what was typed into it.
+    /// A deleted agent's draft goes with it: the daemon forgets it, and the
+    /// chat still on screen until its page leaves keeps nothing typed into
+    /// it from then on.
     func testADeletedAgentsDraftIsForgotten() async throws {
         let account = "deleted-\(UUID().uuidString)"
         let agent = Cards.key(2)
-        let stores = bundle(account: account, acting: { _, _ in .success(Nothing()) })
+        let stores = bundle(account: account, acting: { [unowned self] _, deleted in
+            daemon[deleted] = nil
+            return .success(Nothing())
+        })
         stores.fleet.show(Cards.view([Cards.row(2, "idle")]), hosts: [Cards.host()])
         try stores.chat(agent).draft = "for an agent about to go"
 
         guard case .success = await stores.delete(agent) else { return XCTFail("the delete failed") }
         try stores.chat(agent).draft = "typed as the page left"
-        XCTAssertNil(stores.drafts.draft(for: agent), "the deleted agent's draft is still kept")
+        XCTAssertNil(daemon[agent], "the deleted agent's draft is still kept")
         stores.closeChats()
 
         let after = bundle(account: account)
@@ -253,6 +269,6 @@ final class StoreBundleSessionTests: XCTestCase {
         try stores.chat(agent).draft = "still wanted"
 
         guard case .failure = await stores.delete(agent) else { return XCTFail("the delete went through") }
-        XCTAssertNotNil(stores.drafts.draft(for: agent), "a failed delete dropped the draft")
+        XCTAssertNotNil(daemon[agent], "a failed delete dropped the draft")
     }
 }

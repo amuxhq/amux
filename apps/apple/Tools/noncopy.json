@@ -393,7 +393,8 @@
       {"literal": "\"installation\"", "context": "support.appendingPathComponent(\"installation\", isDirectory: true)", "reason": "File or directory name on disk, not interface copy.", "count": 1},
       {"literal": "\"installations\"", "context": "at: support.appendingPathComponent(\"installations\", isDirectory: true))", "reason": "File or directory name on disk, not interface copy.", "count": 1},
       {"literal": "\"runtime.log\"", "context": "forReadingFrom: directory.appendingPathComponent(\"runtime.log\"))", "reason": "File or directory name on disk, not interface copy.", "count": 1},
-      {"literal": "\"runtime.log\"", "context": "logPath: directory.appendingPathComponent(\"runtime.log\").path,", "reason": "File or directory name on disk, not interface copy.", "count": 1}
+      {"literal": "\"runtime.log\"", "context": "logPath: directory.appendingPathComponent(\"runtime.log\").path,", "reason": "File or directory name on disk, not interface copy.", "count": 1},
+      {"literal": "\"drafts\"", "context": "at: support.appendingPathComponent(\"drafts\", isDirectory: true))", "reason": "File or directory name on disk, not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/Signposts.swift": [
       {"literal": "\"sh.amux.app\"", "context": "public static let subsystem = \"sh.amux.app\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
@@ -1630,11 +1631,6 @@
       {"literal": "\"chat.overview.server.\\(server.name)\"", "context": ".identified(\"chat.overview.server.\\(server.name)\", label: ChatWords.failed(server))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.overview.usage.\\(index).detail.volatile\"", "context": ".reported(\"chat.overview.usage.\\(index).detail.volatile\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.overview.usage.\\(index)\"", "context": "\"chat.overview.usage.\\(index)\", label: label, value: ChatWords.used(window))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
-    ],
-    "apps/apple/Packages/AmuxCore/Sources/AmuxCore/Drafts.swift": [
-      {"literal": "\"amux/drafts\"", "context": ".appendingPathComponent(\"amux/drafts\", isDirectory: true)", "reason": "File or directory name on disk, not interface copy.", "count": 1},
-      {"literal": "\"\\(Self.hex(agent.host))-\\(Self.hex(agent.agent)).json\"", "context": "folder.appendingPathComponent(\"\\(Self.hex(agent.host))-\\(Self.hex(agent.agent)).json\")", "reason": "File or directory name on disk, not interface copy.", "count": 1},
-      {"literal": "\"%02x\"", "context": "bytes.map { String(format: \"%02x\", $0) }.joined()", "reason": "Format string for hex digits, not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift": [
       {"literal": "\"host.pairAgain\"", "context": ".identified(\"host.pairAgain\", label: String(localized: \"Pair Again\"))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},

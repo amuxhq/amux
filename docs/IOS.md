@@ -100,19 +100,19 @@ open `Chat`:
   rows on screen stay until the rebuilt transcript replaces them.
 - It keeps the head ask's unsent answers and a review in progress for as
   long as the chat is open, so leaving the page loses none of them. The
-  draft and its attachments last longer: `DraftShelf` keeps each one on the
-  phone, per account and agent, as it changes, so a draft outlives its
-  chat's session and the app being closed. A prompt held for a host that
-  cannot be reached is kept in the draft too, ahead of what is typed, from
-  the moment it is held until it is released and sent, so a phone that
-  closes first finds its words back in the composer. A chat holding one
-  stays open past its retention until it goes, as only the open chat takes
-  it back out of the kept draft. Drafts never leave the device,
-  and removing an account from the phone forgets its drafts. Deleting an
-  agent from the phone forgets its draft, and nothing typed into its chat
-  while the page leaves is kept. An agent deleted elsewhere leaves its draft
-  on the phone: the phone reads the fleet as it stands and is not told of
-  removals.
+  draft and its attachments last longer: the chat hands each one, as it
+  changes, to the profile's own daemon on the phone, as the terminal hands
+  its drafts to its machine's (docs/CLIENT.md), so a draft outlives its
+  chat's session and the app being closed, and the chat opens with it again.
+  A prompt held for a host that cannot be reached is kept in the draft too,
+  ahead of what is typed, from the moment it is held until it is released
+  and sent, so a phone that closes first finds its words back in the
+  composer. A chat holding one stays open past its retention until it goes,
+  as only the open chat takes it back out of the kept draft. Drafts never
+  leave the device, and removing an account deletes its profile and its
+  drafts with it. The daemon forgets a deleted agent's draft, wherever it
+  was deleted, and nothing typed into its chat while the page leaves is
+  kept.
 - An attachment is checked against the stated limit, 64 MB of content
   (`wire::ATTACHMENT_SIZE_LIMIT`, copied as `ChatModel.attachmentLimit`),
   before anything is read or uploaded, and one over it is refused in words

@@ -160,6 +160,10 @@ public final class RuntimeCoordinator {
         // of its own here; nothing reads them now.
         try? FileManager.default.removeItem(
             at: support.appendingPathComponent("installations", isDirectory: true))
+        // Before drafts were kept with each profile's daemon, the phone kept
+        // them in files of its own here; nothing reads them now.
+        try? FileManager.default.removeItem(
+            at: support.appendingPathComponent("drafts", isDirectory: true))
         let directory = directory
         let config = StartConfig(
             dataDir: directory.path, deviceName: deviceName,
@@ -381,7 +385,6 @@ public final class RuntimeCoordinator {
             profilesMoved()
         }
         registry.leave(account)
-        DraftShelf(account: account).forgetAll()
         _ = await runtime.deleteProfile(entry.profile)
         profilesMoved()
     }

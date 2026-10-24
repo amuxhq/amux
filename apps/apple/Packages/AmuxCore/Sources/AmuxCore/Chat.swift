@@ -79,6 +79,16 @@ public final class Chat: ChatSource, @unchecked Sendable {
         call(()) { live in amux_session_follow(live, following) }
     }
 
+    public func keptDraft() -> Draft? {
+        call(nil) { live in Bridge.read(Draft?.self, amux_session_kept_draft(live)) ?? nil }
+    }
+
+    /// Keeps the draft with this phone's daemon for the profile; saves go in
+    /// order and an empty draft is forgotten.
+    public func keep(_ draft: Draft) {
+        call(()) { live in Bridge.json(draft).withCString { amux_session_keep_draft(live, $0) } }
+    }
+
     public func rows(for keys: [String]) -> [Row] {
         call([]) { live in
             Bridge.json(keys).withCString {

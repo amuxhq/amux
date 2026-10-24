@@ -233,6 +233,11 @@ impl Draft {
         Draft { parts }
     }
 
+    /// A draft as this device's daemon kept it.
+    pub fn kept(draft: &wire::ComposerDraft) -> Draft {
+        Draft::of(&draft.text, &draft.attachments)
+    }
+
     /// A queued prompt as a draft: its words and every attachment.
     pub fn from_queued(entry: &wire::QueuedInput) -> Draft {
         Draft::of(&entry.text, &entry.attachments)

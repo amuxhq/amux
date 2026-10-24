@@ -284,6 +284,7 @@ dependencies = [
  "testnet",
  "thiserror 2.0.20",
  "tokio",
+ "tracing",
  "ui-runtime",
  "ui-state",
  "ui-view",

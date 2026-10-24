@@ -133,7 +133,7 @@ goldens-perturb *ARGS: build tools
 # journeys/manifest.json declares.
 # Drive the app like a person against real daemons and a real relay.
 journey *ARGS: build tools
-    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 2400 {{python}} -B scripts/ios-journey.py "$@"
+    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 2400 target/debug/testnet journey phone "$@"
 
 # Sweep every state this build draws and require each control on it to have a
 # name VoiceOver can read and at least 44 pt to hit. A UI test, because that is

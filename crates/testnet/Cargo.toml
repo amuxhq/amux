@@ -32,6 +32,7 @@ provider-fakes = { workspace = true }
 quinn = { workspace = true }
 release = { workspace = true, features = ["test-key"] }
 rcgen = { workspace = true }
+regex = "1"
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

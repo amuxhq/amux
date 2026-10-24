@@ -4772,6 +4772,7 @@ dependencies = [
  "provider-fakes",
  "quinn",
  "rcgen",
+ "regex",
  "release",
  "rustls",
  "serde",

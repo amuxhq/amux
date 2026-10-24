@@ -1063,7 +1063,7 @@ swift = ["AmuxAppTests", "AmuxCoreTests", "AmuxDesignTests", "AmuxFeaturesTests"
 [[suite]]
 name = "phone-journeys"
 contract = "A person can complete every declared phone story through the real app and production amux path against a served topology."
-paths = ["scripts/journeys/phone.py", "scripts/ios-journey.py", "journeys/manifest.json", "journeys/topologies/phone-stories.json", "journeys/topologies/phone-reach.json", "journeys/topologies/phone-authority.json", "journeys/topologies/phone-accounts.json", "journeys/topologies/phone-purchase.json", "journeys/topologies/phone-accessible.json", "journeys/topologies/phone-push.json", "journeys/topologies/phone-resume.json", "journeys/topologies/phone-flows.json", "journeys/fixtures/needs-you.apns", "journeys/goldens/phone"]
+paths = ["crates/testnet/src/journey", "journeys/manifest.json", "journeys/topologies/phone-stories.json", "journeys/topologies/phone-reach.json", "journeys/topologies/phone-authority.json", "journeys/topologies/phone-accounts.json", "journeys/topologies/phone-purchase.json", "journeys/topologies/phone-accessible.json", "journeys/topologies/phone-push.json", "journeys/topologies/phone-resume.json", "journeys/topologies/phone-flows.json", "journeys/fixtures/needs-you.apns", "journeys/goldens/phone"]
 recipe = "just ios journey"
 boundary = "Journeys"
 oracle = "Declared acts, independent door and host observations, screenshots, exits, and teardown evidence."

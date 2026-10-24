@@ -614,7 +614,7 @@ just ios journey reach-host manage-agent
 just ios journey -- --native
 ```
 
-`scripts/ios-journey.py` starts the story's topology with `testnet serve`,
+`testnet journey phone` starts the story's topology with `testnet serve`,
 installs the debug app fresh on the leased simulator with the
 reduce-transparency flag on, and acts only as a person would, through the
 door: tap, type, paste, pair by the code or link a machine printed. It judges

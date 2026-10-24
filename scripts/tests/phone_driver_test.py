@@ -1,18 +1,13 @@
-"""The phone journey driver's pure parts: what a launch is told, what a
-compared screen masks and records, and how the stories read what they see."""
+"""The Python phone driver's pure parts, which the goldens, accessibility
+and performance suites drive the app with: what a launch is told and what a
+compared screen masks and records."""
 
-import importlib
-import json
 from pathlib import Path
 import sys
 import unittest
-from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from journeys import phone  # noqa: E402
-
-with patch.object(sys, "dont_write_bytecode", True):
-    stories = importlib.import_module("ios-journey")
 
 DESK = "d6e6b93c-114e-4d20-b29a-6fac10bfb78d"
 AGENT = "082210b9-b56d-4557-b77b-5303f1eca198"
@@ -157,102 +152,6 @@ class ComparingScreens(unittest.TestCase):
         named = phone.by_name([element("chat.row.prompt", label="one"), element("chat.row.prompt", label="two")])
         self.assertEqual(list(named), ["chat.row.prompt", "chat.row.prompt#2"])
         self.assertEqual(named["chat.row.prompt#2"]["label"], "two")
-
-
-class ReadingWhatIsSeen(unittest.TestCase):
-    def test_the_pin_a_machine_prints_is_read_as_six_digits(self):
-        self.assertEqual(stories.pin_of("Pairing PIN: 619 138\n"), "619138")
-        self.assertIsNone(stories.pin_of("Ctrl+C closes it.\n"))
-
-    def test_a_paired_host_is_recognised_by_id_and_name_and_a_wrong_name_fails(self):
-        drawn = {f"hosts.row.{DESK}": {"label": "desk, reachable on this network"}}
-        stories.trusted_as(drawn, DESK, "desk")
-        with self.assertRaises(RuntimeError):
-            stories.trusted_as(drawn, DESK, "laptop")
-        with self.assertRaises(RuntimeError):
-            stories.trusted_as({}, DESK, "desk")
-
-    def test_a_prompt_the_host_holds_twice_is_not_reflected_once(self):
-        chat = {"items": [{"text": "hi"}, {"text": "hi"}, {"text": "other"}]}
-        with self.assertRaises(RuntimeError):
-            stories.reflected_once(chat, "hi")
-        stories.reflected_once(chat, "other")
-
-    def test_a_review_is_read_as_text_then_paste_then_review_with_its_one_comment(self):
-        comment = {"path": "deploy.sh", "line": 3, "old_line": 0, "text": stories.COMMENT}
-        sent = {
-            "text": "Please check \ufffc against",
-            "attachments": [
-                {"kind": "text", "text": stories.PASTED},
-                {"kind": "review", "comments": [comment], "patch": "ab"},
-            ],
-        }
-        chat = {"items": [{"text": "earlier", "attachments": []}, sent]}
-        self.assertIs(stories.reviewed(chat, stories.COMMENT), sent)
-        with self.assertRaises(RuntimeError):
-            stories.reviewed(chat, "another comment")
-        swapped = {**sent, "attachments": list(reversed(sent["attachments"]))}
-        with self.assertRaises(RuntimeError):
-            stories.reviewed({"items": [swapped]}, stories.COMMENT)
-        with self.assertRaises(RuntimeError):
-            stories.reviewed({"items": [sent, sent]}, stories.COMMENT)
-
-    def test_every_phone_story_written_is_declared_for_the_phone(self):
-        for name in stories.STORIES:
-            declared = phone.story(name)
-            self.assertIn("phone", declared["clients"], name)
-            topology = phone.ROOT / declared.get("phone_topology", declared["topology"])
-            self.assertTrue(topology.exists(), topology)
-
-
-class Selecting(unittest.TestCase):
-    NATIVE = ["account-sign-in", "purchase-restore", "report", "accessibility", "local-network", "push-wake", "resume"]
-
-    def test_native_runs_exactly_the_stories_declared_for_the_phone_alone(self):
-        self.assertEqual(stories.selected(["--native"]), self.NATIVE)
-        self.assertTrue(set(self.NATIVE) <= set(stories.STORIES))
-
-    def test_names_run_those_and_nothing_runs_every_story(self):
-        self.assertEqual(stories.selected(["reach-host"]), ["reach-host"])
-        self.assertEqual(stories.selected([]), list(stories.STORIES))
-        with self.assertRaises(SystemExit):
-            stories.selected(["--native", "reach-host"])
-
-    def test_every_retired_phone_journey_names_stories_that_carry_it(self):
-        manifest = json.loads(phone.MANIFEST.read_text())
-        declared = {item["id"] for item in manifest["journeys"]}
-        retired = manifest["retired_phone_journeys"]["journeys"]
-        self.assertTrue(retired)
-        for journey in retired:
-            # A story written again under its old name carries its own claim.
-            if journey["id"] in declared:
-                self.assertEqual(journey["carried_by"], [journey["id"]])
-            self.assertTrue(journey["how"])
-            for carrier in journey["carried_by"]:
-                self.assertIn(carrier, stories.STORIES, journey["id"])
-
-    def test_every_retired_claim_is_carried_by_a_story_step_or_dropped_with_why(self):
-        manifest = json.loads(phone.MANIFEST.read_text())
-        goldens = phone.MANIFEST.parent / "goldens" / "phone"
-        for journey in manifest["retired_phone_journeys"]["journeys"]:
-            self.assertTrue(journey["claims"] or journey["dropped"], journey["id"])
-            carriers = []
-            for claim in journey["claims"]:
-                self.assertTrue(claim["claim"], journey["id"])
-                story, screen = claim["step"].split("/")
-                self.assertIn(story, stories.STORIES, claim["step"])
-                # A step is a screen the story photographs.
-                self.assertTrue((goldens / story / f"{screen}.png").exists(), claim["step"])
-                if story not in carriers:
-                    carriers.append(story)
-            self.assertEqual(journey["carried_by"], carriers, journey["id"])
-            for dropped in journey["dropped"]:
-                self.assertTrue(dropped["claim"] and dropped["why"], journey["id"])
-
-    def test_the_needs_you_push_carries_what_the_app_reads(self):
-        payload = json.loads(stories.NEEDS_YOU.read_text())
-        self.assertEqual(payload["aps"]["content-available"], 1)
-        self.assertEqual(set(payload["amux"]), {"host", "agent"})
 
 
 if __name__ == "__main__":

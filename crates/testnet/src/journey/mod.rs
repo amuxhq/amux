@@ -6,7 +6,10 @@
 //! rewrites them) and asks the hosts, through the net's door, what they
 //! recorded. Results land in `target/journeys/`.
 
+mod common;
 mod frame;
+mod phone;
+mod phone_stories;
 mod terminal;
 mod terminal_stories;
 
@@ -35,6 +38,15 @@ enum Client {
     /// The terminal client in a private tmux server: one story, or `all`,
     /// one after another, a failure not stopping the rest.
     Terminal { story: String },
+    /// The phone app on the leased golden simulator: the named stories, or
+    /// every one written for the phone, one after another.
+    Phone {
+        /// The phone's own stories: those the manifest declares for the
+        /// phone and no other client.
+        #[arg(long, conflicts_with = "stories")]
+        native: bool,
+        stories: Vec<String>,
+    },
 }
 
 /// `testnet journey …` with its own arguments.
@@ -48,6 +60,7 @@ pub fn main(arguments: Vec<String>) -> ExitCode {
     match journey.client {
         Client::Terminal { story } if story == "all" => terminal_stories::run_all(),
         Client::Terminal { story } => terminal_stories::run(&story),
+        Client::Phone { native, stories } => phone_stories::run(native, stories),
     }
 }
 
@@ -67,6 +80,9 @@ pub(crate) struct Story {
     pub clients: Vec<String>,
     #[serde(default)]
     pub topology: Option<String>,
+    /// The topology the phone runs the story against, where it differs.
+    #[serde(default)]
+    pub phone_topology: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -237,7 +253,7 @@ pub(crate) fn compare_golden(path: &Path, actual: &str) -> Result<(), String> {
 }
 
 /// The lines that differ, approved then actual, each with its number.
-fn line_diff(approved: &str, actual: &str) -> String {
+pub(crate) fn line_diff(approved: &str, actual: &str) -> String {
     let (old, new): (Vec<&str>, Vec<&str>) = (approved.lines().collect(), actual.lines().collect());
     let mut out = Vec::new();
     for at in 0..old.len().max(new.len()) {

@@ -2,7 +2,6 @@
 //! would, captures the frames its goldens review and proves what the hosts
 //! recorded, one claim per line.
 
-use std::collections::BTreeSet;
 use std::fs::File;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
@@ -10,8 +9,8 @@ use std::process::{Command, ExitCode, Stdio};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
-use sha2::{Digest as _, Sha256};
 
+use super::common::*;
 use super::terminal::{TerminalJourney, agent_row, at_home, at_rest, chat_of, working};
 use super::{
     Proved, holds, items, negative_control, never_sent, phase, prompts, quoted, reflected_once,
@@ -231,59 +230,12 @@ fn counts_edits(frame: &str) -> bool {
     })
 }
 
-fn ids(agents: &[Value]) -> BTreeSet<String> {
-    agents.iter().map(|agent| text(&agent["id"])).collect()
-}
-
-fn text(value: &Value) -> String {
-    value.as_str().unwrap_or_default().to_owned()
-}
-
-fn listed<'a>(agents: &'a [Value], id: &str) -> Option<&'a Value> {
-    agents.iter().find(|agent| agent["id"] == id)
-}
-
-/// The one agent `host` lists under `name`.
-fn named<'a>(agents: &'a [Value], name: &str) -> Result<&'a Value, String> {
-    match agents
-        .iter()
-        .filter(|agent| agent["name"] == name)
-        .collect::<Vec<_>>()
-        .as_slice()
-    {
-        [agent] => Ok(agent),
-        found => Err(format!(
-            "{} agents are named {name}: {agents:?}",
-            found.len()
-        )),
-    }
-}
-
-const LIVE: i64 = 1;
-const EXITED: i64 = 2;
-
-/// The host lists `id` under `name` in lifecycle `state`.
-fn lifecycle(agents: &[Value], id: &str, name: &str, state: i64) -> Result<(), String> {
-    match listed(agents, id) {
-        Some(agent) if agent["name"] == name && agent["lifecycle"] == state => Ok(()),
-        agent => Err(format!(
-            "the host lists {id} as {agent:?}, not {name:?} in lifecycle {state}"
-        )),
-    }
-}
-
-fn keys_of(chat: &Value) -> Vec<Value> {
-    items(chat).iter().map(|item| item["key"].clone()).collect()
-}
-
 fn answered_with(chat: &Value, words: &str) -> bool {
     phase(chat) == "IDLE" && holds(chat, words)
 }
 
 // --- the stories ---------------------------------------------------------
 
-const PROMPT: &str = "Check the deployment once.";
-const REPLY: &str = "The deploy check passed.";
 const DRAFT: &str = "Keep this draft through the outage.";
 
 fn conversation_decision(
@@ -506,10 +458,6 @@ fn leave_and_recover(journey: &mut TerminalJourney) -> Proved {
         "the client exited 0",
     ]))
 }
-
-const HELLO: &str = "Say hello.";
-const BACK: &str = "Welcome back.";
-const READY: &str = "Ready when you are.";
 
 fn manage_agent(journey: &mut TerminalJourney) -> Proved {
     let before = ids(&journey.inventory("desk", Some("inventory-before"))?);
@@ -764,15 +712,6 @@ fn reach_host(journey: &mut TerminalJourney) -> Proved {
     ])
 }
 
-const COMMENT: &str = "Why --delete here?";
-
-fn pasted() -> String {
-    (0..12)
-        .map(|n| format!("deploy log {n}: rsync finished with status 0"))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 /// The one prompt carrying the paste and the review, as the desk holds it.
 fn reviewed(chat: &Value, comment: &str) -> Result<Value, String> {
     let sent: Vec<&Value> = items(chat)
@@ -813,69 +752,9 @@ fn reviewed(chat: &Value, comment: &str) -> Result<Value, String> {
     Ok((*item).clone())
 }
 
-/// Every file under `directory` named `name`.
-fn files_named(directory: &Path, name: &str) -> Vec<PathBuf> {
-    walk(directory)
-        .into_iter()
-        .filter(|path| path.file_name().is_some_and(|file| file == name))
-        .collect()
-}
-
-/// Every file under `directory`, at any depth.
-fn walk(directory: &Path) -> Vec<PathBuf> {
-    let mut found = Vec::new();
-    let Ok(entries) = std::fs::read_dir(directory) else {
-        return found;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            found.extend(walk(&path));
-        } else {
-            found.push(path);
-        }
-    }
-    found.sort();
-    found
-}
-
 fn attachment_or_review(journey: &mut TerminalJourney) -> Proved {
     // The reviewer's working tree on the desk: one commit and an edit.
-    let work = journey.ready.root.join("desk/work");
-    let git = |args: &[&str]| -> Result<(), String> {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(&work)
-            .args([
-                "-c",
-                "user.name=Journey",
-                "-c",
-                "user.email=journey@example.invalid",
-            ])
-            .args(args)
-            // A pinned author and date keep the commit id the review page
-            // shows.
-            .env("GIT_AUTHOR_DATE", "2026-01-01T00:00:00Z")
-            .env("GIT_COMMITTER_DATE", "2026-01-01T00:00:00Z")
-            .output()
-            .map_err(|error| format!("git: {error}"))?;
-        if output.status.success() {
-            Ok(())
-        } else {
-            Err(format!(
-                "git {}: {}",
-                args.join(" "),
-                String::from_utf8_lossy(&output.stderr).trim()
-            ))
-        }
-    };
-    let script = work.join("deploy.sh");
-    let write = |body: &str| std::fs::write(&script, body).map_err(|error| error.to_string());
-    git(&["init", "-q", "-b", "main"])?;
-    write("#!/bin/sh\necho deploying\nrsync build/ prod:/srv\n")?;
-    git(&["add", "deploy.sh"])?;
-    git(&["commit", "-qm", "Deploy by rsync"])?;
-    write("#!/bin/sh\necho deploying\nrsync --delete build/ prod:/srv\necho done\n")?;
+    review_repository(&journey.ready.root.join("desk/work"))?;
 
     // On the laptop: text, a long paste as one token, text, and a review of
     // the desk's working tree with one comment.
@@ -942,30 +821,7 @@ fn attachment_or_review(journey: &mut TerminalJourney) -> Proved {
     let item = reviewed(&received, COMMENT)?;
     let control =
         negative_control(reviewed(&received, &format!("{COMMENT} (a wrong comment)")).map(drop))?;
-    let patch = text(&item["attachments"][1]["patch"]);
-    let found: Vec<PathBuf> = files_named(&journey.ready.root.join("desk/data"), &patch)
-        .into_iter()
-        .filter(|path| {
-            path.parent()
-                .and_then(Path::file_name)
-                .is_some_and(|name| name == "blobs")
-        })
-        .collect();
-    let [blob] = found.as_slice() else {
-        return Err(format!(
-            "the desk holds the patch {patch} {} times",
-            found.len()
-        ));
-    };
-    let bytes = std::fs::read(blob).map_err(|error| error.to_string())?;
-    let digest: String = Sha256::digest(&bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
-    let edit = b"+rsync --delete build/ prod:/srv";
-    if digest != patch || !bytes.windows(edit.len()).any(|window| window == edit) {
-        return Err("the patch on the desk is not the reviewed diff".to_owned());
-    }
+    patch_on_disk(&journey.ready.root, &text(&item["attachments"][1]["patch"]))?;
 
     // Revisited: the chat opened again shows the paste's opening lines in
     // place and the review as its token.
@@ -992,17 +848,6 @@ fn attachment_or_review(journey: &mut TerminalJourney) -> Proved {
         "the chat opened again shows the paste in place, the review token and the reply".to_owned(),
         "the client exited 0".to_owned(),
     ])
-}
-
-fn never_received(chat: &Value, text: &str) -> Result<(), String> {
-    if prompts(chat, text).is_empty() {
-        Ok(())
-    } else {
-        Err(format!(
-            "the desk received {} while access was lost",
-            quoted(text)
-        ))
-    }
 }
 
 fn keep_authority(journey: &mut TerminalJourney) -> Proved {
@@ -1116,93 +961,7 @@ fn keep_authority(journey: &mut TerminalJourney) -> Proved {
     ])
 }
 
-/// What the provider was sent, one JSON line each.
-fn provider_lines(
-    journey: &mut TerminalJourney,
-    agent: &str,
-    label: &str,
-) -> Result<Vec<Value>, String> {
-    journey
-        .provider_input(agent, label)?
-        .iter()
-        .map(|line| serde_json::from_str(line).map_err(|error| format!("{line}: {error}")))
-        .collect()
-}
-
-/// What headless Claude was answered, in order.
-fn control_responses(
-    journey: &mut TerminalJourney,
-    agent: &str,
-    label: &str,
-) -> Result<Vec<Value>, String> {
-    Ok(provider_lines(journey, agent, label)?
-        .into_iter()
-        .filter(|line| line["type"] == "control_response")
-        .map(|line| line["response"]["response"].clone())
-        .collect())
-}
-
-/// What Codex was answered, in order.
-fn codex_results(
-    journey: &mut TerminalJourney,
-    agent: &str,
-    label: &str,
-) -> Result<Vec<Value>, String> {
-    Ok(provider_lines(journey, agent, label)?
-        .into_iter()
-        .filter(|line| line.get("result").is_some() && (line["id"].is_i64() || line["id"].is_u64()))
-        .map(|line| line["result"].clone())
-        .collect())
-}
-
-const PLAN_PROMPT: &str = "Move the journal.";
-const PLAN_NOTE: &str = "Check the copy before switching.";
-const PLAN_DONE: &str = "Moving the journal as planned.";
 const PLAN_FILE: &str = ".claude/plans/";
-
-/// The plan went back once with `note`, then was approved once.
-fn sent_back_then_approved(decisions: &[Value], note: &str) -> Result<(), String> {
-    let behaviors: Vec<&Value> = decisions
-        .iter()
-        .map(|decision| &decision["behavior"])
-        .collect();
-    let noted = decisions
-        .first()
-        .and_then(|decision| decision["message"].as_str())
-        .is_some_and(|message| message.ends_with(note));
-    if behaviors == [&json!("deny"), &json!("allow")] && noted {
-        Ok(())
-    } else {
-        Err(format!("Claude was answered {decisions:?}"))
-    }
-}
-
-/// The desk holds the two plans as its only tool items: the plan file
-/// Claude wrote before each is no step of the chat.
-fn plans_only(chat: &Value) -> Result<(), String> {
-    let calls: Vec<&Value> = items(chat)
-        .iter()
-        .filter(|item| {
-            item["key"]
-                .as_str()
-                .is_some_and(|key| key.starts_with("toolu_"))
-        })
-        .collect();
-    let plans = calls.iter().all(|item| {
-        item["text"]
-            .as_str()
-            .is_some_and(|said| said.starts_with("# Move the journal"))
-    });
-    if calls.len() == 2 && plans {
-        Ok(())
-    } else {
-        let heads: Vec<String> = calls
-            .iter()
-            .map(|item| text(&item["text"]).chars().take(40).collect())
-            .collect();
-        Err(format!("the desk holds {heads:?} as tool items"))
-    }
-}
 
 /// The screen shows no step writing the plan file, open or folded into
 /// the steps before the plan.
@@ -1268,7 +1027,7 @@ fn decide_plan(journey: &mut TerminalJourney, agent: &str, headless: bool) -> Pr
         negative_control(plans_only(&json!({ "items": extra })))?,
     ];
     if headless {
-        let decisions = control_responses(journey, agent, "plan-decisions")?;
+        let decisions = control_responses(&journey.provider_input(agent, "plan-decisions")?)?;
         sent_back_then_approved(&decisions, PLAN_NOTE)?;
         proved
             .push("Claude received the plan sent back with the note, then one approval".to_owned());
@@ -1281,53 +1040,6 @@ fn decide_plan(journey: &mut TerminalJourney, agent: &str, headless: bool) -> Pr
     journey.quit_client(&pane)?;
     proved.push("the client exited 0".to_owned());
     Ok(proved)
-}
-
-const ROTATE_PROMPT: &str = "Rotate the logs.";
-const ROTATE_NOTE: &str = "Keep a month of logs, compressed.";
-const IMPLEMENT: &str = "Implement the plan.";
-
-/// Each turn amux started on Codex: the collaboration mode it ran in and
-/// its words. A turn naming no mode keeps the one before, as Codex does.
-fn codex_turns(
-    journey: &mut TerminalJourney,
-    agent: &str,
-    label: &str,
-) -> Result<Vec<(String, String)>, String> {
-    let mut mode = "default".to_owned();
-    let mut turns = Vec::new();
-    for line in provider_lines(journey, agent, label)? {
-        if line["method"] != "turn/start" {
-            continue;
-        }
-        let params = &line["params"];
-        if let Some(named) = params["collaborationMode"]["mode"].as_str() {
-            mode = named.to_owned();
-        }
-        let words: String = params["input"]
-            .as_array()
-            .map_or(&[][..], Vec::as_slice)
-            .iter()
-            .filter_map(|part| part["text"].as_str())
-            .collect();
-        turns.push((mode.clone(), words));
-    }
-    Ok(turns)
-}
-
-fn codex_plan_turns(turns: &[(String, String)], expected: &[(&str, &str)]) -> Result<(), String> {
-    let same = turns.len() == expected.len()
-        && turns
-            .iter()
-            .zip(expected)
-            .all(|((mode, words), (want_mode, want_words))| {
-                mode == want_mode && words == want_words
-            });
-    if same {
-        Ok(())
-    } else {
-        Err(format!("Codex was started on {turns:?}"))
-    }
 }
 
 fn decide_plan_codex(journey: &mut TerminalJourney) -> Proved {
@@ -1404,7 +1116,7 @@ fn decide_plan_codex(journey: &mut TerminalJourney) -> Proved {
         ("plan", ROTATE_PROMPT),
         ("plan", ROTATE_NOTE),
     ];
-    let turns = codex_turns(journey, agent, "plan-turns")?;
+    let turns = codex_turns(&journey.provider_input(agent, "plan-turns")?)?;
     codex_plan_turns(&turns, &expected)?;
     let wrong = [
         expected[0],
@@ -1428,39 +1140,6 @@ fn decide_plan_codex(journey: &mut TerminalJourney) -> Proved {
         control,
         "the client exited 0".to_owned(),
     ])
-}
-
-const OTHER: &str = "From the help panel";
-const SKIPPED: &str = "Which section should come first?";
-const PALETTE: &str = "Pick the palette too.";
-const QUESTION_REPLY: &str = "Let me see both palettes on the desk first.";
-
-fn answers() -> Value {
-    json!({
-        "How should the settings screen be laid out?": "Stacked",
-        "Where should the screen open from?": OTHER,
-    })
-}
-
-/// The first ask was answered once with exactly `answers`: the skipped
-/// question left out.
-fn answered(decisions: &[Value], answers: &Value) -> Result<(), String> {
-    match decisions.first() {
-        Some(decision) if decision["updatedInput"]["answers"] == *answers => Ok(()),
-        _ => Err(format!("Claude was answered {decisions:?}")),
-    }
-}
-
-/// The second ask was refused with the person's own words.
-fn replied(decisions: &[Value], words: &str) -> Result<(), String> {
-    if decisions.len() == 2
-        && decisions[1]["behavior"] == "deny"
-        && decisions[1]["message"] == words
-    {
-        Ok(())
-    } else {
-        Err(format!("Claude was answered {decisions:?}"))
-    }
 }
 
 fn answer_questions(journey: &mut TerminalJourney) -> Proved {
@@ -1545,7 +1224,7 @@ fn answer_questions(journey: &mut TerminalJourney) -> Proved {
         "the reply to the reply",
     )?;
     journey.frame(&pane, "replied")?;
-    let decisions = control_responses(journey, "asker", "answers")?;
+    let decisions = control_responses(&journey.provider_input("asker", "answers")?)?;
     answered(&decisions, &answers())?;
     replied(&decisions, QUESTION_REPLY)?;
     let mut wrong = answers();
@@ -1564,20 +1243,6 @@ fn answer_questions(journey: &mut TerminalJourney) -> Proved {
     proved.extend(controls);
     proved.push("the client exited 0".to_owned());
     Ok(proved)
-}
-
-const FORM_TITLE: &str = "Reconnect flake in e2e";
-
-fn form() -> Value {
-    json!({"title": FORM_TITLE, "team": "FOX", "estimate": 3})
-}
-
-fn form_sent(decisions: &[Value], content: &Value) -> Result<(), String> {
-    if decisions.len() == 1 && decisions[0] == json!({"action": "accept", "content": content}) {
-        Ok(())
-    } else {
-        Err(format!("Claude was answered {decisions:?}"))
-    }
 }
 
 fn tool_server_asks(journey: &mut TerminalJourney) -> Proved {
@@ -1606,7 +1271,7 @@ fn tool_server_asks(journey: &mut TerminalJourney) -> Proved {
         |frame| at_rest(frame, &["Sent the form to linear", "Filed it in Linear."]),
         "the filed reply",
     )?;
-    let decisions = control_responses(journey, "filer", "form-answer")?;
+    let decisions = control_responses(&journey.provider_input("filer", "form-answer")?)?;
     form_sent(&decisions, &form())?;
     let mut wrong = form();
     wrong["team"] = json!("CORE");
@@ -1643,7 +1308,7 @@ fn tool_server_asks(journey: &mut TerminalJourney) -> Proved {
         },
         "the reply",
     )?;
-    let results = codex_results(journey, "linker", "link-answers")?;
+    let results = codex_results(&journey.provider_input("linker", "link-answers")?)?;
     let actions: Vec<&Value> = results.iter().map(|result| &result["action"]).collect();
     if actions != [&json!("accept"), &json!("accept")] || !results[1]["content"].is_null() {
         return Err(format!("Codex was answered {results:?}"));
@@ -1662,10 +1327,6 @@ fn tool_server_asks(journey: &mut TerminalJourney) -> Proved {
         "the client exited 0".to_owned(),
     ])
 }
-
-const RUN: &str = "Run the soak.";
-const STEER: &str = "Also log the peak.";
-const WITHDRAWN: &str = "And email me.";
 
 fn queue_and_steer(journey: &mut TerminalJourney) -> Proved {
     let pane = journey.launch("terminal", "laptop", &[])?;
@@ -1729,11 +1390,8 @@ fn queue_and_steer(journey: &mut TerminalJourney) -> Proved {
     ])
 }
 
-const BACKUP: &str = "Check last night's backup.";
 const NOT_SENT: &str = "Rotate the backup keys.";
 const MAYBE: &str = "Prune the old snapshots.";
-const BACKUP_DONE: &str = "Last night's backup finished with no errors.";
-
 fn send_while_away(journey: &mut TerminalJourney) -> Proved {
     let pane = journey.launch("terminal", "laptop", &[])?;
     journey.open_chat(&pane, "backups")?;
@@ -2280,12 +1938,6 @@ fn new_agent_worktree(journey: &mut TerminalJourney) -> Proved {
     ])
 }
 
-fn read_json(path: &Path) -> Result<Value, String> {
-    let read =
-        std::fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
-    serde_json::from_str(&read).map_err(|error| format!("{}: {error}", path.display()))
-}
-
 fn private(path: &Path) -> bool {
     std::fs::metadata(path).is_ok_and(|metadata| metadata.permissions().mode() & 0o077 == 0)
 }
@@ -2441,45 +2093,6 @@ fn report_a_problem(journey: &mut TerminalJourney) -> Proved {
 }
 
 // --- door requests -------------------------------------------------------
-
-fn sever(a: &str, b: &str) -> Control {
-    Control::Sever {
-        a: a.to_owned(),
-        b: b.to_owned(),
-    }
-}
-
-fn restore(a: &str, b: &str) -> Control {
-    Control::Restore {
-        a: a.to_owned(),
-        b: b.to_owned(),
-    }
-}
-
-fn trust(a: &str, b: &str) -> Control {
-    Control::Trust {
-        a: a.to_owned(),
-        b: b.to_owned(),
-    }
-}
-
-fn refuse_calls(a: &str, b: &str, refuse: bool) -> Control {
-    Control::RefuseCalls {
-        a: a.to_owned(),
-        b: b.to_owned(),
-        refuse,
-    }
-}
-
-fn open_gate(name: &str) -> Control {
-    Control::OpenGate {
-        name: name.to_owned(),
-    }
-}
-
-fn lines(said: &[&str]) -> Vec<String> {
-    said.iter().map(|line| (*line).to_owned()).collect()
-}
 
 #[cfg(test)]
 mod tests {

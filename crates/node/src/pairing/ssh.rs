@@ -218,7 +218,7 @@ fn local_ssh_identity(
     profile: ProfileId,
 ) -> Result<(DeviceIdentity, SshPairingProfile), SshPairingError> {
     validate_pairing_name(local_name)?;
-    let identity = load_or_create_device_identity_in(data_dir).map_err(identity_error)?;
+    let identity = load_or_create_device_identity_in(data_dir, profile).map_err(identity_error)?;
     let peer = SshPairingPeer {
         host_id: identity.host_id,
         pubkey: identity.public_key().to_vec(),

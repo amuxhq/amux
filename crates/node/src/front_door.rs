@@ -25,7 +25,7 @@ use crate::Tier;
 use crate::daemon::{Hosted, Installation};
 use crate::edge::{Edge, Observed, RelayCarrier, account};
 use crate::grpc::{self, status, wire_error};
-use crate::profiles::{PROFILE_SOCKET, Registry, profile_dir};
+use crate::profiles::{self, PROFILE_SOCKET, profile_dir};
 
 /// How long a profile's removal waits for its store to close before it
 /// removes the profile's files.
@@ -88,7 +88,8 @@ pub(crate) fn info(hosted: &Hosted) -> ProfileInfo {
             .to_string_lossy()
             .into_owned(),
         host_id: hosted.runtime.host().as_bytes().to_vec(),
-        revision: hosted.entry.revision,
+        // Profiles carry no revision since the directory became the set.
+        revision: 0,
     }
 }
 
@@ -101,7 +102,11 @@ fn sign_in_analytics(
     let hosted = installation.hosted.lock().unwrap();
     profile
         .and_then(|profile| hosted.get(&profile))
-        .or_else(|| hosted.values().min_by_key(|hosted| hosted.position))
+        .or_else(|| {
+            hosted
+                .values()
+                .min_by_key(|hosted| (hosted.entry.created_ms, hosted.entry.id))
+        })
         .map(|hosted| hosted.runtime.analytics().clone())
 }
 
@@ -177,7 +182,7 @@ impl FrontDoor {
     fn list(installation: &Installation) -> Vec<ProfileInfo> {
         let hosted = installation.hosted.lock().unwrap();
         let mut hosted: Vec<&Hosted> = hosted.values().collect();
-        hosted.sort_by_key(|hosted| hosted.position);
+        hosted.sort_by_key(|hosted| (hosted.entry.created_ms, hosted.entry.id));
         hosted.into_iter().map(info).collect()
     }
 
@@ -303,7 +308,7 @@ impl ProfileService for FrontDoor {
             .label
             .filter(|label| !label.trim().is_empty())
             .unwrap_or_else(|| "profile".to_owned());
-        let _change = installation.registry_changes.lock().await;
+        let _change = installation.profile_changes.lock().await;
         let id = installation
             .create(label.trim())
             .await
@@ -323,11 +328,10 @@ impl ProfileService for FrontDoor {
             .map(|name| name.trim().to_owned())
             .filter(|name| !name.is_empty())
             .ok_or_else(|| failed(ErrorCode::InvalidArgument, "a profile needs a name"))?;
-        let _change = installation.registry_changes.lock().await;
-        let mut registry = Registry::read(&installation.data_dir)
+        let _change = installation.profile_changes.lock().await;
+        let profiles = profiles::list(&installation.data_dir)
             .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
-        if registry
-            .profiles
+        if profiles
             .iter()
             .any(|entry| entry.id != id && entry.label == label)
         {
@@ -336,22 +340,12 @@ impl ProfileService for FrontDoor {
                 format!("another profile is named {label}"),
             ));
         }
-        let entry = registry
-            .profiles
-            .iter_mut()
+        let mut entry = profiles
+            .into_iter()
             .find(|entry| entry.id == id)
             .ok_or_else(|| failed(ErrorCode::NotFound, format!("no profile {id}")))?;
-        if request.expected_revision != 0 && request.expected_revision != entry.revision {
-            return Err(failed(
-                ErrorCode::Aborted,
-                "the profile changed since it was read; read it again",
-            ));
-        }
         entry.label = label;
-        entry.revision += 1;
-        let entry = entry.clone();
-        registry
-            .write(&installation.data_dir)
+        profiles::write_entry(&installation.data_dir, &entry)
             .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
         let info = {
             let mut hosted = installation.hosted.lock().unwrap();
@@ -374,20 +368,13 @@ impl ProfileService for FrontDoor {
         let installation = self.installation()?;
         let request = request.into_inner();
         let id = profile_id(&request.profile_id)?;
-        let _change = installation.registry_changes.lock().await;
-        let mut registry = Registry::read(&installation.data_dir)
+        let _change = installation.profile_changes.lock().await;
+        let profiles = profiles::list(&installation.data_dir)
             .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
-        let entry = registry
-            .entry(id)
-            .cloned()
-            .ok_or_else(|| failed(ErrorCode::NotFound, format!("no profile {id}")))?;
-        if request.confirm_revision != entry.revision {
-            return Err(failed(
-                ErrorCode::Aborted,
-                "the profile changed since it was read; read it again",
-            ));
+        if !profiles.iter().any(|entry| entry.id == id) {
+            return Err(failed(ErrorCode::NotFound, format!("no profile {id}")));
         }
-        if registry.profiles.len() == 1 {
+        if profiles.len() == 1 {
             return Err(failed(
                 ErrorCode::FailedPrecondition,
                 "an installation keeps at least one profile",
@@ -408,12 +395,6 @@ impl ProfileService for FrontDoor {
                 "the profile has running agents; stop them first",
             ));
         }
-        // The registry entry goes first: a crash after it leaves a
-        // directory nothing lists, never a listed profile half removed.
-        registry.profiles.retain(|entry| entry.id != id);
-        registry
-            .write(&installation.data_dir)
-            .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
         let hosted = installation.hosted.lock().unwrap().remove(&id);
         let closed = runtime.as_ref().map(|runtime| runtime.driver().closed());
         if let Some(hosted) = hosted {

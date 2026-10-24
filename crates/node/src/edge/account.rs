@@ -291,17 +291,21 @@ pub(crate) async fn bind(
     let same_account =
         |record: &AccountRecord| record.service == service && record.subject == info.sub;
 
-    let _change = installation.registry_changes.lock().await;
+    let _change = installation.profile_changes.lock().await;
     let hosted = installation
         .hosted
         .lock()
         .unwrap()
         .iter()
         .filter_map(|(id, hosted)| {
-            hosted
-                .runtime
-                .edge()
-                .map(|edge| (*id, hosted.position, hosted.runtime.clone(), edge))
+            hosted.runtime.edge().map(|edge| {
+                (
+                    *id,
+                    (hosted.entry.created_ms, hosted.entry.id),
+                    hosted.runtime.clone(),
+                    edge,
+                )
+            })
         })
         .collect::<Vec<_>>();
     let bound = hosted

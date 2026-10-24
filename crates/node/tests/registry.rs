@@ -42,7 +42,7 @@ async fn working(runtime: &node::ProfileRuntime, id: uuid::Uuid) -> Result<(), S
 #[tokio::test(flavor = "multi_thread")]
 async fn a_store_from_before_the_release_schema_stops_the_daemon_and_is_kept() {
     let install = Install::new();
-    let host = node::host_id(&install.profile_dir()).unwrap();
+    let host = install.profile;
     let path = install.profile_dir().join(node::STORE);
     {
         // The history a store written before the release recorded: seven
@@ -181,7 +181,7 @@ async fn the_generation_bumps_only_after_an_unclean_reboot() {
 #[tokio::test(flavor = "multi_thread")]
 async fn startup_prepares_after_looking_and_writes_only_after_go() {
     let install = Install::new();
-    let host = node::host_id(&install.profile_dir()).unwrap();
+    let host = install.profile;
     let store_path = install.profile_dir().join(node::STORE);
 
     // An agent that ran while no daemon was up: a live row, a directory with
@@ -332,7 +332,7 @@ async fn startup_prepares_after_looking_and_writes_only_after_go() {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_ingested_cause_survives_a_daemon_that_died_before_marking() {
     let install = Install::new();
-    let host = node::host_id(&install.profile_dir()).unwrap();
+    let host = install.profile;
     let id = uuid::Uuid::new_v4();
     let key = AgentKey::new(host.as_bytes().to_vec(), id.as_bytes().to_vec());
     let mut writer =

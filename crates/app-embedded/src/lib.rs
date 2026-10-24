@@ -384,20 +384,10 @@ impl EmbeddedRuntime {
     /// Deletes a profile: its key, the machines it trusts and its store.
     /// The installation keeps at least one.
     pub async fn delete_profile(&self, profile: ProfileId) -> Result<(), EmbeddedError> {
-        let revision = self
-            .door()
-            .list_profiles(Request::new(Empty {}))
-            .await?
-            .into_inner()
-            .profiles
-            .into_iter()
-            .find(|info| info.id == profile.as_bytes())
-            .ok_or(EmbeddedError::NoProfile(profile))?
-            .revision;
         self.door()
             .delete_profile(Request::new(DeleteProfileRequest {
                 profile_id: profile.as_bytes().to_vec(),
-                confirm_revision: revision,
+                confirm_revision: 0,
             }))
             .await?;
         Ok(())

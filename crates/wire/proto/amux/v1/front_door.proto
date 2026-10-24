@@ -11,8 +11,7 @@ import "amux/v1/service.proto";
 
 // The installation's front door: local Unix socket and in-process only.
 // Calls are not retried by any client; a mutation that loses its reply is
-// re-run by the person, and the revision checks on rename and delete
-// refuse a re-run against a profile that changed meanwhile.
+// re-run by the person.
 service ProfileService {
   rpc ListProfiles(Empty) returns (ListProfilesResponse);
   // Snapshot, CaughtUp, then ordered events; ABORTED requires a fresh watch.
@@ -82,6 +81,7 @@ message ProfileInfo {
   bytes host_id = 6;
   Intent intent = 7;
   Observed observed = 8;
+  // Unused: always zero.
   uint64 revision = 9;
   Tier tier = 10;
   RelayCarrier relay_carrier = 11;
@@ -118,12 +118,14 @@ message BindProfileRequest {
 
 message RenameProfileRequest {
   bytes profile_id = 1;
+  // Unused: ignored.
   uint64 expected_revision = 2;
   optional string override_name = 3;
 }
 
 message DeleteProfileRequest {
   bytes profile_id = 1;
+  // Unused: ignored.
   uint64 confirm_revision = 2;
 }
 

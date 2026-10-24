@@ -809,15 +809,7 @@ async fn a_pairing_that_replaces_a_hosts_key_closes_the_old_keys_live_link_first
         .await
         .unwrap();
     net.stop_daemon("new-desk").await.unwrap();
-    let profile_dir = |name: &str| {
-        let host = net.host(name).unwrap();
-        node::profile_dir(&host.data_dir, host.profile)
-    };
-    std::fs::copy(
-        node::harness::host_id_path(&profile_dir("desk")),
-        node::harness::host_id_path(&profile_dir("new-desk")),
-    )
-    .unwrap();
+    net.replace_profile("new-desk", desk).unwrap();
     net.restart_daemon("new-desk").await.unwrap();
     assert_eq!(edge(&net, "new-desk").host_id(), desk);
     let new_key = edge(&net, "new-desk").public_key().to_vec();

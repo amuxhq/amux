@@ -27,9 +27,7 @@ use crate::link::resumption::SessionTickets;
 use crate::trust::{SharedTrustStore, TrustStore};
 
 const DEVICE_KEY_FILE: &str = "device.key";
-const HOST_ID_FILE: &str = "host_id";
 /// The host id file holds the id's hyphenated text form.
-const HOST_ID_LEN: usize = 36;
 const ED25519_SEED_LEN: usize = 32;
 pub(crate) const ED25519_PUBKEY_LEN: usize = 32;
 const ED25519_PKCS8_V1_PREFIX: [u8; 16] = [
@@ -518,10 +516,22 @@ impl ServerCertVerifier for PinnedServerCertVerifier {
     }
 }
 
+/// The identity of a profile whose directory is `data_dir`, under an id
+/// derived from the directory: the same on every load, another for every
+/// other directory.
+#[cfg(test)]
+fn identity_in(data_dir: &Path) -> Result<DeviceIdentity, IdentityError> {
+    let host = HostId::new_v5(
+        &uuid::Uuid::NAMESPACE_OID,
+        data_dir.to_string_lossy().as_bytes(),
+    );
+    load_or_create_device_identity_in(data_dir, host)
+}
+
 #[cfg(all(test, unix))]
 fn ensure_device_files_in(data_dir: &Path) -> Result<DeviceIdentity, IdentityError> {
     crate::trust::load_or_create_in(data_dir)?;
-    load_or_create_device_identity_in(data_dir)
+    identity_in(data_dir)
 }
 
 #[cfg(all(test, unix))]
@@ -539,41 +549,16 @@ fn data_dir_mode_ready(path: &Path) -> bool {
     }
 }
 
-pub fn load_or_create_device_identity_in(data_dir: &Path) -> Result<DeviceIdentity, IdentityError> {
+/// The profile's identity: its host id, which is the profile's own id and
+/// public, and the device key kept in its directory, the identity's
+/// secret, made on first use.
+pub fn load_or_create_device_identity_in(
+    data_dir: &Path,
+    host_id: HostId,
+) -> Result<DeviceIdentity, IdentityError> {
     ensure_data_dir(data_dir)?;
-    let host_id = load_or_create_host_id(&host_id_path(data_dir))?;
     let private_key_pkcs8 = load_or_create_device_key(&device_key_path(data_dir))?;
     DeviceIdentity::from_parts(host_id, private_key_pkcs8)
-}
-
-/// The profile's host id: the text file the profile was created with. The
-/// device key is the identity's secret; the host id is public.
-fn load_or_create_host_id(path: &Path) -> Result<HostId, IdentityError> {
-    match load_host_id(path) {
-        Ok(host_id) => Ok(host_id),
-        Err(IdentityError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
-            let host_id = HostId::new_v4();
-            match create_private_file(path, host_id.to_string().as_bytes()) {
-                Ok(()) => Ok(host_id),
-                Err(IdentityError::Io(error))
-                    if error.kind() == std::io::ErrorKind::AlreadyExists =>
-                {
-                    load_host_id(path)
-                }
-                Err(error) => Err(error),
-            }
-        }
-        Err(error) => Err(error),
-    }
-}
-
-fn load_host_id(path: &Path) -> Result<HostId, IdentityError> {
-    let text = fs::read_to_string(path)?;
-    HostId::parse_str(text.trim()).map_err(|_| IdentityError::InvalidLength {
-        field: HOST_ID_FILE,
-        expected: HOST_ID_LEN,
-        actual: text.trim().len(),
-    })
 }
 
 fn load_or_create_device_key(path: &Path) -> Result<Vec<u8>, IdentityError> {
@@ -753,10 +738,6 @@ pub fn device_key_path(data_dir: &Path) -> PathBuf {
     data_dir.join(DEVICE_KEY_FILE)
 }
 
-pub fn host_id_path(data_dir: &Path) -> PathBuf {
-    data_dir.join(HOST_ID_FILE)
-}
-
 #[cfg(test)]
 mod tests {
     #[cfg(unix)]
@@ -797,8 +778,8 @@ mod tests {
     fn device_identity_is_created_and_reused() {
         let dir = temp_data_dir();
 
-        let first = load_or_create_device_identity_in(dir.path()).unwrap();
-        let second = load_or_create_device_identity_in(dir.path()).unwrap();
+        let first = identity_in(dir.path()).unwrap();
+        let second = identity_in(dir.path()).unwrap();
 
         assert_eq!(first.host_id, second.host_id);
         assert_eq!(first.public_key(), second.public_key());
@@ -808,24 +789,12 @@ mod tests {
                 .private_key_pkcs8()
                 .starts_with(&ED25519_PKCS8_V1_PREFIX)
         );
-        assert_eq!(
-            fs::read(host_id_path(dir.path())).unwrap().len(),
-            HOST_ID_LEN
-        );
 
         #[cfg(unix)]
         {
             assert_eq!(
                 fs::metadata(dir.path()).unwrap().permissions().mode() & 0o777,
                 0o700
-            );
-            assert_eq!(
-                fs::metadata(host_id_path(dir.path()))
-                    .unwrap()
-                    .permissions()
-                    .mode()
-                    & 0o777,
-                0o600
             );
             assert_eq!(
                 fs::metadata(device_key_path(dir.path()))
@@ -842,8 +811,8 @@ mod tests {
     fn pinned_client_cert_verifier_accepts_only_trusted_device_pubkeys() {
         let trusted_dir = temp_data_dir();
         let untrusted_dir = temp_data_dir();
-        let trusted = load_or_create_device_identity_in(trusted_dir.path()).unwrap();
-        let untrusted = load_or_create_device_identity_in(untrusted_dir.path()).unwrap();
+        let trusted = identity_in(trusted_dir.path()).unwrap();
+        let untrusted = identity_in(untrusted_dir.path()).unwrap();
         let trust_store = trust_store_with_pubkey(trusted.host_id, trusted.public_key());
         let verifier = PinnedClientCertVerifier::new(Arc::new(std::sync::RwLock::new(trust_store)));
         let now = UnixTime::since_unix_epoch(Duration::from_secs(1_700_000_000));
@@ -864,7 +833,7 @@ mod tests {
     #[test]
     fn pinned_client_cert_verifier_reads_live_trust_store_updates() {
         let peer_dir = temp_data_dir();
-        let peer = load_or_create_device_identity_in(peer_dir.path()).unwrap();
+        let peer = identity_in(peer_dir.path()).unwrap();
         let trust_store = Arc::new(std::sync::RwLock::new(TrustStore::default()));
         let verifier = PinnedClientCertVerifier::new(trust_store.clone());
         let now = UnixTime::since_unix_epoch(Duration::from_secs(1_700_000_000));
@@ -904,7 +873,7 @@ mod tests {
     #[test]
     fn pinned_server_cert_verifier_reads_live_trust_store_updates_and_replacements() {
         let peer_dir = temp_data_dir();
-        let peer = load_or_create_device_identity_in(peer_dir.path()).unwrap();
+        let peer = identity_in(peer_dir.path()).unwrap();
         let rotated_peer = DeviceIdentity::for_test(peer.host_id);
         let trust_store = Arc::new(std::sync::RwLock::new(TrustStore::default()));
         let verifier = PinnedServerCertVerifier::new(peer.host_id, trust_store.clone());
@@ -991,7 +960,7 @@ mod tests {
                 let barrier = barrier.clone();
                 std::thread::spawn(move || {
                     barrier.wait();
-                    load_or_create_device_identity_in(&data_dir).unwrap()
+                    identity_in(&data_dir).unwrap()
                 })
             })
             .collect::<Vec<_>>();
@@ -1008,26 +977,9 @@ mod tests {
                     && identity.public_key() == first.public_key())
         );
 
-        let reloaded = load_or_create_device_identity_in(&data_dir).unwrap();
+        let reloaded = identity_in(&data_dir).unwrap();
         assert_eq!(reloaded.host_id, first.host_id);
         assert_eq!(reloaded.public_key(), first.public_key());
-    }
-
-    #[test]
-    fn invalid_host_id_length_is_rejected() {
-        let dir = temp_data_dir();
-        fs::create_dir_all(dir.path()).unwrap();
-        create_private_file(&host_id_path(dir.path()), b"short").unwrap();
-
-        let error = load_or_create_device_identity_in(dir.path()).unwrap_err();
-        assert!(matches!(
-            error,
-            IdentityError::InvalidLength {
-                field: HOST_ID_FILE,
-                expected: HOST_ID_LEN,
-                actual: 5
-            }
-        ));
     }
 
     #[cfg(unix)]

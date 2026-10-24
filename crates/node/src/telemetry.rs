@@ -51,10 +51,8 @@ impl Profiles {
     fn runtime(&self, host: HostId) -> Option<Arc<ProfileRuntime>> {
         let installation = self.0.upgrade()?;
         let hosted = installation.hosted.lock().unwrap();
-        hosted
-            .values()
-            .find(|hosted| hosted.runtime.host() == host)
-            .map(|hosted| hosted.runtime.clone())
+        // A profile's host id is its id.
+        hosted.get(&host).map(|hosted| hosted.runtime.clone())
     }
 }
 

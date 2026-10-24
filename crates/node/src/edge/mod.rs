@@ -314,12 +314,13 @@ impl Edge {
     /// options ask for. `runtime` is what trusted peers reach.
     pub(crate) async fn start(
         dir: &Path,
+        host: HostId,
         options: &EdgeOptions,
         clock: Arc<dyn Clock>,
         runtime: Weak<ProfileRuntime>,
         analytics: analytics::Analytics,
     ) -> Result<Arc<Self>, EdgeError> {
-        let identity = crate::identity::load_or_create_device_identity_in(dir)?;
+        let identity = crate::identity::load_or_create_device_identity_in(dir, host)?;
         // The core holds the trust store; the edge reads it as the core
         // publishes it. A trust file that does not read stops the edge.
         let read = crate::trust::load_or_create_in(dir)?;

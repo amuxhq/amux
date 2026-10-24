@@ -62,7 +62,7 @@ use tokio::io::AsyncWriteExt as _;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::install::{private_dir, sync_dir};
-use crate::profiles::{self, Registry};
+use crate::profiles;
 use crate::release::{self, Manifest, Release};
 use crate::window::{self, Window};
 
@@ -780,9 +780,8 @@ async fn fetch(release: &Release, staged: &Path) -> Result<(), CheckError> {
 /// The host id that places this installation in a rollout: its first
 /// profile's.
 fn rollout_host(data_dir: &Path) -> Option<uuid::Uuid> {
-    let registry = Registry::read(data_dir).ok()?;
-    let first = registry.profiles.first()?;
-    profiles::host_id(&profiles::profile_dir(data_dir, first.id)).ok()
+    // A profile's host id is its id.
+    Some(profiles::list(data_dir).ok()?.first()?.id)
 }
 
 /// The supervisor's own lock, `<data_dir>/supervisor.lock`, holding its

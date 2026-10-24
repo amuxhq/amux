@@ -382,7 +382,6 @@ struct Connected {
 
 pub struct ProfileRuntime {
     profile: ProfileId,
-    host: Uuid,
     /// The installation's generation, carried on this host's entry.
     generation: u64,
     dir: PathBuf,
@@ -620,7 +619,6 @@ impl Drop for ProfileRuntime {
 /// What a profile runtime is made of.
 pub struct Profile {
     pub profile: ProfileId,
-    pub host: Uuid,
     /// The installation's generation as of this run.
     pub generation: u64,
     /// The profile's directory.
@@ -646,7 +644,6 @@ impl ProfileRuntime {
     pub fn open(profile: Profile) -> Arc<Self> {
         let Profile {
             profile,
-            host,
             generation,
             dir,
             store,
@@ -669,7 +666,6 @@ impl ProfileRuntime {
         let mut core = None;
         let runtime = Arc::new_cyclic(|me| Self {
             profile,
-            host,
             generation,
             clock,
             driver: {
@@ -724,6 +720,7 @@ impl ProfileRuntime {
         }
         let edge = crate::edge::Edge::start(
             &self.dir,
+            self.profile,
             options,
             self.clock.clone(),
             Arc::downgrade(self),
@@ -761,8 +758,9 @@ impl ProfileRuntime {
         self.turns.take()
     }
 
+    /// The profile's host id, the one its peers know it by: its own id.
     pub fn host(&self) -> Uuid {
-        self.host
+        self.profile
     }
 
     /// The installation's generation as of this run's start.
@@ -868,7 +866,7 @@ impl ProfileRuntime {
     }
 
     pub(crate) fn key(&self, id: AgentId) -> AgentKey {
-        AgentKey::new(self.host.as_bytes().to_vec(), id.as_bytes().to_vec())
+        AgentKey::new(self.host().as_bytes().to_vec(), id.as_bytes().to_vec())
     }
 
     /// The inventory row for an agent.
@@ -956,7 +954,7 @@ impl ProfileRuntime {
             16 => Uuid::from_slice(&request.agent_id).expect("sixteen bytes"),
             n => return Err(RegistryError::BadId(n)),
         };
-        if self.target_host(&request)? != self.host {
+        if self.target_host(&request)? != self.host() {
             return Err(RegistryError::OtherHost);
         }
         let Some(agent) = &request.agent else {
@@ -985,7 +983,7 @@ impl ProfileRuntime {
         }
         let parent = match caller {
             Some(caller) => Some(AgentRef {
-                host_id: self.host.as_bytes().to_vec(),
+                host_id: self.host().as_bytes().to_vec(),
                 agent_id: caller.as_bytes().to_vec(),
             }),
             None => request.parent.clone(),
@@ -1086,7 +1084,7 @@ impl ProfileRuntime {
                 Uuid::from_slice(host).map_err(|_| RegistryError::BadId(host.len()))
             }
             Some(Of::Name(name)) if !name.is_empty() => Ok(self.resolve_host(name)?),
-            _ => Ok(self.host),
+            _ => Ok(self.host()),
         }
     }
 
@@ -1115,7 +1113,7 @@ impl ProfileRuntime {
         let mut request = request;
         if let Some(caller) = caller {
             request.parent = Some(AgentRef {
-                host_id: self.host.as_bytes().to_vec(),
+                host_id: self.host().as_bytes().to_vec(),
                 agent_id: caller.as_bytes().to_vec(),
             });
         }
@@ -1452,7 +1450,7 @@ impl ProfileRuntime {
             .read_rows(|store| store.agents())
             .await?
             .into_iter()
-            .filter(|row| row.agent.host == self.host.as_bytes())
+            .filter(|row| row.agent.host == self.host().as_bytes())
             .filter_map(|row| Some((Uuid::from_slice(&row.agent.agent).ok()?, row)))
             .collect();
         let mut dirs = HashSet::new();

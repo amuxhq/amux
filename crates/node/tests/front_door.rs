@@ -184,12 +184,10 @@ async fn an_empty_pairing_token_is_invalid() {
     daemon.shutdown().await.unwrap();
 }
 
-/// A rename or a delete names the revision its caller read, and one that
-/// has moved on since is refused and changes nothing: that is what keeps a
-/// re-run of a half-applied change from acting on a profile it no longer
-/// describes.
+/// A rename changes the label the profile is listed under, and a delete
+/// takes it out of the list.
 #[tokio::test(flavor = "multi_thread")]
-async fn rename_and_delete_refuse_a_stale_revision() {
+async fn rename_and_delete_change_the_listed_profile() {
     let install = Install::new();
     let daemon = install.start("boot-1", quiet_launch()).await;
     let door = daemon.front_door();
@@ -200,7 +198,6 @@ async fn rename_and_delete_refuse_a_stale_revision() {
         .await
         .unwrap()
         .into_inner();
-    let read = created.revision;
     let listed = || {
         let door = door.clone();
         let id = created.id.clone();
@@ -214,44 +211,26 @@ async fn rename_and_delete_refuse_a_stale_revision() {
                 .find(|profile| profile.id == id)
         }
     };
-    let rename = |expected_revision: u64, name: &str| {
-        door.rename_profile(Request::new(RenameProfileRequest {
-            profile_id: created.id.clone(),
-            expected_revision,
-            override_name: Some(name.to_owned()),
-        }))
-    };
 
-    let renamed = rename(read, "kept").await.unwrap().into_inner();
+    let renamed = door
+        .rename_profile(Request::new(RenameProfileRequest {
+            profile_id: created.id.clone(),
+            expected_revision: 0,
+            override_name: Some("kept".to_owned()),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
     assert_eq!(renamed.label, "kept");
-    assert!(renamed.revision > read, "a rename moves the revision on");
-
-    let stale = rename(read, "lost")
-        .await
-        .expect_err("a rename from the revision before the last one");
-    assert_eq!(stale.code(), tonic::Code::Aborted, "{stale:?}");
     let after = listed().await.expect("the profile is still listed");
-    assert_eq!(after.label, "kept", "a refused rename changes nothing");
-    assert_eq!(after.revision, renamed.revision);
+    assert_eq!(after.label, "kept", "the list shows the new label");
 
-    let delete = |confirm_revision: u64| {
-        door.delete_profile(Request::new(DeleteProfileRequest {
-            profile_id: created.id.clone(),
-            confirm_revision,
-        }))
-    };
-    let stale = delete(read)
-        .await
-        .expect_err("a delete confirming the revision before the last one");
-    assert_eq!(stale.code(), tonic::Code::Aborted, "{stale:?}");
-    assert!(
-        listed().await.is_some(),
-        "a refused delete leaves the profile"
-    );
-
-    // The same delete at the current revision goes through, so the stale
-    // revision was the only reason for the refusal.
-    delete(renamed.revision).await.unwrap();
+    door.delete_profile(Request::new(DeleteProfileRequest {
+        profile_id: created.id.clone(),
+        confirm_revision: 0,
+    }))
+    .await
+    .unwrap();
     assert!(listed().await.is_none(), "the profile is gone");
 
     drop(door);

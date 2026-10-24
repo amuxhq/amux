@@ -3,12 +3,11 @@
 //! ```text
 //! <data_dir>/
 //!   installation.lock     exclusive; one daemon per data dir
-//!   registry              which profiles exist
 //!   generation            boot id, clean-shutdown flag, generation counter
 //!   installation_id       this installation's random id, written once
 //!   reports/              debug bundles
-//!   profiles/<profile_id>/
-//!     host_id             this profile's host id, written once
+//!   profiles/<profile_id>/  one per profile; the id is its host id
+//!     profile             what it is called and when it was made
 //!     store.sqlite        the profile store
 //!     core-ring/          the core's checkpoints and every input it
 //!                         stepped since each
@@ -22,11 +21,9 @@ use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
 pub const INSTALLATION_LOCK: &str = "installation.lock";
-pub const REGISTRY: &str = "registry";
 pub const GENERATION: &str = "generation";
 pub const REPORTS: &str = "reports";
 pub const PROFILES: &str = "profiles";
-pub const HOST_ID: &str = "host_id";
 pub const STORE: &str = "store.sqlite";
 pub const CORE_RING: &str = "core-ring";
 pub const AGENTS: &str = "agents";

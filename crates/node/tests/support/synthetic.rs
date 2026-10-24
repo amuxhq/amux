@@ -508,8 +508,9 @@ pub fn turn_end(turn_id: u64, key: &str) -> Step {
     }
 }
 
+/// The installation's profile's host id: its profile id.
 pub fn host(install: &Install) -> Uuid {
-    node::host_id(&install.profile_dir()).unwrap()
+    install.profile
 }
 
 // --- steps --------------------------------------------------------------

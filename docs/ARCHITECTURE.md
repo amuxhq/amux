@@ -218,7 +218,7 @@ and the rule.
 ![Inside one daemon. The two handle types are the only per-agent and per-client state the daemon holds; both are rebuilt from disk and from reconnecting clients after a restart.](figures/inside-daemon.svg)
 
 One daemon process is one installation ([`node::start`](../crates/node/src/daemon.rs)).
-It holds the installation lock, the profile registry, the generation file
+It holds the installation lock, the profiles directory, the generation file
 and the front door, and hosts one
 [`ProfileRuntime`](../crates/node/src/runtime.rs) per profile. A profile
 runtime is a complete amux: one daemon core, which owns the profile's store
@@ -320,11 +320,11 @@ The rest of the installation:
 ```text
 <data_dir>/                   default ~/.local/share/amux ($XDG_DATA_HOME/amux)
   installation.lock           one daemon per data directory
-  registry                    which profiles exist
   generation                  boot id, clean-shutdown flag and a counter a replica compares
   reports/                    dumps (debug bundles)
-  profiles/<profile_id>/
-    host_id, device.key       this profile's identity; the key never leaves the machine
+  profiles/<profile_id>/      one per profile; its id is its host id
+    profile                   what it is called and when it was made
+    device.key                this profile's key; it never leaves the machine
     trust.json                the hosts this profile has paired with
     account                   the account binding and its credential, when bound
     sock                      the client socket, owner-only
@@ -372,7 +372,7 @@ time:
 2. Read `generation`. If the boot id changed and the last run did not shut
    down cleanly, bump the counter. Rewrite the file with this boot's id and
    the clean flag cleared, durably, before anything is served.
-3. Read the registry. For each profile, open its store and apply pending
+3. List the profiles directory. For each profile, open its store and apply pending
    migrations (forward-only, and additive from the first release on), then
    look at every
    `agents/<id>/` without writing: try the lock, dial the live ones, read

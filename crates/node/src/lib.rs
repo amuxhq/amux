@@ -79,8 +79,8 @@ pub use generation::{Generation, boot_id};
 pub use grpc::{ClientApi, status};
 pub use identity::{quic_endpoint, quic_endpoint_config};
 pub use install::{
-    AGENTS, CORE_RING, GENERATION, HOST_ID, INSTALLATION_LOCK, InstallationLock, LockError,
-    PROFILES, REGISTRY, REPLICAS, REPORTS, STORE, write_durably,
+    AGENTS, CORE_RING, GENERATION, INSTALLATION_LOCK, InstallationLock, LockError, PROFILES,
+    REPLICAS, REPORTS, STORE, write_durably,
 };
 pub use link::{
     Cursor, EarlyAnswer, EarlyCall, EarlyReply, PeerChannel, PeerClient, ResumedLink,
@@ -99,7 +99,7 @@ pub use pairing::ssh::{
 #[cfg(unix)]
 pub use pairing::ssh::{pair_via_ssh_responder_stdio, relay_stdio_to_unix_socket};
 pub use profiles::{
-    PROFILE_SOCKET, ProfileEntry, ProfileId, Registry, create_profile, host_id, profile_dir,
+    PROFILE_SOCKET, ProfileEntry, ProfileId, create_profile, create_profile_as, profile_dir,
 };
 pub use relay::RelayError;
 pub use replicas::{InventoryHook, SourceHook, SourcePolicy, SourceVerdict};
@@ -122,7 +122,7 @@ pub mod harness {
 
     pub use crate::auth::claims::Tier;
     pub use crate::discovery::{Advertisement, Discovery, DiscoveryEvent, ScriptedDiscovery};
-    pub use crate::identity::{device_key_path, host_id_path};
+    pub use crate::identity::device_key_path;
     pub use crate::link::ByteStream;
     pub use crate::link::relay_host::RelayHost;
     pub use crate::routing::{AuthenticatedLinkUser, LinkTokenAuthenticator, LiveRoute};

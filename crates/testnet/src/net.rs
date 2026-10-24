@@ -1619,7 +1619,7 @@ impl Net {
             }
         }
         let profile = node::create_profile(&data_dir)?;
-        let host_id = node::host_id(&node::profile_dir(&data_dir, profile))?;
+        let host_id = profile;
         let front_door = dir.join("door.sock");
         let config = dir.join("installation.yaml");
         std::fs::write(
@@ -2639,6 +2639,22 @@ impl Net {
 
     /// Starts a host's daemon again from what its installation holds, under
     /// the same boot, and relinks its declared links.
+    /// Gives a stopped host's installation a profile under `id`, another
+    /// machine's, in place of its own: a machine starting under an id its
+    /// peers already know, with a key of its own.
+    pub fn replace_profile(&mut self, host: &str, id: ProfileId) -> Result<(), NetError> {
+        let info = &mut self
+            .hosts
+            .get_mut(host)
+            .ok_or_else(|| NetError::NoHost(host.to_owned()))?
+            .info;
+        std::fs::remove_dir_all(node::profile_dir(&info.data_dir, info.profile))?;
+        node::create_profile_as(&info.data_dir, id)?;
+        info.profile = id;
+        info.host_id = id;
+        Ok(())
+    }
+
     pub async fn restart_daemon(&mut self, host: &str) -> Result<Ack, NetError> {
         if let Some(process) = self.process(host)?.cloned() {
             // A supervised host's daemon may already be back under its

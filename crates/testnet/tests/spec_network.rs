@@ -985,7 +985,13 @@ async fn a_host_revoked_while_away_reads_the_desk_as_revoked_once_it_dials_throu
         Topology::new()
             .relay(&["ada"])
             .host_decl(relay_host("desk", "ada"))
-            .host_decl(relay_host("tablet", "ada"))
+            // The tablet's own dialler runs (a host that dials found hosts
+            // dials through a relay too); the desk listens on no LAN, so
+            // the relay is the only way to it.
+            .host_decl(testnet::HostDecl {
+                lan: true,
+                ..relay_host("tablet", "ada")
+            })
             .agent(
                 testnet::AgentDecl::new("worker", "desk")
                     .prompt("Watch the build.")
@@ -1031,8 +1037,27 @@ async fn a_host_revoked_while_away_reads_the_desk_as_revoked_once_it_dials_throu
         (tonic::Code::Unauthenticated, node::TRUST_REVOKED),
         "a call through the relay is refused as no longer trusted"
     );
+    // Nor does it go on dialling a host that refused it: once the refused
+    // call's own packets have settled, the relay forwards nothing more
+    // from it over two of the dialler's backoff pauses (1 s, then 2 s).
+    let forwarded = || net.relay().unwrap().forward_counts().forwarded;
+    let mut settled = forwarded();
+    loop {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let now = forwarded();
+        if now == settled {
+            break;
+        }
+        settled = now;
+    }
+    tokio::time::sleep(Duration::from_millis(3500)).await;
+    assert_eq!(
+        forwarded(),
+        settled,
+        "the tablet dialled the desk again after it was refused as revoked"
+    );
     println!(
-        "the tablet, revoked while stopped, dialled through the relay and reads the desk as revoked"
+        "the tablet, revoked while stopped, dialled through the relay once and reads the desk as revoked"
     );
 
     net.shutdown().await.unwrap();

@@ -1141,8 +1141,8 @@ async fn redial_while_away(
 
 /// Dials `peer` through the first host the core lists as claiming to reach
 /// it, pausing after each failure as a direct redial does, until a link of
-/// its own is up, no host claims it, it is no longer trusted, or the
-/// connector shuts down. A refusal for the account's plan fails the try
+/// its own is up, no host claims it, it is no longer trusted, it refuses us
+/// as revoked, or the connector shuts down. A refusal for the account's plan fails the try
 /// like any other: the relay goes on refusing while the plan lapses, and
 /// the core reads the host away meanwhile.
 async fn dial_through_while_away(
@@ -1178,7 +1178,11 @@ async fn dial_through_while_away(
             }
             _ => None,
         };
-        if let Some(Err(error)) = tried {
+        // A host that refused us as revoked is not dialled again: the core
+        // asks afresh once the revocation clears.
+        if let Some(Err(error)) = tried
+            && !matches!(error, ChannelError::Revoked)
+        {
             tracing::debug!(%peer, %error, "dialling through a forwarder failed");
             let pause = REDIAL_FIRST
                 .saturating_mul(1 << failures.min(5))

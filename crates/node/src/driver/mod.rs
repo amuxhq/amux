@@ -905,39 +905,28 @@ impl CoreThread {
             self.timers.remove(&id);
             self.step(runtime, Input::Timer { id }, out);
         }
-        self.alarm = None;
         self.set_alarm(runtime);
     }
 
     /// Sets the one alarm to the soonest deadline, on the profile's clock;
     /// it wakes the loop, which steps the soonest timer due by then. A
     /// deadline already passed rings at once, and the wake queues behind
-    /// the inputs already waiting. An alarm at or past now may have rung
-    /// already, so it is set afresh.
+    /// the inputs already waiting.
     fn set_alarm(&mut self, runtime: &Arc<ProfileRuntime>) {
         let now = runtime.clock_now().max(0) as u64;
         let next = self.timers.values().copied().min();
-        if self.alarm.as_ref().is_some_and(|(at, _)| *at <= now) {
-            self.alarm = None;
-        }
-        if self.alarm.as_ref().map(|(at, _)| *at) == next {
-            return;
-        }
-        if let Some((_, task)) = self.alarm.take() {
-            task.abort();
-        }
-        let Some(at) = next else {
-            return;
-        };
-        let due = runtime.clock().sleep_until(at.min(i64::MAX as u64) as i64);
-        let inputs = self.inputs.clone();
-        let task = tokio::spawn(async move {
-            due.await;
-            if let Some(inputs) = inputs.upgrade() {
-                let _ = inputs.send(Fed::Wake).await;
-            }
+        let inputs = &self.inputs;
+        rearm(&mut self.alarm, now, next, |at| {
+            let due = runtime.clock().sleep_until(at.min(i64::MAX as u64) as i64);
+            let inputs = inputs.clone();
+            tokio::spawn(async move {
+                due.await;
+                if let Some(inputs) = inputs.upgrade() {
+                    let _ = inputs.send(Fed::Wake).await;
+                }
+            })
+            .abort_handle()
         });
-        self.alarm = Some((at, task.abort_handle()));
     }
 
     /// Tells the core the time, when it moved.
@@ -1632,9 +1621,62 @@ impl ProfileRuntime {
     }
 }
 
+/// Keeps `alarm` when it is still to ring at `next`, and otherwise stops
+/// it and has `ring_at` set one for `next`, if any. An alarm at or past
+/// `now` may have rung already, so it is set afresh. One replaced is
+/// stopped: wakes come from reports too, and an alarm left sleeping would
+/// ring again and set one more of its own.
+fn rearm(
+    alarm: &mut Option<(u64, AbortHandle)>,
+    now: u64,
+    next: Option<u64>,
+    ring_at: impl FnOnce(u64) -> AbortHandle,
+) {
+    if let Some((at, _)) = alarm
+        && *at > now
+        && Some(*at) == next
+    {
+        return;
+    }
+    if let Some((_, task)) = alarm.take() {
+        task.abort();
+    }
+    *alarm = next.map(|at| (at, ring_at(at)));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn an_alarm_is_kept_while_its_deadline_holds_and_stopped_when_replaced() {
+        let mut alarm = None;
+        let mut set = Vec::new();
+        let mut ring_at = |at: u64| {
+            let task = tokio::spawn(std::future::pending::<()>());
+            set.push((at, task.abort_handle()));
+            task.abort_handle()
+        };
+        rearm(&mut alarm, 0, Some(100), &mut ring_at);
+        // Wakes that are not the alarm's leave it be.
+        for now in [10, 50, 99] {
+            rearm(&mut alarm, now, Some(100), &mut ring_at);
+        }
+        // A sooner deadline replaces it; one at hand is set afresh.
+        rearm(&mut alarm, 99, Some(60), &mut ring_at);
+        rearm(&mut alarm, 100, Some(60), &mut ring_at);
+        rearm(&mut alarm, 100, None, &mut ring_at);
+        tokio::task::yield_now().await;
+        assert_eq!(
+            set.iter().map(|(at, _)| *at).collect::<Vec<_>>(),
+            [100, 60, 60]
+        );
+        assert!(
+            set.iter().all(|(_, task)| task.is_finished()),
+            "every replaced alarm is stopped"
+        );
+        assert!(alarm.is_none());
+    }
 
     #[test]
     fn a_violation_the_daemon_core_repeats_is_one_bundle_per_interval() {

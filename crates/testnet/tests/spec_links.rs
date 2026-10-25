@@ -1570,11 +1570,10 @@ async fn token_lapse_within_hour_is_noticed_at_the_hourly_refresh() {
         ("desk", laptop, edge(&net, "desk").forward_refusals()),
         ("laptop", desk, edge(&net, "laptop").forward_refusals()),
     ];
-    let refresh_at = net.now_ms() + HOUR.as_millis() as i64;
-    tokio::time::timeout(PATIENCE, net.clock().unwrap().armed(refresh_at))
-        .await
-        .expect("the hourly refresh is armed");
-
+    // The refresh was armed an hour after the credentials were fetched,
+    // which carrying the links through the relay already took; the clock
+    // has not moved since. Only the soonest of a core's timers sleeps on
+    // the clock, so the hour is shown by crossing it, below.
     net.relay()
         .unwrap()
         .set_tier("ada", node::harness::Tier::Free);
@@ -1587,7 +1586,16 @@ async fn token_lapse_within_hour_is_noticed_at_the_hourly_refresh() {
     }
     println!("lapsed at the account service: the relay still forwards on the credentials it holds");
 
-    net.advance(HOUR).unwrap();
+    net.advance(HOUR - std::time::Duration::from_millis(1))
+        .unwrap();
+    streams_live(&net, &["laptop"], "worker", "said through the relay").await;
+    for (host, _, refusals) in &mut told {
+        assert!(
+            refusals.try_recv().is_err(),
+            "{host} is told nothing a moment before the hour"
+        );
+    }
+    net.advance(std::time::Duration::from_millis(1)).unwrap();
     for (host, peer, refusals) in &mut told {
         let refusal = tokio::time::timeout(PATIENCE, refusals.recv())
             .await

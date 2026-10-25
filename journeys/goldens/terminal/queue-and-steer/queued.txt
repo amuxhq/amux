@@ -23,7 +23,7 @@
 
   ● Running scripts/soak --for 1h
 
-    Working · <t>
+    Working
 
     Also log the peak.                                                                              queued
     And email me.                                                                                   queued

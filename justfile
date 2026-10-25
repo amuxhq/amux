@@ -6,6 +6,10 @@ export AMUX_GIT_SHA := `git rev-parse HEAD`
 
 # Wall-clock bound for every recipe; portable where GNU timeout is absent.
 bounded := "scripts/bounded"
+# The pinned nightly's cargo, for formatting and Miri. rustup's `+toolchain`
+# selects it; the Nix dev shell has no rustup and provides `cargo-nightly`
+# instead (nix/toolchain.nix), at the same date.
+nightly_cargo := `command -v cargo-nightly >/dev/null && echo cargo-nightly || echo cargo +nightly-2026-08-30`
 # Desktop roots keep naming the feature explicitly so an invocation that
 # disables defaults cannot silently switch the SQLite linkage policy.
 desktop_features := "--features bundled"
@@ -88,11 +92,11 @@ lint:
 
 # Format all Rust sources with the pinned nightly toolchain.
 fmt:
-    {{bounded}} 600 cargo +nightly-2026-08-30 fmt --all
+    {{bounded}} 600 {{nightly_cargo}} fmt --all
 
 # Check Rust formatting with the pinned nightly toolchain.
 fmt-check:
-    {{bounded}} 600 cargo +nightly-2026-08-30 fmt --all -- --check
+    {{bounded}} 600 {{nightly_cargo}} fmt --all -- --check
 
 # Regenerate the committed protobuf bindings.
 protobuf:
@@ -228,7 +232,7 @@ fuzz-smoke *ARGS:
 # start an installation or a tokio runtime are ignored under Miri, each with
 # its reason. Needs the nightly's miri and rust-src components.
 miri *ARGS:
-    {{bounded}} 1500 cargo +nightly-2026-08-30 miri test --locked -p app-ffi "$@"
+    {{bounded}} 1500 {{nightly_cargo}} miri test --locked -p app-ffi "$@"
 
 # Fail when any state-machine core's dependency graph contains tokio, or any
 # core source contains a lock, a spawned task, an async fn or an await.

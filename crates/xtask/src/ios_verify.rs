@@ -510,9 +510,12 @@ mod tests {
             .skip_while(|line| !line.starts_with("fmt-check:"))
             .nth(1)
             .unwrap();
-        assert!(
-            fmt_check.contains("cargo +nightly-") && fmt_check.contains("fmt --all -- --check")
-        );
+        assert!(fmt_check.contains("{{nightly_cargo}} fmt --all -- --check"));
+        let nightly_cargo = ROOT_JUSTFILE
+            .lines()
+            .find(|line| line.starts_with("nightly_cargo :="))
+            .unwrap();
+        assert!(nightly_cargo.contains("cargo +nightly-"));
     }
 
     /// The push gate includes small in-process component renders, but leaves

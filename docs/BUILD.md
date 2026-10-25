@@ -16,7 +16,8 @@
 
 Formatting uses `nightly-2026-08-30` explicitly (`just fmt`, `just
 fmt-check`), so a stable-toolchain update cannot rewrite the tree
-unexpectedly. Install that nightly with `rustfmt` once.
+unexpectedly. Install that nightly with `rustfmt` once, or use the Nix dev
+shell below, which has it.
 
 Other tools a full checkout uses:
 
@@ -26,6 +27,22 @@ Other tools a full checkout uses:
   3.9.
 - Xcode and XcodeGen build the iPhone app (see [the iPhone app](IOS.md)).
 - `tmux` drives the terminal journeys.
+
+### The Nix dev shell
+
+On a machine with [Nix](https://nixos.org/download/) and flakes enabled,
+`nix develop` at the root opens a shell with everything above except Xcode:
+the toolchain `rust-toolchain.toml` pins, the formatting nightly, `just`,
+`tmux`, Python, `git` and, on Linux, a C compiler. `nix develop -c just test`
+runs one recipe in it. [`nix/toolchain.nix`](../nix/toolchain.nix) is the
+list, and `flake.lock` pins every tool in it, so two machines on the same
+revision get the same tools. `nix profile install .#toolchain` installs the
+same list onto the PATH of every shell, for a machine that should simply have
+it.
+
+The shell has no rustup, so it provides the nightly's cargo as
+`cargo-nightly`, which `just fmt`, `just fmt-check` and `just miri` use
+whenever it is on the PATH. Its date in `nix/toolchain.nix` has to move with the justfile's.
 
 The workspace has one lockfile. Build and verification recipes pass
 `--locked`, and protobuf output is committed, so the same revision selects

@@ -61,7 +61,8 @@
           "activity": {
             "kind": "Working",
             "since_ms": 0,
-            "elapsed_ms": 0
+            "elapsed_ms": 0,
+            "turn_elapsed_ms": 0
           },
           "switched_away": false
         },
@@ -153,7 +154,8 @@
           "activity": {
             "kind": "Working",
             "since_ms": 0,
-            "elapsed_ms": 0
+            "elapsed_ms": 0,
+            "turn_elapsed_ms": 0
           },
           "switched_away": false
         },
@@ -260,7 +262,8 @@
           "activity": {
             "kind": "Working",
             "since_ms": 0,
-            "elapsed_ms": 0
+            "elapsed_ms": 0,
+            "turn_elapsed_ms": 0
           },
           "switched_away": false
         },
@@ -371,7 +374,8 @@
           "activity": {
             "kind": "Working",
             "since_ms": 0,
-            "elapsed_ms": 0
+            "elapsed_ms": 0,
+            "turn_elapsed_ms": 0
           },
           "switched_away": false
         },
@@ -530,7 +534,8 @@
           "activity": {
             "kind": "Working",
             "since_ms": 0,
-            "elapsed_ms": 0
+            "elapsed_ms": 0,
+            "turn_elapsed_ms": 0
           },
           "switched_away": false
         },
@@ -709,7 +714,8 @@
           "activity": {
             "kind": "Working",
             "since_ms": 0,
-            "elapsed_ms": 0
+            "elapsed_ms": 0,
+            "turn_elapsed_ms": 0
           },
           "switched_away": false
         },
@@ -892,7 +898,8 @@
           "activity": {
             "kind": "Working",
             "since_ms": 0,
-            "elapsed_ms": 0
+            "elapsed_ms": 0,
+            "turn_elapsed_ms": 0
           },
           "switched_away": false
         },
@@ -1073,7 +1080,8 @@
           "activity": {
             "kind": "Working",
             "since_ms": 0,
-            "elapsed_ms": 0
+            "elapsed_ms": 0,
+            "turn_elapsed_ms": 0
           },
           "switched_away": false
         },
@@ -1235,7 +1243,8 @@
           "activity": {
             "kind": "Working",
             "since_ms": 0,
-            "elapsed_ms": 0
+            "elapsed_ms": 0,
+            "turn_elapsed_ms": 0
           },
           "switched_away": false
         },

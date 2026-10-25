@@ -154,6 +154,10 @@ impl Sqlite {
             path,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
+        // The journal segments below the checkpoint are deleted once it
+        // completes, so its sync must pass the drive's cache too, which on
+        // macOS takes a full flush (F_FULLFSYNC) rather than a plain fsync.
+        conn.pragma_update(None, "checkpoint_fullfsync", true)?;
         // SQLite answers busy, the WAL's pages and the pages moved; a
         // checkpoint that could not run at all, because another connection
         // holds the checkpoint lock, answers busy with both counts -1.

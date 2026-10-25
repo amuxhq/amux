@@ -45,7 +45,7 @@ An agent that stops to ask for permission, present a plan or ask a question sits
 you answer. With amux every agent waiting on you is at the top of the list on your phone, and
 you can approve the command, accept the plan or answer from wherever you are. The phone is a full
 client, not a remote control: it shows the same agents and chats and can do everything the
-terminal can.
+terminal can, down to reading an agent's diff and commenting on its lines.
 
 <p align="center">
   <picture>
@@ -54,20 +54,31 @@ terminal can.
   </picture>
 </p>
 
+## Their own interface, or one for both
+
+Work in Claude Code's and Codex's own terminal interfaces, just as they are: `amux attach`
+hands your terminal to the agent, and the same agent stays in your fleet and on your phone. Or
+use amux's chat, which reads the same for Claude and Codex and takes its colours from your
+terminal's theme.
+
+<p align="center">
+  <img src="images/readme/native.png" alt="Claude Code's own interface and Codex's own interface side by side, each opened with amux attach">
+</p>
+
+<p align="center">
+  <img src="images/readme/themes.png" alt="amux's chat in three terminal themes: Gruvbox Dark, Solarized Light and Catppuccin Mocha">
+</p>
+
 ## A terminal app worth living in
 
-amux's own terminal app is fast, easy to use, and built to be looked at all day. Claude and
-Codex chats read the same way, the whole fleet is one key away, and it comes with the tools
-you reach for between prompts:
+amux's own terminal app is fast, easy to use, and built to be looked at all day. The whole
+fleet is one key away, and it comes with the tools you reach for between prompts:
 
 - **Code review.** Read the agent's whole diff and comment on lines or files; the comments go
   back to the agent with your next message.
 - **An overview** of what the agent has in flight: its tasks, background jobs, changed files
   and how close it is to its usage limits.
 - **Attachments.** Paste a screenshot or a long log and the agent gets it whole.
-
-It takes its colours from your terminal's theme. Prefer Claude's own interface? `amux attach`
-hands your terminal straight to it.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/readme/review-dark.png">
@@ -90,12 +101,19 @@ and another Claude to rewrite the error messages, and hears back from each one w
 
 - **Your code stays on your machines.** Agents run where you started them; amux carries
   their chats between your devices.
-- **End-to-end encrypted.** Every connection is encrypted between your own machines and
-  checked against keys they exchanged when you paired them. The relay passes on traffic it
-  cannot read.
+- **End-to-end encrypted.** Every connection is encrypted between your own devices and
+  checked against keys they exchanged when you paired them, whether it runs directly on your
+  network or through the amux relay.
 - **Trust you grant in person.** Machines trust each other only once you pair them, with a
   PIN or QR code on the screen in front of you. No account or server can grant access, and
   unpairing takes effect at once.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="images/readme/private-dark.svg">
+    <img src="images/readme/private-light.svg" alt="studio and build on your network, connected directly; your phone reaches them through the amux relay; every connection carries a lock and is end-to-end encrypted" width="760">
+  </picture>
+</p>
 
 [How amux works](docs/HOW_IT_WORKS.md) explains what each device, the account and the relay
 can and cannot do.
@@ -109,6 +127,8 @@ amux pair --qr                            # pair your phone: scan the code with 
 amux pair desk                            # or pair another computer found nearby
 ```
 
+amux keeps itself up to date.
+
 ## Free, with an optional paid tier
 
 amux is free. Your machines find each other on the same network, or connect over SSH, with
@@ -119,7 +139,7 @@ anywhere, securely, when your machines are apart.
 
 | | |
 |---|---|
-| **Agents** | Claude Code (in amux's chat or its own terminal interface), Codex |
+| **Agents** | Claude Code and Codex, in amux's chat or their own terminal interfaces |
 | **Computers** | macOS, Linux, Windows |
 | **Phone** | iPhone |
 

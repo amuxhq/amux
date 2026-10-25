@@ -48,9 +48,33 @@ page, dark and light) and, under the simulator lease, the phone (fleet and
 the waiting request). Without a lease it photographs only the terminal. The
 shots land in `~/.local/state/amux-marketing/<tree>/launch/images`.
 
+It also photographs checkout-redesign's chat in three other terminals'
+colours, from `palettes/`: Gruvbox Dark, Solarized Light and Catppuccin Mocha.
+The client takes its palette from each, as it would from yours.
+
 `just compose` redraws the terminal frames at twice the renderer's size, puts
 them in windows and the phone screens in a device outline, and writes the
-README's light and dark images.
+README's light and dark images. The three themes and the agents' own
+interfaces are one image each, for both of GitHub's pages.
+
+## Claude Code's and Codex's own interfaces
+
+```sh
+just scene native
+```
+
+Only the real programs can draw their own interfaces, so `just scene native`
+runs them, under your own Claude and Codex logins: real Claude Code in its
+terminal and real Codex, on studio, in a clone of Tally at
+`/Users/Shared/tally`. Each is asked a question Tally's files answer whole, by
+reading. When both are done, it opens their screens with `amux attach` from
+the terminal client, as a person would, and photographs them. Claude asks
+once whether to trust the folder; the scene says yes, which Claude remembers
+in your own settings. The answers differ from run to run, so the shots are
+kept until it runs again, and `just compose` uses whichever it finds.
+
+Codex runs with a scratch home, so it writes its folder in full: the clone is
+in `/Users/Shared` so that it isn't a folder under your account's name.
 
 ## Filming the takes
 

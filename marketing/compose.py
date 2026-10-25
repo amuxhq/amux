@@ -9,7 +9,9 @@ every cell's text and colours) and each phone screen as a PNG. This script
 redraws the frames at twice the terminal renderer's size, so they stay sharp
 on high-density screens, puts each in a window, puts the phone screens in a
 device outline, and writes the README's images, light and dark, to
-`images/readme/`.
+`images/readme/`. Two are drawn once for both: the agents' own interfaces
+side by side, and amux's chat in three terminals' colours, which shows
+light and dark itself.
 
     uv run marketing/compose.py [SHOTS_FOLDER]
 """
@@ -50,6 +52,14 @@ CHROME = {
     "light": {"bar": "#ececea", "edge": "#d6d8dc", "title": "#6a7080", "shadow": 55},
 }
 LIGHTS = ["#ff5f57", "#febc2e", "#28c840"]
+# The pictures drawn once sit on both of GitHub's pages: a shadow between.
+SHADOW_BOTH = 80
+# amux's chat in each terminal, back to front, with the window's title.
+THEMES = [
+    ("gruvbox-dark", "amux — Gruvbox Dark"),
+    ("solarized-light", "amux — Solarized Light"),
+    ("catppuccin-mocha", "amux — Catppuccin Mocha"),
+]
 
 
 def rgb(value: str) -> tuple[int, int, int]:
@@ -66,6 +76,8 @@ def render(frame_path: Path) -> Image.Image:
     frame = json.loads(frame_path.read_text())
     default_fg, default_bg = rgb(frame["default"]["fg"]), rgb(frame["default"]["bg"])
     image = Image.new("RGB", (frame["width"] * CELL_W, frame["height"] * CELL_H), default_bg)
+    # The terminal's own ground, which a program may paint over at any cell.
+    image.info["ground"] = default_bg
     draw = ImageDraw.Draw(image)
     for y, runs in enumerate(frame["rows"][: frame["height"]]):
         top = y * CELL_H
@@ -92,6 +104,16 @@ def render(frame_path: Path) -> Image.Image:
                     continue
                 if char in "─│╭╮╯╰":
                     line(draw, char, left, top, fg)
+                    continue
+                if char in "⏸⏵":
+                    # Media marks Claude Code draws, which neither font has.
+                    mid, h = top + CELL_H // 2, CELL_H // 4
+                    if char == "⏸":
+                        for x in (left + CELL_W * 3 // 10, left + CELL_W * 6 // 10):
+                            draw.rectangle([x, mid - h, x + CELL_W // 6, mid + h], fill=fg)
+                    else:
+                        draw.polygon([(left + CELL_W // 4, mid - h), (left + CELL_W // 4, mid + h),
+                                      (left + CELL_W * 3 // 4, mid)], fill=fg)
                     continue
                 face = font if ord(char) in MONO_GLYPHS else SYMBOLS
                 draw.text((left, top + BASELINE), char, font=face, fill=fg, anchor="ls")
@@ -138,12 +160,24 @@ def rounded(image: Image.Image, radius: int) -> Image.Image:
     return out
 
 
+def chrome_of(screen: Image.Image) -> dict:
+    """A window's bar, edge and title in a terminal's own colours: its
+    ground moved a little toward the light or the dark."""
+    ground = screen.info["ground"]
+    dark = sum(ground) / 3 < 128
+    toward = (255, 255, 255) if dark else (0, 0, 0)
+    hexed = lambda c: "#%02x%02x%02x" % c
+    return {"bar": hexed(mix(ground, toward, 0.06)), "edge": hexed(mix(ground, toward, 0.16)),
+            "title": hexed(mix(ground, toward, 0.5))}
+
+
 def window(screen: Image.Image, theme: str, title: str) -> Image.Image:
-    """A terminal window: a title bar with its three lights, then the screen."""
-    chrome = CHROME[theme]
+    """A terminal window: a title bar with its three lights, then the screen.
+    `theme` is "dark" or "light", or "own" for the screen's own colours."""
+    chrome = chrome_of(screen) if theme == "own" else CHROME[theme]
     bar = 34 * SCALE
     pad = 6 * SCALE
-    body = Image.new("RGB", (screen.width + 2 * pad, screen.height + bar + pad), screen.getpixel((0, 0)))
+    body = Image.new("RGB", (screen.width + 2 * pad, screen.height + bar + pad), screen.info["ground"])
     draw = ImageDraw.Draw(body)
     draw.rectangle([0, 0, body.width, bar - 1], fill=chrome["bar"])
     for i, colour in enumerate(LIGHTS):
@@ -173,13 +207,15 @@ def phone(screen: Image.Image, theme: str) -> Image.Image:
 
 def shadowed(layers: list[tuple[Image.Image, tuple[int, int]]], theme: str, margin: int = 140) -> Image.Image:
     """The layers on a transparent canvas, each over a soft shadow, so the
-    picture sits on GitHub's light and dark pages alike."""
+    picture sits on GitHub's light and dark pages alike. `theme` "both" is
+    for a picture shown on either."""
+    strength = SHADOW_BOTH if theme == "both" else CHROME[theme]["shadow"]
     width = max(x + layer.width for layer, (x, _) in layers) + 2 * margin
     height = max(y + layer.height for layer, (_, y) in layers) + 2 * margin
     canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     for layer, (x, y) in layers:
         shadow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-        alpha = layer.getchannel("A").point(lambda a: a * CHROME[theme]["shadow"] // 255)
+        alpha = layer.getchannel("A").point(lambda a: a * strength // 255)
         shadow.paste((0, 0, 0, 255), (margin + x, margin + y + 30), alpha)
         canvas.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(50)))
         canvas.alpha_composite(layer, (margin + x, margin + y))
@@ -214,6 +250,18 @@ def main(arguments: list[str]) -> int:
         gap = 120
         save(shadowed([(pair_fleet, (0, 0)), (pair_ask, (pair_fleet.width + gap, 0))], theme),
              f"phone-{theme}", 1800)
+    # From `scene native`, which runs the real programs: kept until it is
+    # run again.
+    claude, codex = shots / "native-claude_pty.frame.json", shots / "native-codex.frame.json"
+    if claude.exists() and codex.exists():
+        left = window(render(claude), "own", "amux attach error-copy")
+        right = window(render(codex), "own", "amux attach ledger-race")
+        save(shadowed([(left, (0, 0)), (right, (left.width + 80, 0))], "both"), "native", 2400)
+    else:
+        print("compose: no native shots; `just scene native` takes them", file=sys.stderr)
+    windows = [window(render(shots / f"theme-{name}.frame.json"), "own", title) for name, title in THEMES]
+    step_x, step_y = windows[0].width * 26 // 100, windows[0].height * 18 // 100
+    save(shadowed([(w, (i * step_x, i * step_y)) for i, w in enumerate(windows)], "both"), "themes", 2400)
     return 0
 
 

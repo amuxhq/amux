@@ -6,7 +6,9 @@ agent plays a script from `marketing/scripts`, so the scene is the same on
 every start, and every README image and video take comes from it.
 
 `just scene shots` takes the README's pictures; `just scene film` films the
-takes the launch film is cut from (see `film()`).
+takes the launch film is cut from (see `film()`). `just scene native` takes
+the pictures of Claude Code's and Codex's own interfaces, which only the real
+programs can draw, so it runs them (see `native()`).
 
 The product the agents work on is Tally, an invoicing app whose source is
 `marketing/repo`. Every host holds a clone of it.
@@ -40,6 +42,10 @@ MARK = ".git/amux-scene"
 IMAGES = FOLDER / "images"
 # Where the film's takes land.
 TAKES = FOLDER / "takes"
+# Terminals' colours: amux's chat is photographed in each of THEMES, and the
+# agents' own interfaces in a plain dark terminal.
+PALETTES = HERE / "palettes"
+THEMES = ("gruvbox-dark", "solarized-light", "catppuccin-mocha")
 HOSTS = {
     "studio": ("src/tally", "checkout-redesign"),
     "build": ("tally", "main"),
@@ -85,7 +91,10 @@ def clone(host: str) -> Path:
     """A fresh clone of Tally for `host`: the repository committed on main,
     then checked out on the host's branch."""
     folder, branch = HOSTS[host]
-    path = HOME / folder
+    return clone_at(HOME / folder, branch)
+
+
+def clone_at(path: Path, branch: str) -> Path:
     if path.exists() and not (path / MARK).exists():
         raise SystemExit(f"scene: {path} is not one of the scene's clones; move it and try again")
     shutil.rmtree(path, ignore_errors=True)
@@ -128,11 +137,12 @@ def topology() -> dict:
 
 
 def build() -> None:
-    """The binaries the net runs, as `just env` builds them; the phone app
-    is `just ios build`'s."""
+    """The binaries the net runs, as `just env` builds them, with the probes
+    a real provider runs behind; the phone app is `just ios build`'s."""
     subprocess.run(
         [str(ROOT / "scripts/bounded"), "1800", "cargo", "build", "--locked",
-         "-p", "amux", "-p", "testnet", "-p", "provider-fakes", "--bins", "--features", "amux/bundled"],
+         "-p", "amux", "-p", "testnet", "-p", "provider-fakes", "-p", "claude-specs", "-p", "codex-specs",
+         "--bins", "--features", "amux/bundled"],
         cwd=ROOT, check=True,
     )
 
@@ -173,13 +183,27 @@ def cursor_to(pane: str, text: str, mark: str, key: str = "j") -> None:
     raise SystemExit(f"scene: never reached {text!r} in {pane}")
 
 
-def shoot(pane: str, name: str) -> None:
+def block_to(pane: str, text: str) -> None:
+    """Press j until the selected row holds `text`, where the client marks
+    the row with a tinted block (a palette taken from the terminal) rather
+    than a "›": the row under the block's half-filled top edge."""
+    for _ in range(80):
+        lines = screen(pane).splitlines()
+        if any(line.strip().startswith("▄▄") and text in below for line, below in zip(lines, lines[1:])):
+            return
+        keys(pane, "j", settle=0.15)
+    raise SystemExit(f"scene: never reached {text!r} in {pane}")
+
+
+def shoot(pane: str, name: str, as_named: str | None = None) -> None:
+    """A shot of `pane` kept as NAME-PANE, or as `as_named`."""
     taken = Path(output("tui", "shot", pane).splitlines()[0])
     IMAGES.mkdir(parents=True, exist_ok=True)
-    shutil.copy(taken, IMAGES / f"{name}-{pane}.png")
+    kept = as_named or f"{name}-{pane}"
+    shutil.copy(taken, IMAGES / f"{kept}.png")
     # The frame beside it is what compose.py redraws at twice the size.
-    shutil.copy(taken.with_suffix(".frame.json"), IMAGES / f"{name}-{pane}.frame.json")
-    print(f"scene: {name}-{pane}.png", flush=True)
+    shutil.copy(taken.with_suffix(".frame.json"), IMAGES / f"{kept}.frame.json")
+    print(f"scene: {kept}.png", flush=True)
 
 
 def ready() -> None:
@@ -222,6 +246,15 @@ def shots() -> int:
         keys(theme, "Enter")
         shoot(theme, "review")
         output("tui", "close", theme)
+    # The chat again in other people's terminals: the client takes its
+    # palette from each one's colours.
+    for palette in THEMES:
+        tui("open", "studio", "--size", "84x26", "--palette", str(PALETTES / f"{palette}.json"), "--name", palette)
+        time.sleep(2)
+        block_to(palette, "checkout-redesign")
+        keys(palette, "Enter", settle=2)
+        shoot(palette, "theme")
+        output("tui", "close", palette)
     if os.environ.get("WT_LEASE_IPHONE"):
         phone_shots()
     return 0
@@ -439,6 +472,64 @@ def film() -> int:
     return 0
 
 
+# The agents whose own interfaces are photographed: real Claude Code in its
+# terminal and real Codex, on studio, each asked what Tally's few files
+# answer whole, by reading, so neither stops to ask before it is
+# photographed.
+NATIVE = [
+    ("error-copy", "claude_pty", "sonnet",
+     "Which three messages in web/src/checkout/messages.ts leave the client stuck? Suggest a clearer "
+     "one for each, as a short list; don't change the file yet."),
+    ("ledger-race", "codex", "gpt-6-astra",
+     "Is there a race in Ledger::apply in crates/sync/src/ledger.rs? Explain in three sentences; "
+     "don't change any files."),
+]
+# Codex runs here with a scratch home, so it writes the folder in full: a
+# shared one, rather than one under this account's name.
+NATIVE_CLONE = Path("/Users/Shared/tally")
+
+
+def native() -> int:
+    """Photographs NATIVE's agents in their own interfaces, reached the way
+    a person reaches them, with `amux attach` from the terminal client."""
+    folder = clone_at(NATIVE_CLONE, "main")
+    topology = {
+        "hosts": [{"name": "studio", "lan": True, "bonjour": True, "provider": "real"}],
+        "agents": [
+            {"name": name, "host": "studio", "kind": kind, "model": model, "cwd": str(folder), "prompt": prompt}
+            for name, kind, model, prompt in NATIVE
+        ],
+    }
+    path = FOLDER / "native.json"
+    path.write_text(json.dumps(topology, indent=2))
+    if ctl("up", str(path)):
+        return 1
+    tui("open", "studio", "--size", "80x30", "--palette", str(PALETTES / "studio.json"), "--name", "native")
+    time.sleep(2)
+    panes = {name: json.loads(output("--json", "tui", "attach", "native", name))["pane"] for name, *_ in NATIVE}
+    deadline = time.monotonic() + 900
+    while time.monotonic() < deadline:
+        # Claude asks once whether to trust a folder it has not seen, as it
+        # would ask the person; the scene says yes.
+        for name, pane in panes.items():
+            if "Yes, I trust this folder" in screen(pane):
+                keys(pane, "Down")
+                keys(pane, "Enter")
+        fleet = output("fleet", "studio").splitlines()
+        rows = {line.split()[0]: line for line in fleet if line and not line.startswith(" ")}
+        if all("IDLE" in rows.get(name, "") for name, *_ in NATIVE):
+            break
+        time.sleep(5)
+    else:
+        raise SystemExit("scene: the agents never finished")
+    time.sleep(4)
+    for name, kind, *_ in NATIVE:
+        shoot(panes[name], "native", as_named=f"native-{kind}")
+        output("tui", "close", panes[name])
+    output("tui", "close", "native")
+    return 0
+
+
 def main(arguments: list[str]) -> int:
     verb = arguments[0] if arguments else "up"
     FOLDER.mkdir(parents=True, exist_ok=True)
@@ -451,8 +542,14 @@ def main(arguments: list[str]) -> int:
         if ctl("up", str(path)):
             return 1
         return {"shots": shots, "film": film}.get(verb, lambda: 0)()
+    if verb == "native":
+        build()
+        ctl("down")
+        return native()
     if verb == "down":
         code = ctl("down")
+        if (NATIVE_CLONE / MARK).exists():
+            shutil.rmtree(NATIVE_CLONE)
         for folder, _ in HOSTS.values():
             if (HOME / folder / MARK).exists():
                 shutil.rmtree(HOME / folder)
@@ -460,7 +557,7 @@ def main(arguments: list[str]) -> int:
             if parent != HOME and parent.exists() and not any(parent.iterdir()):
                 parent.rmdir()
         return code
-    print("usage: scene.py up|shots|film|down", file=sys.stderr)
+    print("usage: scene.py up|shots|film|native|down", file=sys.stderr)
     return 2
 
 

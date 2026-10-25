@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
-"""Build the one bridge slice a driven simulator build of the app links.
+"""Build the bridge slices a driven build of the app links.
 
 The simulator slice, with the driving tools compiled in, under the
 `phone-dev` profile: what `ios build`, `ios unit` and every recipe that drives
 an app need. Debug app configurations still carry symbols and testability on
 the Swift side; the Rust bridge is built optimised, but without the
-whole-program optimisation a release gets. Nothing here builds for a phone;
-that is `ios-package.py`, and only the shipping recipes pay for it.
+whole-program optimisation a release gets. `--device` adds the same library
+for a plugged-in phone, which a driven build for that phone links; only the
+recipes that build for one ask for it, so a simulator recipe never pays for a
+second triple. The shipping library is `ios-package.py`'s.
 
 When no Rust input has changed since the last run, cargo is not invoked and the
 framework is left untouched, so a Swift-only edit costs no Rust work at all.
 """
 
 from pathlib import Path
+import argparse
 import sys
 
 try:
@@ -28,9 +31,10 @@ PROFILE = bridge.DRIVING_PROFILE
 FEATURES = bridge.DRIVING_FEATURES
 
 
-def build_fingerprint() -> str:
-    """Everything that determines which driving archive may be reused."""
-    return f"{bridge.source_fingerprint()}:{PROFILE}:{','.join(FEATURES)}"
+def build_fingerprint(device: bool = False) -> str:
+    """Everything that determines which driving archives may be reused."""
+    simulator = f"{bridge.source_fingerprint()}:{PROFILE}:{','.join(FEATURES)}"
+    return f"{simulator}:{bridge.DEVICE_TRIPLE}" if device else simulator
 
 
 def packaged(framework: Path) -> bool:
@@ -41,13 +45,21 @@ def packaged(framework: Path) -> bool:
     )
 
 
-def main() -> None:
+def main(device: bool = False) -> None:
+    # Each triple and the slice xcodebuild names it in a framework. A build
+    # with the phone's slice is still current for a simulator build, so a
+    # simulator recipe after a phone one does not rebuild the bridge.
+    slices = [(bridge.SIMULATOR_TRIPLE, bridge.DRIVING_SLICE)]
+    if device:
+        slices.append((bridge.DEVICE_TRIPLE, bridge.DRIVING_DEVICE_SLICE))
     bridge.OUTPUT.mkdir(parents=True, exist_ok=True)
     driving = bridge.OUTPUT / bridge.DRIVING_FRAMEWORK
     shipping = bridge.OUTPUT / bridge.FRAMEWORK
     stand_in = bridge.stand_in_marker(shipping)
-    linked = driving / bridge.DRIVING_SLICE / bridge.LIBRARY
-    fingerprint = build_fingerprint()
+    linked = [driving / name / bridge.LIBRARY for _, name in slices]
+    triples = [triple for triple, _ in slices]
+    fingerprint = build_fingerprint(device)
+    accepted = {fingerprint, build_fingerprint(device=True)}
     # Both frameworks are asked for a library, not for a directory. A build
     # cache can restore an xcframework's shape without the archives inside it
     # -- they are the large part -- and a stamp alone would then call the
@@ -57,27 +69,30 @@ def main() -> None:
     # `ios package` removes the marker when it puts the shipping library in
     # the stand-in's place, so a missing marker means the package tests
     # would link the shipping Rust: not current.
-    stand_in_current = (
-        stand_in.is_file() and stand_in.read_text().strip() == fingerprint
-    )
-    if (STAMP.is_file() and STAMP.read_text().strip() == fingerprint
-            and linked.is_file() and packaged(shipping) and stand_in_current):
+    def current(marker: Path) -> bool:
+        return marker.is_file() and marker.read_text().strip() in accepted
+
+    if (current(STAMP) and all(library.is_file() for library in linked)
+            and packaged(shipping) and current(stand_in)):
         print("Rust sources unchanged; the bridge is current and cargo was not run", flush=True)
         return
     STAMP.unlink(missing_ok=True)
 
     staging = bridge.OUTPUT / "debug-tools"
-    built = bridge.cargo_build(
-        bridge.SIMULATOR_TRIPLE, profile=PROFILE, features=FEATURES,
-        log=staging / f"{bridge.SIMULATOR_TRIPLE}-build.jsonl")
-    staged = bridge.stage(built, staging / bridge.SIMULATOR_TRIPLE)
-    bridge.package_if_changed(driving, [staging / bridge.SIMULATOR_TRIPLE],
+    staged = {}
+    for triple in triples:
+        built = bridge.cargo_build(
+            triple, profile=PROFILE, features=FEATURES,
+            log=staging / f"{triple}-build.jsonl")
+        staged[triple] = bridge.stage(built, staging / triple)
+    bridge.package_if_changed(driving, [staging / triple for triple in triples],
                               staging / "framework.sha256")
-    if not linked.is_file():
-        raise RuntimeError(
-            f"{linked} is missing. The debug configuration of the app links this "
-            "exact path (apps/apple/project.yml), so a change in how xcodebuild names "
-            "the slice has to fail here rather than at link time.")
+    for library in linked:
+        if not library.is_file():
+            raise RuntimeError(
+                f"{library} is missing. The Debug and Measured configurations of the app "
+                "link this exact path (apps/apple/project.yml), so a change in how "
+                "xcodebuild names the slice has to fail here rather than at link time.")
     # The Swift packages name the shipping framework as a binary target, so
     # their unit tests link whatever sits there, not the driving library the
     # app force-loads. A shipping build from before a Rust change would have
@@ -90,7 +105,7 @@ def main() -> None:
     # its archives is replaced the same way.
     if not packaged(shipping):
         (bridge.OUTPUT / "framework.sha256").unlink(missing_ok=True)
-    if bridge.package_if_changed(shipping, [staging / bridge.SIMULATOR_TRIPLE],
+    if bridge.package_if_changed(shipping, [staging / triple for triple in triples],
                                  bridge.OUTPUT / "framework.sha256"):
         print(f"{shipping.name} now holds this development slice, so the package unit "
               "tests link the current Rust; `just ios package` builds the shipping library",
@@ -100,11 +115,15 @@ def main() -> None:
 
     profile = tomllib.loads(Path("Cargo.toml").read_text())["profile"].get(PROFILE, {})
     text = bridge.write_size_report(
-        [bridge.size_line(bridge.SIMULATOR_TRIPLE, staged, f" ({PROFILE}, debug tools)")],
+        [bridge.size_line(triple, staged[triple], f" ({PROFILE}, debug tools)")
+         for triple in triples],
         {"name": PROFILE, **profile})
     print(text, end="", flush=True)
     STAMP.write_text(fingerprint + "\n")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--device", action="store_true",
+                        help="also build the slice a driven build for a phone links")
+    main(device=parser.parse_args().device)

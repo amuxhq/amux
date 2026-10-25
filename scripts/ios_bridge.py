@@ -21,10 +21,12 @@ CRATE = "app-ffi"
 LIBRARY = "libamux_app.a"
 HEADER = "amux_app.h"
 MODULE = "AmuxApp"
-# The library the debug app configuration force-loads: the
-# bridge with its driving tools compiled in, for the simulator alone.
+# The library the Debug and Measured app configurations force-load: the
+# bridge with its driving tools compiled in. Its simulator slice is always
+# built; its phone slice only when a build for a plugged-in phone asks for it.
 DRIVING_FRAMEWORK = "AmuxAppDebugTools.xcframework"
 DRIVING_SLICE = "ios-arm64-simulator"
+DRIVING_DEVICE_SLICE = "ios-arm64"
 # The library the app packages ship with, and that the Swift package's binary
 # target names, so it has to exist before any configuration can resolve.
 FRAMEWORK = "AmuxApp.xcframework"

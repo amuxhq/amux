@@ -1091,6 +1091,12 @@ public enum Door {
     /// over the loopback both processes share.
     public static let portArgument = "amux-door-port"
 
+    /// `-amux-door-bind ADDRESS`: listen on this address instead of IPv4
+    /// loopback. A phone's driver runs on the Mac, so a launch on a phone
+    /// names the phone's address on its USB link, which the Mac reaches
+    /// without the door listening on any other network.
+    public static let bindArgument = "amux-door-bind"
+
     /// `-amux-relay URL`: the relay an account added through the door signs
     /// in to. The request to add an account carries the user and the bearer;
     /// where to reach them is fixed for the launch.

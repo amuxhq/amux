@@ -894,6 +894,7 @@
       {"literal": "\"error\"", "context": "try fields.encode(\"error\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"amux-door-ready\"", "context": "public static let readyArgument = \"amux-door-ready\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"amux-door-port\"", "context": "public static let portArgument = \"amux-door-port\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"amux-door-bind\"", "context": "public static let bindArgument = \"amux-door-bind\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"amux-relay\"", "context": "public static let relayArgument = \"amux-relay\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"amux-scripted-cloud\"", "context": "public static let scriptedCloudArgument = \"amux-scripted-cloud\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"amux-link\"", "context": "public static let linkArgument = \"amux-link\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},

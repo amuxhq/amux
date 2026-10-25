@@ -95,6 +95,65 @@ class DevelopmentBuildTests(unittest.TestCase):
                 ios_rust.main()
             cargo.assert_not_called()
 
+    def test_a_simulator_build_after_a_phone_build_runs_no_cargo(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "ios"
+            for framework in (bridge.DRIVING_FRAMEWORK, bridge.FRAMEWORK):
+                for name in (bridge.DRIVING_SLICE, bridge.DRIVING_DEVICE_SLICE):
+                    (output / framework / name).mkdir(parents=True)
+                    (output / framework / name / bridge.LIBRARY).write_bytes(b"a")
+            phone = f"same:phone-dev:debug-tools:{bridge.DEVICE_TRIPLE}\n"
+            bridge.stand_in_marker(output / bridge.FRAMEWORK).write_text(phone)
+            stamp = output / "rust-stamp.json"
+            stamp.write_text(phone)
+            with mock.patch.object(bridge, "OUTPUT", output), \
+                    mock.patch.object(ios_rust, "STAMP", stamp), \
+                    mock.patch.object(bridge, "source_fingerprint", return_value="same"), \
+                    mock.patch.object(bridge, "cargo_build") as cargo, \
+                    mock.patch("builtins.print"):
+                ios_rust.main()
+            cargo.assert_not_called()
+
+    def test_a_phone_build_puts_its_slice_in_both_frameworks(self):
+        """The app force-loads the driving framework's phone slice, and the
+        Swift packages resolve the shipping framework for the phone too, so a
+        build for a phone that left either without it would fail at link."""
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "ios"
+            output.mkdir()
+            stamp = output / "rust-stamp.json"
+            stamp.write_text("same\n")
+
+            def build(triple, **_):
+                built = bridge.Slice(triple, output / f"{triple}.a", output / f"{triple}.h")
+                built.library.write_bytes(triple.encode())
+                built.header.write_text("h")
+                return built
+
+            def package(framework, slices):
+                for staged in slices:
+                    name = (bridge.DRIVING_DEVICE_SLICE if staged.name == bridge.DEVICE_TRIPLE
+                            else bridge.DRIVING_SLICE)
+                    (framework / name).mkdir(parents=True, exist_ok=True)
+                    (framework / name / bridge.LIBRARY).write_bytes(b"a")
+
+            with mock.patch.object(bridge, "OUTPUT", output), \
+                    mock.patch.object(ios_rust, "STAMP", stamp), \
+                    mock.patch.object(bridge, "SIZE_REPORT", output / "size.txt"), \
+                    mock.patch.object(bridge, "source_fingerprint", return_value="same"), \
+                    mock.patch.object(bridge, "cargo_build", side_effect=build) as cargo, \
+                    mock.patch.object(bridge, "package", side_effect=package) as packaged, \
+                    mock.patch.object(ios_rust.Path, "read_text", return_value="[profile.dev]\ndebug = 1\n"), \
+                    mock.patch("builtins.print"):
+                ios_rust.main(device=True)
+            self.assertEqual([call.args[0] for call in cargo.call_args_list],
+                             [bridge.SIMULATOR_TRIPLE, bridge.DEVICE_TRIPLE])
+            self.assertEqual(
+                {call.args[0].name: sorted(path.name for path in call.args[1])
+                 for call in packaged.call_args_list},
+                {name: sorted([bridge.SIMULATOR_TRIPLE, bridge.DEVICE_TRIPLE])
+                 for name in (bridge.DRIVING_FRAMEWORK, bridge.FRAMEWORK)})
+
     def test_a_shipping_framework_holding_no_library_is_rebuilt(self):
         """A restored build cache can leave an xcframework's directories behind
         without the archives inside them. The shape alone must not count as

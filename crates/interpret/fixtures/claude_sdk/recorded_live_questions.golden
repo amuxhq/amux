@@ -77,6 +77,6 @@ append msg_011CfnB8RqtScCuU3SHTZgYu:1 "done"
 ## 191 recorded 190: fact Stream type=assistant uuid=aa56fb20-359e-43b8-a297-e69ab47c5ac4
 item msg_011CfnB8RqtScCuU3SHTZgYu:1 message final at=1791344098451 text="done"
 ## 198 recorded 197: fact Stream type=result subtype=success uuid=5475d07d-fe8a-4719-86b3-cdbe848c72b9
-item turn:1 turn final at=1791344098484 text="" #1 TURN_OUTCOME_COMPLETED started=1791344092535 cost=0.024959
+item turn:1 turn final at=1791344098484 text="" #1 TURN_OUTCOME_COMPLETED started=1791344092535
 snapshot IDLE queue=[] working_on="Use the AskUserQuestion tool once, asking me two questions in that one call: 'Which colour?' with the options Red and Blue, and 'Which size?' with the options Small and Large. After I answer, use it once more to ask me one question, 'Which shape?' with the options Circle and Square. Then reply with the single word done. Do nothing else." at=1791344098484 asks=[] session=57aa0e10-cd09-4b47-a847-9bd1e155bdc8 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23080/200000 tasks=? active=[] usage=ok 5h:6%(ok) 7d:35%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CfnB8RqtScCuU3SHTZgYu:1

@@ -28,7 +28,7 @@ snapshot WORKING queue=[0x22222222222242228222222222222204] working_on="Use Bash
 item toolu_01V8KNRp5VHwLZsBWWh8nwpU tool final at=1790394806656 text="" Bash TOOL_STATE_SUCCEEDED ended=1790394821818 input="{\"command\":\"python3 -c 'import time; time.sleep(15)'; echo S…" out="S1"
 ## 38 recorded 37: fact Stream type=result subtype=success uuid=c4786fca-f2bb-4574-9bd4-defb5f8f08a9
 effect user 22222222-2222-4222-8222-222222222204 "Also append the word NUTMEG."
-item turn:1 turn final at=1790394821822 text="" #1 TURN_OUTCOME_INTERRUPTED started=1790394803362 cost=0.025315
+item turn:1 turn final at=1790394821822 text="" #1 TURN_OUTCOME_INTERRUPTED started=1790394803362
 item 22222222-2222-4222-8222-222222222204 prompt final input=0x22222222222242228222222222222204 at=1790394821822 text="Also append the word NUTMEG."
 snapshot WORKING queue=[] working_on="Also append the word NUTMEG." at=1790394821822 asks=[] session=a3ac617e-ea95-452f-85f5-00d91687ea0e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=25899/200000 tasks=? active=[] usage=ok 5h:11%(ok) 7d:36%(?) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_NEEDS_AUTH,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Claude Docs:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=-
@@ -45,6 +45,6 @@ snapshot WORKING queue=[] working_on="Also append the word NUTMEG." at=179039483
 ## 65 recorded 64: fact Stream type=assistant uuid=ce99ec94-c0a5-4929-bc29-8a85d4bb8107
 item msg_011CfRNfuLgcUn8jjMUCR381:1 message final at=1790394830449 text="DONE-N NUTMEG"
 ## 67 recorded 66: fact Stream type=result subtype=success uuid=8da37b7c-dc29-4ef0-8c4e-d067b013000b
-item turn:2 turn final at=1790394830454 text="" #2 TURN_OUTCOME_COMPLETED started=1790394821824 cost=0.032969
+item turn:2 turn final at=1790394830454 text="" #2 TURN_OUTCOME_COMPLETED started=1790394821824
 snapshot IDLE queue=[] working_on="Also append the word NUTMEG." at=1790394830454 asks=[] session=a3ac617e-ea95-452f-85f5-00d91687ea0e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=26478/200000 tasks=? active=[] usage=ok 5h:11%(ok) 7d:36%(?) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_NEEDS_AUTH,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Claude Docs:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 2 last=msg_011CfRNfuLgcUn8jjMUCR381:1

@@ -35,6 +35,6 @@ item msg_011CfnB8bBxxdP3V7Kho83NX:1 message final at=1791344100798 text="pong"
 ## 36 recorded 35: fact Stream type=rate_limit_event uuid=99730d5f-f437-465d-90cd-33ce0386356f
 snapshot WORKING queue=[] working_on="Reply with the single word pong and nothing else." at=1791344100824 asks=[] session=4bae23e4-6189-444d-8c43-ca9912f68ac5 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=22428/? tasks=? active=[] usage=ok 5h:6%(ok) 7d:35%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 38 recorded 37: fact Stream type=result subtype=success uuid=36a9bfb0-8808-4c5b-a8c7-02f01b9c7c19
-item turn:1 turn final at=1791344100835 text="" #1 TURN_OUTCOME_COMPLETED started=1791344099943 cost=0.016753
+item turn:1 turn final at=1791344100835 text="" #1 TURN_OUTCOME_COMPLETED started=1791344099943
 snapshot IDLE queue=[] working_on="Reply with the single word pong and nothing else." at=1791344100835 asks=[] session=4bae23e4-6189-444d-8c43-ca9912f68ac5 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=22428/200000 tasks=? active=[] usage=ok 5h:6%(ok) 7d:35%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CfnB8bBxxdP3V7Kho83NX:1

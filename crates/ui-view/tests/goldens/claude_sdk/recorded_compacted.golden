@@ -11,7 +11,7 @@
 ## 26 recorded 25: fact Stream type=assistant uuid=511190c3-c9af-43a9-8276-bc62b62ceae5
   row    4 msg_011CeW3ek1A3PBja3jXLEEjT:1 Prose { text: [Text("# The History of Rope-Making\n\nRope-making is one of humanity's oldest crafts, with evidence of twisted plant fibers dating back thousands of years. Archaeological findings from ancient Egypt suggest that Egyptians were making ropes from papyrus, while other civilizations used materials like hemp, flax, and coconut fibers depending on their…
 ## 28 recorded 27: fact Stream type=result subtype=success uuid=42315a73-af12-4a7b-9db0-e909e817e989
-  row    5 turn:1 TurnEnd { duration_ms: Some(7222), cost_usd: Some(0.024946), failed: false }
+  row    5 turn:1 TurnEnd { duration_ms: Some(7222), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 30 recorded 29: input stdin-3
   row    6 73746469-6e2d-4300-8000-000000000000 Prompt { text: [Text("Now three more paragraphs about knots.")], steered: false }
@@ -21,7 +21,7 @@
 ## 46 recorded 45: fact Stream type=assistant uuid=62fd8a30-3f31-4fda-8f65-84e42fd711f0
   row    8 msg_011CeW3fHM4FgKHkfGMcSFe5:1 Prose { text: [Text("# The History and Importance of Knots\n\nKnots represent one of humanity's most fundamental innovations, with evidence suggesting their use dates back at least 100,000 years. Early humans discovered that tying knots allowed them to secure tools, create snares for hunting, and bind materials together for shelter and clothing. Archaeological e…
 ## 48 recorded 47: fact Stream type=result subtype=success uuid=5b7af582-1c85-450a-a692-005a38bbe7ad
-  row    9 turn:2 TurnEnd { duration_ms: Some(6644), cost_usd: Some(0.0313196), failed: false }
+  row    9 turn:2 TurnEnd { duration_ms: Some(6644), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 50 recorded 49: input stdin-4
   row   10 73746469-6e2d-4400-8000-000000000000 Prompt { text: [Text("/compact")], steered: false }
@@ -36,24 +36,24 @@
 ## 60 recorded 59: fact Stream type=user uuid=c6713576-a5e6-44b7-8df8-6b97e041c567
   row   14 c6713576-a5e6-44b7-8df8-6b97e041c567 SlashOutput { command: "/compact", args: "", output: "Compacted" }
 ## 62 recorded 61: fact Stream type=result subtype=success uuid=9566e87b-f831-46a6-98ff-a6b638e627d2
-  row   15 turn:3 TurnEnd { duration_ms: Some(21170), cost_usd: Some(0.0451237), failed: false }
+  row   15 turn:3 TurnEnd { duration_ms: Some(21170), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Write three paragraphs about the history of rope-making.")], steered: false }
      3 msg_011CeW3ek1A3PBja3jXLEEjT:0 Thinking { text: "The user is asking me to write three paragraphs about the history of rope-making. This is a straightforward informational writing task that has nothing to do with software engineering, code, the current working directory, or any of the technical context provided.\n\nThis is not a software engineering task, so I should just write the requested c…
      4 msg_011CeW3ek1A3PBja3jXLEEjT:1 Prose { text: [Text("# The History of Rope-Making\n\nRope-making is one of humanity's oldest crafts, with evidence of twisted plant fibers dating back thousands of years. Archaeological findings from ancient Egypt suggest that Egyptians were making ropes from papyrus, while other civilizations used materials like hemp, flax, and coconut fibers depending on their…
-     5 turn:1 TurnEnd { duration_ms: Some(7222), cost_usd: Some(0.024946), failed: false }
+     5 turn:1 TurnEnd { duration_ms: Some(7222), failed: false }
      6 73746469-6e2d-4300-8000-000000000000 Prompt { text: [Text("Now three more paragraphs about knots.")], steered: false }
      7 msg_011CeW3fHM4FgKHkfGMcSFe5:0 Thinking { text: "The user is asking for three more paragraphs about knots. This is another straightforward informational writing task, similar to the previous request about rope-making. I should write three informative paragraphs about the history and significance of knots.", open: false, duration_ms: Some(1585) }
      8 msg_011CeW3fHM4FgKHkfGMcSFe5:1 Prose { text: [Text("# The History and Importance of Knots\n\nKnots represent one of humanity's most fundamental innovations, with evidence suggesting their use dates back at least 100,000 years. Early humans discovered that tying knots allowed them to secure tools, create snares for hunting, and bind materials together for shelter and clothing. Archaeological e…
-     9 turn:2 TurnEnd { duration_ms: Some(6644), cost_usd: Some(0.0313196), failed: false }
+     9 turn:2 TurnEnd { duration_ms: Some(6644), failed: false }
     10 73746469-6e2d-4400-8000-000000000000 Prompt { text: [Text("/compact")], steered: false }
     11 00d461b3-c569-43f4-80ff-33ac9a87bfaf Hidden collapsed
     12 115f463b-1a4e-4a07-bf00-88e995d814ac Compaction { tokens_before: Some(29543), tokens_after: Some(2963), automatic: false }
     13 boundary:2 Boundary { kind: Compacted, cause: "" }
     14 c6713576-a5e6-44b7-8df8-6b97e041c567 SlashOutput { command: "/compact", args: "", output: "Compacted" }
-    15 turn:3 TurnEnd { duration_ms: Some(21170), cost_usd: Some(0.0451237), failed: false }
+    15 turn:3 TurnEnd { duration_ms: Some(21170), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: Some(UsageView { blocked: false, windows: [UsageWindowView { label: FiveHour, used_percent: 19.0, resets_at_ms: Some(1787970000000), state: Unknown }, UsageWindowView { label: Weekly { model: None }, used_percent: 83.0, resets_at_ms: Some(1787976000000), state: NearLimit }], credits: None }), changes: None }
 == context Some(ContextView { used_tokens: 2963, window_tokens: Some(200000), percent: Some(1), near_full: false }) sign-in None
 == settings

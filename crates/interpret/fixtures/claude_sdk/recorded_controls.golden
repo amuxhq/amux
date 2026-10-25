@@ -30,6 +30,6 @@ snapshot WORKING queue=[] working_on="Reply with exactly CONTROL_OK and nothing 
 ## 53 recorded 52: fact Stream type=assistant uuid=8688123e-9d26-4b73-b83a-3e62a9595984
 item msg_011CeW3MLa2xZvpfbdqnT7ye:1 message final at=1787960942171 text="CONTROL_OK"
 ## 55 recorded 54: fact Stream type=result subtype=success uuid=42d0be24-bfbc-4b0e-b8fe-3be6b8c97f46
-item turn:1 turn final at=1787960942266 text="" #1 TURN_OUTCOME_COMPLETED started=1787960940795 cost=0.022551
+item turn:1 turn final at=1787960942266 text="" #1 TURN_OUTCOME_COMPLETED started=1787960940795
 snapshot IDLE queue=[] working_on="Reply with exactly CONTROL_OK and nothing else." at=1787960942266 asks=[] session=156ce36e-fb1a-43a5-bd00-3fe6a7d6afcf model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=acceptEdits context=27907/200000 tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CeW3MLa2xZvpfbdqnT7ye:1

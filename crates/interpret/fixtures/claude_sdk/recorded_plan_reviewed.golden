@@ -80,7 +80,7 @@ snapshot WORKING queue=[] working_on="Plan changing README.md's only line from C
 ## 83 recorded 82: fact Stream type=assistant uuid=bddfbe5c-b9f7-49f0-b244-7ecff219131e
 item msg_011CemAjYTPDxNdYUo5EdGBq:1 message final at=1788651286224 text="AUTO_APPROVED"
 ## 85 recorded 84: fact Stream type=result subtype=success uuid=59e57651-f4f9-4d54-bf33-927f4ba8b538
-item turn:1 turn final at=1788651286238 text="" #1 TURN_OUTCOME_COMPLETED started=1788651267480 cost=0.053291
+item turn:1 turn final at=1788651286238 text="" #1 TURN_OUTCOME_COMPLETED started=1788651267480
 snapshot IDLE queue=[] working_on="Plan changing README.md's only line from CURRENT to AUTO, then call ExitPlanMode. Do not ask questions. Once approved, do not edit; reply exactly AUTO_APPROVED." at=1788651286238 asks=[] session=020256dc-b7d7-471b-b395-b83ccb943d79 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=acceptEdits context=28749/200000 tasks=? active=[] usage=ok 5h:19%(ok) 7d:23%(?) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CemAjYTPDxNdYUo5EdGBq:1
 ## 87 recorded 86: input stdin-5
@@ -116,7 +116,7 @@ snapshot WORKING queue=[] working_on="Plan changing README.md's only line from C
 ## 120 recorded 119: fact Stream type=assistant uuid=db388450-0b23-4afc-9cef-059bc3b9f55a
 item msg_011CemAk91mkTNq5nAMMETcX:1 message final at=1788651294172 text="MANUAL_APPROVED"
 ## 122 recorded 121: fact Stream type=result subtype=success uuid=e3d0426f-bb38-4b65-9762-8e165091ef38
-item turn:2 turn final at=1788651294269 text="" #2 TURN_OUTCOME_COMPLETED started=1788651286241 cost=0.069836
+item turn:2 turn final at=1788651294269 text="" #2 TURN_OUTCOME_COMPLETED started=1788651286241
 snapshot IDLE queue=[] working_on="Plan changing README.md's only line from CURRENT to MANUAL, then call ExitPlanMode. Do not ask questions. Once approved, do not edit; reply exactly MANUAL_APPROVED." at=1788651294269 asks=[] session=020256dc-b7d7-471b-b395-b83ccb943d79 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=31149/200000 tasks=? active=[] usage=ok 5h:19%(ok) 7d:23%(?) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 2 last=msg_011CemAk91mkTNq5nAMMETcX:1
 ## 123 recorded 122: input stdin-8

@@ -22,7 +22,7 @@
 ## 14 fact {"channel":"transcript","json":{"message":{"content":[{"content":"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.","is_error":true,"tool_use_id":"t1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":…
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [112, 50], text: [Text("never mind, just fix the typo")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 15 fact {"channel":"transcript","json":{"durationMs":12,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.022Z","type":"system","uuid":"d1"}}
-  row    4 turn:1 TurnEnd { duration_ms: Some(12), cost_usd: None, failed: false }
+  row    4 turn:1 TurnEnd { duration_ms: Some(12), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 16 fact {"channel":"transcript","json":{"message":{"content":"never mind, just fix the typo","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.030Z","type":"user","uuid":"u2"}}
   row    5 u2 Prompt { text: [Text("never mind, just fix the typo")], steered: false }
@@ -47,7 +47,7 @@
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 u1 Prompt { text: [Text("plan the README change")], steered: false }
      3 t1 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: Dismissed, mode: "", mode_name: "", note: None, writing: false })
-     4 turn:1 TurnEnd { duration_ms: Some(12), cost_usd: None, failed: false }
+     4 turn:1 TurnEnd { duration_ms: Some(12), failed: false }
      5 u2 Prompt { text: [Text("never mind, just fix the typo")], steered: false }
      6 t2 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: ApprovedSwitching, mode: "acceptEdits", mode_name: "Accept edits", note: None, writing: false })
      7 e1 FileChange { files: [FileRow { path: "/w/README.md", change: Edited, added: 1, removed: 1, line: None }], state: Running } run[e1..e1 x1 recent=0 live RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }]

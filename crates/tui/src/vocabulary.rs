@@ -1432,7 +1432,6 @@ fn row_sets() -> Vec<RowSet> {
                 (
                     row(RowKind::TurnEnd {
                         duration_ms: Some(102_000),
-                        cost_usd: Some(0.42),
                         failed: false,
                     }),
                     CLOSED,
@@ -1440,7 +1439,6 @@ fn row_sets() -> Vec<RowSet> {
                 (
                     row(RowKind::TurnEnd {
                         duration_ms: Some(3_000),
-                        cost_usd: None,
                         failed: true,
                     }),
                     CLOSED,

@@ -24,8 +24,28 @@ public enum PlaceNames {
     /// the parents are there only to tell two of the same name apart, which a
     /// letter each still does. A hidden parent keeps its dot and first letter.
     public static func directory(_ path: String) -> String {
+        guard let (root, parts) = homed(path) else { return path }
+        guard let last = parts.last else { return "~" }
+        let parents = parts.dropLast().map { part -> String in
+            if part.hasPrefix("."), part.count > 1 { return String(part.prefix(2)) }
+            return String(part.prefix(1))
+        }
+        return root + (parents + [last]).joined(separator: "/")
+    }
+
+    /// The directory with only its home written as `~` —
+    /// `/Users/ada/source/amux` is `~/source/amux` — for where a path is read
+    /// whole, as when choosing one.
+    public static func path(_ path: String) -> String {
+        guard let (root, parts) = homed(path) else { return path }
+        return parts.isEmpty ? "~" : root + parts.joined(separator: "/")
+    }
+
+    /// The path's components after its root, the root being `~/` when the
+    /// path is under a home.
+    private static func homed(_ path: String) -> (root: String, parts: [String])? {
         var parts = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
-        guard !parts.isEmpty else { return path }
+        guard !parts.isEmpty else { return nil }
         var root = path.hasPrefix("/") ? "/" : ""
         // A home directory is recognised by where the platforms put them. The
         // phone cannot ask the machine what its home is, and these are the
@@ -42,12 +62,7 @@ public enum PlaceNames {
             parts.removeFirst()
             root = "~/"
         }
-        guard let last = parts.last else { return "~" }
-        let parents = parts.dropLast().map { part -> String in
-            if part.hasPrefix("."), part.count > 1 { return String(part.prefix(2)) }
-            return String(part.prefix(1))
-        }
-        return root + (parents + [last]).joined(separator: "/")
+        return (root, parts)
     }
 
     /// "~/s/amux · studio": the directory first, because it is what tells one

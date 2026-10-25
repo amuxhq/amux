@@ -26,6 +26,6 @@ effect reply stdin-3 rejected:UNSUPPORTED
 ## 24 recorded 23: fact Stream type=user uuid=ab88dea4-334a-42d2-b313-eafcff6db34f
 item toolu_01MG15TcFRDQwrP1CLCJmvAt ask final at=1790388069719 text="" question×1 ASK_OUTCOME_DISMISSED
 ## 28 recorded 27: fact Stream type=result subtype=error_during_execution uuid=6f0f996a-252e-4fb6-98e1-24a190db421e
-item turn:1 turn final at=1790388069736 text="" #1 TURN_OUTCOME_INTERRUPTED started=1790388065836 cost=0.000000
+item turn:1 turn final at=1790388069736 text="" #1 TURN_OUTCOME_INTERRUPTED started=1790388065836
 snapshot IDLE queue=[] working_on="Use AskUserQuestion to ask one single-select question with header Color, question 'Which color do you prefer?', and options Red and Blue." at=1790388069736 asks=[] session=97ead3f1-e995-4f05-b4ae-c6b0e3b64e4b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=25834/? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_NEEDS_AUTH,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Claude Docs:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=-

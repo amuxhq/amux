@@ -57,7 +57,7 @@
   row    9 prompt:7032 Prompt { text: [Text("Now commit.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 24 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-2","status":"completed"}}}}
-  row   10 turn:2 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+  row   10 turn:2 TurnEnd { duration_ms: Some(0), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -69,7 +69,7 @@
      7 cmd-2 Command { command: "rm -rf fixtures", state: Denied, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[cmd-1..cmd-2 x2 recent=0 RunCounts { commands: 2, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Denied, granted: None, note: None, elsewhere: true }
      8 turn:1 Stopped
      9 prompt:7032 Prompt { text: [Text("Now commit.")], steered: false }
-    10 turn:2 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+    10 turn:2 TurnEnd { duration_ms: Some(0), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

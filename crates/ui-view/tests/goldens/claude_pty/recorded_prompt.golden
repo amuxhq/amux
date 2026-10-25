@@ -10,14 +10,14 @@
 ## 24 recorded 22: fact Transcript type=assistant uuid=2d999060-1734-4832-8136-8e519f159482
   row    4 2d999060-1734-4832-8136-8e519f159482 Prose { text: [Text("PTY_SPEC_PROMPT_OK")], streaming: false, working_note: false }
 ## 26 recorded 24: fact Transcript type=system subtype=turn_duration uuid=4330a98c-55bf-4741-976c-d3364d43101b
-  row    5 turn:1 TurnEnd { duration_ms: Some(1292), cost_usd: None, failed: false }
+  row    5 turn:1 TurnEnd { duration_ms: Some(1292), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 66d78e2f-df01-44d6-aa07-59fb3c141ce7 Prompt { text: [Text("Reply exactly PTY_SPEC_PROMPT_OK and nothing else.")], steered: false }
      3 dbaffd9d-6b72-4d5f-a3ff-e37a673c448f Thinking { text: "", open: false, duration_ms: Some(1213) }
      4 2d999060-1734-4832-8136-8e519f159482 Prose { text: [Text("PTY_SPEC_PROMPT_OK")], streaming: false, working_note: false }
-     5 turn:1 TurnEnd { duration_ms: Some(1292), cost_usd: None, failed: false }
+     5 turn:1 TurnEnd { duration_ms: Some(1292), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 34310, window_tokens: None, percent: None, near_full: false }) sign-in None
 == settings

@@ -27,7 +27,7 @@
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [97, 51], text: [Text("Use the old palette.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 11 fact {"channel":"transcript","json":{"message":{"content":[{"text":"[Request interrupted by user for tool use]","type":"text"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.026Z","type":"user","uuid":"i1"}}
   row    4 i1 Hidden collapsed
-  row    5 turn:1 TurnEnd { duration_ms: None, cost_usd: None, failed: false }
+  row    5 turn:1 TurnEnd { duration_ms: None, failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 13 fact {"channel":"transcript","json":{"message":{"content":"Use the old palette.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.040Z","type":"user","uuid":"u2"}}
   row    6 u2 Prompt { text: [Text("Use the old palette.")], steered: false }
@@ -37,7 +37,7 @@
      2 u1 Prompt { text: [Text("test it")], steered: false }
      3 t1 [Replied: Color = (skipped); Tools = (skipped) skipped=2 reply="Use the old palette."] Ask(Questions { questions: [QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false }, OptionView { label: "Blue", description: "cool", preview: "", recommended: false }], allow_other: true, s…
      4 i1 Hidden collapsed
-     5 turn:1 TurnEnd { duration_ms: None, cost_usd: None, failed: false }
+     5 turn:1 TurnEnd { duration_ms: None, failed: false }
      6 u2 Prompt { text: [Text("Use the old palette.")], steered: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None

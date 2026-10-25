@@ -16,7 +16,7 @@
   row    5 8f0f7a3e-1a84-4841-941a-7c5805737e84 Error { error_kind: "authentication_failed", message: "Failed to authenticate. API Error: 401 API key is invalid.", attempts: 0, gave_up: true } attention
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 18 recorded 17: fact Stream type=result subtype=success uuid=22cb37c7-0bd8-4e34-9a82-d6aa579513cb
-  row    6 turn:1 TurnEnd { duration_ms: Some(2552), cost_usd: Some(0.0), failed: true }
+  row    6 turn:1 TurnEnd { duration_ms: Some(2552), failed: true }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -24,7 +24,7 @@
      3 d85ab0c7-bfef-4a0f-994b-61ad4b774f54 Error { error_kind: "authentication_failed", message: "authentication_failed (401)", attempts: 1, gave_up: false }
      4 2d7d9687-a10d-4df3-a987-e4d08ae2bd5a Error { error_kind: "authentication_failed", message: "authentication_failed (401)", attempts: 2, gave_up: false }
      5 8f0f7a3e-1a84-4841-941a-7c5805737e84 Error { error_kind: "authentication_failed", message: "Failed to authenticate. API Error: 401 API key is invalid.", attempts: 0, gave_up: true } attention
-     6 turn:1 TurnEnd { duration_ms: Some(2552), cost_usd: Some(0.0), failed: true }
+     6 turn:1 TurnEnd { duration_ms: Some(2552), failed: true }
 == overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "plugin:stripe:stripe", error: "", needs_auth: true }], usage_near_limit: None, changes: None }
 == context None sign-in Some(SignInView { state: Failed, account: "", message: "Failed to authenticate. API Error: 401 API key is invalid." })
 == settings

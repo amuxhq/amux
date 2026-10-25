@@ -10,7 +10,7 @@
 ## 25 recorded 23: fact Transcript type=assistant uuid=97bdfa13-078a-44ef-899a-4adc60f12a8a
   row    4 97bdfa13-078a-44ef-899a-4adc60f12a8a Prose { text: [Text("READY_FOR_RELINK")], streaming: false, working_note: false }
 ## 27 recorded 25: fact Transcript type=system subtype=turn_duration uuid=6f897057-e0a4-416b-b910-88531f0caa02
-  row    5 turn:1 TurnEnd { duration_ms: Some(1716), cost_usd: None, failed: false }
+  row    5 turn:1 TurnEnd { duration_ms: Some(1716), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 30 recorded 28: fact Transcript type=user uuid=15cef8d9-5b94-4d1b-980f-92100f8cb134
   row    6 15cef8d9-5b94-4d1b-980f-92100f8cb134 Prompt { text: [Text("Reply exactly READY_FOR_RELINK and nothing else.")], steered: false }
@@ -20,7 +20,7 @@
 ## 36 recorded 34: fact Transcript type=assistant uuid=dd5c6294-8506-46ee-958a-f70a8963bca2
   row    8 dd5c6294-8506-46ee-958a-f70a8963bca2 Prose { text: [Text("READY_FOR_RELINK")], streaming: false, working_note: false }
 ## 44 recorded 42: fact Transcript type=system subtype=turn_duration uuid=92c7442c-643b-48f1-a9f9-192a127e552d
-  row    9 turn:2 TurnEnd { duration_ms: Some(1092), cost_usd: None, failed: false }
+  row    9 turn:2 TurnEnd { duration_ms: Some(1092), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 47 recorded 45: fact Transcript type=user uuid=c3911e9e-ecbd-46ac-8b33-a559f050b0ff
   row   10 c3911e9e-ecbd-46ac-8b33-a559f050b0ff Prompt { text: [Text("Reply exactly READY_FOR_RELINK and nothing else.")], steered: false }
@@ -30,7 +30,7 @@
 ## 53 recorded 51: fact Transcript type=assistant uuid=efa196b4-6d50-43a5-9e2b-387785138b6a
   row   12 efa196b4-6d50-43a5-9e2b-387785138b6a Prose { text: [Text("READY_FOR_RELINK")], streaming: false, working_note: false }
 ## 55 recorded 53: fact Transcript type=system subtype=turn_duration uuid=b5cd1249-f4a4-4ab2-9921-06186b010e87
-  row   13 turn:3 TurnEnd { duration_ms: Some(985), cost_usd: None, failed: false }
+  row   13 turn:3 TurnEnd { duration_ms: Some(985), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 58 recorded 56: fact Transcript type=user uuid=f0d72ff7-c7a4-42a1-b99e-96da3aab0fc1
   row   14 f0d72ff7-c7a4-42a1-b99e-96da3aab0fc1 Prompt { text: [Text("Reply exactly READY_FOR_RELINK and nothing else.")], steered: false }
@@ -40,7 +40,7 @@
 ## 65 recorded 63: fact Transcript type=assistant uuid=2f756e98-fc61-4783-b702-4cacf189bd3e
   row   16 2f756e98-fc61-4783-b702-4cacf189bd3e Prose { text: [Text("READY_FOR_RELINK")], streaming: false, working_note: false }
 ## 67 recorded 65: fact Transcript type=system subtype=turn_duration uuid=f5668032-ceb6-41a2-a580-33f081239527
-  row   17 turn:4 TurnEnd { duration_ms: Some(1057), cost_usd: None, failed: false }
+  row   17 turn:4 TurnEnd { duration_ms: Some(1057), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 70 recorded 68: fact Transcript type=user uuid=d99b454e-51c4-43e1-bd7a-4332808eaf89
   row   18 d99b454e-51c4-43e1-bd7a-4332808eaf89 SlashOutput { command: "/compact", args: "", output: "" }
@@ -57,19 +57,19 @@
      2 efcc2f8e-5a90-4609-ba23-3cd8afa3a622 Prompt { text: [Text("Reply exactly READY_FOR_RELINK and nothing else.")], steered: false }
      3 36da80d0-ce65-4459-b6f4-967d934fa661 Thinking { text: "", open: false, duration_ms: Some(1680) }
      4 97bdfa13-078a-44ef-899a-4adc60f12a8a Prose { text: [Text("READY_FOR_RELINK")], streaming: false, working_note: false }
-     5 turn:1 TurnEnd { duration_ms: Some(1716), cost_usd: None, failed: false }
+     5 turn:1 TurnEnd { duration_ms: Some(1716), failed: false }
      6 15cef8d9-5b94-4d1b-980f-92100f8cb134 Prompt { text: [Text("Reply exactly READY_FOR_RELINK and nothing else.")], steered: false }
      7 cb5ed14a-4977-498c-902d-06c1abf307d1 Thinking { text: "", open: false, duration_ms: Some(985) }
      8 dd5c6294-8506-46ee-958a-f70a8963bca2 Prose { text: [Text("READY_FOR_RELINK")], streaming: false, working_note: false }
-     9 turn:2 TurnEnd { duration_ms: Some(1092), cost_usd: None, failed: false }
+     9 turn:2 TurnEnd { duration_ms: Some(1092), failed: false }
     10 c3911e9e-ecbd-46ac-8b33-a559f050b0ff Prompt { text: [Text("Reply exactly READY_FOR_RELINK and nothing else.")], steered: false }
     11 5b3e8676-76c1-49a1-90d2-02da95644b0a Thinking { text: "", open: false, duration_ms: Some(957) }
     12 efa196b4-6d50-43a5-9e2b-387785138b6a Prose { text: [Text("READY_FOR_RELINK")], streaming: false, working_note: false }
-    13 turn:3 TurnEnd { duration_ms: Some(985), cost_usd: None, failed: false }
+    13 turn:3 TurnEnd { duration_ms: Some(985), failed: false }
     14 f0d72ff7-c7a4-42a1-b99e-96da3aab0fc1 Prompt { text: [Text("Reply exactly READY_FOR_RELINK and nothing else.")], steered: false }
     15 e779a09b-aac8-437a-aed4-6e451e283a4d Thinking { text: "", open: false, duration_ms: Some(986) }
     16 2f756e98-fc61-4783-b702-4cacf189bd3e Prose { text: [Text("READY_FOR_RELINK")], streaming: false, working_note: false }
-    17 turn:4 TurnEnd { duration_ms: Some(1057), cost_usd: None, failed: false }
+    17 turn:4 TurnEnd { duration_ms: Some(1057), failed: false }
     18 d99b454e-51c4-43e1-bd7a-4332808eaf89 SlashOutput { command: "/compact", args: "", output: "Compacted (ctrl+o to see full summary)" }
     19 boundary:2 Boundary { kind: Compacted, cause: "" }
     20 8b164c5e-6b9e-4737-8685-335403c36779 Compaction { tokens_before: Some(34695), tokens_after: Some(2587), automatic: false }

@@ -25,6 +25,6 @@ effect reply stdin-3 accepted
 ## 33 recorded 32: fact Stream type=assistant uuid=c6dd151a-23e8-4401-a662-02960268d9e6
 item msg_011CeW3dDkhxHSkTccVzTNHw:1 message final at=1787961157965 text="1\n2\n3\n4\n5\n6"
 ## 37 recorded 36: fact Stream type=result subtype=error_during_execution uuid=d977b23e-28cd-4e2c-a4fa-652e0ddec2cd
-item turn:1 turn final at=1787961157967 text="" #1 TURN_OUTCOME_INTERRUPTED started=1787961156237 cost=0.000970
+item turn:1 turn final at=1787961157967 text="" #1 TURN_OUTCOME_INTERRUPTED started=1787961156237
 snapshot IDLE queue=[] working_on="Count slowly from one to two hundred, one number per line." at=1787961157967 asks=[] session=82044520-de4a-469b-aab1-7874aa383634 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=27909/200000 tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CeW3dDkhxHSkTccVzTNHw:1

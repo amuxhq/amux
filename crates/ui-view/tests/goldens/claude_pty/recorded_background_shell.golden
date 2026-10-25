@@ -52,7 +52,7 @@
   row    5 toolu_01HUWUypBzyzC593e5BuR9db Background { command: "for i in 1 2 3; do echo tick $i; sleep 2; done", running: false, duration_ms: Some(148) } run[toolu_01HUWUypBzyzC593e5BuR9db..toolu_01PYf9RAUvxv4nhnWRuY4fwj x2 recent=1] collapsed
   row    6 toolu_01PYf9RAUvxv4nhnWRuY4fwj Command { command: "sleep 8", state: Succeeded, exit_code: None, output_head: ["(Bash completed with no output)"], more_lines: 0, output_trimmed: false, output_tail: ["(Bash completed with no output)"], duration_ms: Some(8089) } run[toolu_01HUWUypBzyzC593e5BuR9db..toolu_01PYf9RAUvxv4nhnWRuY4fwj x2 recent=0 RunCounts { commands: 2, edits: 0, reads: 0, searches: 0…
   row    9 toolu_015Zd8iUXCxUrCYDWoBJfLcj Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_015Zd8iUXCxUrCYDWoBJfLcj..toolu_015Zd8iUXCxUrCYDWoBJfLcj x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
-  row   12 turn:1 TurnEnd { duration_ms: Some(19651), cost_usd: None, failed: false }
+  row   12 turn:1 TurnEnd { duration_ms: Some(19651), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -66,7 +66,7 @@
      9 toolu_015Zd8iUXCxUrCYDWoBJfLcj Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_015Zd8iUXCxUrCYDWoBJfLcj..toolu_015Zd8iUXCxUrCYDWoBJfLcj x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
     10 2f94f359-aa87-4fc0-97ab-b494f7a33897 Thinking { text: "", open: false, duration_ms: Some(1509) }
     11 d7c982ea-189e-492c-b5c9-ab7b20a2a8e2 Prose { text: [Text("The last line the background command printed is **`tick 3`**.")], streaming: false, working_note: false }
-    12 turn:1 TurnEnd { duration_ms: Some(19651), cost_usd: None, failed: false }
+    12 turn:1 TurnEnd { duration_ms: Some(19651), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 37725, window_tokens: None, percent: None, near_full: false }) sign-in None
 == settings

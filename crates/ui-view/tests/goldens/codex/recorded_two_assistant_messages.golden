@@ -36,7 +36,7 @@
 ## 46 recorded 45: fact Rpc method=item/completed
   row    5 msg_0c55feb572459127016a934861f11087d2a954de2ba1465f7e Prose { text: [Text("CODEX_SPEC_SECOND")], streaming: false, working_note: false }
 ## 53 recorded 52: fact Rpc method=turn/completed
-  row    6 turn:1 TurnEnd { duration_ms: Some(4841), cost_usd: None, failed: false }
+  row    6 turn:1 TurnEnd { duration_ms: Some(4841), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -44,7 +44,7 @@
      3 rs_0c55feb572459127016a93486173c887d28317ad03147fec76 Thinking { text: "", open: false, duration_ms: Some(4143) }
      4 msg_0c55feb572459127016a934861bf6887d28dfc52e3aa94f16b Prose { text: [Text("CODEX_SPEC_FIRST")], streaming: false, working_note: true }
      5 msg_0c55feb572459127016a934861f11087d2a954de2ba1465f7e Prose { text: [Text("CODEX_SPEC_SECOND")], streaming: false, working_note: false }
-     6 turn:1 TurnEnd { duration_ms: Some(4841), cost_usd: None, failed: false }
+     6 turn:1 TurnEnd { duration_ms: Some(4841), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 14560, window_tokens: Some(258400), percent: Some(5), near_full: false }) sign-in None
 == settings

@@ -162,7 +162,6 @@ pub enum RowKind {
     Ask(AskRow),
     TurnEnd {
         duration_ms: Option<i64>,
-        cost_usd: Option<f64>,
         failed: bool,
     },
     Stopped,
@@ -968,18 +967,15 @@ fn turn_row(state: &SessionState, held: &Held, turn: &wire::Turn) -> RowKind {
     match TurnOutcome::try_from(turn.outcome).unwrap_or(TurnOutcome::Unspecified) {
         TurnOutcome::Interrupted if replied_instead(state, held) => RowKind::TurnEnd {
             duration_ms,
-            cost_usd: turn.cost_usd,
             failed: false,
         },
         TurnOutcome::Interrupted | TurnOutcome::Stopped => RowKind::Stopped,
         TurnOutcome::Failed => RowKind::TurnEnd {
             duration_ms,
-            cost_usd: turn.cost_usd,
             failed: true,
         },
         TurnOutcome::Completed | TurnOutcome::Unspecified => RowKind::TurnEnd {
             duration_ms,
-            cost_usd: turn.cost_usd,
             failed: false,
         },
     }

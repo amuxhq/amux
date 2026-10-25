@@ -11,7 +11,7 @@
 ## 20 recorded 19: fact Stream type=assistant uuid=caf82b1b-76cb-487b-af59-090a079eb41f
   row    4 msg_011CeW3YaVFN1fZVnGSUSfbb:1 Prose { text: [Text("REMEMBERED")], streaming: false, working_note: false }
 ## 22 recorded 21: fact Stream type=result subtype=success uuid=b1fcbf89-d0f2-44fa-82b4-03be03cf7326
-  row    5 turn:1 TurnEnd { duration_ms: Some(1418), cost_usd: Some(0.022579), failed: false }
+  row    5 turn:1 TurnEnd { duration_ms: Some(1418), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 24 recorded 23: input stdin-4
   row    6 73746469-6e2d-4400-8000-000000000000 Prompt { text: [Text("What word did I ask you to remember? Reply with just that word.")], steered: false }
@@ -21,18 +21,18 @@
 ## 30 recorded 29: fact Stream type=assistant uuid=262a9fba-ed92-4c0e-b3a9-1693137bf524
   row    8 msg_011CeW3Yn8yXiAArcPPibkqz:1 Prose { text: [Text("ALBATROSS")], streaming: false, working_note: false }
 ## 32 recorded 31: fact Stream type=result subtype=success uuid=a60fedaf-15ef-4505-8626-748bd69bfabe
-  row    9 turn:2 TurnEnd { duration_ms: Some(1033), cost_usd: Some(0.0032457000000000007), failed: false }
+  row    9 turn:2 TurnEnd { duration_ms: Some(1033), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Remember the word ALBATROSS. Reply with exactly REMEMBERED.")], steered: false }
      3 msg_011CeW3YaVFN1fZVnGSUSfbb:0 Thinking { text: "The user is asking me to remember the word \"ALBATROSS\" and reply with exactly \"REMEMBERED\".\n\nThis is a straightforward request. I should respond with exactly what they asked for.", open: false, duration_ms: Some(2113) }
      4 msg_011CeW3YaVFN1fZVnGSUSfbb:1 Prose { text: [Text("REMEMBERED")], streaming: false, working_note: false }
-     5 turn:1 TurnEnd { duration_ms: Some(1418), cost_usd: Some(0.022579), failed: false }
+     5 turn:1 TurnEnd { duration_ms: Some(1418), failed: false }
      6 73746469-6e2d-4400-8000-000000000000 Prompt { text: [Text("What word did I ask you to remember? Reply with just that word.")], steered: false }
      7 msg_011CeW3Yn8yXiAArcPPibkqz:0 Thinking { text: "The user asked me to remember the word \"ALBATROSS\" in the previous message. Now they're asking me to reply with just that word.", open: false, duration_ms: None }
      8 msg_011CeW3Yn8yXiAArcPPibkqz:1 Prose { text: [Text("ALBATROSS")], streaming: false, working_note: false }
-     9 turn:2 TurnEnd { duration_ms: Some(1033), cost_usd: Some(0.0032457000000000007), failed: false }
+     9 turn:2 TurnEnd { duration_ms: Some(1033), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: Some(UsageView { blocked: false, windows: [UsageWindowView { label: FiveHour, used_percent: 19.0, resets_at_ms: Some(1787970000000), state: Unknown }, UsageWindowView { label: Weekly { model: None }, used_percent: 83.0, resets_at_ms: Some(1787976000000), state: NearLimit }], credits: None }), changes: None }
 == context Some(ContextView { used_tokens: 28015, window_tokens: Some(200000), percent: Some(14), near_full: false }) sign-in None
 == settings

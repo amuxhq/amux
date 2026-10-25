@@ -30,7 +30,7 @@
   row    6 msg_011CfREjzoXASzH2PTT581ix:1 Prose { text: [Text("elicitation failed: {\"code\":-32602,\"message\":\"Client does not support URL-mode elicitation requests\"}")], streaming: false, working_note: false }
 ## 36 recorded 35: fact Stream type=result subtype=success uuid=380c8daa-1a37-45f2-a1e3-b056b7dc9456
   row    4 toolu_015Z2eFD6HNF5MaAwp8Vsuxp ToolCall { server: "external", tool: "ask_the_operator", fact: "LINK", state: Succeeded, result: "elicitation failed: {\"code\":-32602,\"message\":\"Client does not support URL-mode elicitation requests\"}" } run[toolu_015Z2eFD6HNF5MaAwp8Vsuxp..toolu_015Z2eFD6HNF5MaAwp8Vsuxp x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, othe…
-  row    7 turn:1 TurnEnd { duration_ms: Some(2804), cost_usd: Some(0.0277359), failed: false }
+  row    7 turn:1 TurnEnd { duration_ms: Some(2804), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -39,7 +39,7 @@
      4 toolu_015Z2eFD6HNF5MaAwp8Vsuxp ToolCall { server: "external", tool: "ask_the_operator", fact: "LINK", state: Succeeded, result: "elicitation failed: {\"code\":-32602,\"message\":\"Client does not support URL-mode elicitation requests\"}" } run[toolu_015Z2eFD6HNF5MaAwp8Vsuxp..toolu_015Z2eFD6HNF5MaAwp8Vsuxp x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, othe…
      5 msg_011CfREjzoXASzH2PTT581ix:0 Thinking { text: "", open: false, duration_ms: Some(1017) }
      6 msg_011CfREjzoXASzH2PTT581ix:1 Prose { text: [Text("elicitation failed: {\"code\":-32602,\"message\":\"Client does not support URL-mode elicitation requests\"}")], streaming: false, working_note: false }
-     7 turn:1 TurnEnd { duration_ms: Some(2804), cost_usd: Some(0.0277359), failed: false }
+     7 turn:1 TurnEnd { duration_ms: Some(2804), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "plugin:stripe:stripe", error: "", needs_auth: true }, ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 26089, window_tokens: Some(200000), percent: Some(13), near_full: false }) sign-in None
 == settings

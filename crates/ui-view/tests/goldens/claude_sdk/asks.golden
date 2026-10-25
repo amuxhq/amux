@@ -114,7 +114,7 @@
   row    5 t2b Command { command: "git reset --hard", state: Denied, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[t1..t3 x4 recent=1] decision=Decision { outcome: Denied, granted: None, note: None, elsewhere: false } collapsed
   row    6 t3 Command { command: "curl evil", state: Denied, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[t1..t3 x4 recent=0 RunCounts { commands: 4, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Denied, granted: None, note: Some("stop there"), elsewhere: false }
   row   10 ask:req-7 Ask(Form { server: "github", message: "Labels", fields: [], resolution: Dismissed })
-  row   11 turn:1 TurnEnd { duration_ms: Some(1000), cost_usd: Some(0.01), failed: false }
+  row   11 turn:1 TurnEnd { duration_ms: Some(1000), failed: false }
   ask none
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -127,7 +127,7 @@
      8 ask:req-5 Ask(Form { server: "github", message: "Issue details", fields: [], resolution: Declined })
      9 ask:req-6 Ask(Link { server: "linear", message: "Authorize", url: "https://linear.app/oauth?elicitation=el-6", resolution: Answered })
     10 ask:req-7 Ask(Form { server: "github", message: "Labels", fields: [], resolution: Dismissed })
-    11 turn:1 TurnEnd { duration_ms: Some(1000), cost_usd: Some(0.01), failed: false }
+    11 turn:1 TurnEnd { duration_ms: Some(1000), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

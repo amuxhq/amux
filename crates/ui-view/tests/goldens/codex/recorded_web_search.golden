@@ -28,7 +28,7 @@
   row    5 msg_07b442cd94dce1af016ab72ec00f3487d29c6b7163e5df4754 Prose { text: [Text("Canberra")], streaming: false, working_note: false }
 ## 47 recorded 46: fact Rpc method=turn/completed
   row    4 exec-3c575a4d-c180-4758-8b39-f2031d36f615 Explore { verb: WebSearch, subject: "capital city of Australia", state: Succeeded, result: "" } run[exec-3c575a4d-c180-4758-8b39-f2031d36f615..exec-3c575a4d-c180-4758-8b39-f2031d36f615 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
-  row    6 turn:1 TurnEnd { duration_ms: Some(12885), cost_usd: None, failed: false }
+  row    6 turn:1 TurnEnd { duration_ms: Some(12885), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -36,7 +36,7 @@
      3 rs_07b442cd94dce1af016ab72ebab0a087d2af0fc0f2bb07812a Thinking { text: "", open: false, duration_ms: Some(7553) }
      4 exec-3c575a4d-c180-4758-8b39-f2031d36f615 Explore { verb: WebSearch, subject: "capital city of Australia", state: Succeeded, result: "" } run[exec-3c575a4d-c180-4758-8b39-f2031d36f615..exec-3c575a4d-c180-4758-8b39-f2031d36f615 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
      5 msg_07b442cd94dce1af016ab72ec00f3487d29c6b7163e5df4754 Prose { text: [Text("Canberra")], streaming: false, working_note: false }
-     6 turn:1 TurnEnd { duration_ms: Some(12885), cost_usd: None, failed: false }
+     6 turn:1 TurnEnd { duration_ms: Some(12885), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 16447, window_tokens: Some(258400), percent: Some(6), near_full: false }) sign-in None
 == settings

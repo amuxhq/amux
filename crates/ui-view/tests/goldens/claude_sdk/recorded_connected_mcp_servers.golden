@@ -9,13 +9,13 @@
 ## 20 recorded 19: fact Stream type=assistant uuid=14008531-0570-4733-b63e-10b8e11bdd59
   row    3 msg_011CeXDshsT1UAM4tM6qxDbC:0 Prose { text: [Text("SERVERS_OK")], streaming: false, working_note: false }
 ## 22 recorded 21: fact Stream type=result subtype=success uuid=28e0576c-f147-4de0-8ea0-77ed5ac564f0
-  row    4 turn:1 TurnEnd { duration_ms: Some(1655), cost_usd: Some(0.0634934), failed: false }
+  row    4 turn:1 TurnEnd { duration_ms: Some(1655), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 73746469-6e2d-4300-8000-000000000000 Prompt { text: [Text("Reply with exactly SERVERS_OK and nothing else.")], steered: false }
      3 msg_011CeXDshsT1UAM4tM6qxDbC:0 Prose { text: [Text("SERVERS_OK")], streaming: false, working_note: false }
-     4 turn:1 TurnEnd { duration_ms: Some(1655), cost_usd: Some(0.0634934), failed: false }
+     4 turn:1 TurnEnd { duration_ms: Some(1655), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 38819, window_tokens: Some(1000000), percent: Some(3), near_full: false }) sign-in None
 == settings

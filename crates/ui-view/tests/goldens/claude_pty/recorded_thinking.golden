@@ -10,14 +10,14 @@
 ## 41 recorded 39: fact Transcript type=assistant uuid=dfac7a6c-4b59-4131-9b8c-b9586aacb9c4
   row    4 dfac7a6c-4b59-4131-9b8c-b9586aacb9c4 Prose { text: [Text("289")], streaming: false, working_note: false }
 ## 46 recorded 44: fact Transcript type=system subtype=turn_duration uuid=761fd4b4-a86f-4371-8ad2-29f59d827b0a
-  row    5 turn:1 TurnEnd { duration_ms: Some(1635), cost_usd: None, failed: false }
+  row    5 turn:1 TurnEnd { duration_ms: Some(1635), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 64c613a1-b9fa-4ac0-8fbb-6dd43941196f Prompt { text: [Text("Think hard about this before answering: which is larger, 17 squared or 2 to the power 8? Answer with just the larger number.")], steered: false }
      3 c89715c1-480e-4c5b-b682-fbee7170ad49 Thinking { text: "", open: false, duration_ms: Some(1534) }
      4 dfac7a6c-4b59-4131-9b8c-b9586aacb9c4 Prose { text: [Text("289")], streaming: false, working_note: false }
-     5 turn:1 TurnEnd { duration_ms: Some(1635), cost_usd: None, failed: false }
+     5 turn:1 TurnEnd { duration_ms: Some(1635), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 35679, window_tokens: None, percent: None, near_full: false }) sign-in None
 == settings

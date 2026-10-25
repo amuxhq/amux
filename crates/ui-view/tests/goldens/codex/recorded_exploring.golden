@@ -81,7 +81,7 @@
   row    5 exec-04fc10c0-1c2a-47f2-b330-a59bbe7c8861 Explore { verb: Read, subject: "cat config.txt", state: Succeeded, result: "" } run[exec-04fc10c0-1c2a-47f2-b330-a59bbe7c8861..exec-3942aaf0-5ac6-4fc8-9c51-bd46974af751 x3 recent=2] collapsed
   row    6 exec-cb55466e-35bc-4581-9e00-9023c4cb14ba Explore { verb: List, subject: "ls", state: Succeeded, result: "config.txt\nold.txt\nsquare.png" } run[exec-04fc10c0-1c2a-47f2-b330-a59bbe7c8861..exec-3942aaf0-5ac6-4fc8-9c51-bd46974af751 x3 recent=1] collapsed
   row    7 exec-3942aaf0-5ac6-4fc8-9c51-bd46974af751 Explore { verb: Search, subject: "grep -n VALUE config.txt", state: Succeeded, result: "1:VALUE=1" } run[exec-04fc10c0-1c2a-47f2-b330-a59bbe7c8861..exec-3942aaf0-5ac6-4fc8-9c51-bd46974af751 x3 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 1, subagents: 0, other: 1 }]
-  row    9 turn:1 TurnEnd { duration_ms: Some(12854), cost_usd: None, failed: false }
+  row    9 turn:1 TurnEnd { duration_ms: Some(12854), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -92,7 +92,7 @@
      6 exec-cb55466e-35bc-4581-9e00-9023c4cb14ba Explore { verb: List, subject: "ls", state: Succeeded, result: "config.txt\nold.txt\nsquare.png" } run[exec-04fc10c0-1c2a-47f2-b330-a59bbe7c8861..exec-3942aaf0-5ac6-4fc8-9c51-bd46974af751 x3 recent=1] collapsed
      7 exec-3942aaf0-5ac6-4fc8-9c51-bd46974af751 Explore { verb: Search, subject: "grep -n VALUE config.txt", state: Succeeded, result: "1:VALUE=1" } run[exec-04fc10c0-1c2a-47f2-b330-a59bbe7c8861..exec-3942aaf0-5ac6-4fc8-9c51-bd46974af751 x3 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 1, subagents: 0, other: 1 }]
      8 msg_079a4a6430ea5e73016ab72910119087d2a2f37c9799d0640f Prose { text: [Text("DONE")], streaming: false, working_note: false }
-     9 turn:1 TurnEnd { duration_ms: Some(12854), cost_usd: None, failed: false }
+     9 turn:1 TurnEnd { duration_ms: Some(12854), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 13035, window_tokens: Some(258400), percent: Some(5), near_full: false }) sign-in None
 == settings

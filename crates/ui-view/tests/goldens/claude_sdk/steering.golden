@@ -20,7 +20,7 @@
 ## 13 input {"id":"p2","prompt":{"text":"Then summarise."}}
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [112, 50], text: [Text("Then summarise.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 14 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":false,"session_id":"s1","subtype":"success","total_cost_usd":0.01,"type":"result","uuid":"r1"}}
-  row    6 turn:1 TurnEnd { duration_ms: Some(1000), cost_usd: Some(0.01), failed: false }
+  row    6 turn:1 TurnEnd { duration_ms: Some(1000), failed: false }
   row    7 70320000-0000-4000-8000-000000000000 Prompt { text: [Text("Then summarise.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 17 input {"id":"p3","prompt":{"text":"Also check the logs."}}
@@ -32,7 +32,7 @@
 ## 20 fact {"channel":"stream","json":{"message":{"content":[{"text":"Summary.","type":"text"}],"id":"msg-2","model":"claude-opus-5-5","role":"assistant"},"session_id":"s1","type":"assistant","uuid":"a2"}}
   row    8 msg-2:0 Prose { text: [Text("Summary.")], streaming: false, working_note: false }
 ## 21 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":false,"session_id":"s1","subtype":"success","total_cost_usd":0.01,"type":"result","uuid":"r2"}}
-  row    9 turn:2 TurnEnd { duration_ms: Some(1000), cost_usd: Some(0.01), failed: false }
+  row    9 turn:2 TurnEnd { duration_ms: Some(1000), failed: false }
   composer Send activity=None queue=[QueuedRow { input_id: [112, 51], text: [Text("Also check the logs.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }, QueuedRow { input_id: [112, 52], text: [Text("And the tests.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 22 fact {"channel":"stream","json":{"isReplay":true,"message":{"content":"Also check the logs.","role":"user"},"session_id":"s1","type":"user","uuid":"70330000-0000-4000-8000-000000000000"}}
   row   10 70330000-0000-4000-8000-000000000000 Prompt { text: [Text("Also check the logs.")], steered: false }
@@ -40,13 +40,13 @@
 ## 23 fact {"channel":"stream","json":{"message":{"content":[{"text":"Logs are clean.","type":"text"}],"id":"msg-3","model":"claude-opus-5-5","role":"assistant"},"session_id":"s1","type":"assistant","uuid":"a3"}}
   row   11 msg-3:0 Prose { text: [Text("Logs are clean.")], streaming: false, working_note: false }
 ## 24 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":false,"session_id":"s1","subtype":"success","total_cost_usd":0.01,"type":"result","uuid":"r3"}}
-  row   12 turn:3 TurnEnd { duration_ms: Some(1000), cost_usd: Some(0.01), failed: false }
+  row   12 turn:3 TurnEnd { duration_ms: Some(1000), failed: false }
   row   13 70340000-0000-4000-8000-000000000000 Prompt { text: [Text("And the tests.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 26 fact {"channel":"stream","json":{"message":{"content":[{"text":"Tests pass.","type":"text"}],"id":"msg-4","model":"claude-opus-5-5","role":"assistant"},"session_id":"s1","type":"assistant","uuid":"a4"}}
   row   14 msg-4:0 Prose { text: [Text("Tests pass.")], streaming: false, working_note: false }
 ## 27 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":false,"session_id":"s1","subtype":"success","total_cost_usd":0.01,"type":"result","uuid":"r4"}}
-  row   15 turn:4 TurnEnd { duration_ms: Some(1000), cost_usd: Some(0.01), failed: false }
+  row   15 turn:4 TurnEnd { duration_ms: Some(1000), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -54,16 +54,16 @@
      3 70310000-0000-4000-8000-000000000000 Prompt { text: [Text("Use the staging config.")], steered: true }
      4 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: [Text("Status?")], to: "", sent: Unspecified, rejection: "" }
      5 msg-1:0 Prose { text: [Text("Planned, with the staging config.")], streaming: false, working_note: false }
-     6 turn:1 TurnEnd { duration_ms: Some(1000), cost_usd: Some(0.01), failed: false }
+     6 turn:1 TurnEnd { duration_ms: Some(1000), failed: false }
      7 70320000-0000-4000-8000-000000000000 Prompt { text: [Text("Then summarise.")], steered: false }
      8 msg-2:0 Prose { text: [Text("Summary.")], streaming: false, working_note: false }
-     9 turn:2 TurnEnd { duration_ms: Some(1000), cost_usd: Some(0.01), failed: false }
+     9 turn:2 TurnEnd { duration_ms: Some(1000), failed: false }
     10 70330000-0000-4000-8000-000000000000 Prompt { text: [Text("Also check the logs.")], steered: false }
     11 msg-3:0 Prose { text: [Text("Logs are clean.")], streaming: false, working_note: false }
-    12 turn:3 TurnEnd { duration_ms: Some(1000), cost_usd: Some(0.01), failed: false }
+    12 turn:3 TurnEnd { duration_ms: Some(1000), failed: false }
     13 70340000-0000-4000-8000-000000000000 Prompt { text: [Text("And the tests.")], steered: false }
     14 msg-4:0 Prose { text: [Text("Tests pass.")], streaming: false, working_note: false }
-    15 turn:4 TurnEnd { duration_ms: Some(1000), cost_usd: Some(0.01), failed: false }
+    15 turn:4 TurnEnd { duration_ms: Some(1000), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

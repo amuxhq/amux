@@ -22,6 +22,6 @@ snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else."
 ## 18 recorded 17: fact Stream type=assistant uuid=b9929e4a-cf74-46f4-8d81-e7b867c6e625
 item msg_011CeW3DobWKinE7b6G1yy9r:1 message final at=1787960839784 text="PONG"
 ## 20 recorded 19: fact Stream type=result subtype=success uuid=976f58a1-eb3d-4087-ae36-33ba96ece845
-item turn:1 turn final at=1787960839788 text="" #1 TURN_OUTCOME_COMPLETED started=1787960838590 cost=0.022533
+item turn:1 turn final at=1787960839788 text="" #1 TURN_OUTCOME_COMPLETED started=1787960838590
 snapshot IDLE queue=[] working_on="Reply with exactly PONG and nothing else." at=1787960839788 asks=[] session=4c2067b7-f57e-4999-b24d-afdd6b61c8a7 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=27906/200000 tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CeW3DobWKinE7b6G1yy9r:1

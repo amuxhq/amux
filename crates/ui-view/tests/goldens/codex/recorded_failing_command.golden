@@ -78,7 +78,7 @@
   row    6 msg_03fb63819d44799e016ab72916853087d297467639b8929672 Prose { text: [Text("Yes, it failed. The command exited with status `1`.")], streaming: false, working_note: false }
 ## 100 recorded 99: fact Rpc method=turn/completed
   row    5 exec-8bcf460a-8814-4073-b121-3c591c0497e5 Explore { verb: List, subject: "ls does-not-exist", state: Failed, result: "ls: does-not-exist: No such file or directory" } run[exec-8bcf460a-8814-4073-b121-3c591c0497e5..exec-8bcf460a-8814-4073-b121-3c591c0497e5 x1 recent=0 unresolved RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] attention
-  row    7 turn:1 TurnEnd { duration_ms: Some(6013), cost_usd: None, failed: false }
+  row    7 turn:1 TurnEnd { duration_ms: Some(6013), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -87,7 +87,7 @@
      4 msg_03fb63819d44799e016ab72913776c87d2b354e9d6fd8962c6 Prose { text: [Text("I’ll run the exact command once and report its result.")], streaming: false, working_note: true }
      5 exec-8bcf460a-8814-4073-b121-3c591c0497e5 Explore { verb: List, subject: "ls does-not-exist", state: Failed, result: "ls: does-not-exist: No such file or directory" } run[exec-8bcf460a-8814-4073-b121-3c591c0497e5..exec-8bcf460a-8814-4073-b121-3c591c0497e5 x1 recent=0 unresolved RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] attention
      6 msg_03fb63819d44799e016ab72916853087d297467639b8929672 Prose { text: [Text("Yes, it failed. The command exited with status `1`.")], streaming: false, working_note: false }
-     7 turn:1 TurnEnd { duration_ms: Some(6013), cost_usd: None, failed: false }
+     7 turn:1 TurnEnd { duration_ms: Some(6013), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 12614, window_tokens: Some(258400), percent: Some(4), near_full: false }) sign-in None
 == settings

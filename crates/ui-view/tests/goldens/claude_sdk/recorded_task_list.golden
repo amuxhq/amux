@@ -27,7 +27,7 @@
   row    9 msg_011CfREHpn3Hk84LGLeepJ2T:1 Prose { text: [Text("Done.")], streaming: false, working_note: false }
 ## 66 recorded 65: fact Stream type=result subtype=success uuid=86afc84d-d2b5-46c6-9b57-77002f1f48ff
   row    4 toolu_01YJafHWooM6hL1guvrWe39C Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Succeeded, result: "" } run[toolu_01YJafHWooM6hL1guvrWe39C..toolu_01YJafHWooM6hL1guvrWe39C x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
-  row   10 turn:1 TurnEnd { duration_ms: Some(16117), cost_usd: Some(0.04450130000000001), failed: false }
+  row   10 turn:1 TurnEnd { duration_ms: Some(16117), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -39,7 +39,7 @@
      7 msg_011CfREHjFfZi4DL3SGtnvt8:0 Thinking { text: "", open: false, duration_ms: Some(1327) }
      8 msg_011CfREHpn3Hk84LGLeepJ2T:0 Thinking { text: "", open: false, duration_ms: Some(1500) }
      9 msg_011CfREHpn3Hk84LGLeepJ2T:1 Prose { text: [Text("Done.")], streaming: false, working_note: false }
-    10 turn:1 TurnEnd { duration_ms: Some(16117), cost_usd: Some(0.04450130000000001), failed: false }
+    10 turn:1 TurnEnd { duration_ms: Some(16117), failed: false }
 == overview Overview { tasks: Some(TasksView { done: 1, total: 3, current: "", entries: [TaskLine { subject: "Draft", mark: Done }, TaskLine { subject: "Review", mark: Todo }, TaskLine { subject: "Publish", mark: Todo }] }), jobs: [], failed_servers: [ServerView { name: "plugin:stripe:stripe", error: "", needs_auth: true }, ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 28640, window_tokens: Some(200000), percent: Some(14), near_full: false }) sign-in None
 == settings

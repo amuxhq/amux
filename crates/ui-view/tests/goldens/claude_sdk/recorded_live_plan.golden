@@ -144,7 +144,7 @@
   row    9 toolu_019k6RAsffJVpjZWTqpENCCx Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_019k6RAsffJVpjZWTqpENCCx..toolu_01Qe1UJ5XuQHWBggq8kvp37P x3 recent=2] collapsed
   row   12 toolu_01TNhCXvsRc7iT2ozHYy5bNt FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[toolu_019k6RAsffJVpjZWTqpENCCx..toolu_01Qe1UJ5XuQHWBggq8kvp37P x3 recent=1] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: false } collapsed
   row   15 toolu_01Qe1UJ5XuQHWBggq8kvp37P Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_019k6RAsffJVpjZWTqpENCCx..toolu_01Qe1UJ5XuQHWBggq8kvp37P x3 recent=0 RunCounts { commands: 0, edits: 1, reads: 2, searches: 0, subagents: 0, other: 0 }]
-  row   19 turn:1 TurnEnd { duration_ms: Some(9053), cost_usd: Some(0.0876338), failed: false }
+  row   19 turn:1 TurnEnd { duration_ms: Some(9053), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -165,7 +165,7 @@
     16 c1ccffd9-89a8-4bbb-9a79-977057852189 Hidden collapsed
     17 msg_011CfnB7wZXsD79UUd1hP4DP:0 Thinking { text: "", open: false, duration_ms: Some(841) }
     18 msg_011CfnB7wZXsD79UUd1hP4DP:1 Prose { text: [Text("✅ **Complete.** README.md has been updated from `CURRENT` to `UPDATED`.")], streaming: false, working_note: false }
-    19 turn:1 TurnEnd { duration_ms: Some(9053), cost_usd: Some(0.0876338), failed: false }
+    19 turn:1 TurnEnd { duration_ms: Some(9053), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 17100, window_tokens: Some(200000), percent: Some(8), near_full: false }) sign-in None
 == settings

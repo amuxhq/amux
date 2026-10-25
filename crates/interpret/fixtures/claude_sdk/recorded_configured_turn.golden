@@ -22,6 +22,6 @@ item msg_011CeW3V6q1abpfL22fPTVCh:1 message final at=1787961048200 text="CONFIGU
 ## 24 recorded 23: fact Stream type=rate_limit_event uuid=b30a77b7-6eb7-49a1-80d0-4267ca4c8383
 snapshot WORKING queue=[] working_on="What is the capital of France?" at=1787961048214 asks=[] session=f86895c9-1234-42b2-84ba-3472a8f71a98 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=16128/? tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 26 recorded 25: fact Stream type=result subtype=success uuid=129f34f8-8519-424c-88e0-98afb7d637cb
-item turn:1 turn final at=1787961048219 text="" #1 TURN_OUTCOME_COMPLETED started=1787961046102 cost=0.002272
+item turn:1 turn final at=1787961048219 text="" #1 TURN_OUTCOME_COMPLETED started=1787961046102
 snapshot IDLE queue=[] working_on="What is the capital of France?" at=1787961048219 asks=[] session=f86895c9-1234-42b2-84ba-3472a8f71a98 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=16128/200000 tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CeW3V6q1abpfL22fPTVCh:1

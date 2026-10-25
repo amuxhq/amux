@@ -75,7 +75,7 @@
   row    7 msg_02ce3e63657d5390016ab72f336cf887d2b139b5c8c48f4b5a Prose { text: [Text("DONE")], streaming: false, working_note: false }
 ## 104 recorded 103: fact Rpc method=turn/completed
   row    5 exec-fab58c85-33be-409e-b3fa-73402a9c2500 Command { command: "read LINE; echo CODEX_SPEC_GOT $LINE", state: Succeeded, exit_code: Some(0), output_head: ["hello", "CODEX_SPEC_GOT hello"], more_lines: 0, output_trimmed: false, output_tail: ["hello", "CODEX_SPEC_GOT hello"], duration_ms: Some(2883) } run[exec-fab58c85-33be-409e-b3fa-73402a9c2500..exec-fab58c85-33be-409e-b3fa-73402a9c2500 x1 rece…
-  row    8 turn:1 TurnEnd { duration_ms: Some(9240), cost_usd: None, failed: false }
+  row    8 turn:1 TurnEnd { duration_ms: Some(9240), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -85,7 +85,7 @@
      5 exec-fab58c85-33be-409e-b3fa-73402a9c2500 Command { command: "read LINE; echo CODEX_SPEC_GOT $LINE", state: Succeeded, exit_code: Some(0), output_head: ["hello", "CODEX_SPEC_GOT hello"], more_lines: 0, output_trimmed: false, output_tail: ["hello", "CODEX_SPEC_GOT hello"], duration_ms: Some(2883) } run[exec-fab58c85-33be-409e-b3fa-73402a9c2500..exec-fab58c85-33be-409e-b3fa-73402a9c2500 x1 rece…
      6 rs_02ce3e63657d5390016ab72f31d5c487d2933a4824fbdccf05 Thinking { text: "", open: false, duration_ms: Some(1866) }
      7 msg_02ce3e63657d5390016ab72f336cf887d2b139b5c8c48f4b5a Prose { text: [Text("DONE")], streaming: false, working_note: false }
-     8 turn:1 TurnEnd { duration_ms: Some(9240), cost_usd: None, failed: false }
+     8 turn:1 TurnEnd { duration_ms: Some(9240), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 12953, window_tokens: Some(258400), percent: Some(5), near_full: false }) sign-in None
 == settings

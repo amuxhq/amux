@@ -1403,13 +1403,11 @@ fn describe_item(body: &[u8]) -> ItemView {
             "turn",
             true,
             format!(
-                "#{} {} started={} cost={}",
+                "#{} {} started={}",
                 turn.turn_id,
                 wire::TurnOutcome::try_from(turn.outcome)
                     .map_or("?", |outcome| outcome.as_str_name()),
                 turn.started_at_ms,
-                turn.cost_usd
-                    .map_or("-".to_owned(), |cost| format!("{cost:.6}"))
             ),
         ),
         Some(Kind::Status(status)) => (

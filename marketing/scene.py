@@ -61,7 +61,7 @@ AGENTS = [
         "permission": "acceptEdits",
         "prompt": "Redesign checkout as a single page that pays with the client's saved card, "
                   "with clearer errors. Have Codex on build write the payment tests while you work, "
-                  "and get a helper to rewrite the error copy.",
+                  "and start a subagent to rewrite the error copy.",
     }),
     ("db-migration", "laptop", "claude_sdk", {
         "permission": "plan",
@@ -388,7 +388,7 @@ class Takes:
 def film() -> int:
     """The takes the launch film is cut from, every one real UI: the fleet
     filling as the scene starts, checkout-redesign's chat as it hands work to
-    its helpers, a code review comment typed into the review page, and the
+    its subagents, a code review comment typed into the review page, and the
     phone opening flaky-sync-test's request and allowing it, filmed with the
     terminal's fleet at the same moment. Terminal takes are frame files
     (`ctl tui record`) the film draws itself; the phone's is the simulator's

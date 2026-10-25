@@ -29,7 +29,7 @@
 ## 40 recorded 39: fact Stream type=assistant uuid=0dad14cf-2826-48ca-9126-df682f306a1b
   row    5 msg_011CeW3Epe3BZoTMYGXSxojn:1 Prose { text: [Text("SEVEN")], streaming: false, working_note: false }
 ## 47 recorded 46: fact Stream type=result subtype=success uuid=560a5bf0-46bc-427e-ba16-a6d8558c4e56
-  row    6 turn:1 TurnEnd { duration_ms: Some(1619), cost_usd: Some(0.022754999999999997), failed: false }
+  row    6 turn:1 TurnEnd { duration_ms: Some(1619), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -37,7 +37,7 @@
      3 d7572888-ddd2-4a64-bd8d-1d0d0a03cd96 Hidden collapsed
      4 msg_011CeW3Epe3BZoTMYGXSxojn:0 Thinking { text: "The user is asking me to think briefly about the number seven, then reply with exactly SEVEN.\n\nThis is a straightforward request. Let me think about the number seven:\n- It's a prime number\n- It has cultural significance in many traditions\n- It's between 6 and 8\n- etc.\n\nNow I need to reply with exactly SEVEN.", open: false, duration_ms: …
      5 msg_011CeW3Epe3BZoTMYGXSxojn:1 Prose { text: [Text("SEVEN")], streaming: false, working_note: false }
-     6 turn:1 TurnEnd { duration_ms: Some(1619), cost_usd: Some(0.022754999999999997), failed: false }
+     6 turn:1 TurnEnd { duration_ms: Some(1619), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: Some(UsageView { blocked: false, windows: [UsageWindowView { label: FiveHour, used_percent: 19.0, resets_at_ms: Some(1787970000000), state: Unknown }, UsageWindowView { label: Weekly { model: None }, used_percent: 83.0, resets_at_ms: Some(1787976000000), state: NearLimit }], credits: None }), changes: None }
 == context Some(ContextView { used_tokens: 27910, window_tokens: Some(200000), percent: Some(13), near_full: false }) sign-in None
 == settings

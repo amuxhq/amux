@@ -36,6 +36,6 @@ snapshot WORKING queue=[] working_on="Use the Write tool once to create tool.txt
 ## 46 recorded 45: fact Stream type=assistant uuid=a5acac56-22e6-4c2c-b629-595b920a57cb
 item msg_011CeW3RkCT4RhGdseDBvZGV:1 message final at=1787961001553 text="DONE"
 ## 48 recorded 47: fact Stream type=result subtype=success uuid=00df2739-7432-4b37-9c37-9148acd876a9
-item turn:1 turn final at=1787961001559 text="" #1 TURN_OUTCOME_COMPLETED started=1787960996538 cost=0.028100
+item turn:1 turn final at=1787961001559 text="" #1 TURN_OUTCOME_COMPLETED started=1787960996538
 snapshot IDLE queue=[] working_on="Use the Write tool once to create tool.txt containing exactly TOOL_OK, then reply exactly DONE." at=1787961001559 asks=[] session=8a09557f-e719-4329-8b4c-9ef4e3eeeaa1 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=29397/200000 tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CeW3RkCT4RhGdseDBvZGV:1

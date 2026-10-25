@@ -22,13 +22,13 @@
 ## 34 recorded 33: fact Rpc method=item/completed
   row    3 msg_055115bef0bf2729016a9348574dc087d28574870349ece42c Prose { text: [Text("CODEX_SPEC_INJECT_IDLE")], streaming: false, working_note: false }
 ## 40 recorded 39: fact Rpc method=turn/completed
-  row    4 turn:1 TurnEnd { duration_ms: Some(2638), cost_usd: None, failed: false }
+  row    4 turn:1 TurnEnd { duration_ms: Some(2638), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 agent-message:737464696e2d34 AgentMessage { from: "", kind: Message, text: [Text("Reply with exactly CODEX_SPEC_INJECT_IDLE and nothing else.")], to: "", sent: Unspecified, rejection: "" }
      3 msg_055115bef0bf2729016a9348574dc087d28574870349ece42c Prose { text: [Text("CODEX_SPEC_INJECT_IDLE")], streaming: false, working_note: false }
-     4 turn:1 TurnEnd { duration_ms: Some(2638), cost_usd: None, failed: false }
+     4 turn:1 TurnEnd { duration_ms: Some(2638), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 14531, window_tokens: Some(258400), percent: Some(5), near_full: false }) sign-in None
 == settings

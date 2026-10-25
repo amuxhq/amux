@@ -39,7 +39,7 @@
   row    9 msg_011CfRNj5TURBD2abCDBvnZ3:1 Prose { text: [Text("DONE-A BANANA")], streaming: false, working_note: false }
 ## 68 recorded 67: fact Stream type=result subtype=success uuid=b3e4fdf9-70f1-49ec-bbc7-28c030d3ddcb
   row    7 toolu_014owyRschqLYDToWz47XjCb Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5064) } run[toolu_014owyRschqLYDToWz47XjCb..toolu_014owyRschqLYDToWz47XjCb x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, o…
-  row   10 turn:1 TurnEnd { duration_ms: Some(26090), cost_usd: Some(0.0324442), failed: false }
+  row   10 turn:1 TurnEnd { duration_ms: Some(26090), failed: false }
   row   11 22222222-2222-4222-8222-222222222203 Prompt { text: [Text("Reply with exactly LATER-C.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 78 recorded 77: fact Stream type=assistant uuid=50d566f3-8346-4204-92ec-103c912e3ac1
@@ -47,7 +47,7 @@
 ## 80 recorded 79: fact Stream type=assistant uuid=7ab25215-00e3-4be2-a654-3ea9db0d6be3
   row   13 msg_011CfRNjBg2rCzPFefeuVqdQ:1 Prose { text: [Text("LATER-C")], streaming: false, working_note: false }
 ## 82 recorded 81: fact Stream type=result subtype=success uuid=1863b652-fb37-4f38-96f7-32514a168f99
-  row   14 turn:2 TurnEnd { duration_ms: Some(914), cost_usd: Some(0.0355917), failed: false }
+  row   14 turn:2 TurnEnd { duration_ms: Some(914), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -59,11 +59,11 @@
      7 toolu_014owyRschqLYDToWz47XjCb Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5064) } run[toolu_014owyRschqLYDToWz47XjCb..toolu_014owyRschqLYDToWz47XjCb x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, o…
      8 msg_011CfRNj5TURBD2abCDBvnZ3:0 Thinking { text: "", open: false, duration_ms: Some(6516) }
      9 msg_011CfRNj5TURBD2abCDBvnZ3:1 Prose { text: [Text("DONE-A BANANA")], streaming: false, working_note: false }
-    10 turn:1 TurnEnd { duration_ms: Some(26090), cost_usd: Some(0.0324442), failed: false }
+    10 turn:1 TurnEnd { duration_ms: Some(26090), failed: false }
     11 22222222-2222-4222-8222-222222222203 Prompt { text: [Text("Reply with exactly LATER-C.")], steered: false }
     12 msg_011CfRNjBg2rCzPFefeuVqdQ:0 Thinking { text: "", open: false, duration_ms: Some(892) }
     13 msg_011CfRNjBg2rCzPFefeuVqdQ:1 Prose { text: [Text("LATER-C")], streaming: false, working_note: false }
-    14 turn:2 TurnEnd { duration_ms: Some(914), cost_usd: Some(0.0355917), failed: false }
+    14 turn:2 TurnEnd { duration_ms: Some(914), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "plugin:stripe:stripe", error: "", needs_auth: true }, ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 26580, window_tokens: Some(200000), percent: Some(13), near_full: false }) sign-in None
 == settings

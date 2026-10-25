@@ -44,6 +44,6 @@ item msg_011CeW3U8oo3iVx7tGdmWLrx:1 message final at=1787961034026 text="DONE"
 ## 45 recorded 44: fact Stream type=control_request
 effect write "{\"response\":{\"error\":\"amux does not handle hook_callback\",\"request_id\":\"c1f5f40b-2ae9-402f-96aa-1162cba62bc0\",\"subtype\":\"error\"},\"type\":\"control_response\"}"
 ## 47 recorded 46: fact Stream type=result subtype=success uuid=426c13ae-1345-446f-a031-4285b73833d3
-item turn:1 turn final at=1787961034035 text="" #1 TURN_OUTCOME_COMPLETED started=1787961030101 cost=0.027137
+item turn:1 turn final at=1787961034035 text="" #1 TURN_OUTCOME_COMPLETED started=1787961030101
 snapshot IDLE queue=[] working_on="Use the Write tool once to create hook.txt containing exactly HOOK_OK, then reply exactly DONE." at=1787961034035 asks=[] session=b1bbbae8-6099-417c-b520-9c4b3df96ccd model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=29258/200000 tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CeW3U8oo3iVx7tGdmWLrx:1

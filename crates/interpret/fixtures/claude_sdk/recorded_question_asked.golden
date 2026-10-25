@@ -34,6 +34,6 @@ snapshot WORKING queue=[] working_on="Use AskUserQuestion to ask exactly one sin
 ## 26 recorded 25: fact Stream type=assistant uuid=2027fd93-c2ae-422d-9a26-ea5c12e99308
 item msg_011Ceixj5ieT1t1iXEK8kpWJ:1 message final at=1788550566035 text="You selected **Blue**."
 ## 28 recorded 27: fact Stream type=result subtype=success uuid=29ec0d2d-ba3e-463f-a3ca-310b52c869f3
-item turn:1 turn final at=1788550566040 text="" #1 TURN_OUTCOME_COMPLETED started=1788550562356 cost=0.028109
+item turn:1 turn final at=1788550566040 text="" #1 TURN_OUTCOME_COMPLETED started=1788550562356
 snapshot IDLE queue=[] working_on="Use AskUserQuestion to ask exactly one single-select question with header Color, question 'Which color do you prefer?', and options Red and Blue. Then repeat my answer." at=1788550566040 asks=[] session=d7ec31b2-733c-4a1c-8f61-38a6b6d96b2b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=25522/200000 tasks=? active=[] usage=ok 5h:5%(ok) 7d:39%(?) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_STARTING,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011Ceixj5ieT1t1iXEK8kpWJ:1

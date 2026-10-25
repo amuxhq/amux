@@ -18,7 +18,7 @@
 ## 17 input {"id":"p2","prompt":{"text":"Then summarise."}}
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [112, 50], text: [Text("Then summarise.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 18 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"completed"}}}}
-  row    5 turn:1 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+  row    5 turn:1 TurnEnd { duration_ms: Some(0), failed: false }
   row    6 prompt:7032 Prompt { text: [Text("Then summarise.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 23 input {"id":"p3","prompt":{"text":"Also check the logs."}}
@@ -26,22 +26,22 @@
 ## 24 input {"id":"n6","send_now":{"target":"p3"}}
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [112, 51], text: [Text("Also check the logs.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }] underway=[] refused=[]
 ## 25 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-2","status":"completed"}}}}
-  row    7 turn:2 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+  row    7 turn:2 TurnEnd { duration_ms: Some(0), failed: false }
   row    8 prompt:7033 Prompt { text: [Text("Also check the logs.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 30 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-3","status":"completed"}}}}
-  row    9 turn:3 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+  row    9 turn:3 TurnEnd { duration_ms: Some(0), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:7030 Prompt { text: [Text("Plan it.")], steered: false }
      3 steer:7031 Prompt { text: [Text("Use the staging config.")], steered: true }
      4 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: [Text("Status?")], to: "", sent: Unspecified, rejection: "" }
-     5 turn:1 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+     5 turn:1 TurnEnd { duration_ms: Some(0), failed: false }
      6 prompt:7032 Prompt { text: [Text("Then summarise.")], steered: false }
-     7 turn:2 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+     7 turn:2 TurnEnd { duration_ms: Some(0), failed: false }
      8 prompt:7033 Prompt { text: [Text("Also check the logs.")], steered: false }
-     9 turn:3 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+     9 turn:3 TurnEnd { duration_ms: Some(0), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

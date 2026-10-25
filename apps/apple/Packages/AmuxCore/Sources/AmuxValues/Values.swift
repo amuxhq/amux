@@ -4968,7 +4968,7 @@ public enum RowKind: Codable, Hashable, Sendable {
     case slashOutput(command: String, args: String, output: String)
     /// An ask that is the work: resolves in place.
     case ask(AskRow)
-    case turnEnd(failed: Bool, costUsd: Double?, durationMs: Int64?)
+    case turnEnd(failed: Bool, durationMs: Int64?)
     case compaction(automatic: Bool, tokensAfter: UInt64?, tokensBefore: UInt64?)
     case error(errorKind: String, message: String, attempts: UInt32, gaveUp: Bool)
     case modelSwitch(from: String, to: String, reason: String)
@@ -5091,7 +5091,6 @@ public enum RowKind: Codable, Hashable, Sendable {
 
     private enum TurnEndKeys: String, CodingKey {
         case failed
-        case costUsd = "cost_usd"
         case durationMs = "duration_ms"
     }
 
@@ -5265,7 +5264,6 @@ public enum RowKind: Codable, Hashable, Sendable {
                 keyedBy: TurnEndKeys.self, forKey: .turnEnd)
             self = .turnEnd(
                 failed: try _fields.decode(Bool.self, forKey: .failed),
-                costUsd: try _fields.decodeIfPresent(Double.self, forKey: .costUsd),
                 durationMs: try _fields.decodeIfPresent(Int64.self, forKey: .durationMs))
         case .compaction:
             let _fields = try _container.nestedContainer(
@@ -5415,11 +5413,10 @@ public enum RowKind: Codable, Hashable, Sendable {
         case .ask(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .ask)
-        case .turnEnd(let failed, let costUsd, let durationMs):
+        case .turnEnd(let failed, let durationMs):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: TurnEndKeys.self, forKey: .turnEnd)
             try _fields.encode(failed, forKey: .failed)
-            try _fields.encodeIfPresent(costUsd, forKey: .costUsd)
             try _fields.encodeIfPresent(durationMs, forKey: .durationMs)
         case .compaction(let automatic, let tokensAfter, let tokensBefore):
             var _container = encoder.container(keyedBy: Tag.self)

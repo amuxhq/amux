@@ -8,13 +8,13 @@
 ## 31 recorded 30: fact Rpc method=error
   row    3 error:01a0db79-665d-7dd0-a475-3e9f066bfadb Error { error_kind: "other", message: "{\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'codex-spec-no-such-model' model is not supported when using Codex with a ChatGPT account.\"}}", attempts: 0, gave_up: true } attention
 ## 33 recorded 32: fact Rpc method=turn/completed
-  row    4 turn:1 TurnEnd { duration_ms: Some(3209), cost_usd: None, failed: true }
+  row    4 turn:1 TurnEnd { duration_ms: Some(3209), failed: true }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:737464696e2d34 Prompt { text: [Text("Reply with exactly CODEX_SPEC_UNREACHABLE.")], steered: false }
      3 error:01a0db79-665d-7dd0-a475-3e9f066bfadb Error { error_kind: "other", message: "{\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'codex-spec-no-such-model' model is not supported when using Codex with a ChatGPT account.\"}}", attempts: 0, gave_up: true } attention
-     4 turn:1 TurnEnd { duration_ms: Some(3209), cost_usd: None, failed: true }
+     4 turn:1 TurnEnd { duration_ms: Some(3209), failed: true }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

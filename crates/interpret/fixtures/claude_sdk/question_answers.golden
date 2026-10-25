@@ -31,6 +31,6 @@ item t2 ask final at=0 text="" question×3 ASK_OUTCOME_REPLIED answered 1 of 3 [
 snapshot WORKING queue=[] working_on="ask me three things" at=0 asks=[] session=s1 model=claude-sonnet-5 model_name="Sonnet 5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 11 fact {"channel":"stream","json":{"message":{"content":[{"content":"Pick whatever matches the old page.","is_error":true,"tool_use_id":"t2","type":"tool_result"}],"role":"user"},"tool_use_result":"Error: Pick whatever matches the old page.","type":"user","uuid":"u2"}}
 ## 12 fact {"channel":"stream","json":{"duration_api_ms":3000,"duration_ms":4000,"is_error":false,"num_turns":3,"result":"ok","session_id":"s1","stop_reason":"end_turn","subtype":"success","type":"result","uuid":"r1"}}
-item turn:1 turn final at=0 text="" #1 TURN_OUTCOME_COMPLETED started=-4000 cost=-
+item turn:1 turn final at=0 text="" #1 TURN_OUTCOME_COMPLETED started=-4000
 snapshot IDLE queue=[] working_on="ask me three things" at=0 asks=[] session=s1 model=claude-sonnet-5 model_name="Sonnet 5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 turn_end 1 last=-

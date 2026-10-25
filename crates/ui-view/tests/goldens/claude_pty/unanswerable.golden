@@ -71,7 +71,7 @@
 ## 30 fact {"channel":"transcript","json":{"durationMs":50,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:30.600Z","type":"system","uuid":"d1"}}
   row    3 t1 ToolCall { server: "github", tool: "create_issue", fact: "Crash on launch", state: Succeeded, result: "{\"number\": 42}" } run[t1..t1 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
   row    6 t2 ToolCall { server: "docs", tool: "sign_in", fact: "work", state: Failed, result: "The user cancelled the sign-in." } run[t2..t2 x1 recent=0 unresolved RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] attention
-  row   11 turn:1 TurnEnd { duration_ms: Some(50), cost_usd: None, failed: false }
+  row   11 turn:1 TurnEnd { duration_ms: Some(50), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 32 fact {"channel":"transcript","json":{"message":{"content":"try again","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:40.000Z","type":"user","uuid":"u2"}}
   row   12 u2 Prompt { text: [Text("try again")], steered: false }
@@ -111,7 +111,7 @@
      8 ask:ask:3 Ask(Unanswerable { reason: "Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent.", resolution: Dismissed })
      9 a3 Prose { text: [Text("Signed out, filed #42.")], streaming: false, working_note: false }
     10 ask:ask:4 Ask(Unanswerable { reason: "Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent.", resolution: Dismissed })
-    11 turn:1 TurnEnd { duration_ms: Some(50), cost_usd: None, failed: false }
+    11 turn:1 TurnEnd { duration_ms: Some(50), failed: false }
     12 u2 Prompt { text: [Text("try again")], steered: false }
     13 ask:ask:5 Ask(Unanswerable { reason: "Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent.", resolution: Dismissed })
     14 u3 Prompt { text: [Text("once more")], steered: false }

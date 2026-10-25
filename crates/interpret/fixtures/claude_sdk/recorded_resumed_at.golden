@@ -22,7 +22,7 @@ snapshot WORKING queue=[] working_on="Remember the word ALBATROSS. Reply with ex
 ## 108 recorded 107: fact Stream type=assistant uuid=3e6b0976-1e34-4d51-9fa1-afbdaf443733
 item msg_011CeXyKpGfAsJfgXs37stGJ:1 message final at=1788049046198 text="REMEMBERED"
 ## 110 recorded 109: fact Stream type=result subtype=success uuid=d33f2408-ea0b-4ffc-8a40-799c120337e9
-item turn:1 turn final at=1788049046204 text="" #1 TURN_OUTCOME_COMPLETED started=1788049044067 cost=0.022605
+item turn:1 turn final at=1788049046204 text="" #1 TURN_OUTCOME_COMPLETED started=1788049044067
 snapshot IDLE queue=[] working_on="Remember the word ALBATROSS. Reply with exactly REMEMBERED." at=1788049046204 asks=[] session=efc457f2-80e8-4f87-b4f3-ccb9ea3c8927 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=24433/200000 tasks=? active=[] usage=ok 5h:4%(ok) 7d:12%(?) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CeXyKpGfAsJfgXs37stGJ:1
 ## 112 recorded 111: input stdin-3
@@ -36,7 +36,7 @@ snapshot WORKING queue=[] working_on="Now also remember the word CORMORANT. Repl
 ## 128 recorded 127: fact Stream type=assistant uuid=dea61fa2-9460-4708-89c6-09dec4435905
 item msg_011CeXyKyX1t4RuCoVfW18S9:1 message final at=1788049047701 text="REMEMBERED"
 ## 130 recorded 129: fact Stream type=result subtype=success uuid=5ad42b81-15ee-4494-b880-2eb1d61b5e62
-item turn:2 turn final at=1788049047717 text="" #2 TURN_OUTCOME_COMPLETED started=1788049046206 cost=0.025828
+item turn:2 turn final at=1788049047717 text="" #2 TURN_OUTCOME_COMPLETED started=1788049046206
 snapshot IDLE queue=[] working_on="Now also remember the word CORMORANT. Reply with exactly REMEMBERED." at=1788049047717 asks=[] session=efc457f2-80e8-4f87-b4f3-ccb9ea3c8927 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=24601/200000 tasks=? active=[] usage=ok 5h:4%(ok) 7d:12%(?) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 2 last=msg_011CeXyKyX1t4RuCoVfW18S9:1
 ## 131 recorded 130: fact Stream type=control_response
@@ -52,6 +52,6 @@ snapshot WORKING queue=[] working_on="List every word I asked you to remember, a
 ## 139 recorded 138: fact Stream type=assistant uuid=c464d8f0-8ae6-4422-91ec-46e4cd2e8812
 item msg_011CeXyLBWao6sWd7QVvXTek:1 message final at=1788049047717 text="ALBATROSS"
 ## 141 recorded 140: fact Stream type=result subtype=success uuid=5f6d7739-cfeb-47ac-8d51-9d613bd437d2
-item turn:3 turn final at=1788049047717 text="" #3 TURN_OUTCOME_COMPLETED started=1788049046175 cost=0.002943
+item turn:3 turn final at=1788049047717 text="" #3 TURN_OUTCOME_COMPLETED started=1788049046175
 snapshot IDLE queue=[] working_on="List every word I asked you to remember, and nothing else." at=1788049047717 asks=[] session=efc457f2-80e8-4f87-b4f3-ccb9ea3c8927 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=24476/200000 tasks=? active=[] usage=ok 5h:4%(ok) 7d:12%(?) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 3 last=msg_011CeXyLBWao6sWd7QVvXTek:1

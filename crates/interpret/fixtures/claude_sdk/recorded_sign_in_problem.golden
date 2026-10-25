@@ -23,6 +23,6 @@ item 2d7d9687-a10d-4df3-a987-e4d08ae2bd5a api_error final at=1790388860548 text=
 item 8f0f7a3e-1a84-4841-941a-7c5805737e84 api_error final at=1790388861992 text="" authentication_failed "Failed to authenticate. API Error: 401 API key is invalid." retry=false 0/0
 snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1790388861992 asks=[] session=103225c5-6001-41b1-b15f-38626db1d385 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_NEEDS_AUTH,linear-server:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_FAILED - background=?
 ## 18 recorded 17: fact Stream type=result subtype=success uuid=22cb37c7-0bd8-4e34-9a82-d6aa579513cb
-item turn:1 turn final at=1790388861995 text="" #1 TURN_OUTCOME_FAILED started=1790388859443 cost=0.000000
+item turn:1 turn final at=1790388861995 text="" #1 TURN_OUTCOME_FAILED started=1790388859443
 snapshot IDLE queue=[] working_on="Reply with exactly PONG and nothing else." at=1790388861995 asks=[] session=103225c5-6001-41b1-b15f-38626db1d385 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_NEEDS_AUTH,linear-server:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_FAILED - background=?
 turn_end 1 last=-

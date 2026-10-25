@@ -24,6 +24,6 @@ snapshot WORKING queue=[] working_on="Reply with exactly INTROSPECT_OK and nothi
 ## 35 recorded 34: fact Stream type=assistant uuid=ea1cee26-e62b-4e26-a40e-a8e1d9b28d2a
 item msg_011CeW3wwXRLnks7CigJd5LU:1 message final at=1787961412932 text="INTROSPECT_OK"
 ## 37 recorded 36: fact Stream type=result subtype=success uuid=c5acb7f7-a836-4e2d-8758-f2f7a0ce7fbd
-item turn:1 turn final at=1787961412934 text="" #1 TURN_OUTCOME_COMPLETED started=1787961410219 cost=0.023095
+item turn:1 turn final at=1787961412934 text="" #1 TURN_OUTCOME_COMPLETED started=1787961410219
 snapshot IDLE queue=[] working_on="Reply with exactly INTROSPECT_OK and nothing else." at=1787961412934 asks=[] session=82d42e77-320b-41e9-bdad-e05a157e52a6 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=27853/200000 (9 categories) tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CeW3wwXRLnks7CigJd5LU:1

@@ -2228,7 +2228,7 @@ impl ::prost::Name for AgentMessage {
         "/amux.v1.AgentMessage".into()
     }
 }
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Turn {
     #[prost(uint64, tag = "1")]
     pub turn_id: u64,
@@ -2237,8 +2237,6 @@ pub struct Turn {
     /// When the turn started; "Worked 1m 42s" is at_ms minus this.
     #[prost(int64, tag = "3")]
     pub started_at_ms: i64,
-    #[prost(double, optional, tag = "4")]
-    pub cost_usd: ::core::option::Option<f64>,
 }
 impl ::prost::Name for Turn {
     const NAME: &'static str = "Turn";

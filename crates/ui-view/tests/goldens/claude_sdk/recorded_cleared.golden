@@ -9,13 +9,13 @@
 ## 8 recorded 7: fact Stream type=system subtype=init uuid=c3d005a9-fb76-4ae7-a143-7bfd6bb27b27
   row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 10 recorded 9: fact Stream type=result subtype=success uuid=d5673ad0-69c1-4bb2-9469-80354dfd604a
-  row    4 turn:1 TurnEnd { duration_ms: Some(28), cost_usd: Some(0.0), failed: false }
+  row    4 turn:1 TurnEnd { duration_ms: Some(28), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("/clear")], steered: false }
      3 boundary:2 Boundary { kind: Cleared, cause: "" }
-     4 turn:1 TurnEnd { duration_ms: Some(28), cost_usd: Some(0.0), failed: false }
+     4 turn:1 TurnEnd { duration_ms: Some(28), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

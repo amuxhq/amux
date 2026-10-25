@@ -84,7 +84,7 @@
   row    6 toolu_01DREqFCCGvj7gfXeDNovDVt Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_01DREqFCCGvj7gfXeDNovDVt..toolu_01SqjhP72QyjDbsj1HxaUjBU x2 recent=1] collapsed
   row    8 toolu_01SqjhP72QyjDbsj1HxaUjBU FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[toolu_01DREqFCCGvj7gfXeDNovDVt..toolu_01SqjhP72QyjDbsj1HxaUjBU x2 recent=0 RunCounts { commands: 0, edits: 1, reads: 1, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewh…
   row   11 toolu_018JAcjenHUB2wJucMA4Mq75 Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_018JAcjenHUB2wJucMA4Mq75..toolu_018JAcjenHUB2wJucMA4Mq75 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
-  row   14 turn:1 TurnEnd { duration_ms: Some(9989), cost_usd: None, failed: false }
+  row   14 turn:1 TurnEnd { duration_ms: Some(9989), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -100,7 +100,7 @@
     11 toolu_018JAcjenHUB2wJucMA4Mq75 Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_018JAcjenHUB2wJucMA4Mq75..toolu_018JAcjenHUB2wJucMA4Mq75 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
     12 de6c3db9-79d7-452b-92ef-745c555f8aad Thinking { text: "", open: false, duration_ms: Some(920) }
     13 8157ec70-c1b6-4567-adf4-9f8d7b3722d7 Prose { text: [Text("✅ **Done.** README.md has been updated successfully. The sole line now reads `UPDATED` instead of `CURRENT`.")], streaming: false, working_note: false }
-    14 turn:1 TurnEnd { duration_ms: Some(9989), cost_usd: None, failed: false }
+    14 turn:1 TurnEnd { duration_ms: Some(9989), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 27954, window_tokens: None, percent: None, near_full: false }) sign-in None
 == settings

@@ -76,6 +76,25 @@ impl SyntheticWriter {
     }
 }
 
+/// Overwrites the journal in `dir` with zeros from global offset `byte` to
+/// its end, its length unchanged: what a power cut can leave of writes the
+/// file system had sized but not yet stored.
+pub fn zero_from(dir: &Path, byte: u64) -> io::Result<()> {
+    use std::io::{Seek, SeekFrom, Write};
+    for start in segments(dir)? {
+        let path = segment_path(dir, start);
+        let len = fs::metadata(&path)?.len();
+        if start + len <= byte {
+            continue;
+        }
+        let from = byte.saturating_sub(start);
+        let mut file = OpenOptions::new().write(true).open(path)?;
+        file.seek(SeekFrom::Start(from))?;
+        file.write_all(&vec![0; (len - from) as usize])?;
+    }
+    Ok(())
+}
+
 /// Truncates the journal in `dir` at global offset `byte` without
 /// reopening any writer: the state a dead writer leaves behind.
 pub fn cut(dir: &Path, byte: u64) -> io::Result<()> {

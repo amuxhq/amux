@@ -130,12 +130,11 @@ impl Daemon {
         let cursor = self.store.cursor(&key)?;
         // The row's cursor rules: a commit the store refused left the
         // reader past it.
-        let mut reader = self
-            .journal_readers
-            .remove(&agent)
-            .unwrap_or_else(|| journal::Reader::new(&dir, cursor));
+        let held = self.journal_readers.remove(&agent);
+        let opened = held.is_none();
+        let mut reader = held.unwrap_or_else(|| journal::Reader::new(&dir, cursor));
         reader.seek(cursor);
-        let read = self.read_batch(&mut reader, agent, &key, &dir, cursor, seen);
+        let read = self.read_batch(&mut reader, agent, &key, cursor, opened, seen);
         self.journal_readers.insert(agent, reader);
         let batch = read?;
         // A torn frame in the newest segment is a write still under way:
@@ -200,29 +199,34 @@ impl Daemon {
     }
 
     /// One batch from the cursor, rewinding the row's cursor first when
-    /// the journal shows it lost its tail.
+    /// the journal shows it lost its tail. `opened` says the reader is new:
+    /// the first read since the daemon started, or since the agent's last
+    /// incarnation ended.
     fn read_batch(
         &mut self,
         reader: &mut journal::Reader,
         agent: AgentId,
         key: &AgentKey,
-        dir: &Path,
         cursor: u64,
+        opened: bool,
         seen: &mut u64,
     ) -> Result<journal::Batch, IngestError> {
         let mut batch = reader.read_up_to(INGEST_BATCH)?;
         *seen = batch.seen;
-        if batch.frames.is_empty() && (batch.seen < cursor || batch.torn.is_some()) {
+        if batch.frames.is_empty() && (opened || batch.seen < cursor || batch.torn.is_some()) {
             // The journal ending below the cursor, or torn bytes at it, may
             // mean the cursor is past the journal's last whole frame: the
             // store reached the drive after committing frames the unsynced
             // journal then lost to a power cut, which cuts the file short or
-            // leaves it zero-filled. The agent re-derives from the last
-            // whole frame, so that is where the cursor goes; revisions keep
-            // counting up, so what it writes again is new to every
-            // subscriber. Finding that frame decodes the newest segment, so
-            // it is done only on these signs and not on every empty read.
-            let end = journal::end(dir)?;
+            // leaves it zero-filled. A zero-filled tail ending exactly at the
+            // cursor shows no sign at all, so a reader's first read checks
+            // too: a power cut is always followed by one. The agent
+            // re-derives from the last whole frame, so that is where the
+            // cursor goes; revisions keep counting up, so what it writes
+            // again is new to every subscriber. Finding that frame decodes
+            // the newest segment, so it is done only then and not on every
+            // empty read.
+            let end = journal::end(&self.journal_dir(agent))?;
             if end < cursor {
                 tracing::warn!(
                     ?agent,
@@ -258,11 +262,11 @@ impl Daemon {
         Ok(())
     }
 
-    /// The agent's journal was laid out again under its directory, as a
-    /// replay does before each step: the reader held open on the old files
-    /// is dropped, and the next read opens what is there now. A live
-    /// journal is only ever appended to and reclaimed, which the held
-    /// reader follows on its own.
+    /// The agent's journal is about to be laid out again under its
+    /// directory, as a replay does before each step: the reader held open
+    /// on the old files is dropped, and the next read opens what is there
+    /// then. A live journal is only ever appended to and reclaimed, which
+    /// the held reader follows on its own.
     pub fn journal_relaid(&mut self, agent: AgentId) {
         self.journal_readers.remove(&agent);
     }

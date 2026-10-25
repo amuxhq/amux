@@ -1264,6 +1264,9 @@ impl Daemon {
         if !if_live || row.lifecycle != Lifecycle::Exited as i32 {
             self.record_exit(row, fallback, out)?;
         }
+        // Nothing more comes, so its journal's file is not held open: a
+        // daemon may hold the history of many agents that have ended.
+        self.journal_readers.remove(&agent);
         if self.store.markers().get(&key) == Some(&Marker::CaughtUp) {
             // A subscriber that joined since read it at its cut, and one
             // that joined before was told then.
@@ -1591,6 +1594,30 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn an_agent_that_ended_holds_no_journal_file_open() {
+        let mut rig = rig();
+        rig.live(PARENT, "lead", None);
+        let mut journal = journal::Writer::open(rig.daemon.journal_dir(PARENT), 1 << 20)
+            .expect("the journal opens");
+        journal
+            .append(&wire::Step::default())
+            .expect("a frame is written");
+        rig.step(Input::Nudge { agent: PARENT });
+        assert!(
+            rig.daemon.journal_readers.contains_key(&PARENT),
+            "a live agent's reader is held between reads"
+        );
+        rig.step(Input::ControlClosed {
+            agent: PARENT,
+            ended: Ended::Exited,
+        });
+        assert!(
+            !rig.daemon.journal_readers.contains_key(&PARENT),
+            "an ended agent's reader is closed"
+        );
     }
 
     /// A resume issued while the process is still on its way out builds

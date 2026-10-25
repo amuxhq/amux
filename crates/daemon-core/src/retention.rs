@@ -138,6 +138,11 @@ impl Daemon {
         };
         let removed = Arc::new(inventory(inventory_event::Of::AgentRemoved(removed)));
         self.agent_removed(agent, removed, out);
+        if let Some(own) =
+            AgentId::from_slice(&agent.agent).filter(|_| agent.host == self.store.own_host())
+        {
+            self.journal_readers.remove(&own);
+        }
         self.forget_draft(&agent.agent, out);
         if let Err(error) = self.parent_changed(agent, ParentSays::Deleted, out) {
             tracing::warn!(%error, "following a removed parent failed");

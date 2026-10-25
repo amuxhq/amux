@@ -919,6 +919,40 @@ async fn a_journal_cut_below_a_durable_cursor_rewinds_it_and_re_derived_steps_co
     crash(daemon, runtime).await;
 }
 
+/// A power cut can leave the journal's unsynced tail zero-filled at its full
+/// length rather than cut short: the cursor then sits exactly at the file's
+/// end, with nothing past it to read as torn.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_journal_zero_filled_up_to_a_durable_cursor_rewinds_it() {
+    let install = Install::new();
+    let mut agent = SyntheticAgent::new(&install, "zeroed", BIG_SEGMENTS);
+    agent.register_offline(&install);
+    let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
+    let offsets = write_and_ingest(&runtime, &mut agent, &steps()).await;
+    runtime.checkpoint().await.unwrap();
+    let before = held(&runtime, &agent, &install).await;
+    let journal = agent.dir.join(agent_dir::JOURNAL);
+    assert_eq!(before.cursor, offsets[7]);
+    assert_eq!(
+        journal::end(&journal).unwrap(),
+        offsets[7],
+        "the cursor is at the journal's end"
+    );
+    let checkpointed = checkpointed_store(&runtime, &install).await;
+    crash(daemon, runtime).await;
+    lose_power(&install, &checkpointed);
+    journal::synthetic::zero_from(&journal, offsets[5] + 3).unwrap();
+
+    let (daemon, runtime) = start(&install, "boot-2", quiet_launch()).await;
+    let after = held(&runtime, &agent, &install).await;
+    assert_eq!(
+        after.cursor, offsets[5],
+        "the cursor rewound to the journal's last whole frame"
+    );
+    assert_eq!(after.items, before.items, "nothing committed is lost");
+    crash(daemon, runtime).await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_batch_that_fails_on_a_later_frame_commits_and_broadcasts_none_of_it() {
     let install = Install::new();

@@ -198,12 +198,14 @@ impl Bundle {
             let mut refuse = None;
             for read in &reads {
                 let journal = journals.get(&read.agent).map_or(&[][..], Vec::as_slice);
+                // The reader goes first: some systems refuse to remove a
+                // directory holding a file still open.
+                daemon.journal_relaid(read.agent);
                 lay_out(
                     &daemon_core::ingest::journal_dir(&agents, read.agent),
                     journal,
                     read.seen,
                 )?;
-                daemon.journal_relaid(read.agent);
                 if let Some(why) = &read.failed {
                     refuse.get_or_insert(why.clone());
                 }

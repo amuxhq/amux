@@ -22,6 +22,14 @@ final class PlaceNamesTests: XCTestCase {
         XCTAssertEqual(PlaceNames.directory("amux"), "amux")
     }
 
+    func testAPathReadWholeWritesOnlyItsHomeAsATilde() {
+        XCTAssertEqual(PlaceNames.path("/Users/ada/source/amux"), "~/source/amux")
+        XCTAssertEqual(PlaceNames.path("/home/ada/work/api"), "~/work/api")
+        XCTAssertEqual(PlaceNames.path("/Users/ada"), "~")
+        XCTAssertEqual(PlaceNames.path("/Users/Shared/tally"), "/Users/Shared/tally")
+        XCTAssertEqual(PlaceNames.path("/opt/build/amux"), "/opt/build/amux")
+    }
+
     func testThePlaceLeadsWithTheDirectory() {
         XCTAssertEqual(
             PlaceNames.place(host: "studio.local", directory: "/Users/ada/source/amux"),

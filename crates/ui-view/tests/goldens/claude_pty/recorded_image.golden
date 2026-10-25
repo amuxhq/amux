@@ -24,7 +24,7 @@
   row    6 68ac380a-e96c-4d41-b39d-46fc7dfe4180 Prose { text: [Text("Red.")], streaming: false, working_note: false }
 ## 62 recorded 60: fact Transcript type=system subtype=turn_duration uuid=4ca5f3a8-a6ee-4c07-86cb-73199102a716
   row    4 toolu_01HGR4w5xbprSyoZpRZAoEus Image { image: Some(BlobRef { hash: [13, 188, 137, 79, 133, 238, 125, 12, 106, 7, 238, 253, 141, 85, 231, 43, 84, 34, 114, 38, 133, 218, 117, 229, 18, 219, 233, 73, 35, 210, 211, 35], name: "", mime: "image/png", size: 99 }), path: "<MACHINE_PATH>", generated: false } run[toolu_01HGR4w5xbprSyoZpRZAoEus..toolu_01HGR4w5xbprSyoZpRZAoEus x1 recent=0 RunCounts { comm…
-  row    7 turn:1 TurnEnd { duration_ms: Some(5303), cost_usd: None, failed: false }
+  row    7 turn:1 TurnEnd { duration_ms: Some(5303), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -33,7 +33,7 @@
      4 toolu_01HGR4w5xbprSyoZpRZAoEus Image { image: Some(BlobRef { hash: [13, 188, 137, 79, 133, 238, 125, 12, 106, 7, 238, 253, 141, 85, 231, 43, 84, 34, 114, 38, 133, 218, 117, 229, 18, 219, 233, 73, 35, 210, 211, 35], name: "", mime: "image/png", size: 99 }), path: "<MACHINE_PATH>", generated: false } run[toolu_01HGR4w5xbprSyoZpRZAoEus..toolu_01HGR4w5xbprSyoZpRZAoEus x1 recent=0 RunCounts { comm…
      5 74af71bc-1cea-40cd-905e-1216d8aaf986 Thinking { text: "", open: false, duration_ms: Some(1961) }
      6 68ac380a-e96c-4d41-b39d-46fc7dfe4180 Prose { text: [Text("Red.")], streaming: false, working_note: false }
-     7 turn:1 TurnEnd { duration_ms: Some(5303), cost_usd: None, failed: false }
+     7 turn:1 TurnEnd { duration_ms: Some(5303), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 36484, window_tokens: None, percent: None, near_full: false }) sign-in None
 == settings

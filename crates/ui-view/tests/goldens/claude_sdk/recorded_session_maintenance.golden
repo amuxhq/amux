@@ -11,14 +11,14 @@
 ## 39 recorded 38: fact Stream type=assistant uuid=16dec490-b8e1-4506-9120-4edbf735ce8b
   row    4 msg_011CeW3rvQpCUmmycA12PXsr:1 Prose { text: [Text("MAINTENANCE_OK")], streaming: false, working_note: false }
 ## 41 recorded 40: fact Stream type=result subtype=success uuid=a7ea334e-1dfd-45da-ae84-c2f8908ae444
-  row    5 turn:1 TurnEnd { duration_ms: Some(1682), cost_usd: Some(0.022547), failed: false }
+  row    5 turn:1 TurnEnd { duration_ms: Some(1682), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Reply with exactly MAINTENANCE_OK and nothing else.")], steered: false }
      3 msg_011CeW3rvQpCUmmycA12PXsr:0 Thinking { text: "The user is asking me to reply with exactly \"MAINTENANCE_OK\" and nothing else. This is a simple, straightforward request. I should comply exactly as stated.", open: false, duration_ms: Some(2370) }
      4 msg_011CeW3rvQpCUmmycA12PXsr:1 Prose { text: [Text("MAINTENANCE_OK")], streaming: false, working_note: false }
-     5 turn:1 TurnEnd { duration_ms: Some(1682), cost_usd: Some(0.022547), failed: false }
+     5 turn:1 TurnEnd { duration_ms: Some(1682), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: Some(UsageView { blocked: false, windows: [UsageWindowView { label: FiveHour, used_percent: 19.0, resets_at_ms: Some(1787970000000), state: Unknown }, UsageWindowView { label: Weekly { model: None }, used_percent: 83.0, resets_at_ms: Some(1787976000000), state: NearLimit }], credits: None }), changes: None }
 == context Some(ContextView { used_tokens: 27910, window_tokens: Some(200000), percent: Some(13), near_full: false }) sign-in None
 == settings

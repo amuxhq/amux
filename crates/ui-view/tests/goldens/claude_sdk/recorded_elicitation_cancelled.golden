@@ -40,7 +40,7 @@
   row    7 msg_011CfRSeMsmM9bVJVaGtjwom:1 Prose { text: [Text("elicitation cancel")], streaming: false, working_note: false }
 ## 36 recorded 35: fact Stream type=result subtype=success uuid=a6119d8b-6e94-4ef8-869b-571639f50102
   row    4 toolu_01QTRcLPFaHmpgL3TCF5cTxC ToolCall { server: "external", tool: "ask_the_operator", fact: "PELICAN", state: Succeeded, result: "elicitation cancel" } run[toolu_01QTRcLPFaHmpgL3TCF5cTxC..toolu_01QTRcLPFaHmpgL3TCF5cTxC x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: fa…
-  row    8 turn:1 TurnEnd { duration_ms: Some(2741), cost_usd: Some(0.0555908), failed: false }
+  row    8 turn:1 TurnEnd { duration_ms: Some(2741), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -50,7 +50,7 @@
      5 ask:c2a391a0-f761-498a-8006-19fc8cae11e0 Ask(Form { server: "external", message: "Confirm the word PELICAN.", fields: [], resolution: Cancelled })
      6 msg_011CfRSeMsmM9bVJVaGtjwom:0 Thinking { text: "", open: false, duration_ms: Some(1006) }
      7 msg_011CfRSeMsmM9bVJVaGtjwom:1 Prose { text: [Text("elicitation cancel")], streaming: false, working_note: false }
-     8 turn:1 TurnEnd { duration_ms: Some(2741), cost_usd: Some(0.0555908), failed: false }
+     8 turn:1 TurnEnd { duration_ms: Some(2741), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "plugin:stripe:stripe", error: "", needs_auth: true }, ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 26089, window_tokens: Some(200000), percent: Some(13), near_full: false }) sign-in None
 == settings

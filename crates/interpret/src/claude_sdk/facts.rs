@@ -1137,9 +1137,6 @@ impl State {
                     turn_id: turn.id,
                     outcome: outcome as i32,
                     started_at_ms,
-                    cost_usd: common
-                        .and_then(|common| common.total_cost_usd.as_ref())
-                        .and_then(serde_json::Number::as_f64),
                 })),
                 at_ms: Some(at_ms),
                 complete: true,

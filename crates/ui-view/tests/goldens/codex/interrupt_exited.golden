@@ -14,7 +14,7 @@
   row    5 prompt:7032 Prompt { text: [Text("Summarise the plan.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 9 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-2","status":"completed"}}}}
-  row    6 turn:2 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+  row    6 turn:2 TurnEnd { duration_ms: Some(0), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -22,7 +22,7 @@
      3 boundary:2 Boundary { kind: Exited, cause: "the provider exited: exit code 1" }
      4 boundary:3 Boundary { kind: Resumed, cause: "" }
      5 prompt:7032 Prompt { text: [Text("Summarise the plan.")], steered: false }
-     6 turn:2 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+     6 turn:2 TurnEnd { duration_ms: Some(0), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

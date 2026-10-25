@@ -183,10 +183,10 @@ public struct ChatRowView: View {
                 opens: !output.isEmpty, open: expanded, toggle: toggle)
         case .ask(let ask):
             AskRowView(ask: ask, rail: rail, expanded: expanded, toggle: toggle)
-        case .turnEnd(let failed, let costUsd, let durationMs):
+        case .turnEnd(let failed, let durationMs):
             Footer(
                 kind: "turn-end",
-                text: ChatWords.turnEnd(durationMs: durationMs, costUsd: costUsd, failed: failed),
+                text: ChatWords.turnEnd(durationMs: durationMs, failed: failed),
                 failed: failed)
         case .stopped:
             GridRow(

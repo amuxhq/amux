@@ -314,7 +314,6 @@ message Turn {
   TurnOutcome outcome = 2;
   // When the turn started; "Worked 1m 42s" is at_ms minus this.
   int64 started_at_ms = 3;
-  optional double cost_usd = 4;
 }
 
 message Compaction {

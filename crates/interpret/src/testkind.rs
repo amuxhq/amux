@@ -219,7 +219,6 @@ impl<const FORGET: bool> TestKind<FORGET> {
                                 turn_id: turn.id,
                                 outcome: outcome as i32,
                                 started_at_ms: turn.started_at_ms,
-                                cost_usd: None,
                             })),
                             complete: true,
                             ..Default::default()

@@ -82,7 +82,7 @@
   row    8 msg_0267f61d4441067f016ab72ec30e7487d281dfeb0bf02e2447 Prose { text: [Text("HTTP/2 200")], streaming: false, working_note: false }
 ## 100 recorded 99: fact Rpc method=turn/completed
   row    7 exec-8dd0f788-c801-4c7a-8196-b19a7c8aeec0 Command { command: "curl -sI https://example.com", state: Succeeded, exit_code: Some(0), output_head: ["HTTP/2 200 ", "date: Sat, 26 Sep 2026 02:32:33 GMT", "content-type: text/html"], more_lines: 8, output_trimmed: false, output_tail: ["HTTP/2 200 ", "date: Sat, 26 Sep 2026 02:32:33 GMT", "content-type: text/html", "server: cloudflare", "last-modifie…
-  row    9 turn:1 TurnEnd { duration_ms: Some(14566), cost_usd: None, failed: false }
+  row    9 turn:1 TurnEnd { duration_ms: Some(14566), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -93,7 +93,7 @@
      6 rs_0267f61d4441067f016ab72ec0b23887d2be569947ad83f017 Thinking { text: "", open: false, duration_ms: Some(2443) }
      7 exec-8dd0f788-c801-4c7a-8196-b19a7c8aeec0 Command { command: "curl -sI https://example.com", state: Succeeded, exit_code: Some(0), output_head: ["HTTP/2 200 ", "date: Sat, 26 Sep 2026 02:32:33 GMT", "content-type: text/html"], more_lines: 8, output_trimmed: false, output_tail: ["HTTP/2 200 ", "date: Sat, 26 Sep 2026 02:32:33 GMT", "content-type: text/html", "server: cloudflare", "last-modifie…
      8 msg_0267f61d4441067f016ab72ec30e7487d281dfeb0bf02e2447 Prose { text: [Text("HTTP/2 200")], streaming: false, working_note: false }
-     9 turn:1 TurnEnd { duration_ms: Some(14566), cost_usd: None, failed: false }
+     9 turn:1 TurnEnd { duration_ms: Some(14566), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 13088, window_tokens: Some(258400), percent: Some(5), near_full: false }) sign-in None
 == settings

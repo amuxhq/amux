@@ -29,6 +29,6 @@ snapshot WORKING queue=[] working_on="Run exactly this Bash command once: ls doe
 ## 32 recorded 31: fact Stream type=assistant uuid=3ed391a5-53e8-4665-b7fd-491a118a8d8d
 item msg_011CfREGSkTSgkTjpxqgxvfx:1 message final at=1790388220756 text="Yes, it failed. The command exited with code 1 and returned the error \"ls: does-not-exist: No such file or directory\"."
 ## 34 recorded 33: fact Stream type=result subtype=success uuid=8db84fca-e7b6-4190-8e29-249923503802
-item turn:1 turn final at=1790388220763 text="" #1 TURN_OUTCOME_COMPLETED started=1790388214527 cost=0.030087
+item turn:1 turn final at=1790388220763 text="" #1 TURN_OUTCOME_COMPLETED started=1790388214527
 snapshot IDLE queue=[] working_on="Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed." at=1790388220763 asks=[] session=d2e5a8c9-c088-4e42-a795-7d5115bf585f model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=26570/200000 tasks=? active=[] usage=ok 5h:2%(ok) 7d:35%(?) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_NEEDS_AUTH,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Claude Docs:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CfREGSkTSgkTjpxqgxvfx:1

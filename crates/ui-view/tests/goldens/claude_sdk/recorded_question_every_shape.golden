@@ -24,7 +24,7 @@
 ## 40 recorded 39: fact Stream type=assistant uuid=06bef8dd-5c1f-456f-a26c-8aaa3b929935
   row    6 msg_011CfRE3gGBaXJ87UoW9ehMx:1 Prose { text: [Text("Your answers:\n\n1. **Color:** Blue\n2. **Tools:** Hammer, Drill\n3. **Layout:** Grid\n4. **Snack:** Dried mango")], streaming: false, working_note: false }
 ## 42 recorded 41: fact Stream type=result subtype=success uuid=83a6fb24-bc66-4fdc-b2c4-49c668e531ee
-  row    7 turn:1 TurnEnd { duration_ms: Some(13701), cost_usd: Some(0.067362), failed: false }
+  row    7 turn:1 TurnEnd { duration_ms: Some(13701), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -33,7 +33,7 @@
      4 toolu_01PpKZzwKZ9tHyeeGtQv6zb2 [Answered: Color = Blue; Tools = Hammer, Drill; Layout = Grid; Snack = "Dried mango" skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "A bold, energetic red color", preview: "", recommended: false }, OptionView { label: "Blue", des…
      5 msg_011CfRE3gGBaXJ87UoW9ehMx:0 Thinking { text: "", open: false, duration_ms: Some(1968) }
      6 msg_011CfRE3gGBaXJ87UoW9ehMx:1 Prose { text: [Text("Your answers:\n\n1. **Color:** Blue\n2. **Tools:** Hammer, Drill\n3. **Layout:** Grid\n4. **Snack:** Dried mango")], streaming: false, working_note: false }
-     7 turn:1 TurnEnd { duration_ms: Some(13701), cost_usd: Some(0.067362), failed: false }
+     7 turn:1 TurnEnd { duration_ms: Some(13701), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "plugin:stripe:stripe", error: "", needs_auth: true }, ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 28664, window_tokens: Some(200000), percent: Some(14), near_full: false }) sign-in None
 == settings

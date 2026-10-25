@@ -24,14 +24,14 @@
 ## 38 recorded 36: fact Transcript type=assistant uuid=33f3e8ff-c6ef-4b5b-bd00-6c890e2d723d
   row    4 33f3e8ff-c6ef-4b5b-bd00-6c890e2d723d Prose { text: [Text("Color: Blue. Tools: Hammer, Drill.")], streaming: false, working_note: false }
 ## 40 recorded 38: fact Transcript type=system subtype=turn_duration uuid=bcb07b02-89d0-4fae-8952-2edad8fa4e2d
-  row    5 turn:1 TurnEnd { duration_ms: Some(3344), cost_usd: None, failed: false }
+  row    5 turn:1 TurnEnd { duration_ms: Some(3344), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 104f3301-c165-4ce0-bf5e-7c98043943cc Prompt { text: [Text("Use one AskUserQuestion call containing two questions: first a single-select Color question with Red and Blue; second a multi-select Tools question with Hammer, Saw, and Drill. Then repeat both answers.")], steered: false }
      3 toolu_01RvcE5CZ5FufiVEqtUdnTxL [Answered: Color = Blue; Tools = Hammer, Drill skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Pick a color:", multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue", preview: "", recommended: false }], allow_other: true, se…
      4 33f3e8ff-c6ef-4b5b-bd00-6c890e2d723d Prose { text: [Text("Color: Blue. Tools: Hammer, Drill.")], streaming: false, working_note: false }
-     5 turn:1 TurnEnd { duration_ms: Some(3344), cost_usd: None, failed: false }
+     5 turn:1 TurnEnd { duration_ms: Some(3344), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 48643, window_tokens: None, percent: None, near_full: false }) sign-in None
 == settings

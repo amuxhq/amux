@@ -54,7 +54,7 @@
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 16 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":false,"subtype":"success","total_cost_usd":0.01,"type":"result","uuid":"r1"}}
-  row    7 turn:1 TurnEnd { duration_ms: Some(1000), cost_usd: Some(0.01), failed: false }
+  row    7 turn:1 TurnEnd { duration_ms: Some(1000), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -63,7 +63,7 @@
      4 t2 Ask(Plan { title: None, body: "- edit", verdict: ApprovedSwitching, mode: "acceptEdits", mode_name: "", note: None, writing: false })
      5 t3 Ask(Plan { title: None, body: "- edit", verdict: Approved, mode: "", mode_name: "", note: None, writing: false })
      6 t4 Ask(Plan { title: None, body: "- edit", verdict: SentBack, mode: "", mode_name: "", note: Some("say why"), writing: false })
-     7 turn:1 TurnEnd { duration_ms: Some(1000), cost_usd: Some(0.01), failed: false }
+     7 turn:1 TurnEnd { duration_ms: Some(1000), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

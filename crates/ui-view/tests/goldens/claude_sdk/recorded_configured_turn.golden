@@ -11,14 +11,14 @@
 ## 22 recorded 21: fact Stream type=assistant uuid=2b05e941-65a1-4fa6-8d8d-7c4a7eb56903
   row    4 msg_011CeW3V6q1abpfL22fPTVCh:1 Prose { text: [Text("CONFIGURED")], streaming: false, working_note: false }
 ## 26 recorded 25: fact Stream type=result subtype=success uuid=129f34f8-8519-424c-88e0-98afb7d637cb
-  row    5 turn:1 TurnEnd { duration_ms: Some(2117), cost_usd: Some(0.0022718), failed: false }
+  row    5 turn:1 TurnEnd { duration_ms: Some(2117), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("What is the capital of France?")], steered: false }
      3 msg_011CeW3V6q1abpfL22fPTVCh:0 Thinking { text: "The user is asking me \"What is the capital of France?\" However, I have a specific instruction at the beginning of my system prompt that says:\n\n\"You are a Claude agent, built on Anthropic's Claude Agent SDK. Whatever you are asked, reply with exactly the word CONFIGURED and nothing else.\"\n\nThis is a very clear instruction that overrides …
      4 msg_011CeW3V6q1abpfL22fPTVCh:1 Prose { text: [Text("CONFIGURED")], streaming: false, working_note: false }
-     5 turn:1 TurnEnd { duration_ms: Some(2117), cost_usd: Some(0.0022718), failed: false }
+     5 turn:1 TurnEnd { duration_ms: Some(2117), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: Some(UsageView { blocked: false, windows: [UsageWindowView { label: FiveHour, used_percent: 19.0, resets_at_ms: Some(1787970000000), state: Unknown }, UsageWindowView { label: Weekly { model: None }, used_percent: 83.0, resets_at_ms: Some(1787976000000), state: NearLimit }], credits: None }), changes: None }
 == context Some(ContextView { used_tokens: 16128, window_tokens: Some(200000), percent: Some(8), near_full: false }) sign-in None
 == settings

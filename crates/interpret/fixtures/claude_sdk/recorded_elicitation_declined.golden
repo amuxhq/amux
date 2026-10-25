@@ -44,6 +44,6 @@ snapshot WORKING queue=[] working_on="Call the mcp__external__ask_the_operator t
 ## 34 recorded 33: fact Stream type=assistant uuid=506001dc-ab54-4ee4-bb46-be6e03515b75
 item msg_011CfREfE5M8BiLJCFASrzap:1 message final at=1790388528961 text="elicitation decline"
 ## 36 recorded 35: fact Stream type=result subtype=success uuid=63385a69-7e9f-40ac-b872-e6f7c599077a
-item turn:1 turn final at=1790388528968 text="" #1 TURN_OUTCOME_COMPLETED started=1790388525965 cost=0.055526
+item turn:1 turn final at=1790388528968 text="" #1 TURN_OUTCOME_COMPLETED started=1790388525965
 snapshot IDLE queue=[] working_on="Call the mcp__external__ask_the_operator tool with word set to PELICAN, then reply with exactly what it returned." at=1790388528968 asks=[] session=da063500-bade-4953-96e9-697b5ae457c4 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=26065/200000 tasks=? active=[] usage=ok 5h:3%(ok) 7d:35%(?) servers=HEALTH_STATE_HEALTHY[external:TOOL_SERVER_STATUS_READY,plugin:stripe:stripe:TOOL_SERVER_STATUS_NEEDS_AUTH,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Claude Docs:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CfREfE5M8BiLJCFASrzap:1

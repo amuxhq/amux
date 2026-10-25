@@ -14,7 +14,7 @@
 ## 9 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"id":"turn-1-plan","text":"## Write the colour\n\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n","type":"plan"},"threadId":"t1","turnId":"turn-1"}}}
   row    3 turn-1-plan Ask(Plan { title: Some("Write the colour"), body: "\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n", verdict: Open, mode: "", mode_name: "", note: None, writing: false })
 ## 10 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"completed"}}}}
-  row    4 turn:1 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+  row    4 turn:1 TurnEnd { duration_ms: Some(0), failed: false }
   ask plan:turn-1-plan -> "turn-1-plan" 1/1 Open
     choices ApprovePlan { mode: "", mode_name: "" }*, SendBack+note
     body Plan { title: Some("Write the colour"), body: "\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n" }
@@ -25,7 +25,7 @@
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 15 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-2","status":"completed"}}}}
-  row    6 turn:2 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+  row    6 turn:2 TurnEnd { duration_ms: Some(0), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 17 input {"id":"p2","prompt":{"text":"Plan the README too."}}
   row    7 prompt:7032 Prompt { text: [Text("Plan the README too.")], steered: false }
@@ -39,7 +39,7 @@
 ## 24 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"id":"turn-3-plan","text":"## Write the colour and the README\n\n- Write `Blue` to `color.txt`.\n- Say so in `README.md`.\n","type":"plan"},"threadId":"t1","turnId":"turn-3"}}}
   row    8 turn-3-plan Ask(Plan { title: Some("Write the colour and the README"), body: "\n- Write `Blue` to `color.txt`.\n- Say so in `README.md`.\n", verdict: Open, mode: "", mode_name: "", note: None, writing: false })
 ## 25 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-3","status":"completed"}}}}
-  row    9 turn:3 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+  row    9 turn:3 TurnEnd { duration_ms: Some(0), failed: false }
   ask plan:turn-3-plan -> "turn-3-plan" 1/1 Open
     choices ApprovePlan { mode: "", mode_name: "" }*, SendBack+note
     body Plan { title: Some("Write the colour and the README"), body: "\n- Write `Blue` to `color.txt`.\n- Say so in `README.md`.\n" }
@@ -58,7 +58,7 @@
 ## 33 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"id":"turn-4-plan","text":"## Write the colour\n\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n","type":"plan"},"threadId":"t1","turnId":"turn-4"}}}
   row   11 turn-4-plan Ask(Plan { title: Some("Write the colour"), body: "\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n", verdict: Open, mode: "", mode_name: "", note: None, writing: false })
 ## 34 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-4","status":"completed"}}}}
-  row   12 turn:4 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+  row   12 turn:4 TurnEnd { duration_ms: Some(0), failed: false }
   ask plan:turn-4-plan -> "turn-4-plan" 1/1 Open
     choices ApprovePlan { mode: "", mode_name: "" }*, SendBack+note
     body Plan { title: Some("Write the colour"), body: "\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n" }
@@ -78,7 +78,7 @@
 ## 43 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"id":"turn-5-plan","text":"## Write the colour\n\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n","type":"plan"},"threadId":"t1","turnId":"turn-5"}}}
   row   14 turn-5-plan Ask(Plan { title: Some("Write the colour"), body: "\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n", verdict: Open, mode: "", mode_name: "", note: None, writing: false })
 ## 44 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-5","status":"completed"}}}}
-  row   15 turn:5 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+  row   15 turn:5 TurnEnd { duration_ms: Some(0), failed: false }
   ask plan:turn-5-plan -> "turn-5-plan" 1/1 Open
     choices ApprovePlan { mode: "", mode_name: "" }*, SendBack+note
     body Plan { title: Some("Write the colour"), body: "\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n" }
@@ -92,18 +92,18 @@
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:7031 Prompt { text: [Text("Plan the colour change.")], steered: false }
      3 turn-1-plan Ask(Plan { title: Some("Write the colour"), body: "\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n", verdict: Approved, mode: "", mode_name: "", note: None, writing: false })
-     4 turn:1 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+     4 turn:1 TurnEnd { duration_ms: Some(0), failed: false }
      5 prompt:6131 Prompt { text: [Text("Implement the plan.")], steered: false }
-     6 turn:2 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+     6 turn:2 TurnEnd { duration_ms: Some(0), failed: false }
      7 prompt:7032 Prompt { text: [Text("Plan the README too.")], steered: false }
      8 turn-3-plan Ask(Plan { title: Some("Write the colour and the README"), body: "\n- Write `Blue` to `color.txt`.\n- Say so in `README.md`.\n", verdict: SentBack, mode: "", mode_name: "", note: Some("Leave the README alone."), writing: false })
-     9 turn:3 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+     9 turn:3 TurnEnd { duration_ms: Some(0), failed: false }
     10 prompt:6132 Prompt { text: [Text("Leave the README alone.")], steered: false }
     11 turn-4-plan Ask(Plan { title: Some("Write the colour"), body: "\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n", verdict: SentBack, mode: "", mode_name: "", note: None, writing: false })
-    12 turn:4 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+    12 turn:4 TurnEnd { duration_ms: Some(0), failed: false }
     13 prompt:7033 Prompt { text: [Text("One more pass on the plan.")], steered: false }
     14 turn-5-plan Ask(Plan { title: Some("Write the colour"), body: "\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n", verdict: Dismissed, mode: "", mode_name: "", note: None, writing: false })
-    15 turn:5 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+    15 turn:5 TurnEnd { duration_ms: Some(0), failed: false }
     16 prompt:7034 Prompt { text: [Text("Forget the plan; just write Blue.")], steered: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None

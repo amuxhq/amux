@@ -112,7 +112,7 @@
   row    5 exec-8a1d3127-60a9-47f2-b755-b836fdff6745 Command { command: "touch first.txt", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-8a1d3127-60a9-47f2-b755-b836fdff6745..exec-400d32d4-d342-41d7-a8fc-0ceb3caae7f3 x3 recent=2] decision=Decision { outcome: Allowed, granted: Some(CommandPrefix { words: ["tou…
   row    7 exec-1a0fca9e-2c71-46fa-bc5c-ffb0c1bb9a17 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Succeeded } run[exec-8a1d3127-60a9-47f2-b755-b836fdff6745..exec-400d32d4-d342-41d7-a8fc-0ceb3caae7f3 x3 recent=1] decision=Decision { outcome: Allowed, granted: Some(Session), note: None, elsewhere: false } collapsed
   row   10 exec-400d32d4-d342-41d7-a8fc-0ceb3caae7f3 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[exec-8a1d3127-60a9-47f2-b755-b836fdff6745..exec-400d32d4-d342-41d7-a8fc-0ceb3caae7f3 x3 recent=0 RunCounts { commands: 1, edits: 2, reads: 0, searches: 0, subagents: 0, other: 0 }]
-  row   12 turn:1 TurnEnd { duration_ms: Some(15489), cost_usd: None, failed: false }
+  row   12 turn:1 TurnEnd { duration_ms: Some(15489), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -126,7 +126,7 @@
      9 rs_02124244eb5c39e0016ab72ec1b55c87d2871c7c17b156e8a1 Thinking { text: "", open: false, duration_ms: None } run[exec-8a1d3127-60a9-47f2-b755-b836fdff6745..exec-400d32d4-d342-41d7-a8fc-0ceb3caae7f3 x3] collapsed
     10 exec-400d32d4-d342-41d7-a8fc-0ceb3caae7f3 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[exec-8a1d3127-60a9-47f2-b755-b836fdff6745..exec-400d32d4-d342-41d7-a8fc-0ceb3caae7f3 x3 recent=0 RunCounts { commands: 1, edits: 2, reads: 0, searches: 0, subagents: 0, other: 0 }]
     11 msg_02124244eb5c39e0016ab72ec422c487d29f3b7cbcfaeaa2f9 Prose { text: [Text("DONE")], streaming: false, working_note: false }
-    12 turn:1 TurnEnd { duration_ms: Some(15489), cost_usd: None, failed: false }
+    12 turn:1 TurnEnd { duration_ms: Some(15489), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 13341, window_tokens: Some(258400), percent: Some(5), near_full: false }) sign-in None
 == settings

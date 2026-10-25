@@ -255,11 +255,10 @@ public enum ChatWords {
         return words
     }
 
-    /// "Worked 1m 42s · $0.42".
-    public static func turnEnd(durationMs: Int64?, costUsd: Double?, failed: Bool) -> String {
+    /// "Worked 1m 42s".
+    public static func turnEnd(durationMs: Int64?, failed: Bool) -> String {
         var words = [durationMs.map { String(localized: "Worked \(duration($0))") }
             ?? String(localized: "Turn ended")]
-        if let costUsd { words.append(String(format: "$%.2f", costUsd)) }
         if failed { words.append(String(localized: "failed")) }
         return words.joined(separator: " · ")
     }

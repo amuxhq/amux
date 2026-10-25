@@ -19,7 +19,7 @@
 ## 35 recorded 34: fact Rpc method=item/completed
   row    3 msg_0d4fe278a9664e72016ac45910526487d28941bd617dde458d Prose { text: [Text("CODEX_SPEC_OTHER")], streaming: false, working_note: false }
 ## 43 recorded 42: fact Rpc method=turn/completed
-  row    4 turn:1 TurnEnd { duration_ms: Some(1785), cost_usd: None, failed: false }
+  row    4 turn:1 TurnEnd { duration_ms: Some(1785), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 47 recorded 46: fact Rpc method=turn/started
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
@@ -32,7 +32,7 @@
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 01a10efb-e428-7d01-a95b-8d1207ff1a08 Prompt { text: [Text("Reply with exactly CODEX_SPEC_OTHER and nothing else.")], steered: false }
      3 msg_0d4fe278a9664e72016ac45910526487d28941bd617dde458d Prose { text: [Text("CODEX_SPEC_OTHER")], streaming: false, working_note: false }
-     4 turn:1 TurnEnd { duration_ms: Some(1785), cost_usd: None, failed: false }
+     4 turn:1 TurnEnd { duration_ms: Some(1785), failed: false }
      5 01a10efb-e879-71a1-ac48-c250bdfc406e Prompt { text: [Text("Count slowly from one to one hundred, one number per line.")], steered: false }
      6 turn:2 Stopped
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }

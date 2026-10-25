@@ -36,7 +36,7 @@
   row   10 msg_011CfRNfuLgcUn8jjMUCR381:1 Prose { text: [Text("DONE-N NUTMEG")], streaming: false, working_note: false }
 ## 67 recorded 66: fact Stream type=result subtype=success uuid=8da37b7c-dc29-4ef0-8c4e-d067b013000b
   row    8 toolu_0185XCcbbCw5erC6Fi3B99Ro Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5074) } run[toolu_0185XCcbbCw5erC6Fi3B99Ro..toolu_0185XCcbbCw5erC6Fi3B99Ro x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, o…
-  row   11 turn:2 TurnEnd { duration_ms: Some(8630), cost_usd: Some(0.032968800000000006), failed: false }
+  row   11 turn:2 TurnEnd { duration_ms: Some(8630), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -49,7 +49,7 @@
      8 toolu_0185XCcbbCw5erC6Fi3B99Ro Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5074) } run[toolu_0185XCcbbCw5erC6Fi3B99Ro..toolu_0185XCcbbCw5erC6Fi3B99Ro x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, o…
      9 msg_011CfRNfuLgcUn8jjMUCR381:0 Thinking { text: "", open: false, duration_ms: Some(6440) }
     10 msg_011CfRNfuLgcUn8jjMUCR381:1 Prose { text: [Text("DONE-N NUTMEG")], streaming: false, working_note: false }
-    11 turn:2 TurnEnd { duration_ms: Some(8630), cost_usd: Some(0.032968800000000006), failed: false }
+    11 turn:2 TurnEnd { duration_ms: Some(8630), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "plugin:stripe:stripe", error: "", needs_auth: true }, ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 26478, window_tokens: Some(200000), percent: Some(13), near_full: false }) sign-in None
 == settings

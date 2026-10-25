@@ -61,7 +61,7 @@ AGENTS = [
         "permission": "acceptEdits",
         "prompt": "Redesign checkout as a single page that pays with the client's saved card, "
                   "with clearer errors. Have Codex on build write the payment tests while you work, "
-                  "and get a helper to rewrite the error copy.",
+                  "and start a subagent to rewrite the error copy.",
     }),
     ("db-migration", "laptop", "claude_sdk", {
         "permission": "plan",
@@ -334,6 +334,52 @@ def labelled(label: str) -> str:
     raise SystemExit(f"scene: no element labelled {label!r} on the phone")
 
 
+def containing(prefix: str, text: str) -> str:
+    """The id of the element under `prefix` whose label holds `text`."""
+    for _ in range(30):
+        for line in output("phone", "query").splitlines():
+            words = line.split()
+            if words and words[0].startswith(prefix) and text in line:
+                return words[0]
+        time.sleep(1)
+    raise SystemExit(f"scene: no {prefix} element holding {text!r} on the phone")
+
+
+def store() -> int:
+    """The phone's screens the App Store frames are composed from
+    (`marketing/store.py`), dark: the fleet; flaky-sync-test's request;
+    checkout-redesign's chat with the run that starts its subagents open;
+    its review page with a comment; the new-agent sheet; and studio's page
+    under Hosts. Needs the simulator lease."""
+    ready()
+    phone_paired()
+    output("phone", "appearance", "dark")
+    phone_shoot("phone-fleet-dark")
+    output("phone", "tap", element("home.row.", "flaky-sync-test"))
+    phone_shoot("phone-ask-dark")
+    output("phone", "tap", "chat.back")
+    output("phone", "tap", element("home.row.", "checkout-redesign"))
+    # The first run in its chat is the one that starts its two subagents.
+    output("phone", "tap", "chat.row.run")
+    output("phone", "scroll", "top")
+    phone_shoot("phone-chat-dark")
+    output("phone", "tap", "chat.changes")
+    output("phone", "perform", containing("review.line.", "MissingCard"), "Select line")
+    output("phone", "tap", "review.comment")
+    output("phone", "type", "Answer 422 with a message the page can show, not a 500.", "--into", "review.note")
+    output("phone", "tap", "review.add")
+    phone_shoot("phone-review-dark")
+    output("phone", "tap", "chat.back")
+    output("phone", "tap", "chat.back")
+    output("phone", "tap", "home.newAgent")
+    phone_shoot("phone-new-dark")
+    output("phone", "tap", "new-agent.cancel")
+    output("phone", "choose", "Hosts")
+    output("phone", "tap", element("hosts.row.", "studio"))
+    phone_shoot("phone-host-dark")
+    return 0
+
+
 class Takes:
     """The film's recordings, each started at a moment this keeps, so the
     edit can lay them on one clock. `takes.json` lists every take and every
@@ -388,7 +434,7 @@ class Takes:
 def film() -> int:
     """The takes the launch film is cut from, every one real UI: the fleet
     filling as the scene starts, checkout-redesign's chat as it hands work to
-    its helpers, a code review comment typed into the review page, and the
+    its subagents, a code review comment typed into the review page, and the
     phone opening flaky-sync-test's request and allowing it, filmed with the
     terminal's fleet at the same moment. Terminal takes are frame files
     (`ctl tui record`) the film draws itself; the phone's is the simulator's
@@ -533,7 +579,7 @@ def native() -> int:
 def main(arguments: list[str]) -> int:
     verb = arguments[0] if arguments else "up"
     FOLDER.mkdir(parents=True, exist_ok=True)
-    if verb in ("up", "shots", "film"):
+    if verb in ("up", "shots", "film", "store"):
         build()
         ctl("down")
         path = FOLDER / "topology.json"
@@ -541,7 +587,7 @@ def main(arguments: list[str]) -> int:
         print(f"scene: {FOLDER}", flush=True)
         if ctl("up", str(path)):
             return 1
-        return {"shots": shots, "film": film}.get(verb, lambda: 0)()
+        return {"shots": shots, "film": film, "store": store}.get(verb, lambda: 0)()
     if verb == "native":
         build()
         ctl("down")
@@ -557,7 +603,7 @@ def main(arguments: list[str]) -> int:
             if parent != HOME and parent.exists() and not any(parent.iterdir()):
                 parent.rmdir()
         return code
-    print("usage: scene.py up|shots|film|native|down", file=sys.stderr)
+    print("usage: scene.py up|shots|film|store|native|down", file=sys.stderr)
     return 2
 
 

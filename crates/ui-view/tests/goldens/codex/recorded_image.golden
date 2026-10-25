@@ -109,7 +109,7 @@
 ## 117 recorded 116: fact Rpc method=turn/completed
   row    5 exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad Explore { verb: List, subject: "rg --files -g 'square.png' -g '*.png' -g '*.jpg' -g '*.jpeg' .", state: Succeeded, result: "./square.png" } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-3611d2c8-226d-481d-a506-c22a13328f1f x2 recent=1] collapsed
   row    7 exec-3611d2c8-226d-481d-a506-c22a13328f1f Image { image: None, path: "<MACHINE_PATH>", generated: false } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-3611d2c8-226d-481d-a506-c22a13328f1f x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 2 }]
-  row   10 turn:1 TurnEnd { duration_ms: Some(10680), cost_usd: None, failed: false }
+  row   10 turn:1 TurnEnd { duration_ms: Some(10680), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -121,7 +121,7 @@
      7 exec-3611d2c8-226d-481d-a506-c22a13328f1f Image { image: None, path: "<MACHINE_PATH>", generated: false } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-3611d2c8-226d-481d-a506-c22a13328f1f x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 2 }]
      8 rs_00365b873261f7c9016ab7292bca2087d2a45c9404a8a22c66 Thinking { text: "", open: false, duration_ms: Some(945) }
      9 msg_00365b873261f7c9016ab7292ce0a887d2a8ec0e389920ec7e Prose { text: [Text("Red. Yes, it is the same image.")], streaming: false, working_note: false }
-    10 turn:1 TurnEnd { duration_ms: Some(10680), cost_usd: None, failed: false }
+    10 turn:1 TurnEnd { duration_ms: Some(10680), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 13037, window_tokens: Some(258400), percent: Some(5), near_full: false }) sign-in None
 == settings

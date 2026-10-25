@@ -32,7 +32,7 @@ snapshot WORKING queue=[] working_on="Delegate to the `counter` subagent, then r
 ## 46 recorded 45: fact Stream type=assistant uuid=0ee89b87-5b61-4e94-85fa-decba585cd51
 item msg_011CeW3XPJm4JjB5UX8mmfpP:1 message final at=1787961078974 text="Waiting for the counter agent to complete..."
 ## 48 recorded 47: fact Stream type=result subtype=success uuid=6b872f45-0001-48cb-ab82-f007edfd8deb
-item turn:1 turn final at=1787961078980 text="" #1 TURN_OUTCOME_COMPLETED started=1787961074425 cost=0.027954
+item turn:1 turn final at=1787961078980 text="" #1 TURN_OUTCOME_COMPLETED started=1787961074425
 snapshot IDLE queue=[] working_on="Delegate to the `counter` subagent, then reply with exactly what it said." at=1787961078980 asks=[] session=76181e3a-0d79-4a8f-967b-4f5f666b7de1 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=29509/200000 tasks=? active=[a13375edde10d56ab] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[toolu_011tXt8wWZsDcqNkmr2GAzYp:"Count to three"@1787961077036]
 turn_end 1 last=msg_011CeW3XPJm4JjB5UX8mmfpP:1
 ## 50 recorded 49: fact Stream type=assistant uuid=345f828c-454b-4188-88b2-a65c27034b99
@@ -53,6 +53,6 @@ snapshot WORKING queue=[] working_on="Delegate to the `counter` subagent, then r
 ## 71 recorded 70: fact Stream type=assistant uuid=78d78602-a4a4-433e-8a31-0b3d66590647
 item msg_011CeW3XZiLBkgSpdEiS4RW8:1 message final at=1787961080837 text="ONE TWO THREE"
 ## 73 recorded 72: fact Stream type=result subtype=success uuid=c4435006-66f5-4b76-8d57-838505bdf032
-item turn:2 turn final at=1787961080842 text="" #2 TURN_OUTCOME_COMPLETED started=1787961079496 cost=0.034573
+item turn:2 turn final at=1787961080842 text="" #2 TURN_OUTCOME_COMPLETED started=1787961079496
 snapshot IDLE queue=[] working_on="Delegate to the `counter` subagent, then reply with exactly what it said." at=1787961080842 asks=[] session=76181e3a-0d79-4a8f-967b-4f5f666b7de1 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=30040/200000 tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[]
 turn_end 2 last=msg_011CeW3XZiLBkgSpdEiS4RW8:1

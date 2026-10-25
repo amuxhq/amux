@@ -8,13 +8,13 @@
 ## 32 recorded 30: fact Transcript type=assistant uuid=26397c9d-41a4-4483-818e-956b132a2a9b
   row    3 26397c9d-41a4-4483-818e-956b132a2a9b Error { error_kind: "server_error", message: "API Error: Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED)", attempts: 0, gave_up: true } attention
 ## 33 recorded 31: fact Transcript type=system subtype=turn_duration uuid=6e0c5064-0783-4624-80cf-8a5a474523c6
-  row    4 turn:1 TurnEnd { duration_ms: Some(1771), cost_usd: None, failed: false }
+  row    4 turn:1 TurnEnd { duration_ms: Some(1771), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 937c32da-2f1c-431f-badd-91838d542dd9 Prompt { text: [Text("Reply exactly PTY_SPEC_API_ERROR and nothing else.")], steered: false }
      3 26397c9d-41a4-4483-818e-956b132a2a9b Error { error_kind: "server_error", message: "API Error: Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED)", attempts: 0, gave_up: true } attention
-     4 turn:1 TurnEnd { duration_ms: Some(1771), cost_usd: None, failed: false }
+     4 turn:1 TurnEnd { duration_ms: Some(1771), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

@@ -11,7 +11,7 @@ snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model
 ## 3 fact {"channel":"stream","json":{"content":"Total cost: $0.12","subtype":"local_command_output","type":"system","uuid":"lc"}}
 item lc slash final at=1800000000000 text="Total cost: $0.12" /cost args=""
 ## 4 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":false,"subtype":"success","total_cost_usd":0.01,"type":"result","uuid":"r0"}}
-item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_COMPLETED started=1799999999000 cost=0.010000
+item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_COMPLETED started=1799999999000
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 turn_end 1 last=-
 ## 5 input {"id":"p2","prompt":{"text":"go"}}
@@ -34,6 +34,6 @@ snapshot WORKING queue=[] working_on="Fixing the parser" at=1800000001000 asks=[
 ## 11 fact {"channel":"stream","json":{"error":"server_error","message":{"content":[{"text":"API Error: 529 overloaded","type":"text"}],"id":"m3","model":"claude-sonnet-5","role":"assistant"},"type":"assistant","uuid":"e3"}}
 item e3 api_error final at=1800000001000 text="" server_error "API Error: 529 overloaded" retry=false 0/0
 ## 12 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":false,"subtype":"success","total_cost_usd":0.25,"type":"result","uuid":"r1"}}
-item turn:2 turn final at=1800000001000 text="" #2 TURN_OUTCOME_COMPLETED started=1800000000000 cost=0.250000
+item turn:2 turn final at=1800000001000 text="" #2 TURN_OUTCOME_COMPLETED started=1800000000000
 snapshot IDLE queue=[] working_on="Fixing the parser" at=1800000001000 asks=[] session=s1 model=claude-sonnet-5 model_name="Sonnet 5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 turn_end 2 last=m1:0

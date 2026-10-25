@@ -20,13 +20,13 @@
 ## 35 recorded 34: fact Rpc method=item/completed
   row    3 msg_06c4950302592050016a934835b27887d28ecfc4578303dc9a Prose { text: [Text("CODEX_SPEC_PONG")], streaming: false, working_note: false }
 ## 41 recorded 40: fact Rpc method=turn/completed
-  row    4 turn:1 TurnEnd { duration_ms: Some(3741), cost_usd: None, failed: false }
+  row    4 turn:1 TurnEnd { duration_ms: Some(3741), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:737464696e2d34 Prompt { text: [Text("Reply with exactly CODEX_SPEC_PONG and nothing else.")], steered: false }
      3 msg_06c4950302592050016a934835b27887d28ecfc4578303dc9a Prose { text: [Text("CODEX_SPEC_PONG")], streaming: false, working_note: false }
-     4 turn:1 TurnEnd { duration_ms: Some(3741), cost_usd: None, failed: false }
+     4 turn:1 TurnEnd { duration_ms: Some(3741), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 14541, window_tokens: Some(258400), percent: Some(5), near_full: false }) sign-in None
 == settings

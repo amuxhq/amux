@@ -36,6 +36,6 @@ snapshot WORKING queue=[] working_on="Call the mcp__external__ask_the_operator t
 ## 34 recorded 33: fact Stream type=assistant uuid=dd9f9c05-c921-4744-b3d7-c01b7cf49cd0
 item msg_011CfREjzoXASzH2PTT581ix:1 message final at=1790388593849 text="elicitation failed: {\"code\":-32602,\"message\":\"Client does not support URL-mode elicitation requests\"}"
 ## 36 recorded 35: fact Stream type=result subtype=success uuid=380c8daa-1a37-45f2-a1e3-b056b7dc9456
-item turn:1 turn final at=1790388593855 text="" #1 TURN_OUTCOME_COMPLETED started=1790388591051 cost=0.027736
+item turn:1 turn final at=1790388593855 text="" #1 TURN_OUTCOME_COMPLETED started=1790388591051
 snapshot IDLE queue=[] working_on="Call the mcp__external__ask_the_operator tool with word set to LINK, then reply with exactly what it returned." at=1790388593855 asks=[] session=da82e770-8b4f-4160-bce1-d4405a7c00dc model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=26089/200000 tasks=? active=[] usage=ok 5h:3%(ok) 7d:35%(?) servers=HEALTH_STATE_HEALTHY[external:TOOL_SERVER_STATUS_READY,plugin:stripe:stripe:TOOL_SERVER_STATUS_NEEDS_AUTH,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Claude Docs:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CfREjzoXASzH2PTT581ix:1

@@ -36,13 +36,13 @@
   row    3 error:01a0db79-73fb-78b2-b3a1-6f3f7e36bff7 Error { error_kind: "other", message: "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, cf-ray: a40eba5a8e5a7da8-CPH, request id: req_dea86bb657864187a20038a2886fefc3", attempts: 0, gave_up: true } attention
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 45 recorded 44: fact Rpc method=turn/completed
-  row    4 turn:1 TurnEnd { duration_ms: Some(16747), cost_usd: None, failed: true }
+  row    4 turn:1 TurnEnd { duration_ms: Some(16747), failed: true }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:737464696e2d35 Prompt { text: [Text("Reply with exactly CODEX_SPEC_SIGNED_OUT.")], steered: false }
      3 error:01a0db79-73fb-78b2-b3a1-6f3f7e36bff7 Error { error_kind: "other", message: "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, cf-ray: a40eba5a8e5a7da8-CPH, request id: req_dea86bb657864187a20038a2886fefc3", attempts: 0, gave_up: true } attention
-     4 turn:1 TurnEnd { duration_ms: Some(16747), cost_usd: None, failed: true }
+     4 turn:1 TurnEnd { duration_ms: Some(16747), failed: true }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in Some(SignInView { state: Failed, account: "", message: "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, cf-ray: a40eba42eb5befc1-CPH, request id: req_761b843f85ad42088993e438994ec82c" })
 == settings

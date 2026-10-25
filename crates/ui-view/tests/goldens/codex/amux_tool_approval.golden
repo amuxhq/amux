@@ -30,14 +30,14 @@
 ## 12 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"completed"}}}}
   row    3 exec-1 Child { action: Start, name: "reviewer", host: "", kind: "", state: Succeeded, result: "" } run[exec-1..exec-2 x2 recent=1] collapsed
   row    4 exec-2 ToolCall { server: "spec", tool: "ask_the_operator", fact: "BLUE", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"BLUE\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-1..exec-2 x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 2 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: fals…
-  row    5 turn:1 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+  row    5 turn:1 TurnEnd { duration_ms: Some(0), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:7031 Prompt { text: [Text("Get the parser reviewed.")], steered: false }
      3 exec-1 Child { action: Start, name: "reviewer", host: "", kind: "", state: Succeeded, result: "" } run[exec-1..exec-2 x2 recent=1] collapsed
      4 exec-2 ToolCall { server: "spec", tool: "ask_the_operator", fact: "BLUE", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"BLUE\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-1..exec-2 x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 2 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: fals…
-     5 turn:1 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+     5 turn:1 TurnEnd { duration_ms: Some(0), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

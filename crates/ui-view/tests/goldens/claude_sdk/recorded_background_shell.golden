@@ -70,7 +70,7 @@
   row    8 toolu_0197msubRxYrMAEYvpZ2dxbz Background { command: "for i in 1 2 3; do echo tick $i; sleep 2; done", running: false, duration_ms: Some(6149) } run[toolu_0197msubRxYrMAEYvpZ2dxbz..toolu_0197msubRxYrMAEYvpZ2dxbz x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: false }
   row   11 toolu_01TfpDM8C7npd4Ff4eCUAae3 Command { command: "sleep 8", state: Succeeded, exit_code: None, output_head: ["(Bash completed with no output)"], more_lines: 0, output_trimmed: false, output_tail: ["(Bash completed with no output)"], duration_ms: Some(8039) } run[toolu_01TfpDM8C7npd4Ff4eCUAae3..toolu_01TfpDM8C7npd4Ff4eCUAae3 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0…
   row   14 toolu_01GPY4cnmpELQxCwoakQbmGh Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_01GPY4cnmpELQxCwoakQbmGh..toolu_01GPY4cnmpELQxCwoakQbmGh x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
-  row   17 turn:1 TurnEnd { duration_ms: Some(26747), cost_usd: Some(0.0526671), failed: false }
+  row   17 turn:1 TurnEnd { duration_ms: Some(26747), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -89,7 +89,7 @@
     14 toolu_01GPY4cnmpELQxCwoakQbmGh Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_01GPY4cnmpELQxCwoakQbmGh..toolu_01GPY4cnmpELQxCwoakQbmGh x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
     15 msg_011CfREKrx4wA1d2m839Aypt:0 Thinking { text: "", open: false, duration_ms: Some(1812) }
     16 msg_011CfREKrx4wA1d2m839Aypt:1 Prose { text: [Text("The last line printed by the background command is: **tick 3**\n\nThe complete output shows all three ticks from the loop:\n- tick 1\n- tick 2\n- tick 3\n\nThe command completed successfully with exit code 0.")], streaming: false, working_note: false }
-    17 turn:1 TurnEnd { duration_ms: Some(26747), cost_usd: Some(0.0526671), failed: false }
+    17 turn:1 TurnEnd { duration_ms: Some(26747), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "plugin:stripe:stripe", error: "", needs_auth: true }, ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 30513, window_tokens: Some(200000), percent: Some(15), near_full: false }) sign-in None
 == settings

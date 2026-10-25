@@ -11,14 +11,14 @@
 ## 53 recorded 52: fact Stream type=assistant uuid=8688123e-9d26-4b73-b83a-3e62a9595984
   row    4 msg_011CeW3MLa2xZvpfbdqnT7ye:1 Prose { text: [Text("CONTROL_OK")], streaming: false, working_note: false }
 ## 55 recorded 54: fact Stream type=result subtype=success uuid=42d0be24-bfbc-4b0e-b8fe-3be6b8c97f46
-  row    5 turn:1 TurnEnd { duration_ms: Some(1471), cost_usd: Some(0.022551), failed: false }
+  row    5 turn:1 TurnEnd { duration_ms: Some(1471), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Reply with exactly CONTROL_OK and nothing else.")], steered: false }
      3 msg_011CeW3MLa2xZvpfbdqnT7ye:0 Thinking { text: "The user is asking me to reply with exactly \"CONTROL_OK\" and nothing else. This appears to be a test or verification command. I should follow this instruction precisely.", open: false, duration_ms: Some(2084) }
      4 msg_011CeW3MLa2xZvpfbdqnT7ye:1 Prose { text: [Text("CONTROL_OK")], streaming: false, working_note: false }
-     5 turn:1 TurnEnd { duration_ms: Some(1471), cost_usd: Some(0.022551), failed: false }
+     5 turn:1 TurnEnd { duration_ms: Some(1471), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: Some(UsageView { blocked: false, windows: [UsageWindowView { label: FiveHour, used_percent: 19.0, resets_at_ms: Some(1787970000000), state: Unknown }, UsageWindowView { label: Weekly { model: None }, used_percent: 83.0, resets_at_ms: Some(1787976000000), state: NearLimit }], credits: None }), changes: None }
 == context Some(ContextView { used_tokens: 27907, window_tokens: Some(200000), percent: Some(13), near_full: false }) sign-in None
 == settings

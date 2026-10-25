@@ -20,14 +20,14 @@
 ## 40 recorded 39: fact Rpc method=item/completed
   row    4 msg_062a207d005b1e31016ab729029a3487d2afd04ebdee8294b6 Prose { text: [Text("399")], streaming: false, working_note: false }
 ## 47 recorded 46: fact Rpc method=turn/completed
-  row    5 turn:1 TurnEnd { duration_ms: Some(4889), cost_usd: None, failed: false }
+  row    5 turn:1 TurnEnd { duration_ms: Some(4889), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:737464696e2d34 Prompt { text: [Text("Think carefully about which is larger, 17 * 23 or 19 * 21, then reply with only the larger product.")], steered: false }
      3 rs_062a207d005b1e31016ab72901af9c87d2af961a0015e992f0 Thinking { text: "**Identifying product 399**", open: false, duration_ms: Some(3925) }
      4 msg_062a207d005b1e31016ab729029a3487d2afd04ebdee8294b6 Prose { text: [Text("399")], streaming: false, working_note: false }
-     5 turn:1 TurnEnd { duration_ms: Some(4889), cost_usd: None, failed: false }
+     5 turn:1 TurnEnd { duration_ms: Some(4889), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 12463, window_tokens: Some(258400), percent: Some(4), near_full: false }) sign-in None
 == settings

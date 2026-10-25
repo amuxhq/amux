@@ -32,14 +32,14 @@
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 12 fact {"channel":"stream","json":{"duration_api_ms":3000,"duration_ms":4000,"is_error":false,"num_turns":3,"result":"ok","session_id":"s1","stop_reason":"end_turn","subtype":"success","type":"result","uuid":"r1"}}
-  row    5 turn:1 TurnEnd { duration_ms: None, cost_usd: None, failed: false }
+  row    5 turn:1 TurnEnd { duration_ms: None, failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 70310000-0000-4000-8000-000000000000 Prompt { text: [Text("ask me three things")], steered: false }
      3 t1 [Answered: Color = Blue note="the blue of the logo"; Fruit = (skipped); Tools = Hammer, Saw note="both, for the shelf" skipped=1] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "The color red", preview: "", recommended: false }, OptionView { label: "Blue", description…
      4 t2 [Replied: Color = Red; Fruit = (skipped); Tools = (skipped) skipped=2 reply="Pick whatever matches the old page."] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "The color red", preview: "", recommended: false }, OptionView { label: "Blue", description: "The color bl…
-     5 turn:1 TurnEnd { duration_ms: None, cost_usd: None, failed: false }
+     5 turn:1 TurnEnd { duration_ms: None, failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

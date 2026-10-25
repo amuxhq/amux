@@ -44,6 +44,6 @@ snapshot WORKING queue=[] working_on="Call the echo tool with text set to HELLO,
 ## 51 recorded 50: fact Stream type=assistant uuid=1ea2fc0c-d142-40cd-a8e3-fccc8fef3d91
 item msg_011CeW3Su9F4CySfD9aBbkFP:1 message final at=1787961017467 text="echoed:HELLO"
 ## 53 recorded 52: fact Stream type=result subtype=success uuid=08827116-9c2d-41cc-be3d-1f75f3ad695b
-item turn:1 turn final at=1787961017475 text="" #1 TURN_OUTCOME_COMPLETED started=1787961014128 cost=0.026633
+item turn:1 turn final at=1787961017475 text="" #1 TURN_OUTCOME_COMPLETED started=1787961014128
 snapshot IDLE queue=[] working_on="Call the echo tool with text set to HELLO, then reply with exactly what it returned." at=1787961017475 asks=[] session=b9f5fb6d-edc3-4ed0-b2bb-8f151daf5efd model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=29192/200000 tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY,spec:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CeW3Su9F4CySfD9aBbkFP:1

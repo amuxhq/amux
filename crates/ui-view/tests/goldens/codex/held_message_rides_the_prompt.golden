@@ -9,13 +9,13 @@
   row    3 prompt:7031 Prompt { text: [Text("Review the parser change.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 7 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"completed"}}}}
-  row    4 turn:1 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+  row    4 turn:1 TurnEnd { duration_ms: Some(0), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: [Text("It is on branch parser.")], to: "", sent: Unspecified, rejection: "" }
      2 boundary:1 Boundary { kind: Started, cause: "" }
      3 prompt:7031 Prompt { text: [Text("Review the parser change.")], steered: false }
-     4 turn:1 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+     4 turn:1 TurnEnd { duration_ms: Some(0), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

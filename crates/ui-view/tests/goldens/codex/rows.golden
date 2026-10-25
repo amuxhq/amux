@@ -46,7 +46,7 @@
   row   11 msg-1 Prose { text: [Text("The lexer is split.")], streaming: false, working_note: false }
 ## 33 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"durationMs":4000,"id":"turn-1","status":"completed"}}}}
   row    7 cmd-1 Background { command: "cargo watch", running: true, duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
-  row   12 turn:1 TurnEnd { duration_ms: Some(4000), cost_usd: None, failed: false }
+  row   12 turn:1 TurnEnd { duration_ms: Some(4000), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 35 fact {"channel":"rpc","json":{"method":"item/completed","params":{"completedAtMs":1800000010000,"item":{"aggregatedOutput":"[watching]\n[done]\n","command":"/bin/zsh -lc 'cargo watch'","commandActions":[{"command":"cargo watch","type":"unknown"}],"cwd":"/work","durationMs":9000,"exitCode":0,"id":"cmd-1","status":"completed","type":"commandExecution"},"threadId":"t1","turnId":"turn-1"}}}
   row    7 cmd-1 Background { command: "cargo watch", running: false, duration_ms: Some(9000) } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
@@ -61,7 +61,7 @@
   composer Send activity=Some(Retrying { attempt: 2, max_attempts: 3, retry_at_ms: None }) queue=[] underway=[] refused=[]
 ## 41 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"error":{"additionalDetails":null,"codexErrorInfo":"other","message":"stream closed"},"id":"turn-2","status":"failed"}}}}
   row   14 error:turn-2 Error { error_kind: "other", message: "stream closed", attempts: 0, gave_up: true } attention
-  row   15 turn:2 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: true }
+  row   15 turn:2 TurnEnd { duration_ms: Some(0), failed: true }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -75,10 +75,10 @@
      9 rv-1 Unrecognized { what: "enteredReviewMode", summary: "an item amux does not read" }
     10 unrecognized:3 Unrecognized { what: "item/somethingNew", summary: "a notification amux does not read" }
     11 msg-1 Prose { text: [Text("The lexer is split.")], streaming: false, working_note: false }
-    12 turn:1 TurnEnd { duration_ms: Some(4000), cost_usd: None, failed: false }
+    12 turn:1 TurnEnd { duration_ms: Some(4000), failed: false }
     13 prompt:7032 Prompt { text: [Text("Run the tests.")], steered: false }
     14 error:turn-2 Error { error_kind: "other", message: "stream closed", attempts: 0, gave_up: true } attention
-    15 turn:2 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: true }
+    15 turn:2 TurnEnd { duration_ms: Some(0), failed: true }
 == overview Overview { tasks: Some(TasksView { done: 1, total: 3, current: "Split the lexer", entries: [TaskLine { subject: "Read the parser", mark: Done }, TaskLine { subject: "Split the lexer", mark: Current }, TaskLine { subject: "Run the tests", mark: Todo }] }), jobs: [], failed_servers: [ServerView { name: "docs", error: "connection refused", needs_auth: false }], usage_near_limit: Some(UsageView { blocked: true, windows: [UsageWindowView { label: FiveHour, used_percent: 100.0, resets_at_ms: Some(1800003600000), state: Blocked }, UsageWindowView { label: Weekly { model: None }, used_percent: 40.0, resets_at_ms: Some(1800600000000), state: Ok }], credits: Some("0") }), changes: None }
 == context Some(ContextView { used_tokens: 48000, window_tokens: Some(258400), percent: Some(18), near_full: false }) sign-in Some(SignInView { state: SignedOut, account: "", message: "" })
 == settings

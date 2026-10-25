@@ -1479,7 +1479,6 @@ impl State {
                     turn_id: turn.id,
                     outcome: outcome as i32,
                     started_at_ms,
-                    cost_usd: None,
                 })),
                 at_ms: Some(at_ms),
                 complete: true,

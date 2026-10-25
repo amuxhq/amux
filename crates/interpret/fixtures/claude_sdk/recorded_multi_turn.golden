@@ -22,7 +22,7 @@ snapshot WORKING queue=[] working_on="Remember the word ALBATROSS. Reply with ex
 ## 24 recorded 23: fact Stream type=assistant uuid=38c5757d-70e3-4837-b9d7-5fb067c3c30c
 item msg_011CeW3FrFoj3phfnaViDk1b:1 message final at=1787960867826 text="REMEMBERED"
 ## 26 recorded 25: fact Stream type=result subtype=success uuid=00fa741b-bf79-4039-98a7-37477097d94c
-item turn:1 turn final at=1787960867867 text="" #1 TURN_OUTCOME_COMPLETED started=1787960866311 cost=0.022695
+item turn:1 turn final at=1787960867867 text="" #1 TURN_OUTCOME_COMPLETED started=1787960866311
 snapshot IDLE queue=[] working_on="Remember the word ALBATROSS. Reply with exactly REMEMBERED." at=1787960867867 asks=[] session=5651c630-6550-4233-8837-517f88ab245c model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=27910/200000 tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CeW3FrFoj3phfnaViDk1b:1
 ## 28 recorded 27: input stdin-3
@@ -36,6 +36,6 @@ snapshot WORKING queue=[] working_on="What word did I ask you to remember? Reply
 ## 44 recorded 43: fact Stream type=assistant uuid=4af584e7-3095-4311-84f3-ed7b108b32f0
 item msg_011CeW3FxowpDKEe7YP46nJR:1 message final at=1787960869616 text="ALBATROSS"
 ## 46 recorded 45: fact Stream type=result subtype=success uuid=ffc0f667-b65b-4824-8727-67c8887694cc
-item turn:2 turn final at=1787960869636 text="" #2 TURN_OUTCOME_COMPLETED started=1787960867871 cost=0.026220
+item turn:2 turn final at=1787960869636 text="" #2 TURN_OUTCOME_COMPLETED started=1787960867871
 snapshot IDLE queue=[] working_on="What word did I ask you to remember? Reply with just that word." at=1787960869636 asks=[] session=5651c630-6550-4233-8837-517f88ab245c model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=28040/200000 tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 2 last=msg_011CeW3FxowpDKEe7YP46nJR:1

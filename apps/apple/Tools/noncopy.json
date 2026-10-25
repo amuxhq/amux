@@ -1486,7 +1486,6 @@
       {"literal": "\"\\(count)\"", "context": "case ..<1_000: \"\\(count)\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"%.1fM\"", "context": "default: String(format: \"%.1fM\", Double(count) / 1_000_000)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"+\"", "context": "let plus = run.openBelow ? \"+\" : \"\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
-      {"literal": "\"$%.2f\"", "context": "if let costUsd { words.append(String(format: \"$%.2f\", costUsd)) }", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"\\(toolCount) \"", "context": "var parts = [\"\\(toolCount) \" + plural(toolCount, \"tool\", \"tools\")]", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"doc.plaintext\"", "context": "case .text: \"doc.plaintext\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"text.bubble\"", "context": "case .review: \"text.bubble\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},

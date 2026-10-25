@@ -50,7 +50,7 @@ snapshot WORKING queue=[0x22222222222242228222222222222203] working_on="Use Bash
 item msg_011CfRNj5TURBD2abCDBvnZ3:1 message final at=1790394874368 text="DONE-A BANANA"
 ## 68 recorded 67: fact Stream type=result subtype=success uuid=b3e4fdf9-70f1-49ec-bbc7-28c030d3ddcb
 effect user 22222222-2222-4222-8222-222222222203 "Reply with exactly LATER-C."
-item turn:1 turn final at=1790394874373 text="" #1 TURN_OUTCOME_COMPLETED started=1790394848283 cost=0.032444
+item turn:1 turn final at=1790394874373 text="" #1 TURN_OUTCOME_COMPLETED started=1790394848283
 item 22222222-2222-4222-8222-222222222203 prompt final input=0x22222222222242228222222222222203 at=1790394874373 text="Reply with exactly LATER-C."
 snapshot WORKING queue=[] working_on="Reply with exactly LATER-C." at=1790394874373 asks=[] session=f50ce982-b235-43d3-9274-1cbdf386d410 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=26433/200000 tasks=? active=[] usage=ok 5h:11%(ok) 7d:36%(?) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_NEEDS_AUTH,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Claude Docs:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CfRNj5TURBD2abCDBvnZ3:1
@@ -60,6 +60,6 @@ snapshot WORKING queue=[] working_on="Reply with exactly LATER-C." at=1790394875
 ## 80 recorded 79: fact Stream type=assistant uuid=7ab25215-00e3-4be2-a654-3ea9db0d6be3
 item msg_011CfRNjBg2rCzPFefeuVqdQ:1 message final at=1790394875276 text="LATER-C"
 ## 82 recorded 81: fact Stream type=result subtype=success uuid=1863b652-fb37-4f38-96f7-32514a168f99
-item turn:2 turn final at=1790394875290 text="" #2 TURN_OUTCOME_COMPLETED started=1790394874376 cost=0.035592
+item turn:2 turn final at=1790394875290 text="" #2 TURN_OUTCOME_COMPLETED started=1790394874376
 snapshot IDLE queue=[] working_on="Reply with exactly LATER-C." at=1790394875290 asks=[] session=f50ce982-b235-43d3-9274-1cbdf386d410 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=26580/200000 tasks=? active=[] usage=ok 5h:11%(ok) 7d:36%(?) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_NEEDS_AUTH,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Claude Docs:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 2 last=msg_011CfRNjBg2rCzPFefeuVqdQ:1

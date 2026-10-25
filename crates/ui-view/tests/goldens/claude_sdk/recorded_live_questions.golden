@@ -69,7 +69,7 @@
 ## 191 recorded 190: fact Stream type=assistant uuid=aa56fb20-359e-43b8-a297-e69ab47c5ac4
   row   11 msg_011CfnB8RqtScCuU3SHTZgYu:1 Prose { text: [Text("done")], streaming: false, working_note: false }
 ## 198 recorded 197: fact Stream type=result subtype=success uuid=5475d07d-fe8a-4719-86b3-cdbe848c72b9
-  row   12 turn:1 TurnEnd { duration_ms: Some(5949), cost_usd: Some(0.0249585), failed: false }
+  row   12 turn:1 TurnEnd { duration_ms: Some(5949), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -83,7 +83,7 @@
      9 1934a552-c50e-4688-b6c7-cd9285ea2826 Hidden collapsed
     10 msg_011CfnB8RqtScCuU3SHTZgYu:0 Thinking { text: "", open: false, duration_ms: Some(1358) }
     11 msg_011CfnB8RqtScCuU3SHTZgYu:1 Prose { text: [Text("done")], streaming: false, working_note: false }
-    12 turn:1 TurnEnd { duration_ms: Some(5949), cost_usd: Some(0.0249585), failed: false }
+    12 turn:1 TurnEnd { duration_ms: Some(5949), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 23080, window_tokens: Some(200000), percent: Some(11), near_full: false }) sign-in None
 == settings

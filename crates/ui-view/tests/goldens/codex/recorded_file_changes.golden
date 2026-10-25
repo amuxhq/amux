@@ -84,7 +84,7 @@
   row    5 exec-8e77da47-ed05-4328-8c00-28d7e42ef310 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Succeeded } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3 recent=2] collapsed
   row    7 exec-d949ae90-3ccd-40eb-8921-6c7ce431fdf8 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3 recent=1] collapsed
   row    8 exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Deleted, added: 0, removed: 1, line: None }], state: Succeeded } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3 recent=0 RunCounts { commands: 0, edits: 3, reads: 0, searches: 0, subagents: 0, other: 0 }]
-  row   10 turn:1 TurnEnd { duration_ms: Some(10348), cost_usd: None, failed: false }
+  row   10 turn:1 TurnEnd { duration_ms: Some(10348), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -96,7 +96,7 @@
      7 exec-d949ae90-3ccd-40eb-8921-6c7ce431fdf8 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3 recent=1] collapsed
      8 exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Deleted, added: 0, removed: 1, line: None }], state: Succeeded } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3 recent=0 RunCounts { commands: 0, edits: 3, reads: 0, searches: 0, subagents: 0, other: 0 }]
      9 msg_0fdbb478bf498617016ab72921bbac87d2838294812ce8b3c3 Prose { text: [Text("DONE")], streaming: false, working_note: false }
-    10 turn:1 TurnEnd { duration_ms: Some(10348), cost_usd: None, failed: false }
+    10 turn:1 TurnEnd { duration_ms: Some(10348), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 12922, window_tokens: Some(258400), percent: Some(5), near_full: false }) sign-in None
 == settings

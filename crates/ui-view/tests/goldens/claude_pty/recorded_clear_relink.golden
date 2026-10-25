@@ -10,7 +10,7 @@
 ## 25 recorded 23: fact Transcript type=assistant uuid=67516796-dd9c-482d-8786-2a1948429361
   row    4 67516796-dd9c-482d-8786-2a1948429361 Prose { text: [Text("READY_FOR_RELINK")], streaming: false, working_note: false }
 ## 28 recorded 26: fact Transcript type=system subtype=turn_duration uuid=5d2eb5aa-52a8-4761-b3fc-87f5322376bf
-  row    5 turn:1 TurnEnd { duration_ms: Some(1725), cost_usd: None, failed: false }
+  row    5 turn:1 TurnEnd { duration_ms: Some(1725), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 32 recorded 30: fact Hook hook_event_name=SessionStart
   row    6 boundary:2 Boundary { kind: Cleared, cause: "" }
@@ -19,7 +19,7 @@
      2 410435d4-7294-4bf6-a76b-f6cd41757813 Prompt { text: [Text("Reply exactly READY_FOR_RELINK and nothing else.")], steered: false }
      3 21907f08-88b6-43be-aeb1-3a2b186e3eef Thinking { text: "", open: false, duration_ms: Some(1574) }
      4 67516796-dd9c-482d-8786-2a1948429361 Prose { text: [Text("READY_FOR_RELINK")], streaming: false, working_note: false }
-     5 turn:1 TurnEnd { duration_ms: Some(1725), cost_usd: None, failed: false }
+     5 turn:1 TurnEnd { duration_ms: Some(1725), failed: false }
      6 boundary:2 Boundary { kind: Cleared, cause: "" }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None

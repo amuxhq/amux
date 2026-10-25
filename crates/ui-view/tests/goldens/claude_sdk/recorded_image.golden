@@ -23,7 +23,7 @@
   row    7 msg_011CfREFs6PwobXFrxsJ1d8W:1 Prose { text: [Text("Yes, they are the **same image**. Both are identical solid red squares.")], streaming: false, working_note: false }
 ## 30 recorded 29: fact Stream type=result subtype=success uuid=acfa7de7-ecf3-42de-81f6-519e0b8ec56d
   row    5 toolu_01Afb6dgP2n3vt4oAb6wKGn2 Image { image: Some(BlobRef { hash: [13, 188, 137, 79, 133, 238, 125, 12, 106, 7, 238, 253, 141, 85, 231, 43, 84, 34, 114, 38, 133, 218, 117, 229, 18, 219, 233, 73, 35, 210, 211, 35], name: "", mime: "image/png", size: 99 }), path: "<MACHINE_PATH>", generated: false } run[toolu_01Afb6dgP2n3vt4oAb6wKGn2..toolu_01Afb6dgP2n3vt4oAb6wKGn2 x1 recent=0 RunCounts { comm…
-  row    8 turn:1 TurnEnd { duration_ms: Some(4690), cost_usd: Some(0.029189599999999996), failed: false }
+  row    8 turn:1 TurnEnd { duration_ms: Some(4690), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -33,7 +33,7 @@
      5 toolu_01Afb6dgP2n3vt4oAb6wKGn2 Image { image: Some(BlobRef { hash: [13, 188, 137, 79, 133, 238, 125, 12, 106, 7, 238, 253, 141, 85, 231, 43, 84, 34, 114, 38, 133, 218, 117, 229, 18, 219, 233, 73, 35, 210, 211, 35], name: "", mime: "image/png", size: 99 }), path: "<MACHINE_PATH>", generated: false } run[toolu_01Afb6dgP2n3vt4oAb6wKGn2..toolu_01Afb6dgP2n3vt4oAb6wKGn2 x1 recent=0 RunCounts { comm…
      6 msg_011CfREFs6PwobXFrxsJ1d8W:0 Thinking { text: "", open: false, duration_ms: Some(1332) }
      7 msg_011CfREFs6PwobXFrxsJ1d8W:1 Prose { text: [Text("Yes, they are the **same image**. Both are identical solid red squares.")], streaming: false, working_note: false }
-     8 turn:1 TurnEnd { duration_ms: Some(4690), cost_usd: Some(0.029189599999999996), failed: false }
+     8 turn:1 TurnEnd { duration_ms: Some(4690), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "plugin:stripe:stripe", error: "", needs_auth: true }, ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 26573, window_tokens: Some(200000), percent: Some(13), near_full: false }) sign-in None
 == settings

@@ -176,7 +176,8 @@ public struct NewAgent: View {
         Button { model.browsing = true } label: {
             FieldRow(
                 label: String(localized: "Directory"),
-                value: model.directory.isEmpty ? String(localized: "Choose") : model.directory,
+                value: model.directory.isEmpty
+                    ? String(localized: "Choose") : PlaceNames.path(model.directory),
                 mono: !model.directory.isEmpty)
         }
         .buttonStyle(.amuxRow)
@@ -575,7 +576,7 @@ public struct NewAgentDirectories: View {
                     Text(project.name)
                         .designFont(.identifier, design)
                         .foregroundStyle(design.ink.color)
-                    Text(project.path)
+                    Text(PlaceNames.path(project.path))
                         .designFont(.monoSmall, design)
                         .foregroundStyle(design.inkFaint.color)
                         .lineLimit(1)

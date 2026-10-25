@@ -84,7 +84,7 @@
   row    7 toolu_01Vc9B91WwArPGgg7nCq56LW Command { command: "find /private<MACHINE_PATH> -name \"README.md\" -type f", state: Denied, exit_code: None, output_head: ["the specification did not authorize this request"], more_lines: 0, output_trimmed: false, output_tail: ["the specification did not authorize this request"], duration_ms: Some(8) } run[toolu_01YZdkAEMaZC2TZ8SXM2whGG..toolu_01Vc9B91WwArPGgg7…
   row   10 toolu_018pebhcRLtZwWorTmMSCYGB Command { command: "ls -la", state: Succeeded, exit_code: None, output_head: ["total 0", "drwxr-xr-x@ 2 jlw  staff   64  6 Sep 01:34 .", "drwxr-xr-x@ 5 jlw  staff  160  6 Sep 01:34 .."], more_lines: 0, output_trimmed: false, output_tail: ["total 0", "drwxr-xr-x@ 2 jlw  staff   64  6 Sep 01:34 .", "drwxr-xr-x@ 5 jlw  staff  160  6 Sep 01:34 .."], duration_ms: Som…
   row   14 toolu_0136AgDZJPeDWaegLP63t1M4 Explore { verb: Search, subject: "select:ExitPlanMode", state: Succeeded, result: "" } run[toolu_0136AgDZJPeDWaegLP63t1M4..toolu_0136AgDZJPeDWaegLP63t1M4 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
-  row   19 turn:1 TurnEnd { duration_ms: Some(18758), cost_usd: Some(0.0532914), failed: false }
+  row   19 turn:1 TurnEnd { duration_ms: Some(18758), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 90 recorded 89: input stdin-6
   row   20 73746469-6e2d-4600-8000-000000000000 Prompt { text: [Text("Plan changing README.md's only line from CURRENT to MANUAL, then call ExitPlanMode. Do not ask questions. Once approved, do not edit; reply exactly MANUAL_APPROVED.")], steered: false }
@@ -109,7 +109,7 @@
 ## 120 recorded 119: fact Stream type=assistant uuid=db388450-0b23-4afc-9cef-059bc3b9f55a
   row   25 msg_011CemAk91mkTNq5nAMMETcX:1 Prose { text: [Text("MANUAL_APPROVED")], streaming: false, working_note: false }
 ## 122 recorded 121: fact Stream type=result subtype=success uuid=e3d0426f-bb38-4b65-9762-8e165091ef38
-  row   26 turn:2 TurnEnd { duration_ms: Some(8028), cost_usd: Some(0.0698357), failed: false }
+  row   26 turn:2 TurnEnd { duration_ms: Some(8028), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 127 recorded 126: input stdin-9
   row   27 73746469-6e2d-4900-8000-000000000000 Prompt { text: [Text("Plan changing README.md's only line from CURRENT to REVISED, then call ExitPlanMode. Do not ask questions.")], steered: false }
@@ -148,14 +148,14 @@
     16 toolu_01DCjanY6a1x2v98zG1JDjR9 Ask(Plan { title: Some("Plan: Change README.md line from CURRENT to AUTO"), body: "\n## Context\nREADME.md currently contains a single line with the text \"CURRENT\" that needs to be updated to \"AUTO\".\n\n## Approach\nReplace the only line in README.md from \"CURRENT\" to \"AUTO\".\n\n## Files to modify\n- README.md\n\n## Verification\nAfter the change, README…
     17 msg_011CemAjYTPDxNdYUo5EdGBq:0 Thinking { text: "", open: false, duration_ms: Some(1682) }
     18 msg_011CemAjYTPDxNdYUo5EdGBq:1 Prose { text: [Text("AUTO_APPROVED")], streaming: false, working_note: false }
-    19 turn:1 TurnEnd { duration_ms: Some(18758), cost_usd: Some(0.0532914), failed: false }
+    19 turn:1 TurnEnd { duration_ms: Some(18758), failed: false }
     20 73746469-6e2d-4600-8000-000000000000 Prompt { text: [Text("Plan changing README.md's only line from CURRENT to MANUAL, then call ExitPlanMode. Do not ask questions. Once approved, do not edit; reply exactly MANUAL_APPROVED.")], steered: false }
     21 msg_011CemAjfdVYojrZ5mxdZiL2:0 Thinking { text: "", open: false, duration_ms: Some(2242) }
     22 msg_011CemAk2BzzPjNMh8RDbkUv:0 Thinking { text: "", open: false, duration_ms: Some(4026) }
     23 toolu_013F4mueVBPPP7wHrHLWsPXk Ask(Plan { title: Some("Plan: Change README.md line from CURRENT to MANUAL"), body: "\n## Context\nREADME.md currently contains a single line with the text \"CURRENT\" that needs to be updated to \"MANUAL\".\n\n## Approach\nReplace the only line in README.md from \"CURRENT\" to \"MANUAL\".\n\n## Files to modify\n- README.md\n\n## Verification\nAfter the change, …
     24 msg_011CemAk91mkTNq5nAMMETcX:0 Thinking { text: "", open: false, duration_ms: Some(1653) }
     25 msg_011CemAk91mkTNq5nAMMETcX:1 Prose { text: [Text("MANUAL_APPROVED")], streaming: false, working_note: false }
-    26 turn:2 TurnEnd { duration_ms: Some(8028), cost_usd: Some(0.0698357), failed: false }
+    26 turn:2 TurnEnd { duration_ms: Some(8028), failed: false }
     27 73746469-6e2d-4900-8000-000000000000 Prompt { text: [Text("Plan changing README.md's only line from CURRENT to REVISED, then call ExitPlanMode. Do not ask questions.")], steered: false }
     28 msg_011CemAkFzxW42ipk68FCyqC:0 Thinking { text: "", open: false, duration_ms: Some(2329) }
     29 msg_011CemAkcJ6R4G2ESyzAYCzU:0 Thinking { text: "", open: false, duration_ms: Some(3843) }

@@ -20,7 +20,7 @@
 ## 13 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"id":"msg-2","phase":"final_answer","text":"DONE","type":"agentMessage"},"threadId":"t1","turnId":"turn-1"}}}
   row    5 msg-2 Prose { text: [Text("DONE")], streaming: false, working_note: false }
 ## 15 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"completed"}}}}
-  row    6 turn:1 TurnEnd { duration_ms: Some(2000), cost_usd: None, failed: false }
+  row    6 turn:1 TurnEnd { duration_ms: Some(2000), failed: false }
 ## 18 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"id":"msg-3","phase":"final_answer","text":"","type":"agentMessage"},"startedAtMs":null,"threadId":"t1","turnId":"turn-2"}}}
   row    7 msg-3 Prose { text: [], streaming: true, working_note: false }
 ## 19 fact {"channel":"rpc","json":{"method":"item/agentMessage/delta","params":{"delta":"DONE","itemId":"msg-3","threadId":"t1","turnId":"turn-2"}}}
@@ -28,7 +28,7 @@
 ## 20 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"id":"msg-3","phase":"final_answer","text":"DONE","type":"agentMessage"},"threadId":"t1","turnId":"turn-2"}}}
   row    7 msg-3 Prose { text: [Text("DONE")], streaming: false, working_note: false }
 ## 21 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-2","status":"completed"}}}}
-  row    8 turn:2 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+  row    8 turn:2 TurnEnd { duration_ms: Some(0), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -36,9 +36,9 @@
      3 agent-message:6531 AgentMessage { from: "reviewer", kind: Message, text: [Text("Also say DONE at the end.")], to: "", sent: Unspecified, rejection: "" }
      4 msg-1 Prose { text: [Text("1 2 3 4 5 6 7 8 9 10")], streaming: false, working_note: false }
      5 msg-2 Prose { text: [Text("DONE")], streaming: false, working_note: false }
-     6 turn:1 TurnEnd { duration_ms: Some(2000), cost_usd: None, failed: false }
+     6 turn:1 TurnEnd { duration_ms: Some(2000), failed: false }
      7 msg-3 Prose { text: [Text("DONE")], streaming: false, working_note: false }
-     8 turn:2 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+     8 turn:2 TurnEnd { duration_ms: Some(0), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

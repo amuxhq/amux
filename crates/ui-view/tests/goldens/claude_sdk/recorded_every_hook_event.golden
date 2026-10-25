@@ -11,14 +11,14 @@
 ## 22 recorded 21: fact Stream type=assistant uuid=66a17c5a-d3d2-4d0d-a91f-ffd2710d82ef
   row    4 msg_011CeW3WAiT9DpX3CM5acFcg:1 Prose { text: [Text("HOOKS_OK")], streaming: false, working_note: false }
 ## 26 recorded 25: fact Stream type=result subtype=success uuid=de376580-51c1-4abd-9e6b-43c134f83bca
-  row    5 turn:1 TurnEnd { duration_ms: Some(1279), cost_usd: Some(0.022556999999999997), failed: false }
+  row    5 turn:1 TurnEnd { duration_ms: Some(1279), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Reply with exactly HOOKS_OK and nothing else.")], steered: false }
      3 msg_011CeW3WAiT9DpX3CM5acFcg:0 Thinking { text: "The user is asking me to reply with exactly \"HOOKS_OK\" and nothing else. This is a direct, specific instruction. I should follow it exactly as written.", open: false, duration_ms: Some(1786) }
      4 msg_011CeW3WAiT9DpX3CM5acFcg:1 Prose { text: [Text("HOOKS_OK")], streaming: false, working_note: false }
-     5 turn:1 TurnEnd { duration_ms: Some(1279), cost_usd: Some(0.022556999999999997), failed: false }
+     5 turn:1 TurnEnd { duration_ms: Some(1279), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: Some(UsageView { blocked: false, windows: [UsageWindowView { label: FiveHour, used_percent: 19.0, resets_at_ms: Some(1787970000000), state: Unknown }, UsageWindowView { label: Weekly { model: None }, used_percent: 83.0, resets_at_ms: Some(1787976000000), state: NearLimit }], credits: None }), changes: None }
 == context Some(ContextView { used_tokens: 27910, window_tokens: Some(200000), percent: Some(13), near_full: false }) sign-in None
 == settings

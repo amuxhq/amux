@@ -64,6 +64,31 @@ an X profile's header, which keeps its words clear of the profile picture
 in the bottom-left corner. Both set their words in Instrument Sans, the
 launch film's face, from `fonts/` under its Open Font License.
 
+## The App Store's screenshots
+
+```sh
+wt exec amux/<tree> -- scripts/with iphone -- just scene store
+just store
+```
+
+`just scene store` starts the scene afresh and, under the simulator lease,
+photographs the phone's screens the App Store frames are made from, dark:
+the fleet, flaky-sync-test's request, checkout-redesign's chat with the run
+that starts its subagents open, its review page with a comment, the
+new-agent sheet and studio's page under Hosts. `just store` composes seven
+portrait frames at 1320x2868, the 6.9-inch iPhone's size, into
+`~/.local/state/amux-marketing/<tree>/store/`, with
+`panorama-preview.png` and `rest-preview.png` to look them over side by
+side.
+
+The first three are one panorama: search results show them side by side,
+so they share one stage and one flight trail in the logo's colours. Each
+frame lifts the part that matters out of the phone, larger, so it reads at
+the size of a search result. The lock screen on the second frame is drawn,
+since a simulator cannot be given permission to show a notification; it is
+set in the system's SF Pro, so `just store` runs on a Mac. Headlines share
+one size, and the script refuses one too long for a frame.
+
 ## Claude Code's and Codex's own interfaces
 
 ```sh

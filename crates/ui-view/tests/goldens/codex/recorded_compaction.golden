@@ -24,7 +24,7 @@
 ## 43 recorded 42: fact Rpc method=item/completed
   row    3 msg_05a870aea1db9da3016ab72946e3c887d2a8b811fa7bb04434 Prose { text: [Text("CODEX_SPEC_BEFORE_COMPACT")], streaming: false, working_note: false }
 ## 49 recorded 48: fact Rpc method=turn/completed
-  row    4 turn:1 TurnEnd { duration_ms: Some(4065), cost_usd: None, failed: false }
+  row    4 turn:1 TurnEnd { duration_ms: Some(4065), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 51 recorded 50: input stdin-5
   row    5 prompt:737464696e2d35 Prompt { text: [Text("/compact")], steered: false }
@@ -32,16 +32,16 @@
 ## 63 recorded 62: fact Rpc method=item/completed
   row    6 boundary:2 Boundary { kind: Compacted, cause: "" }
 ## 67 recorded 66: fact Rpc method=turn/completed
-  row    7 turn:2 TurnEnd { duration_ms: Some(2991), cost_usd: None, failed: false }
+  row    7 turn:2 TurnEnd { duration_ms: Some(2991), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:737464696e2d34 Prompt { text: [Text("Reply with exactly CODEX_SPEC_BEFORE_COMPACT and nothing else.")], steered: false }
      3 msg_05a870aea1db9da3016ab72946e3c887d2a8b811fa7bb04434 Prose { text: [Text("CODEX_SPEC_BEFORE_COMPACT")], streaming: false, working_note: false }
-     4 turn:1 TurnEnd { duration_ms: Some(4065), cost_usd: None, failed: false }
+     4 turn:1 TurnEnd { duration_ms: Some(4065), failed: false }
      5 prompt:737464696e2d35 Prompt { text: [Text("/compact")], steered: false }
      6 boundary:2 Boundary { kind: Compacted, cause: "" }
-     7 turn:2 TurnEnd { duration_ms: Some(2991), cost_usd: None, failed: false }
+     7 turn:2 TurnEnd { duration_ms: Some(2991), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 4567, window_tokens: Some(258400), percent: Some(1), near_full: false }) sign-in None
 == settings

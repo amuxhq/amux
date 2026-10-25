@@ -15,13 +15,13 @@
   row    3 error:01a0db9b-30b6-7653-91ca-94bfbbd5b898 Error { error_kind: "httpConnectionFailed", message: "Connection failed: error sending request", attempts: 0, gave_up: true } attention
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 33 recorded 32: fact Rpc method=turn/completed
-  row    4 turn:1 TurnEnd { duration_ms: Some(3017), cost_usd: None, failed: true }
+  row    4 turn:1 TurnEnd { duration_ms: Some(3017), failed: true }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:737464696e2d34 Prompt { text: [Text("Reply with exactly CODEX_SPEC_UNREACHABLE.")], steered: false }
      3 error:01a0db9b-30b6-7653-91ca-94bfbbd5b898 Error { error_kind: "httpConnectionFailed", message: "Connection failed: error sending request", attempts: 0, gave_up: true } attention
-     4 turn:1 TurnEnd { duration_ms: Some(3017), cost_usd: None, failed: true }
+     4 turn:1 TurnEnd { duration_ms: Some(3017), failed: true }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

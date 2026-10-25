@@ -588,7 +588,7 @@ nothing is inferred.
   note on a setting amux changed) draws nothing.
 - **Turns.** A turn starts with a submission or a `message_start`, and ends on
   the `result` line: completed, interrupted, or failed (with an error item
-  for a non-success subtype), with its duration and cost on the turn item.
+  for a non-success subtype), with its duration on the turn item.
   The result dismisses any ask still open.
 - **Boundaries.** Claude repeats its `init` at every turn; only a process
   start or a changed session id is a boundary, the latter a fork.

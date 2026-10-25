@@ -160,7 +160,7 @@ codex = { mark = "partial", carriers = ["item:verdict"], golden = [" verdict "] 
 id = "C20"
 item = "Turn finished"
 claude_pty = { mark = "full", carriers = ["item:turn"], golden = [" turn final ", "TURN_OUTCOME_COMPLETED"] }
-claude_sdk = { mark = "full", carriers = ["item:turn"], golden = [" turn final ", "TURN_OUTCOME_COMPLETED", " cost="] }
+claude_sdk = { mark = "full", carriers = ["item:turn"], golden = [" turn final ", "TURN_OUTCOME_COMPLETED"] }
 codex = { mark = "full", carriers = ["item:turn"], golden = [" turn final ", "TURN_OUTCOME_COMPLETED"] }
 
 [[row]]

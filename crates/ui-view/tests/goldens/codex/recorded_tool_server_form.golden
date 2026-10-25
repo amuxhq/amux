@@ -178,7 +178,7 @@
 ## 190 recorded 189: fact Rpc method=turn/completed
   row    6 exec-5adffbb8-ae90-4058-9833-1a29154d8128 ToolCall { server: "spec", tool: "ask_the_operator", fact: "BLUE", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"BLUE\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-5adffbb8-ae90-4058-9833-1a29154d8128..exec-5adffbb8-ae90-4058-9833-1a29154d8128 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, s…
   row    8 exec-2656a517-59e9-4a69-b383-8c58ae2f102c ToolCall { server: "spec", tool: "ask_the_operator", fact: "LINK", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"elicitation cancel\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-2656a517-59e9-4a69-b383-8c58ae2f102c..exec-2656a517-59e9-4a69-b383-8c58ae2f102c x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, …
-  row   11 turn:1 TurnEnd { duration_ms: Some(12559), cost_usd: None, failed: false }
+  row   11 turn:1 TurnEnd { duration_ms: Some(12559), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -191,7 +191,7 @@
      8 exec-2656a517-59e9-4a69-b383-8c58ae2f102c ToolCall { server: "spec", tool: "ask_the_operator", fact: "LINK", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"elicitation cancel\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-2656a517-59e9-4a69-b383-8c58ae2f102c..exec-2656a517-59e9-4a69-b383-8c58ae2f102c x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, …
      9 ask:3 Ask(Link { server: "<REDACTED_IDENTIFIER>", message: "Open the page to confirm.", url: "https://example.com/confirm", resolution: Cancelled })
     10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE` call returned: `BLUE`\n- `LINK` call returned: `elicitation cancel`")], streaming: false, working_note: false }
-    11 turn:1 TurnEnd { duration_ms: Some(12559), cost_usd: None, failed: false }
+    11 turn:1 TurnEnd { duration_ms: Some(12559), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 13539, window_tokens: Some(258400), percent: Some(5), near_full: false }) sign-in None
 == settings

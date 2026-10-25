@@ -434,6 +434,30 @@ record unreadable to every other checkout.
 Submitting for review stays a person's act in App Store Connect, with the
 screenshots, the notes and the reviewers already decided.
 
+### Screenshots
+
+The listing's iPhone screenshots belong to an App Store version, and a
+version's listing is fixed once it is live: new screenshots go on the next
+version, before it is submitted.
+
+```sh
+just store                          # compose the seven frames (marketing/README.md)
+just ios screenshots --dry-run      # say what would change
+just ios screenshots                # or --version X.Y.Z for a version not made yet
+```
+
+`just ios screenshots` signs in with the same App Store Connect key as a
+release, finds the version that can still change (not yet submitted, or sent
+back by review), and replaces its en-US 6.9-inch screenshots with the seven
+frames, in order. Apple shrinks that set for every smaller iPhone, so it is
+the only one uploaded, and the listing's other iPhone sets are removed once
+it is whole: an older 6.5-inch set left in place would go on showing on
+6.5-inch phones. iPad sets are left alone. The API calls the 6.9-inch set
+`APP_IPHONE_67`, the largest iPhone type its reference lists;
+`--display-type` names another if Apple adds one. It attaches no build and
+submits nothing: in App Store Connect, the version still needs its build and
+a person to submit it.
+
 ### One-time operator setup
 
 Everything here is done once, in a browser, by a person. Afterwards releases

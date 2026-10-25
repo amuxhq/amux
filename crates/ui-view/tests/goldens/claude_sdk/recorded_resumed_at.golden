@@ -11,7 +11,7 @@
 ## 108 recorded 107: fact Stream type=assistant uuid=3e6b0976-1e34-4d51-9fa1-afbdaf443733
   row    4 msg_011CeXyKpGfAsJfgXs37stGJ:1 Prose { text: [Text("REMEMBERED")], streaming: false, working_note: false }
 ## 110 recorded 109: fact Stream type=result subtype=success uuid=d33f2408-ea0b-4ffc-8a40-799c120337e9
-  row    5 turn:1 TurnEnd { duration_ms: Some(2137), cost_usd: Some(0.022604999999999997), failed: false }
+  row    5 turn:1 TurnEnd { duration_ms: Some(2137), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 112 recorded 111: input stdin-3
   row    6 73746469-6e2d-4300-8000-000000000000 Prompt { text: [Text("Now also remember the word CORMORANT. Reply with exactly REMEMBERED.")], steered: false }
@@ -21,7 +21,7 @@
 ## 128 recorded 127: fact Stream type=assistant uuid=dea61fa2-9460-4708-89c6-09dec4435905
   row    8 msg_011CeXyKyX1t4RuCoVfW18S9:1 Prose { text: [Text("REMEMBERED")], streaming: false, working_note: false }
 ## 130 recorded 129: fact Stream type=result subtype=success uuid=5ad42b81-15ee-4494-b880-2eb1d61b5e62
-  row    9 turn:2 TurnEnd { duration_ms: Some(1511), cost_usd: Some(0.0258283), failed: false }
+  row    9 turn:2 TurnEnd { duration_ms: Some(1511), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 132 recorded 131: input stdin-5
   row   10 73746469-6e2d-4500-8000-000000000000 Prompt { text: [Text("List every word I asked you to remember, and nothing else.")], steered: false }
@@ -31,22 +31,22 @@
 ## 139 recorded 138: fact Stream type=assistant uuid=c464d8f0-8ae6-4422-91ec-46e4cd2e8812
   row   12 msg_011CeXyLBWao6sWd7QVvXTek:1 Prose { text: [Text("ALBATROSS")], streaming: false, working_note: false }
 ## 141 recorded 140: fact Stream type=result subtype=success uuid=5f6d7739-cfeb-47ac-8d51-9d613bd437d2
-  row   13 turn:3 TurnEnd { duration_ms: Some(1542), cost_usd: Some(0.0029433000000000003), failed: false }
+  row   13 turn:3 TurnEnd { duration_ms: Some(1542), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Remember the word ALBATROSS. Reply with exactly REMEMBERED.")], steered: false }
      3 msg_011CeXyKpGfAsJfgXs37stGJ:0 Thinking { text: "The user is asking me to remember the word \"ALBATROSS\" and reply with exactly \"REMEMBERED\". This is a straightforward instruction.\n\nHowever, I should also consider whether I should save this to memory. Looking at the memory instructions, ephemeral task details and current conversation context should not be saved to memory. This appears to…
      4 msg_011CeXyKpGfAsJfgXs37stGJ:1 Prose { text: [Text("REMEMBERED")], streaming: false, working_note: false }
-     5 turn:1 TurnEnd { duration_ms: Some(2137), cost_usd: Some(0.022604999999999997), failed: false }
+     5 turn:1 TurnEnd { duration_ms: Some(2137), failed: false }
      6 73746469-6e2d-4300-8000-000000000000 Prompt { text: [Text("Now also remember the word CORMORANT. Reply with exactly REMEMBERED.")], steered: false }
      7 msg_011CeXyKyX1t4RuCoVfW18S9:0 Thinking { text: "The user is asking me to remember the word \"CORMORANT\" and reply with exactly \"REMEMBERED\". This is another straightforward instruction, similar to the previous one.\n\nAgain, this is an ephemeral task detail within the current conversation, so I won't save it to memory. I'll just reply with \"REMEMBERED\" as instructed.", open: false, dura…
      8 msg_011CeXyKyX1t4RuCoVfW18S9:1 Prose { text: [Text("REMEMBERED")], streaming: false, working_note: false }
-     9 turn:2 TurnEnd { duration_ms: Some(1511), cost_usd: Some(0.0258283), failed: false }
+     9 turn:2 TurnEnd { duration_ms: Some(1511), failed: false }
     10 73746469-6e2d-4500-8000-000000000000 Prompt { text: [Text("List every word I asked you to remember, and nothing else.")], steered: false }
     11 msg_011CeXyLBWao6sWd7QVvXTek:0 Thinking { text: "The user asked me to remember the word \"ALBATROSS\" and reply with exactly \"REMEMBERED\". Then they asked me to list every word they asked me to remember, and nothing else.\n\nSo the word they asked me to remember is: ALBATROSS\n\nI should list just this word and nothing else.", open: false, duration_ms: None }
     12 msg_011CeXyLBWao6sWd7QVvXTek:1 Prose { text: [Text("ALBATROSS")], streaming: false, working_note: false }
-    13 turn:3 TurnEnd { duration_ms: Some(1542), cost_usd: Some(0.0029433000000000003), failed: false }
+    13 turn:3 TurnEnd { duration_ms: Some(1542), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 24476, window_tokens: Some(200000), percent: Some(12), near_full: false }) sign-in None
 == settings

@@ -48,6 +48,6 @@ snapshot WORKING queue=[] working_on="Track this work with your task or todo too
 ## 64 recorded 63: fact Stream type=assistant uuid=c59899ef-19c3-4599-94e1-4ff5deb71872
 item msg_011CfREHpn3Hk84LGLeepJ2T:1 message final at=1790388238941 text="Done."
 ## 66 recorded 65: fact Stream type=result subtype=success uuid=86afc84d-d2b5-46c6-9b57-77002f1f48ff
-item turn:1 turn final at=1790388238946 text="" #1 TURN_OUTCOME_COMPLETED started=1790388222829 cost=0.044501
+item turn:1 turn final at=1790388238946 text="" #1 TURN_OUTCOME_COMPLETED started=1790388222829
 snapshot IDLE queue=[] working_on="Track this work with your task or todo tool: create three tasks named Draft, Review and Publish. Then mark Draft in progress, then mark Draft completed. Do nothing else, then stop." at=1790388238946 asks=[] session=414494bb-f6c0-4fa2-a4d4-5613f7ebbcff model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=28640/200000 tasks=[1:TASK_LIST_STATUS_COMPLETED:"Draft",2:TASK_LIST_STATUS_PENDING:"Review",3:TASK_LIST_STATUS_PENDING:"Publish"] active=[] usage=ok 5h:2%(ok) 7d:35%(?) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_NEEDS_AUTH,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Claude Docs:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CfREHpn3Hk84LGLeepJ2T:1

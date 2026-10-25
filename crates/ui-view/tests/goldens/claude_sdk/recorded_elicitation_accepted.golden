@@ -40,7 +40,7 @@
   row    7 msg_011CeiyN1wiM3Dzg9UpjPo5J:1 Prose { text: [Text("PELICAN")], streaming: false, working_note: false }
 ## 36 recorded 35: fact Stream type=result subtype=success uuid=e3dade6a-329b-4f67-9baf-e251bb864ad5
   row    4 toolu_0118rZrfDTg63Kst5bzq3YSn ToolCall { server: "external", tool: "ask_the_operator", fact: "PELICAN", state: Succeeded, result: "PELICAN" } run[toolu_0118rZrfDTg63Kst5bzq3YSn..toolu_0118rZrfDTg63Kst5bzq3YSn x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: false }
-  row    8 turn:1 TurnEnd { duration_ms: Some(4112), cost_usd: Some(0.055543), failed: false }
+  row    8 turn:1 TurnEnd { duration_ms: Some(4112), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -50,7 +50,7 @@
      5 ask:864d404c-3373-4c07-a136-f5e9eb9cf488 Ask(Form { server: "external", message: "Confirm the word PELICAN.", fields: ["confirmed"], resolution: Answered })
      6 msg_011CeiyN1wiM3Dzg9UpjPo5J:0 Thinking { text: "", open: false, duration_ms: Some(1058) }
      7 msg_011CeiyN1wiM3Dzg9UpjPo5J:1 Prose { text: [Text("PELICAN")], streaming: false, working_note: false }
-     8 turn:1 TurnEnd { duration_ms: Some(4112), cost_usd: Some(0.055543), failed: false }
+     8 turn:1 TurnEnd { duration_ms: Some(4112), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 25313, window_tokens: Some(200000), percent: Some(12), near_full: false }) sign-in None
 == settings

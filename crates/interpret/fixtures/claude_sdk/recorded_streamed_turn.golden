@@ -39,6 +39,6 @@ append msg_011CeW3Epe3BZoTMYGXSxojn:1 "SEVEN"
 ## 40 recorded 39: fact Stream type=assistant uuid=0dad14cf-2826-48ca-9126-df682f306a1b
 item msg_011CeW3Epe3BZoTMYGXSxojn:1 message final at=1787960853970 text="SEVEN"
 ## 47 recorded 46: fact Stream type=result subtype=success uuid=560a5bf0-46bc-427e-ba16-a6d8558c4e56
-item turn:1 turn final at=1787960853991 text="" #1 TURN_OUTCOME_COMPLETED started=1787960852372 cost=0.022755
+item turn:1 turn final at=1787960853991 text="" #1 TURN_OUTCOME_COMPLETED started=1787960852372
 snapshot IDLE queue=[] working_on="Think briefly about the number seven, then reply with exactly SEVEN." at=1787960853991 asks=[] session=0f880130-cfff-4406-8614-8f81af6ba205 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=27910/200000 tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CeW3Epe3BZoTMYGXSxojn:1

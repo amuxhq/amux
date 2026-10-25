@@ -180,7 +180,7 @@ enum ComponentCatalog {
             row("image", height: 230, r("i1", 23, .image(path: "host-list-mock.png", generated: true, image: F.photo))),
             row("slash-output", height: 150, r("o1", 24, .slashOutput(
                 command: "/cost", args: "", output: "Total cost: $0.42\nTotal duration: 18m 3s"))),
-            row("turn-end", r("z1", 25, .turnEnd(failed: false, costUsd: 0.42, durationMs: 102_000))),
+            row("turn-end", r("z1", 25, .turnEnd(failed: false, durationMs: 102_000))),
             row("stopped", r("z2", 26, .stopped)),
             row("compaction", r("z3", 27, .compaction(automatic: true, tokensAfter: 22_000, tokensBefore: 148_000))),
             row("error", height: 140, expanded: false, r("z4", 28, .error(
@@ -1202,7 +1202,7 @@ enum CatalogFixtures {
               decision: Decision(outcome: .denied, elsewhere: false, granted: nil, note: "Use cargo clean instead")),
         ], failed: ["c13"]) + [
             r("c15", 15, .prose(text: [.text("Done. The three arms are one now, and the new test asserts on the single string. Clippy still flags an unused import I left for you to decide on.")], streaming: false, workingNote: false)),
-            r("c16", 16, .turnEnd(failed: false, costUsd: nil, durationMs: 102_000)),
+            r("c16", 16, .turnEnd(failed: false, durationMs: 102_000)),
         ]
     }()
 

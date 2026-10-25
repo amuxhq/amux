@@ -69,7 +69,7 @@
   row    7 msg_090afabc340baac3016a93483e541887d29bcf6be0423a19d9 Prose { text: [Text("DONE")], streaming: false, working_note: false }
 ## 85 recorded 84: fact Rpc method=turn/completed
   row    5 exec-8ed0fba0-f88b-452f-911c-79283dcb350f Command { command: "/usr/bin/touch <MACHINE_PATH>", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-8ed0fba0-f88b-452f-911c-79283dcb350f..exec-8ed0fba0-f88b-452f-911c-79283dcb350f x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents…
-  row    8 turn:1 TurnEnd { duration_ms: Some(8226), cost_usd: None, failed: false }
+  row    8 turn:1 TurnEnd { duration_ms: Some(8226), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -79,7 +79,7 @@
      5 exec-8ed0fba0-f88b-452f-911c-79283dcb350f Command { command: "/usr/bin/touch <MACHINE_PATH>", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-8ed0fba0-f88b-452f-911c-79283dcb350f..exec-8ed0fba0-f88b-452f-911c-79283dcb350f x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents…
      6 rs_090afabc340baac3016a93483e36b087d28bfb63c75918582e Thinking { text: "", open: false, duration_ms: Some(1561) }
      7 msg_090afabc340baac3016a93483e541887d29bcf6be0423a19d9 Prose { text: [Text("DONE")], streaming: false, working_note: false }
-     8 turn:1 TurnEnd { duration_ms: Some(8226), cost_usd: None, failed: false }
+     8 turn:1 TurnEnd { duration_ms: Some(8226), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 14661, window_tokens: Some(258400), percent: Some(5), near_full: false }) sign-in None
 == settings

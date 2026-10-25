@@ -3661,7 +3661,6 @@ fn a_turn_ended_by_reply_instead_is_not_drawn_as_stopped() {
             turn_id: 1,
             outcome: wire::TurnOutcome::Interrupted as i32,
             started_at_ms: 500,
-            ..Default::default()
         }),
     );
     let state = codex_session(Phase::Working, vec![question, turn]);

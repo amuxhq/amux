@@ -11,14 +11,14 @@
 ## 18 recorded 17: fact Stream type=assistant uuid=b9929e4a-cf74-46f4-8d81-e7b867c6e625
   row    4 msg_011CeW3DobWKinE7b6G1yy9r:1 Prose { text: [Text("PONG")], streaming: false, working_note: false }
 ## 20 recorded 19: fact Stream type=result subtype=success uuid=976f58a1-eb3d-4087-ae36-33ba96ece845
-  row    5 turn:1 TurnEnd { duration_ms: Some(1198), cost_usd: Some(0.022533), failed: false }
+  row    5 turn:1 TurnEnd { duration_ms: Some(1198), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Reply with exactly PONG and nothing else.")], steered: false }
      3 msg_011CeW3DobWKinE7b6G1yy9r:0 Thinking { text: "The user is asking me to reply with exactly \"PONG\" and nothing else. This is a simple, direct instruction. I should follow it exactly as stated.", open: false, duration_ms: Some(1990) }
      4 msg_011CeW3DobWKinE7b6G1yy9r:1 Prose { text: [Text("PONG")], streaming: false, working_note: false }
-     5 turn:1 TurnEnd { duration_ms: Some(1198), cost_usd: Some(0.022533), failed: false }
+     5 turn:1 TurnEnd { duration_ms: Some(1198), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: Some(UsageView { blocked: false, windows: [UsageWindowView { label: FiveHour, used_percent: 19.0, resets_at_ms: Some(1787970000000), state: Unknown }, UsageWindowView { label: Weekly { model: None }, used_percent: 83.0, resets_at_ms: Some(1787976000000), state: NearLimit }], credits: None }), changes: None }
 == context Some(ContextView { used_tokens: 27906, window_tokens: Some(200000), percent: Some(13), near_full: false }) sign-in None
 == settings

@@ -44,7 +44,7 @@
   row    8 msg_029a3b95d86dbaa8016ab72f1a9b7887d28e6885f79ce0b102 Prose { text: [Text("DONE")], streaming: false, working_note: false }
 ## 72 recorded 71: fact Rpc method=turn/completed
   row    7 exec-a6e3d06e-be70-441f-ba72-8fb01c9007b0 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Moved { to: "<MACHINE_PATH>" }, added: 0, removed: 0, line: None }], state: Succeeded } run[exec-a6e3d06e-be70-441f-ba72-8fb01c9007b0..exec-a6e3d06e-be70-441f-ba72-8fb01c9007b0 x1 recent=0 RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }]
-  row    9 turn:1 TurnEnd { duration_ms: Some(24083), cost_usd: None, failed: false }
+  row    9 turn:1 TurnEnd { duration_ms: Some(24083), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -55,7 +55,7 @@
      6 rs_029a3b95d86dbaa8016ab72f110fd887d2b17785a166dbb5bc Thinking { text: "", open: false, duration_ms: Some(3911) }
      7 exec-a6e3d06e-be70-441f-ba72-8fb01c9007b0 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Moved { to: "<MACHINE_PATH>" }, added: 0, removed: 0, line: None }], state: Succeeded } run[exec-a6e3d06e-be70-441f-ba72-8fb01c9007b0..exec-a6e3d06e-be70-441f-ba72-8fb01c9007b0 x1 recent=0 RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }]
      8 msg_029a3b95d86dbaa8016ab72f1a9b7887d28e6885f79ce0b102 Prose { text: [Text("DONE")], streaming: false, working_note: false }
-     9 turn:1 TurnEnd { duration_ms: Some(24083), cost_usd: None, failed: false }
+     9 turn:1 TurnEnd { duration_ms: Some(24083), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 13800, window_tokens: Some(258400), percent: Some(5), near_full: false }) sign-in None
 == settings

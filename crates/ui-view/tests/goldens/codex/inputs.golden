@@ -38,7 +38,7 @@
 ## 30 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"id":"cc-1","type":"contextCompaction"},"threadId":"t1","turnId":"turn-3"}}}
   row   10 boundary:2 Boundary { kind: Compacted, cause: "" }
 ## 31 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-3","status":"completed"}}}}
-  row   11 turn:4 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+  row   11 turn:4 TurnEnd { duration_ms: Some(0), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 32 provider_exit {"code":1}
   row   12 boundary:3 Boundary { kind: Exited, cause: "the provider exited: exit code 1" }
@@ -58,7 +58,7 @@
      8 turn:3 Stopped
      9 prompt:7035 Prompt { text: [Text("/compact")], steered: false }
     10 boundary:2 Boundary { kind: Compacted, cause: "" }
-    11 turn:4 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
+    11 turn:4 TurnEnd { duration_ms: Some(0), failed: false }
     12 boundary:3 Boundary { kind: Exited, cause: "the provider exited: exit code 1" }
     13 agent-message:6539 AgentMessage { from: "lead", kind: Message, text: [Text("Status?")], to: "", sent: Unspecified, rejection: "" }
     14 boundary:4 Boundary { kind: Resumed, cause: "" }

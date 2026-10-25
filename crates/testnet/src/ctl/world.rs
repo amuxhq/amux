@@ -149,6 +149,7 @@ pub(crate) fn open(
                 host: declared.host.clone(),
                 size: "110x34".to_owned(),
                 theme: Theme::Dark,
+                palette: None,
                 name: None,
             },
         )?;

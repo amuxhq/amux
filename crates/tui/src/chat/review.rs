@@ -805,15 +805,14 @@ impl ReviewPage {
             .files
             .iter()
             .flat_map(|file| file.hunks.iter().flat_map(|hunk| &hunk.lines))
-            .flat_map(|line| [line.old_line, line.new_line])
-            .flatten()
+            .filter_map(|line| line.new_line.or(line.old_line))
             .max()
             .unwrap_or(0)
             .to_string()
             .len()
             .max(3);
-        // "▌ " + old + " " + new + " " + sign + " "
-        let gutter = 2 + digits * 2 + 4;
+        // "▌ " + number + " " + sign + " "
+        let gutter = 2 + digits + 3;
         let selected_target = self.target();
         let mut lines: Vec<Line<'static>> = Vec::new();
         let mut selected = (0, 0);
@@ -862,12 +861,35 @@ impl ReviewPage {
                 }
                 Target::Line { file, hunk, line } => {
                     let h = &self.doc.files[file].hunks[hunk];
-                    // Hunks apart by a blank line and their faint @@ line.
+                    // A hunk follows a blank. Where the patch leaves lines
+                    // out before it, a break says so: "⋯" in the number
+                    // column, git's name for where the hunk is, and a
+                    // hairline to the margin, as the phone's band does.
                     if line == 0 {
                         lines.push(Line::default());
-                        let mut header = Line::from(Span::raw("  "));
-                        push(&mut header, h.header.clone(), theme.faint(), width);
-                        lines.push(header);
+                        if h.skips {
+                            let mut gap = Line::from(Span::raw("  "));
+                            push(
+                                &mut gap,
+                                format!("{:>digits$}   ", "⋯"),
+                                theme.muted(),
+                                width,
+                            );
+                            if !h.scope.is_empty() {
+                                let room = width.saturating_sub(text::line_width(&gap) + 4);
+                                let scope = h.scope.replace('\t', "    ");
+                                push(
+                                    &mut gap,
+                                    text::clip_to_width(&scope, room),
+                                    theme.muted(),
+                                    width,
+                                );
+                                push(&mut gap, " ", theme.faint(), width);
+                            }
+                            let rule = width.saturating_sub(text::line_width(&gap) + 2);
+                            push(&mut gap, "─".repeat(rule), theme.hairline(), width);
+                            lines.push(gap);
+                        }
                     }
                     let diff_line = &h.lines[line];
                     let number = |n: Option<u32>| match n {
@@ -879,14 +901,12 @@ impl ReviewPage {
                         LineKind::Removed => ('-', theme.diff_removed()),
                         LineKind::Context => (' ', theme.diff_context()),
                     };
+                    // One column of numbers: a removed line by its old
+                    // number, every other by its new one, as on the phone.
                     let mut row = Line::from(bar);
                     push(
                         &mut row,
-                        format!(
-                            "{} {} ",
-                            number(diff_line.old_line),
-                            number(diff_line.new_line)
-                        ),
+                        format!("{} ", number(diff_line.new_line.or(diff_line.old_line))),
                         theme.muted(),
                         width,
                     );

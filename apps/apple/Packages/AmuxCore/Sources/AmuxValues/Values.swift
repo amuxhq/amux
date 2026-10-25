@@ -118,17 +118,22 @@ public struct Activity: Codable, Hashable, Sendable {
     public var kind: ActivityKind
     public var sinceMs: Int64
     public var elapsedMs: Int64
+    /// How long the turn has run, whatever the kind times: a client that
+    /// words a call in flight as the turn's work times the turn.
+    public var turnElapsedMs: Int64
 
-    public init(kind: ActivityKind, sinceMs: Int64, elapsedMs: Int64) {
+    public init(kind: ActivityKind, sinceMs: Int64, elapsedMs: Int64, turnElapsedMs: Int64) {
         self.kind = kind
         self.sinceMs = sinceMs
         self.elapsedMs = elapsedMs
+        self.turnElapsedMs = turnElapsedMs
     }
 
     private enum CodingKeys: String, CodingKey {
         case kind
         case sinceMs = "since_ms"
         case elapsedMs = "elapsed_ms"
+        case turnElapsedMs = "turn_elapsed_ms"
     }
 }
 
@@ -1705,6 +1710,11 @@ public struct ChatFrame: Codable, Hashable, Sendable {
         case signIn = "sign_in"
         case waiting
     }
+}
+
+public enum ChildAction: String, Codable, Hashable, Sendable, CaseIterable {
+    case start = "Start"
+    case stop = "Stop"
 }
 
 /// One choice, stated as what happens, with the answer it sends.
@@ -3581,16 +3591,23 @@ public struct HostView: Codable, Hashable, Sendable {
 }
 
 public struct Hunk: Codable, Hashable, Sendable {
-    public var header: String
+    /// Lines the patch leaves out come before this one: every hunk but a
+    /// file's first when that starts at the top.
+    public var skips: Bool
+    /// The line git names after the header's second `@@`, its guess at the
+    /// enclosing function or type; empty when it names none.
+    public var scope: String
     public var lines: [DiffLine]
 
-    public init(header: String, lines: [DiffLine]) {
-        self.header = header
+    public init(skips: Bool, scope: String, lines: [DiffLine]) {
+        self.skips = skips
+        self.scope = scope
         self.lines = lines
     }
 
     private enum CodingKeys: String, CodingKey {
-        case header
+        case skips
+        case scope
         case lines
     }
 }
@@ -5036,6 +5053,10 @@ public enum RowKind: Codable, Hashable, Sendable {
     case thinking(text: String, open: Bool, durationMs: Int64?)
     case toolCall(server: String, tool: String, fact: String, state: CallPhase, result: String)
     case fileChange(files: [FileRow], state: CallPhase)
+    /// amux's own call that starts or stops a subagent: "Started
+    /// payment-tests on build · Codex". `host` is empty for the caller's own
+    /// host, and `kind` empty when the call does not say it.
+    case child(action: ChildAction, name: String, host: String, kind: String, state: CallPhase, result: String)
     case command(command: String, state: CallPhase, outputHead: [String], moreLines: UInt, outputTrimmed: Bool, outputTail: [String], durationMs: Int64?, exitCode: Int32?)
     case explore(verb: ExploreVerb, subject: String, state: CallPhase, result: String)
     case subagent(description: String, running: Bool, toolCount: UInt32, lastTool: String, answer: String, durationMs: Int64?)
@@ -5063,6 +5084,7 @@ public enum RowKind: Codable, Hashable, Sendable {
         case thinking = "Thinking"
         case toolCall = "ToolCall"
         case fileChange = "FileChange"
+        case child = "Child"
         case command = "Command"
         case explore = "Explore"
         case subagent = "Subagent"
@@ -5108,6 +5130,15 @@ public enum RowKind: Codable, Hashable, Sendable {
     private enum FileChangeKeys: String, CodingKey {
         case files
         case state
+    }
+
+    private enum ChildKeys: String, CodingKey {
+        case action
+        case name
+        case host
+        case kind
+        case state
+        case result
     }
 
     private enum CommandKeys: String, CodingKey {
@@ -5263,6 +5294,16 @@ public enum RowKind: Codable, Hashable, Sendable {
             self = .fileChange(
                 files: try _fields.decode([FileRow].self, forKey: .files),
                 state: try _fields.decode(CallPhase.self, forKey: .state))
+        case .child:
+            let _fields = try _container.nestedContainer(
+                keyedBy: ChildKeys.self, forKey: .child)
+            self = .child(
+                action: try _fields.decode(ChildAction.self, forKey: .action),
+                name: try _fields.decode(String.self, forKey: .name),
+                host: try _fields.decode(String.self, forKey: .host),
+                kind: try _fields.decode(String.self, forKey: .kind),
+                state: try _fields.decode(CallPhase.self, forKey: .state),
+                result: try _fields.decode(String.self, forKey: .result))
         case .command:
             let _fields = try _container.nestedContainer(
                 keyedBy: CommandKeys.self, forKey: .command)
@@ -5414,6 +5455,15 @@ public enum RowKind: Codable, Hashable, Sendable {
             var _fields = _container.nestedContainer(keyedBy: FileChangeKeys.self, forKey: .fileChange)
             try _fields.encode(files, forKey: .files)
             try _fields.encode(state, forKey: .state)
+        case .child(let action, let name, let host, let kind, let state, let result):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: ChildKeys.self, forKey: .child)
+            try _fields.encode(action, forKey: .action)
+            try _fields.encode(name, forKey: .name)
+            try _fields.encode(host, forKey: .host)
+            try _fields.encode(kind, forKey: .kind)
+            try _fields.encode(state, forKey: .state)
+            try _fields.encode(result, forKey: .result)
         case .command(let command, let state, let outputHead, let moreLines, let outputTrimmed, let outputTail, let durationMs, let exitCode):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: CommandKeys.self, forKey: .command)

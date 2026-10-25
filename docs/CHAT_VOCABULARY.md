@@ -64,6 +64,7 @@ kind is the [`ui_view::RowKind`](../crates/ui-view/src/rows.rs) variant the view
 | File edit | `FileChange { files, state }` | Each `FileRow` as path +N −N, opening that file's diff. A file in the agent's folder is named from it. A Codex patch that did not land made no file, so a file it would have added reads `Writing`, never `Created`. | full: exact patch and counts | full | partial: per-file diff |
 | File created, deleted, moved | `FileChange` with `Created { lines }`, `Deleted`, `Moved { to }` | "Created path · 38 lines", "Deleted path", "Moved a → b". | partial: create and overwrite only | partial | full |
 | Tool call | `ToolCall { server, tool, fact, state, result }` | "Used github · create_issue" plus one fact, opening to input and result. | partial: name and text result | full | full |
+| Subagent started or stopped | `Child { action, name, host, kind, state, result }` | amux's own `spawn` and `stop` calls in their own words: "Started payment-tests on build · Codex", "Stopped copy-pass". The machine shows only when it is another one; a failure reads "Could not start …" and opens to why. amux's `agents` and `hosts` listings are the agent looking around, and hidden. | full | full | full |
 | Subagent | `Subagent { description, running, tool_count, last_tool, answer, duration_ms }` | Live while running ("12 tools · 48s · last: Read"), its answer once finished; its own steps are rows with a `parent`, collapsed under it. | partial | full | partial |
 | Background process | `Background { command, running }` | "Started in background npm run dev"; the running job is listed in the overview. | partial | partial | partial |
 | Image | `Image { image, path, generated }` | A thumbnail opening full size; Codex can report generated images. | partial | partial | full |
@@ -120,7 +121,8 @@ when the newest item says only `Working` (Codex writes reasoning while a command
 the phase is working. Elapsed time is measured from the relevant item's timestamp with
 the renderer's clock, which is why the terminal ticks while an agent works and at no other time. The terminal
 draws it as the running turn's live end in the feed (`Working · 33s`), where `Worked 6m` stands once the turn
-ends; its steps say what is running.
+ends; its steps say what is running, so it times the turn (`turn_elapsed_ms`) even while a call is in flight, and
+shows no time until the turn's first second.
 
 ## Asks
 

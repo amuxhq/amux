@@ -11,6 +11,12 @@ lower-left ribbon is disconnected from the rest of the mark, with a smooth,
 tapered inner edge. Colour supplies ribbon depth; the silhouette also works
 in a single colour.
 
+For a place that takes no SVG, [amux.png](../images/brand/amux.png),
+[amux-black.png](../images/brand/amux-black.png) and
+[amux-white.png](../images/brand/amux-white.png) are the colour, black and
+white exports at 1024 pixels, on a transparent ground. `just logo` makes them
+again, with every other size, whenever the master changes.
+
 ## Editing
 
 `silhouette` owns the outline and all negative space. The other named paths

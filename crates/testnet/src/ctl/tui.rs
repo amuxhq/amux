@@ -34,6 +34,13 @@ pub enum TuiCommand {
         size: String,
         #[arg(long, value_enum, default_value_t = Theme::Dark)]
         theme: Theme,
+        /// A terminal's colours instead of --theme: a JSON file of
+        /// `background`, `foreground` and the sixteen `ansi` slots, as
+        /// "#rrggbb". The pane answers colour queries with them, the
+        /// client takes its palette from them (`theme: terminal`), and a
+        /// pane attached from this one has them too.
+        #[arg(long, conflicts_with = "theme")]
+        palette: Option<PathBuf>,
         /// The pane's name; the host's name (then host-2, ...) by default.
         #[arg(long)]
         name: Option<String>,
@@ -85,6 +92,18 @@ pub enum TuiCommand {
     /// end of a line is not kept, and the font has no CJK or emoji glyphs,
     /// so those draw as boxes. The text beside it (.txt) is exact.
     Shot { pane: String },
+    /// Film the pane: its frame (as a shot writes it) each time the screen
+    /// changes, checked every --every (default 50ms), one JSON line per
+    /// frame with the milliseconds since the start, appended to FILE until
+    /// --for has passed (default until stopped) or the pane closes.
+    Record {
+        pane: String,
+        file: PathBuf,
+        #[arg(long, default_value = "50ms")]
+        every: String,
+        #[arg(long = "for")]
+        lasting: Option<String>,
+    },
     /// Resize the pane's terminal to COLSxROWS.
     Resize { pane: String, size: String },
     /// Open the agent's native view (Claude's own interface for terminal
@@ -126,11 +145,124 @@ impl Theme {
     }
 }
 
+impl Pane {
+    /// What the pane draws on: its palette's ink, or its theme's.
+    fn ink(&self) -> (String, String) {
+        match &self.palette {
+            Some(palette) => (palette.foreground.clone(), palette.background.clone()),
+            None => {
+                let (fg, bg) = self.theme.ink();
+                (fg.to_owned(), bg.to_owned())
+            }
+        }
+    }
+
+    /// A frame's colours with the palette's slots named as colours, so a
+    /// program drawing in the terminal's own sixteen is drawn as it saw
+    /// them; past the sixteen, a terminal's 256 are xterm's.
+    fn paint(&self, mut frame: Frame) -> Frame {
+        if let Some(palette) = &self.palette {
+            let slot = |colour: &mut String| {
+                if let Some(n) = colour
+                    .strip_prefix("ansi:")
+                    .and_then(|n| n.parse::<usize>().ok())
+                {
+                    match palette.ansi.get(n) {
+                        Some(named) => *colour = named.clone(),
+                        None => {
+                            if let Some((r, g, b)) = xterm_256(n) {
+                                *colour = format!("#{r:02x}{g:02x}{b:02x}");
+                            }
+                        }
+                    }
+                }
+            };
+            for run in frame.rows.iter_mut().flatten() {
+                slot(&mut run.fg);
+                slot(&mut run.bg);
+            }
+        }
+        frame
+    }
+}
+
+/// A terminal's colours, as a program in it can ask for them.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Palette {
+    background: String,
+    foreground: String,
+    ansi: Vec<String>,
+}
+
+impl Palette {
+    fn read(path: &Path) -> Result<Self, String> {
+        let text = std::fs::read_to_string(path)
+            .map_err(|error| format!("reading {}: {error}", path.display()))?;
+        let palette: Self = serde_json::from_str(&text)
+            .map_err(|error| format!("{} is not a palette: {error}", path.display()))?;
+        if palette.ansi.len() != 16 {
+            return Err(format!(
+                "{} names {} ansi colours, not 16",
+                path.display(),
+                palette.ansi.len()
+            ));
+        }
+        Ok(palette)
+    }
+
+    /// tmux commands giving pane `name` these colours, to chain onto the
+    /// one that starts it: tmux answers the program's queries only once
+    /// its loop runs, after every chained command.
+    fn tmux_args(&self, name: &str) -> Vec<String> {
+        let mut args = vec![
+            ";".to_owned(),
+            "set-option".to_owned(),
+            "-p".to_owned(),
+            "-t".to_owned(),
+            name.to_owned(),
+            "window-style".to_owned(),
+            format!("fg={},bg={}", self.foreground, self.background),
+        ];
+        for (slot, colour) in self.ansi.iter().enumerate() {
+            args.extend([
+                ";".to_owned(),
+                "set-option".to_owned(),
+                "-p".to_owned(),
+                "-t".to_owned(),
+                name.to_owned(),
+                format!("pane-colours[{slot}]"),
+                colour.clone(),
+            ]);
+        }
+        args
+    }
+}
+
+/// xterm's colour for slot `n` of its 256 past the sixteen: a 6×6×6 cube,
+/// then 24 greys.
+fn xterm_256(n: usize) -> Option<(u8, u8, u8)> {
+    const LEVELS: [u8; 6] = [0, 95, 135, 175, 215, 255];
+    match n {
+        16..=231 => {
+            let n = n - 16;
+            Some((LEVELS[n / 36], LEVELS[n / 6 % 6], LEVELS[n % 6]))
+        }
+        232..=255 => {
+            let grey = 8 + 10 * (n - 232) as u8;
+            Some((grey, grey, grey))
+        }
+        _ => None,
+    }
+}
+
 /// What the session knows about a pane.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Pane {
     host: String,
     theme: Theme,
+    /// The terminal's own colours, when it was given some.
+    #[serde(default)]
+    palette: Option<Palette>,
     /// What runs in it: the client, or an agent's native view.
     what: String,
 }
@@ -228,8 +360,14 @@ pub(crate) fn run(folder: &Folder, command: TuiCommand) -> Result<Outcome, Strin
             host,
             size: wanted,
             theme,
+            palette,
             name,
-        } => open(folder, &host, &wanted, theme, name),
+        } => {
+            let palette = palette
+                .map(|path| Palette::read(&folder.input(&path)))
+                .transpose()?;
+            open(folder, &host, &wanted, theme, palette, name)
+        }
         TuiCommand::Keys { pane, keys } => {
             known(folder, &pane)?;
             for key in &keys {
@@ -300,6 +438,18 @@ pub(crate) fn run(folder: &Folder, command: TuiCommand) -> Result<Outcome, Strin
             )
             .with_files(vec![png, text]))
         }
+        TuiCommand::Record {
+            pane,
+            file,
+            every,
+            lasting,
+        } => record(
+            folder,
+            &pane,
+            &folder.input(&file),
+            &every,
+            lasting.as_deref(),
+        ),
         TuiCommand::Resize { pane, size: wanted } => {
             known(folder, &pane)?;
             let (cols, rows) = size(&wanted)?;
@@ -423,6 +573,7 @@ fn open(
     host: &str,
     wanted: &str,
     theme: Theme,
+    palette: Option<Palette>,
     name: Option<String>,
 ) -> Result<Outcome, String> {
     let entry = folder.host(host)?;
@@ -437,7 +588,12 @@ fn open(
     // The pane's own copy of the host's config, so its theme is its own.
     let config = entry["config"].as_str().ok_or("the host has no config")?;
     let mut yaml = std::fs::read_to_string(config).map_err(|error| error.to_string())?;
-    yaml.push_str(&format!("ui:\n  theme: {}\n", theme.word()));
+    let chosen = if palette.is_some() {
+        "terminal"
+    } else {
+        theme.word()
+    };
+    yaml.push_str(&format!("ui:\n  theme: {chosen}\n"));
     let pane_config = folder.net_dir().join(format!("pane-{name}.yaml"));
     std::fs::write(&pane_config, yaml).map_err(|error| error.to_string())?;
     let work = PathBuf::from(entry["dir"].as_str().unwrap_or_default()).join("work");
@@ -446,22 +602,24 @@ fn open(
         "--config",
         pane_config.to_string_lossy().as_ref(),
     ]);
-    start_pane(folder, &name, cols, rows, &work, &command)?;
+    start_pane(folder, &name, cols, rows, &work, &command, palette.as_ref())?;
     let mut all = panes(folder);
+    let colours = match &palette {
+        Some(_) => "its palette's colours".to_owned(),
+        None => format!("{} theme", theme.word()),
+    };
     all.insert(
         name.clone(),
         Pane {
             host: host.to_owned(),
             theme,
+            palette,
             what: "the terminal client".to_owned(),
         },
     );
     save_panes(folder, &all)?;
     Ok(Outcome::new(
-        format!(
-            "pane {name}: the terminal client on {host}, {cols}x{rows}, {} theme",
-            theme.word()
-        ),
+        format!("pane {name}: the terminal client on {host}, {cols}x{rows}, {colours}"),
         json!({"pane": name}),
     ))
 }
@@ -489,30 +647,35 @@ fn start_pane(
     rows: u16,
     dir: &Path,
     command: &str,
+    palette: Option<&Palette>,
 ) -> Result<(), String> {
     let dir = if dir.is_dir() {
         dir.to_owned()
     } else {
         folder.dir.clone()
     };
-    tmux(
-        folder,
-        &[
-            "new-session",
-            "-d",
-            "-s",
-            name,
-            "-x",
-            &cols.to_string(),
-            "-y",
-            &rows.to_string(),
-            "-c",
-            dir.to_string_lossy().as_ref(),
-            "sh",
-            "-c",
-            command,
-        ],
-    )?;
+    let (cols_word, rows_word) = (cols.to_string(), rows.to_string());
+    let dir_word = dir.to_string_lossy();
+    let mut args = vec![
+        "new-session",
+        "-d",
+        "-s",
+        name,
+        "-x",
+        &cols_word,
+        "-y",
+        &rows_word,
+        "-c",
+        dir_word.as_ref(),
+        "sh",
+        "-c",
+        command,
+    ];
+    let colours = palette
+        .map(|palette| palette.tmux_args(name))
+        .unwrap_or_default();
+    args.extend(colours.iter().map(String::as_str));
+    tmux(folder, &args)?;
     // The session's size, not whatever client attaches later, decides the
     // window's; and no status line takes a row from the client.
     let _ = tmux(folder, &["set-option", "-t", name, "status", "off"]);
@@ -573,13 +736,22 @@ fn attach(folder: &Folder, pane: &str, agent: &str) -> Result<Outcome, String> {
         listed["id"].as_str().unwrap_or(agent),
     ]);
     let work = PathBuf::from(owner["dir"].as_str().unwrap_or_default()).join("work");
-    start_pane(folder, &name, cols, rows, &work, &command)?;
+    start_pane(
+        folder,
+        &name,
+        cols,
+        rows,
+        &work,
+        &command,
+        from.palette.as_ref(),
+    )?;
     let mut all = panes(folder);
     all.insert(
         name.clone(),
         Pane {
             host: owner_name.clone(),
             theme: from.theme,
+            palette: from.palette.clone(),
             what: format!("amux attach {agent}"),
         },
     );
@@ -728,8 +900,15 @@ pub(crate) fn shot(folder: &Folder, pane: &str) -> Result<(PathBuf, PathBuf), St
     )?;
     let (cols, rows) = size(dims.trim())?;
     let (x, y, shown) = cursor(folder, pane)?;
-    let (fg, bg) = known.theme.ink();
-    let frame = frame(&styled, cols, rows, fg, bg, shown.then_some((x, y)));
+    let (fg, bg) = known.ink();
+    let frame = known.paint(frame(
+        &styled,
+        cols,
+        rows,
+        &fg,
+        &bg,
+        shown.then_some((x, y)),
+    ));
     let dir = folder.dir.join("shots");
     std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
     let stamp = chrono::Utc::now().format("%H%M%S%3f");
@@ -745,6 +924,72 @@ pub(crate) fn shot(folder: &Folder, pane: &str) -> Result<(PathBuf, PathBuf), St
         shot::rasterize(&buffer, ::tui::Theme::default()).map_err(|error| error.to_string())?;
     shot::write_png(&raster, &png).map_err(|error| error.to_string())?;
     Ok((png, text))
+}
+
+/// Films `pane` into `path` until `lasting` has passed or the pane closes:
+/// a frame only when the screen changed, so a still screen costs nothing
+/// and each line's time is when that picture appeared.
+fn record(
+    folder: &Folder,
+    pane: &str,
+    path: &Path,
+    every: &str,
+    lasting: Option<&str>,
+) -> Result<Outcome, String> {
+    use std::io::Write as _;
+    let known = known(folder, pane)?;
+    let every = Duration::from_millis(super::duration_ms(every)?);
+    let lasting = lasting
+        .map(super::duration_ms)
+        .transpose()?
+        .map(Duration::from_millis);
+    let (fg, bg) = known.ink();
+    let mut out = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|error| format!("opening {}: {error}", path.display()))?;
+    let start = std::time::Instant::now();
+    let mut last = String::new();
+    let mut frames = 0;
+    while lasting.is_none_or(|lasting| start.elapsed() < lasting) {
+        let Ok(styled) = tmux(folder, &["capture-pane", "-p", "-e", "-t", pane]) else {
+            break;
+        };
+        let (x, y, shown) = cursor(folder, pane)?;
+        let seen = format!("{styled}{x},{y},{shown}");
+        if seen != last {
+            let dims = tmux(
+                folder,
+                &[
+                    "display-message",
+                    "-p",
+                    "-t",
+                    pane,
+                    "#{pane_width}x#{pane_height}",
+                ],
+            )?;
+            let (cols, rows) = size(dims.trim())?;
+            let frame = known.paint(frame(
+                &styled,
+                cols,
+                rows,
+                &fg,
+                &bg,
+                shown.then_some((x, y)),
+            ));
+            let line = json!({"ms": start.elapsed().as_millis() as u64, "frame": frame});
+            writeln!(out, "{line}").map_err(|error| error.to_string())?;
+            out.flush().map_err(|error| error.to_string())?;
+            last = seen;
+            frames += 1;
+        }
+        std::thread::sleep(every);
+    }
+    Ok(Outcome::new(
+        format!("recorded {frames} frames of {pane} into {}", path.display()),
+        json!({"frames": frames, "file": path}),
+    ))
 }
 
 /// One cell's style as the frame names it.
@@ -1171,5 +1416,31 @@ mod tests {
             serde_json::to_value(super::frame("abc", 3, 1, "#fff", "#000", Some((1, 0)))).unwrap();
         assert_eq!(frame["rows"][0][1]["text"], "b");
         assert_eq!(frame["rows"][0][1]["styles"], json!(["reversed"]));
+    }
+
+    #[test]
+    fn a_pane_with_a_palette_draws_its_colours_as_the_palette_names_them() {
+        let mut ansi: Vec<String> = (0..16).map(|n| format!("#0000{n:02x}")).collect();
+        ansi[1] = "#dc322f".into();
+        let pane = Pane {
+            host: "studio".into(),
+            theme: Theme::Dark,
+            palette: Some(Palette {
+                background: "#fdf6e3".into(),
+                foreground: "#657b83".into(),
+                ansi,
+            }),
+            what: "the terminal client".into(),
+        };
+        let (fg, bg) = pane.ink();
+        let styled = "\u{1b}[31ma\u{1b}[38;5;200mb\u{1b}[38;2;1;2;3mc";
+        let frame =
+            serde_json::to_value(pane.paint(super::frame(styled, 3, 1, &fg, &bg, None))).unwrap();
+        assert_eq!(frame["default"], json!({"fg": "#657b83", "bg": "#fdf6e3"}));
+        let row = &frame["rows"][0];
+        assert_eq!(row[0]["fg"], "#dc322f");
+        // Past the sixteen, xterm's; colours given outright stay as given.
+        assert_eq!(row[1]["fg"], "#ff00d7");
+        assert_eq!(row[2]["fg"], "#010203");
     }
 }

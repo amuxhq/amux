@@ -131,16 +131,18 @@ fn moved<T: PartialEq>(held: &mut Option<T>, now: T) -> bool {
     true
 }
 
-/// The frame as the screen draws it. A running activity's elapsed time is
-/// read off the clock with every frame, so every frame differs; the
-/// activity line counts it from when the activity began, so a frame that
-/// moved only with the clock is not handed over.
+/// The frame as the screen draws it. A running activity's elapsed times
+/// are read off the clock with every frame, so every frame differs; the
+/// activity line counts from when the activity began, and the phone draws
+/// no turn time, so a frame that moved only with the clock is not handed
+/// over.
 fn drawn(frame: &ChatFrame) -> ChatFrame {
     let mut frame = frame.clone();
     if let Some(activity) = frame.composer.activity.as_mut()
         && activity.since_ms > 0
     {
         activity.elapsed_ms = 0;
+        activity.turn_elapsed_ms = 0;
     }
     frame
 }
@@ -183,6 +185,7 @@ mod tests {
             kind: model::ActivityKind::Working,
             since_ms,
             elapsed_ms,
+            turn_elapsed_ms: elapsed_ms,
         };
         let mut sent = Sent::default();
         frame.composer.activity = Some(activity(1_000, 500));

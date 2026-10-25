@@ -237,7 +237,8 @@ page showed, however the tree changes afterwards.
 The document itself is `ui_view::review_doc(diff, patch, comments)`: it parses
 the patch into files (path, old path for a rename, status, added and removed
 counts, whether it is binary) and hunks of context, added and removed lines
-with their old and new line numbers, and places each comment on its line, on
+with their old and new line numbers (each hunk with whether lines are left out
+before it and git's name for where it is), and places each comment on its line, on
 an old-side line for a removed one, or on the file as a whole. Both clients
 draw that one document, so they agree on where a comment sits:
 

@@ -15,8 +15,8 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ui_state::Key;
 use ui_view::{
-    AnswerView, AskRow, AttachmentView, CallPhase, DecisionView, FileChangeView, PlanVerdict,
-    QuestionView, Resolution, Row, RowKind, Run, RunCounts, Segment,
+    AnswerView, AskRow, AttachmentView, CallPhase, ChildAction, DecisionView, FileChangeView,
+    PlanVerdict, QuestionView, Resolution, Row, RowKind, Run, RunCounts, Segment,
 };
 
 use super::rows::{
@@ -352,6 +352,7 @@ pub fn is_step(row: &Row) -> bool {
         RowKind::Explore { .. }
             | RowKind::Command { .. }
             | RowKind::ToolCall { .. }
+            | RowKind::Child { .. }
             | RowKind::FileChange { .. }
             | RowKind::Background { .. }
             | RowKind::Subagent { .. }
@@ -1050,6 +1051,41 @@ fn step_words(row: &Row) -> (String, String, String) {
             let meta = decided(meta, row, *state == CallPhase::Denied);
             (verb.to_owned(), subject, meta)
         }
+        RowKind::Child {
+            action,
+            name,
+            host,
+            kind,
+            state,
+            ..
+        } => {
+            let verb = match (action, state) {
+                (ChildAction::Start, CallPhase::Failed) => "Could not start",
+                (ChildAction::Stop, CallPhase::Failed) => "Could not stop",
+                (ChildAction::Start, _) => {
+                    call_verb(*state, ["Wants to start", "Starting", "Started"])
+                }
+                (ChildAction::Stop, _) => {
+                    call_verb(*state, ["Wants to stop", "Stopping", "Stopped"])
+                }
+            };
+            // "Started payment-tests on build · Codex": the machine only
+            // when it is another one.
+            let mut subject = if name.is_empty() {
+                "a subagent".to_owned()
+            } else {
+                name.clone()
+            };
+            if !host.is_empty() {
+                subject.push_str(&format!(" on {host}"));
+            }
+            let meta: Vec<String> = (!kind.is_empty())
+                .then(|| kind.clone())
+                .into_iter()
+                .collect();
+            let meta = decided(meta, row, *state == CallPhase::Denied);
+            (verb.to_owned(), subject, meta)
+        }
         RowKind::FileChange { files, state } => {
             let file = files.first();
             let verb = match (state, file.map(|f| &f.change)) {
@@ -1382,6 +1418,9 @@ fn step_detail(row: &Row, facts: &RowFacts, width: usize, theme: Theme) -> Vec<L
             .unwrap_or_default(),
         RowKind::ToolCall { result, .. } if !result.is_empty() => {
             detail(result, width, theme.muted(), DETAIL_LINES, theme)
+        }
+        RowKind::Child { result, .. } if !result.is_empty() => {
+            detail(result, width, theme.error(), DETAIL_LINES, theme)
         }
         // Why a read or search failed, or what it found.
         RowKind::Explore { result, state, .. } if !result.is_empty() => {

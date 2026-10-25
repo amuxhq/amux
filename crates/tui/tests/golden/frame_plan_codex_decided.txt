@@ -21,7 +21,7 @@
     Forget the plan; just write Blue.                                                      08:00
 
 
-    Working · 0ms
+    Working
 
   ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
   │ › Message worker                                                                             │
@@ -52,7 +52,7 @@
 ..UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU..
 ..UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU..
 ....................................................................................................
-....mmmmmmm??????...................................................................................
+....mmmmmmm.........................................................................................
 ....................................................................................................
 ..mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..
 ..mmmmmmmmmmmmmmmmmm.............................................................................m..

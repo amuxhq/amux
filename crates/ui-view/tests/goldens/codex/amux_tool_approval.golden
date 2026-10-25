@@ -6,13 +6,13 @@
   row    2 prompt:7031 Prompt { text: [Text("Get the parser reviewed.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 5 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"appContext":null,"arguments":{"name":"reviewer","prompt":"Review the parser change."},"durationMs":null,"error":null,"id":"exec-1","mcpAppUi":null,"pluginId":null,"readOnlyHint":null,"result":null,"server":"amux","status":"inProgress","tool":"spawn","type":"mcpToolCall"},"threadId":"t1","turnId":"turn-1"}}}
-  row    3 exec-1 ToolCall { server: "amux", tool: "spawn", fact: "reviewer", state: Running, result: "" } run[exec-1..exec-1 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
+  row    3 exec-1 Child { action: Start, name: "reviewer", host: "", kind: "", state: Running, result: "" } run[exec-1..exec-1 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
   composer Send activity=Some(Running { key: "exec-1" }) queue=[] underway=[] refused=[]
 ## 7 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"appContext":null,"arguments":{"name":"reviewer","prompt":"Review the parser change."},"durationMs":3,"error":null,"id":"exec-1","mcpAppUi":null,"pluginId":null,"readOnlyHint":null,"result":{"_meta":null,"content":[{"text":"started reviewer","type":"text"}],"structuredContent":null},"server":"amux","status":"completed","tool…
-  row    3 exec-1 ToolCall { server: "amux", tool: "spawn", fact: "reviewer", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"started reviewer\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-1..exec-1 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
+  row    3 exec-1 Child { action: Start, name: "reviewer", host: "", kind: "", state: Succeeded, result: "" } run[exec-1..exec-1 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 8 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"appContext":null,"arguments":{"word":"BLUE"},"durationMs":null,"error":null,"id":"exec-2","mcpAppUi":null,"pluginId":null,"readOnlyHint":null,"result":null,"server":"spec","status":"inProgress","tool":"ask_the_operator","type":"mcpToolCall"},"threadId":"t1","turnId":"turn-1"}}}
-  row    3 exec-1 ToolCall { server: "amux", tool: "spawn", fact: "reviewer", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"started reviewer\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-1..exec-2 x2 recent=1 live]
+  row    3 exec-1 Child { action: Start, name: "reviewer", host: "", kind: "", state: Succeeded, result: "" } run[exec-1..exec-2 x2 recent=1 live]
   row    4 exec-2 ToolCall { server: "spec", tool: "ask_the_operator", fact: "BLUE", state: Running, result: "" } run[exec-1..exec-2 x2 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 2 }]
   composer Send activity=Some(Running { key: "exec-2" }) queue=[] underway=[] refused=[]
 ## 9 fact {"channel":"rpc","json":{"id":1,"method":"mcpServer/elicitation/request","params":{"_meta":{"codex_approval_kind":"mcp_tool_call","persist":["session","always"],"tool_description":"Ask the operator to confirm a word, then return it.","tool_params":{"word":"BLUE"},"tool_params_display":[{"display_name":"word","name":"word","value":"BLUE"}]},"message":"Allow the spec MCP server to run tool \"as…
@@ -28,14 +28,14 @@
   row    4 exec-2 ToolCall { server: "spec", tool: "ask_the_operator", fact: "BLUE", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"BLUE\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-1..exec-2 x2 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 2 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere:…
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 12 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"completed"}}}}
-  row    3 exec-1 ToolCall { server: "amux", tool: "spawn", fact: "reviewer", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"started reviewer\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-1..exec-2 x2 recent=1] collapsed
+  row    3 exec-1 Child { action: Start, name: "reviewer", host: "", kind: "", state: Succeeded, result: "" } run[exec-1..exec-2 x2 recent=1] collapsed
   row    4 exec-2 ToolCall { server: "spec", tool: "ask_the_operator", fact: "BLUE", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"BLUE\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-1..exec-2 x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 2 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: fals…
   row    5 turn:1 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:7031 Prompt { text: [Text("Get the parser reviewed.")], steered: false }
-     3 exec-1 ToolCall { server: "amux", tool: "spawn", fact: "reviewer", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"started reviewer\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-1..exec-2 x2 recent=1] collapsed
+     3 exec-1 Child { action: Start, name: "reviewer", host: "", kind: "", state: Succeeded, result: "" } run[exec-1..exec-2 x2 recent=1] collapsed
      4 exec-2 ToolCall { server: "spec", tool: "ask_the_operator", fact: "BLUE", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"BLUE\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-1..exec-2 x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 2 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: fals…
      5 turn:1 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }

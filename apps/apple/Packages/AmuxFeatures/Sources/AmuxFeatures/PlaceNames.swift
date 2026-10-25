@@ -29,8 +29,10 @@ public enum PlaceNames {
         var root = path.hasPrefix("/") ? "/" : ""
         // A home directory is recognised by where the platforms put them. The
         // phone cannot ask the machine what its home is, and these are the
-        // places a home is on every machine amux runs on.
-        if path.hasPrefix("/"), parts.count >= 2, ["Users", "home"].contains(parts[0]) {
+        // places a home is on every machine amux runs on. A Mac's
+        // /Users/Shared sits beside the homes but is nobody's.
+        if path.hasPrefix("/"), parts.count >= 2, ["Users", "home"].contains(parts[0]),
+           !(parts[0] == "Users" && parts[1] == "Shared") {
             parts.removeFirst(2)
             root = "~/"
         } else if path.hasPrefix("/"), parts.first == "root" {

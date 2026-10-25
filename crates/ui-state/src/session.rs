@@ -513,11 +513,6 @@ impl SessionState {
         if self.exited() || self.phase() != PhaseView::Working {
             return None;
         }
-        let at = |since_ms: i64, kind| Activity {
-            kind,
-            since_ms,
-            elapsed_ms: (now_ms - since_ms).max(0),
-        };
         let transcript = &self.transcript;
         // Arrivals held above the window are the newest rows there are.
         let newest_first = || {
@@ -548,6 +543,12 @@ impl SessionState {
         }
         let subagents = subagents.max(running_tasks);
         let turn_start = turn_start.unwrap_or(self.state.at_ms);
+        let at = |since_ms: i64, kind| Activity {
+            kind,
+            since_ms,
+            elapsed_ms: (now_ms - since_ms).max(0),
+            turn_elapsed_ms: (now_ms - turn_start).max(0),
+        };
         // A call whose hook announced it and whose row has not landed, or
         // landed after it: terminal Claude writes a call's row up to
         // seconds after the call starts.

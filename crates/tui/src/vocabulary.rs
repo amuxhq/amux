@@ -370,6 +370,7 @@ pub fn authored_home() -> HomeScene {
                 kind: ActivityKind::Running { key: "call".into() },
                 since_ms: NOW,
                 elapsed_ms: 0,
+                turn_elapsed_ms: 0,
             },
             step: Some(step.to_owned()),
         }),
@@ -622,6 +623,11 @@ index 1111111..2222222 100644
 +    let c = 4;
 +    println!(\"{}\", a + b + c);
  }
+@@ -19,3 +20,3 @@ fn total(xs: &[i32]) -> i32 {
+     let mut sum = 0;
+-    for x in xs { sum += x; }
++    for x in xs { sum += *x; }
+     sum
 diff --git a/NOTES.md b/NOTES.md
 new file mode 100644
 index 0000000..3333333

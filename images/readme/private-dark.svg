@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="330" viewBox="0 0 840 330" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+<rect x="30" y="20" width="290" height="300" rx="22" fill="none" stroke="#3a404c" stroke-width="1.5" stroke-dasharray="5 6"/>
+<text x="54" y="48" text-anchor="start" font-size="13" fill="#8a90a0">your network</text>
+<line x1="210" y1="95" x2="210" y2="245" stroke="#4a505c" stroke-width="2"/>
+<line x1="210" y1="95" x2="500" y2="170" stroke="#4a505c" stroke-width="2"/>
+<line x1="210" y1="245" x2="500" y2="170" stroke="#4a505c" stroke-width="2"/>
+<line x1="500" y1="170" x2="760" y2="170" stroke="#4a505c" stroke-width="2"/>
+<g transform="translate(210,170)"><circle r="15" fill="#1b1e25" stroke="#5cc3d8" stroke-width="1.5"/><rect x="-6" y="-2" width="12" height="9" rx="2" fill="#5cc3d8"/><path d="M-3.5 -2 V-4.5 a3.5 3.5 0 0 1 7 0 V-2" fill="none" stroke="#5cc3d8" stroke-width="1.8"/></g>
+<g transform="translate(384,140)"><circle r="15" fill="#1b1e25" stroke="#5cc3d8" stroke-width="1.5"/><rect x="-6" y="-2" width="12" height="9" rx="2" fill="#5cc3d8"/><path d="M-3.5 -2 V-4.5 a3.5 3.5 0 0 1 7 0 V-2" fill="none" stroke="#5cc3d8" stroke-width="1.8"/></g>
+<g transform="translate(384,200)"><circle r="15" fill="#1b1e25" stroke="#5cc3d8" stroke-width="1.5"/><rect x="-6" y="-2" width="12" height="9" rx="2" fill="#5cc3d8"/><path d="M-3.5 -2 V-4.5 a3.5 3.5 0 0 1 7 0 V-2" fill="none" stroke="#5cc3d8" stroke-width="1.8"/></g>
+<g transform="translate(630,170)"><circle r="15" fill="#1b1e25" stroke="#5cc3d8" stroke-width="1.5"/><rect x="-6" y="-2" width="12" height="9" rx="2" fill="#5cc3d8"/><path d="M-3.5 -2 V-4.5 a3.5 3.5 0 0 1 7 0 V-2" fill="none" stroke="#5cc3d8" stroke-width="1.8"/></g>
+<text x="234" y="175" text-anchor="start" font-size="13" fill="#8a90a0">direct</text>
+<text x="630" y="142" text-anchor="middle" font-size="13" fill="#8a90a0">end-to-end encrypted</text>
+<g transform="translate(210,95)"><rect x="-44" y="-38" width="88" height="76" rx="16" fill="#1b1e25" stroke="#2c303a" stroke-width="1.5"/><rect x="-20" y="-16" width="40" height="26" rx="3" fill="none" stroke="#dfe3e8" stroke-width="2"/><path d="M-8 18 H8 M0 10 V18" stroke="#dfe3e8" stroke-width="2"/></g>
+<text x="152" y="100" text-anchor="end" font-size="15" fill="#dfe3e8">studio</text>
+<g transform="translate(210,245)"><rect x="-44" y="-38" width="88" height="76" rx="16" fill="#1b1e25" stroke="#2c303a" stroke-width="1.5"/><rect x="-18" y="-15" width="36" height="9" rx="2" fill="none" stroke="#dfe3e8" stroke-width="2"/><circle cx="-11" cy="-10.5" r="1.6" fill="#dfe3e8"/><rect x="-18" y="-3" width="36" height="9" rx="2" fill="none" stroke="#dfe3e8" stroke-width="2"/><circle cx="-11" cy="1.5" r="1.6" fill="#dfe3e8"/><rect x="-18" y="9" width="36" height="9" rx="2" fill="none" stroke="#dfe3e8" stroke-width="2"/><circle cx="-11" cy="13.5" r="1.6" fill="#dfe3e8"/></g>
+<text x="152" y="250" text-anchor="end" font-size="15" fill="#dfe3e8">build</text>
+<g transform="translate(500,170)"><rect x="-44" y="-38" width="88" height="76" rx="16" fill="#1b1e25" stroke="#2c303a" stroke-width="1.5"/><path d="M-16 8 a10 10 0 0 1 2-19 a13 13 0 0 1 25 3 a8 8 0 0 1 3 16 Z" fill="none" stroke="#dfe3e8" stroke-width="2" stroke-linejoin="round"/></g>
+<text x="500" y="234" text-anchor="middle" font-size="15" fill="#dfe3e8">amux relay</text>
+<g transform="translate(760,170)"><rect x="-44" y="-38" width="88" height="76" rx="16" fill="#1b1e25" stroke="#2c303a" stroke-width="1.5"/><rect x="-12" y="-20" width="24" height="40" rx="5" fill="none" stroke="#dfe3e8" stroke-width="2"/><path d="M-4 15 H4" stroke="#dfe3e8" stroke-width="2"/></g>
+<text x="760" y="234" text-anchor="middle" font-size="15" fill="#dfe3e8">your phone</text>
+</svg>

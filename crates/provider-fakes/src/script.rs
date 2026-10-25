@@ -111,6 +111,10 @@ pub struct Script {
     /// streams them, as a model writing does.
     #[serde(default)]
     pub chunk_ms: u64,
+    /// How long each completed turn says it took (headless Claude's result
+    /// `duration_ms`, which a chat shows as "Worked 6m"); 1 ms when unset.
+    #[serde(default)]
+    pub turn_ms: Option<u64>,
     /// File tools change the files they name, as the real tools do: a
     /// Write writes its content, an Edit replaces its old string, a Codex
     /// patch writes each file it adds. Off by default, so a script's paths
@@ -285,6 +289,10 @@ pub struct Outcome {
     /// return the pieces joined.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pieces: Option<usize>,
+    /// The call runs this long before it returns, so its row shows a
+    /// believable duration; at once when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ms: Option<u64>,
 }
 
 impl Outcome {
@@ -300,6 +308,11 @@ impl Outcome {
     /// Everything the command printed.
     pub fn text(&self) -> String {
         self.printed().collect()
+    }
+
+    /// When a call started now returns.
+    pub fn until(&self) -> tokio::time::Instant {
+        tokio::time::Instant::now() + std::time::Duration::from_millis(self.ms.unwrap_or(0))
     }
 }
 

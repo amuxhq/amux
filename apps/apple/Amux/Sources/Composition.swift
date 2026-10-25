@@ -5,6 +5,7 @@ import AmuxShell
 import Foundation
 import Observation
 import UIKit
+import UserNotifications
 
 /// Everything the app is made of, assembled in one place.
 ///
@@ -46,6 +47,31 @@ final class Composition {
         }
     }
     private static let shareUsageKey = "shareUsage"
+    /// Notifications as iOS has them, read at launch and whenever the app
+    /// comes back to the front, since they are changed in the system's
+    /// settings. None in a build that does not offer them.
+    private(set) var notifications: NotificationsSetting?
+    /// Whether the home's offer of notifications was put away. Kept across
+    /// launches: the offer is made once, and Settings has them after.
+    private var notificationsOfferDeclined =
+        UserDefaults.standard.bool(forKey: Composition.notificationsOfferKey) {
+        didSet {
+            UserDefaults.standard.set(notificationsOfferDeclined, forKey: Self.notificationsOfferKey)
+        }
+    }
+    private static let notificationsOfferKey = "notificationsOfferDeclined"
+    /// Whether this build offers notifications at all. Nothing sends them to
+    /// a phone yet, so the App Store build keeps them out of sight rather
+    /// than ask for something that never arrives; the debug build offers
+    /// them, for a push handed to the simulator.
+    #if AMUX_DEBUG_TOOLS
+    static let offersNotifications = true
+    #else
+    static let offersNotifications = false
+    #endif
+
+    /// Whether the home offers notifications above its list.
+    var offerNotifications: Bool { notifications == .notAsked && !notificationsOfferDeclined }
     /// The one report this phone is in the middle of, from a screenshot or
     /// from Help. In every build: reporting a problem is for everybody.
     let reports = ReportStore()
@@ -148,6 +174,7 @@ final class Composition {
         runtime.start()
         discovery.start()
         settleOutstandingPurchases()
+        readNotifications()
         Signposts.emit(.compositionBuilt)
     }
 
@@ -245,6 +272,18 @@ final class Composition {
             appearance = wanted
         case .shareUsage(let on):
             shareUsage = on
+        case .turnOnNotifications:
+            askForNotifications()
+        case .notNowNotifications:
+            notificationsOfferDeclined = true
+        // Once iOS has asked, its own settings are the only place they are
+        // changed: an app may ask once and never turn them off.
+        case .notificationSettings:
+            if notifications == .notAsked {
+                askForNotifications()
+            } else if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
+                UIApplication.shared.open(url)
+            }
         case .deleteAccount(let id):
             deletion.ask(id)
         case .cancelDeletion:
@@ -272,6 +311,52 @@ final class Composition {
         case .yearly: .yearly
         }
     }
+
+    /// Reads what iOS says about notifications into `notifications`.
+    func readNotifications() {
+        guard Self.offersNotifications else { return }
+        Task {
+            let status = await UNUserNotificationCenter.current().notificationSettings()
+                .authorizationStatus
+            notifications = switch status {
+            case .notDetermined: .notAsked
+            case .authorized, .provisional, .ephemeral: .on
+            case .denied: .off
+            @unknown default: .off
+            }
+        }
+    }
+
+    private func askForNotifications() {
+        Task {
+            _ = try? await UNUserNotificationCenter.current()
+                .requestAuthorization(options: [.alert, .sound, .badge])
+            readNotifications()
+        }
+    }
+
+    /// Takes away the notifications of agents that no longer need you: an
+    /// ask answered on another machine leaves nothing on the lock screen to
+    /// open onto a chat that has moved on. Only agents the fleet on screen
+    /// lists as settled are cleared; one it does not list, on another
+    /// account or folded into a family, is left for when it is.
+    func clearSettledNotifications() {
+        guard Self.offersNotifications else { return }
+        let settled = Set(stores.fleet.rows.filter { !$0.needsYou }.map(\.id))
+        guard !settled.isEmpty else { return }
+        Task {
+            let center = UNUserNotificationCenter.current()
+            let delivered = await center.deliveredNotifications().map {
+                (id: $0.request.identifier, payload: $0.request.content.userInfo)
+            }
+            let stale = PushPayload.stale(delivered, settled: settled)
+            if !stale.isEmpty { center.removeDeliveredNotifications(withIdentifiers: stale) }
+        }
+    }
+
+    /// The agents the fleet on screen lists as needing you; a change in it
+    /// is when notifications may have gone stale.
+    var waiting: Set<AgentKey> { Set(stores.fleet.rows.filter(\.needsYou).map(\.id)) }
 
     /// Opens the chat a notification names, putting the account whose
     /// profile trusts its host on screen first.

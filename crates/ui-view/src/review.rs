@@ -39,7 +39,12 @@ pub enum FileStatus {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct Hunk {
-    pub header: String,
+    /// Lines the patch leaves out come before this one: every hunk but a
+    /// file's first when that starts at the top.
+    pub skips: bool,
+    /// The line git names after the header's second `@@`, its guess at the
+    /// enclosing function or type; empty when it names none.
+    pub scope: String,
     pub lines: Vec<DiffLine>,
 }
 
@@ -104,8 +109,12 @@ pub fn review_doc(diff: &Diff, patch: &str, comments: &[ReviewComment]) -> Revie
             let (old, new) = hunk_starts(header);
             old_line = old;
             new_line = new;
+            let scope = header
+                .split_once("@@")
+                .map_or("", |(_, scope)| scope.trim());
             file.hunks.push(Hunk {
-                header: line.to_owned(),
+                skips: !file.hunks.is_empty() || old.max(new) > 1,
+                scope: scope.to_owned(),
                 lines: Vec::new(),
             });
             continue;

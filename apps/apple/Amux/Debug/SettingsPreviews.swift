@@ -9,6 +9,7 @@ import SwiftUI
 #Preview("Settings") { StoryApp(settingsOpen: true) }
 #Preview("Settings · two accounts") { StoryScreen("settings.two-accounts") }
 #Preview("Settings · signed out") { StoryScreen("settings.signed-out") }
+#Preview("Settings · notifications") { StoryScreen("settings.notifications") }
 #Preview("Settings · remove account") {
     let stores = StoryFleet.busy(accounts: 2)
     NavigationStack {

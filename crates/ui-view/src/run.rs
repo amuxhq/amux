@@ -250,6 +250,7 @@ fn failed_kind(kind: &RowKind) -> bool {
         } => *state == CallPhase::Failed || exit_code.is_some_and(|code| code != 0),
         RowKind::Explore { state, .. }
         | RowKind::ToolCall { state, .. }
+        | RowKind::Child { state, .. }
         | RowKind::FileChange { state, .. } => *state == CallPhase::Failed,
         _ => false,
     }

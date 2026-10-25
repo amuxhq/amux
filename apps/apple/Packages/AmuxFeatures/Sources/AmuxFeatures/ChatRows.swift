@@ -103,6 +103,28 @@ public struct ChatRowView: View {
                 quote: denialNote,
                 detail: expanded && !result.isEmpty ? result : nil,
                 opens: !result.isEmpty, open: expanded, toggle: toggle)
+        case .child(let action, let name, let host, let kind, let state, let result):
+            // "Started payment-tests on build · Codex", as the terminal
+            // says it: the machine only when it is another one.
+            let verb = switch (action, state) {
+            case (.start, .failed): String(localized: "Could not start")
+            case (.stop, .failed): String(localized: "Could not stop")
+            case (.start, _): ChatWords.verb(
+                state, row, wants: String(localized: "Wants to start"),
+                doing: String(localized: "Starting"), done: String(localized: "Started"))
+            case (.stop, _): ChatWords.verb(
+                state, row, wants: String(localized: "Wants to stop"),
+                doing: String(localized: "Stopping"), done: String(localized: "Stopped"))
+            }
+            let who = name.isEmpty ? String(localized: "a subagent") : name
+            GridRow(
+                kind: "child", glyph: glyph(state, action == .start ? "person.badge.plus" : "person.badge.minus"),
+                accented: accented(state), failed: state == .failed,
+                rail: rail, verb: verb, subject: host.isEmpty ? who : String(localized: "\(who) on \(host)"),
+                meta: RowMeta(ChatWords.meta([kind], row, verbPhase: state, note: false)),
+                quote: denialNote,
+                detail: expanded && !result.isEmpty ? result : nil,
+                opens: !result.isEmpty, open: expanded, toggle: toggle)
         case .fileChange(let files, let state):
             fileChange(files, state)
         case .command(

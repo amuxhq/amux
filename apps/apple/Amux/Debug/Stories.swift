@@ -20,6 +20,7 @@ extension ComponentCatalog {
 
     static let fleet: [ComponentExample] = [
         fleet("busy") { StoryFleet.busy() },
+        fleet("notifications-offer", offerNotifications: true) { StoryFleet.busy(nearby: false) },
         fleet("stopped-open") { StoryFleet.busy(stoppedOpen: true) },
         fleet("away") { StoryFleet.busy(away: true) },
         fleet("no-agents") { StoryFleet.noAgents() },
@@ -56,7 +57,7 @@ extension ComponentCatalog {
     ]
 
     private static func fleet(
-        _ id: String, size: DynamicTypeSize = .large,
+        _ id: String, size: DynamicTypeSize = .large, offerNotifications: Bool = false,
         stores: @escaping @MainActor () -> StoryFleet.Stores
     ) -> ComponentExample {
         ComponentExample(
@@ -68,7 +69,10 @@ extension ComponentCatalog {
             // In a navigation stack, as the app shows it, so the title and
             // the buttons beside it are the system bar's.
             NavigationStack {
-                AgentsHome(model: stores.fleet, accounts: stores.accounts, hosts: stores.hosts) { _ in }
+                AgentsHome(
+                    model: stores.fleet, accounts: stores.accounts, hosts: stores.hosts,
+                    offerNotifications: offerNotifications
+                ) { _ in }
             }
             .onAppear { Design.app.dressNavigationBars() }
         }
@@ -96,8 +100,11 @@ enum StoryFleet {
     static let laptop = host(4, "laptop", platform: .macos, trusted: false, candidate: true)
     static let studioFound = host(5, "studio", platform: .macos, trusted: false, candidate: true)
 
+    /// - Parameter nearby: whether a machine this phone has not paired is
+    ///   on its network, offering itself above the list.
     static func busy(
-        stoppedOpen: Bool = false, away: Bool = false, accounts: Int = 1, picture: Bool = false
+        stoppedOpen: Bool = false, away: Bool = false, accounts: Int = 1, picture: Bool = false,
+        nearby: Bool = true
     ) -> Stores {
         let studioReach: Reach = away ? .away : .online(.direct)
         let needs = [
@@ -132,7 +139,9 @@ enum StoryFleet {
         let view = FleetView(sections: sections, needYou: 2, working: 3)
         var studio = studio
         if away { studio.reach = .away }
-        var stores = Self.stores(hosts: [desk, studio, pi, laptop], accounts: accounts, picture: picture)
+        var stores = Self.stores(
+            hosts: nearby ? [desk, studio, pi, laptop] : [desk, studio, pi], accounts: accounts,
+            picture: picture)
         stores.view = view
         stores.fleet.show(view, hosts: stores.hostViews)
         if stoppedOpen { stores.fleet.toggle(.exited) }
@@ -192,7 +201,7 @@ enum StoryFleet {
     }
 
     private static func activity(_ kind: ActivityKind) -> Activity {
-        Activity(kind: kind, sinceMs: ms(minutesAgo: 1), elapsedMs: 60_000)
+        Activity(kind: kind, sinceMs: ms(minutesAgo: 1), elapsedMs: 60_000, turnElapsedMs: 60_000)
     }
 
     private static func ms(minutesAgo: Double) -> Int64 {
@@ -224,6 +233,7 @@ enum StoryFleet {
 struct StoryApp: View {
     @State private var router: Router
     @State private var app: (accounts: AccountRegistry, stores: StoreBundle)
+    private let notifications: NotificationsSetting?
 
     /// - Parameters:
     ///   - chatOpen: opens the first agent's chat, as a person who had just
@@ -231,11 +241,14 @@ struct StoryApp: View {
     ///   - settingsOpen: raises the settings sheet over the list.
     ///   - reviewOpen: opens the first agent's chat and its review over it.
     ///   - newAgentOpen: raises New Agent over the list.
+    ///   - notifications: what Settings says of notifications; none leaves
+    ///     the row out, as a build that offers none does.
     init(
         chatOpen: Bool = false,
         settingsOpen: Bool = false,
         reviewOpen: Bool = false,
         newAgentOpen: Bool = false,
+        notifications: NotificationsSetting? = nil,
         chatPhase: PhaseView = .idle,
         _ fleet: @escaping @MainActor () -> StoryFleet.Stores = { StoryFleet.busy() }
     ) {
@@ -261,6 +274,7 @@ struct StoryApp: View {
         bundle.hosts.show(invented.hostViews)
         if let roster = invented.hosts.roster { bundle.hosts.show(roster) }
         _app = State(initialValue: (invented.accounts, bundle))
+        self.notifications = notifications
     }
 
     var body: some View {
@@ -276,7 +290,7 @@ struct StoryApp: View {
     private var shell: Shell {
         Shell(
             router: router, accounts: app.accounts, stores: app.stores, signIn: SignInStore(),
-            paywall: PaywallStore(), deletion: DeletionStore()
+            paywall: PaywallStore(), deletion: DeletionStore(), notifications: notifications
         ) { _ in }
     }
 }

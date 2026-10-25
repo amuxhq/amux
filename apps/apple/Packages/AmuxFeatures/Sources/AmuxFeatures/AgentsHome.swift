@@ -27,6 +27,10 @@ public enum HomeAction: Equatable, Sendable {
     /// Take the person to this app's page in the system's settings, the only
     /// place a refused local network can be granted again.
     case openSystemSettings
+    /// Ask iOS to show a notification when an agent needs you.
+    case turnOnNotifications
+    /// Put the offer of notifications away for good. Settings still has them.
+    case notNowNotifications
     case openExceptions
     /// The list was pulled, or the screen came back into view. Only then may
     /// the ordering regroup.
@@ -54,6 +58,9 @@ public struct AgentsHome: View {
     /// with no agents yet is a phone that has not paired, and what it has
     /// found on its network is the shortest way out of that.
     private let hosts: HostsStore
+    /// Whether to offer notifications above the list: iOS has not asked,
+    /// and nobody has put the offer away.
+    private let offerNotifications: Bool
     private let actions: @MainActor (HomeAction) -> Void
     /// The fold is view state, not fleet state: opening it is a thing this
     /// screen is doing, and coming back to the screen starts it closed again.
@@ -69,11 +76,13 @@ public struct AgentsHome: View {
         model: FleetStore,
         accounts: AccountRegistry,
         hosts: HostsStore,
+        offerNotifications: Bool = false,
         actions: @escaping @MainActor (HomeAction) -> Void
     ) {
         self.model = model
         self.accounts = accounts
         self.hosts = hosts
+        self.offerNotifications = offerNotifications
         self.actions = actions
         // Picked up from the fleet so the list comes back narrowed as it was
         // left, rather than with an empty field over a filtered list.
@@ -187,7 +196,7 @@ public struct AgentsHome: View {
         // Nothing else reaches this screen: the rest of an account's actions
         // live under You, where there is room to state what they do.
         case .signOut, .remove, .confirmRemoval, .cancelRemoval, .delete, .subscription,
-             .appearance, .shareUsage, .support, .report, .exportDump:
+             .appearance, .shareUsage, .notifications, .support, .report, .exportDump:
             break
         }
     }
@@ -627,7 +636,12 @@ public struct AgentsHome: View {
     }
 
     /// What the list asks of the person before its rows: pairing a machine
-    /// found nearby, then whatever stands between the phone and the fleet.
+    /// found nearby, then whatever stands between the phone and the fleet,
+    /// then notifications, which are worth having and never in the way.
+    ///
+    /// Notifications are offered here, once a machine is paired, rather than
+    /// asked for at launch: iOS asks once, and the question makes sense only
+    /// to somebody with agents that could need them.
     private var callouts: [Callout<HomeAction>] {
         var callouts = found.compactMap { host -> Callout<HomeAction>? in
             guard let id = host.id else { return nil }
@@ -641,6 +655,14 @@ public struct AgentsHome: View {
             callouts.append(Callout(
                 id: "exceptions", glyph: glyph(for: exceptions.act), title: exceptions.text,
                 detail: nil, button: nil, act: exceptions.act))
+        }
+        if offerNotifications {
+            callouts.append(Callout(
+                id: "notifications", glyph: "bell",
+                title: String(localized: "Get notified"),
+                detail: String(localized: "When an agent needs you"),
+                button: String(localized: "Turn On"), act: .turnOnNotifications,
+                dismiss: .notNowNotifications))
         }
         return callouts
     }
@@ -1140,6 +1162,9 @@ struct Callout<Action: Equatable>: Identifiable, Equatable {
     let act: Action
     /// What a driver names its card by.
     var identifier: String?
+    /// Putting the callout away, for one the person may decline; drawn as a
+    /// close mark at its end.
+    var dismiss: Action? = nil
 }
 
 /// The callouts: one takes the full width; more than one narrow so the next
@@ -1187,54 +1212,86 @@ private struct FleetSearch: ViewModifier {
 }
 
 /// A callout as a card: a quiet surface with its mark, its words and its
-/// button.
+/// button, and a close mark at its end when it can be put away.
 private struct CalloutCard<Action: Equatable>: View {
     @Environment(\.design) private var design
     let callout: Callout<Action>
     let act: (Action) -> Void
 
+    private var identifier: String { callout.identifier ?? "home.callout.\(callout.id)" }
+
     var body: some View {
-        Button { act(callout.act) } label: {
-            HStack(spacing: Space.m) {
-                Image(systemName: callout.glyph)
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(design.inkMuted.color)
-                    .frame(width: 24)
-                VStack(alignment: .leading, spacing: Space.xxs) {
-                    Text(callout.title)
-                        .designFont(.bodyEmphasis, design)
-                        .foregroundStyle(design.ink.color)
-                        .lineLimit(1)
-                    if let detail = callout.detail {
-                        Text(detail)
-                            .designFont(.caption, design)
-                            .foregroundStyle(design.inkMuted.color)
-                            .lineLimit(1)
-                    }
+        if let dismiss = callout.dismiss {
+            // Two buttons side by side on one surface: a button inside
+            // another's label would take every press as the outer one's.
+            HStack(spacing: 0) {
+                Button { act(callout.act) } label: {
+                    face.padding(.leading, Space.m).contentShape(Rectangle())
                 }
-                Spacer(minLength: Space.s)
-                if let button = callout.button {
-                    Text(button)
-                        .designFont(.caption, design)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(design.onAccent.color)
-                        .padding(.horizontal, Space.m)
-                        .frame(height: 30)
-                        .background(Capsule().fill(design.accent.color))
-                } else {
-                    Image(systemName: "chevron.right")
+                .buttonStyle(.amuxControl)
+                .identified(identifier, label: callout.title)
+                Button { act(dismiss) } label: {
+                    Image(systemName: "xmark")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(design.inkFaint.color)
+                        .frame(width: 44, height: 60)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.amuxControl)
+                .identified("\(identifier).dismiss", label: String(localized: "Not Now"))
+            }
+            .frame(minHeight: 60)
+            .background(surface)
+        } else {
+            Button { act(callout.act) } label: {
+                face
+                    .padding(.horizontal, Space.m)
+                    .frame(minHeight: 60)
+                    .background(surface)
+                    .contentShape(RoundedRectangle(cornerRadius: design.metrics.controlRadius))
+            }
+            .buttonStyle(.amuxControl)
+            .identified(identifier, label: callout.title)
+        }
+    }
+
+    private var surface: some View {
+        RoundedRectangle(cornerRadius: design.metrics.controlRadius).fill(design.sunken.color)
+    }
+
+    private var face: some View {
+        HStack(spacing: Space.m) {
+            Image(systemName: callout.glyph)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(design.inkMuted.color)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: Space.xxs) {
+                Text(callout.title)
+                    .designFont(.bodyEmphasis, design)
+                    .foregroundStyle(design.ink.color)
+                    .lineLimit(1)
+                if let detail = callout.detail {
+                    Text(detail)
+                        .designFont(.caption, design)
+                        .foregroundStyle(design.inkMuted.color)
+                        .lineLimit(1)
                 }
             }
-            .padding(.horizontal, Space.m)
-            .frame(minHeight: 60)
-            .background(
-                RoundedRectangle(cornerRadius: design.metrics.controlRadius)
-                    .fill(design.sunken.color))
-            .contentShape(RoundedRectangle(cornerRadius: design.metrics.controlRadius))
+            Spacer(minLength: Space.s)
+            if let button = callout.button {
+                Text(button)
+                    .designFont(.caption, design)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(design.onAccent.color)
+                    .padding(.horizontal, Space.m)
+                    .frame(height: 30)
+                    .background(Capsule().fill(design.accent.color))
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(design.inkFaint.color)
+            }
         }
-        .buttonStyle(.amuxControl)
-        .identified(callout.identifier ?? "home.callout.\(callout.id)", label: callout.title)
+        .frame(minHeight: 60)
     }
 }

@@ -588,11 +588,11 @@ async fn agents_lists_the_fleet_read_to_caught_up_and_marks_you() {
     assert_eq!(
         listed,
         json!({ "agents": [
-            { "name": "lead", "id": interpret::to_hex(&ME), "kind": "claude_pty", "host": "laptop",
+            { "name": "lead", "id": interpret::to_hex(&ME), "kind": "claude", "host": "laptop",
               "live": true, "phase": "working", "working_on": "Splitting the parser", "you": true },
             { "name": "reviewer", "id": interpret::to_hex(&REVIEWER), "kind": "codex",
               "host": "Studio", "live": true, "phase": "idle" },
-            { "name": "helper", "id": interpret::to_hex(&CHILD), "kind": "claude_sdk",
+            { "name": "helper", "id": interpret::to_hex(&CHILD), "kind": "claude",
               "host": "laptop", "live": false, "phase": "idle", "exit_cause": "finished",
               "parent": "lead" },
         ]})
@@ -715,7 +715,7 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
 
     mcp.ok(
         "spawn",
-        json!({ "kind": "claude_sdk", "prompt": "Review it.", "host": "studio" }),
+        json!({ "kind": "claude", "prompt": "Review it.", "host": "studio" }),
     )
     .await;
     let calls = fleet.calls();
@@ -744,7 +744,7 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
     assert_eq!(
         mcp.refused("spawn", json!({ "kind": "gemini", "prompt": "x" }))
             .await,
-        "no agent kind \"gemini\"; use claude_pty, claude_sdk or codex"
+        "no agent kind \"gemini\"; use claude or codex"
     );
     assert_eq!(
         fleet.calls().len(),

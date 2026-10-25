@@ -291,6 +291,20 @@ alone. In front of somebody the account on screen never changes under them;
 a tap on a notification for another account's host brings that account
 forward.
 
+A notification only opens its chat; it carries no Allow or Deny, since the
+request makes sense only beside what the agent was doing. The app asks for
+permission from a card on the agent list ("Get notified", with Not Now) and
+from **Notifications** in **Settings**, which asks if nobody has yet and
+otherwise opens the system's settings for the app. Not Now is kept in the
+app's defaults. Whenever the app comes to the front, and whenever the set of
+agents waiting on somebody changes, it removes the delivered notifications
+whose agent no longer needs anyone (`PushPayload.stale`). The tap is handled
+with the completion-handler form of `didReceive`, on the main actor: its
+async form ran off the main thread and crashed the app as it came forward.
+The card and the row show only in Debug and Measured builds until amux.sh
+sends pushes; the App Store build neither shows them nor registers for
+remote notifications.
+
 ## The store
 
 The store is the workspace's `store` crate, built with SQLite bundled rather

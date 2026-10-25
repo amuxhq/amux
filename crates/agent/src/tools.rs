@@ -47,8 +47,8 @@ and which one is this host. Spawn on another host by its name.";
 const SEND: &str = "Send a message to another amux agent by name. It answers once the \
 recipient's provider has the message, or says why it could not. When a message reaches you \
 from an amux agent, reply with this tool to that agent's name.";
-const SPAWN: &str = "Start a child agent of any kind with a first prompt: claude_pty (Claude \
-in a terminal), claude_sdk (headless Claude) or codex. It runs on this host unless you name \
+const SPAWN: &str = "Start a child agent with a first prompt: claude or codex. It runs on \
+this host unless you name \
 another trusted host, in your working directory unless you give one. On another host, give \
 a folder there: ask the person which one if you do not know one. The child does \
 its work and stops; you are sent its last message when it finishes, and a later send to it \
@@ -218,13 +218,13 @@ impl Server {
 
     async fn call(&self, name: &str, arguments: &Value) -> Option<Answer> {
         Some(match name {
-            "agents" => self.agents().await,
-            "hosts" => self.hosts().await,
-            "send" => self.send(arguments).await,
-            "spawn" => self.spawn(arguments).await,
-            "stop" => self.stop(arguments).await,
-            interpret::STATUS_TOOL => status(arguments),
-            "attach" => self.attach(arguments),
+            wire::AGENTS_TOOL => self.agents().await,
+            wire::HOSTS_TOOL => self.hosts().await,
+            wire::SEND_TOOL => self.send(arguments).await,
+            wire::SPAWN_TOOL => self.spawn(arguments).await,
+            wire::STOP_TOOL => self.stop(arguments).await,
+            wire::STATUS_TOOL => status(arguments),
+            wire::ATTACH_TOOL => self.attach(arguments),
             _ => return None,
         })
     }
@@ -352,8 +352,8 @@ impl Server {
     async fn spawn(&self, arguments: &Value) -> Answer {
         let kind = required(arguments, "kind")?;
         let Some(kind) = kind_named(&kind) else {
-            let [first, second, last] = SPAWNABLE.map(kind_word);
-            return Err(format!("no agent kind {kind:?}; use {first}, {second} or {last}").into());
+            let [first, last] = SPAWNABLE.map(kind_word);
+            return Err(format!("no agent kind {kind:?}; use {first} or {last}").into());
         };
         let prompt = required(arguments, "prompt")?;
         let name = optional(arguments, "name");
@@ -686,8 +686,10 @@ fn plain(status: &Status) -> String {
     }
 }
 
-/// The kinds an agent may spawn.
-const SPAWNABLE: [Kind; 3] = [Kind::ClaudePty, Kind::ClaudeSdk, Kind::Codex];
+/// The kinds an agent may spawn. A Claude child runs headless: people read
+/// a child in amux's chat, so how its Claude is driven is no business of
+/// the parent's.
+const SPAWNABLE: [Kind; 2] = [Kind::ClaudeSdk, Kind::Codex];
 
 /// An enum value as the tools say it: its protobuf name without the enum's
 /// prefix, in lowercase, so the tools' words are the wire's own.
@@ -695,11 +697,13 @@ fn word(name: &str, prefix: &str) -> String {
     name.trim_start_matches(prefix).to_ascii_lowercase()
 }
 
-/// A kind as the tools say it: `claude_pty`, `claude_sdk`, `codex`.
+/// A kind as the tools say it: `claude` or `codex`. Both ways of driving
+/// Claude are `claude`, for the same reason a parent cannot pick one.
 fn kind_word(kind: Kind) -> String {
     match kind {
         Kind::Unspecified => "unknown".to_owned(),
-        known => word(known.as_str_name(), "KIND_"),
+        Kind::ClaudePty | Kind::ClaudeSdk => "claude".to_owned(),
+        Kind::Codex => "codex".to_owned(),
     }
 }
 
@@ -797,29 +801,29 @@ fn definitions() -> Value {
     };
     let read_only = json!({ "readOnlyHint": true });
     json!([
-        { "name": "agents", "description": AGENTS, "inputSchema": object(json!({}), &[]),
+        { "name": wire::AGENTS_TOOL, "description": AGENTS, "inputSchema": object(json!({}), &[]),
           "annotations": read_only },
-        { "name": "hosts", "description": HOSTS, "inputSchema": object(json!({}), &[]),
+        { "name": wire::HOSTS_TOOL, "description": HOSTS, "inputSchema": object(json!({}), &[]),
           "annotations": read_only },
-        { "name": interpret::SEND_TOOL, "description": SEND, "inputSchema": object(json!({
+        { "name": wire::SEND_TOOL, "description": SEND, "inputSchema": object(json!({
             "to": { "type": "string", "description": "The recipient agent's name." },
             "text": { "type": "string" },
             "context": { "type": "string", "description": "An optional thread label the recipient sees with the message." },
           }), &["to", "text"]) },
-        { "name": "spawn", "description": SPAWN, "inputSchema": object(json!({
+        { "name": wire::SPAWN_TOOL, "description": SPAWN, "inputSchema": object(json!({
             "kind": { "type": "string", "enum": SPAWNABLE.map(kind_word) },
             "prompt": { "type": "string" },
             "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": wire::AGENT_NAME_MOST, "description": "Lowercase letters, digits and hyphens; one is chosen when omitted." },
             "cwd": { "type": "string", "description": "A path on the host the child runs on; required when that is another host." },
             "host": { "type": "string", "description": "A trusted host's name; this host when omitted." },
           }), &["kind", "prompt"]) },
-        { "name": "stop", "description": STOP, "inputSchema": object(json!({
+        { "name": wire::STOP_TOOL, "description": STOP, "inputSchema": object(json!({
             "name": { "type": "string" },
           }), &["name"]) },
-        { "name": interpret::STATUS_TOOL, "description": STATUS, "inputSchema": object(json!({
+        { "name": wire::STATUS_TOOL, "description": STATUS, "inputSchema": object(json!({
             "working_on": { "type": ["string", "null"] },
           }), &["working_on"]) },
-        { "name": "attach", "description": ATTACH, "inputSchema": object(json!({
+        { "name": wire::ATTACH_TOOL, "description": ATTACH, "inputSchema": object(json!({
             "path": { "type": "string" },
             "name": { "type": "string", "description": "The name viewers see; the file's own name when omitted." },
           }), &["path"]) },

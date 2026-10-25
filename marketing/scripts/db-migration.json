@@ -1,0 +1,72 @@
+{
+  "chunk_ms": 25,
+  "edit_files": true,
+  "model": "claude-opus-5-5",
+  "steps": [
+    {
+      "pause": {
+        "ms": 120000
+      }
+    },
+    {
+      "tool": {
+        "name": "Read",
+        "class": "exploration",
+        "input": {
+          "file_path": "migrations/0006_invoices.sql"
+        },
+        "outcome": {
+          "output": ""
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "Grep",
+        "class": "exploration",
+        "input": {
+          "pattern": "line_items"
+        },
+        "outcome": {
+          "output": ""
+        }
+      }
+    },
+    {
+      "thinking": {
+        "text": "Copy first, keep the JSONB column for a release, drop later."
+      }
+    },
+    {
+      "ask": {
+        "plan": {
+          "markdown": "## Move invoice line items into their own table\n\nLine items live in a JSONB column on `invoices`, so reports can't filter or sum them.\n\n1. **Migration 0007** creates `line_items` (invoice, description, quantity, unit price, tax rate), copies every row out of `invoices.line_items`, and keeps the JSONB column for one release.\n2. **API** reads and writes `line_items`; invoice totals become a sum, checked against the stored total during the copy.\n3. **Backfill check**: a script compares both representations for every invoice and lists mismatches before the old column is dropped.\n4. **Migration 0008** (next release) drops `invoices.line_items`.\n\nRollback is safe until 0008: the old column is still written."
+        }
+      }
+    },
+    {
+      "text": {
+        "chunks": [
+          "Starting with migration ",
+          "0007."
+        ]
+      }
+    },
+    "turn_end"
+  ],
+  "models": [
+    {
+      "value": "claude-opus-5-5",
+      "display_name": "Opus 5.5",
+      "description": "Most capable",
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_effort": "high"
+    }
+  ]
+}

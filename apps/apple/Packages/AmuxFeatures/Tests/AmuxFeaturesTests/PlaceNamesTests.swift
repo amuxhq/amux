@@ -16,6 +16,7 @@ final class PlaceNamesTests: XCTestCase {
         XCTAssertEqual(PlaceNames.directory("/home/ada/work/api/server"), "~/w/a/server")
         XCTAssertEqual(PlaceNames.directory("~/src/amux"), "~/s/amux")
         XCTAssertEqual(PlaceNames.directory("/Users/ada"), "~")
+        XCTAssertEqual(PlaceNames.directory("/Users/Shared/tally"), "/U/S/tally")
         XCTAssertEqual(PlaceNames.directory("/Users/ada/.config/amux"), "~/.c/amux")
         XCTAssertEqual(PlaceNames.directory("/opt/build/amux"), "/o/b/amux")
         XCTAssertEqual(PlaceNames.directory("amux"), "amux")

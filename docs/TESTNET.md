@@ -150,8 +150,9 @@ fake waits for a prompt or an injected message, then plays steps until `turn_end
 | `exit` | Exit the provider process with a code. |
 | `repeat` | Play some steps a number of times, without writing them out. |
 
-A script can also set the `model`, the `models` and `commands` a session offers, and, for terminal Claude,
-`offers_auto_mode` and `untrusted_folder`. A script that asks a provider for an ask kind it cannot raise fails to
+A script can also set the `model`, the `models` and `commands` a session offers, `turn_ms`, how long headless
+Claude says each finished turn took (the chat's "Worked 4m"), and, for terminal Claude, `offers_auto_mode` and
+`untrusted_folder`. A Codex command that asks gives the `reason` in its input as the request's reason. A script that asks a provider for an ask kind it cannot raise fails to
 load.
 
 ## Real providers
@@ -597,7 +598,7 @@ what holds the port.
 | Agents | `spawn NAME --host H [--kind claude-sdk\|claude-pty\|codex] [--provider real\|fake] [--script FILE] [--prompt P] [--model M] [--permission P] [--mode M] [--parent A] [--cwd D] [--wait] [--timeout S]`, `send AGENT TEXT [--wait]`, `wait AGENT`, `stop-agent AGENT`, `resume AGENT [TEXT]`, `gate open NAME` |
 | A host's own record | `fleet HOST` (its own agents and its trusted peers', as its clients show them; rows a host it no longer trusts left behind are listed apart), `chat HOST AGENT` (each item with what its body decodes as, and the asks waiting on a person), `block HOST AGENT`, `provider-input AGENT` |
 | The real CLI | `amux HOST -- ARGS…`, with standard input passed through; bare `pair` runs in the background and prints its PIN and address, and `pair ADDRESS` naming one of the net's hosts goes through the pair's gate |
-| Terminal client | `tui open HOST [--size COLSxROWS] [--theme light\|dark] [--name N]`, `tui keys PANE KEY…`, `tui type PANE TEXT`, `tui paste PANE TEXT\|--file FILE\|--file -`, `tui clip PANE FILE [--image]`, `tui screen PANE`, `tui shot PANE`, `tui resize PANE COLSxROWS`, `tui attach PANE AGENT`, `tui watch PANE`, `tui close PANE`, `tui list` |
+| Terminal client | `tui open HOST [--size COLSxROWS] [--theme light\|dark \| --palette FILE] [--name N]`, `tui keys PANE KEY…`, `tui type PANE TEXT`, `tui paste PANE TEXT\|--file FILE\|--file -`, `tui clip PANE FILE [--image]`, `tui screen PANE`, `tui shot PANE`, `tui record PANE FILE [--every D] [--for D]`, `tui resize PANE COLSxROWS`, `tui attach PANE AGENT`, `tui watch PANE`, `tui close PANE`, `tui list` |
 | Phone | `phone open [--host H] [--relay]`, `phone pair HOST`, `phone connect ACCOUNT`, `phone tap ID`, `phone choose LABEL` (an item of the dialog or menu that is open), `phone type TEXT --into ID`, `phone search TEXT`, `phone scroll DIRECTION [--in ID]`, `phone query`, `phone shot`, `phone appearance light\|dark`, `phone text-size SIZE`, `phone attach AGENT FILE [--image]`, `phone settle` |
 | Evidence | `capture NAME [--note TEXT]`, `log [--tail N]`, `dump show BUNDLE [--agent A]` |
 | Files to test with | `make-file NAME SIZE [--fill zero\|random\|text]`: a file below the folder (no `..`), up to 2g |
@@ -608,13 +609,19 @@ Durations take `ms` or `s` (`200ms`, `1.5s`); a rate is bytes a second, with `k`
 otherwise.
 
 **The terminal client** runs as the real `amux` binary against a host's installation config in a tmux pane of the
-folder's own tmux server, at 24-bit colour in the chosen theme. That server reads only the net's own tmux
+folder's own tmux server, at 24-bit colour in the chosen theme. With `--palette FILE` (a JSON file of `background`,
+`foreground` and the sixteen `ansi` colours, as `#rrggbb`) the pane is instead a terminal of those colours: it answers
+the client's colour queries with them, the client derives its palette from them as it would from a person's
+terminal (`theme: terminal`), a pane `tui attach` opens from it has them too, and shots draw the palette's colours
+where a program used the terminal's own sixteen. That server reads only the net's own tmux
 configuration (`crates/testnet/src/ctl/tmux.conf`), never the operator's, so keys reach the client the same way on
 every machine: legacy bytes by default and xterm's modifyOtherKeys form to a program that asks for it, as Claude
 Code does in `tui attach`. `tui keys` presses each key separately, as tmux names
 them. `tui paste` loads the text into tmux's buffer from a file and pastes it as a bracketed paste byte for byte:
 line endings arrive as written, and a paste of any size goes through. `tui shot` captures the pane with its styles, turns it into the frame format the terminal's own report writes
-(`.frame.json`) and draws that to PNG with `crates/shot`; the exact text sits beside it (`.txt`). Background colour a
+(`.frame.json`) and draws that to PNG with `crates/shot`; the exact text sits beside it (`.txt`). `tui record` films a
+pane: each time its screen changes (checked every `--every`, 50ms by default), it appends one JSON line holding the
+milliseconds since it started and the frame, until `--for` has passed, the pane closes or it is stopped. Background colour a
 program paints by clearing to the end of a line is not kept, and the font has no CJK or emoji glyphs. `tui attach`
 opens `amux attach` for an agent in a second pane: Claude's own interface for terminal Claude, Codex's own for Codex.
 `tui watch` attaches this terminal to a pane, to watch and use the client in it by hand; tmux's C-b d leaves it

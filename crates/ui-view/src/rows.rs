@@ -6,6 +6,7 @@ use std::ops::RangeInclusive;
 
 use schemars::JsonSchema;
 use serde::Serialize;
+use serde_json::Value;
 use ui_state::{Fold, Held, ItemBody, Key, PhaseView, SessionState};
 use wire::{
     Attachment, BlobRef, BoundaryKind, DecisionOutcome, EnvelopeKind, FileChangeKind, SendState,
@@ -97,6 +98,17 @@ pub enum RowKind {
     FileChange {
         files: Vec<FileRow>,
         state: CallPhase,
+    },
+    /// amux's own call that starts or stops a subagent: "Started
+    /// payment-tests on build · Codex". `host` is empty for the caller's own
+    /// host, and `kind` empty when the call does not say it.
+    Child {
+        action: ChildAction,
+        name: String,
+        host: String,
+        kind: String,
+        state: CallPhase,
+        result: String,
     },
     Command {
         command: String,
@@ -348,12 +360,19 @@ impl Row {
     pub fn call_phase(&self) -> Option<CallPhase> {
         match &self.kind {
             RowKind::ToolCall { state, .. }
+            | RowKind::Child { state, .. }
             | RowKind::FileChange { state, .. }
             | RowKind::Command { state, .. }
             | RowKind::Explore { state, .. } => Some(*state),
             _ => None,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+pub enum ChildAction {
+    Start,
+    Stop,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
@@ -1145,13 +1164,23 @@ fn claude_tool(
             generated: false,
         }
     } else if !tool.server.is_empty() {
-        RowKind::ToolCall {
-            server: tool.server.clone(),
-            tool: tool.name.clone(),
-            fact: named.to_owned(),
-            state: view,
-            result: tool.outcome_text.clone(),
-        }
+        // Any other tool's input is Claude's own JSON, which amux's calls
+        // are read from.
+        let input = match of {
+            Some(tool_input::Of::OtherJson(json)) => {
+                serde_json::from_slice(json).unwrap_or(Value::Null)
+            }
+            _ => Value::Null,
+        };
+        amux_call(&tool.server, &tool.name, &input, &tool.outcome_text, view).unwrap_or_else(|| {
+            RowKind::ToolCall {
+                server: tool.server.clone(),
+                tool: tool.name.clone(),
+                fact: named.to_owned(),
+                state: view,
+                result: tool.outcome_text.clone(),
+            }
+        })
     } else if let Some(verb) = explore_verb(tool.class) {
         RowKind::Explore {
             verb,
@@ -1228,6 +1257,69 @@ fn claude_tool(
         }
     };
     (kind, decision, failed)
+}
+
+/// A string field of a JSON object, empty when it is missing.
+fn field(value: &Value, name: &str) -> String {
+    value
+        .get(name)
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// amux's own calls that a person reads better as what they did than as
+/// a tool call: a subagent started or stopped. Listing the fleet or the hosts
+/// is the agent looking around, and hidden. None for any other call.
+fn amux_call(
+    server: &str,
+    tool: &str,
+    input: &Value,
+    result: &str,
+    state: CallPhase,
+) -> Option<RowKind> {
+    if server != wire::AMUX_TOOL_SERVER {
+        return None;
+    }
+    let action = match tool {
+        wire::AGENTS_TOOL | wire::HOSTS_TOOL => return Some(RowKind::Hidden),
+        wire::SPAWN_TOOL => ChildAction::Start,
+        wire::STOP_TOOL => ChildAction::Stop,
+        _ => return None,
+    };
+    // A spawn may leave the name to amux; its answer then names the child,
+    // as `{"name", "id"}` or, from Codex, inside the tool result's text.
+    let answered = || {
+        let answer: Value = serde_json::from_str(result).ok()?;
+        let answer = match answer["content"][0]["text"].as_str() {
+            Some(text) => serde_json::from_str(text).ok()?,
+            None => answer,
+        };
+        answer["name"].as_str().map(str::to_owned)
+    };
+    let name = field(input, "name");
+    let name = if name.is_empty() {
+        answered().unwrap_or_default()
+    } else {
+        name
+    };
+    let kind = match field(input, "kind").as_str() {
+        "claude" => crate::fleet::kind_name(wire::Kind::ClaudeSdk),
+        "codex" => crate::fleet::kind_name(wire::Kind::Codex),
+        _ => "",
+    };
+    Some(RowKind::Child {
+        action,
+        name,
+        host: field(input, "host"),
+        kind: kind.to_owned(),
+        state,
+        result: if state == CallPhase::Failed {
+            result.to_owned()
+        } else {
+            String::new()
+        },
+    })
 }
 
 /// Added and removed lines: from the patch Claude reported when it gave
@@ -1343,17 +1435,23 @@ fn codex_work(
                     state: view,
                 }
             }
-            Some(Of::Mcp(call)) => RowKind::ToolCall {
-                server: call.server.clone(),
-                tool: call.tool.clone(),
-                fact: call.subject.clone(),
-                state: view,
-                result: if call.error.is_empty() {
+            Some(Of::Mcp(call)) => {
+                let input = serde_json::from_slice(&call.arguments_json).unwrap_or(Value::Null);
+                let result = if call.error.is_empty() {
                     String::from_utf8_lossy(&call.result_json).into_owned()
                 } else {
                     call.error.clone()
-                },
-            },
+                };
+                amux_call(&call.server, &call.tool, &input, &result, view).unwrap_or_else(|| {
+                    RowKind::ToolCall {
+                        server: call.server.clone(),
+                        tool: call.tool.clone(),
+                        fact: call.subject.clone(),
+                        state: view,
+                        result,
+                    }
+                })
+            }
             Some(Of::WebSearch(search)) => {
                 let (verb, subject) = web_step(search);
                 RowKind::Explore {

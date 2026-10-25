@@ -146,6 +146,7 @@ struct Engine {
     context_tokens: Option<u64>,
     edit_files: bool,
     chunk_ms: u64,
+    turn_ms: u64,
     /// The turn ended on a refused credential, with Claude's message.
     auth_failed: Option<String>,
     /// A form schema the next frame carries, as the script wrote it.
@@ -233,6 +234,7 @@ impl Engine {
             context_tokens: script.context_tokens,
             edit_files: script.edit_files,
             chunk_ms: script.chunk_ms,
+            turn_ms: script.turn_ms.unwrap_or(1),
             auth_failed: None,
             schema: None,
             tasks: Vec::new(),
@@ -779,6 +781,10 @@ impl Engine {
     /// A call held until its file exists keeps taking the host's frames
     /// while it runs; an interrupt stops waiting for it.
     async fn run_tool(&mut self, tool: &Tool) {
+        let until = tool.outcome.until();
+        while tokio::time::Instant::now() < until && self.cut != Some(Cut::Interrupted) {
+            self.pump().await;
+        }
         let Some(path) = &tool.wait_for else { return };
         while !path.exists() && self.cut != Some(Cut::Interrupted) {
             self.pump().await;
@@ -1290,7 +1296,10 @@ impl Engine {
                     .await;
                 let Some(answer) = answer else { return };
                 let outcome = match allowed(&answer) {
-                    Ok(()) => Ok(tool.outcome.text()),
+                    Ok(()) => {
+                        self.run_tool(&tool).await;
+                        Ok(tool.outcome.text())
+                    }
                     Err(refusal) => Err(refusal),
                 };
                 self.tool_result(&id, &tool, &input, outcome).await;
@@ -1442,7 +1451,7 @@ impl Engine {
             "subtype": "success",
             "api_error_status": null,
             "duration_api_ms": 1,
-            "duration_ms": 1,
+            "duration_ms": self.turn_ms,
             "fast_mode_disabled_reason": "sdk_opt_in_required",
             "fast_mode_state": "off",
             // Claude 2.1.289 also times each response.

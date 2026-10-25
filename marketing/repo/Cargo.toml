@@ -1,0 +1,9 @@
+[workspace]
+resolver = "2"
+members = ["crates/api", "crates/payments", "crates/sync"]
+
+[workspace.dependencies]
+axum = "0.8"
+serde = { version = "1", features = ["derive"] }
+sqlx = { version = "0.8", features = ["postgres", "runtime-tokio"] }
+tokio = { version = "1", features = ["full"] }

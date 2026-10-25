@@ -17,4 +17,15 @@ public enum PushPayload {
         else { return nil }
         return AgentKey(host: host, agent: agent)
     }
+
+    /// Which of the notifications on show, each its identifier and payload,
+    /// are for one of `settled`: agents that no longer need you, whose
+    /// notifications would open onto a chat that has moved on.
+    public static func stale(
+        _ delivered: [(id: String, payload: [AnyHashable: Any])], settled: Set<AgentKey>
+    ) -> [String] {
+        delivered.compactMap { notification in
+            agent(notification.payload).flatMap { settled.contains($0) ? notification.id : nil }
+        }
+    }
 }

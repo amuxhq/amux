@@ -665,6 +665,10 @@
       "shows": "Settings on a phone with no account signed in."
     },
     {
+      "id": "settings.notifications",
+      "shows": "Settings with notifications on, as a build that offers them shows the row."
+    },
+    {
       "id": "settings.delete",
       "shows": "Asking before an account is deleted, with the address typed to confirm."
     },
@@ -807,6 +811,10 @@
     {
       "id": "fleet.no-agents",
       "shows": "A phone paired with a machine that runs no agents yet."
+    },
+    {
+      "id": "fleet.notifications-offer",
+      "shows": "The busy fleet offering notifications above its list, with a close mark to put the offer away."
     },
     {
       "id": "fleet.first-run",

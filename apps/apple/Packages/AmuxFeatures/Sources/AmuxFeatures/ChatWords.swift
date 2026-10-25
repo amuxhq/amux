@@ -375,6 +375,7 @@ public enum ChatWords {
         case .command(let command, _, _, _, _, _, _, _): firstLine(command)
         case .explore(_, let subject, _, _): subject
         case .toolCall(let server, let tool, _, _, _): server.isEmpty ? tool : "\(server) · \(tool)"
+        case .child(_, let name, _, _, _, _): name.isEmpty ? nil : name
         case .fileChange(let files, _): files.first?.path
         case .subagent(let description, _, _, _, _, _): firstLine(description)
         default: nil

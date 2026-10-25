@@ -1018,17 +1018,20 @@ impl Engine {
 
     /// Run a call held until its file exists, taking keys meanwhile.
     async fn hold(&mut self, tool: &Tool) -> Held {
-        let Some(path) = &tool.wait_for else {
+        if tool.outcome.ms.is_none() && tool.wait_for.is_none() {
             return Held::Ran;
-        };
+        }
+        let until = tool.outcome.until();
         loop {
+            let running = tokio::time::Instant::now() < until
+                || tool.wait_for.as_ref().is_some_and(|path| !path.exists());
             if self.cut == Some(Cut::Interrupted) {
                 return Held::Interrupted;
             }
             if self.send_now {
                 return Held::Backgrounded;
             }
-            if path.exists() || self.closed {
+            if !running || self.closed {
                 return Held::Ran;
             }
             self.pump().await;
@@ -1182,6 +1185,10 @@ impl Engine {
                     self.cut = Some(Cut::Denied);
                     self.interruption_row("[Request interrupted by user for tool use]");
                     return;
+                }
+                let until = tool.outcome.until();
+                while tokio::time::Instant::now() < until && !self.closed {
+                    self.pump().await;
                 }
                 self.finish_tool(&id, &name, &input, &tool, Ok(tool.outcome.text()));
             }

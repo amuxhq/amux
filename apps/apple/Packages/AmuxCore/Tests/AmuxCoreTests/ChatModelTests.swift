@@ -1215,4 +1215,18 @@ final class ChatModelTests: XCTestCase {
         XCTAssertEqual(PushPayload.agent(payload), AgentKey(host: HostId(host), agent: agent))
         XCTAssertNil(PushPayload.agent(["aps": ["content-available": 1]]))
     }
+
+    func testOnlyNotificationsForAgentsThatStoppedNeedingYouAreStale() {
+        let host = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+        let answered = UUID(uuidString: "66666666-7777-8888-9999-000000000000")!
+        let waiting = UUID(uuidString: "66666666-7777-8888-9999-000000000001")!
+        func payload(_ agent: UUID) -> [AnyHashable: Any] {
+            ["amux": ["host": host.uuidString, "agent": agent.uuidString]]
+        }
+        let delivered: [(id: String, payload: [AnyHashable: Any])] = [
+            ("answered", payload(answered)), ("waiting", payload(waiting)), ("other", ["aps": [:]]),
+        ]
+        let settled: Set = [AgentKey(host: HostId(host), agent: answered)]
+        XCTAssertEqual(PushPayload.stale(delivered, settled: settled), ["answered"])
+    }
 }

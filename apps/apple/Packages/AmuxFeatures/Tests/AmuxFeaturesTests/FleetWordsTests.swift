@@ -42,7 +42,7 @@ final class FleetWordsTests: XCTestCase {
         }
         XCTAssertEqual(with(.lastSaid("Started the server."), 1), "1 background job · Started the server.")
         XCTAssertEqual(with(.blank, 3), "3 background jobs running")
-        let thinking = Activity(kind: .thinking, sinceMs: 0, elapsedMs: 0)
+        let thinking = Activity(kind: .thinking, sinceMs: 0, elapsedMs: 0, turnElapsedMs: 0)
         XCTAssertEqual(
             with(.step(AmuxValues.ActivityLine(activity: thinking, step: nil)), 2),
             "2 background jobs · \(said(.step(AmuxValues.ActivityLine(activity: thinking, step: nil)))!)")
@@ -51,9 +51,9 @@ final class FleetWordsTests: XCTestCase {
     }
 
     func testAWorkingAgentNamesItsStep() {
-        let running = Activity(kind: .running(key: "s1"), sinceMs: 0, elapsedMs: 0)
+        let running = Activity(kind: .running(key: "s1"), sinceMs: 0, elapsedMs: 0, turnElapsedMs: 0)
         XCTAssertEqual(said(.step(AmuxValues.ActivityLine(activity: running, step: "npm test\nmore"))), "npm test")
-        let thinking = Activity(kind: .thinking, sinceMs: 0, elapsedMs: 0)
+        let thinking = Activity(kind: .thinking, sinceMs: 0, elapsedMs: 0, turnElapsedMs: 0)
         XCTAssertEqual(said(.step(AmuxValues.ActivityLine(activity: thinking, step: nil))), "Thinking")
     }
 

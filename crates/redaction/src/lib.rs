@@ -282,19 +282,20 @@ pub fn redact_text(input: &str, rules: &Redaction, summary: &mut RedactionSummar
         value = redact_spans(&value, marker, PATH_PLACEHOLDER, &mut summary.machine_paths);
     }
     value = redact_windows_user_paths(&value, summary);
-    for identifier in &rules.extra_personal_identifiers {
-        if !identifier.is_empty() && identifier != IDENTIFIER_PLACEHOLDER {
-            value = redact_width_matched_identifier(&value, identifier, summary);
-        }
-    }
+    // The host's full name before its short one, which it contains.
     for identifier in [&rules.hostname, &rules.user].into_iter().flatten() {
         if !identifier.is_empty() && identifier != IDENTIFIER_PLACEHOLDER {
-            value = redact_literal(
+            value = redact_word(
                 &value,
                 identifier,
                 IDENTIFIER_PLACEHOLDER,
                 &mut summary.personal_identifiers,
             );
+        }
+    }
+    for identifier in &rules.extra_personal_identifiers {
+        if !identifier.is_empty() && identifier != IDENTIFIER_PLACEHOLDER {
+            value = redact_width_matched_identifier(&value, identifier, summary);
         }
     }
     value
@@ -317,7 +318,7 @@ fn redact_width_matched_identifier(
     if replacement == identifier {
         return input.to_string();
     }
-    redact_literal(
+    redact_word(
         input,
         identifier,
         &replacement,
@@ -461,6 +462,34 @@ fn redact_literal(input: &str, needle: &str, replacement: &str, count: &mut u64)
     }
     *count += matches;
     input.replace(needle, replacement)
+}
+
+/// Replaces `needle` where it stands as a word of its own: a name inside a
+/// longer word ("nova" in "innovation") is someone else's word, and
+/// replacing it there would change text a replay then compares.
+fn redact_word(input: &str, needle: &str, replacement: &str, count: &mut u64) -> String {
+    let bytes = input.as_bytes();
+    let bounded = |at: usize| {
+        let before = at.checked_sub(1).map(|i| bytes[i]);
+        let after = bytes.get(at + needle.len()).copied();
+        !before.is_some_and(is_word_byte) && !after.is_some_and(is_word_byte)
+    };
+    let mut output = String::with_capacity(input.len());
+    let mut copied = 0;
+    for (at, _) in input.match_indices(needle) {
+        if at < copied || !bounded(at) {
+            continue;
+        }
+        output.push_str(&input[copied..at]);
+        output.push_str(replacement);
+        copied = at + needle.len();
+        *count += 1;
+    }
+    if copied == 0 {
+        return input.to_string();
+    }
+    output.push_str(&input[copied..]);
+    output
 }
 
 fn redact_spans(input: &str, marker: &str, replacement: &str, count: &mut u64) -> String {
@@ -680,6 +709,27 @@ mod tests {
             "{text}"
         );
         assert_eq!(summary.secrets, 3);
+    }
+
+    #[test]
+    fn a_name_is_redacted_as_a_word_and_left_inside_other_words() {
+        let rules = Redaction {
+            hostname: Some("nova.lan".to_owned()),
+            user: Some("ada-l".to_owned()),
+            extra_personal_identifiers: vec!["nova".to_owned()],
+            ..Redaction::default()
+        };
+        let mut summary = RedactionSummary::default();
+        let text = redact_text(
+            "ada-l on nova.lan, then nova: innovation, novas, ada-love",
+            &rules,
+            &mut summary,
+        );
+        assert_eq!(
+            text,
+            "<REDACTED_IDENTIFIER> on <REDACTED_IDENTIFIER>, then ####: innovation, novas, ada-love"
+        );
+        assert_eq!(summary.personal_identifiers, 3);
     }
 
     #[test]

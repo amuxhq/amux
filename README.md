@@ -5,7 +5,7 @@
 <h1 align="center">amux</h1>
 
 <p align="center">
-  <strong>Your coding agents, on every machine you own.</strong>
+  <strong>Your agents, everywhere, all at once.</strong>
 </p>
 
 <p align="center">
@@ -16,7 +16,6 @@
 
 ```sh
 curl -fsSL https://amux.sh/install | sh      # macOS, Linux
-irm https://amux.sh/install | iex            # Windows PowerShell
 ```
 
 <p align="center">
@@ -120,7 +119,7 @@ can and cannot do.
 
 ## amux in 50 seconds
 
-https://github.com/user-attachments/assets/a9237fcc-bf10-4a43-8edd-dd1e7b9403e8
+https://github.com/user-attachments/assets/714575f7-a9cb-497a-90ef-f12283c535a1
 
 ## Get started
 
@@ -144,7 +143,7 @@ anywhere, securely, when your machines are apart.
 | | |
 |---|---|
 | **Agents** | Claude Code and Codex, in amux's chat or their own terminal interfaces |
-| **Computers** | macOS, Linux, Windows |
+| **Computers** | macOS, Linux |
 | **Phone** | iPhone |
 
 ## Learn more

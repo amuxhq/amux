@@ -1,3 +1,5 @@
+2026-10-25 — **The README's tagline is "Your agents, everywhere, all at once.", and it no longer offers Windows.** The old line, "Your coding agents, on every machine you own.", said less than the page around it; the new one carries the fleet, the machines and the phone, and many agents at work together. The launch film opens and ends on it too, and the README plays the re-rendered film. The PowerShell install line and Windows in the Supported table are gone, so the README promises only macOS and Linux.
+
 2026-10-25 — **The README plays the launch film.** It sits just before Get started, as "amux in 50 seconds": by then the reader has seen the pictures, the film tells the whole story once more, and the install command follows. GitHub plays a README video inline only when it was uploaded to GitHub itself, and allows 10 MB on a free plan, so the copy uploaded is re-encoded to 9.3 MB at the same 1080p.
 
 2026-10-25 — **The README shows both ways to work with an agent, and draws the privacy story.**

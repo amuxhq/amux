@@ -1605,24 +1605,6 @@ impl ::prost::Name for PairingIdentity {
         "/amux.v1.PairingIdentity".into()
     }
 }
-/// SSH bootstrap includes the local selector needed for subsequent stdio relays.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct SshPairingIdentity {
-    #[prost(message, optional, tag = "1")]
-    pub identity: ::core::option::Option<PairingIdentity>,
-    #[prost(bytes = "vec", tag = "2")]
-    pub profile_id: ::prost::alloc::vec::Vec<u8>,
-}
-impl ::prost::Name for SshPairingIdentity {
-    const NAME: &'static str = "SshPairingIdentity";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.SshPairingIdentity".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.SshPairingIdentity".into()
-    }
-}
 /// Generated client implementations.
 #[cfg(feature = "grpc")]
 pub mod pairing_service_client {
@@ -11055,12 +11037,12 @@ impl ::prost::Name for InstallationInfo {
         "/amux.v1.InstallationInfo".into()
     }
 }
+/// An SSH destination; `amux relay` there joins the profile whose id is the
+/// peer's host id.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SshTarget {
     #[prost(string, tag = "1")]
     pub target: ::prost::alloc::string::String,
-    #[prost(bytes = "vec", tag = "2")]
-    pub profile_id: ::prost::alloc::vec::Vec<u8>,
 }
 impl ::prost::Name for SshTarget {
     const NAME: &'static str = "SshTarget";

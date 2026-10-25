@@ -138,6 +138,91 @@ async fn route_ssh_reaches_a_session_through_the_far_hosts_link_socket() {
     net.shutdown().await.unwrap();
 }
 
+/// `amux pair <target>` on the laptop pairs it with the desk over SSH
+/// alone: SSH runs `amux pair-recv` on the desk, the two trade identities
+/// through their own daemons, each trusts the other, the laptop remembers
+/// the desk's SSH destination, and the link comes up over SSH. The same
+/// command aimed at the laptop itself is refused as a pairing with itself.
+#[tokio::test(flavor = "multi_thread")]
+async fn pair_over_ssh_from_the_cli_trusts_both_ends_and_links() {
+    let said = "paired over SSH";
+    let host = |name: &str| HostDecl {
+        name: name.to_owned(),
+        ..HostDecl::default()
+    };
+    let topology = Topology::new()
+        .host_decl(host("desk"))
+        .host_decl(host("laptop"))
+        .agent(worker_saying(said));
+    let net = Net::start(topology).await.unwrap();
+    let (desk, laptop) = (host_id(&net, "desk"), host_id(&net, "laptop"));
+    let config = net.host("laptop").unwrap().config.clone();
+    let pair = |target: String| {
+        let config = config.clone();
+        async move {
+            tokio::process::Command::new(testnet::Binaries::built().amux())
+                .arg("--config")
+                .arg(&config)
+                .args(["pair", &target])
+                .env_remove("AMUX_LOG")
+                .output()
+                .await
+                .unwrap()
+        }
+    };
+
+    // `amux pair` takes `user@host` as SSH; the stand-in drops the user.
+    let desk_target = format!("ada@{}", net.ssh_target("desk").unwrap());
+    let paired = pair(desk_target.clone()).await;
+    let out = String::from_utf8_lossy(&paired.stdout);
+    assert!(
+        paired.status.success(),
+        "amux pair: {out}{}",
+        String::from_utf8_lossy(&paired.stderr)
+    );
+    assert!(out.contains("Paired with desk"), "{out}");
+    let peers = |near: &'static str| {
+        let net = &net;
+        async move {
+            admin(net, near)
+                .await
+                .list_peers(wire::Empty {})
+                .await
+                .unwrap()
+                .into_inner()
+                .peers
+        }
+    };
+    let desk_seen = peers("laptop").await;
+    assert_eq!(desk_seen.len(), 1);
+    assert_eq!(desk_seen[0].host_id, desk.as_bytes());
+    assert!(
+        desk_seen[0].reachabilities.iter().any(|way| matches!(
+            &way.kind,
+            Some(wire::peer_reachability::Kind::SshTarget(ssh))
+                if ssh.target == desk_target
+        )),
+        "the laptop remembers where it reached the desk: {desk_seen:?}"
+    );
+    let laptop_seen = peers("desk").await;
+    assert_eq!(laptop_seen.len(), 1);
+    assert_eq!(laptop_seen[0].host_id, laptop.as_bytes());
+    assert!(
+        laptop_seen[0].reachabilities.is_empty(),
+        "the desk did not dial, so it holds no way there: {laptop_seen:?}"
+    );
+    until_via(&net, "laptop", "desk", LiveRoute::Ssh).await;
+    streams_live(&net, &["laptop"], "worker", said).await;
+    println!("the CLI paired the laptop with the desk over SSH and linked");
+
+    let refused = pair(format!("ada@{}", net.ssh_target("laptop").unwrap())).await;
+    let said = String::from_utf8_lossy(&refused.stderr);
+    assert!(!refused.status.success(), "pairing with itself is refused");
+    assert!(said.contains("SELF_PAIRING"), "{said}");
+    assert_eq!(peers("laptop").await.len(), 1);
+    net.shutdown().await.unwrap();
+}
+
 /// Two hosts on one paid account with no network between them but the
 /// relay, reached over UDP alone: each links to the relay over UDP, and
 /// their own link, pinned at pairing, runs end to end through the relay's
@@ -784,7 +869,6 @@ async fn trust_over_ssh(net: &Net, near: &str, far: &str) {
             }),
             ssh_target: Some(wire::SshTarget {
                 target: net.ssh_target(far).unwrap(),
-                profile_id: profile(net, far),
             }),
         })
         .await

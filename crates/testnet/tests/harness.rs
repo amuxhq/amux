@@ -1334,7 +1334,6 @@ async fn the_ssh_stand_in_carries_a_link_into_the_far_hosts_link_socket() {
             }),
             ssh_target: Some(wire::SshTarget {
                 target: target.clone(),
-                profile_id: desk.profile.as_bytes().to_vec(),
             }),
         })
         .await

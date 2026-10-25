@@ -21,10 +21,7 @@ fn addr(text: &str) -> SocketAddr {
 #[test]
 fn trust_store_pairing_upsert_inserts_and_deduplicates_reachability() {
     let mut store = TrustStore::default();
-    let target = SshTarget {
-        target: "workstation".to_string(),
-        profile: Uuid::from_u128(42),
-    };
+    let target = "workstation".to_string();
     let ssh = Reachability::Ssh(target.clone());
 
     let upsert = |store: &mut TrustStore, name: &str, reachability: Reachability, when| {
@@ -141,10 +138,7 @@ fn the_trust_file_round_trips_and_names_how_a_peer_is_reached() {
             paired_at: at(200),
             on_account: true,
             direct: vec![addr("192.0.2.7:7001")],
-            ssh: Some(SshTarget {
-                target: "workstation".to_string(),
-                profile: Uuid::from_u128(42),
-            }),
+            ssh: Some("workstation".to_string()),
             signed_in: Some(false),
             platform: wire::Platform::Linux,
             listed: vec![crate::payload::PeerAddress {
@@ -463,10 +457,7 @@ fn a_change_under_way_survives_a_checkpoint() {
             host: OTHER,
             pubkey: vec![9; 32],
             name: "other".into(),
-            reachability: Some(Reachability::Ssh(SshTarget {
-                target: "desk".into(),
-                profile: Uuid::from_u128(4),
-            })),
+            reachability: Some(Reachability::Ssh("desk".into())),
         },
     );
     step(

@@ -207,9 +207,11 @@ message UnpairRequest {
 
 message InstallationInfo { string version = 1; }
 
+// An SSH destination; `amux relay` there joins the profile whose id is the
+// peer's host id.
 message SshTarget {
   string target = 1;
-  bytes profile_id = 2;
+  reserved 2;
 }
 
 message PeerReachability {

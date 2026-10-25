@@ -32,20 +32,12 @@ use crate::serve::answered;
 pub const PUBKEY_LEN: usize = 32;
 
 /// How a pairing reached the host: through the account's relay, over
-/// SSH, or at addresses.
+/// SSH to a destination, or at addresses.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Reachability {
     Cloud,
-    Ssh(SshTarget),
+    Ssh(String),
     Direct { addrs: Vec<SocketAddr> },
-}
-
-/// Where a host paired over SSH is reached: the SSH destination, and the
-/// profile on the far machine whose link socket `amux relay` joins.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct SshTarget {
-    pub target: String,
-    pub profile: Uuid,
 }
 
 /// What the profile knows of one paired host.
@@ -62,9 +54,10 @@ pub struct TrustEntry {
     /// beside what discovery finds. Only these reach a host paired by
     /// address across a network discovery cannot see.
     pub direct: Vec<SocketAddr>,
-    /// How to reach the host over SSH, where it paired that way: the one
-    /// way of reaching it the host cannot tell this one itself.
-    pub ssh: Option<SshTarget>,
+    /// The SSH destination the host is reached at, where it paired that
+    /// way: the one way of reaching it the host cannot tell this one
+    /// itself. `amux relay` there joins the profile whose id is the host's.
+    pub ssh: Option<String>,
     pub signed_in: Option<bool>,
     /// The operating system the peer announced, last it said one.
     pub platform: wire::Platform,
@@ -90,7 +83,7 @@ mod forms {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         direct: Vec<SocketAddr>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        ssh: Option<SshTarget>,
+        ssh: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         signed_in: Option<bool>,
         #[serde(default, skip_serializing_if = "unspecified")]
@@ -106,7 +99,7 @@ mod forms {
         paired_at: DateTime<Utc>,
         on_account: bool,
         direct: Vec<SocketAddr>,
-        ssh: Option<SshTarget>,
+        ssh: Option<String>,
         signed_in: Option<bool>,
         platform: wire::Platform,
         listed: Vec<PeerAddress>,

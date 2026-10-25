@@ -90,16 +90,15 @@ pub use link::{
 };
 pub use offers::{CatalogueError, HostCatalogue, PROVIDERS, Provider};
 pub use outbox::{DrainReport, HttpSender, NoopSender, Push, PushError, PushFuture, PushSender};
-pub use pairing::PairingAdmin;
 pub use pairing::qr::{
     PAIR_LINK, QrPairingError, QrPairingPayload, encode_qr_pairing_invitation, pair_link,
     parse_pair_link, parse_qr_pairing_payload,
 };
-pub use pairing::ssh::{
-    SshPairingError, SshPairingPeer, SshPairingProfile, SshTarget, pair_via_ssh_target,
-};
 #[cfg(unix)]
-pub use pairing::ssh::{pair_via_ssh_responder_stdio, relay_stdio_to_unix_socket};
+pub use pairing::ssh::relay_stdio_to_unix_socket;
+pub use pairing::ssh::{
+    SshPairingError, exchange_over_ssh, read_ssh_identity, ssh_stdio, write_ssh_identity,
+};
 pub use profile_admin::ProfileAdmin;
 pub use profiles::{
     PROFILE_SOCKET, ProfileEntry, ProfileId, create_profile, create_profile_as, profile_dir,

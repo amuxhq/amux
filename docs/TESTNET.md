@@ -324,13 +324,15 @@ path carried a link the way a person reading the log would:
 
 ### SSH
 
-A host reaches a peer over SSH by running `ssh <target> amux relay --profile <id>` and carrying the link over that
+A host reaches a peer over SSH by running `ssh <target> amux relay --profile <id>`, where the id is the peer's host id
+(a profile's id is its host's), and carrying the link over that
 process's stdio into the far daemon's link socket (`link.sock` in its profile directory), where the pinned QUIC
 handshake admits only a paired key. Every in-process host serves its link socket. The net puts a stand-in `ssh`
 (`crates/testnet/stand-in/ssh`) first on its process's PATH, which process hosts inherit; no real SSH runs. A target
 is a host's directory, which `ssh_target(host)` answers: the stand-in runs the far host's own `amux` against its own
-installation there, so `amux relay` joins the far daemon's link socket. Give the target to a peer as an SSH pairing
-does, with the far host's profile id.
+installation there, so `amux relay` joins the far daemon's link socket, and `amux pair-recv` answers an SSH pairing.
+Give the target to a peer as an SSH pairing does; `amux pair` reads a target as SSH in `user@host` form, and the
+stand-in drops the user.
 
 ## Growing a net while it runs
 

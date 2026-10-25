@@ -30,9 +30,8 @@ use crate::driver::pairing::status as pairing_status;
 use crate::pairing::PAIR_MODE_TTL;
 use crate::runtime::ProfileRuntime;
 use crate::services::LocalPairingIdentity;
-use crate::trust::{Reachability, SshTarget, TrustEntry, TrustStore};
+use crate::trust::{Reachability, TrustEntry, TrustStore};
 
-const PUBKEY_LEN: usize = 32;
 const MAX_PAIRING_NAME_BYTES: usize = 256;
 const QR_SECRET_LEN: usize = daemon_core::pairing::QR_SECRET_LEN;
 /// How long a pairing dial to one address may take before the next is tried.
@@ -122,8 +121,7 @@ pub(crate) fn peer_entry_to_wire(host_id: HostId, entry: &TrustEntry) -> PeerEnt
             .into_iter()
             .chain(entry.ssh.as_ref().map(|ssh| {
                 wire::peer_reachability::Kind::SshTarget(wire::SshTarget {
-                    target: ssh.target.clone(),
-                    profile_id: ssh.profile.as_bytes().to_vec(),
+                    target: ssh.clone(),
                 })
             }))
             .chain((!entry.direct.is_empty()).then(|| {
@@ -490,14 +488,6 @@ impl Edge {
             .peer
             .ok_or_else(|| Status::invalid_argument("TrustSshPeerRequest.peer is required"))?;
         let host = host_from_bytes("PairingIdentity.host_id", &identity.host_id)?;
-        if identity.pubkey.len() != PUBKEY_LEN {
-            return Err(Status::invalid_argument(
-                "PairingIdentity.pubkey must be 32 bytes",
-            ));
-        }
-        if identity.name.len() > MAX_PAIRING_NAME_BYTES {
-            return Err(Status::invalid_argument("PairingIdentity.name is too long"));
-        }
         let reachability = request
             .ssh_target
             .map(|target| {
@@ -506,15 +496,7 @@ impl Edge {
                         "TrustSshPeerRequest.ssh_target is invalid",
                     ));
                 }
-                let profile = Uuid::from_slice(&target.profile_id).map_err(|_| {
-                    Status::invalid_argument(
-                        "TrustSshPeerRequest.ssh_target.profile_id must be 16 bytes",
-                    )
-                })?;
-                Ok(Reachability::Ssh(SshTarget {
-                    target: target.target,
-                    profile,
-                }))
+                Ok(Reachability::Ssh(target.target))
             })
             .transpose()?;
         self.ask(ClientRequest::PairOverSsh {

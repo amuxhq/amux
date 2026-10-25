@@ -4,7 +4,8 @@
 # the command after it runs as that host's amux, through the login the net
 # wrote there: `amux relay --profile <id>` joins this process's stdio to
 # the far host's link socket, as sshd would run it on a real machine.
-# Options are skipped, as ssh's own would not change where this lands.
+# Options are skipped, as ssh's own would not change where this lands, and
+# so is a user before the target's `@`.
 while [ $# -gt 0 ]; do
     case $1 in
         --) shift; break ;;
@@ -17,7 +18,7 @@ if [ $# -eq 0 ]; then
     echo "usage: ssh [options] target amux command..." >&2
     exit 255
 fi
-target=$1
+target=${1#*@}
 shift
 if [ ! -x "$target/ssh-login" ]; then
     echo "ssh: Could not resolve hostname $target: no testnet host there" >&2

@@ -493,7 +493,7 @@ mod tests {
     /// The types code encodes on its own rather than inside another
     /// message or a call: frames on an agent's sockets, the journal's
     /// steps, the spec an agent starts from, the link's framing, error
-    /// details, the SSH pairing hand-off, and each provider's item, input
+    /// details, and each provider's item, input
     /// and snapshot bodies, which travel as bytes.
     const ENCODED_ON_THEIR_OWN: &[&str] = &[
         "AgentSpec",
@@ -505,7 +505,6 @@ mod tests {
         "ProtocolVersionMismatch",
         "AmbiguousAgentName",
         "AmbiguousHostName",
-        "SshPairingIdentity",
         "ClaudePtyItem",
         "ClaudePtyInput",
         "ClaudePtySnapshot",

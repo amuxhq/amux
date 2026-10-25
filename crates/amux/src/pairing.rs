@@ -304,11 +304,10 @@ pub async fn cancel(mut admin: Admin) -> Result<()> {
 pub async fn pair(
     admin: Admin,
     client: &mut ClientServiceClient<Channel>,
-    profile: &ProfileInfo,
     target: Target,
 ) -> Result<()> {
     let (host_id, addrs) = match target {
-        Target::Ssh(target) => return pair_over_ssh(admin, profile, target).await,
+        Target::Ssh(target) => return pair_over_ssh(admin, target).await,
         Target::Addr(addr) => (Vec::new(), vec![addr.to_string()]),
         Target::Found(name) => {
             let (hosts, _) = crate::verbs::inventory(client).await?;
@@ -449,75 +448,68 @@ fn profile_dir(profile: &ProfileInfo) -> Result<PathBuf> {
         })
 }
 
-/// The trust an SSH pairing establishes, stored through the profile's
-/// administration.
-struct SocketAdmin {
-    admin: Admin,
-    profile: Uuid,
-}
-
-#[async_trait::async_trait]
-impl node::PairingAdmin for SocketAdmin {
-    fn profile_id(&self) -> node::ProfileId {
-        self.profile
-    }
-
-    async fn pair_ssh_peer(
-        &self,
-        peer: node::SshPairingPeer,
-        target: Option<node::SshTarget>,
-    ) -> Result<(), String> {
-        self.admin
-            .clone()
-            .trust_ssh_peer(TrustSshPeerRequest {
-                peer: Some(PairingIdentity {
-                    host_id: peer.host_id.as_bytes().to_vec(),
-                    pubkey: peer.pubkey,
-                    name: peer.name,
-                    expires_at_ms: 0,
-                }),
-                ssh_target: target.map(|target| wire::SshTarget {
-                    target: target.target,
-                    profile_id: target.profile.as_bytes().to_vec(),
-                }),
-            })
-            .await
-            .map(drop)
-            .map_err(|status| status.message().to_owned())
-    }
-}
-
-async fn ssh_admin(admin: Admin, profile: &ProfileInfo) -> Result<(SocketAdmin, String)> {
-    let name = admin
+/// This profile's identity as its daemon holds it, for the far end of an
+/// SSH pairing.
+async fn own_identity(admin: &Admin) -> Result<PairingIdentity> {
+    let own = admin
         .clone()
         .get_device_identity(Empty {})
         .await
         .map_err(plain)?
-        .into_inner()
-        .name;
-    let admin = SocketAdmin {
-        admin,
-        profile: Uuid::from_slice(&profile.id).context("the profile id")?,
-    };
-    Ok((admin, name))
+        .into_inner();
+    Ok(PairingIdentity {
+        host_id: own.host_id,
+        pubkey: own.pubkey,
+        name: own.name,
+        expires_at_ms: 0,
+    })
 }
 
-async fn pair_over_ssh(admin: Admin, profile: &ProfileInfo, target: String) -> Result<()> {
-    let (admin, name) = ssh_admin(admin, profile).await?;
-    let peer = node::pair_via_ssh_target(profile_dir(profile)?, name, target, &admin).await?;
+/// Trusts `peer`, whose identity SSH carried; `target` is where this host
+/// reaches it, when this host ran the SSH.
+async fn trust_ssh_peer(
+    admin: &Admin,
+    peer: PairingIdentity,
+    target: Option<String>,
+) -> Result<()> {
+    admin
+        .clone()
+        .trust_ssh_peer(TrustSshPeerRequest {
+            peer: Some(peer),
+            ssh_target: target.map(|target| wire::SshTarget { target }),
+        })
+        .await
+        .map_err(plain)?;
+    Ok(())
+}
+
+async fn pair_over_ssh(admin: Admin, target: String) -> Result<()> {
+    let own = own_identity(&admin).await?;
+    let peer = node::exchange_over_ssh(&target, &own).await?;
+    trust_ssh_peer(&admin, peer.clone(), Some(target)).await?;
     println!(
         "Paired with {} ({}) over SSH.",
-        peer.identity.name, peer.identity.host_id
+        peer.name,
+        host(&peer.host_id)
     );
     Ok(())
 }
 
 /// `amux pair-recv`, run by SSH on this host: the identity exchange's far
-/// end, over stdin and stdout.
+/// end, over stdin and stdout. It trusts the near end before answering, so
+/// the near end trusts only a host that has trusted it.
 #[cfg(unix)]
-pub async fn pair_recv(admin: Admin, profile: &ProfileInfo) -> Result<()> {
-    let (admin, name) = ssh_admin(admin, profile).await?;
-    node::pair_via_ssh_responder_stdio(profile_dir(profile)?, name, &admin).await?;
+pub async fn pair_recv(admin: Admin) -> Result<()> {
+    let own = own_identity(&admin).await?;
+    let mut stdio = node::ssh_stdio();
+    let peer = node::read_ssh_identity(&mut stdio).await?;
+    if peer.host_id == own.host_id || peer.pubkey == own.pubkey {
+        // The near end learns it reached itself only from the answer.
+        node::write_ssh_identity(&mut stdio, &own).await?;
+        bail!("SSH pairing peer is this device");
+    }
+    trust_ssh_peer(&admin, peer, None).await?;
+    node::write_ssh_identity(&mut stdio, &own).await?;
     Ok(())
 }
 

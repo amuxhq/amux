@@ -45,9 +45,3 @@ message PairingIdentity {
   // Authenticated along with the responder identity by SPAKE2 sealing.
   int64 expires_at_ms = 4;
 }
-
-// SSH bootstrap includes the local selector needed for subsequent stdio relays.
-message SshPairingIdentity {
-  PairingIdentity identity = 1;
-  bytes profile_id = 2;
-}

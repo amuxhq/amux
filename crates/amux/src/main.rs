@@ -444,7 +444,7 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                 } else if let Some(target) = target {
                     let mut client = connect::client_of(&selected).await?;
                     let target = pairing::Target::parse(&target)?;
-                    pairing::pair(admin, &mut client, &selected, target).await
+                    pairing::pair(admin, &mut client, target).await
                 } else {
                     pairing::wait(admin, qr, print_link).await
                 }
@@ -475,7 +475,7 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
             #[cfg(unix)]
             Command::PairRecv => {
                 let selected = connect::profile(&config, profile).await?;
-                pairing::pair_recv(connect::admin_of(&selected).await?, &selected).await
+                pairing::pair_recv(connect::admin_of(&selected).await?).await
             }
             #[cfg(unix)]
             Command::Relay => pairing::relay(&connect::profile(&config, profile).await?).await,

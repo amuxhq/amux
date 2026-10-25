@@ -21,7 +21,7 @@ use crate::link::socket::Path;
 use crate::link::{ChannelError, ChannelPool, QuicCarrier};
 use crate::routing::{Host, LinkConnectorCtx, LinkId, LiveLocalHost, Route};
 use crate::transport::spawn_ssh_relay;
-use crate::trust::{Reachability, SharedTrustStore, SshTarget};
+use crate::trust::{Reachability, SharedTrustStore};
 
 const DIRECT_LINK_ESTABLISHMENT_TIMEOUT: Duration = Duration::from_secs(10);
 /// SSH's own connection setup comes ahead of the QUIC handshake through it.
@@ -911,10 +911,10 @@ async fn establish_reachability_link(
             tracing::warn!(error = %error, "direct Link establishment failed");
             None
         }
-        Reachability::Ssh(SshTarget { target, profile }) => {
+        Reachability::Ssh(target) => {
             let carrier = match tokio::time::timeout(
                 SSH_LINK_HANDSHAKE_TIMEOUT,
-                prepare_ssh_carrier(&context, attempt.peer, &target, profile),
+                prepare_ssh_carrier(&context, attempt.peer, &target),
             )
             .await
             .map_err(|_| DialError::Failed("the QUIC handshake over SSH timed out".to_owned()))
@@ -952,16 +952,16 @@ async fn establish_reachability_link(
     }
 }
 
-/// Runs `amux relay` on the far host over SSH and dials its link socket
-/// through the session, pinning the peer's key as a direct dial does.
+/// Runs `amux relay` on the far host over SSH, joining the profile whose
+/// id is the peer's host id, and dials its link socket through the
+/// session, pinning the peer's key as a direct dial does.
 async fn prepare_ssh_carrier(
     context: &ReachabilityLinkContext,
     peer: HostId,
     target: &str,
-    profile: crate::ProfileId,
 ) -> Result<Arc<QuicCarrier>, DialError> {
     let failed = |error: &dyn std::fmt::Display| DialError::Failed(error.to_string());
-    let io = spawn_ssh_relay(target, profile).map_err(|error| failed(&error))?;
+    let io = spawn_ssh_relay(target, peer).map_err(|error| failed(&error))?;
     let stream = StreamEndpoint::new(io, FramedKind::Ssh, None).map_err(|error| failed(&error))?;
     let config = context
         .identity

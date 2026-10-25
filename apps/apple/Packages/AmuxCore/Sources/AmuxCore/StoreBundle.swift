@@ -81,9 +81,12 @@ public final class StoreBundle {
         self.newAgent = NewAgentStore()
         // Applied after the refresh that put the frame up, not inside it.
         fleet.presented = { [weak self] in
-            guard let self, let held = self.held else { return }
-            self.held = nil
-            Task { [weak self] in self?.apply(held) }
+            guard self?.held != nil else { return }
+            Task { [weak self] in
+                guard let self, let held = self.held else { return }
+                self.held = nil
+                self.apply(held)
+            }
         }
     }
 
@@ -103,8 +106,10 @@ public final class StoreBundle {
             // agents' sessions starting; the second lines they bring arrive
             // a moment after the remembered rows. Applied before the launch's
             // first frame is on screen, they lay the rows out again inside
-            // it, so they wait for that frame, and not for long.
-            guard fleet.presenting else {
+            // it, so they wait for that frame, and not for long. What moves
+            // while the held delta waits to be applied joins it, newest
+            // last, rather than going up ahead of the older one.
+            guard fleet.presenting || held != nil else {
                 apply(delta)
                 return
             }

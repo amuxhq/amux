@@ -102,6 +102,22 @@ final class StoreBundleSessionTests: XCTestCase {
 
     private func sessions(for agent: AgentKey) -> [CaughtUpSession] { opened.filter { $0.agent == agent } }
 
+    /// The fleet moving again just after the launch's first frame went up,
+    /// before the delta held for that frame is applied, is not undone by it.
+    func testAFleetMoveAfterTheFirstFrameIsNotOverwrittenByTheOneHeldForIt() async {
+        let stores = bundle()
+        let fleet = { (name: String) in
+            Moved.fleet(FleetDelta(hosts: [Cards.host()], view: Cards.view([Cards.row(1, name)])))
+        }
+        stores.moved(fleet("first"))
+        XCTAssertTrue(stores.fleet.presenting, "the first frame is going up")
+        stores.moved(fleet("held"))
+        stores.fleet.finishPresenting()
+        stores.moved(fleet("newer"))
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertEqual(stores.fleet.rows.map(\.name), ["newer"])
+    }
+
     func testAnAgentThatNeedsThePersonOpensNothingUntilItsChatIsShown() throws {
         let stores = bundle()
         let asking = Cards.key(1)

@@ -1593,9 +1593,9 @@ public struct Changes: Codable, Hashable, Sendable {
 public struct ChatDelta: Codable, Hashable, Sendable {
     /// The chat's id within its fleet.
     public var chat: UInt64
-    /// The rows that changed among those held, and every row new at the
-    /// newest edge, each run folded as the reader left it. A row paged in
-    /// below, or held through a reload, is read when it is drawn.
+    /// The rows that changed among those the host held, each run folded as
+    /// the reader left it. A row new at either edge, or held through a
+    /// reload, is read when it is drawn.
     public var rows: [Row]
     public var ask: AskMoved?
     public var frame: ChatFrame?
@@ -4978,7 +4978,7 @@ public struct Roster: Codable, Hashable, Sendable {
 }
 
 /// How this machine reaches a host, or how a pairing peer was reached. No
-/// value for "no route": Presence says offline.
+/// value for "no route": the host reads offline.
 public enum RouteKind: String, Codable, Hashable, Sendable, CaseIterable {
     case unspecified = "Unspecified"
     case direct = "Direct"

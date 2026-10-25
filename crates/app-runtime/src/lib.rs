@@ -247,11 +247,13 @@ impl AppRuntime {
     }
 
     /// Home's view and every host, for the host opening on the fleet; every
-    /// delta after it says what moved since.
+    /// delta after it says what moved since. A delta asked for meanwhile,
+    /// on the step's queue, waits for what this sends.
     pub fn fleet_opening(&self) -> FleetDelta {
+        let mut sent = self.fleet_sent.lock().unwrap();
         self.fleet_changes.take();
         let (view, hosts) = (self.fleet_view(), self.hosts());
-        *self.fleet_sent.lock().unwrap() = Some((view.clone(), hosts.clone()));
+        *sent = Some((view.clone(), hosts.clone()));
         FleetDelta {
             view: Some(view),
             hosts: Some(hosts),
@@ -259,12 +261,12 @@ impl AppRuntime {
     }
 
     /// What moved in the fleet since the host last heard, or None when
-    /// nothing did or it has not opened on the fleet; the next change wakes
-    /// the host again.
+    /// nothing did or it has not opened on the fleet; either way the
+    /// changes are taken, so the next one wakes the host again.
     pub fn fleet_delta(&self) -> Option<FleetDelta> {
         let mut sent = self.fleet_sent.lock().unwrap();
-        let (view, hosts) = sent.as_mut()?;
         let hosts_moved = self.fleet_changes.take().other;
+        let (view, hosts) = sent.as_mut()?;
         let delta = FleetDelta {
             view: Some(self.fleet_view()).filter(|now| now != view),
             hosts: Some(self.hosts()).filter(|now| hosts_moved || now != hosts),

@@ -80,6 +80,13 @@ struct Host {
 }
 
 async fn open(net: &Net) -> (AppRuntime, Host) {
+    let (runtime, host) = connect(net).await;
+    runtime.fleet_opening();
+    (runtime, host)
+}
+
+/// The runtime, with home not yet opened.
+async fn connect(net: &Net) -> (AppRuntime, Host) {
     let client: Arc<dyn Client> = Arc::new(InProcess::new(net.client("desk").unwrap()));
     let (sender, wakes) = mpsc::unbounded_channel();
     let wake = Arc::new(move |wake: Wake| {
@@ -89,7 +96,6 @@ async fn open(net: &Net) -> (AppRuntime, Host) {
     let runtime = AppRuntime::open(client, Arc::new(SystemClock), local, wake)
         .await
         .unwrap();
-    runtime.fleet_opening();
     (
         runtime,
         Host {
@@ -543,6 +549,24 @@ async fn a_dump_carries_the_fleet_and_every_open_chat() {
         .expect("the open chat's part")
         .count();
     assert_eq!(sessions, 1);
+    net.shutdown().await.unwrap();
+}
+
+/// The host's queue can answer a fleet wake while home is still being
+/// built on the main thread, before it has opened: that answer is
+/// nothing, but it still takes the changes that woke the host, or no
+/// change after them would wake it again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_fleet_wake_answered_before_home_opens_leaves_later_ones_coming() {
+    let net = Net::start(topology()).await.unwrap();
+    let (runtime, mut host) = connect(&net).await;
+    host.next(Wake::Fleet).await;
+    assert!(runtime.fleet_delta().is_none(), "home has not opened");
+    let chat = opened(&runtime, &worker(&net), 50).await;
+    chat.send(&Draft::words("please run it")).await;
+    host.next(Wake::Fleet).await;
+    assert!(runtime.fleet_delta().is_none(), "home has still not opened");
+    runtime.fleet_opening();
     net.shutdown().await.unwrap();
 }
 

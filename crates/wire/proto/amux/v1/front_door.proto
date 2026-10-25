@@ -101,14 +101,13 @@ message ProfileInfo {
   string email = 3;
   string account_name = 4;
   string socket_path = 5;
-  reserved 7, 8, 10, 11;
-  CloudStanding cloud = 14;
+  CloudStanding cloud = 6;
   // The bound account's subject at its service, which stays after a
   // sign-out; empty when unbound. What tells two profiles' accounts apart.
-  string account_subject = 12;
+  string account_subject = 7;
   // Where the bound account's profile picture is, as its service said at
   // sign-in; empty when it has none or the profile is unbound.
-  string account_picture = 13;
+  string account_picture = 8;
 }
 
 message ListProfilesResponse { repeated ProfileInfo profiles = 1; }
@@ -211,7 +210,6 @@ message InstallationInfo { string version = 1; }
 // peer's host id.
 message SshTarget {
   string target = 1;
-  reserved 2;
 }
 
 message PeerReachability {

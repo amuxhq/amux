@@ -53,36 +53,35 @@ message Thinking {
 }
 
 message ToolCall {
-  reserved 2, 5;
   string name = 1;
-  ToolState state = 3;
-  string outcome_text = 4;
-  repeated Attachment attachments = 6;
-  ToolClass class = 7;
+  ToolState state = 2;
+  string outcome_text = 3;
+  repeated Attachment attachments = 4;
+  ToolClass class = 5;
   // A permission decision is meta on the tool call's own row.
-  ToolDecision decision = 8;
+  ToolDecision decision = 6;
   // Started in the background: a shell or task that outlives the call.
-  bool background = 9;
+  bool background = 7;
   // The key of the subagent call this step belongs to, for nested steps.
-  string parent_key = 10;
+  string parent_key = 8;
   // Live progress of a subagent call.
-  SubagentProgress subagent = 11;
+  SubagentProgress subagent = 9;
   // The tool server, for a tool-server call.
-  string server = 12;
-  optional int32 exit_code = 13;
+  string server = 10;
+  optional int32 exit_code = 11;
   // When the call finished, the provider's timestamp where it has one.
-  optional int64 ended_at_ms = 14;
+  optional int64 ended_at_ms = 12;
   // A file write that finished: whether it made the file (else it
   // replaced one). Claude says which only once the write is done.
-  optional bool created = 15;
+  optional bool created = 13;
   // A file edit that finished: the line its first change landed on.
-  optional uint32 line = 16;
+  optional uint32 line = 14;
   // When the call began running, after any approval. Its duration is
   // ended_at_ms minus this, else minus the item's at_ms.
-  optional int64 started_at_ms = 17;
-  ToolInput input = 18;
+  optional int64 started_at_ms = 15;
+  ToolInput input = 16;
   // A file edit or write that finished: the hunks Claude says it changed.
-  repeated PatchHunk patch = 19;
+  repeated PatchHunk patch = 17;
 }
 
 // What a Claude call was asked to do, read once by the interpreter from the
@@ -440,9 +439,8 @@ message Ask {
 }
 
 message PermissionAsk {
-  reserved 2;
   string tool_name = 1;
-  ToolInput input = 9;
+  ToolInput input = 2;
   // Every scope the provider offered, in order.
   repeated ScopeChoice scopes = 3;
   string reason = 4;

@@ -1988,49 +1988,49 @@ impl ::prost::Name for Thinking {
 pub struct ToolCall {
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
-    #[prost(enumeration = "ToolState", tag = "3")]
+    #[prost(enumeration = "ToolState", tag = "2")]
     pub state: i32,
-    #[prost(string, tag = "4")]
+    #[prost(string, tag = "3")]
     pub outcome_text: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "6")]
+    #[prost(message, repeated, tag = "4")]
     pub attachments: ::prost::alloc::vec::Vec<Attachment>,
-    #[prost(enumeration = "ToolClass", tag = "7")]
+    #[prost(enumeration = "ToolClass", tag = "5")]
     pub class: i32,
     /// A permission decision is meta on the tool call's own row.
-    #[prost(message, optional, tag = "8")]
+    #[prost(message, optional, tag = "6")]
     pub decision: ::core::option::Option<ToolDecision>,
     /// Started in the background: a shell or task that outlives the call.
-    #[prost(bool, tag = "9")]
+    #[prost(bool, tag = "7")]
     pub background: bool,
     /// The key of the subagent call this step belongs to, for nested steps.
-    #[prost(string, tag = "10")]
+    #[prost(string, tag = "8")]
     pub parent_key: ::prost::alloc::string::String,
     /// Live progress of a subagent call.
-    #[prost(message, optional, tag = "11")]
+    #[prost(message, optional, tag = "9")]
     pub subagent: ::core::option::Option<SubagentProgress>,
     /// The tool server, for a tool-server call.
-    #[prost(string, tag = "12")]
+    #[prost(string, tag = "10")]
     pub server: ::prost::alloc::string::String,
-    #[prost(int32, optional, tag = "13")]
+    #[prost(int32, optional, tag = "11")]
     pub exit_code: ::core::option::Option<i32>,
     /// When the call finished, the provider's timestamp where it has one.
-    #[prost(int64, optional, tag = "14")]
+    #[prost(int64, optional, tag = "12")]
     pub ended_at_ms: ::core::option::Option<i64>,
     /// A file write that finished: whether it made the file (else it
     /// replaced one). Claude says which only once the write is done.
-    #[prost(bool, optional, tag = "15")]
+    #[prost(bool, optional, tag = "13")]
     pub created: ::core::option::Option<bool>,
     /// A file edit that finished: the line its first change landed on.
-    #[prost(uint32, optional, tag = "16")]
+    #[prost(uint32, optional, tag = "14")]
     pub line: ::core::option::Option<u32>,
     /// When the call began running, after any approval. Its duration is
     /// ended_at_ms minus this, else minus the item's at_ms.
-    #[prost(int64, optional, tag = "17")]
+    #[prost(int64, optional, tag = "15")]
     pub started_at_ms: ::core::option::Option<i64>,
-    #[prost(message, optional, tag = "18")]
+    #[prost(message, optional, tag = "16")]
     pub input: ::core::option::Option<ToolInput>,
     /// A file edit or write that finished: the hunks Claude says it changed.
-    #[prost(message, repeated, tag = "19")]
+    #[prost(message, repeated, tag = "17")]
     pub patch: ::prost::alloc::vec::Vec<PatchHunk>,
 }
 impl ::prost::Name for ToolCall {
@@ -2707,7 +2707,7 @@ impl ::prost::Name for Ask {
 pub struct PermissionAsk {
     #[prost(string, tag = "1")]
     pub tool_name: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "9")]
+    #[prost(message, optional, tag = "2")]
     pub input: ::core::option::Option<ToolInput>,
     /// Every scope the provider offered, in order.
     #[prost(message, repeated, tag = "3")]
@@ -10702,15 +10702,15 @@ pub struct ProfileInfo {
     pub account_name: ::prost::alloc::string::String,
     #[prost(string, tag = "5")]
     pub socket_path: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "14")]
+    #[prost(message, optional, tag = "6")]
     pub cloud: ::core::option::Option<CloudStanding>,
     /// The bound account's subject at its service, which stays after a
     /// sign-out; empty when unbound. What tells two profiles' accounts apart.
-    #[prost(string, tag = "12")]
+    #[prost(string, tag = "7")]
     pub account_subject: ::prost::alloc::string::String,
     /// Where the bound account's profile picture is, as its service said at
     /// sign-in; empty when it has none or the profile is unbound.
-    #[prost(string, tag = "13")]
+    #[prost(string, tag = "8")]
     pub account_picture: ::prost::alloc::string::String,
 }
 impl ::prost::Name for ProfileInfo {

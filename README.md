@@ -118,6 +118,10 @@ and another Claude to rewrite the error messages, and hears back from each one w
 [How amux works](docs/HOW_IT_WORKS.md) explains what each device, the account and the relay
 can and cannot do.
 
+## amux in 50 seconds
+
+https://github.com/user-attachments/assets/a9237fcc-bf10-4a43-8edd-dd1e7b9403e8
+
 ## Get started
 
 ```sh

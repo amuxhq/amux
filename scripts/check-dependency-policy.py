@@ -80,14 +80,15 @@ ALLOWED_LOCAL = {
 # store, reads journals, speaks the message types and records its inputs in
 # the ring; the relay's is built from the daemon's link and routing state;
 # the agent's wraps the interpreter; the supervisor's reads release
-# manifests and version stamps; the path machine names links and reports
+# manifests and version stamps and shares the cores' step budget and dump
+# reasons from the ring's crate; the path machine names links and reports
 # dumps as the daemon's does.
 CORES_ALLOWED_LOCAL = {
     "daemon-core": {"core-ring", "journal", "store", "wire"},
     "relay-core": {"daemon-core"},
     "path-core": {"daemon-core"},
     "agent-core": {"core-ring", "interpret", "journal", "wire"},
-    "supervisor-core": {"release", "version-stamp"},
+    "supervisor-core": {"core-ring", "release", "version-stamp"},
 }
 # The UI library and the clients built on it reach the daemon only through
 # the client seam: none of them may link, directly or through another crate,

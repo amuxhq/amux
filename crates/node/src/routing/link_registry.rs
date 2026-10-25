@@ -506,6 +506,21 @@ impl LinkRegistry {
             .await
     }
 
+    /// Closes every link to `host_id` made before the instance `before`
+    /// and waits until they are gone; a link made since stays.
+    pub(crate) async fn close_host_before(
+        &self,
+        host_id: HostId,
+        before: u64,
+        request: LinkCloseRequest,
+    ) -> Vec<LinkId> {
+        self.close_where(
+            |link, writer| writer.host.id == host_id && link.instance < before,
+            request,
+        )
+        .await
+    }
+
     /// Requests closure of `link`, for `request`, and waits until it is
     /// gone from the registry.
     pub(crate) async fn close_link(&self, link: LinkId, request: LinkCloseRequest) {
@@ -951,6 +966,65 @@ mod tests {
         );
         assert_eq!(registry.links_per_peer().await, vec![(phone.id, 1)]);
         assert!(registry.native_carrier(&link(3, 2)).await.is_some());
+    }
+
+    /// A call that timed out closes the links to the host it had to use,
+    /// and leaves one that came up while it waited.
+    #[tokio::test]
+    async fn a_timed_out_call_closes_the_links_made_before_it_began() {
+        let registry = Arc::new(LinkRegistry::new(HostId::nil()));
+        let phone = host(3);
+        let forwarded = || LinkProperties {
+            role: LinkRole::Peer,
+            admission: LinkAdmission::PinnedKey,
+            carrier: CarrierKind::Forwarded,
+            runtime_instance: RuntimeInstance::random(),
+            direct_order: None,
+        };
+        let mut closes = Vec::new();
+        for instance in [1, 2] {
+            let (tx, _) = mpsc::channel(8);
+            closes.push(
+                registry
+                    .register_with_details(
+                        link(3, instance),
+                        phone.clone(),
+                        tx,
+                        forwarded(),
+                        &[],
+                        Some(carried_through(link(1, instance)).await),
+                    )
+                    .await
+                    .expect("a forwarded link is usable"),
+            );
+        }
+        let mut newer = closes.pop().unwrap();
+        let mut older = closes.pop().unwrap();
+        let closer = tokio::spawn({
+            let registry = registry.clone();
+            async move {
+                let request = older.recv().await;
+                registry.remove(&link(3, 1)).await;
+                request
+            }
+        });
+        let closed = tokio::time::timeout(
+            Duration::from_secs(10),
+            registry.close_host_before(
+                phone.id,
+                link(3, 2).instance,
+                LinkCloseRequest::CallsFailed,
+            ),
+        )
+        .await
+        .expect("the older link closes");
+        assert_eq!(closed, vec![link(3, 1)]);
+        assert_eq!(closer.await.unwrap(), Some(LinkCloseRequest::CallsFailed));
+        assert!(
+            newer.try_recv().is_err(),
+            "the newer link was not asked to close"
+        );
+        assert_eq!(registry.links_per_peer().await, vec![(phone.id, 1)]);
     }
 
     #[tokio::test]

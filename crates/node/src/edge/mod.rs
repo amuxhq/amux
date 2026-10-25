@@ -686,10 +686,10 @@ impl Edge {
         &self.first_flights
     }
 
-    /// A call to `host` found no channel within its patience: its links
-    /// close.
-    pub(crate) fn calls_timed_out(&self, host: HostId) {
-        self.connections.calls_timed_out(host);
+    /// A call to `host`, begun when the next link would be `since`, found
+    /// no channel within its patience: the links it had close.
+    pub(crate) fn calls_timed_out(&self, host: HostId, since: u64) {
+        self.connections.calls_timed_out(host, since);
     }
 
     /// From now on no channel to `host` opens, or opens again, while the

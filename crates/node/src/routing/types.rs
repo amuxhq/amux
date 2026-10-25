@@ -38,13 +38,20 @@ pub struct LinkId {
     pub(crate) instance: u64,
 }
 
+static INSTANCES: AtomicU64 = AtomicU64::new(1);
+
 impl LinkId {
     pub(crate) fn new(peer: HostId) -> Self {
-        static INSTANCES: AtomicU64 = AtomicU64::new(1);
         Self {
             peer,
             instance: INSTANCES.fetch_add(1, Ordering::Relaxed),
         }
+    }
+
+    /// The instance the next link made will have: every link made before
+    /// now has a lower one.
+    pub(crate) fn next_instance() -> u64 {
+        INSTANCES.load(Ordering::Relaxed)
     }
 
     pub(crate) fn peer(&self) -> HostId {

@@ -114,14 +114,18 @@ impl ConnectionManager {
         self.channel_to_class(peer, ChannelClass::Calls).await
     }
 
-    /// A call to `peer` found no channel within its patience: its links
+    /// A call to `peer` that began when the next link would be `since`
+    /// found no channel within its patience: the links it had to use
     /// close, as their idle timeout would close them, only sooner, and
-    /// redialling brings them back.
-    pub(crate) fn calls_timed_out(&self, peer: HostId) {
+    /// redialling brings them back. A link that came up while it waited,
+    /// as its own dial may have brought one, has not failed it and stays.
+    pub(crate) fn calls_timed_out(&self, peer: HostId, since: u64) {
         tracing::warn!(%peer, "no call channel opened in time; closing the host's links");
         let links = self.channels.link_registry().clone();
         tokio::spawn(async move {
-            links.close_host(peer, LinkCloseRequest::CallsFailed).await;
+            links
+                .close_host_before(peer, since, LinkCloseRequest::CallsFailed)
+                .await;
         });
     }
 

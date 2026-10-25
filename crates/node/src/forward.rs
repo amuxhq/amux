@@ -249,6 +249,7 @@ impl ProfileRuntime {
         if !edge.is_trusted(host) {
             return Err(not_sent());
         }
+        let since = crate::routing::LinkId::next_instance();
         match tokio::time::timeout(REACH_PATIENCE, edge.peer(host)).await {
             Ok(Ok(client)) => Ok(client),
             // On a free account the relay lists the account's hosts and
@@ -260,12 +261,13 @@ impl ProfileRuntime {
                 name: self.host_name(host),
             }),
             // A channel that failed on its link closed the link already;
-            // one that found none in time closes the host's links now. The
+            // one that found none in time closes the host's links it had
+            // to use, not one that came up while it waited. The
             // host reads offline once none is up, and a link of its own
             // coming up again is what releases sends held for it.
             Ok(Err(_)) => Err(not_sent()),
             Err(_) => {
-                edge.calls_timed_out(host);
+                edge.calls_timed_out(host, since);
                 Err(not_sent())
             }
         }

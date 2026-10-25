@@ -258,13 +258,18 @@ def stage(size: tuple[int, int], glow: tuple[int, int, int, int]) -> Image.Image
     return card
 
 
-def fleet_at_half(shots: Path, columns: int, rows: int) -> Image.Image:
-    """The fleet's top-left corner in its window, drawn at 2x and halved
-    exactly, so its text is as sharp as the terminal's own at 1x. What is
-    cut away sits behind the phone or below the rows that matter."""
+def fleet_window(shots: Path, columns: int, rows: int) -> Image.Image:
+    """The fleet's top-left corner in its window, at 2x. What is cut away
+    sits behind the phone or below the rows that matter."""
     frame = render(shots / "fleet-dark.frame.json").crop((0, 0, columns * CELL_W, rows * CELL_H))
     frame.info["ground"] = frame.getpixel((0, 0))
-    framed = window(frame, "dark", "amux — studio")
+    return window(frame, "dark", "amux — studio")
+
+
+def fleet_at_half(shots: Path, columns: int, rows: int) -> Image.Image:
+    """The fleet's corner halved exactly, so its text is as sharp as the
+    terminal's own at 1x."""
+    framed = fleet_window(shots, columns, rows)
     return framed.resize((framed.width // 2, framed.height // 2), Image.LANCZOS)
 
 

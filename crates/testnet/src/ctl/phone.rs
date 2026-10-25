@@ -41,6 +41,9 @@ pub enum PhoneCommand {
     /// a tap, then waits for the screen to change and the app to settle, so
     /// the next command sees what the tap did.
     Tap { id: String },
+    /// Run the element's named accessibility action, as VoiceOver offers
+    /// it: a review line is selected by its "Select line", not a tap.
+    Perform { id: String, action: String },
     /// Choose the item with this label in the dialog or menu that is open:
     /// their items are drawn by the system and carry no identifier (`phone
     /// shot` shows them).
@@ -238,6 +241,14 @@ pub(crate) fn run(folder: &Folder, command: PhoneCommand) -> Result<Outcome, Str
             Ok(outcome)
         }
         PhoneCommand::Tap { id } => tap(folder, &id),
+        PhoneCommand::Perform { id, action } => {
+            request(
+                folder,
+                json!({"kind": "perform", "identifier": id, "action": action}),
+            )?;
+            request(folder, json!({"kind": "settle"}))
+                .map(|reply| Outcome::new(format!("{action} on {id}"), reply))
+        }
         PhoneCommand::Choose { label } => {
             request(folder, json!({"kind": "choose", "label": label}))
                 .map(|reply| Outcome::new(format!("chose {label}"), reply))

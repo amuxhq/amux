@@ -30,6 +30,10 @@ scene *ARGS:
 compose *ARGS:
     {{bounded}} 300 uv run --script marketing/compose.py "$@"
 
+# Compose the App Store's screenshots from the scene's phone shots (marketing/README.md).
+store *ARGS:
+    {{bounded}} 300 uv run --script marketing/store.py "$@"
+
 # The iPhone app's recipes: `just ios build`, `just ios verify`, ... (`just --list ios`).
 mod ios 'apps/apple/justfile'
 

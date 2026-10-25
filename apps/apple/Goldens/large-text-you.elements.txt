@@ -8,12 +8,13 @@ you.appearance.light | Light | not chosen | 32,427,89,66
 you.appearance.dark | Dark | not chosen | 121,427,84,66
 you.appearance.system | System | chosen | 204,427,120,66
 you.shareUsage |  | on | 16,496,370,133
+you.notifications | Notifications | Off | 16,629,370,114
 you.name | <volatile>
 you.fingerprint | <volatile>
-you.support | Contact Support |  | 16,1032,370,69
-you.report | Report a Problem |  | 16,1102,370,69
-you.dump | Export Diagnostics |  | 16,1171,370,112
-you.help.caption |  |  | 16,1291,366,106
+you.support | Contact Support |  | 16,1147,370,69
+you.report | Report a Problem |  | 16,1216,370,69
+you.dump | Export Diagnostics |  | 16,1286,370,112
+you.help.caption |  |  | 16,1405,366,106
 you.close | Close |  | 326,82,56,36
  | All |  | 16,114,60,44
  | Needs you, 2 |  | 84,114,191,44
@@ -43,13 +44,14 @@ you.close | Close |  | 326,82,56,36
  | Dark |  | 121,427,84,66
  | System |  | 204,427,120,66
  | Share Usage, Counts and choices, never what you type | 1 | 30,504,342,115
- | Name, <device> |  | 16,629,370,114
- | Fingerprint, <key> |  | 30,756,342,203
- | HELP |  | 18,988,76,36
- | Contact Support |  | 16,1032,370,69
- | Report a Problem |  | 16,1102,370,69
- | Export Diagnostics |  | 16,1171,370,112
- | A report includes a screenshot and this phone’s diagnostic dump. |  | 30,1291,338,106
+ | Notifications, Off |  | 16,629,370,114
+ | Name, <device> |  | 16,744,370,114
+ | Fingerprint, <key> |  | 30,870,342,203
+ | HELP |  | 18,1103,76,36
+ | Contact Support |  | 16,1147,370,69
+ | Report a Problem |  | 16,1216,370,69
+ | Export Diagnostics |  | 16,1286,370,112
+ | A report includes a screenshot and this phone’s diagnostic dump. |  | 30,1405,338,106
  | Settings |  | 161,88,80,25
  | Close |  | 326,82,56,36
  | Agents | selected | 111,795,94,54

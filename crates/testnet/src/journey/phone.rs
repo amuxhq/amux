@@ -161,6 +161,11 @@ fn launch_arguments(
         found.join(","),
         "-amux-lan-bind".to_owned(),
         "127.0.0.1:0".to_owned(),
+        // The fleet's offer of notifications, put away as a person who
+        // answered it once would have: the screens the journeys read are
+        // the list's, and the offer has a component snapshot of its own.
+        "-notificationsOfferDeclined".to_owned(),
+        "YES".to_owned(),
     ]);
     if let Some(cloud) = &ready.cloud_url
         && (ready.relay_tcp.is_some() || ready.relay_quic.is_some())
@@ -1738,7 +1743,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_launch_names_its_door_scope_found_machines_and_loopback_links() {
+    fn a_launch_names_its_door_scope_found_machines_and_loopback_links_and_puts_the_offer_away() {
         let arguments = launch_arguments(
             &ready(false),
             "phone-reach",
@@ -1759,6 +1764,8 @@ pub(crate) mod tests {
                 DESK,
                 "-amux-lan-bind",
                 "127.0.0.1:0",
+                "-notificationsOfferDeclined",
+                "YES",
             ]
         );
     }

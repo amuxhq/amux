@@ -224,6 +224,15 @@ design-benchmark *ARGS:
 release *ARGS: package scope-audit
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 8100 {{python}} -B scripts/release.py "$@"
 
+# Replaces the iPhone screenshots of the App Store version being prepared
+# with the seven frames `just store` composes, in order, through the App Store
+# Connect API and the release key. --dry-run says what would change and
+# changes nothing; --version X.Y.Z names the version, created if it is new.
+# Never attaches a build or submits for review (docs/RELEASE.md).
+# Put the App Store's screenshots on the version being prepared.
+screenshots *ARGS:
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 900 {{python}} -B scripts/ios-screenshots.py "$@"
+
 # Signs a QA account into the real amux.sh from this Mac, with no app, the
 # same way the phone does, and reports what that account is entitled to and
 # whether the relay will issue it a credential. Evidence a person runs by

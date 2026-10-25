@@ -165,6 +165,14 @@ public final class RuntimeCoordinator {
         // them in files of its own here; nothing reads them now.
         try? FileManager.default.removeItem(
             at: support.appendingPathComponent("drafts", isDirectory: true))
+        // An installation that still has the registry file profiles were
+        // once listed in is one this build cannot read, and the runtime
+        // refuses it; its keys and pairings went with that layout.
+        if FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent("registry").path)
+        {
+            try? FileManager.default.removeItem(at: directory)
+        }
         let directory = directory
         let config = StartConfig(
             dataDir: directory.path, deviceName: deviceName,

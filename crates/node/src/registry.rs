@@ -13,7 +13,7 @@ use wire::ErrorCode;
 use crate::ProfileId;
 use crate::daemon::{Hosted, Installation};
 use crate::edge::{Cloud, Edge, account};
-use crate::profiles::{self, PROFILE_SOCKET, profile_dir};
+use crate::profiles::{self, PROFILE_SOCKET};
 
 /// How long a profile's removal waits for its store to close before it
 /// removes the profile's files.
@@ -348,8 +348,9 @@ impl Registry {
         if let Some(closed) = closed {
             let _ = tokio::time::timeout(PROFILE_CLOSES_WITHIN, closed).await;
         }
-        std::fs::remove_dir_all(profile_dir(&installation.data_dir, id))
-            .map_err(ProfileRefusal::failed)?;
+        // The profile file goes first, so a removal cut short leaves a
+        // directory the next start tidies away rather than a profile.
+        profiles::discard(&installation.data_dir, id).map_err(ProfileRefusal::failed)?;
         installation.publish(ProfileEvent::Removed(id));
         Ok(())
     }

@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pillow==11.3.0", "fonttools==4.59.0"]
+# dependencies = ["pillow==11.3.0", "fonttools==4.59.0", "resvg-py==0.2.6"]
 # ///
 """Compose the README's pictures from the scene's shots.
 
@@ -11,19 +11,22 @@ on high-density screens, puts each in a window, puts the phone screens in a
 device outline, and writes the README's images, light and dark, to
 `images/readme/`. Two are drawn once for both: the agents' own interfaces
 side by side, and amux's chat in three terminals' colours, which shows
-light and dark itself.
+light and dark itself. Last, the cards for a shared link to the repository
+and for an X profile's header.
 
     uv run marketing/compose.py [SHOTS_FOLDER]
 """
 
 from __future__ import annotations
 
+from io import BytesIO
 import json
 import sys
 from pathlib import Path
 
 from fontTools.ttLib import TTFont
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
+import resvg_py
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -230,6 +233,86 @@ def save(image: Image.Image, name: str, width: int) -> None:
     print(f"compose: images/readme/{name}.png {image.width}x{image.height}")
 
 
+# The cards for links and profiles: drawn on the film's stage, in its type.
+STAGE = (7, 8, 11)
+INK, MUTED = (242, 244, 247), (139, 145, 156)
+
+
+def sans(size: int, weight: int) -> ImageFont.FreeTypeFont:
+    font = ImageFont.truetype(str(HERE / "fonts/InstrumentSans.ttf"), size)
+    font.set_variation_by_axes([100, weight])
+    return font
+
+
+def mark(size: int) -> Image.Image:
+    svg = (ROOT / "images/brand/amux.svg").read_text()
+    return Image.open(BytesIO(resvg_py.svg_to_bytes(svg_string=svg, width=size, height=size))).convert("RGBA")
+
+
+def stage(size: tuple[int, int], glow: tuple[int, int, int, int]) -> Image.Image:
+    """The dark ground with a faint blue light behind the words."""
+    card = Image.new("RGBA", size, STAGE + (255,))
+    light = Image.new("RGBA", size, (0, 0, 0, 0))
+    ImageDraw.Draw(light).ellipse(glow, fill=(44, 135, 255, 30))
+    card.alpha_composite(light.filter(ImageFilter.GaussianBlur(120)))
+    return card
+
+
+def fleet_at_half(shots: Path, columns: int, rows: int) -> Image.Image:
+    """The fleet's top-left corner in its window, drawn at 2x and halved
+    exactly, so its text is as sharp as the terminal's own at 1x. What is
+    cut away sits behind the phone or below the rows that matter."""
+    frame = render(shots / "fleet-dark.frame.json").crop((0, 0, columns * CELL_W, rows * CELL_H))
+    frame.info["ground"] = frame.getpixel((0, 0))
+    framed = window(frame, "dark", "amux — studio")
+    return framed.resize((framed.width // 2, framed.height // 2), Image.LANCZOS)
+
+
+def phone_at(shots: Path, height: int) -> Image.Image:
+    """The request on the phone, shrunk once from the simulator's pixels."""
+    handset = phone(Image.open(shots / "phone-ask-dark.png").convert("RGBA"), "dark")
+    handset = handset.resize((round(handset.width * height / handset.height), height), Image.LANCZOS)
+    return handset.filter(ImageFilter.UnsharpMask(radius=0.6, percent=60, threshold=0))
+
+
+def lay(card: Image.Image, layer: Image.Image, at: tuple[int, int]) -> None:
+    shadow = Image.new("RGBA", card.size, (0, 0, 0, 0))
+    shadow.paste((0, 0, 0, 200), (at[0], at[1] + 16), layer.getchannel("A"))
+    card.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(28)))
+    card.alpha_composite(layer, at)
+
+
+def social(shots: Path) -> Image.Image:
+    """The card a shared link to the repository shows, at GitHub's 1280x640.
+    It is usually seen far smaller, so it carries the name and the promise
+    in large type and nothing small enough to need reading."""
+    card = stage((1280, 640), (-200, 40, 760, 600))
+    lay(card, fleet_at_half(shots, 70, 23), (452, 58))
+    handset = phone_at(shots, 556)
+    lay(card, handset, (1280 - 52 - handset.width, 42))
+    card.alpha_composite(mark(148), (62, 108))
+    draw = ImageDraw.Draw(card)
+    draw.text((72, 360), "amux", font=sans(112, 620), fill=INK, anchor="ls")
+    for i, text in enumerate(["Your agents,", "everywhere,", "all at once."]):
+        draw.text((74, 424 + i * 48), text, font=sans(42, 470), fill=MUTED, anchor="ls")
+    return card.convert("RGB")
+
+
+def banner(shots: Path) -> Image.Image:
+    """An X profile's header, 1500x500. The profile picture covers the
+    bottom-left corner, so the words keep to the top-left and the
+    pictures to the right."""
+    card = stage((1500, 500), (-160, -60, 820, 420))
+    lay(card, fleet_at_half(shots, 52, 14), (836, 86))
+    handset = phone_at(shots, 428)
+    lay(card, handset, (1500 - 64 - handset.width, 36))
+    card.alpha_composite(mark(104), (92, 92))
+    draw = ImageDraw.Draw(card)
+    draw.text((218, 172), "amux", font=sans(100, 620), fill=INK, anchor="ls")
+    draw.text((100, 246), "Your agents, everywhere, all at once.", font=sans(36, 470), fill=MUTED, anchor="ls")
+    return card.convert("RGB")
+
+
 def main(arguments: list[str]) -> int:
     shots = Path(arguments[0]) if arguments else SHOTS
     for theme in ("dark", "light"):
@@ -262,6 +345,8 @@ def main(arguments: list[str]) -> int:
     windows = [window(render(shots / f"theme-{name}.frame.json"), "own", title) for name, title in THEMES]
     step_x, step_y = windows[0].width * 26 // 100, windows[0].height * 18 // 100
     save(shadowed([(w, (i * step_x, i * step_y)) for i, w in enumerate(windows)], "both"), "themes", 2400)
+    save(social(shots), "social", 1280)
+    save(banner(shots), "banner", 1500)
     return 0
 
 

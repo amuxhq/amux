@@ -57,6 +57,13 @@ them in windows and the phone screens in a device outline, and writes the
 README's light and dark images. The three themes and the agents' own
 interfaces are one image each, for both of GitHub's pages.
 
+It also writes two cards from the dark shots, drawn for their size rather
+than cut from the hero: `social.png`, 1280x640, the repository's social
+preview (Settings → General → Social preview), and `banner.png`, 1500x500,
+an X profile's header, which keeps its words clear of the profile picture
+in the bottom-left corner. Both set their words in Instrument Sans, the
+launch film's face, from `fonts/` under its Open Font License.
+
 ## Claude Code's and Codex's own interfaces
 
 ```sh

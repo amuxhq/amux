@@ -21,10 +21,11 @@ fn addr(text: &str) -> SocketAddr {
 #[test]
 fn trust_store_pairing_upsert_inserts_and_deduplicates_reachability() {
     let mut store = TrustStore::default();
-    let ssh = Reachability::Ssh {
+    let target = SshTarget {
         target: "workstation".to_string(),
         profile: Uuid::from_u128(42),
     };
+    let ssh = Reachability::Ssh(target.clone());
 
     let upsert = |store: &mut TrustStore, name: &str, reachability: Reachability, when| {
         store
@@ -47,7 +48,8 @@ fn trust_store_pairing_upsert_inserts_and_deduplicates_reachability() {
     let entry = store.entry(PEER).unwrap();
     assert_eq!(entry.name, "renamed");
     assert_eq!(entry.pubkey, vec![9; 32]);
-    assert_eq!(entry.reachabilities, vec![Reachability::Cloud, ssh]);
+    assert!(entry.on_account);
+    assert_eq!(entry.ssh, Some(target));
 }
 
 #[test]
@@ -101,7 +103,8 @@ fn trust_store_pairing_upsert_requires_teardown_before_pubkey_replacement() {
     let entry = store.entry(PEER).unwrap();
     assert_eq!(entry.name, "old");
     assert_eq!(entry.pubkey, vec![7; 32]);
-    assert_eq!(entry.reachabilities, vec![Reachability::Cloud]);
+    assert!(entry.on_account);
+    assert!(entry.direct.is_empty());
     assert!(store.pubkey_for_host(PEER).is_none());
     assert!(store.host_id_for_pubkey(&[7; 32]).is_none());
 
@@ -120,11 +123,15 @@ fn trust_store_pairing_upsert_requires_teardown_before_pubkey_replacement() {
     let entry = store.entry(PEER).unwrap();
     assert_eq!(entry.name, "new");
     assert_eq!(entry.pubkey, vec![8; 32]);
-    assert_eq!(entry.reachabilities, vec![direct]);
+    assert!(
+        !entry.on_account,
+        "a replaced key starts from what its pairing reached"
+    );
+    assert_eq!(entry.direct, vec![addr("127.0.0.1:9000")]);
 }
 
 #[test]
-fn the_trust_file_round_trips_and_names_its_reachabilities() {
+fn the_trust_file_round_trips_and_names_how_a_peer_is_reached() {
     let mut store = TrustStore::default();
     store.insert_for_test(
         PEER,
@@ -132,10 +139,12 @@ fn the_trust_file_round_trips_and_names_its_reachabilities() {
             pubkey: vec![9; 32],
             name: "peer".to_string(),
             paired_at: at(200),
-            reachabilities: vec![Reachability::Ssh {
+            on_account: true,
+            direct: vec![addr("192.0.2.7:7001")],
+            ssh: Some(SshTarget {
                 target: "workstation".to_string(),
                 profile: Uuid::from_u128(42),
-            }],
+            }),
             signed_in: Some(false),
             platform: wire::Platform::Linux,
             listed: vec![crate::payload::PeerAddress {
@@ -186,7 +195,9 @@ fn trust_store_rejects_wrong_length_pubkey_on_load_and_save() {
             pubkey: vec![1, 2, 3],
             name: "peer".to_string(),
             paired_at: at(200),
-            reachabilities: vec![Reachability::Cloud],
+            on_account: true,
+            direct: Vec::new(),
+            ssh: None,
             signed_in: None,
             platform: wire::Platform::Unspecified,
             listed: Vec::new(),
@@ -200,7 +211,7 @@ fn trust_store_rejects_wrong_length_pubkey_on_load_and_save() {
     "pubkey": [1, 2, 3],
     "name": "peer",
     "paired_at": "1970-01-01T00:00:00Z",
-    "reachabilities": [{{ "type": "cloud" }}]
+    "on_account": true
   }}
 }}"#
     );
@@ -452,10 +463,10 @@ fn a_change_under_way_survives_a_checkpoint() {
             host: OTHER,
             pubkey: vec![9; 32],
             name: "other".into(),
-            reachability: Some(Reachability::Ssh {
+            reachability: Some(Reachability::Ssh(SshTarget {
                 target: "desk".into(),
                 profile: Uuid::from_u128(4),
-            }),
+            })),
         },
     );
     step(

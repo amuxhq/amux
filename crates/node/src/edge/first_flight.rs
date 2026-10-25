@@ -17,7 +17,6 @@ use super::Edge;
 use crate::HostId;
 use crate::link::link_log::{EarlyData, LinkEvent, LinkTransition};
 use crate::link::{EarlyCall, EarlyReply, QuicCarrier};
-use crate::trust::Reachability;
 
 /// How long an answer the core has not asked for is kept: past it, the
 /// core asked differently, or not at all, and the stream is let go.
@@ -133,14 +132,7 @@ fn remembered(edge: &Edge) -> Vec<HostId> {
         .map(|store| {
             store
                 .entries()
-                .filter(|(_, entry)| {
-                    entry.reachabilities.iter().any(|reachability| {
-                        matches!(
-                            reachability,
-                            Reachability::Cloud | Reachability::Direct { .. }
-                        )
-                    })
-                })
+                .filter(|(_, entry)| entry.on_account || !entry.direct.is_empty())
                 .map(|(host, _)| host)
                 .collect()
         })

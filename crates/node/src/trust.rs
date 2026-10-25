@@ -6,7 +6,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub use daemon_core::trust::{Reachability, TrustChange, TrustEntry, TrustError, TrustStore};
+pub use daemon_core::trust::{
+    Reachability, SshTarget, TrustChange, TrustEntry, TrustError, TrustStore,
+};
 
 use crate::identity::{
     ED25519_PUBKEY_LEN, IdentityError, create_private_file, ensure_private_file_mode,

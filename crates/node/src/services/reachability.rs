@@ -21,7 +21,7 @@ use crate::link::socket::Path;
 use crate::link::{ChannelError, ChannelPool, QuicCarrier};
 use crate::routing::{Host, LinkConnectorCtx, LinkId, LiveLocalHost, Route};
 use crate::transport::spawn_ssh_relay;
-use crate::trust::{Reachability, SharedTrustStore};
+use crate::trust::{Reachability, SharedTrustStore, SshTarget};
 
 const DIRECT_LINK_ESTABLISHMENT_TIMEOUT: Duration = Duration::from_secs(10);
 /// SSH's own connection setup comes ahead of the QUIC handshake through it.
@@ -137,7 +137,6 @@ struct ReachabilityRuntime {
 struct ReachabilityLinkAttempt {
     peer: HostId,
     reachability: Reachability,
-    ordinal: usize,
     /// Failed direct dials to this found peer just before this one.
     redials: u32,
 }
@@ -276,7 +275,6 @@ impl ReachabilityLinkConnector {
         let Some(task) = self.spawn_attempt(ReachabilityLinkAttempt {
             peer,
             reachability,
-            ordinal: 0,
             redials: 0,
         }) else {
             return;
@@ -293,7 +291,6 @@ impl ReachabilityLinkConnector {
         if let Some(task) = self.spawn_attempt(ReachabilityLinkAttempt {
             peer,
             reachability: Reachability::Direct { addrs },
-            ordinal: 0,
             redials: 0,
         }) {
             self.retain_task(task);
@@ -422,7 +419,6 @@ impl ReachabilityLinkConnector {
             local = %inner.context.identity.host_id,
             peer = %attempt.peer,
             reachability = ?attempt.reachability,
-            ordinal = attempt.ordinal,
         );
         Some(tokio::spawn(
             async move {
@@ -482,17 +478,10 @@ fn snapshot_attempts(
     for (peer, entry) in store.entries() {
         // A launch's first flight takes the relay and every address at
         // once; only SSH is dialled here.
-        for (ordinal, reachability) in entry
-            .reachabilities
-            .iter()
-            .filter(|reachability| matches!(reachability, Reachability::Ssh { .. }))
-            .cloned()
-            .enumerate()
-        {
+        if let Some(ssh) = &entry.ssh {
             attempts.push(ReachabilityLinkAttempt {
                 peer,
-                reachability,
-                ordinal,
+                reachability: Reachability::Ssh(ssh.clone()),
                 redials: 0,
             });
         }
@@ -513,14 +502,7 @@ fn direct_candidates(context: &ReachabilityLinkContext, peer: HostId) -> Vec<std
             .entries()
             .find_map(|(id, entry)| (id == peer).then_some(entry))
     {
-        for addr in entry
-            .reachabilities
-            .iter()
-            .flat_map(|reachability| match reachability {
-                Reachability::Direct { addrs } => addrs.as_slice(),
-                _ => &[],
-            })
-        {
+        for addr in &entry.direct {
             if !addrs.contains(addr) {
                 addrs.push(*addr);
             }
@@ -829,13 +811,9 @@ async fn redial_after(
 /// Whether `peer` is a host on the account, which the relay reaches.
 fn on_the_account(trust_store: &SharedTrustStore, peer: HostId) -> bool {
     trust_store.read().is_ok_and(|store| {
-        store.entries().any(|(id, entry)| {
-            id == peer
-                && entry
-                    .reachabilities
-                    .iter()
-                    .any(|reachability| matches!(reachability, Reachability::Cloud))
-        })
+        store
+            .entries()
+            .any(|(id, entry)| id == peer && entry.on_account)
     })
 }
 
@@ -933,7 +911,7 @@ async fn establish_reachability_link(
             tracing::warn!(error = %error, "direct Link establishment failed");
             None
         }
-        Reachability::Ssh { target, profile } => {
+        Reachability::Ssh(SshTarget { target, profile }) => {
             let carrier = match tokio::time::timeout(
                 SSH_LINK_HANDSHAKE_TIMEOUT,
                 prepare_ssh_carrier(&context, attempt.peer, &target, profile),
@@ -1155,7 +1133,6 @@ async fn redial_while_away(
         reachability: Reachability::Direct {
             addrs: direct_candidates(&context, peer),
         },
-        ordinal: 0,
         redials: redials.saturating_add(1),
     }) {
         connector.retain_task(task);

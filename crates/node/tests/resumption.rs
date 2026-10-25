@@ -342,14 +342,9 @@ async fn first_flight_on_every_path_reaches_the_host_once() {
     // laptop's first flight goes to each.
     let mut trust: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&trust_file).unwrap()).unwrap();
-    let reachabilities = trust[desk_id.to_string()]["reachabilities"]
-        .as_array_mut()
-        .expect("the desk's entry lists its reachabilities");
-    let direct = reachabilities
-        .iter_mut()
-        .find(|reachability| reachability["type"] == "direct")
-        .expect("the desk is remembered at an address");
-    direct["addrs"] = serde_json::json!([format!("127.0.0.1:{port}"), format!("[::1]:{port}")]);
+    let direct = &mut trust[desk_id.to_string()]["direct"];
+    assert!(direct.is_array(), "the desk is remembered at an address");
+    *direct = serde_json::json!([format!("127.0.0.1:{port}"), format!("[::1]:{port}")]);
     std::fs::write(&trust_file, serde_json::to_vec_pretty(&trust).unwrap()).unwrap();
 
     let mark = captured().lock().unwrap().len();
@@ -411,10 +406,9 @@ async fn a_first_flight_with_no_ticket_to_an_address_that_never_answers_gives_up
     let trust_file = laptop.profile_dir().join("trust.json");
     let mut trust: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&trust_file).unwrap()).unwrap();
-    trust[desk_id.to_string()]["reachabilities"] = serde_json::json!([{
-        "type": "direct",
-        "addrs": [silent.local_addr().unwrap().to_string()],
-    }]);
+    let desk = &mut trust[desk_id.to_string()];
+    desk["direct"] = serde_json::json!([silent.local_addr().unwrap().to_string()]);
+    desk.as_object_mut().unwrap().remove("on_account");
     std::fs::write(&trust_file, serde_json::to_vec_pretty(&trust).unwrap()).unwrap();
     let mut options = laptop.options("boot-1", quiet_launch());
     options.edge = lan(None);

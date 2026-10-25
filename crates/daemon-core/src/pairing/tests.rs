@@ -2,7 +2,7 @@ use store::Sqlite;
 
 use super::*;
 use crate::payload::{ClientRequest, JobResult};
-use crate::trust::TrustStore;
+use crate::trust::{SshTarget, TrustStore};
 use crate::{Input, Job, StartOptions, StepBudget};
 
 const OFFERER: u8 = 1;
@@ -462,10 +462,10 @@ fn a_pending_pairing_is_forgotten_when_the_peers_window_would_close() {
 #[test]
 fn an_ssh_pairing_commits_through_the_same_trust_writes() {
     let mut joiner = Host::new(JOINER);
-    let reachability = Reachability::Ssh {
+    let reachability = Reachability::Ssh(SshTarget {
         target: "desk".into(),
         profile: Uuid::from_u128(5),
-    };
+    });
     joiner.call(
         3,
         ClientRequest::PairOverSsh {
@@ -488,8 +488,11 @@ fn an_ssh_pairing_commits_through_the_same_trust_writes() {
             .trust()
             .entry(Uuid::from_bytes([OFFERER; 16]))
             .unwrap()
-            .reachabilities,
-        vec![reachability]
+            .ssh,
+        Some(SshTarget {
+            target: "desk".into(),
+            profile: Uuid::from_u128(5),
+        })
     );
     assert_eq!(
         events(&out),

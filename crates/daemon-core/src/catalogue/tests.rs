@@ -268,12 +268,11 @@ fn a_trusted_host_the_relay_claims_is_remembered_as_on_the_account() {
             .trust()
             .entry(Uuid::from_bytes(DESK.0))
             .expect("the desk is trusted")
-            .reachabilities
-            .clone()
+            .on_account
     };
     // Paired on the same network: nothing says the relay reaches it.
     linked(&mut daemon, 1, DESK, CarrierKind::Direct, &[]);
-    assert!(!reachable(&daemon).contains(&Reachability::Cloud));
+    assert!(!reachable(&daemon));
 
     // The relay claims it: the next launch may send through the relay.
     step(
@@ -304,10 +303,10 @@ fn a_trusted_host_the_relay_claims_is_remembered_as_on_the_account() {
             result: JobResult::Done,
         },
     );
-    assert!(reachable(&daemon).contains(&Reachability::Cloud));
+    assert!(reachable(&daemon));
 
     // A claim on a link that is not the relay's says nothing of the account.
     let mut daemon = self::daemon(&[DESK]);
     linked(&mut daemon, 1, numbered(1), CarrierKind::Direct, &[DESK]);
-    assert!(!reachable(&daemon).contains(&Reachability::Cloud));
+    assert!(!reachable(&daemon));
 }

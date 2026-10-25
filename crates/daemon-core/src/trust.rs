@@ -31,12 +31,21 @@ use crate::serve::answered;
 /// The length of an Ed25519 public key, the only key a host pins.
 pub const PUBKEY_LEN: usize = 32;
 
-/// One way a paired host was reached.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// How a pairing reached the host: through the account's relay, over
+/// SSH, or at addresses.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Reachability {
     Cloud,
-    Ssh { target: String, profile: Uuid },
+    Ssh(SshTarget),
     Direct { addrs: Vec<SocketAddr> },
+}
+
+/// Where a host paired over SSH is reached: the SSH destination, and the
+/// profile on the far machine whose link socket `amux relay` joins.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct SshTarget {
+    pub target: String,
+    pub profile: Uuid,
 }
 
 /// What the profile knows of one paired host.
@@ -45,7 +54,17 @@ pub struct TrustEntry {
     pub pubkey: Vec<u8>,
     pub name: String,
     pub paired_at: DateTime<Utc>,
-    pub reachabilities: Vec<Reachability>,
+    /// The account's relay reaches the host: it paired through the relay,
+    /// or the relay has claimed it since. A launch's first flight then goes
+    /// through the relay too, before the relay has said anything.
+    pub on_account: bool,
+    /// The addresses the host last answered at directly, dialled at launch
+    /// beside what discovery finds. Only these reach a host paired by
+    /// address across a network discovery cannot see.
+    pub direct: Vec<SocketAddr>,
+    /// How to reach the host over SSH, where it paired that way: the one
+    /// way of reaching it the host cannot tell this one itself.
+    pub ssh: Option<SshTarget>,
     pub signed_in: Option<bool>,
     /// The operating system the peer announced, last it said one.
     pub platform: wire::Platform,
@@ -54,64 +73,11 @@ pub struct TrustEntry {
     pub listed: Vec<PeerAddress>,
 }
 
-/// The trust file's shapes, which are JSON's: a reachability tagged by
-/// its `type`, and an entry that leaves out what it does not know. The
-/// checkpoint's format reads neither, so it gets the plain shapes.
+/// The trust file's shapes, which are JSON's: an entry that leaves out
+/// what it does not know. The checkpoint's format cannot skip a field, so
+/// it gets the plain shape.
 mod forms {
     use super::*;
-
-    #[derive(Serialize, Deserialize)]
-    #[serde(tag = "type", rename_all = "snake_case")]
-    enum FileReachability {
-        Cloud,
-        Ssh { target: String, profile: Uuid },
-        Direct { addrs: Vec<SocketAddr> },
-    }
-
-    #[derive(Serialize, Deserialize)]
-    enum PlainReachability {
-        Cloud,
-        Ssh { target: String, profile: Uuid },
-        Direct { addrs: Vec<SocketAddr> },
-    }
-
-    macro_rules! convert {
-        ($from:ident => $to:ident) => {
-            impl From<$from> for $to {
-                fn from(reachability: $from) -> $to {
-                    match reachability {
-                        $from::Cloud => $to::Cloud,
-                        $from::Ssh { target, profile } => $to::Ssh { target, profile },
-                        $from::Direct { addrs } => $to::Direct { addrs },
-                    }
-                }
-            }
-        };
-    }
-    convert!(Reachability => FileReachability);
-    convert!(FileReachability => Reachability);
-    convert!(Reachability => PlainReachability);
-    convert!(PlainReachability => Reachability);
-
-    impl Serialize for Reachability {
-        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-            if serializer.is_human_readable() {
-                FileReachability::from(self.clone()).serialize(serializer)
-            } else {
-                PlainReachability::from(self.clone()).serialize(serializer)
-            }
-        }
-    }
-
-    impl<'de> Deserialize<'de> for Reachability {
-        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-            if deserializer.is_human_readable() {
-                FileReachability::deserialize(deserializer).map(Reachability::from)
-            } else {
-                PlainReachability::deserialize(deserializer).map(Reachability::from)
-            }
-        }
-    }
 
     #[derive(Serialize, Deserialize)]
     #[serde(deny_unknown_fields)]
@@ -119,7 +85,12 @@ mod forms {
         pubkey: Vec<u8>,
         name: String,
         paired_at: DateTime<Utc>,
-        reachabilities: Vec<Reachability>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        on_account: bool,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        direct: Vec<SocketAddr>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ssh: Option<SshTarget>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         signed_in: Option<bool>,
         #[serde(default, skip_serializing_if = "unspecified")]
@@ -133,7 +104,9 @@ mod forms {
         pubkey: Vec<u8>,
         name: String,
         paired_at: DateTime<Utc>,
-        reachabilities: Vec<Reachability>,
+        on_account: bool,
+        direct: Vec<SocketAddr>,
+        ssh: Option<SshTarget>,
         signed_in: Option<bool>,
         platform: wire::Platform,
         listed: Vec<PeerAddress>,
@@ -151,7 +124,9 @@ mod forms {
                         pubkey: entry.pubkey,
                         name: entry.name,
                         paired_at: entry.paired_at,
-                        reachabilities: entry.reachabilities,
+                        on_account: entry.on_account,
+                        direct: entry.direct,
+                        ssh: entry.ssh,
                         signed_in: entry.signed_in,
                         platform: entry.platform,
                         listed: entry.listed,
@@ -283,7 +258,9 @@ impl TrustStore {
                         pubkey,
                         name: Uuid::from_bytes(host.0).to_string(),
                         paired_at: DateTime::<Utc>::UNIX_EPOCH,
-                        reachabilities: Vec::new(),
+                        on_account: false,
+                        direct: Vec::new(),
+                        ssh: None,
                         signed_in: None,
                         platform: wire::Platform::Unspecified,
                         listed: Vec::new(),
@@ -361,7 +338,7 @@ impl TrustStore {
                 entry.name = name;
                 entry.paired_at = paired_at;
                 if let Some(reachability) = reachability {
-                    append_reachability(&mut entry.reachabilities, reachability);
+                    entry.reached(reachability);
                 }
                 Ok(PairingUpdate::Updated)
             }
@@ -372,15 +349,7 @@ impl TrustStore {
             None => {
                 self.entries.insert(
                     host_id,
-                    TrustEntry {
-                        pubkey,
-                        name,
-                        paired_at,
-                        reachabilities: reachability.into_iter().collect(),
-                        signed_in: None,
-                        platform: wire::Platform::Unspecified,
-                        listed: Vec::new(),
-                    },
+                    TrustEntry::paired(pubkey, name, paired_at, reachability),
                 );
                 Ok(PairingUpdate::Inserted)
             }
@@ -406,32 +375,18 @@ impl TrustStore {
                 entry.name = name;
                 entry.paired_at = paired_at;
                 if let Some(reachability) = reachability {
-                    append_reachability(&mut entry.reachabilities, reachability);
+                    entry.reached(reachability);
                 }
                 Ok(PairingUpdate::Updated)
             }
             Some(entry) => {
-                entry.pubkey = pubkey;
-                entry.name = name;
-                entry.paired_at = paired_at;
-                entry.reachabilities = reachability.into_iter().collect();
-                entry.signed_in = None;
-                entry.platform = wire::Platform::Unspecified;
-                entry.listed.clear();
+                *entry = TrustEntry::paired(pubkey, name, paired_at, reachability);
                 Ok(PairingUpdate::ReplacedPubkey)
             }
             None => {
                 self.entries.insert(
                     host_id,
-                    TrustEntry {
-                        pubkey,
-                        name,
-                        paired_at,
-                        reachabilities: reachability.into_iter().collect(),
-                        signed_in: None,
-                        platform: wire::Platform::Unspecified,
-                        listed: Vec::new(),
-                    },
+                    TrustEntry::paired(pubkey, name, paired_at, reachability),
                 );
                 Ok(PairingUpdate::Inserted)
             }
@@ -447,19 +402,10 @@ impl TrustStore {
         let Some(entry) = self.entries.get_mut(&host_id) else {
             return false;
         };
-        let direct = Reachability::Direct { addrs };
-        if entry
-            .reachabilities
-            .iter()
-            .filter(|reachability| matches!(reachability, Reachability::Direct { .. }))
-            .eq([&direct])
-        {
+        if entry.direct == addrs {
             return false;
         }
-        entry
-            .reachabilities
-            .retain(|reachability| !matches!(reachability, Reachability::Direct { .. }));
-        entry.reachabilities.push(direct);
+        entry.direct = addrs;
         true
     }
 
@@ -482,11 +428,7 @@ impl TrustStore {
         let Some(entry) = self.entries.get_mut(&host_id) else {
             return false;
         };
-        if entry.reachabilities.contains(&Reachability::Cloud) {
-            return false;
-        }
-        entry.reachabilities.push(Reachability::Cloud);
-        true
+        !std::mem::replace(&mut entry.on_account, true)
     }
 
     pub fn remember_signed_in(&mut self, host_id: Uuid, signed_in: Option<bool>) -> bool {
@@ -527,26 +469,45 @@ impl TrustStore {
     }
 }
 
-fn append_reachability(reachabilities: &mut Vec<Reachability>, reachability: Reachability) {
-    if let Reachability::Direct { addrs } = reachability {
-        if let Some(Reachability::Direct {
-            addrs: stored_addrs,
-        }) = reachabilities
-            .iter_mut()
-            .find(|reachability| matches!(reachability, Reachability::Direct { .. }))
-        {
-            for addr in addrs {
-                if !stored_addrs.contains(&addr) {
-                    stored_addrs.push(addr);
+impl TrustEntry {
+    /// A host just paired, reached as `reachability`.
+    fn paired(
+        pubkey: Vec<u8>,
+        name: String,
+        paired_at: DateTime<Utc>,
+        reachability: Option<Reachability>,
+    ) -> TrustEntry {
+        let mut entry = TrustEntry {
+            pubkey,
+            name,
+            paired_at,
+            on_account: false,
+            direct: Vec::new(),
+            ssh: None,
+            signed_in: None,
+            platform: wire::Platform::Unspecified,
+            listed: Vec::new(),
+        };
+        if let Some(reachability) = reachability {
+            entry.reached(reachability);
+        }
+        entry
+    }
+
+    /// Keeps how a pairing reached the host, beside what was kept before:
+    /// addresses join the direct ones, and an SSH target replaces the last.
+    fn reached(&mut self, reachability: Reachability) {
+        match reachability {
+            Reachability::Cloud => self.on_account = true,
+            Reachability::Ssh(target) => self.ssh = Some(target),
+            Reachability::Direct { addrs } => {
+                for addr in addrs {
+                    if !self.direct.contains(&addr) {
+                        self.direct.push(addr);
+                    }
                 }
             }
-        } else {
-            reachabilities.push(Reachability::Direct { addrs });
         }
-        return;
-    }
-    if !reachabilities.contains(&reachability) {
-        reachabilities.push(reachability);
     }
 }
 

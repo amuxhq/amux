@@ -30,7 +30,7 @@ use crate::driver::pairing::status as pairing_status;
 use crate::pairing::PAIR_MODE_TTL;
 use crate::runtime::ProfileRuntime;
 use crate::services::LocalPairingIdentity;
-use crate::trust::{Reachability, TrustEntry, TrustStore};
+use crate::trust::{Reachability, SshTarget, TrustEntry, TrustStore};
 
 const PUBKEY_LEN: usize = 32;
 const MAX_PAIRING_NAME_BYTES: usize = 256;
@@ -117,24 +117,21 @@ pub(crate) fn peer_entry_to_wire(host_id: HostId, entry: &TrustEntry) -> PeerEnt
         pubkey: entry.pubkey.clone(),
         paired_at_ms: entry.paired_at.timestamp_millis(),
         reachabilities: entry
-            .reachabilities
-            .iter()
-            .map(|reachability| wire::PeerReachability {
-                kind: Some(match reachability {
-                    Reachability::Cloud => wire::peer_reachability::Kind::Cloud(wire::Empty {}),
-                    Reachability::Ssh { target, profile } => {
-                        wire::peer_reachability::Kind::SshTarget(wire::SshTarget {
-                            target: target.clone(),
-                            profile_id: profile.as_bytes().to_vec(),
-                        })
-                    }
-                    Reachability::Direct { addrs } => {
-                        wire::peer_reachability::Kind::Direct(wire::DirectReachability {
-                            addrs: addrs.iter().map(ToString::to_string).collect(),
-                        })
-                    }
-                }),
-            })
+            .on_account
+            .then_some(wire::peer_reachability::Kind::Cloud(wire::Empty {}))
+            .into_iter()
+            .chain(entry.ssh.as_ref().map(|ssh| {
+                wire::peer_reachability::Kind::SshTarget(wire::SshTarget {
+                    target: ssh.target.clone(),
+                    profile_id: ssh.profile.as_bytes().to_vec(),
+                })
+            }))
+            .chain((!entry.direct.is_empty()).then(|| {
+                wire::peer_reachability::Kind::Direct(wire::DirectReachability {
+                    addrs: entry.direct.iter().map(ToString::to_string).collect(),
+                })
+            }))
+            .map(|kind| wire::PeerReachability { kind: Some(kind) })
             .collect(),
     }
 }
@@ -514,10 +511,10 @@ impl Edge {
                         "TrustSshPeerRequest.ssh_target.profile_id must be 16 bytes",
                     )
                 })?;
-                Ok(Reachability::Ssh {
+                Ok(Reachability::Ssh(SshTarget {
                     target: target.target,
                     profile,
-                })
+                }))
             })
             .transpose()?;
         self.ask(ClientRequest::PairOverSsh {

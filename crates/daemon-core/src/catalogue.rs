@@ -31,7 +31,7 @@ use crate::Daemon;
 use crate::ids::{ChannelId, HostId, LinkId};
 use crate::io::Output;
 use crate::payload::CarrierKind;
-use crate::trust::{Reachability, TrustChange};
+use crate::trust::TrustChange;
 
 /// How many hosts this profile does not trust it holds descriptions of.
 pub const HOST_CAP: usize = 1000;
@@ -362,7 +362,7 @@ impl Daemon {
             .trust
             .store()
             .entry(uuid)
-            .is_none_or(|entry| entry.reachabilities.contains(&Reachability::Cloud));
+            .is_none_or(|entry| entry.on_account);
         if !known {
             self.change_trust(TrustChange::OnTheAccount { host: uuid }, None, out);
         }

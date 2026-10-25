@@ -47,17 +47,10 @@ fn remembered(install: &Install, peer: node::HostId) -> (Vec<String>, Vec<String
                 .collect()
         })
         .unwrap_or_default();
-    let answered = entry["reachabilities"]
+    let answered = entry["direct"]
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|reachability| reachability["type"] == "direct")
-        .flat_map(|reachability| {
-            reachability["addrs"]
-                .as_array()
-                .cloned()
-                .unwrap_or_default()
-        })
         .filter_map(|addr| addr.as_str().map(str::to_owned))
         .collect();
     (listed, answered)

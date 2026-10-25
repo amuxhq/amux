@@ -85,6 +85,8 @@ pub struct Relay {
     server: CloudLinkServer,
     host_id: Uuid,
     url: String,
+    /// The same service for a client outside the net.
+    client_url: String,
     tcp: SocketAddr,
     quic: SocketAddr,
     quic_roots: rustls::RootCertStore,
@@ -101,7 +103,15 @@ pub struct Relay {
 impl Relay {
     /// Starts the relay and the cloud for `decl`'s accounts, their
     /// credentials timed by `clock`.
-    pub async fn start(decl: &RelayDecl, clock: Arc<dyn Clock>) -> std::io::Result<Self> {
+    /// The account service listens on loopback for the hosts and, when
+    /// `client_ip` is named, there as well for a client outside this Mac: a
+    /// Mac cannot reach its own address on a phone's USB link, whose
+    /// packets go out to the phone rather than back to the Mac.
+    pub async fn start(
+        decl: &RelayDecl,
+        clock: Arc<dyn Clock>,
+        client_ip: Option<std::net::IpAddr>,
+    ) -> std::io::Result<Self> {
         let (quic_server, quic_roots, quic_root, quic_root_pem) = quic_configs();
         let udp = std::net::UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))?;
         let quic = udp.local_addr()?;
@@ -138,11 +148,21 @@ impl Relay {
         let http = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let url = format!("http://{}", http.local_addr()?);
         let serving = server.serve_tcp(udp, tcp_listener, quic_server)?;
-        let tasks = vec![tokio::spawn(serve_cloud(http, cloud.clone()))];
+        let mut tasks = vec![tokio::spawn(serve_cloud(http, cloud.clone()))];
+        let client_url = match client_ip {
+            Some(ip) => {
+                let outside = tokio::net::TcpListener::bind(SocketAddr::new(ip, 0)).await?;
+                let client_url = format!("http://{}", outside.local_addr()?);
+                tasks.push(tokio::spawn(serve_cloud(outside, cloud.clone())));
+                client_url
+            }
+            None => url.clone(),
+        };
         Ok(Self {
             server,
             host_id,
             url,
+            client_url,
             tcp,
             quic,
             quic_roots,
@@ -167,6 +187,12 @@ impl Relay {
     /// The cloud a sign-in names.
     pub fn url(&self) -> &str {
         &self.url
+    }
+
+    /// The cloud as a client outside the net reaches it: the same service
+    /// as [`Relay::url`], on the client address when the net has one.
+    pub fn client_url(&self) -> &str {
+        &self.client_url
     }
 
     /// The relay's plaintext TCP carrier, which a client outside the net
@@ -319,6 +345,11 @@ impl Relay {
     /// A gate in front of the relay's QUIC carrier.
     pub async fn gate(&self) -> std::io::Result<UdpGate> {
         UdpGate::start(self.quic).await
+    }
+
+    /// A gate in front of the QUIC carrier whose front listens on `front`.
+    pub fn gate_on(&self, front: std::net::IpAddr) -> std::io::Result<UdpGate> {
+        UdpGate::bind_on(front, Some(self.quic))
     }
 }
 

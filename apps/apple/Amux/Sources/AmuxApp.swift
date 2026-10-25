@@ -13,6 +13,7 @@ struct AmuxApp: App {
         // system's share of a launch from this app's.
         Signposts.emit(.appEntered)
         #if AMUX_DEBUG_TOOLS
+        DoorServer.freshStartIfRequested()
         DoorServer.startIfRequested()
         #endif
     }

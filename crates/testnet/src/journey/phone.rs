@@ -25,6 +25,7 @@ use std::time::{Duration, Instant};
 use regex::Regex;
 use serde_json::{Value, json};
 
+use super::device::Phone;
 use super::{Record, Story, door, line_diff, root};
 use crate::ctl::session::pin_in;
 use crate::door::{Control, Readiness};
@@ -493,7 +494,7 @@ impl From<AppError> for String {
 }
 
 /// `command`'s output, or its failure, within `timeout`.
-fn run_within(mut command: Command, timeout: Duration) -> Result<String, String> {
+pub(crate) fn run_within(mut command: Command, timeout: Duration) -> Result<String, String> {
     let described = format!("{command:?}");
     let mut child = command
         .stdin(Stdio::null())
@@ -593,7 +594,7 @@ fn free_port() -> Result<u16, String> {
 
 /// What a SIGTERM must undo when it ends a run from outside: the app on its
 /// simulator and the served net. The bound a recipe puts on a run sends it.
-static UNDO: OnceLock<std::sync::Mutex<Option<(String, SocketAddr)>>> = OnceLock::new();
+static UNDO: OnceLock<std::sync::Mutex<Option<(Target, SocketAddr)>>> = OnceLock::new();
 
 fn undo_on_terminate() {
     let undo = UNDO.get_or_init(|| std::sync::Mutex::new(None));
@@ -613,13 +614,36 @@ fn undo_on_terminate() {
                     terminate.recv().await;
                 }
             });
-            if let Some((udid, control)) = undo.lock().ok().and_then(|held| held.clone()) {
-                let _ = simctl(&["terminate", &udid, BUNDLE_ID], Duration::from_secs(30));
+            if let Some((target, control)) = undo.lock().ok().and_then(|held| held.clone()) {
+                let _ = target.terminate();
                 let _ = door(control, &Control::Shutdown, Duration::from_secs(10));
             }
             std::process::exit(143);
         });
     });
+}
+
+/// Something other than devicectl that launches the app on a phone with the
+/// arguments and environment given: Instruments, to record the launch.
+pub(crate) type Launcher = Box<dyn FnOnce(&[String], &[(&str, &str)]) -> Result<(), String>>;
+
+/// What a run drives the app on: a simulator by its udid, or the phone
+/// plugged into this Mac.
+#[derive(Clone, Debug)]
+pub(crate) enum Target {
+    Simulator(String),
+    Phone(Phone),
+}
+
+impl Target {
+    fn terminate(&self) -> Result<(), String> {
+        match self {
+            Target::Simulator(udid) => {
+                simctl(&["terminate", udid, BUNDLE_ID], Duration::from_secs(60)).map(|_| ())
+            }
+            Target::Phone(phone) => phone.terminate(),
+        }
+    }
 }
 
 /// Where a run serves its net from, writes what it found and finds its
@@ -632,7 +656,11 @@ pub(crate) struct Setup {
 }
 
 pub(crate) struct PhoneJourney {
+    /// The simulator's udid, or the phone's as xctrace names it.
     pub udid: String,
+    /// The phone plugged in, when the run drives one rather than a
+    /// simulator.
+    pub phone: Option<Phone>,
     pub output: PathBuf,
     /// Where this run's screens are compared, and whether a screen that no
     /// longer matches is rewritten there instead.
@@ -657,11 +685,14 @@ pub(crate) struct PhoneJourney {
     /// The volatile surfaces on screen when the system last photographed
     /// the app, masked again wherever a report shows that photograph.
     frozen: Vec<Value>,
-    /// The app's door, on this Mac.
+    /// The app's door's port: on this Mac's loopback for a simulator, on
+    /// the phone's link address for a phone.
     pub port: u16,
-    /// The process id the app was launched as on this Mac, for a profile of
-    /// the Mac to be filtered by.
+    /// The process id the app was launched as, on this Mac for a simulator
+    /// or on the phone, for a profile to attach to or be filtered by.
     pub pid: u32,
+    /// What launches the app on a phone next time, once, in devicectl's place.
+    through: Option<Launcher>,
 }
 
 impl PhoneJourney {
@@ -679,11 +710,11 @@ impl PhoneJourney {
                 goldens: root.join("journeys/goldens/phone").join(&story.id),
                 app: debug_app(),
             },
-            udid,
+            &Target::Simulator(udid.to_owned()),
         )
     }
 
-    pub(crate) fn serve(setup: Setup, udid: &str) -> Result<PhoneJourney, String> {
+    pub(crate) fn serve(setup: Setup, target: &Target) -> Result<PhoneJourney, String> {
         let root = root();
         let topology_path = setup.topology;
         let named = |error: &dyn std::fmt::Display| format!("{}: {error}", topology_path.display());
@@ -716,6 +747,13 @@ impl PhoneJourney {
             .env("RUST_LOG", rust_log())
             .stdout(Stdio::piped())
             .stderr(File::create(output.join("testnet.log")).map_err(|error| error.to_string())?);
+        if let Target::Phone(phone) = target {
+            // What the phone dials (the machines' gates, the relay's, the
+            // account service) listens on the Mac's side of its USB link.
+            command
+                .arg("--client-ip")
+                .arg(phone.mac_address.to_string());
+        }
         let mut process = command
             .spawn()
             .map_err(|error| format!("testnet serve: {error}"))?;
@@ -744,14 +782,19 @@ impl PhoneJourney {
         if let Some(undo) = UNDO.get()
             && let Ok(mut held) = undo.lock()
         {
-            *held = Some((udid.to_owned(), ready.control));
+            *held = Some((target.clone(), ready.control));
         }
         let mut record = Record::default();
         record
             .actions
             .push(format!("ready control={}", ready.control));
+        let (udid, phone) = match target {
+            Target::Simulator(udid) => (udid.clone(), None),
+            Target::Phone(phone) => (phone.udid.clone(), Some(phone.clone())),
+        };
         Ok(PhoneJourney {
-            udid: udid.to_owned(),
+            udid,
+            phone,
             goldens: setup.goldens,
             update: std::env::var("UPDATE_JOURNEY_GOLDENS").is_ok_and(|value| value == "1"),
             flat: true,
@@ -765,6 +808,7 @@ impl PhoneJourney {
             frozen: Vec::new(),
             port: 0,
             pid: 0,
+            through: None,
         })
     }
 
@@ -991,6 +1035,15 @@ impl PhoneJourney {
     /// The app, installed fresh so no earlier run's identity or trust is on
     /// the phone, launched against this net.
     pub(crate) fn launch(&mut self, launch: Launch) -> Result<(), String> {
+        if let Some(phone) = &self.phone {
+            phone.terminate()?;
+            phone.install(&self.build)?;
+            let mut launch = launch;
+            launch
+                .extra
+                .extend(super::device::FRESH_START.map(str::to_owned));
+            return self.relaunch(launch);
+        }
         if self.running() {
             simctl(
                 &["terminate", &self.udid, BUNDLE_ID],
@@ -1048,6 +1101,34 @@ impl PhoneJourney {
             relay_quic.as_deref(),
         );
         arguments.extend(launch.extra);
+        if let Some(phone) = &self.phone {
+            // The phone's link socket dials out from where it is bound, so it
+            // binds the phone's address on the USB link, and the door listens
+            // there for the Mac.
+            let address = SocketAddr::from((phone.address, 0)).to_string();
+            if let Some(bind) = arguments
+                .iter()
+                .position(|argument| argument == "-amux-lan-bind")
+            {
+                arguments[bind + 1] = address;
+            }
+            arguments.extend(["-amux-door-bind".to_owned(), phone.address.to_string()]);
+            let log = rust_log();
+            let environment = [("RUST_LOG", log.as_str())];
+            let phone = phone.clone();
+            match self.through.take() {
+                Some(through) => {
+                    through(&arguments, &environment)?;
+                    self.record.actions.push("launch the app".to_owned());
+                    self.await_door()?;
+                    self.pid = phone.running()?.unwrap_or_default();
+                    return Ok(());
+                }
+                None => self.pid = phone.launch(&arguments, &environment)?,
+            }
+            self.record.actions.push("launch the app".to_owned());
+            return self.await_door();
+        }
         let mut command = Command::new("xcrun");
         command
             .args([
@@ -1069,8 +1150,12 @@ impl PhoneJourney {
             .and_then(|pid| pid.trim().parse().ok())
             .unwrap_or(0);
         self.record.actions.push("launch the app".to_owned());
-        // The door answering is the launch; what a capture needs settled it
-        // settles itself.
+        self.await_door()
+    }
+
+    /// The door answering is the launch; what a capture needs settled it
+    /// settles itself.
+    fn await_door(&mut self) -> Result<(), String> {
         let deadline = Instant::now() + Duration::from_secs(60);
         loop {
             if self.app(json!({"kind": "signposts"})).is_ok() {
@@ -1091,14 +1176,30 @@ impl PhoneJourney {
         Ok(())
     }
 
+    /// The same, launched on the phone by `through` rather than devicectl.
+    pub(crate) fn relaunch_through(
+        &mut self,
+        launch: Launch,
+        through: Launcher,
+    ) -> Result<(), String> {
+        self.through = Some(through);
+        let launched = self.relaunch(launch);
+        self.through = None;
+        launched
+    }
+
     /// The app closed, as a person swipes it away.
     pub(crate) fn quit(&mut self) -> Result<(), String> {
-        simctl(
-            &["terminate", &self.udid, BUNDLE_ID],
-            Duration::from_secs(60),
-        )?;
+        self.target().terminate()?;
         self.record.actions.push("quit the app".to_owned());
         Ok(())
+    }
+
+    fn target(&self) -> Target {
+        match &self.phone {
+            Some(phone) => Target::Phone(phone.clone()),
+            None => Target::Simulator(self.udid.clone()),
+        }
     }
 
     fn running(&self) -> bool {
@@ -1117,7 +1218,10 @@ impl PhoneJourney {
     pub(crate) fn app_within(&self, request: Value, timeout: Duration) -> Result<Value, AppError> {
         let unreachable =
             |error: std::io::Error| AppError::Unreachable(format!("the app's door: {error}"));
-        let address = SocketAddr::from(([127, 0, 0, 1], self.port));
+        let address = match &self.phone {
+            Some(phone) => phone.door(self.port),
+            None => SocketAddr::from(([127, 0, 0, 1], self.port)),
+        };
         let mut stream = TcpStream::connect_timeout(&address, timeout).map_err(unreachable)?;
         stream
             .set_read_timeout(Some(timeout))
@@ -1516,7 +1620,11 @@ impl PhoneJourney {
     pub(crate) fn fail(&mut self, error: &str) {
         // The display as the story stopped, beside what it says it drew.
         let failed = self.output.join("failed.png");
-        if let Err(missed) = simctl(
+        if self.phone.is_some() {
+            self.record
+                .actions
+                .push("no picture of the failure: the run drove a phone".to_owned());
+        } else if let Err(missed) = simctl(
             &[
                 "io",
                 &self.udid,
@@ -1535,10 +1643,7 @@ impl PhoneJourney {
     }
 
     pub(crate) fn close(mut self) -> Result<(), String> {
-        let _ = simctl(
-            &["terminate", &self.udid, BUNDLE_ID],
-            Duration::from_secs(60),
-        );
+        let _ = self.target().terminate();
         let mut result = Ok(());
         if let Some(mut process) = self.process.take()
             && process.try_wait().ok().flatten().is_none()

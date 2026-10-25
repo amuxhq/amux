@@ -3,6 +3,31 @@ import Foundation
 import QuartzCore
 import UIKit
 
+/// Whether the device is in a state to be measured: the system's thermal
+/// state as it names it (`nominal`, `fair`, `serious`, `critical`) and
+/// whether Low Power Mode is on, which slows the CPU and holds back work.
+public struct DeviceCondition: Codable, Sendable, Equatable {
+    public let thermal: String
+    public let lowPower: Bool
+
+    public init(thermal: String, lowPower: Bool) {
+        self.thermal = thermal
+        self.lowPower = lowPower
+    }
+
+    public static func now() -> DeviceCondition {
+        let process = ProcessInfo.processInfo
+        let thermal = switch process.thermalState {
+        case .nominal: "nominal"
+        case .fair: "fair"
+        case .serious: "serious"
+        case .critical: "critical"
+        @unknown default: "unknown"
+        }
+        return DeviceCondition(thermal: thermal, lowPower: process.isLowPowerModeEnabled)
+    }
+}
+
 /// What the door measures over a stretch of time, for the performance
 /// suite: how the display kept up, what the main thread cost, what the
 /// process holds, and whether the app asked the display for anything while

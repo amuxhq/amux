@@ -156,10 +156,32 @@ loopback-smoke: tools
 # streaming and idle; budgets and drift per docs/PERFORMANCE.md.
 # `--baseline` records this machine's medians; `--only GROUP` takes one
 # group; `--describe` says what would run without running it.
+# `--device` runs it on the phone plugged into this Mac instead, over its
+# USB link: the bridge and the app are built for the phone and signed with
+# the local signing file's Team ID, and no simulator is leased.
 # Measure the phone.
-perf *ARGS: rust tools
-    {{bounded}} 1800 {{python}} -B scripts/ios-build.py --configuration Measured
-    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 3600 target/debug/testnet journey perf "$@"
+perf *ARGS: tools
+    if [ "${1-}" = -- ]; then shift; fi; \
+    device=; for argument in "$@"; do [ "$argument" = --device ] && device=--device; done; \
+    {{bounded}} 1800 {{python}} -B scripts/ios-rust.py $device && \
+    {{bounded}} 2400 {{python}} -B scripts/ios-build.py --configuration Measured $device && \
+    if [ -n "$device" ]; then {{bounded}} 3600 target/debug/testnet journey perf "$@"; \
+    else scripts/with iphone -- {{bounded}} 3600 target/debug/testnet journey perf "$@"; fi
+
+# The same run on the phone plugged into this Mac, with the first sample of
+# GROUP (cold, reconciliation, streaming or idle) recorded under the named
+# Instruments template (`xcrun xctrace list templates`: Time Profiler, App
+# Launch, Animation Hitches, SwiftUI, Swift Concurrency, Allocations, Power
+# Profiler, ...). The trace and its tables, exported as XML, land in
+# target/ios/traces/.
+# Profile one part of the phone run on the plugged-in phone.
+profile GROUP TEMPLATE="Time Profiler": tools
+    mkdir -p target/ios/traces; \
+    trace="target/ios/traces/$1-$(printf %s "$2" | tr ' A-Z' '-a-z')-$(date +%Y%m%d-%H%M%S).trace"; \
+    {{bounded}} 1800 {{python}} -B scripts/ios-rust.py --device && \
+    {{bounded}} 2400 {{python}} -B scripts/ios-build.py --configuration Measured --device && \
+    {{bounded}} 3600 target/debug/testnet journey perf --device --only "$1" \
+        --trace "$trace" --template "$2" --during "$1"
 
 # Inspect the release bundle for excluded platforms and debug-only surfaces.
 # Release links the shipping library, so the package is its input.

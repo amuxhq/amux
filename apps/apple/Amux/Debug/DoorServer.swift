@@ -31,6 +31,30 @@ enum DoorServer {
     }
 }
 
+extension DoorServer {
+    /// Forgets what this installation kept when the launch asks it to, before
+    /// any of it is read: the support directory, the caches, the temporary
+    /// files and the settings, as an uninstall would, and nothing the system
+    /// keeps for the app, such as the permissions a person granted.
+    static func freshStartIfRequested() {
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: Door.freshStartArgument) else { return }
+        let manager = FileManager.default
+        var kept = [URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)]
+        for search in [FileManager.SearchPathDirectory.applicationSupportDirectory, .cachesDirectory] {
+            kept += manager.urls(for: search, in: .userDomainMask)
+        }
+        for directory in kept {
+            let contents = (try? manager.contentsOfDirectory(
+                at: directory, includingPropertiesForKeys: nil)) ?? []
+            for item in contents { try? manager.removeItem(at: item) }
+        }
+        if let domain = Bundle.main.bundleIdentifier {
+            defaults.removePersistentDomain(forName: domain)
+        }
+    }
+}
+
 enum DoorFailure: Error, CustomStringConvertible {
     case socket(Int32)
     case bind(Int32)

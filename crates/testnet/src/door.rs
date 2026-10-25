@@ -606,7 +606,7 @@ fn readiness(net: &Net, control: SocketAddr) -> Result<Readiness, NetError> {
                 provider: agent.provider,
             })
             .collect(),
-        cloud_url: net.relay().ok().map(|relay| relay.url().to_owned()),
+        cloud_url: net.relay().ok().map(|relay| relay.client_url().to_owned()),
         relay_tcp: net.relay().ok().map(|relay| relay.tcp()),
         relay_quic: net.relay().ok().map(|relay| relay.quic()),
         relay_root: net.relay().ok().map(|relay| {

@@ -104,6 +104,7 @@
       {"literal": "\"new-agent\"", "context": "if router.composing { return \"new-agent\" }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Amux/Debug/DoorServer.swift": [
+      {"literal": "\"\\(given) is not an IPv4 or IPv6 address\"", "context": "case .unparsable(let given): \"\\(given) is not an IPv4 or IPv6 address\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"the driving door could not open: \\(error)\"", "context": "fatalError(\"the driving door could not open: \\(error)\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"socket() failed with errno \\(code)\"", "context": "case .socket(let code): \"socket() failed with errno \\(code)\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"bind() failed with errno \\(code)\"", "context": "case .bind(let code): \"bind() failed with errno \\(code)\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
@@ -895,6 +896,7 @@
       {"literal": "\"amux-door-ready\"", "context": "public static let readyArgument = \"amux-door-ready\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"amux-door-port\"", "context": "public static let portArgument = \"amux-door-port\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"amux-door-bind\"", "context": "public static let bindArgument = \"amux-door-bind\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"amux-fresh-start\"", "context": "public static let freshStartArgument = \"amux-fresh-start\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"amux-relay\"", "context": "public static let relayArgument = \"amux-relay\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"amux-scripted-cloud\"", "context": "public static let scriptedCloudArgument = \"amux-scripted-cloud\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"amux-link\"", "context": "public static let linkArgument = \"amux-link\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
@@ -930,7 +932,10 @@
       {"literal": "\"holdBackground\"", "context": "try fields.encode(\"holdBackground\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"push\"", "context": "try fields.encode(\"push\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"awaitBackground\"", "context": "case \"awaitBackground\":", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"awaitBackground\"", "context": "try fields.encode(\"awaitBackground\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}
+      {"literal": "\"awaitBackground\"", "context": "try fields.encode(\"awaitBackground\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"condition\"", "context": "case \"condition\": self = .condition", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"condition\"", "context": "try fields.encode(\"condition\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 2},
+      {"literal": "\"condition\"", "context": "case \"condition\":", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxTestSupport/Sources/AmuxTestSupport/ScriptedCloud.swift": [
       {"literal": "\"scripted-connect-token\"", "context": "token: String? = \"scripted-connect-token\",", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
@@ -1772,6 +1777,13 @@
       {"literal": "\"report.sending\"", "context": "#Preview(\"Report · sending\") { StoryScreen(\"report.sending\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"report.failed\"", "context": "#Preview(\"Report · not sent\") { StoryScreen(\"report.failed\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"report.sent\"", "context": "#Preview(\"Report · sent\") { StoryScreen(\"report.sent\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+    ],
+    "apps/apple/Packages/AmuxTestSupport/Sources/AmuxTestSupport/Instrumentation.swift": [
+      {"literal": "\"nominal\"", "context": "case .nominal: \"nominal\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"fair\"", "context": "case .fair: \"fair\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"serious\"", "context": "case .serious: \"serious\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"critical\"", "context": "case .critical: \"critical\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"unknown\"", "context": "@unknown default: \"unknown\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}
     ]
   }
 }

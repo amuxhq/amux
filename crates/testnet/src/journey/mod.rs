@@ -7,6 +7,7 @@
 //! recorded. Results land in `target/journeys/`.
 
 mod common;
+mod device;
 mod frame;
 mod goldens;
 mod perf;
@@ -102,15 +103,38 @@ enum Suite {
         /// baseline, that says how much of a number is the glass.
         #[arg(long)]
         flat: bool,
-        /// Record an Instruments Time Profiler trace (xctrace) through the
-        /// first streaming sample into PATH, a .trace bundle. The recording
-        /// is of the whole Mac, with the app's pid printed to filter by:
-        /// xctrace hangs attaching to a simulator process through the
-        /// simulator device, and on the host it refuses the pid, but a host
-        /// recording of every process carries the app with its symbols and
-        /// thread names.
+        /// Record the first sample of one group under Instruments (xctrace)
+        /// into PATH, a .trace bundle, and export its tables beside it as
+        /// XML. On a phone the recording attaches to the app, or for a
+        /// launch records the whole phone. On the simulator it is of the
+        /// whole Mac, with the app's pid printed to filter by: xctrace hangs
+        /// attaching to a simulator process through the simulator device,
+        /// and on the host it refuses the pid, but a host recording of every
+        /// process carries the app with its symbols and thread names.
         #[arg(long, value_name = "PATH")]
         trace: Option<PathBuf>,
+        /// The Instruments template the trace is made with, as
+        /// `xcrun xctrace list templates` names it.
+        #[arg(
+            long,
+            value_name = "NAME",
+            default_value = "Time Profiler",
+            requires = "trace"
+        )]
+        template: String,
+        /// The group whose first sample the trace records.
+        #[arg(
+            long,
+            value_enum,
+            value_name = "GROUP",
+            default_value = "streaming",
+            requires = "trace"
+        )]
+        during: perf::Group,
+        /// Measure on the phone plugged into this Mac over USB rather than
+        /// the simulator.
+        #[arg(long)]
+        device: bool,
     },
 }
 
@@ -140,12 +164,20 @@ pub fn main(arguments: Vec<String>) -> ExitCode {
             baseline,
             flat,
             trace,
+            template,
+            during,
+            device,
         } => perf::run(perf::Asked {
             describe,
             only,
             baseline,
             flat,
-            trace,
+            trace: trace.map(|path| perf::Trace {
+                path,
+                template,
+                during,
+            }),
+            device,
         }),
     }
 }

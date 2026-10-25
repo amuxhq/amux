@@ -76,12 +76,16 @@ impl Lan {
         &self,
         host: &str,
         upstream: Option<SocketAddr>,
+        on: Option<std::net::IpAddr>,
     ) -> std::io::Result<SocketAddr> {
         let mut state = self.0.lock().unwrap();
         let gate = match state.fronts.get(host) {
             Some(gate) => gate.clone(),
             None => {
-                let gate = Arc::new(UdpGate::bind(upstream)?);
+                let gate = Arc::new(match on {
+                    Some(on) => UdpGate::bind_on(on, upstream)?,
+                    None => UdpGate::bind(upstream)?,
+                });
                 gate.set_faults(state.faults(host));
                 state.fronts.insert(host.to_owned(), gate.clone());
                 gate
@@ -290,7 +294,7 @@ impl Discovery for FrontAdvert {
         if let Some(listener) = advert.addrs.first().copied() {
             let front = self
                 .lan
-                .front(&self.me, Some(listener))
+                .front(&self.me, Some(listener), None)
                 .map_err(|error| DiscoveryError::Register(error.to_string()))?;
             advert.addrs = vec![front];
         }

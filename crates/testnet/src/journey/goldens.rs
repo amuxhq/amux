@@ -35,7 +35,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::phone::{
-    Drawn, Launch, PhoneJourney, Setup, debug_app, golden_udid, labelled, printed_pin, simctl,
+    Drawn, Launch, PhoneJourney, Setup, Target, debug_app, golden_udid, labelled, printed_pin,
+    simctl,
 };
 use super::{holds, phase, root};
 use crate::door::Control;
@@ -663,7 +664,7 @@ fn photograph_the_way(
             goldens: root.join(GOLDENS),
             app: debug_app(),
         },
-        &udid,
+        &Target::Simulator(udid.clone()),
     )?;
     journey.update = update;
     // Review captures are of the glass itself.
@@ -871,7 +872,7 @@ fn audit_the_way() -> Result<bool, String> {
             goldens: root.join(GOLDENS),
             app: debug_app(),
         },
-        &udid,
+        &Target::Simulator(udid.clone()),
     )?;
     let started = File::create(&log)
         .and_then(|sink| {

@@ -46,6 +46,11 @@ enum Command {
         /// Where real providers' traffic is recorded.
         #[arg(long, value_name = "DIR")]
         recordings: Option<PathBuf>,
+        /// Where what a client outside this Mac dials listens: the gates in
+        /// front of the hosts and the relay, and the account service. A
+        /// phone over USB names the Mac's address on its link.
+        #[arg(long, value_name = "IP")]
+        client_ip: Option<std::net::IpAddr>,
     },
     /// Drive a served net from the shell (`testnet ctl --help`).
     #[command(disable_help_flag = true)]
@@ -106,6 +111,7 @@ async fn serve() -> Result<()> {
         gated_lan,
         facts_ring_mib,
         recordings,
+        client_ip,
     } = Cli::parse().command
     else {
         unreachable!("ctl and journey are dispatched before parsing");
@@ -117,6 +123,7 @@ async fn serve() -> Result<()> {
         gated_lan,
         facts_ring_mib,
         recordings,
+        client_ip,
         ..testnet::NetOptions::default()
     };
     let mut served = testnet::door::serve_with(topology, control, options)

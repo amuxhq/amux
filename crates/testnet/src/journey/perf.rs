@@ -1,4 +1,5 @@
-//! `testnet journey perf`: the iPhone app measured on this Mac's simulator.
+//! `testnet journey perf`: the iPhone app measured on this Mac's simulator,
+//! or with `--device` on the phone plugged into it.
 //!
 //! The optimised `Measured` app, which keeps the driving door, runs against
 //! the served performance network (`qualification::perf::phone`: three
@@ -13,6 +14,9 @@
 //! against the budgets below and the enrolled Mac's baseline, and writes the
 //! report.
 //!
+//! On a phone the same run is driven over its USB link (`device`), and the
+//! numbers are the phone's own: its loader, its CPU, its display.
+//!
 //! docs/PERFORMANCE.md, "The phone", is the reference: the tables there are
 //! checked against `BUDGETS` and `MACHINES` here by this module's tests.
 
@@ -20,6 +24,7 @@ use std::collections::BTreeMap;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitCode, Stdio};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use base64::Engine as _;
@@ -29,11 +34,15 @@ use serde::Serialize;
 use serde::ser::{SerializeMap as _, Serializer};
 use serde_json::{Value, json};
 
-use super::phone::{Launch, PhoneJourney, SCRATCH_DIR, Setup, golden_device};
+use super::device::{self, Phone};
+use super::phone::{
+    BUNDLE_ID, Launch, Launcher, PhoneJourney, SCRATCH_DIR, Setup, Target, golden_device,
+};
 use super::root;
 use crate::door::Control;
 
 const APP: &str = "target/ios/DerivedData/Build/Products/Measured-iphonesimulator/Amux.app";
+const DEVICE_APP: &str = "target/ios/DerivedData/Build/Products/Measured-iphoneos/Amux.app";
 const TOPOLOGY_TOOL: &str = "target/debug/phone-topology";
 const OUTPUT: &str = "target/ios/perf";
 const BASELINES: &str = "perf/baselines/phone";
@@ -43,6 +52,17 @@ const BASELINES: &str = "perf/baselines/phone";
 /// here and in docs/PERFORMANCE.md, then recording its baseline
 /// deliberately.
 const MACHINES: &[(&str, &str)] = &[("Mac14,6", "pinned-mac")];
+
+/// The phones a `--device` run is allowed on, by hardware model. A phone's
+/// baseline is its name with the iOS major version, `iphone-14-pro-ios27`:
+/// a system update changes the loader and the frameworks under the app, so
+/// it is a new reference, recorded deliberately.
+const PHONES: &[(&str, &str)] = &[("iPhone15,2", "iphone-14-pro")];
+
+/// The cold first frame a phone is asked for (docs/IOS.md's physical-phone
+/// checklist). A run on a phone reports the median against it; it is a
+/// target, not a budget.
+const LAUNCH_TARGET_MS: f64 = 400.0;
 
 const SAMPLES: usize = 5;
 const HOSTS: [&str; 3] = ["desk", "laptop", "studio"];
@@ -61,6 +81,9 @@ const LAUNCH_SPACING: Duration = Duration::from_secs(10);
 /// The trace outlasts the measured stretch by the settle after it, so the
 /// whole burst is in the recording.
 const TRACE_SECONDS: f64 = STREAM_SECONDS + 4.0;
+/// A traced launch: the app's start, its reconciliation and the settle
+/// after, with room for devicectl's own seconds before the process starts.
+const LAUNCH_TRACE_SECONDS: f64 = 12.0;
 
 /// The parts of a run, any of which may be run alone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -311,12 +334,23 @@ fn plain(number: f64) -> String {
     }
 }
 
+/// An Instruments recording asked for: where it goes, the template it is
+/// made with, and the part of the run it watches.
+#[derive(Clone, Debug)]
+pub(crate) struct Trace {
+    pub path: PathBuf,
+    pub template: String,
+    pub during: Group,
+}
+
 /// One measured run: the served network, the phone, and the samples.
 struct Run {
     journey: PhoneJourney,
     only: Vec<Group>,
     flat: bool,
-    trace: Option<PathBuf>,
+    trace: Option<Trace>,
+    /// Whether the asked-for recording has been made: one per run.
+    traced: bool,
     samples: Samples,
     notes: Vec<String>,
     gates: BTreeMap<&'static str, String>,
@@ -342,6 +376,45 @@ impl Run {
 
     fn app(&self, request: Value, timeout: Duration) -> Result<Value, String> {
         Ok(self.journey.app_within(request, timeout)?)
+    }
+
+    /// Whether the next sample of `group` is the one to record.
+    fn traces(&self, group: Group) -> bool {
+        !self.traced
+            && self
+                .trace
+                .as_ref()
+                .is_some_and(|trace| trace.during == group)
+    }
+
+    /// A phone that is hot or saving power measures itself rather than the
+    /// app: such a run stops and says why. `fair` is a phone warmed by use,
+    /// noted rather than refused, since a minute of streaming reaches it.
+    fn check_condition(&mut self, before: &str) -> Result<(), String> {
+        let Some(phone) = &self.journey.phone else {
+            return Ok(());
+        };
+        let name = phone.name.clone();
+        let reply = self.app(json!({"kind": "condition"}), Duration::from_secs(30))?;
+        let condition = &reply["condition"];
+        let thermal = condition["thermal"]
+            .as_str()
+            .unwrap_or("unknown")
+            .to_owned();
+        if condition["lowPower"].as_bool().unwrap_or(false) {
+            return Err(format!(
+                "{name} is in Low Power Mode, which slows its CPU and holds work back;                  turn it off (Settings > Battery) and run again"
+            ));
+        }
+        if matches!(thermal.as_str(), "serious" | "critical") {
+            return Err(format!(
+                "{name} is {thermal}ly hot and throttling; let it cool unplugged from any charger                  that warms it and run again"
+            ));
+        }
+        if thermal != "nominal" {
+            self.note(format!("{name} thermal state {thermal} {before}"));
+        }
+        Ok(())
     }
 
     // --- the network -----------------------------------------------------
@@ -511,7 +584,12 @@ impl Run {
         let record_cold = latency_ms == 0 && self.takes(Group::Cold);
         let record_reconciliation = self.takes(Group::Reconciliation);
         for attempt in 0..SAMPLES {
-            let marks = self.marked_launch(attempt, &format!("at {latency_ms} ms"))?;
+            let group = if latency_ms == 0 {
+                Group::Cold
+            } else {
+                Group::Reconciliation
+            };
+            let marks = self.marked_launch(group, attempt, &format!("at {latency_ms} ms"))?;
             let store_read = (marks["nodeStarted"] - marks["storeReadBegan"])
                 + (marks["storeReadEnded"] - marks["fleetOpenBegan"]);
             if record_cold {
@@ -538,8 +616,11 @@ impl Run {
     fn relay_launches(&mut self, latency_ms: u64) -> Result<(), String> {
         self.relay_latency(latency_ms)?;
         for attempt in 0..SAMPLES {
-            let marks =
-                self.marked_launch(attempt, &format!("through the relay at {latency_ms} ms"))?;
+            let marks = self.marked_launch(
+                Group::Reconciliation,
+                attempt,
+                &format!("through the relay at {latency_ms} ms"),
+            )?;
             self.sample(
                 &format!("reconciliation through the relay at {latency_ms} ms"),
                 marks["reconciled"] - marks["storeReadEnded"],
@@ -557,13 +638,40 @@ impl Run {
     /// other launch a full handshake.
     fn marked_launch(
         &mut self,
+        group: Group,
         attempt: usize,
         named: &str,
     ) -> Result<BTreeMap<String, f64>, String> {
         self.space_launches();
         self.journey.quit()?;
-        self.relaunch()?;
+        // On a phone Instruments launches the app itself, the one way its
+        // recording of the launch carries the app's own symbols. On the
+        // simulator the launch is recorded over the whole Mac.
+        let profiler = match (self.traces(group), self.journey.phone.is_some()) {
+            (false, _) => {
+                self.relaunch()?;
+                None
+            }
+            (true, true) => {
+                let (launcher, started) = self.launching_profiler(LAUNCH_TRACE_SECONDS)?;
+                let launch = self.launching();
+                self.journey.relaunch_through(launch, launcher)?;
+                Some(
+                    started
+                        .recv()
+                        .map_err(|_| "xctrace never started recording".to_owned())??,
+                )
+            }
+            (true, false) => {
+                let profiler = self.start_profiler(LAUNCH_TRACE_SECONDS, Watch::Everything)?;
+                self.relaunch()?;
+                Some(profiler)
+            }
+        };
         let marks = self.await_reconciled(Duration::from_secs(120))?;
+        if let Some(profiler) = profiler {
+            self.finish_profiler(profiler)?;
+        }
         for needed in [
             "firstCachedFrame",
             "storeReadBegan",
@@ -678,7 +786,15 @@ impl Run {
     fn idle(&mut self) -> Result<(), String> {
         for attempt in 0..SAMPLES {
             std::thread::sleep(Duration::from_secs(2));
+            let profiler = if self.traces(Group::Idle) {
+                Some(self.start_profiler(IDLE_SECONDS + 4.0, Watch::App)?)
+            } else {
+                None
+            };
             let measured = self.measure(IDLE_SECONDS)?;
+            if let Some(profiler) = profiler {
+                self.finish_profiler(profiler)?;
+            }
             let commits = measured["transcriptCommits"].as_f64().unwrap_or_default();
             let ticks = measured["idleTicks"].as_f64().unwrap_or_default();
             self.sample("idle transcript commits", commits);
@@ -697,9 +813,10 @@ impl Run {
     fn streaming(&mut self) -> Result<(), String> {
         for attempt in 0..SAMPLES {
             let before = self.newest_order()?.unwrap_or_default();
-            let profiler = match &self.trace {
-                Some(trace) if attempt == 0 => Some(self.start_profiler(trace.clone())?),
-                _ => None,
+            let profiler = if self.traces(Group::Streaming) {
+                Some(self.start_profiler(TRACE_SECONDS, Watch::App)?)
+            } else {
+                None
             };
             self.journey.request(
                 Control::OpenGate {
@@ -739,14 +856,19 @@ impl Run {
 
     // --- the profiler ----------------------------------------------------
 
-    /// Instruments' Time Profiler over every process on this Mac, the app
-    /// among them, recording until its time limit; returns once it says it
-    /// is recording, so the stream it is to watch starts inside the trace.
-    fn start_profiler(&mut self, trace: PathBuf) -> Result<(Child, PathBuf), String> {
-        if trace.exists() {
-            std::fs::remove_dir_all(&trace).map_err(|error| error.to_string())?;
+    /// Instruments recording with the asked-for template until its time
+    /// limit; returns once xctrace says it is recording, so what it is to
+    /// watch starts inside the trace. On a phone it attaches to the app, or
+    /// records the whole phone for a launch; on the simulator it records
+    /// every process on this Mac, since xctrace cannot attach to a
+    /// simulator's process, with the app's pid noted to filter by.
+    fn start_profiler(&mut self, seconds: f64, watch: Watch) -> Result<Profiling, String> {
+        let trace = self.trace.clone().ok_or("no trace was asked for")?;
+        self.traced = true;
+        if trace.path.exists() {
+            std::fs::remove_dir_all(&trace.path).map_err(|error| error.to_string())?;
         }
-        if let Some(parent) = trace.parent() {
+        if let Some(parent) = trace.path.parent() {
             std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
         let started = format!("sh.amux.perf.tracing.{}", std::process::id());
@@ -758,58 +880,177 @@ impl Run {
             .map_err(|error| format!("notifyutil: {error}"))?;
         let log = root().join(OUTPUT).join("xctrace.log");
         let sink = File::create(&log).map_err(|error| error.to_string())?;
-        let mut profiler = Command::new("xcrun")
-            .args([
-                "xctrace",
-                "record",
-                "--template",
-                "Time Profiler",
-                "--no-prompt",
-            ])
-            .arg("--all-processes")
-            .args(["--time-limit", &format!("{TRACE_SECONDS:.0}s")])
+        let mut command = Command::new("xcrun");
+        command.args([
+            "xctrace",
+            "record",
+            "--template",
+            &trace.template,
+            "--no-prompt",
+        ]);
+        let pid = self.journey.pid;
+        let watched = match (&self.journey.phone, watch) {
+            (Some(phone), Watch::App) => {
+                command
+                    .args(["--device", &phone.udid])
+                    .args(["--attach", &pid.to_string()]);
+                format!("the app on {} (pid {pid})", phone.name)
+            }
+            (Some(phone), Watch::Everything) => {
+                command
+                    .args(["--device", &phone.udid])
+                    .arg("--all-processes");
+                format!(
+                    "every process on {}, the app among them once launched",
+                    phone.name
+                )
+            }
+            (None, _) => {
+                command.arg("--all-processes");
+                format!("every process on this Mac; the app is pid {pid}")
+            }
+        };
+        let mut profiler = command
+            .args(["--time-limit", &format!("{seconds:.0}s")])
             .args(["--notify-tracing-started", &started])
             .arg("--output")
-            .arg(&trace)
+            .arg(&trace.path)
             .stdout(sink.try_clone().map_err(|error| error.to_string())?)
             .stderr(sink)
             .spawn()
             .map_err(|error| format!("xctrace: {error}"))?;
-        if !exited_within(&mut waiter, Duration::from_secs(60)) {
+        if !exited_within(&mut waiter, Duration::from_secs(90)) {
             let _ = waiter.kill();
             let _ = profiler.kill();
             let _ = profiler.wait();
             return Err(format!(
-                "xctrace did not start recording within a minute: {}",
+                "xctrace did not start recording within 90 s: {}",
                 std::fs::read_to_string(&log).unwrap_or_default()
             ));
         }
-        let pid = self.journey.pid;
         self.note(format!(
-            "trace: Time Profiler over every process for {TRACE_SECONDS:.0} s; the app is pid {pid}"
+            "trace: {} over {watched} for {seconds:.0} s, during {}",
+            trace.template,
+            trace.during.name()
         ));
-        Ok((profiler, trace))
+        Ok(Profiling {
+            child: profiler,
+            path: trace.path,
+            seconds,
+        })
     }
 
-    fn finish_profiler(&mut self, (mut profiler, trace): (Child, PathBuf)) -> Result<(), String> {
+    /// A launcher that has Instruments launch the app on the phone with the
+    /// run's arguments, recording from the process's start, and where the
+    /// recording it started is sent once xctrace says it is recording.
+    fn launching_profiler(
+        &mut self,
+        seconds: f64,
+    ) -> Result<(Launcher, mpsc::Receiver<Result<Profiling, String>>), String> {
+        let trace = self.trace.clone().ok_or("no trace was asked for")?;
+        let phone = self.journey.phone.clone().ok_or("no phone to launch on")?;
+        self.traced = true;
+        if trace.path.exists() {
+            std::fs::remove_dir_all(&trace.path).map_err(|error| error.to_string())?;
+        }
+        if let Some(parent) = trace.path.parent() {
+            std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+        self.note(format!(
+            "trace: {} launching the app on {} for {seconds:.0} s, during {}",
+            trace.template,
+            phone.name,
+            trace.during.name()
+        ));
+        let log = root().join(OUTPUT).join("xctrace.log");
+        let (sent, started) = mpsc::channel();
+        let launcher: Launcher = Box::new(move |arguments, environment| {
+            let begun = format!("sh.amux.perf.tracing.{}", std::process::id());
+            let recording = (|| {
+                let mut waiter = Command::new("notifyutil")
+                    .args(["-1", &begun])
+                    .stdout(Stdio::null())
+                    .spawn()
+                    .map_err(|error| format!("notifyutil: {error}"))?;
+                let sink = File::create(&log).map_err(|error| error.to_string())?;
+                let mut command = Command::new("xcrun");
+                command
+                    .args([
+                        "xctrace",
+                        "record",
+                        "--template",
+                        &trace.template,
+                        "--no-prompt",
+                    ])
+                    .args(["--device", &phone.udid])
+                    .args(["--time-limit", &format!("{seconds:.0}s")])
+                    .args(["--notify-tracing-started", &begun])
+                    .arg("--output")
+                    .arg(&trace.path);
+                for (key, value) in environment {
+                    command.args(["--env", &format!("{key}={value}")]);
+                }
+                let mut child = command
+                    .args(["--launch", "--", BUNDLE_ID])
+                    .args(arguments)
+                    .stdout(sink.try_clone().map_err(|error| error.to_string())?)
+                    .stderr(sink)
+                    .spawn()
+                    .map_err(|error| format!("xctrace: {error}"))?;
+                if !exited_within(&mut waiter, Duration::from_secs(90)) {
+                    let _ = waiter.kill();
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!(
+                        "xctrace did not start recording within 90 s: {}",
+                        std::fs::read_to_string(&log).unwrap_or_default()
+                    ));
+                }
+                Ok(Profiling {
+                    child,
+                    path: trace.path.clone(),
+                    seconds,
+                })
+            })();
+            let failed = recording.as_ref().err().cloned();
+            let _ = sent.send(recording);
+            failed.map_or(Ok(()), Err)
+        });
+        Ok((launcher, started))
+    }
+
+    /// Waits for the recording to end and be written, then exports its
+    /// tables beside it as XML: the table of contents, and each table it
+    /// lists, for reading without Instruments.
+    fn finish_profiler(&mut self, profiling: Profiling) -> Result<(), String> {
+        let Profiling {
+            mut child,
+            path,
+            seconds,
+        } = profiling;
         // Saving a whole-Mac trace takes minutes.
-        if !exited_within(
-            &mut profiler,
-            Duration::from_secs_f64(TRACE_SECONDS + 600.0),
-        ) {
-            let _ = profiler.kill();
-            let _ = profiler.wait();
+        if !exited_within(&mut child, Duration::from_secs_f64(seconds + 600.0)) {
+            let _ = child.kill();
+            let _ = child.wait();
             return Err("xctrace did not finish writing the trace".to_owned());
         }
-        let status = profiler.wait().map_err(|error| error.to_string())?;
-        if !status.success() || !trace.exists() {
+        let status = child.wait().map_err(|error| error.to_string())?;
+        if !status.success() || !path.exists() {
             let log = root().join(OUTPUT).join("xctrace.log");
             return Err(format!(
                 "xctrace failed ({status}): {}",
                 std::fs::read_to_string(log).unwrap_or_default()
             ));
         }
-        self.note(format!("trace written to {}", trace.display()));
+        self.note(format!("trace written to {}", path.display()));
+        match export_tables(&path) {
+            Ok(tables) => self.note(format!(
+                "exported {} tables beside it: {}",
+                tables.len(),
+                tables.join(", ")
+            )),
+            Err(error) => self.note(format!("its tables were not exported: {error}")),
+        }
         Ok(())
     }
 
@@ -820,6 +1061,7 @@ impl Run {
         self.gate_the_relay()?;
         let launch = self.launching();
         self.journey.launch(launch)?;
+        self.check_condition("before pairing")?;
         self.pair_through_the_gates()?;
         // A launch the cold launches are compared against: the same install,
         // the fleet already in its store. Every reconciled launch below
@@ -831,6 +1073,7 @@ impl Run {
                     continue;
                 }
                 self.cold_launches(latency)?;
+                self.check_condition(&format!("after the launches at {latency} ms"))?;
             }
             self.latency(0)?;
         }
@@ -845,11 +1088,13 @@ impl Run {
             self.relaunch()?;
             self.await_reconciled(Duration::from_secs(120))?;
             self.open_the_conversation()?;
+            self.check_condition("before idle and streaming")?;
             if self.takes(Group::Idle) {
                 self.idle()?;
             }
             if self.takes(Group::Streaming) {
                 self.streaming()?;
+                self.check_condition("after streaming")?;
             }
         }
         Ok(())
@@ -867,6 +1112,64 @@ fn exited_within(child: &mut Child, within: Duration) -> bool {
         }
         std::thread::sleep(Duration::from_millis(100));
     }
+}
+
+/// What a recording watches.
+#[derive(Clone, Copy)]
+enum Watch {
+    /// The app's running process.
+    App,
+    /// The whole device, for a launch the app's process does not yet exist
+    /// for.
+    Everything,
+}
+
+struct Profiling {
+    child: Child,
+    path: PathBuf,
+    seconds: f64,
+}
+
+/// Every table a trace's table of contents lists, exported beside it as
+/// `<trace>.<schema>.xml`, with the table of contents as `<trace>.toc.xml`.
+/// The names of the tables exported.
+fn export_tables(trace: &Path) -> Result<Vec<String>, String> {
+    let export = |args: &[&str], to: PathBuf| -> Result<(), String> {
+        let sink = File::create(&to).map_err(|error| error.to_string())?;
+        let status = Command::new("xcrun")
+            .args(["xctrace", "export", "--input"])
+            .arg(trace)
+            .args(args)
+            .stdout(sink)
+            .stderr(Stdio::null())
+            .status()
+            .map_err(|error| format!("xctrace export: {error}"))?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!("xctrace export {}: {status}", args.join(" ")))
+        }
+    };
+    let stem = trace.with_extension("");
+    let beside = |suffix: &str| PathBuf::from(format!("{}.{suffix}.xml", stem.display()));
+    let toc = beside("toc");
+    export(&["--toc"], toc.clone())?;
+    let contents = std::fs::read_to_string(&toc).map_err(|error| error.to_string())?;
+    let mut schemas: Vec<String> = contents
+        .split("schema=\"")
+        .skip(1)
+        .filter_map(|rest| rest.split('"').next().map(str::to_owned))
+        .collect();
+    schemas.sort();
+    schemas.dedup();
+    let mut exported = Vec::new();
+    for schema in schemas {
+        let xpath = format!("/trace-toc/run[@number=\"1\"]/data/table[@schema=\"{schema}\"]");
+        if export(&["--xpath", &xpath], beside(&schema)).is_ok() {
+            exported.push(schema);
+        }
+    }
+    Ok(exported)
 }
 
 /// The pairing link with the gate's address in place of the machine's.
@@ -1034,8 +1337,8 @@ fn verdict_cell(result: &Judged) -> String {
 
 fn report(
     verdict: &Verdict,
-    machine: &str,
-    model: &str,
+    enrolled: &str,
+    bench: &Bench,
     minutes: f64,
     notes: &[String],
     load: (&str, &str),
@@ -1044,23 +1347,48 @@ fn report(
         "# The phone measured".to_owned(),
         String::new(),
         format!(
-            "Machine `{machine}` ({model}), the `Measured` app on the `golden` simulator, \
-             {SAMPLES} samples per metric; the run took {minutes:.1} minutes."
+            "`{enrolled}`: {}, {SAMPLES} samples per metric; the run took {minutes:.1} minutes.",
+            bench.described()
         ),
         String::new(),
-        // A busy Mac slows the simulator; the load says whether a miss is the app's.
-        format!(
-            "Load average (1, 5, 15 minutes) before the run: {} · after: {}.",
-            load.0, load.1
-        ),
-        String::new(),
-        "The simulator reports 60 Hz and composites through the Mac's display: hitch time is \
-         display-link accounting, a proxy for a device's hitch metric."
-            .to_owned(),
-        String::new(),
+    ];
+    match bench {
+        Bench::Simulator { .. } => lines.extend([
+            // A busy Mac slows the simulator; the load says whether a miss is the app's.
+            format!(
+                "Load average (1, 5, 15 minutes) before the run: {} · after: {}.",
+                load.0, load.1
+            ),
+            String::new(),
+            "The simulator reports 60 Hz and composites through the Mac's display: hitch time is \
+             display-link accounting, a proxy for a device's hitch metric."
+                .to_owned(),
+            String::new(),
+        ]),
+        Bench::Phone(_) => {
+            if let Some(cold) = verdict
+                .results
+                .iter()
+                .find(|result| result.metric == "cold first frame")
+            {
+                let off = cold.median - LAUNCH_TARGET_MS;
+                lines.extend([
+                    format!(
+                        "Cold first frame: median {:.1} ms against the {LAUNCH_TARGET_MS:.0} ms \
+                         launch target, {:.1} ms {}.",
+                        cold.median,
+                        off.abs(),
+                        if off > 0.0 { "over" } else { "under" }
+                    ),
+                    String::new(),
+                ]);
+            }
+        }
+    }
+    lines.extend([
         "| Metric | Median | Worst | Budget | Baseline | Drift | Verdict |".to_owned(),
         "| --- | --- | --- | --- | --- | --- | --- |".to_owned(),
-    ];
+    ]);
     for result in &verdict.results {
         let unit = result.unit;
         let mut budget = if result.provisional {
@@ -1107,9 +1435,52 @@ pub(crate) struct Asked {
     /// whole run: a diagnostic, never a baseline, that says how much of a
     /// number is the glass.
     pub flat: bool,
-    /// Record an Instruments Time Profiler trace through the first streaming
-    /// sample into this .trace bundle.
-    pub trace: Option<PathBuf>,
+    /// Record the first sample of `trace.during` under Instruments.
+    pub trace: Option<Trace>,
+    /// Drive the phone plugged into this Mac rather than the simulator.
+    pub device: bool,
+}
+
+/// Where a run measures: the enrolled Mac's simulator, or a phone.
+enum Bench {
+    Simulator { model: String },
+    Phone(Phone),
+}
+
+impl Bench {
+    /// What the report says the numbers were taken on.
+    fn described(&self) -> String {
+        match self {
+            Bench::Simulator { model } => {
+                format!("this Mac ({model}), the `Measured` app on the `golden` simulator")
+            }
+            Bench::Phone(phone) => format!(
+                "{} ({}, iOS {}), the `Measured` app driven over its USB link",
+                phone.name, phone.model, phone.os_version
+            ),
+        }
+    }
+}
+
+/// The enrolled name a phone's baseline is kept under, or why it cannot run.
+fn enrolled_phone(phone: &Phone) -> Result<String, String> {
+    let major = phone.os_version.split('.').next().unwrap_or_default();
+    PHONES
+        .iter()
+        .find(|(model, _)| *model == phone.model)
+        .map(|(_, name)| format!("{name}-ios{major}"))
+        .ok_or_else(|| {
+            format!(
+                "{} is a {}, which is not enrolled; the enrolled phones are {}",
+                phone.name,
+                phone.model,
+                PHONES
+                    .iter()
+                    .map(|(model, name)| format!("{name} ({model})"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })
 }
 
 pub(crate) fn run(asked: Asked) -> ExitCode {
@@ -1118,14 +1489,26 @@ pub(crate) fn run(asked: Asked) -> ExitCode {
         eprintln!("phone perf: {why}");
         ExitCode::from(2)
     };
-    let (model, name) = match machine() {
-        Ok(machine) => machine,
+    let enrolled = if asked.device {
+        device::connected().and_then(|phone| {
+            let name = enrolled_phone(&phone)?;
+            Ok((Bench::Phone(phone), name))
+        })
+    } else {
+        machine().map(|(model, name)| (Bench::Simulator { model }, name.to_owned()))
+    };
+    let (bench, name) = match enrolled {
+        Ok(enrolled) => enrolled,
         Err(why) => return refused(why),
     };
-    let app = root.join(APP);
+    let model = match &bench {
+        Bench::Simulator { model } => model.clone(),
+        Bench::Phone(phone) => phone.model.clone(),
+    };
+    let app = root.join(if asked.device { DEVICE_APP } else { APP });
     let baseline_file = root.join(BASELINES).join(format!("{name}.json"));
     if asked.describe {
-        println!("this Mac is {model}, enrolled as {name}");
+        println!("measuring on {}, enrolled as {name}", bench.described());
         let present = if baseline_file.is_file() {
             "present"
         } else {
@@ -1144,16 +1527,17 @@ pub(crate) fn run(asked: Asked) -> ExitCode {
             "a flat run is a diagnostic; --baseline records the app as it ships".to_owned(),
         );
     }
-    if asked.trace.is_some()
-        && (asked.baseline || !(asked.only.is_empty() || asked.only.contains(&Group::Streaming)))
+    if let Some(trace) = &asked.trace
+        && (asked.baseline || !(asked.only.is_empty() || asked.only.contains(&trace.during)))
     {
-        return refused(
-            "--trace records the streaming group; it takes no --baseline and needs streaming in --only"
-                .to_owned(),
-        );
+        return refused(format!(
+            "--trace records the {} group; it takes no --baseline and needs that group in --only",
+            trace.during.name()
+        ));
     }
     if asked.trace.as_ref().is_some_and(|trace| {
         trace
+            .path
             .extension()
             .is_none_or(|extension| extension != "trace")
     }) {
@@ -1161,8 +1545,9 @@ pub(crate) fn run(asked: Asked) -> ExitCode {
     }
     if !app.is_dir() {
         return refused(format!(
-            "{} is not built; `scripts/ios-build.py --configuration Measured` builds it",
-            app.display()
+            "{} is not built; `scripts/ios-build.py --configuration Measured{}` builds it",
+            app.display(),
+            if asked.device { " --device" } else { "" }
         ));
     }
     let tool = root.join(TOPOLOGY_TOOL);
@@ -1172,7 +1557,7 @@ pub(crate) fn run(asked: Asked) -> ExitCode {
             tool.display()
         ));
     }
-    match measure(asked, &model, name, app, &baseline_file) {
+    match measure(asked, bench, &model, &name, app, &baseline_file) {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => {
             eprintln!("phone perf: over budget");
@@ -1187,6 +1572,7 @@ pub(crate) fn run(asked: Asked) -> ExitCode {
 
 fn measure(
     asked: Asked,
+    bench: Bench,
     model: &str,
     name: &str,
     app: PathBuf,
@@ -1223,7 +1609,17 @@ fn measure(
 
     let load_before = load_average();
     let began = Instant::now();
-    let (device, udid) = golden_device()?;
+    let (device, target) = match &bench {
+        Bench::Simulator { .. } => {
+            let (device, udid) = golden_device()?;
+            (device, Target::Simulator(udid))
+        }
+        Bench::Phone(phone) => (
+            format!("{} (iOS {})", phone.name, phone.os_version),
+            Target::Phone(phone.clone()),
+        ),
+    };
+    let on_phone = matches!(bench, Bench::Phone(_));
     let mut journey = PhoneJourney::serve(
         Setup {
             topology,
@@ -1231,7 +1627,7 @@ fn measure(
             goldens: output.clone(),
             app,
         },
-        &udid,
+        &target,
     )?;
     // The app is measured as it ships, glass and all, unless a flat run
     // was asked for as a diagnostic.
@@ -1241,9 +1637,13 @@ fn measure(
         only: asked.only,
         flat: asked.flat,
         trace: match asked.trace {
-            Some(trace) => Some(std::path::absolute(trace).map_err(|error| error.to_string())?),
+            Some(trace) => Some(Trace {
+                path: std::path::absolute(trace.path).map_err(|error| error.to_string())?,
+                ..trace
+            }),
             None => None,
         },
+        traced: false,
         samples: BUDGETS
             .iter()
             .map(|budget| (budget.metric, Vec::new()))
@@ -1268,7 +1668,15 @@ fn measure(
     closed?;
     let minutes = began.elapsed().as_secs_f64() / 60.0;
 
-    let verdict = judge(&run.samples, baseline.as_ref(), SET_FROM_FIRST_MEASUREMENT);
+    // A phone's budgets are written from its first measurement; until then
+    // every metric is measured and reported, not judged.
+    let all: Vec<&str> = BUDGETS.iter().map(|budget| budget.metric).collect();
+    let provisional = if on_phone {
+        all.as_slice()
+    } else {
+        SET_FROM_FIRST_MEASUREMENT
+    };
+    let verdict = judge(&run.samples, baseline.as_ref(), provisional);
     let write = |file: &Path, text: String| {
         std::fs::write(file, text).map_err(|error| format!("{}: {error}", file.display()))
     };
@@ -1283,7 +1691,7 @@ fn measure(
         report(
             &verdict,
             name,
-            model,
+            &bench,
             minutes,
             &run.notes,
             (&load_before, &after),
@@ -1312,7 +1720,7 @@ fn measure(
             schema_version: 1,
             machine_model: model,
             configuration: "Measured",
-            simulator: &device,
+            device: &device,
             medians: Ordered(&medians),
         };
         write(baseline_file, pretty(&recorded)?)?;
@@ -1327,7 +1735,8 @@ struct Recorded<'a> {
     schema_version: u32,
     machine_model: &'a str,
     configuration: &'a str,
-    simulator: &'a str,
+    /// The simulator, or the phone and its iOS version.
+    device: &'a str,
     medians: Ordered<'a, f64>,
 }
 
@@ -1518,7 +1927,9 @@ mod tests {
         let text = report(
             &verdict,
             "pinned-mac",
-            "Mac14,6",
+            &Bench::Simulator {
+                model: "Mac14,6".to_owned(),
+            },
             1.0,
             &[],
             ("1.00 2.00 3.00", "1.50 2.00 3.00"),
@@ -1570,7 +1981,9 @@ mod tests {
         let text = report(
             &verdict,
             "pinned-mac",
-            "Mac14,6",
+            &Bench::Simulator {
+                model: "Mac14,6".to_owned(),
+            },
             1.0,
             &[],
             ("1.00 2.00 3.00", "1.00 2.00 3.00"),

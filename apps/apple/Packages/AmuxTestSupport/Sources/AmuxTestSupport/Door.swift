@@ -108,6 +108,9 @@ public enum DoorRequest: Sendable, Equatable {
     /// and answer what they did; the driver runs the workload meanwhile.
     case measure(seconds: Double)
     case signposts
+    /// Whether the device is hot or saving power, which would make whatever
+    /// a run measured next about the device rather than the app.
+    case condition
     case appearance(Appearance)
     case dynamicType(String)
     /// Draw as the system does for a reader who has asked for less motion or
@@ -336,6 +339,7 @@ public enum DoorReply: Sendable, Equatable {
     case conversation(ConversationReading)
     case signposts([SignpostMark])
     case measurement(Measurement)
+    case condition(DeviceCondition)
     case captured(path: String, width: Int, height: Int, scale: Int)
     /// A bundle was written at this path, holding these files.
     case bundle(path: String, parts: [String], reportJSON: String? = nil)
@@ -655,6 +659,7 @@ extension DoorRequest: Codable {
             self = .runtimeLog(
                 bytes: try fields.decodeIfPresent(Int.self, forKey: .bytes) ?? 64_000)
         case "signposts": self = .signposts
+        case "condition": self = .condition
         case "measure":
             self = .measure(seconds: try fields.decode(Double.self, forKey: .seconds))
         case "appearance":
@@ -826,6 +831,8 @@ extension DoorRequest: Codable {
             try fields.encode(bytes, forKey: .bytes)
         case .signposts:
             try fields.encode("signposts", forKey: .kind)
+        case .condition:
+            try fields.encode("condition", forKey: .kind)
         case .measure(let seconds):
             try fields.encode("measure", forKey: .kind)
             try fields.encode(seconds, forKey: .seconds)
@@ -963,7 +970,7 @@ extension DoorReply: Codable {
     private enum Key: String, CodingKey {
         case kind, state, bridge, path, width, height, scale, message, parts, marks, measurement
         case host, delivered, reason, cloud, store, known, states, conversation, reportJSON
-        case log
+        case log, condition
     }
 
     public init(from decoder: any Decoder) throws {
@@ -983,6 +990,8 @@ extension DoorReply: Codable {
             self = .signposts(try fields.decode([SignpostMark].self, forKey: .marks))
         case "measurement":
             self = .measurement(try fields.decode(Measurement.self, forKey: .measurement))
+        case "condition":
+            self = .condition(try fields.decode(DeviceCondition.self, forKey: .condition))
         case "captured":
             self = .captured(
                 path: try fields.decode(String.self, forKey: .path),
@@ -1039,6 +1048,9 @@ extension DoorReply: Codable {
         case .measurement(let measurement):
             try fields.encode("measurement", forKey: .kind)
             try fields.encode(measurement, forKey: .measurement)
+        case .condition(let condition):
+            try fields.encode("condition", forKey: .kind)
+            try fields.encode(condition, forKey: .condition)
         case .captured(let path, let width, let height, let scale):
             try fields.encode("captured", forKey: .kind)
             try fields.encode(path, forKey: .path)
@@ -1096,6 +1108,14 @@ public enum Door {
     /// names the phone's address on its USB link, which the Mac reaches
     /// without the door listening on any other network.
     public static let bindArgument = "amux-door-bind"
+
+    /// `-amux-fresh-start YES`: before anything else, forget everything this
+    /// installation kept — its files, its caches and its settings — as an
+    /// uninstall would. A driver on a phone starts a run this way rather than
+    /// by reinstalling, because an uninstall also takes the permissions a
+    /// person granted, and the system then asks for local network access
+    /// again with nobody there to answer.
+    public static let freshStartArgument = "amux-fresh-start"
 
     /// `-amux-relay URL`: the relay an account added through the door signs
     /// in to. The request to add an account carries the user and the bearer;

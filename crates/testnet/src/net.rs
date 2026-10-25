@@ -113,6 +113,11 @@ pub struct NetOptions {
     /// Hosts then find each other at gate addresses rather than at their
     /// listeners'.
     pub gated_lan: bool,
+    /// Where what a client outside this Mac dials listens: the gates in
+    /// front of the hosts' LAN listeners and the relay, and the account
+    /// service. A phone over its USB link names the Mac's address on that
+    /// link; loopback when none is named.
+    pub client_ip: Option<std::net::IpAddr>,
 }
 
 /// How long a wait on a real provider's agent may take: a real turn on a
@@ -373,6 +378,7 @@ pub struct Net {
     /// Faults set on the relay path as a whole, beside each host's own.
     relay_faults: Faults,
     gated_lan: bool,
+    client_ip: Option<std::net::IpAddr>,
 }
 
 impl Net {
@@ -438,9 +444,10 @@ impl Net {
             feed: None,
             relay_faults: Faults::default(),
             gated_lan: options.gated_lan,
+            client_ip: options.client_ip,
         };
         if let Some(relay) = &topology.relay {
-            net.relay = Some(Relay::start(relay, net.clock.clone()).await?);
+            net.relay = Some(Relay::start(relay, net.clock.clone(), net.client_ip).await?);
             net.write_relay_ca()?;
         }
         for decl in &topology.hosts {
@@ -691,7 +698,8 @@ impl Net {
     /// way to it until it restarts; declare a relay up front to avoid that.
     pub async fn add_account(&mut self, account: AccountDecl) -> Result<Ack, NetError> {
         if self.relay.is_none() {
-            let relay = Relay::start(&RelayDecl::default(), self.clock.clone()).await?;
+            let relay =
+                Relay::start(&RelayDecl::default(), self.clock.clone(), self.client_ip).await?;
             self.relay = Some(relay);
             self.topology.relay = Some(RelayDecl::default());
             self.write_relay_ca()?;
@@ -2092,6 +2100,7 @@ impl Net {
         Ok(self.lan.front(
             host,
             Some(SocketAddr::new(loopback(&self.hosts[host].decl), port)),
+            self.client_ip,
         )?)
     }
 
@@ -2200,7 +2209,10 @@ impl Net {
         if let Some(gate) = &self.relay_gate {
             return Ok(gate.addr());
         }
-        let gate = self.relay()?.gate().await?;
+        let gate = match self.client_ip {
+            Some(ip) => self.relay()?.gate_on(ip)?,
+            None => self.relay()?.gate().await?,
+        };
         let addr = gate.addr();
         self.relay_gate = Some(gate);
         Ok(addr)

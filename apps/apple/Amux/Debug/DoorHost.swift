@@ -116,6 +116,7 @@ final class DoorHost {
             return .runtimeLog(composition?.runtime.logTail(bytes: bytes) ?? "")
         case .conversation(let agent): return reading(agent)
         case .signposts: return .signposts(Signposts.marks)
+        case .condition: return .condition(DeviceCondition.now())
         case .measure(let seconds): return await measure(seconds)
         case .appearance(let appearance):
             await wear(appearance)

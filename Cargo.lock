@@ -3843,6 +3843,7 @@ name = "relay-core"
 version = "0.1.0"
 dependencies = [
  "daemon-core",
+ "serde",
 ]
 
 [[package]]

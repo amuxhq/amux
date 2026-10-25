@@ -32,9 +32,9 @@ use app_runtime::values::{
 pub use app_runtime::values::{PairRequest, ProfileView, StartConfig, UsageEvent};
 use client::{Client, Clock, InProcess};
 use node::{
-    Binding, ClientApi, CloudOptions, Daemon, DiscoveryFactory, EdgeOptions, LanOptions, Observed,
-    ProfileRefusal, ProfileRuntime, ProfileState, ProfileWatch, Registry, SignIn, SourcePolicy,
-    StartError, StartOptions, Tier,
+    ClientApi, Cloud, CloudOptions, Daemon, DiscoveryFactory, EdgeOptions, LanOptions,
+    ProfileRefusal, ProfileRuntime, ProfileState, ProfileWatch, Registry, Relay, SignIn,
+    SourcePolicy, StartError, StartOptions, Tier,
 };
 pub use node::{Cores, ProfileId};
 pub use phone::Phone;
@@ -725,26 +725,23 @@ fn profile_view(state: &ProfileState) -> ProfileView {
         label: state.label.clone(),
         subject: account.subject,
         account: AccountView {
-            binding: match state.binding {
-                Binding::Unbound => AccountBinding::Unbound,
-                Binding::SignedIn => AccountBinding::SignedIn,
-                Binding::SignedOut => AccountBinding::SignedOut,
-                Binding::Paused => AccountBinding::Paused,
+            binding: match state.cloud {
+                Cloud::Unbound => AccountBinding::Unbound,
+                Cloud::SignedIn(_) => AccountBinding::SignedIn,
+                Cloud::SignedOut => AccountBinding::SignedOut,
+                Cloud::Paused => AccountBinding::Paused,
             },
             email: account.email.unwrap_or_default(),
             name: account.name.unwrap_or_default(),
             picture: account.picture.unwrap_or_default(),
-            pro: match &state.relay {
-                Observed::Connected { tier, .. } => Some(*tier == Tier::Pro),
-                _ => None,
-            },
-            relay: match state.relay {
-                Observed::Local => RelayLink::Off,
-                Observed::Connecting => RelayLink::Connecting,
-                Observed::Connected { .. } => RelayLink::Connected,
-                Observed::Retrying => RelayLink::Retrying,
-                Observed::AuthenticationRequired => RelayLink::SignInAgain,
-                Observed::VersionMismatch => RelayLink::VersionMismatch,
+            pro: state.cloud.connected().map(|(tier, _)| tier == Tier::Pro),
+            relay: match &state.cloud {
+                Cloud::Unbound | Cloud::SignedOut | Cloud::Paused => RelayLink::Off,
+                Cloud::SignedIn(Relay::Connecting) => RelayLink::Connecting,
+                Cloud::SignedIn(Relay::Connected { .. }) => RelayLink::Connected,
+                Cloud::SignedIn(Relay::Retrying) => RelayLink::Retrying,
+                Cloud::SignedIn(Relay::SignInAgain) => RelayLink::SignInAgain,
+                Cloud::SignedIn(Relay::VersionMismatch) => RelayLink::VersionMismatch,
             },
         },
     }

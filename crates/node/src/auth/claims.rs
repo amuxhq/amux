@@ -1,12 +1,5 @@
-use serde::{Deserialize, Serialize};
-
-/// Account tier carried by cloud connection tokens.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum Tier {
-    Free,
-    Pro,
-}
+pub use relay_core::Tier;
+use serde::Deserialize;
 
 /// Claims from a cloud routing connection token.
 #[derive(Debug, Deserialize)]

@@ -51,23 +51,36 @@ service InstallationService {
   rpc Shutdown(Empty) returns (Empty);
 }
 
-enum Intent {
-  INTENT_UNSPECIFIED = 0;
-  INTENT_UNBOUND = 1;
-  INTENT_BOUND = 2;
-  INTENT_LOGGED_OUT = 3;
-  INTENT_PAUSED = 4;
+// A profile's standing with its cloud account: what the person asked for
+// and, while signed in, what its relay link is doing.
+message CloudStanding {
+  oneof standing {
+    // Never signed in.
+    Empty unbound = 1;
+    // Signed out, still tied to its account.
+    Empty signed_out = 2;
+    // Signed in, with the relay link held down.
+    Empty paused = 3;
+    RelayLink signed_in = 4;
+  }
 }
 
-enum Observed {
-  OBSERVED_UNSPECIFIED = 0;
-  OBSERVED_LOCAL = 1;
-  OBSERVED_CONNECTING = 2;
-  OBSERVED_CONNECTED = 3;
-  OBSERVED_RETRYING = 4;
-  OBSERVED_AUTHENTICATION_REQUIRED = 5;
-  // The cloud refused this build as too old for its protocol.
-  OBSERVED_VERSION_MISMATCH = 6;
+// What a signed-in profile's relay link is doing.
+message RelayLink {
+  oneof state {
+    Empty connecting = 1;
+    RelayConnected connected = 2;
+    Empty retrying = 3;
+    // The account service refused the profile's credentials.
+    Empty sign_in_again = 4;
+    // The cloud refused this build as too old for its protocol.
+    Empty version_mismatch = 5;
+  }
+}
+
+message RelayConnected {
+  Tier tier = 1;
+  RelayCarrier carrier = 2;
 }
 
 enum Tier {
@@ -88,10 +101,8 @@ message ProfileInfo {
   string email = 3;
   string account_name = 4;
   string socket_path = 5;
-  Intent intent = 7;
-  Observed observed = 8;
-  Tier tier = 10;
-  RelayCarrier relay_carrier = 11;
+  reserved 7, 8, 10, 11;
+  CloudStanding cloud = 14;
   // The bound account's subject at its service, which stays after a
   // sign-out; empty when unbound. What tells two profiles' accounts apart.
   string account_subject = 12;

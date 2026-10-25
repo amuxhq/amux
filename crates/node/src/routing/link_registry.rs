@@ -118,13 +118,6 @@ pub struct LinkRegistry {
     paths: std::sync::OnceLock<std::sync::Weak<PathDriver>>,
 }
 
-pub(crate) fn relay_tier(tier: Tier) -> relay_core::Tier {
-    match tier {
-        Tier::Free => relay_core::Tier::Free,
-        Tier::Pro => relay_core::Tier::Pro,
-    }
-}
-
 #[derive(Default)]
 struct LinkRegistryState {
     writers: HashMap<LinkId, LinkWriter>,
@@ -355,7 +348,7 @@ impl LinkRegistry {
             host: core_host(host.id),
             tier: match admission {
                 LinkAdmission::PinnedKey => None,
-                LinkAdmission::CloudToken { tier } => Some(relay_tier(tier)),
+                LinkAdmission::CloudToken { tier } => Some(tier),
             },
             direct,
             advertised: advertised_snapshot.iter().copied().map(core_host).collect(),
@@ -686,7 +679,7 @@ impl LinkRegistry {
             writer.admission = LinkAdmission::CloudToken { tier };
             self.relaying.step([relay_core::Input::TierChanged {
                 link: link.core(),
-                tier: relay_tier(tier),
+                tier,
             }]);
         }
     }

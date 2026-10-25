@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use node::harness::LiveRoute;
-use node::{Edge, Observed, RelayCarrier};
+use node::{Edge, Relay, RelayCarrier};
 use testnet::{HostDecl, Net, PATIENCE, until};
 use tonic::transport::Channel;
 use uuid::Uuid;
@@ -98,8 +98,8 @@ pub fn still_relayed(net: &Net, a: &str, b: &str) {
 
 /// The carrier the host's relay link rides, once it is connected.
 pub fn carrier(net: &Net, host: &str) -> Option<RelayCarrier> {
-    match edge(net, host).observed() {
-        Observed::Connected { carrier, .. } => Some(carrier),
+    match edge(net, host).relay() {
+        Some(Relay::Connected { carrier, .. }) => Some(carrier),
         _ => None,
     }
 }
@@ -264,8 +264,8 @@ pub async fn ended<T>(stream: &mut tonic::Streaming<T>, what: &str) -> String {
 
 /// The tier the host's relay link carries, once it is connected.
 pub fn tier(net: &Net, host: &str) -> Option<node::Tier> {
-    match edge(net, host).observed() {
-        Observed::Connected { tier, .. } => Some(tier),
+    match edge(net, host).relay() {
+        Some(Relay::Connected { tier, .. }) => Some(tier),
         _ => None,
     }
 }

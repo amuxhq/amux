@@ -39,8 +39,10 @@ use daemon_core::{DumpReason, HostId, LinkId, StepBudget, Violation};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct UserId(pub [u8; 16]);
 
-/// What an account's plan lets its hosts do through the relay.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// What an account's plan lets its hosts do through the relay, as its
+/// connection tokens name it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Tier {
     /// Hosts reach the relay, but no packet is forwarded between them.
     Free,

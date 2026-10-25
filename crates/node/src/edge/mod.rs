@@ -29,12 +29,13 @@ use std::sync::{Arc, Mutex, Weak};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-pub use account::{ACCOUNT_FILE, Binding};
+pub use account::ACCOUNT_FILE;
+use account::Binding;
 pub(crate) use account::{Account, AccountCredentials};
 pub use cloud::{FREE_TIER_REFRESH_INTERVAL, UDP_BLOCKED_MEMORY};
 use futures_util::stream;
 pub use relay_server::{CloudLinkServer, JwtCloudLinkAuthenticator, RelayIdentity, RelayServing};
-pub use status::{Observed, RelayCarrier};
+pub use status::{Cloud, Relay, RelayCarrier};
 pub use token::RELAY_TOKEN_FILE;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::{mpsc, watch};
@@ -224,9 +225,6 @@ pub struct CloudOptions {
     /// How often a free account's link asks the cloud what the account
     /// buys; a purchase reaches the link within one interval.
     pub free_refresh_interval: Option<Duration>,
-    /// A credential the embedder supplies instead of the profile's account
-    /// file, for a host that owns its own sign-in.
-    pub credentials: Option<Arc<dyn CredentialProvider>>,
 }
 
 /// Where a test's relay answers QUIC, and the roots that trust its
@@ -288,7 +286,6 @@ pub struct Edge {
     lan_addr: Option<SocketAddr>,
     quic_endpoint: LinkEndpoint,
     account: Arc<Account>,
-    credentials_override: Option<Arc<dyn CredentialProvider>>,
     cloud_options: CloudOptions,
     cloud: tokio::sync::Mutex<Option<CloudLink>>,
     udp_blocked: Arc<UdpBlockedMemory>,
@@ -340,7 +337,7 @@ impl Edge {
                 runtime.tell_own_host();
             }
         }));
-        let signed_in = options.cloud.credentials.is_some() || account.wants_cloud();
+        let signed_in = account.wants_cloud();
         let local_host = LiveLocalHost::new(local_host(
             identity.host_id,
             &options.host_name,
@@ -532,7 +529,6 @@ impl Edge {
             lan_addr,
             quic_endpoint,
             account,
-            credentials_override: options.cloud.credentials.clone(),
             cloud_options: options.cloud.clone(),
             cloud: tokio::sync::Mutex::new(None),
             udp_blocked: Arc::new(UdpBlockedMemory::new(UDP_BLOCKED_MEMORY, clock.clone())),
@@ -551,12 +547,9 @@ impl Edge {
                 .unwrap()
                 .push(tokio::spawn(first_flight::launch(Arc::downgrade(&edge))));
         }
-        edge.tasks
-            .lock()
-            .unwrap()
-            .push(follow_plan(&edge.status, &edge.connections));
-        edge.tasks.lock().unwrap().push(plan_paths(
+        edge.tasks.lock().unwrap().push(follow_plan(
             &edge.status,
+            &edge.connections,
             &edge.paths,
             edge.local_host.clone(),
         ));
@@ -787,29 +780,30 @@ impl Edge {
         self.udp_blocked.holds(relay)
     }
 
-    /// What the cloud link is doing.
-    pub fn observed(&self) -> Observed {
+    /// The profile's standing with its cloud account.
+    pub fn cloud(&self) -> Cloud {
+        match self.account.binding() {
+            Binding::Unbound => Cloud::Unbound,
+            Binding::SignedOut => Cloud::SignedOut,
+            Binding::Paused => Cloud::Paused,
+            // Signed in with no link running yet: one is about to start.
+            Binding::SignedIn => {
+                Cloud::SignedIn(self.status.current().unwrap_or(Relay::Connecting))
+            }
+        }
+    }
+
+    /// What the relay link is doing, none while no link runs.
+    pub fn relay(&self) -> Option<Relay> {
         self.status.current()
     }
 
-    pub fn subscribe_observed(&self) -> watch::Receiver<Observed> {
+    pub fn subscribe_relay(&self) -> watch::Receiver<Option<Relay>> {
         self.status.subscribe()
     }
 
     pub(crate) fn account(&self) -> &Arc<Account> {
         &self.account
-    }
-
-    /// Whether this profile is signed in to the account it is bound to:
-    /// None while it was never bound, so a profile that only ever worked
-    /// on its own network never reads as signed out. A paused connection
-    /// is still signed in; the person chose to stay off the relay.
-    pub fn account_signed_in(&self) -> Option<bool> {
-        match self.account.binding() {
-            Binding::SignedIn | Binding::Paused => Some(true),
-            Binding::SignedOut => Some(false),
-            Binding::Unbound => None,
-        }
     }
 
     /// The account service the profile is bound to, signed in or not.
@@ -850,9 +844,6 @@ impl Edge {
     }
 
     fn credentials(&self) -> Option<Arc<dyn CredentialProvider>> {
-        if let Some(credentials) = &self.credentials_override {
-            return Some(credentials.clone());
-        }
         self.account.wants_cloud().then(|| {
             Arc::new(AccountCredentials(self.account.clone())) as Arc<dyn CredentialProvider>
         })
@@ -863,11 +854,10 @@ impl Edge {
         let Some(credentials) = self.credentials() else {
             return;
         };
-        let cloud_url = match self.account.service() {
-            Some(service) => service.as_str().to_owned(),
-            None if self.credentials_override.is_some() => String::new(),
-            None => return,
+        let Some(cloud_url) = self.account.service() else {
+            return;
         };
+        let cloud_url = cloud_url.as_str().to_owned();
         let mut cloud = self.cloud.lock().await;
         if cloud.as_ref().is_some_and(|link| !link.is_finished()) {
             return;
@@ -876,7 +866,7 @@ impl Edge {
             finished.stop().await;
         }
         self.local_host.set_signed_in(true);
-        self.status.report(Observed::Connecting);
+        self.status.report(Relay::Connecting);
         let connector: LinkConnectorCtx =
             LinkConnectorCtx::new_live(self.local_host.clone(), self.channels.link_registry())
                 .with_incoming_streams(self.incoming_streams_tx.clone())
@@ -903,9 +893,8 @@ impl Edge {
         if let Some(link) = self.cloud.lock().await.take() {
             link.stop().await;
         }
-        self.local_host
-            .set_signed_in(self.credentials_override.is_some() || self.account.wants_cloud());
-        self.status.report(Observed::Local);
+        self.local_host.set_signed_in(self.account.wants_cloud());
+        self.status.clear();
     }
 
     /// Asks the cloud what the account buys now, over the live cloud link.
@@ -1161,23 +1150,37 @@ impl Drop for LoopbackLink {
     }
 }
 
-/// Tells the connections whenever the account's plan is seen to change,
-/// from one connected tier to another: what the relay carries changes with
-/// it, and hosts it refused or carried need not wait for a retry's backoff
-/// or a call to read as they now are.
-fn follow_plan(status: &RuntimeStatus, connections: &Arc<ConnectionManager>) -> JoinHandle<()> {
-    let mut observed = status.subscribe();
+/// Follows the account's plan as the relay says it. The path machines are
+/// told whether it pays each time: a free account's links stop telling
+/// peers the address the relay saw, since reaching it is punching. The
+/// connections are told when it changes from one connected tier to
+/// another: what the relay carries changes with it, and hosts it refused
+/// or carried need not wait for a retry's backoff or a call to read as
+/// they now are.
+fn follow_plan(
+    status: &RuntimeStatus,
+    connections: &Arc<ConnectionManager>,
+    paths: &Arc<PathDriver>,
+    local_host: LiveLocalHost,
+) -> JoinHandle<()> {
+    let mut relay = status.subscribe();
     let connections = Arc::downgrade(connections);
+    let paths = Arc::downgrade(paths);
     tokio::spawn(async move {
         let mut plan = None;
-        while observed.changed().await.is_ok() {
-            let Observed::Connected { tier, .. } = *observed.borrow_and_update() else {
+        while relay.changed().await.is_ok() {
+            let Some(Relay::Connected { tier, .. }) = *relay.borrow_and_update() else {
                 continue;
             };
+            let (Some(connections), Some(paths)) = (connections.upgrade(), paths.upgrade()) else {
+                return;
+            };
+            let paid = tier == crate::Tier::Pro;
+            if !paid {
+                local_host.clear_public();
+            }
+            paths.plan(paid);
             if plan.replace(tier).is_some_and(|before| before != tier) {
-                let Some(connections) = connections.upgrade() else {
-                    return;
-                };
                 connections.plan_changed();
             }
         }
@@ -1194,33 +1197,6 @@ pub fn interface_addrs() -> Vec<std::net::IpAddr> {
         .collect();
     addrs.dedup();
     addrs
-}
-
-/// Tells the path machines whether the account pays, whenever the relay
-/// says. A free account's links stop telling peers the address the relay
-/// saw, since reaching it is punching.
-fn plan_paths(
-    status: &RuntimeStatus,
-    paths: &Arc<PathDriver>,
-    local_host: LiveLocalHost,
-) -> JoinHandle<()> {
-    let mut observed = status.subscribe();
-    let paths = Arc::downgrade(paths);
-    tokio::spawn(async move {
-        while observed.changed().await.is_ok() {
-            let Observed::Connected { tier, .. } = *observed.borrow_and_update() else {
-                continue;
-            };
-            let Some(paths) = paths.upgrade() else {
-                return;
-            };
-            let paid = tier == crate::Tier::Pro;
-            if !paid {
-                local_host.clear_public();
-            }
-            paths.plan(paid);
-        }
-    })
 }
 
 /// Gives every trusted host a path machine, with what it listed before

@@ -18,6 +18,7 @@ use node::harness::{LiveRoute, Tier};
 use testnet::{ClockMode, HostDecl, Net, NetOptions, PATIENCE, Relay, TierDecl, Topology, until};
 use tonic::transport::{Channel, Endpoint};
 use uuid::Uuid;
+use wire::cloud_standing::Standing;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::profile_service_client::ProfileServiceClient;
 use wire::{
@@ -507,11 +508,11 @@ async fn sign_in_desk(net: &Net) {
 async fn relay_link_up(net: &Net) {
     let relay = net.relay().unwrap();
     until("the desk's relay link", || async {
-        let observed = info(net, "desk").await.observed;
+        let info = info(net, "desk").await;
         let links = relay.links("ada").await;
-        (observed == wire::Observed::Connected as i32 && links.len() == 1)
+        (info.relay_connected().is_some() && links.len() == 1)
             .then_some(())
-            .ok_or_else(|| format!("observed {observed}, ada's links {links:?}"))
+            .ok_or_else(|| format!("cloud {:?}, ada's links {links:?}", info.cloud))
     })
     .await
     .unwrap();
@@ -658,7 +659,7 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
     let relay = net.relay().unwrap();
     let host_id = edge(&net, "desk").host_id();
     let unbound = info(&net, "desk").await;
-    assert_eq!(unbound.intent, wire::Intent::Unbound as i32);
+    assert!(matches!(unbound.standing(), Some(Standing::Unbound(_))));
 
     let bound = door(&net, "desk")
         .await
@@ -671,15 +672,15 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
         .await
         .expect("the profile binds to the account")
         .into_inner();
-    assert_eq!(bound.intent, wire::Intent::Bound as i32);
+    assert!(matches!(bound.standing(), Some(Standing::SignedIn(_))));
     assert_eq!(bound.email, "ada@example.com");
     assert_eq!(bound.account_name, "ada");
 
     until("the cloud link to connect", || async {
         let info = info(&net, "desk").await;
-        (info.observed == wire::Observed::Connected as i32 && info.tier == wire::Tier::Free as i32)
+        (info.relay_connected().map(wire::RelayConnected::tier) == Some(wire::Tier::Free))
             .then_some(())
-            .ok_or_else(|| format!("observed {}, tier {}", info.observed, info.tier))
+            .ok_or_else(|| format!("cloud {:?}", info.cloud))
     })
     .await
     .unwrap();
@@ -696,10 +697,11 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
     assert_eq!(relay.connects().len(), 1);
     net.advance(Duration::from_secs(60)).unwrap();
     until("the refreshed credential to carry the new tier", || async {
-        let tier = info(&net, "desk").await.tier;
-        (tier == wire::Tier::Pro as i32)
+        let info = info(&net, "desk").await;
+        let tier = info.relay_connected().map(wire::RelayConnected::tier);
+        (tier == Some(wire::Tier::Pro))
             .then_some(())
-            .ok_or_else(|| format!("tier {tier}"))
+            .ok_or_else(|| format!("tier {tier:?}"))
     })
     .await
     .unwrap();
@@ -736,10 +738,7 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
     .unwrap();
     armed(&net, net.now_ms() + pro_refresh_ms()).await;
     assert_eq!(relay.links("ada").await, vec![(host_id, 1)]);
-    assert_eq!(
-        info(&net, "desk").await.observed,
-        wire::Observed::Connected as i32
-    );
+    assert!(info(&net, "desk").await.relay_connected().is_some());
     println!("clock +610s: relay-ada-1 expired, the link lives on relay-ada-3");
 
     // Pausing drops the link and keeps the credential; resuming brings it
@@ -750,7 +749,7 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
         .await
         .unwrap()
         .into_inner();
-    assert_eq!(paused.intent, wire::Intent::Paused as i32);
+    assert!(matches!(paused.standing(), Some(Standing::Paused(_))));
     until("the relay link to go with the pause", || async {
         let links = relay.links("ada").await;
         links
@@ -775,7 +774,10 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
         .await
         .unwrap()
         .into_inner();
-    assert_eq!(signed_out.intent, wire::Intent::LoggedOut as i32);
+    assert!(matches!(
+        signed_out.standing(),
+        Some(Standing::SignedOut(_))
+    ));
     assert_eq!(signed_out.email, "ada@example.com");
     until("the relay link to go with the sign-out", || async {
         let links = relay.links("ada").await;

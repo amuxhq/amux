@@ -1944,21 +1944,23 @@ impl Net {
                     .map_err(|status| status.message().to_owned())?
                     .into_inner()
                     .profiles;
-                let observed = profiles.first().map(wire::ProfileInfo::observed);
-                (observed == Some(wire::Observed::Connected))
-                    .then_some(())
-                    .ok_or_else(|| format!("observed {observed:?}"))
+                let cloud = profiles.first().map(|info| &info.cloud);
+                profiles
+                    .first()
+                    .and_then(wire::ProfileInfo::relay_connected)
+                    .map(|_| ())
+                    .ok_or_else(|| format!("cloud {cloud:?}"))
             })
             .await?;
             return Ok(self.ack(format!("{host} signed in to {account}")));
         }
         let edge = self.edge(host)?;
         observe::until(&format!("{host}'s relay link"), || {
-            let observed = edge.observed();
+            let relay = edge.relay();
             async move {
-                matches!(observed, node::Observed::Connected { .. })
+                matches!(relay, Some(node::Relay::Connected { .. }))
                     .then_some(())
-                    .ok_or_else(|| format!("observed {observed:?}"))
+                    .ok_or_else(|| format!("relay {relay:?}"))
             }
         })
         .await?;
@@ -2010,7 +2012,7 @@ impl Net {
             // Only a host whose relay link is up has anything to learn now;
             // any other learns the tier when its link comes up.
             if !info.is_some_and(|info| {
-                info.account_subject == account && info.observed() == wire::Observed::Connected
+                info.account_subject == account && info.relay_connected().is_some()
             }) {
                 continue;
             }
@@ -2054,10 +2056,14 @@ impl Net {
                     .profiles
                     .into_iter()
                     .find(|info| info.id == profile.as_bytes());
-                let seen = info.as_ref().map(|info| (info.observed(), info.tier()));
-                (seen == Some((wire::Observed::Connected, wanted)))
-                    .then_some(())
-                    .ok_or_else(|| format!("observed {seen:?}"))
+                let seen = info.as_ref().map(|info| &info.cloud);
+                (info
+                    .as_ref()
+                    .and_then(wire::ProfileInfo::relay_connected)
+                    .map(wire::RelayConnected::tier)
+                    == Some(wanted))
+                .then_some(())
+                .ok_or_else(|| format!("cloud {seen:?}"))
             })
             .await?;
             told.push(host);

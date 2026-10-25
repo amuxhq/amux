@@ -1,5 +1,7 @@
-//! What a profile's cloud link is doing, apart from what the person asked
-//! for: the front door reports it as the profile's observed state.
+//! A profile's standing with its cloud account: what the person asked for
+//! and, while signed in, what its relay link is doing. The front door and
+//! an embedder report it as one value, so no reader sees a link connected
+//! on a profile that is paused or signed out.
 
 use tokio::sync::watch;
 
@@ -10,59 +12,86 @@ pub enum RelayCarrier {
     Tcp,
 }
 
-/// Connectivity observed by the cloud connector.
+/// A profile's standing with its cloud account.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Observed {
-    Local,
+pub enum Cloud {
+    /// Never signed in.
+    Unbound,
+    /// Signed out, still tied to its account.
+    SignedOut,
+    /// Signed in, with the relay link held down.
+    Paused,
+    SignedIn(Relay),
+}
+
+impl Cloud {
+    /// Whether the profile is signed in to the account it is bound to:
+    /// none while it was never bound, so a profile that only ever worked
+    /// on its own network never reads as signed out. A paused profile is
+    /// still signed in; the person chose to stay off the relay.
+    pub fn signed_in(&self) -> Option<bool> {
+        match self {
+            Cloud::Unbound => None,
+            Cloud::SignedOut => Some(false),
+            Cloud::Paused | Cloud::SignedIn(_) => Some(true),
+        }
+    }
+
+    /// The relay link, while it is connected.
+    pub fn connected(&self) -> Option<(crate::Tier, RelayCarrier)> {
+        match *self {
+            Cloud::SignedIn(Relay::Connected { tier, carrier }) => Some((tier, carrier)),
+            _ => None,
+        }
+    }
+}
+
+/// What a signed-in profile's relay link is doing.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Relay {
     Connecting,
     Connected {
         tier: crate::Tier,
         carrier: RelayCarrier,
     },
     Retrying,
-    AuthenticationRequired,
+    /// The account service refused the profile's credentials.
+    SignInAgain,
     /// The relay speaks no protocol version this build does.
     VersionMismatch,
 }
 
-impl Observed {
-    pub fn to_wire(&self) -> wire::Observed {
-        match self {
-            Self::Local => wire::Observed::Local,
-            Self::Connecting => wire::Observed::Connecting,
-            Self::Connected { .. } => wire::Observed::Connected,
-            Self::Retrying => wire::Observed::Retrying,
-            Self::AuthenticationRequired => wire::Observed::AuthenticationRequired,
-            Self::VersionMismatch => wire::Observed::VersionMismatch,
-        }
-    }
-}
-
-/// The observed state and its watchers. Kept apart from any one link, so
-/// the state outlives a connector that stopped.
+/// The relay link's state and its watchers, none while no link runs.
+/// Kept apart from any one link, so the state outlives a connector that
+/// stopped.
 #[derive(Clone)]
 pub(crate) struct RuntimeStatus {
-    tx: watch::Sender<Observed>,
+    tx: watch::Sender<Option<Relay>>,
 }
 
 impl Default for RuntimeStatus {
     fn default() -> Self {
         Self {
-            tx: watch::channel(Observed::Local).0,
+            tx: watch::channel(None).0,
         }
     }
 }
 
 impl RuntimeStatus {
-    pub(crate) fn subscribe(&self) -> watch::Receiver<Observed> {
+    pub(crate) fn subscribe(&self) -> watch::Receiver<Option<Relay>> {
         self.tx.subscribe()
     }
 
-    pub(crate) fn current(&self) -> Observed {
+    pub(crate) fn current(&self) -> Option<Relay> {
         self.tx.borrow().clone()
     }
 
-    pub(crate) fn report(&self, observed: Observed) {
-        self.tx.send_replace(observed);
+    pub(crate) fn report(&self, relay: Relay) {
+        self.tx.send_replace(Some(relay));
+    }
+
+    /// The link stopped and none runs.
+    pub(crate) fn clear(&self) {
+        self.tx.send_replace(None);
     }
 }

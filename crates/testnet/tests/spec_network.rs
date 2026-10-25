@@ -2115,16 +2115,21 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     net.advance(testnet::CREDENTIAL_TTL - Duration::from_secs(5 * 60))
         .unwrap();
     until("the work profile to need a sign-in", || async {
-        let observed = profile_info(&net, "desk", &work).await.observed;
-        (observed == wire::Observed::AuthenticationRequired as i32)
-            .then_some(())
-            .ok_or_else(|| format!("observed {observed}"))
+        let info = profile_info(&net, "desk", &work).await;
+        matches!(
+            info.relay_state(),
+            Some(wire::relay_link::State::SignInAgain(_))
+        )
+        .then_some(())
+        .ok_or_else(|| format!("cloud {:?}", info.cloud))
     })
     .await
     .unwrap();
-    assert_eq!(
-        profile_info(&net, "desk", &main).await.observed,
-        wire::Observed::Connected as i32
+    assert!(
+        profile_info(&net, "desk", &main)
+            .await
+            .relay_connected()
+            .is_some()
     );
     assert_eq!(net.relay().unwrap().links("ada").await, vec![(desk, 1)]);
 
@@ -2189,8 +2194,8 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     .await
     .unwrap();
     assert_eq!(
-        profile_info(&net, "desk", &main).await.intent,
-        wire::Intent::LoggedOut as i32
+        profile_info(&net, "desk", &main).await.standing(),
+        Some(&wire::cloud_standing::Standing::SignedOut(wire::Empty {}))
     );
     assert_eq!(edge(&net, "desk").via(laptop).await, LiveRoute::Direct);
     assert!(edge(&net, "desk").is_trusted(laptop));

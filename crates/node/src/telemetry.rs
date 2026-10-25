@@ -11,7 +11,7 @@ use analytics::{Ask, CheckIn, Counts, Event, Kind, On, Route};
 
 use crate::HostId;
 use crate::daemon::Installation;
-use crate::edge::{Observed, RelayCarrier};
+use crate::edge::RelayCarrier;
 use crate::runtime::ProfileRuntime;
 
 /// What the daemon does with analytics.
@@ -222,8 +222,9 @@ impl ProfileRuntime {
         if let Some(edge) = self.edge() {
             check_in.paired_hosts = edge.list_peers().map_or(0, |peers| peers.len() as u32);
             check_in.hosts_by_route = edge.routes().await;
-            check_in.signed_in = edge.account_signed_in() == Some(true);
-            if let Observed::Connected { tier, carrier } = edge.observed() {
+            let cloud = edge.cloud();
+            check_in.signed_in = cloud.signed_in() == Some(true);
+            if let Some((tier, carrier)) = cloud.connected() {
                 check_in.tier = Some(match tier {
                     crate::Tier::Free => analytics::Tier::Free,
                     crate::Tier::Pro => analytics::Tier::Pro,

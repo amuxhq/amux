@@ -49,7 +49,7 @@ pub(crate) struct AccountRecord {
 
 /// Where a profile stands with its account.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Binding {
+pub(crate) enum Binding {
     /// Never signed in.
     Unbound,
     SignedIn,

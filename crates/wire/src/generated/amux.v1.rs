@@ -10623,6 +10623,91 @@ pub mod peer_service_server {
         const NAME: &'static str = SERVICE_NAME;
     }
 }
+/// A profile's standing with its cloud account: what the person asked for
+/// and, while signed in, what its relay link is doing.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CloudStanding {
+    #[prost(oneof = "cloud_standing::Standing", tags = "1, 2, 3, 4")]
+    pub standing: ::core::option::Option<cloud_standing::Standing>,
+}
+/// Nested message and enum types in `CloudStanding`.
+pub mod cloud_standing {
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Standing {
+        /// Never signed in.
+        #[prost(message, tag = "1")]
+        Unbound(super::Empty),
+        /// Signed out, still tied to its account.
+        #[prost(message, tag = "2")]
+        SignedOut(super::Empty),
+        /// Signed in, with the relay link held down.
+        #[prost(message, tag = "3")]
+        Paused(super::Empty),
+        #[prost(message, tag = "4")]
+        SignedIn(super::RelayLink),
+    }
+}
+impl ::prost::Name for CloudStanding {
+    const NAME: &'static str = "CloudStanding";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.CloudStanding".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.CloudStanding".into()
+    }
+}
+/// What a signed-in profile's relay link is doing.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RelayLink {
+    #[prost(oneof = "relay_link::State", tags = "1, 2, 3, 4, 5")]
+    pub state: ::core::option::Option<relay_link::State>,
+}
+/// Nested message and enum types in `RelayLink`.
+pub mod relay_link {
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum State {
+        #[prost(message, tag = "1")]
+        Connecting(super::Empty),
+        #[prost(message, tag = "2")]
+        Connected(super::RelayConnected),
+        #[prost(message, tag = "3")]
+        Retrying(super::Empty),
+        /// The account service refused the profile's credentials.
+        #[prost(message, tag = "4")]
+        SignInAgain(super::Empty),
+        /// The cloud refused this build as too old for its protocol.
+        #[prost(message, tag = "5")]
+        VersionMismatch(super::Empty),
+    }
+}
+impl ::prost::Name for RelayLink {
+    const NAME: &'static str = "RelayLink";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.RelayLink".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.RelayLink".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RelayConnected {
+    #[prost(enumeration = "Tier", tag = "1")]
+    pub tier: i32,
+    #[prost(enumeration = "RelayCarrier", tag = "2")]
+    pub carrier: i32,
+}
+impl ::prost::Name for RelayConnected {
+    const NAME: &'static str = "RelayConnected";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.RelayConnected".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.RelayConnected".into()
+    }
+}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ProfileInfo {
     #[prost(bytes = "vec", tag = "1")]
@@ -10635,14 +10720,8 @@ pub struct ProfileInfo {
     pub account_name: ::prost::alloc::string::String,
     #[prost(string, tag = "5")]
     pub socket_path: ::prost::alloc::string::String,
-    #[prost(enumeration = "Intent", tag = "7")]
-    pub intent: i32,
-    #[prost(enumeration = "Observed", tag = "8")]
-    pub observed: i32,
-    #[prost(enumeration = "Tier", tag = "10")]
-    pub tier: i32,
-    #[prost(enumeration = "RelayCarrier", tag = "11")]
-    pub relay_carrier: i32,
+    #[prost(message, optional, tag = "14")]
+    pub cloud: ::core::option::Option<CloudStanding>,
     /// The bound account's subject at its service, which stays after a
     /// sign-out; empty when unbound. What tells two profiles' accounts apart.
     #[prost(string, tag = "12")]
@@ -11090,83 +11169,6 @@ impl ::prost::Name for ListPeersResponse {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.ListPeersResponse".into()
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum Intent {
-    Unspecified = 0,
-    Unbound = 1,
-    Bound = 2,
-    LoggedOut = 3,
-    Paused = 4,
-}
-impl Intent {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "INTENT_UNSPECIFIED",
-            Self::Unbound => "INTENT_UNBOUND",
-            Self::Bound => "INTENT_BOUND",
-            Self::LoggedOut => "INTENT_LOGGED_OUT",
-            Self::Paused => "INTENT_PAUSED",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "INTENT_UNSPECIFIED" => Some(Self::Unspecified),
-            "INTENT_UNBOUND" => Some(Self::Unbound),
-            "INTENT_BOUND" => Some(Self::Bound),
-            "INTENT_LOGGED_OUT" => Some(Self::LoggedOut),
-            "INTENT_PAUSED" => Some(Self::Paused),
-            _ => None,
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum Observed {
-    Unspecified = 0,
-    Local = 1,
-    Connecting = 2,
-    Connected = 3,
-    Retrying = 4,
-    AuthenticationRequired = 5,
-    /// The cloud refused this build as too old for its protocol.
-    VersionMismatch = 6,
-}
-impl Observed {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "OBSERVED_UNSPECIFIED",
-            Self::Local => "OBSERVED_LOCAL",
-            Self::Connecting => "OBSERVED_CONNECTING",
-            Self::Connected => "OBSERVED_CONNECTED",
-            Self::Retrying => "OBSERVED_RETRYING",
-            Self::AuthenticationRequired => "OBSERVED_AUTHENTICATION_REQUIRED",
-            Self::VersionMismatch => "OBSERVED_VERSION_MISMATCH",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "OBSERVED_UNSPECIFIED" => Some(Self::Unspecified),
-            "OBSERVED_LOCAL" => Some(Self::Local),
-            "OBSERVED_CONNECTING" => Some(Self::Connecting),
-            "OBSERVED_CONNECTED" => Some(Self::Connected),
-            "OBSERVED_RETRYING" => Some(Self::Retrying),
-            "OBSERVED_AUTHENTICATION_REQUIRED" => Some(Self::AuthenticationRequired),
-            "OBSERVED_VERSION_MISMATCH" => Some(Self::VersionMismatch),
-            _ => None,
-        }
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]

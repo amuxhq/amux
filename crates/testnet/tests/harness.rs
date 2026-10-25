@@ -1256,14 +1256,19 @@ async fn a_changed_tier_reaches_a_process_host_and_the_plan_read_at_once() {
             .unwrap()
             .into_inner()
             .profiles[0]
-            .tier()
+            .relay_connected()
+            .map(wire::RelayConnected::tier)
     };
-    assert_eq!(tier(&net).await, wire::Tier::Pro);
+    assert_eq!(tier(&net).await, Some(wire::Tier::Pro));
     assert_eq!(plan(&net, "ada")["pro"], true);
 
     let said = net.set_tier("ada", testnet::TierDecl::Free).await.unwrap();
     assert!(said.installed.contains("box learned it"), "{said:?}");
-    assert_eq!(tier(&net).await, wire::Tier::Free, "box knows at once");
+    assert_eq!(
+        tier(&net).await,
+        Some(wire::Tier::Free),
+        "box knows at once"
+    );
     let lapsed = plan(&net, "ada");
     assert_eq!(lapsed["pro"], false, "{lapsed}");
     assert!(lapsed["until"].is_string(), "the access ended: {lapsed}");
@@ -1274,7 +1279,7 @@ async fn a_changed_tier_reaches_a_process_host_and_the_plan_read_at_once() {
     );
 
     net.set_tier("ada", testnet::TierDecl::Pro).await.unwrap();
-    assert_eq!(tier(&net).await, wire::Tier::Pro);
+    assert_eq!(tier(&net).await, Some(wire::Tier::Pro));
     assert_eq!(plan(&net, "ada")["until"], Value::Null);
     net.shutdown().await.unwrap();
 }

@@ -17,7 +17,7 @@ use tokio::task::JoinHandle;
 use tracing::Instrument;
 use uuid::Uuid;
 
-use super::status::{Observed, RelayCarrier, RuntimeStatus};
+use super::status::{Relay, RelayCarrier, RuntimeStatus};
 use super::token::{StoredToken, forget_token, load_token, store_token};
 use crate::Clock;
 use crate::auth::CredentialProvider;
@@ -146,7 +146,7 @@ pub(crate) struct Refresher {
 
 impl Refresher {
     pub(crate) async fn refresh(&self) -> Result<crate::Tier, CloudError> {
-        if !matches!(self.status.current(), Observed::Connected { .. }) {
+        if !matches!(self.status.current(), Some(Relay::Connected { .. })) {
             return Err(CloudError::Connection("cloud link is not connected".into()));
         }
         let (response, response_rx) = oneshot::channel();
@@ -172,14 +172,14 @@ impl Refresher {
             .map_err(|_| CloudError::Connection("cloud link closed during refresh".into()))?
             .map_err(cloud_error_from_refresh_status)?;
         let carrier = match self.status.current() {
-            Observed::Connected { carrier, .. } => carrier,
+            Some(Relay::Connected { carrier, .. }) => carrier,
             _ => {
                 return Err(CloudError::Connection(
                     "cloud link refreshed before it was connected".into(),
                 ));
             }
         };
-        self.status.report(Observed::Connected { tier, carrier });
+        self.status.report(Relay::Connected { tier, carrier });
         Ok(tier)
     }
 }
@@ -256,7 +256,7 @@ pub(crate) fn establish_cloud_link(
                 if *stop_rx.borrow() {
                     return;
                 }
-                connection.status.report(Observed::Connecting);
+                connection.status.report(Relay::Connecting);
                 tracing::info!("attempting cloud routing connection");
                 match run_cloud_connection(&connection, stop_rx.clone()).await
                 {
@@ -285,7 +285,7 @@ pub(crate) fn establish_cloud_link(
                 if *stop_rx.borrow() {
                     return;
                 }
-                connection.status.report(Observed::Retrying);
+                connection.status.report(Relay::Retrying);
 
                 let retry_delay = jittered_backoff(backoff);
                 tracing::info!(base_backoff = ?backoff, retry_delay = ?retry_delay, "reconnecting to cloud");
@@ -320,13 +320,13 @@ fn cloud_connection_error_from_fetch(
 ) -> CloudConnectionError {
     match error {
         CloudError::NotAuthenticated | CloudError::Auth(_) => {
-            status.report(Observed::AuthenticationRequired);
+            status.report(Relay::SignInAgain);
             CloudConnectionError::NonRetriable(
                 "the cloud refused this profile's credentials; sign in again".to_string(),
             )
         }
         error @ CloudError::Rejected(_) => {
-            status.report(Observed::AuthenticationRequired);
+            status.report(Relay::SignInAgain);
             CloudConnectionError::NonRetriable(error.to_string())
         }
         error @ CloudError::Connection(_) => CloudConnectionError::Retriable {
@@ -658,7 +658,7 @@ async fn run_cloud_connection_with_details(
         ),
     )
     .with_refresh_observer(move |tier| {
-        refresh_status.report(Observed::Connected {
+        refresh_status.report(Relay::Connected {
             tier,
             carrier: relay_carrier,
         });
@@ -772,7 +772,7 @@ async fn await_cloud_establishment(
 ) -> std::result::Result<(), CloudConnectionError> {
     match tokio::time::timeout(timeout, established_rx).await {
         Ok(Ok(Ok(_))) => {
-            observed.report(Observed::Connected { tier, carrier });
+            observed.report(Relay::Connected { tier, carrier });
             Ok(())
         }
         Ok(Ok(Err(status))) if kept && status.code() == tonic::Code::Unauthenticated => {
@@ -797,11 +797,11 @@ async fn cloud_connection_error_from_status(
     if crate::net_error::from_status(&status)
         .is_some_and(|error| crate::net_error::is_version_mismatch(&error))
     {
-        observed.report(Observed::VersionMismatch);
+        observed.report(Relay::VersionMismatch);
         return CloudConnectionError::NonRetriable(status.to_string());
     }
     if status.code() == tonic::Code::Unauthenticated {
-        observed.report(Observed::AuthenticationRequired);
+        observed.report(Relay::SignInAgain);
         tracing::warn!(%status, "the relay refused this profile's credentials");
         return CloudConnectionError::NonRetriable(
             "the relay refused this profile's credentials; sign in again".to_string(),
@@ -929,23 +929,23 @@ fn should_reset_backoff_after_connection(connection_uptime: Duration) -> bool {
 mod tests {
     use super::*;
 
-    fn refresher(observed: Observed) -> (Refresher, mpsc::Receiver<LinkConnectorRefreshRequest>) {
+    fn refresher(relay: Relay) -> (Refresher, mpsc::Receiver<LinkConnectorRefreshRequest>) {
         let (refresh_tx, refresh_rx) = mpsc::channel(1);
         let status = RuntimeStatus::default();
-        status.report(observed);
+        status.report(relay);
         (Refresher { refresh_tx, status }, refresh_rx)
     }
 
     #[tokio::test]
     async fn a_refresh_between_connections_fails_at_once() {
-        let (refresher, _rx) = refresher(Observed::Retrying);
+        let (refresher, _rx) = refresher(Relay::Retrying);
         let error = refresher.refresh().await.unwrap_err();
         assert!(error.to_string().contains("not connected"), "{error}");
     }
 
     #[tokio::test]
     async fn a_second_refresh_behind_an_unanswered_one_is_told_at_once() {
-        let (refresher, _rx) = refresher(Observed::Connected {
+        let (refresher, _rx) = refresher(Relay::Connected {
             tier: crate::Tier::Free,
             carrier: RelayCarrier::Quic,
         });
@@ -961,7 +961,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_refresh_nobody_answers_ends_at_the_timeout() {
-        let (refresher, _rx) = refresher(Observed::Connected {
+        let (refresher, _rx) = refresher(Relay::Connected {
             tier: crate::Tier::Free,
             carrier: RelayCarrier::Quic,
         });

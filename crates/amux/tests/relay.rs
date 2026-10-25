@@ -24,7 +24,7 @@ use support::desk::{Desk, GRACE_SECS};
 use support::{amux_binary, grpc_channel, until};
 use tokio::io::{AsyncBufReadExt as _, BufReader};
 use wire::profile_service_client::ProfileServiceClient;
-use wire::{BindProfileRequest, Empty, Observed, RelayCarrier};
+use wire::{BindProfileRequest, Empty, RelayCarrier};
 
 /// The key the stand-in cloud signs connection tokens with, and the same
 /// key's public modulus in its key set.
@@ -306,13 +306,11 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
                 .unwrap()
                 .into_inner()
                 .profiles;
-            let observed = listed
-                .iter()
-                .find(|p| p.id == profile.id)
-                .map(|p| p.observed());
-            (observed == Some(Observed::Connected))
-                .then_some(())
-                .ok_or_else(|| format!("observed {observed:?}"))
+            let listed = listed.iter().find(|p| p.id == profile.id);
+            listed
+                .and_then(wire::ProfileInfo::relay_connected)
+                .map(|_| ())
+                .ok_or_else(|| format!("cloud {:?}", listed.map(|p| &p.cloud)))
         }
     })
     .await
@@ -326,12 +324,7 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
         .into_iter()
         .find(|p| p.id == profile.id)
         .unwrap();
-    println!(
-        "profile {} {:?} over {:?}",
-        linked.label,
-        linked.observed(),
-        linked.relay_carrier()
-    );
+    println!("profile {} {:?}", linked.label, linked.cloud);
     // The relay checked the token against the cloud's keys: it fetched them.
     assert!(
         cloud
@@ -344,5 +337,8 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
     );
     drop(desk);
     relay.kill().await.unwrap();
-    linked.relay_carrier()
+    linked
+        .relay_connected()
+        .expect("the profile's relay link is connected")
+        .carrier()
 }

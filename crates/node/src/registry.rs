@@ -12,7 +12,7 @@ use wire::ErrorCode;
 
 use crate::ProfileId;
 use crate::daemon::{Hosted, Installation};
-use crate::edge::{Binding, Edge, Observed, account};
+use crate::edge::{Cloud, Edge, account};
 use crate::profiles::{self, PROFILE_SOCKET, profile_dir};
 
 /// How long a profile's removal waits for its store to close before it
@@ -29,9 +29,9 @@ pub struct ProfileState {
     /// The account it is bound to, kept after a sign-out; none for a
     /// profile nobody has signed in on.
     pub account: Option<AccountState>,
-    pub binding: Binding,
-    /// Its relay link; `Local` for a profile not in service.
-    pub relay: Observed,
+    /// Its standing with that account; unbound for a profile not in
+    /// service.
+    pub cloud: Cloud,
 }
 
 /// The account a profile is bound to, as its service described it.
@@ -178,10 +178,7 @@ pub(crate) fn state(hosted: &Hosted) -> ProfileState {
                 email: record.email,
                 picture: record.picture,
             }),
-        binding: edge
-            .as_ref()
-            .map_or(Binding::Unbound, |edge| edge.account().binding()),
-        relay: edge.map_or(Observed::Local, |edge| edge.observed()),
+        cloud: edge.map_or(Cloud::Unbound, |edge| edge.cloud()),
     }
 }
 

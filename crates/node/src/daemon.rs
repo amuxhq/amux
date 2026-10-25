@@ -213,7 +213,7 @@ impl Installation {
         let observer = {
             let installation = Arc::downgrade(self);
             let profile = entry.id;
-            let mut observed = edge.subscribe_observed();
+            let mut observed = edge.subscribe_relay();
             tokio::spawn(async move {
                 while observed.changed().await.is_ok() {
                     let Some(installation) = installation.upgrade() else {

@@ -1702,11 +1702,11 @@ async fn punch_lapse_drops_the_punched_path() {
                 .into_inner()
                 .profiles
                 .into_iter()
-                .find(|info| info.id == id)
-                .map(|info| info.observed());
-            (seen == Some(wire::Observed::Connected))
-                .then_some(())
-                .ok_or_else(|| format!("observed {seen:?}"))
+                .find(|info| info.id == id);
+            seen.as_ref()
+                .and_then(wire::ProfileInfo::relay_connected)
+                .map(|_| ())
+                .ok_or_else(|| format!("cloud {:?}", seen.as_ref().map(|info| &info.cloud)))
         })
         .await
         .unwrap();

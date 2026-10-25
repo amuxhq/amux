@@ -26,7 +26,7 @@ impl ProfileRuntime {
                 version: crate::version().to_owned(),
                 capabilities: edge.as_ref().map(|edge| edge.capabilities()),
                 platform: crate::routing::local_platform() as i32,
-                account_signed_in: edge.as_ref().and_then(|edge| edge.account_signed_in()),
+                account_signed_in: edge.as_ref().and_then(|edge| edge.cloud().signed_in()),
             }),
             generation: self.generation(),
             providers: self.offers().on_host(),

@@ -13,35 +13,40 @@ use wire::installation_service_server::{InstallationService, InstallationService
 use wire::profile_service_server::{ProfileService, ProfileServiceServer};
 use wire::{
     BindProfileRequest, CaughtUp, CreateProfileRequest, DeleteProfileRequest, Empty, ErrorCode,
-    InstallationInfo, Intent, ListProfilesResponse, ProfileInfo, RenameProfileRequest,
-    profile_event,
+    InstallationInfo, ListProfilesResponse, ProfileInfo, RenameProfileRequest, profile_event,
 };
 
 use crate::Tier;
-use crate::edge::{Binding, Observed, RelayCarrier};
+use crate::edge::{Cloud, Relay, RelayCarrier};
 use crate::grpc::{self, status, wire_error};
 use crate::registry::{ProfileEvent, ProfileRefusal, ProfileState, Registry, SignIn};
 
 /// A profile as the front door describes it.
 pub(crate) fn info(state: ProfileState) -> ProfileInfo {
-    let (tier, relay_carrier) = match &state.relay {
-        Observed::Connected { tier, carrier } => (
-            match tier {
-                Tier::Free => wire::Tier::Free,
-                Tier::Pro => wire::Tier::Pro,
-            },
-            match carrier {
-                RelayCarrier::Quic => wire::RelayCarrier::Quic,
-                RelayCarrier::Tcp => wire::RelayCarrier::Tcp,
-            },
-        ),
-        _ => (wire::Tier::Unspecified, wire::RelayCarrier::Unspecified),
-    };
-    let intent = match state.binding {
-        Binding::Unbound => Intent::Unbound,
-        Binding::SignedIn => Intent::Bound,
-        Binding::SignedOut => Intent::LoggedOut,
-        Binding::Paused => Intent::Paused,
+    use wire::cloud_standing::Standing;
+    use wire::relay_link::State;
+    let standing = match &state.cloud {
+        Cloud::Unbound => Standing::Unbound(Empty {}),
+        Cloud::SignedOut => Standing::SignedOut(Empty {}),
+        Cloud::Paused => Standing::Paused(Empty {}),
+        Cloud::SignedIn(relay) => Standing::SignedIn(wire::RelayLink {
+            state: Some(match relay {
+                Relay::Connecting => State::Connecting(Empty {}),
+                Relay::Connected { tier, carrier } => State::Connected(wire::RelayConnected {
+                    tier: match tier {
+                        Tier::Free => wire::Tier::Free,
+                        Tier::Pro => wire::Tier::Pro,
+                    } as i32,
+                    carrier: match carrier {
+                        RelayCarrier::Quic => wire::RelayCarrier::Quic,
+                        RelayCarrier::Tcp => wire::RelayCarrier::Tcp,
+                    } as i32,
+                }),
+                Relay::Retrying => State::Retrying(Empty {}),
+                Relay::SignInAgain => State::SignInAgain(Empty {}),
+                Relay::VersionMismatch => State::VersionMismatch(Empty {}),
+            }),
+        }),
     };
     let account = state.account.unwrap_or_default();
     ProfileInfo {
@@ -49,10 +54,9 @@ pub(crate) fn info(state: ProfileState) -> ProfileInfo {
         account_name: account.name.unwrap_or_default(),
         account_subject: account.subject,
         account_picture: account.picture.unwrap_or_default(),
-        intent: intent as i32,
-        observed: state.relay.to_wire() as i32,
-        tier: tier as i32,
-        relay_carrier: relay_carrier as i32,
+        cloud: Some(wire::CloudStanding {
+            standing: Some(standing),
+        }),
         id: state.id.as_bytes().to_vec(),
         label: state.label,
         socket_path: state.socket.to_string_lossy().into_owned(),

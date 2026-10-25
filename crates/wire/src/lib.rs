@@ -161,6 +161,29 @@ impl create_agent_request::Agent {
     }
 }
 
+impl ProfileInfo {
+    /// The profile's standing with its cloud account.
+    pub fn standing(&self) -> Option<&cloud_standing::Standing> {
+        self.cloud.as_ref()?.standing.as_ref()
+    }
+
+    /// What the profile's relay link is doing, while it is signed in.
+    pub fn relay_state(&self) -> Option<&relay_link::State> {
+        match self.standing()? {
+            cloud_standing::Standing::SignedIn(link) => link.state.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// The profile's relay link, while it is signed in and connected.
+    pub fn relay_connected(&self) -> Option<&RelayConnected> {
+        match self.relay_state()? {
+            relay_link::State::Connected(connected) => Some(connected),
+            _ => None,
+        }
+    }
+}
+
 impl HostRef {
     /// A host by its id.
     pub fn id(host_id: impl Into<Vec<u8>>) -> Self {

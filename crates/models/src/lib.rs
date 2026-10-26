@@ -3,9 +3,9 @@
 //! A [`Machine`] is a slice of real state, the actions its environment may
 //! take, and a transition that calls the real code. Its [`Property`] list is
 //! the spec: each reads as a sentence and is a predicate over the state.
-//! [`check`] explores every state breadth first within its [`Bounds`] and
-//! reports the shortest path to a failing state; [`walk`] follows one schedule
-//! chosen by a seed, so a seed alone reproduces a run.
+//! [`check`] explores every state within its [`Bounds`] and reports a path to
+//! a failing state, the shortest one when it explores breadth first; [`walk`]
+//! follows one schedule chosen by a seed, so a seed alone reproduces a run.
 
 use std::fmt::{self, Debug, Display};
 use std::hash::Hash;
@@ -133,8 +133,7 @@ pub fn parked() -> Vec<(&'static str, &'static str, Parked)> {
 /// How many threads a model's test explores with: `MODELS_THREADS` when
 /// set, so a run can price a model on a CI runner's core count, otherwise
 /// every core. The verdict and the state count are the same on any number
-/// of threads; only which of several shortest counterexamples is printed
-/// may differ.
+/// of threads; only which counterexample is printed may differ.
 pub fn threads() -> usize {
     std::env::var("MODELS_THREADS")
         .ok()
@@ -278,9 +277,16 @@ pub struct Bounds {
     /// needs a depth.
     pub depth: Option<usize>,
     /// Exploration threads. One keeps the reported counterexample the same on
-    /// every run; more only change which of several equally short paths is
-    /// reported.
+    /// every run; more only change which path is reported.
     pub threads: usize,
+    /// Explore breadth first, so a failure prints the shortest path to it.
+    /// Depth first, the default, holds only each state's fingerprint and the
+    /// path being explored, where breadth first holds every state of the
+    /// frontier with its path, which at nightly bounds outgrew a 16 GB
+    /// runner where depth first stays near a gigabyte. A bounded depth always explores breadth first, since depth
+    /// first would skip a state it first met past the bound however short
+    /// its other paths are. `MODELS_SEARCH=breadth` sets this for every check.
+    pub breadth_first: bool,
 }
 
 impl Bounds {
@@ -289,6 +295,7 @@ impl Bounds {
         Self {
             depth: None,
             threads: 1,
+            breadth_first: false,
         }
     }
 
@@ -297,11 +304,19 @@ impl Bounds {
         Self {
             depth: Some(depth),
             threads: 1,
+            breadth_first: true,
         }
     }
 
     pub const fn threads(self, threads: usize) -> Self {
         Self { threads, ..self }
+    }
+
+    pub const fn breadth_first(self) -> Self {
+        Self {
+            breadth_first: true,
+            ..self
+        }
     }
 }
 
@@ -426,18 +441,28 @@ impl Display for Verdict {
     }
 }
 
-/// Explores every state of `model` within `bounds`, breadth first, judging
-/// every property in every explored state.
+/// Explores every state of `model` within `bounds`, judging every property
+/// in every explored state.
 pub fn check<M: Machine>(model: &M, bounds: Bounds) -> Verdict {
     let adapter = Adapter::new(model);
-    let properties = model.properties();
     let mut builder = stateright::Model::checker(adapter).threads(bounds.threads.max(1));
     if let Some(depth) = bounds.depth {
         builder = builder.target_max_depth(depth);
     }
+    let breadth_first = bounds.breadth_first
+        || bounds.depth.is_some()
+        || std::env::var("MODELS_SEARCH").is_ok_and(|search| search == "breadth");
     let started = Instant::now();
-    let checker = builder.spawn_bfs().join();
+    if breadth_first {
+        judge(model, &builder.spawn_bfs().join(), started)
+    } else {
+        judge(model, &builder.spawn_dfs().join(), started)
+    }
+}
+
+fn judge<M: Machine>(model: &M, checker: &impl Checker<Adapter<M>>, started: Instant) -> Verdict {
     let seconds = started.elapsed().as_secs_f64();
+    let properties = model.properties();
 
     let judged = properties
         .iter()

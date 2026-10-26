@@ -58,7 +58,8 @@ client model, and the composed net of several daemons and their agents; a lamp a
 itself). A machine holds real state, calls the real cores, store and session model on small instances, and lists
 the faults its environment may inject. A checker explores every state the machine reaches within its bounds and judges every
 property in each: an always must hold everywhere, a sometimes must be reached, an eventually must hold on every
-path that ends. A failure prints the shortest path to the state that broke it.
+path that ends. A failure prints a path to the state that broke it; `MODELS_SEARCH=breadth` explores breadth first
+instead, slower and far hungrier, and prints the shortest.
 
 ```sh
 just test-crate models                     # every machine at its CI bounds, within its state count
@@ -173,7 +174,7 @@ just test-crate interpret -- --test codex  # one crate, then Cargo arguments
 just test-store                            # the store's reader and writer suite, retention and SQLite file
 just test-ui                               # the client model spec
 just test-tui                              # terminal presentation and goldens
-just offline-test                          # workspace tests with isolated config and no network
+just offline-test                          # workspace tests with isolated config and no network (Linux, sudo)
 just journey terminal reach-host           # one terminal journey
 just journey terminal all                  # every terminal story, one line each, keeps going after a failure
 just journey system survive-daemon         # the built binaries' system journey

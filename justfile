@@ -144,13 +144,12 @@ mobile-check:
     {{bounded}} 1200 cargo check --locked -p node -p client -p ui-state -p ui-runtime --target aarch64-apple-ios
     {{bounded}} 1200 cargo check --locked -p node -p client -p ui-state -p ui-runtime --target aarch64-apple-ios-sim
 
-# Run workspace tests with isolated user configuration and no external network.
-# The workspace test script bounds its own compile and run phases. launchd
-# refuses to load a LaunchAgent for a sandboxed process, and the agent it
-# would start runs outside the sandbox anyway, so the one test that loads
-# one cannot be judged here.
+# Run workspace tests with isolated user configuration and no external network,
+# on Linux, through sudo. The workspace test script bounds its own compile and
+# run phases. The protocol models are pure computation that would take most of
+# the run's bound, and run in their own CI job, as they do for the test jobs.
 offline-test:
-    scripts/offline-check.sh scripts/workspace-test.sh --lib --tests -- --skip restarting_the_launch_agent_leaves_the_agent_running
+    scripts/offline-check.sh scripts/workspace-test.sh --lib --tests --no-fail-fast --exclude models
 
 # Build the product with the full-debug profile.
 full-debug:
@@ -261,13 +260,12 @@ parked-check:
 
 # Check the protocol models at their nightly bounds: each model's ignored
 # test, one test binary after another, every core each. Names of test
-# targets (`just models-nightly family`) narrow it to those models. On a
-# twelve-core Mac the models that finish take 3,362 s together (the README's
-# table) and the single daemon's peer runs past 4,000 s, so the whole run
-# takes over two hours: replication and the single daemon push it past the
-# bound, which leaves room for the rest on a machine busy with other work.
+# targets (`just models-nightly family`) narrow it to those models. The bound
+# leaves the nightly job, one model each on a four-core runner, a quarter of an
+# hour of its six for the build; the single daemon's peer alone took two hours
+# on the twelve-core Mac.
 models-nightly *TARGETS:
-    if [ "${1-}" = -- ]; then shift; fi; targets=--tests; [ $# -eq 0 ] || targets=$(printf -- '--test %s ' "$@"); {{bounded}} 4800 cargo test --locked -p models $targets -- --ignored --nocapture
+    if [ "${1-}" = -- ]; then shift; fi; targets=--tests; [ $# -eq 0 ] || targets=$(printf -- '--test %s ' "$@"); {{bounded}} 20700 cargo test --locked -p models $targets -- --ignored --nocapture
 
 # Walk the testnet's simulated stories by seed: every suite tests/catalog.toml
 # declares a simulated mode for, under TESTNET_MODE=simulated, a few seeds per

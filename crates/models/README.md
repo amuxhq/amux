@@ -15,8 +15,15 @@ the state:
   enabled. The checker has no fairness, so a model writes liveness in with a
   bound on consecutive faults.
 
-`check(model, bounds)` explores every state breadth first within the bounds and
-prints the shortest path to a failing state. `walk(model, bounds, seed)` follows
+`check(model, bounds)` explores every state within the bounds and prints a path
+to a failing state. It explores depth first, holding only each state's
+fingerprint and the path it is on; breadth first holds every frontier state with
+its path, and at nightly bounds the client model passed 53 GB that way on the
+enrolled Mac without finishing, where depth first finished in 175 s and peaked
+at 1.3 GB. `MODELS_SEARCH=breadth` (or `Bounds::breadth_first`) explores breadth
+first, to print the shortest path to a failure depth first found; a bounded
+depth always does, since depth first would skip a state first met past the
+bound. `walk(model, bounds, seed)` follows
 one schedule chosen by the seed: the same seed walks the same schedule on every
 run, so a failing walk is reproduced by its seed alone.
 
@@ -387,7 +394,7 @@ which optimises SQLite, the store and the models; `MODELS_THREADS=4` gives
 the four-thread figure. The checker runs on every core the machine has; the
 verdict and the state count do not depend on the number of threads (the
 family model's and replication's counts aside, below), only which of several
-equally short counterexamples is printed.
+counterexamples is printed.
 
 The four-core runner column is each model's test binary's time at its CI
 bounds on CI's four-core Linux runner, measured by CI runs
@@ -425,11 +432,11 @@ runner timed it, so the CI bounds allow one failure and the second is the
 nightly bounds' (which allow three). Presence's nightly bounds keep the CI
 bounds' links up and down: with a fourth up and a third down they explored
 30,391,426 states in 1,170 s on the Mac's twelve threads at load about 50,
-which projects past the nightly job's 100 minutes on the runner, so the fourth
+which projected past the nightly job's then 100 minutes on the runner, so the fourth
 up and the third down were cut. The nightly job's runner is projected from a
 twelve-thread Mac time by the slowest ratio of four threads to twelve in the
 table (2.4) and the runner's 4.7 on four: presence's 140 s comes to about
-1,600 s, inside the nightly recipe's 4,800 s.
+1,600 s.
 The time budgets in the table size the bounds, not the tests.
 
 Each model runs in CI as a job of its own on that runner, and its bounds are

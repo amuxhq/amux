@@ -12,12 +12,13 @@ env:
 jobs:
   offline-test:
     name: Offline workspace tests
-    runs-on: macos-latest
+    # Linux, for a network namespace with nothing but loopback in it.
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.98.0
-      # The macOS test job's cache: a weekly cache of its own is evicted
+      # The Linux test job's cache: a weekly cache of its own is evicted
       # after seven days unused, so every run compiled from nothing.
       - uses: Swatinem/rust-cache@v2
         with:

@@ -96,7 +96,7 @@ jobs:
         shell: bash
         run: scripts/no-update-flags.sh
       - uses: dtolnay/rust-toolchain@1.98.0
-      # Named, because the weekly offline tests restore the macOS one.
+      # Named, because the weekly offline tests restore the Linux one.
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: test

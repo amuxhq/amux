@@ -1784,6 +1784,19 @@
       {"literal": "\"serious\"", "context": "case .serious: \"serious\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"critical\"", "context": "case .critical: \"critical\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"unknown\"", "context": "@unknown default: \"unknown\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}
+    ],
+    "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Leaves/WorkingMotion.swift": [
+      {"literal": "\"init(coder:) is not used\"", "context": "required init?(coder: NSCoder) { fatalError(\"init(coder:) is not used\") }", "reason": "Programmer error for an initializer nothing calls, not displayed text.", "count": 1},
+      {"literal": "\"position.x\"", "context": "keyframes(\"position.x\", period: period, from: at) {", "reason": "Core Animation key path or animation key, not displayed text.", "count": 1},
+      {"literal": "\"bounds.size.width\"", "context": "keyframes(\"bounds.size.width\", period: period, from: at) {", "reason": "Core Animation key path or animation key, not displayed text.", "count": 1},
+      {"literal": "\"motion\"", "context": "forKey: \"motion\")", "reason": "Core Animation key path or animation key, not displayed text.", "count": 4},
+      {"literal": "\"transform.scale\"", "context": "keyframes(\"transform.scale\", period: period, from: at) {", "reason": "Core Animation key path or animation key, not displayed text.", "count": 1},
+      {"literal": "\"opacity\"", "context": "keyframes(\"opacity\", period: period, from: at) {", "reason": "Core Animation key path or animation key, not displayed text.", "count": 2},
+      {"literal": "\"position.y\"", "context": "keyframes(\"position.y\", period: period, from: at) {", "reason": "Core Animation key path or animation key, not displayed text.", "count": 1},
+      {"literal": "\"transform.rotation.z\"", "context": "let turn = CABasicAnimation(keyPath: \"transform.rotation.z\")", "reason": "Core Animation key path or animation key, not displayed text.", "count": 1},
+      {"literal": "\"motion\"", "context": "arc.add(clock.endless([turn], period: period, at: at, aligned: false), forKey: \"motion\")", "reason": "Core Animation key path or animation key, not displayed text.", "count": 1},
+      {"literal": "\"strokeStart\"", "context": "keyframes(\"strokeStart\", period: period, from: at) {", "reason": "Core Animation key path or animation key, not displayed text.", "count": 1},
+      {"literal": "\"strokeEnd\"", "context": "keyframes(\"strokeEnd\", period: period, from: at) {", "reason": "Core Animation key path or animation key, not displayed text.", "count": 1}
     ]
   }
 }

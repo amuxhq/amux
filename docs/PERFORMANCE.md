@@ -257,8 +257,8 @@ the phone, rather than reporting a number about an idle screen.
 | `streaming footprint` | streaming | The process's footprint at the end of the stream | 120 MB | | 10% |
 | `idle transcript commits` | idle | Rows the chat on screen took over five seconds with nothing arriving, after a two-second settle | 0 count | 0 | 0% |
 | `idle display ticks` | idle | Display refreshes the app asked for over the same five seconds | 0 count | 0 | 0% |
-| `idle main-thread CPU` | idle | The main thread's share of one core over the same five seconds, the agent on screen working with nothing arriving: what a never-ending animation costs, which neither count sees | 15 % | | ceiling only |
-| `idle home main-thread CPU` | idle | The same on home, after the launch has reconciled and before the conversation opens, the fleet's agents working | 15 % | | ceiling only |
+| `idle main-thread CPU` | idle | The main thread's share of one core over the same five seconds, the agent on screen working with nothing arriving: what a never-ending animation costs, which neither count sees | 8 % | | ceiling only |
+| `idle home main-thread CPU` | idle | The same on home, after the launch has reconciled and before the conversation opens, the fleet's agents working | 8 % | | ceiling only |
 
 The cold-start budgets are a simulator's: an empty SwiftUI app linking the frameworks this one links draws its first
 frame at about 414 ms on the pinned simulator, so the gate is the floor plus room for the app's own work, and the
@@ -396,8 +396,8 @@ its baseline as a share. Units, groups and tolerances are the simulator's.
 | `streaming footprint` | `iphone-14-pro` | 100 MB | |
 | `idle transcript commits` | `iphone-14-pro` | 0 count | 0 |
 | `idle display ticks` | `iphone-14-pro` | 0 count | 0 |
-| `idle main-thread CPU` | `iphone-14-pro` | 20 % | |
-| `idle home main-thread CPU` | `iphone-14-pro` | 20 % | |
+| `idle main-thread CPU` | `iphone-14-pro` | 8 % | |
+| `idle home main-thread CPU` | `iphone-14-pro` | 8 % | |
 
 On the iPhone 14 Pro (iOS 27.0) the first frame comes about 200 ms after the process starts, against 790 on the
 pinned Mac's simulator: the device's loader does not re-point a shared cache, and most of what remains is UIKit's
@@ -407,6 +407,7 @@ first frame's path; its first flight to every host leaves 2 ms after it listens,
 the node) is built as the app finishes launching rather than when the root view first asks for it. A working agent's
 marks and the chat's activity line were redrawn by SwiftUI on every display frame, at 120 Hz, re-laying out the
 composer around the line: a working chat with nothing arriving held the main thread near 31% busy, and home with a
-working fleet near 32%. Each is now drawn into a canvas on a clock capped at 60 Hz, with the line's elapsed time on
-a clock of its own that ticks once a second, which halved both (about 16.5%); what is left is SwiftUI's per-frame
-update of a view hierarchy with one animation in it, which only an animation run by Core Animation would avoid.
+working fleet near 32%. Drawn into a canvas on a clock capped at 60 Hz, with the line's elapsed time on a clock of
+its own that ticks once a second, they halved (about 16.5%), the rest being SwiftUI's per-frame update of a view
+hierarchy with one animation in it. Run by Core Animation from the same curves (the `workingMotion` leaf in
+[the iPhone app](IOS.md)), they leave the main thread at about 2% in a working chat and 4% on home.

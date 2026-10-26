@@ -757,7 +757,7 @@ package may contain UIKit. A leaf is one file under `Leaves/`, wrapped in one
 representable, named there and justified by a written measurement or
 argument; `feature-lint.sh` refuses UIKit anywhere else. A name with no file
 behind it is a candidate: the question was asked and answered without a
-leaf. There are four names and two leaves.
+leaf. There are five names and three leaves.
 
 | Name | Status | Why |
 | --- | --- | --- |
@@ -765,6 +765,7 @@ leaf. There are four names and two leaves.
 | `tokenTextField` | Candidate | Attachments are chips beside the field, so the field is SwiftUI's own |
 | `diffSelection` | Candidate | Line frames and a point lookup select a range without a second layout system |
 | `menuButton` | Leaf, `Leaves/MenuButton.swift` | SwiftUI's `Menu` does not pass its name or identifier to the button VoiceOver reaches |
+| `workingMotion` | Leaf, `Leaves/WorkingMotion.swift` | The activity line's rule and the working marks, animated by SwiftUI, kept a phone's main thread about 16% busy with nothing arriving and froze while it was busy |
 
 A leaf costs a file outside the platform-neutral package, a representable to
 wrap it, a second layout system to keep in step with the design tokens, and a
@@ -911,3 +912,30 @@ screen still describes its menu from its state.
 
 What would reopen it: a SwiftUI `Menu` whose accessibility modifiers reach the
 button it presents through.
+
+### Working motion is run by Core Animation
+
+Two things move while nothing else changes: the rule under a working chat's
+activity line, and the mark beside each working agent. Drawn by SwiftUI on a
+timeline, every frame of either was an update of the view graph on the main
+thread. On an iPhone 14 Pro (`just ios perf --device`), a working chat with
+nothing arriving held the main thread at about 31%, while the moving rule
+also re-laid out the composer around it, and about 16% once the rule was a
+fixed one-point canvas capped at 60 Hz; home with a working fleet the same.
+A time profile put most of what was left in SwiftUI's own per-frame update
+rather than in the drawing. And the motion stopped whenever the main thread
+was busy, as it is for the moment a chat opens.
+
+The leaf runs the same curves as layer animations, which the render server
+plays without the app: `ActivityLine.segment(at:)` and `MarkMotion`'s
+functions are sampled at 120 a second over one period into keyframes, and
+each animation begins as far into its period as the wall clock is, so the
+motion is the one SwiftUI drew and every mark on a screen keeps the same
+phase. A still picture, for a camera or a reader who asked for less motion,
+is still drawn by SwiftUI from the same functions. `WorkingMotionTests`
+stops the layers' clock at instants through each period and holds what they
+show to the curves. With it, the main thread idles at about 2% in a working
+chat and 4% on home, and the motion keeps its pace while a chat opens.
+
+What would reopen it: a SwiftUI animation that runs without updating the view
+graph on every frame.

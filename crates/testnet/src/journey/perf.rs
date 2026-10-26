@@ -78,8 +78,8 @@ const PHONES: &[EnrolledPhone] = &[EnrolledPhone {
         ("streaming footprint", 100.0, None),
         ("idle transcript commits", 0.0, Some(0.0)),
         ("idle display ticks", 0.0, Some(0.0)),
-        ("idle main-thread CPU", 20.0, None),
-        ("idle home main-thread CPU", 20.0, None),
+        ("idle main-thread CPU", 8.0, None),
+        ("idle home main-thread CPU", 8.0, None),
     ],
 }];
 
@@ -300,16 +300,17 @@ const BUDGETS: &[Budget] = &[
     // What the two counts cannot see: a SwiftUI animation that never stops
     // (a `TimelineView` driving a working mark or the activity line) keeps
     // the main thread busy on every display frame without asking for a tick
-    // or committing a row. Held to a ceiling alone, a little over the first
-    // measurement of one animation on SwiftUI's clock at 60 Hz (12% in a
-    // chat, 9% on home): a second animation, or one back on every display
-    // frame, would cross it.
-    budget("idle main-thread CPU", "%", Group::Idle, 15.0, None, None),
+    // or committing a row. Held to a ceiling alone. With the motion run by
+    // Core Animation, what is left is the one-second clock of the activity
+    // line's words and the run's own frame counter (about 2% in a chat, 3%
+    // on home); one animation back on SwiftUI's clock costs about 16% on a
+    // phone and would cross it.
+    budget("idle main-thread CPU", "%", Group::Idle, 8.0, None, None),
     budget(
         "idle home main-thread CPU",
         "%",
         Group::Idle,
-        15.0,
+        8.0,
         None,
         None,
     ),

@@ -402,11 +402,12 @@ struct ActivityLine: View {
     let subject: String?
 
     // The words and the rule keep separate clocks. The words change once a
-    // second, when the elapsed time does; the rule moves on every frame, and
-    // is drawn into a fixed one-point strip so its motion never changes a
-    // size. Driven together, every frame re-laid out the composer around the
-    // line, its model chip measuring each of its fits, which held the phone's
-    // main thread near a third busy while an agent worked and nothing arrived.
+    // second, when the elapsed time does; the rule moves on every frame, as a
+    // Core Animation leaf of a fixed one-point strip, so its motion never
+    // changes a size or asks SwiftUI for anything. Driven together, every
+    // frame re-laid out the composer around the line, its model chip
+    // measuring each of its fits, which held the phone's main thread near a
+    // third busy while an agent worked and nothing arrived.
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             if photographed {
@@ -460,16 +461,14 @@ struct ActivityLine: View {
             if photographed || reducesMotion {
                 strip(Self.still)
             } else {
-                TimelineView(.animation(minimumInterval: 1.0 / 60)) { context in
-                    strip(Self.segment(at: context.date.timeIntervalSince1970))
-                }
+                WorkingMotion(kind: .rule, ink: design.inkMuted, inkOpacity: 0.7)
             }
         }
         .frame(height: 1)
         .accessibilityHidden(true)
     }
 
-    /// The segment drawn where it stands, a capsule one point high.
+    /// The segment drawn still where it stands, a capsule one point high.
     private func strip(_ segment: (start: CGFloat, end: CGFloat)) -> some View {
         let fill = design.inkMuted.color.opacity(0.7)
         return Canvas { context, size in

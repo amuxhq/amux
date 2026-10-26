@@ -367,6 +367,11 @@ async fn a_generation_change_resets_one_hosts_replicas_and_nothing_else() {
         )
         .agent(AgentDecl::new("other", "lab").steps(says("o")).prompt("go"));
     let mut net = Net::start(topology).await.unwrap();
+    // Each agent's first turn comes to rest at its host before its replica
+    // is taken as current, so the rows read below are all the turn writes:
+    // a reply replicated after them would look like a change.
+    net.settle("worker").await.unwrap();
+    net.settle("other").await.unwrap();
     net.current("laptop", "worker").await.unwrap();
     net.current("laptop", "other").await.unwrap();
     net.checkpoint_host("desk").await.unwrap();

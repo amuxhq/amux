@@ -2,5 +2,15 @@ shell |  | hosts | 0,62,402,778
 home |  | signed-out | 0,174,402,617
 hosts |  |  | 0,174,402,617
 hosts.pair.<desk> | desk is nearby |  | 16,180,370,60
+ | desk is nearby, Pair it to see its agents here, Pair |  | 16,180,370,60
+ | Hosts |  | 16,127,93,42
+ | Agents |  | 111,795,94,54
+ | Agents |  | 140,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 229,830,29,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 230,830,29,12
  | Agents |  | 111,795,94,54
  | Hosts | selected | 197,795,94,54

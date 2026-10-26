@@ -7,7 +7,7 @@ chat.attachment | Pasted text · 12 lines |  | 216,228,155,26
 chat.attachment | Review · 1 comment |  | 216,260,156,26
 chat.row.prose | I read the review. | final | 16,308,370,20
 chat.prose.render |  | rendered | 16,308,370,20
-chat.row.turn-end | Worked <t> · $0.00 |  | 16,335,116,16
+chat.row.turn-end | Worked <t> |  | 16,335,74,16
 chat.field | Message reviewer |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
@@ -33,7 +33,7 @@ chat.overview.review | Review changes |  | 31,698,121,44
  | Resumed |  | 16,158,370,34
  | Please check against, Pasted text · 12 lines, Review · 1 comment |  | 16,192,370,104
  | I read the review. |  | 16,308,370,20
- | Worked <t> · $0.00 |  | 16,335,116,16
+ | Worked <t> |  | 16,335,74,16
  | Back |  | 20,66,56,36
  | reviewer, /t/a/n/d/work · desk |  | 96,66,160,36
  | 1 file, 2 added, 1 removed |  | 295,66,51,36

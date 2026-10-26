@@ -4,7 +4,7 @@ chat.row.boundary | Started |  | 16,124,370,34
 chat.row.prompt | Say hello. |  | 16,158,370,40
 chat.row.prose | Ready when you are. | final | 16,210,370,20
 chat.prose.render |  | rendered | 16,210,370,20
-chat.row.turn-end | Worked <t> · $0.00 |  | 16,237,116,16
+chat.row.turn-end | Worked <t> |  | 16,237,74,16
 chat.row.boundary | Ended · stopped |  | 16,267,370,34
 chat.exited | Exited | desk | 28,720,346,20
 chat.field | helper has exited · a message resumes it |  | 28,750,346,24
@@ -24,7 +24,7 @@ chat.title | helper | helper | 96,66,93,36
  | Started |  | 16,124,370,34
  | Say hello. |  | 16,158,370,40
  | Ready when you are. |  | 16,210,370,20
- | Worked <t> · $0.00 |  | 16,237,116,16
+ | Worked <t> |  | 16,237,74,16
  | Ended · stopped |  | 16,267,370,34
  | Back |  | 20,66,56,36
  | helper, Exited |  | 96,66,93,36

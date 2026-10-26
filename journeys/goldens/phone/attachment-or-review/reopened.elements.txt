@@ -26,7 +26,7 @@ chat.title | reviewer | reviewer | 96,66,160,36
  | Resumed |  | 16,158,370,34
  | Please check against, Pasted text · 12 lines, Review · 1 comment |  | 16,192,370,104
  | I read the review. |  | 16,308,370,20
- | Worked <t> · $0.00 |  | 16,335,116,16
+ | Worked <t> |  | 16,335,74,16
  | Back |  | 20,66,56,36
  | reviewer, /t/a/n/d/work · desk |  | 96,66,160,36
  | 1 file, 2 added, 1 removed |  | 295,66,51,36

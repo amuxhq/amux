@@ -26,11 +26,11 @@ chat.title | asker | asker | 96,66,160,36
  | Started |  | 16,124,370,34
  | Get ready. |  | 16,158,370,40
  | Ready to deploy. |  | 16,210,370,20
- | Worked <t> · $0.00 |  | 16,237,116,16
+ | Worked <t> |  | 16,237,74,16
  | Deploy it. |  | 16,267,370,40
  | 1 command |  | 16,307,370,44
  | Deployed to production. |  | 16,353,370,20
- | Worked <t> · $0.00 |  | 16,381,116,16
+ | Worked <t> |  | 16,381,74,16
  | Back |  | 20,66,56,36
  | asker, /t/a/n/d/work · desk |  | 96,66,160,36
  | More |  | 342,66,36,36

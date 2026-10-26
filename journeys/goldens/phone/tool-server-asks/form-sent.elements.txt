@@ -25,7 +25,7 @@ chat.title | filer | filer | 96,66,160,36
  | 1 call |  | 16,198,370,44
  | Sent 3 fields to, linear |  | 16,228,370,44
  | Filed it in Linear. |  | 16,274,370,20
- | Worked <t> · $0.00 |  | 16,301,116,16
+ | Worked <t> |  | 16,301,74,16
  | Back |  | 20,66,56,36
  | filer, /t/a/n/d/work · desk |  | 96,66,160,36
  | More |  | 342,66,36,36

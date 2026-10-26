@@ -5,7 +5,7 @@ chat.row.prompt | Add a settings screen. |  | 16,158,370,40
 chat.row.question | Answered, 2 of 3 questions |  | 16,210,370,203
 chat.row.prose | Thanks, I'll build it that way. | final | 16,427,370,20
 chat.prose.render |  | rendered | 16,427,370,20
-chat.row.turn-end | Worked <t> · $0.00 |  | 16,454,116,16
+chat.row.turn-end | Worked <t> |  | 16,454,74,16
 chat.row.prompt | Pick the palette too. |  | 16,484,370,40
 chat.row.question | Asking |  | 16,536,370,20
 ask | Question | open | 12,614,378,216
@@ -27,7 +27,7 @@ chat.title | asker | asker | 96,66,160,36
  | Add a settings screen. |  | 16,158,370,40
  | Answered, 2 of 3 questions, Layout, Stacked, Entry, “From the help panel”, Order, Skipped |  | 16,210,370,203
  | Thanks, I'll build it that way. |  | 16,427,370,20
- | Worked <t> · $0.00 |  | 16,454,116,16
+ | Worked <t> |  | 16,454,74,16
  | Pick the palette too. |  | 16,484,370,40
  | Asking |  | 16,536,370,20
  | Back |  | 20,66,56,36

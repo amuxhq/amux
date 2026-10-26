@@ -560,7 +560,10 @@ nothing is inferred.
 - **Asks.** A `can_use_tool` control request opens a permission ask (with its
   scope suggestions, reason and description), a question ask for
   `AskUserQuestion`, or a plan ask for `ExitPlanMode`, pointing at the call
-  it names. An `elicitation` request opens a tool server's form or link, with
+  it names. The reason is Claude's own, else "outside the allowed
+  directories" when the path it blocked is beyond the agent's folder;
+  Claude names the path a command would write inside the folder too, and
+  that ask has no reason. An `elicitation` request opens a tool server's form or link, with
   an item of its own. Answers go back as control responses. A control
   request of any other subtype is answered with an error.
 - **Offers.** The answer to the agent process's `initialize` request lists

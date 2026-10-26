@@ -66,6 +66,12 @@ struct TaskReport<'a> {
 }
 
 impl State {
+    /// Whether a path is in the folder Claude was launched in. An agent
+    /// whose folder is not known has none to be in.
+    fn in_folder(&self, path: &str) -> bool {
+        !self.cwd.is_empty() && std::path::Path::new(path).starts_with(&self.cwd)
+    }
+
     pub(super) fn fact(&mut self, emit: &mut Emit, fact: Fact) {
         if fact.channel != Channel::Stream {
             return;
@@ -1249,7 +1255,12 @@ impl State {
             _ => {
                 let reason = match &asked.decision_reason {
                     Some(reason) => reason.clone(),
+                    // Claude names the path a command would write even
+                    // inside its folder, where it asks only because writes
+                    // need asking; only a path beyond the folder is the
+                    // reason.
                     None => written_opt(asked.blocked_path.as_deref())
+                        .filter(|path| !self.in_folder(path))
                         .map(|path| format!("outside the allowed directories: {path}"))
                         .unwrap_or_default(),
                 };

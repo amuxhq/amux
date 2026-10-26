@@ -231,6 +231,10 @@ pub struct State {
     auto_models: Option<Vec<String>>,
     /// Launched allowing the never-ask permission.
     never_ask: bool,
+    /// The folder Claude was launched in, which it may work in without
+    /// being granted it.
+    #[serde(default)]
+    cwd: String,
     /// The models the initialize response offers and the commands Claude
     /// last listed: the catalogue.
     #[serde(with = "serde_pb::msgs")]
@@ -350,6 +354,7 @@ impl State {
             permission_mode: None,
             auto_models: None,
             never_ask: crate::claude_common::allows_never_ask(&spec.provider_args),
+            cwd: spec.cwd.clone(),
             models: Vec::new(),
             commands: Vec::new(),
             inits: 0,
@@ -1298,6 +1303,7 @@ impl Interpreter for ClaudeSdk {
         state.jobs.clear();
         // A new process: its first init is the incarnation's boundary.
         state.incarnation = spec.incarnation;
+        state.cwd = spec.cwd.clone();
         state.inits = 0;
         state.exited = false;
         state.early_boundary = None;

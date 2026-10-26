@@ -698,8 +698,12 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     });
     let chat = phone.open_chat(phone.profile, &agent_c, 1);
     assert!(!chat.is_null());
+    // The opening holds only what was buffered when it was taken: the row
+    // can still be on its way, in a delta after it.
+    phone.until("the one row", || {
+        phone.chat(chat, |held| held.keys.len()) == 1
+    });
     let held = phone.chat(chat, |held| held.keys.clone());
-    assert_eq!(held.len(), 1, "{held:?}");
     // SAFETY: the chat is open; the string lives for the call.
     phone.started(unsafe { amux_session_page_older(chat, 2) });
     assert_eq!(

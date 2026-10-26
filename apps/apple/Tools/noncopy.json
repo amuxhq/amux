@@ -395,7 +395,8 @@
       {"literal": "\"installations\"", "context": "at: support.appendingPathComponent(\"installations\", isDirectory: true))", "reason": "File or directory name on disk, not interface copy.", "count": 1},
       {"literal": "\"runtime.log\"", "context": "forReadingFrom: directory.appendingPathComponent(\"runtime.log\"))", "reason": "File or directory name on disk, not interface copy.", "count": 1},
       {"literal": "\"runtime.log\"", "context": "logPath: directory.appendingPathComponent(\"runtime.log\").path,", "reason": "File or directory name on disk, not interface copy.", "count": 1},
-      {"literal": "\"drafts\"", "context": "at: support.appendingPathComponent(\"drafts\", isDirectory: true))", "reason": "File or directory name on disk, not interface copy.", "count": 1}
+      {"literal": "\"drafts\"", "context": "at: support.appendingPathComponent(\"drafts\", isDirectory: true))", "reason": "File or directory name on disk, not interface copy.", "count": 1},
+      {"literal": "\"registry\"", "context": "atPath: directory.appendingPathComponent(\"registry\").path)", "reason": "File or directory name on disk, not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/Signposts.swift": [
       {"literal": "\"sh.amux.app\"", "context": "public static let subsystem = \"sh.amux.app\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
@@ -673,6 +674,8 @@
       {"literal": "\"root\"", "context": "} else if path.hasPrefix(\"/\"), parts.first == \"root\" {", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"~\"", "context": "} else if parts.first == \"~\" {", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"~\"", "context": "guard let last = parts.last else { return \"~\" }", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
+      {"literal": "\"~\"", "context": "return parts.isEmpty ? \"~\" : root + parts.joined(separator: \"/\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
+      {"literal": "\"/\"", "context": "return parts.isEmpty ? \"~\" : root + parts.joined(separator: \"/\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\".\"", "context": "if part.hasPrefix(\".\"), part.count > 1 { return String(part.prefix(2)) }", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"/\"", "context": "return root + (parents + [last]).joined(separator: \"/\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1}
     ],

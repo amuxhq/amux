@@ -52,6 +52,7 @@ public struct AgentsHome: View {
     @Environment(\.photographed) private var photographed
     @Environment(\.reducesMotion) private var reducesMotion
     @Environment(\.reducesTransparency) private var reducesTransparency
+    @Environment(\.scenePhase) private var phase
     private let model: FleetStore
     private let accounts: AccountRegistry
     /// The machines, for the one thing this screen says about them: a phone
@@ -71,6 +72,12 @@ public struct AgentsHome: View {
     /// the chip chosen under it.
     @State private var words = ""
     @State private var only: FleetOnly?
+    /// Whether the phone is still dialling its hosts after coming on screen.
+    /// A reopened app lists its hosts as it last saw them, every one
+    /// unreached, and reaches them a few hundred milliseconds later; saying
+    /// they are offline in between flashes a card that is gone before it can
+    /// be read.
+    @State private var dialling = true
 
     public init(
         model: FleetStore,
@@ -155,6 +162,17 @@ public struct AgentsHome: View {
             }
         }
         .onAppear { actions(.refresh) }
+        // Put away, the phone lets go of every link, so coming back dials
+        // them all again.
+        .task(id: phase) {
+            switch phase {
+            case .background: dialling = true
+            case .active where dialling:
+                try? await Task.sleep(for: .seconds(1))
+                if !Task.isCancelled { dialling = false }
+            default: break
+            }
+        }
         // Ages count while the list is on screen, as the terminal's do. A
         // compared picture holds its clock still.
         .task(id: photographed) {
@@ -623,6 +641,7 @@ public struct AgentsHome: View {
     /// that a machine is offline. A phone that can reach every machine it owns
     /// shows none of it and is never asked for an account.
     private var exceptions: (text: String, act: HomeAction)? {
+        if dialling && !photographed { return nil }
         if signedIn, let trouble = model.relayTrouble {
             return (trouble, model.relay == .signInAgain ? .signIn : .openExceptions)
         }
@@ -1093,56 +1112,82 @@ struct StateMark: View {
         .accessibilityHidden(true)
     }
 
+    /// Each style drawn into a canvas of fixed size, on a clock capped at
+    /// 60 Hz. As views redrawn by an uncapped timeline, every working row
+    /// asked SwiftUI for an update on every ProMotion frame, and home's main
+    /// thread stayed near a third busy while it showed a working fleet.
     private struct Working: View {
         @Environment(\.design) private var design
         let style: WorkingMark
         let still: Bool
 
         var body: some View {
-            TimelineView(.animation(paused: still)) { context in
+            TimelineView(.animation(minimumInterval: 1.0 / 60, paused: still)) { context in
                 let t = still ? 0.25 : context.date.timeIntervalSinceReferenceDate
+                mark(at: t)
+            }
+            // The typing dots run a little wider than the mark's column.
+            .frame(width: style == .typing ? 14 : nil)
+        }
+
+        private func mark(at t: Double) -> some View {
+            let ink = design.ink.color
+            let hairline = design.hairline.color
+            let style = style
+            return Canvas { context, size in
+                let center = CGPoint(x: size.width / 2, y: size.height / 2)
                 switch style {
                 case .breathing:
                     let phase = (sin(t * .pi / 1.1) + 1) / 2
-                    Circle()
-                        .fill(design.ink.color)
-                        .scaleEffect(0.55 + 0.45 * phase)
-                        .opacity(0.35 + 0.5 * phase)
+                    let side = min(size.width, size.height) * (0.55 + 0.45 * phase)
+                    let dot = CGRect(
+                        x: center.x - side / 2, y: center.y - side / 2, width: side, height: side)
+                    context.fill(Path(ellipseIn: dot), with: .color(ink.opacity(0.35 + 0.5 * phase)))
                 case .typing:
-                    HStack(spacing: 1.5) {
-                        ForEach(0..<3) { i in
-                            let phase = (sin((t * 2.4 - Double(i) * 0.7) * .pi) + 1) / 2
-                            Circle()
-                                .fill(design.ink.color)
-                                .frame(width: 2.6, height: 2.6)
-                                .opacity(0.3 + 0.7 * phase)
-                                .offset(y: -1.5 * phase)
-                        }
+                    let diameter = 2.6, spacing = 1.5
+                    let row = 3 * diameter + 2 * spacing
+                    for i in 0..<3 {
+                        let phase = (sin((t * 2.4 - Double(i) * 0.7) * .pi) + 1) / 2
+                        let dot = CGRect(
+                            x: center.x - row / 2 + Double(i) * (diameter + spacing),
+                            y: center.y - diameter / 2 - 1.5 * phase,
+                            width: diameter, height: diameter)
+                        context.fill(Path(ellipseIn: dot), with: .color(ink.opacity(0.3 + 0.7 * phase)))
                     }
-                    .frame(width: 14)
                 case .orbit:
-                    ZStack {
-                        Circle().strokeBorder(design.hairline.color, lineWidth: 1.5)
-                        Circle()
-                            .trim(from: 0, to: 0.22)
-                            .stroke(design.ink.color, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-                            .padding(0.75)
-                            .rotationEffect(.radians(t.truncatingRemainder(dividingBy: 1.4) / 1.4 * 2 * .pi))
-                    }
+                    ring(in: &context, size: size, color: hairline)
+                    let turn = t.truncatingRemainder(dividingBy: 1.4) / 1.4 * 2 * .pi
+                    arc(in: &context, size: size, from: 0, to: 0.22, turn: turn, color: ink)
                 case .filling:
+                    ring(in: &context, size: size, color: hairline)
                     let phase = (t.truncatingRemainder(dividingBy: 2.4)) / 2.4
                     let fill = phase < 0.5 ? phase * 2 : 1
                     let start = phase < 0.5 ? 0 : (phase - 0.5) * 2
-                    ZStack {
-                        Circle().strokeBorder(design.hairline.color, lineWidth: 1.5)
-                        Circle()
-                            .trim(from: start, to: fill)
-                            .stroke(design.ink.color, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-                            .padding(0.75)
-                            .rotationEffect(.degrees(-90))
-                    }
+                    arc(in: &context, size: size, from: start, to: fill, turn: -.pi / 2, color: ink)
                 }
             }
+        }
+
+        /// The faint ring a stroked border drew: inside the mark's bounds.
+        private func ring(in context: inout GraphicsContext, size: CGSize, color: Color) {
+            let inset = CGRect(origin: .zero, size: size).insetBy(dx: 0.75, dy: 0.75)
+            context.stroke(Path(ellipseIn: inset), with: .color(color), lineWidth: 1.5)
+        }
+
+        /// A trimmed circle turned about the centre, as `trim` then
+        /// `rotationEffect` drew it.
+        private func arc(
+            in context: inout GraphicsContext, size: CGSize, from: Double, to: Double,
+            turn: Double, color: Color
+        ) {
+            let inset = CGRect(origin: .zero, size: size).insetBy(dx: 0.75, dy: 0.75)
+            var turned = context
+            turned.translateBy(x: size.width / 2, y: size.height / 2)
+            turned.rotate(by: .radians(turn))
+            turned.translateBy(x: -size.width / 2, y: -size.height / 2)
+            turned.stroke(
+                Path(ellipseIn: inset).trimmedPath(from: from, to: to), with: .color(color),
+                style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
         }
     }
 }

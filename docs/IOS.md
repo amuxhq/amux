@@ -745,9 +745,10 @@ iPhone running a Release build before a release:
   the system pickers, on supported phones.
 - Timing on the oldest supported phone: cold start, reaching a paired host's
   fleet, scrolling a long chat while it streams on ProMotion and standard
-  displays, thermal state and battery. The simulator's numbers for the same
-  workloads come from `just ios perf` ([performance](PERFORMANCE.md)) and
-  stand in for a phone's until somebody measures one.
+  displays, thermal state and battery. `just ios perf --device`
+  ([performance](PERFORMANCE.md)) measures the launch, reaching the fleet,
+  streaming and idle on an enrolled phone plugged in over USB; battery and a
+  standard display stay by hand.
 
 ## Registered UIKit leaves
 

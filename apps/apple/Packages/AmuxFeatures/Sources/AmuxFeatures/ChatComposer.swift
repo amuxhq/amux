@@ -401,59 +401,83 @@ struct ActivityLine: View {
     let activity: Activity
     let subject: String?
 
+    // The words and the rule keep separate clocks. The words change once a
+    // second, when the elapsed time does; the rule moves on every frame, and
+    // is drawn into a fixed one-point strip so its motion never changes a
+    // size. Driven together, every frame re-laid out the composer around the
+    // line, its model chip measuring each of its fits, which held the phone's
+    // main thread near a third busy while an agent worked and nothing arrived.
     var body: some View {
-        if photographed {
-            line(elapsed: activity.elapsedMs, segment: Self.still)
-        } else {
-            TimelineView(.animation(minimumInterval: 1.0 / 60, paused: reducesMotion)) { context in
-                let seconds = context.date.timeIntervalSince1970
-                let now = Int64(seconds * 1_000)
-                let elapsed = activity.sinceMs > 0 ? max(0, now - activity.sinceMs) : activity.elapsedMs
-                line(elapsed: elapsed, segment: reducesMotion ? Self.still : Self.segment(at: seconds))
-            }
-        }
-    }
-
-    private func line(elapsed: Int64, segment: (start: CGFloat, end: CGFloat)) -> some View {
-        let parts = ChatWords.activityParts(activity.kind, elapsedMs: elapsed, subject: subject)
-        return VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(parts.words)
-                    .designFont(.detail, design)
-                    .foregroundStyle(design.inkMuted.color)
-                    .lineLimit(1)
-                    .layoutPriority(2)
-                if let subject = parts.subject {
-                    Text(verbatim: subject)
-                        .designFont(.monoSmall, design)
-                        .foregroundStyle(design.inkMuted.color)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                Spacer(minLength: 8)
-                if let time = parts.time {
-                    Text(verbatim: time)
-                        .designFont(.monoSmall, design)
-                        .foregroundStyle(design.inkMuted.color)
-                        .lineLimit(1)
-                        .layoutPriority(1)
+        VStack(alignment: .leading, spacing: 7) {
+            if photographed {
+                words(elapsed: activity.elapsedMs)
+            } else {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    words(elapsed: elapsed(at: context.date))
                 }
             }
-            rule(segment)
+            rule
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(ChatWords.activity(activity.kind, elapsedMs: elapsed, subject: subject))
+        .accessibilityElement(children: .combine)
         .identified("chat.activity", label: ChatWords.activity(activity.kind, elapsedMs: 0, subject: subject))
     }
 
-    private func rule(_ segment: (start: CGFloat, end: CGFloat)) -> some View {
-        GeometryReader { geometry in
-            Capsule().fill(design.inkMuted.color.opacity(0.7))
-                .frame(width: geometry.size.width * (segment.end - segment.start), height: 1)
-                .offset(x: geometry.size.width * segment.start)
+    private func elapsed(at date: Date) -> Int64 {
+        let now = Int64(date.timeIntervalSince1970 * 1_000)
+        return activity.sinceMs > 0 ? max(0, now - activity.sinceMs) : activity.elapsedMs
+    }
+
+    private func words(elapsed: Int64) -> some View {
+        let parts = ChatWords.activityParts(activity.kind, elapsedMs: elapsed, subject: subject)
+        return HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(parts.words)
+                .designFont(.detail, design)
+                .foregroundStyle(design.inkMuted.color)
+                .lineLimit(1)
+                .layoutPriority(2)
+            if let subject = parts.subject {
+                Text(verbatim: subject)
+                    .designFont(.monoSmall, design)
+                    .foregroundStyle(design.inkMuted.color)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 8)
+            if let time = parts.time {
+                Text(verbatim: time)
+                    .designFont(.monoSmall, design)
+                    .foregroundStyle(design.inkMuted.color)
+                    .lineLimit(1)
+                    .layoutPriority(1)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(ChatWords.activity(activity.kind, elapsedMs: elapsed, subject: subject))
+    }
+
+    @ViewBuilder private var rule: some View {
+        Group {
+            if photographed || reducesMotion {
+                strip(Self.still)
+            } else {
+                TimelineView(.animation(minimumInterval: 1.0 / 60)) { context in
+                    strip(Self.segment(at: context.date.timeIntervalSince1970))
+                }
+            }
         }
         .frame(height: 1)
-        .clipped()
+        .accessibilityHidden(true)
+    }
+
+    /// The segment drawn where it stands, a capsule one point high.
+    private func strip(_ segment: (start: CGFloat, end: CGFloat)) -> some View {
+        let fill = design.inkMuted.color.opacity(0.7)
+        return Canvas { context, size in
+            let bounds = CGRect(
+                x: size.width * segment.start, y: 0,
+                width: size.width * (segment.end - segment.start), height: size.height)
+            context.fill(Path(roundedRect: bounds, cornerRadius: size.height / 2), with: .color(fill))
+        }
     }
 
     /// Mid-stretch across the middle.

@@ -87,6 +87,10 @@ public final class FrameWatch {
         previous = nil
         startedAt = CACurrentMediaTime()
         let link = CADisplayLink(target: self, selector: #selector(fired))
+        // As fast as the display goes. A link with no preferred rate runs at
+        // 60 Hz even on a ProMotion phone that lets the app have 120, and the
+        // hitch it counted would be 60 Hz accounting.
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 80, maximum: 120, preferred: 120)
         link.add(to: .main, forMode: .common)
         self.link = link
     }

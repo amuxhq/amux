@@ -53,11 +53,61 @@ const BASELINES: &str = "perf/baselines/phone";
 /// deliberately.
 const MACHINES: &[(&str, &str)] = &[("Mac14,6", "pinned-mac")];
 
-/// The phones a `--device` run is allowed on, by hardware model. A phone's
-/// baseline is its name with the iOS major version, `iphone-14-pro-ios27`:
-/// a system update changes the loader and the frameworks under the app, so
-/// it is a new reference, recorded deliberately.
-const PHONES: &[(&str, &str)] = &[("iPhone15,2", "iphone-14-pro")];
+/// The phones a `--device` run is allowed on, by hardware model, each with
+/// budgets of its own. A phone's baseline is its name with the iOS major
+/// version, `iphone-14-pro-ios27`: a system update changes the loader and the
+/// frameworks under the app, so it is a new reference, recorded
+/// deliberately.
+const PHONES: &[EnrolledPhone] = &[EnrolledPhone {
+    model: "iPhone15,2",
+    name: "iphone-14-pro",
+    // Its first measurement with the simulator's headroom over it: the cold
+    // frame with the simulator's room in milliseconds (a share of 200 ms is
+    // inside one launch's spread), the reconciliations by the simulator's
+    // rule (the ungated launch plus the gated round trip, with 15% over),
+    // and the rest the simulator's budget over its baseline as a share.
+    budgets: &[
+        ("cold first frame", 260.0, Some(310.0)),
+        ("cold store read", 50.0, None),
+        ("cold fleet render", 60.0, None),
+        ("reconciliation at 0 ms", 60.0, None),
+        ("reconciliation at 100 ms", 283.0, None),
+        ("reconciliation through the relay at 100 ms", 513.0, None),
+        ("streaming hitch time", 5.0, None),
+        ("streaming main-thread CPU", 60.0, None),
+        ("streaming footprint", 100.0, None),
+        ("idle transcript commits", 0.0, Some(0.0)),
+        ("idle display ticks", 0.0, Some(0.0)),
+        ("idle main-thread CPU", 20.0, None),
+        ("idle home main-thread CPU", 20.0, None),
+    ],
+}];
+
+/// A phone a run may measure, and what each metric is held to on it: the
+/// median's budget and the worst sample's, in `BUDGETS`' order, whose units,
+/// groups and tolerances it shares.
+struct EnrolledPhone {
+    model: &'static str,
+    name: &'static str,
+    budgets: &'static [(&'static str, f64, Option<f64>)],
+}
+
+impl EnrolledPhone {
+    fn budgets(&self) -> Vec<Budget> {
+        BUDGETS
+            .iter()
+            .zip(self.budgets)
+            .map(|(budget, &(metric, median, worst))| {
+                debug_assert_eq!(budget.metric, metric);
+                Budget {
+                    median,
+                    worst,
+                    ..*budget
+                }
+            })
+            .collect()
+    }
+}
 
 /// The cold first frame a phone is asked for (docs/IOS.md's physical-phone
 /// checklist). A run on a phone reports the median against it; it is a
@@ -106,7 +156,7 @@ impl Group {
 }
 
 /// What one metric is held to.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct Budget {
     metric: &'static str,
     unit: &'static str,
@@ -149,7 +199,7 @@ const fn budget(
 // SwiftUI building a navigation stack, a tab bar and a home for the first
 // time; nothing of ours is among the heavy leaves. The home's system chrome
 // and its redrawn rows added about 100 ms to that, split in
-// docs/PERFORMANCE.md. A device is budgeted apart, once measured.
+// docs/PERFORMANCE.md. A phone has budgets of its own, in `PHONES`.
 const BUDGETS: &[Budget] = &[
     budget(
         "cold first frame",
@@ -246,6 +296,22 @@ const BUDGETS: &[Budget] = &[
         0.0,
         Some(0.0),
         Some(0),
+    ),
+    // What the two counts cannot see: a SwiftUI animation that never stops
+    // (a `TimelineView` driving a working mark or the activity line) keeps
+    // the main thread busy on every display frame without asking for a tick
+    // or committing a row. Held to a ceiling alone, a little over the first
+    // measurement of one animation on SwiftUI's clock at 60 Hz (12% in a
+    // chat, 9% on home): a second animation, or one back on every display
+    // frame, would cross it.
+    budget("idle main-thread CPU", "%", Group::Idle, 15.0, None, None),
+    budget(
+        "idle home main-thread CPU",
+        "%",
+        Group::Idle,
+        15.0,
+        None,
+        None,
     ),
 ];
 
@@ -797,10 +863,32 @@ impl Run {
             }
             let commits = measured["transcriptCommits"].as_f64().unwrap_or_default();
             let ticks = measured["idleTicks"].as_f64().unwrap_or_default();
+            let cpu = measured["mainThreadCpuPercent"]
+                .as_f64()
+                .unwrap_or_default();
             self.sample("idle transcript commits", commits);
             self.sample("idle display ticks", ticks);
+            self.sample("idle main-thread CPU", cpu);
             self.note(format!(
-                "idle {}: {commits} commits, {ticks} ticks over {IDLE_SECONDS:.0} s",
+                "idle {}: {commits} commits, {ticks} ticks, main thread {cpu:.1}% over {IDLE_SECONDS:.0} s",
+                attempt + 1
+            ));
+        }
+        Ok(())
+    }
+
+    /// Home with nothing arriving, after the same settle: what the main
+    /// thread costs while somebody looks at a fleet whose agents work.
+    fn idle_home(&mut self) -> Result<(), String> {
+        for attempt in 0..SAMPLES {
+            std::thread::sleep(Duration::from_secs(2));
+            let measured = self.measure(IDLE_SECONDS)?;
+            let cpu = measured["mainThreadCpuPercent"]
+                .as_f64()
+                .unwrap_or_default();
+            self.sample("idle home main-thread CPU", cpu);
+            self.note(format!(
+                "idle home {}: main thread {cpu:.1}% over {IDLE_SECONDS:.0} s",
                 attempt + 1
             ));
         }
@@ -1087,6 +1175,9 @@ impl Run {
             self.space_launches();
             self.relaunch()?;
             self.await_reconciled(Duration::from_secs(120))?;
+            if self.takes(Group::Idle) {
+                self.idle_home()?;
+            }
             self.open_the_conversation()?;
             self.check_condition("before idle and streaming")?;
             if self.takes(Group::Idle) {
@@ -1219,9 +1310,14 @@ struct Verdict {
 
 /// Every measured metric against its budgets and the baseline; a metric
 /// named in `provisional` is reported but not judged.
-fn judge(samples: &Samples, baseline: Option<&Value>, provisional: &[&str]) -> Verdict {
+fn judge(
+    samples: &Samples,
+    budgets: &[Budget],
+    baseline: Option<&Value>,
+    provisional: &[&str],
+) -> Verdict {
     let mut results = Vec::new();
-    for budget in BUDGETS {
+    for budget in budgets {
         let values = samples
             .iter()
             .find(|(name, _)| *name == budget.metric)
@@ -1462,13 +1558,14 @@ impl Bench {
     }
 }
 
-/// The enrolled name a phone's baseline is kept under, or why it cannot run.
-fn enrolled_phone(phone: &Phone) -> Result<String, String> {
+/// The enrolled name a phone's baseline is kept under and its budgets, or
+/// why it cannot run.
+fn enrolled_phone(phone: &Phone) -> Result<(String, Vec<Budget>), String> {
     let major = phone.os_version.split('.').next().unwrap_or_default();
     PHONES
         .iter()
-        .find(|(model, _)| *model == phone.model)
-        .map(|(_, name)| format!("{name}-ios{major}"))
+        .find(|enrolled| enrolled.model == phone.model)
+        .map(|enrolled| (format!("{}-ios{major}", enrolled.name), enrolled.budgets()))
         .ok_or_else(|| {
             format!(
                 "{} is a {}, which is not enrolled; the enrolled phones are {}",
@@ -1476,7 +1573,7 @@ fn enrolled_phone(phone: &Phone) -> Result<String, String> {
                 phone.model,
                 PHONES
                     .iter()
-                    .map(|(model, name)| format!("{name} ({model})"))
+                    .map(|enrolled| format!("{} ({})", enrolled.name, enrolled.model))
                     .collect::<Vec<_>>()
                     .join(", ")
             )
@@ -1491,13 +1588,19 @@ pub(crate) fn run(asked: Asked) -> ExitCode {
     };
     let enrolled = if asked.device {
         device::connected().and_then(|phone| {
-            let name = enrolled_phone(&phone)?;
-            Ok((Bench::Phone(phone), name))
+            let (name, budgets) = enrolled_phone(&phone)?;
+            Ok((Bench::Phone(phone), name, budgets))
         })
     } else {
-        machine().map(|(model, name)| (Bench::Simulator { model }, name.to_owned()))
+        machine().map(|(model, name)| {
+            (
+                Bench::Simulator { model },
+                name.to_owned(),
+                BUDGETS.to_vec(),
+            )
+        })
     };
-    let (bench, name) = match enrolled {
+    let (bench, name, budgets) = match enrolled {
         Ok(enrolled) => enrolled,
         Err(why) => return refused(why),
     };
@@ -1557,7 +1660,7 @@ pub(crate) fn run(asked: Asked) -> ExitCode {
             tool.display()
         ));
     }
-    match measure(asked, bench, &model, &name, app, &baseline_file) {
+    match measure(asked, bench, &budgets, &model, &name, app, &baseline_file) {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => {
             eprintln!("phone perf: over budget");
@@ -1573,6 +1676,7 @@ pub(crate) fn run(asked: Asked) -> ExitCode {
 fn measure(
     asked: Asked,
     bench: Bench,
+    budgets: &[Budget],
     model: &str,
     name: &str,
     app: PathBuf,
@@ -1619,7 +1723,6 @@ fn measure(
             Target::Phone(phone.clone()),
         ),
     };
-    let on_phone = matches!(bench, Bench::Phone(_));
     let mut journey = PhoneJourney::serve(
         Setup {
             topology,
@@ -1668,15 +1771,12 @@ fn measure(
     closed?;
     let minutes = began.elapsed().as_secs_f64() / 60.0;
 
-    // A phone's budgets are written from its first measurement; until then
-    // every metric is measured and reported, not judged.
-    let all: Vec<&str> = BUDGETS.iter().map(|budget| budget.metric).collect();
-    let provisional = if on_phone {
-        all.as_slice()
-    } else {
-        SET_FROM_FIRST_MEASUREMENT
-    };
-    let verdict = judge(&run.samples, baseline.as_ref(), provisional);
+    let verdict = judge(
+        &run.samples,
+        budgets,
+        baseline.as_ref(),
+        SET_FROM_FIRST_MEASUREMENT,
+    );
     let write = |file: &Path, text: String| {
         std::fs::write(file, text).map_err(|error| format!("{}: {error}", file.display()))
     };
@@ -1869,6 +1969,60 @@ mod tests {
     }
 
     #[test]
+    fn every_enrolled_phone_budgets_every_metric_in_order() {
+        let metrics: Vec<&str> = BUDGETS.iter().map(|budget| budget.metric).collect();
+        for enrolled in PHONES {
+            let budgeted: Vec<&str> = enrolled
+                .budgets
+                .iter()
+                .map(|(metric, ..)| *metric)
+                .collect();
+            assert_eq!(budgeted, metrics, "{}", enrolled.name);
+        }
+    }
+
+    #[test]
+    fn the_phone_tables_match_the_runners_phones() {
+        let rows = table_rows(&phone_section(), "| Phone | Model |");
+        let stated: Vec<(&str, &str)> = rows
+            .iter()
+            .map(|row| (row[1].trim_matches('`'), row[0].trim_matches('`')))
+            .collect();
+        let enrolled: Vec<(&str, &str)> = PHONES
+            .iter()
+            .map(|enrolled| (enrolled.model, enrolled.name))
+            .collect();
+        assert_eq!(stated, enrolled);
+
+        let rows = table_rows(&phone_section(), "| Metric | Phone |");
+        let stated: Vec<(String, String, f64, Option<f64>)> = rows
+            .iter()
+            .map(|row| {
+                (
+                    row[0].trim_matches('`').to_owned(),
+                    row[1].trim_matches('`').to_owned(),
+                    number(&row[2]).expect("a budget").0,
+                    number(&row[3]).map(|(worst, _)| worst),
+                )
+            })
+            .collect();
+        let enforced: Vec<(String, String, f64, Option<f64>)> = PHONES
+            .iter()
+            .flat_map(|enrolled| {
+                enrolled.budgets().into_iter().map(|budget| {
+                    (
+                        budget.metric.to_owned(),
+                        enrolled.name.to_owned(),
+                        budget.median,
+                        budget.worst,
+                    )
+                })
+            })
+            .collect();
+        assert_eq!(stated, enforced);
+    }
+
+    #[test]
     fn a_link_rewritten_to_its_gate_changes_only_the_addresses() {
         let payload = json!({"host_id": "h", "secret": [1, 2], "addrs": ["127.0.0.1:5000"], "cloud_url": "https://c"});
         let encoded = URL_SAFE_NO_PAD.encode(payload.to_string());
@@ -1899,6 +2053,7 @@ mod tests {
     fn a_median_over_budget_fails_and_an_unmeasured_metric_is_not_reported() {
         let verdict = judge(
             &samples(&[("cold first frame", &[400.0, 450.0, 520.0, 430.0, 410.0])]),
+            BUDGETS,
             None,
             &[],
         );
@@ -1907,6 +2062,7 @@ mod tests {
         assert_eq!(metrics, ["cold first frame"]);
         let verdict = judge(
             &samples(&[("cold first frame", &[400.0, 610.0, 520.0, 530.0, 950.0])]),
+            BUDGETS,
             None,
             &[],
         );
@@ -1919,6 +2075,7 @@ mod tests {
         let baseline = json!({"streaming hitch time": 0.0});
         let verdict = judge(
             &samples(&[("streaming hitch time", &[1.7; 5])]),
+            BUDGETS,
             Some(&baseline),
             &[],
         );
@@ -1944,12 +2101,14 @@ mod tests {
         let baseline = json!({"cold first frame": 300.0});
         let inside = judge(
             &samples(&[("cold first frame", &[340.0; 5])]),
+            BUDGETS,
             Some(&baseline),
             &[],
         );
         assert!(inside.passed);
         let past = judge(
             &samples(&[("cold first frame", &[350.0; 5])]),
+            BUDGETS,
             Some(&baseline),
             &[],
         );
@@ -1970,6 +2129,7 @@ mod tests {
         let baseline = json!({name: budget / 2.0});
         let verdict = judge(
             &samples(&[(name, &[budget * 1.2; 5])]),
+            BUDGETS,
             Some(&baseline),
             &[name],
         );
@@ -1997,6 +2157,7 @@ mod tests {
     fn a_count_metric_has_no_slack() {
         let verdict = judge(
             &samples(&[("idle display ticks", &[0.0, 0.0, 1.0, 0.0, 0.0])]),
+            BUDGETS,
             None,
             &[],
         );

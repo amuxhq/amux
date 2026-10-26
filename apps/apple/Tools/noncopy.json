@@ -139,10 +139,10 @@
     ],
     "apps/apple/Amux/Sources/AmuxApp.swift": [
       {"literal": "\"suspending\"", "context": "let held = UIApplication.shared.beginBackgroundTask(withName: \"suspending\") { [weak self] in", "reason": "Background task name the system logs, not app interface copy.", "count": 1},
-      {"literal": "\"AMUX_COMPONENT_SNAPSHOTS\"", "context": "if environment[\"AMUX_COMPONENT_SNAPSHOTS\"] == \"1\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"1\"", "context": "if environment[\"AMUX_COMPONENT_SNAPSHOTS\"] == \"1\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"XCODE_RUNNING_FOR_PREVIEWS\"", "context": "|| environment[\"XCODE_RUNNING_FOR_PREVIEWS\"] == \"1\" {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"1\"", "context": "|| environment[\"XCODE_RUNNING_FOR_PREVIEWS\"] == \"1\" {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"AMUX_COMPONENT_SNAPSHOTS\"", "context": "return environment[\"AMUX_COMPONENT_SNAPSHOTS\"] != \"1\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"1\"", "context": "return environment[\"AMUX_COMPONENT_SNAPSHOTS\"] != \"1\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"XCODE_RUNNING_FOR_PREVIEWS\"", "context": "&& environment[\"XCODE_RUNNING_FOR_PREVIEWS\"] != \"1\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"1\"", "context": "&& environment[\"XCODE_RUNNING_FOR_PREVIEWS\"] != \"1\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Amux/Sources/Composition.swift": [
       {"literal": "\"notificationsOfferDeclined\"", "context": "private static let notificationsOfferKey = \"notificationsOfferDeclined\"", "reason": "Storage filename, keychain service identifier, or relay URL syntax; not app interface copy.", "count": 1},

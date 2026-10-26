@@ -43,8 +43,11 @@ SHIPPING_PROFILE = "release"
 DRIVING_FEATURES = (DEBUG_TOOLS_FEATURE,)
 
 # The served test network a simulator connects to, as `just ios tools` builds
-# it. Every recipe that starts one starts it through this.
+# it. Every recipe that starts one starts it through this, with
+# TESTNET_BINARIES naming where the same build put amux and the fakes, so the
+# net builds nothing of its own.
 TESTNET_SERVE = ("target/debug/testnet", "serve")
+TESTNET_BINARIES = Path("target/debug")
 
 SIMULATOR_TRIPLE = "aarch64-apple-ios-sim"
 DEVICE_TRIPLE = "aarch64-apple-ios"

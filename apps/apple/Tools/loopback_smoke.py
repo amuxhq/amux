@@ -100,6 +100,7 @@ def round_trip(executable: Path, device: str) -> str:
         environment = {key: value for key, value in os.environ.items()
                        if key not in ("AMUX_LOG", "AMUX_CONFIG")}
         environment |= {key: str(root) for key in ("TMPDIR", "TMP", "TEMP")}
+        environment["TESTNET_BINARIES"] = str(bridge.TESTNET_BINARIES.resolve())
         runner = subprocess.Popen(
             [*bridge.TESTNET_SERVE, TOPOLOGY],
             env=environment, stdout=subprocess.PIPE, text=True)

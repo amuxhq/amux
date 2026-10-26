@@ -16,6 +16,7 @@ use serde_json::Value;
 
 use super::frame::{mask_durations, normalize, parse_styled, respell, spell_root, style_map};
 use super::{Record, Story, compare_golden, door, root};
+use crate::Binaries;
 use crate::ctl::tui::shell_word;
 use crate::door::{Control, Readiness};
 
@@ -121,6 +122,8 @@ pub(crate) struct TerminalJourney {
     _lock: File,
     scratch: PathBuf,
     server: String,
+    /// The binaries the served net runs, which its clients run too.
+    binaries: Binaries,
     process: Option<Child>,
     pub ready: Readiness,
     pub record: Record,
@@ -145,6 +148,7 @@ impl TerminalJourney {
         let scratch = scratch_root();
         let _ = std::fs::remove_dir_all(&scratch);
         std::fs::create_dir_all(&scratch).map_err(|error| error.to_string())?;
+        let binaries = Binaries::for_driver()?;
         let testnet = std::env::current_exe().map_err(|error| error.to_string())?;
         let mut command = Command::new(&testnet);
         command
@@ -161,13 +165,7 @@ impl TerminalJourney {
             .env("TMPDIR", &scratch)
             .env("TMP", &scratch)
             .env("TEMP", &scratch)
-            // `just journey terminal` builds amux and the fakes with the
-            // desktop's features; left to itself, testnet would rebuild
-            // them without, which on a cold runner outlasts the wait.
-            .env(
-                crate::PREBUILT_ENV,
-                testnet.parent().unwrap_or(Path::new(".")),
-            )
+            .env(crate::PREBUILT_ENV, binaries.dir())
             .stdout(Stdio::piped())
             .stderr(File::create(output.join("testnet.log")).map_err(|error| error.to_string())?);
         let mut process = command
@@ -204,6 +202,7 @@ impl TerminalJourney {
             _lock: lock,
             scratch,
             server: format!("amux-journey-{}", std::process::id()),
+            binaries,
             process: Some(process),
             ready,
             record,
@@ -410,9 +409,7 @@ impl TerminalJourney {
         host: &str,
         args: &[&str],
     ) -> Result<String, String> {
-        let amux = std::env::current_exe()
-            .map_err(|error| error.to_string())?
-            .with_file_name("amux");
+        let amux = self.binaries.amux();
         let mut words = vec![
             "env".to_owned(),
             "-u".to_owned(),

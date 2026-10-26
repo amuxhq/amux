@@ -27,6 +27,7 @@ use serde_json::{Value, json};
 
 use super::device::Phone;
 use super::{Record, Story, door, line_diff, root};
+use crate::Binaries;
 use crate::ctl::session::pin_in;
 use crate::door::{Control, Readiness};
 
@@ -678,6 +679,9 @@ pub(crate) struct PhoneJourney {
     /// performance suite measures.
     build: PathBuf,
     topology: Value,
+    /// The binaries the served net runs, which a person at one of its
+    /// machines runs too.
+    binaries: Binaries,
     _lock: File,
     process: Option<Child>,
     pub ready: Readiness,
@@ -730,6 +734,7 @@ impl PhoneJourney {
         let scratch = Path::new(SCRATCH_DIR);
         let _ = std::fs::remove_dir_all(scratch);
         std::fs::create_dir_all(scratch).map_err(|error| error.to_string())?;
+        let binaries = Binaries::for_driver()?;
         let testnet = std::env::current_exe().map_err(|error| error.to_string())?;
         let mut command = Command::new(&testnet);
         command
@@ -745,6 +750,7 @@ impl PhoneJourney {
             .env("TEMP", scratch)
             .env("AMUX_TEST_DISCOVERY_MODE", "disabled")
             .env("RUST_LOG", rust_log())
+            .env(crate::PREBUILT_ENV, binaries.dir())
             .stdout(Stdio::piped())
             .stderr(File::create(output.join("testnet.log")).map_err(|error| error.to_string())?);
         if let Target::Phone(phone) = target {
@@ -801,6 +807,7 @@ impl PhoneJourney {
             build: setup.app,
             output,
             topology,
+            binaries,
             _lock: lock,
             process: Some(process),
             ready,
@@ -968,26 +975,22 @@ impl PhoneJourney {
             .actions
             .push(format!("at {host}: amux {}", args.join(" ")));
         let scratch = Path::new(SCRATCH_DIR);
-        let mut child = Command::new(
-            std::env::current_exe()
-                .map_err(|error| error.to_string())?
-                .with_file_name("amux"),
-        )
-        .arg("--config")
-        .arg(self.config(host))
-        .args(args)
-        .env_remove("AMUX_LOG")
-        .env_remove("AMUX_CONFIG")
-        .env("TMPDIR", scratch)
-        .env("TMP", scratch)
-        .env("TEMP", scratch)
-        .env("AMUX_TEST_DISCOVERY_MODE", "disabled")
-        .env("RUST_LOG", rust_log())
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("amux: {error}"))?;
+        let mut child = Command::new(self.binaries.amux())
+            .arg("--config")
+            .arg(self.config(host))
+            .args(args)
+            .env_remove("AMUX_LOG")
+            .env_remove("AMUX_CONFIG")
+            .env("TMPDIR", scratch)
+            .env("TMP", scratch)
+            .env("TEMP", scratch)
+            .env("AMUX_TEST_DISCOVERY_MODE", "disabled")
+            .env("RUST_LOG", rust_log())
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| format!("amux: {error}"))?;
         let (sent, lines) = mpsc::channel();
         for pipe in [
             child

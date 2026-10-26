@@ -32,7 +32,11 @@ belong to the process tests in `crates/amux/tests`.
 On first use in a process, the harness builds `amux` and the fake providers with the same Cargo and profile that
 built the test, so agents always run the binary under test. With `TESTNET_BINARIES` naming a directory that
 already holds `amux`, the fakes and the probes, it builds nothing and uses those: a driver that built them once,
-with the features it chose, keeps every net it starts on that one build.
+with the features it chose, keeps every net it starts on that one build. The terminal and phone journey drivers
+always hand `testnet serve` that directory, the one they run from unless `TESTNET_BINARIES` names another, and stop
+at once if a binary is missing there: their recipes build `amux` and the fakes in the cargo invocation that builds
+`testnet`, since a build of its own would unify features otherwise and rebuild much of the workspace before the net
+is ready.
 
 ## Two modes
 

@@ -132,12 +132,20 @@ fn create_as(data_dir: &Path, id: ProfileId, label: &str) -> io::Result<ProfileE
     let profiles = list(data_dir)?;
     let dir = profile_dir(data_dir, id);
     private_dir(&dir.join(AGENTS))?;
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_millis() as i64);
     let entry = ProfileEntry {
         id,
         label: free_label(&profiles, label),
-        created_ms: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |since| since.as_millis() as i64),
+        // After every profile already made, even one made in the same
+        // millisecond: listed oldest first, profiles are in the order they
+        // were made, and the first, which commands use by default, never
+        // falls to which random id sorts lower.
+        created_ms: profiles
+            .iter()
+            .map(|entry| entry.created_ms.saturating_add(1))
+            .fold(now_ms, i64::max),
     };
     write_entry(data_dir, &entry)?;
     Ok(entry)
@@ -174,6 +182,11 @@ mod tests {
                 .map(|p| p.id)
                 .collect::<Vec<_>>(),
             [kept.id, gone.id]
+        );
+
+        assert!(
+            gone.created_ms > kept.created_ms,
+            "made in one millisecond or not"
         );
 
         discard(data_dir.path(), gone.id).unwrap();

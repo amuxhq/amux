@@ -15,6 +15,11 @@ you are testing still behaves otherwise, that difference is a finding.
   agents.
 - A host's clients show its own agents and those of the hosts it trusts. Once
   two hosts unpair, neither lists the other's agents.
+- Unpairing is one machine's decision. When only desk unpairs laptop, laptop
+  still trusts desk and keeps listing desk's agents, each saying desk no
+  longer trusts this machine; laptop's home top line and `amux peers` say to
+  run `amux pair desk`. Laptop listing them is not a finding; laptop showing
+  desk as merely away, or reaching its agents, is.
 
 ## A test net's daemon grace
 

@@ -1301,7 +1301,12 @@ impl Home {
             })
             .filter(|(_, reach)| !reach.online())
             .collect();
-        let away: Vec<&str> = reaches.iter().map(|(name, _)| *name).collect();
+        // A host that no longer trusts this machine is not merely away:
+        // only pairing again brings it back.
+        let (revoked, away): (Vec<_>, Vec<_>) = reaches
+            .iter()
+            .partition(|(_, reach)| *reach == Reach::Offline(Offline::Revoked));
+        let away: Vec<&str> = away.iter().map(|(name, _)| *name).collect();
         let mut parts: Vec<(String, Style)> = Vec::new();
         // A daemon that restarted into a newer build keeps serving this
         // older client; only the person can restart it.
@@ -1322,6 +1327,20 @@ impl Home {
             .any(|(_, reach)| *reach == Reach::Offline(Offline::SignedOut))
         {
             parts.push(("signed out · amux login".into(), theme.warning()));
+        }
+        match revoked.as_slice() {
+            [] => {}
+            [(one, _)] => parts.push((
+                format!(
+                    "{one} no longer trusts this machine · amux pair {}",
+                    crate::hosts::shell_target(one)
+                ),
+                theme.warning(),
+            )),
+            many => parts.push((
+                format!("{} hosts no longer trust this machine", many.len()),
+                theme.warning(),
+            )),
         }
         match fleet.connection() {
             Connection::Live => {}

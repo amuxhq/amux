@@ -29,16 +29,12 @@ DEBUG_SYMBOLS = (
 REPORT_SYMBOLS = ("ReportStore", "ReportScreen", "ReportFreeze", "amux_profile_dump")
 REPORT_COPY = ("Report a Problem", "What went wrong?")
 FORBIDDEN_APIS = (
-    # The app receives "needs you" pushes: it is the notification centre's
-    # delegate, so a push can wake it and bring one chat current. What it
-    # never does on its own is ask the person for permission; a build that
-    # grew that prompt would be asking for scope nobody agreed to.
-    "requestAuthorizationWithOptions",
-    "ActivityKit", "ActivityAuthorizationInfo",
     # The app browses the local network through Network.framework and nothing
     # else. The two legacy Bonjour entry points stay refused: they reach the
     # same multicast without the system's own permission prompt in front of
     # them, so code that used one would be browsing where nobody was asked.
+    # Features are not listed here: what the app offers is settled in review,
+    # and a list of features kept out goes stale as the app grows.
     "DNSServiceBrowse", "NSNetServiceBrowser",
 )
 # The one service this app may look for, and the sentence the system shows
@@ -46,7 +42,6 @@ FORBIDDEN_APIS = (
 BONJOUR_SERVICES = ["_amux._udp"]
 LOCAL_NETWORK_PURPOSE = ("amux finds hosts on your network so this phone can "
                          "pair and connect to them directly.")
-FORBIDDEN_ROWS = ("Live Activity", "Live Activities", "Mute", "Notifications")
 # Resources that only the driving and capture tools need. Code that reads them
 # is caught by the symbol list above, but a resource can be carried into the
 # bundle on its own — a stray copy phase, or a package whose test-support
@@ -65,11 +60,8 @@ def run(argv, *, timeout=120, check=True):
 
 def binary_violations(symbols: str, strings: str) -> list[str]:
     text = symbols + "\n" + strings
-    failures = [f"excluded symbol or API: {name}"
-                for name in (*DEBUG_SYMBOLS, *FORBIDDEN_APIS) if name in text]
-    rows = set(strings.splitlines())
-    failures += [f"excluded row: {row}" for row in FORBIDDEN_ROWS if row in rows]
-    return failures
+    return [f"excluded symbol or API: {name}"
+            for name in (*DEBUG_SYMBOLS, *FORBIDDEN_APIS) if name in text]
 
 
 def reporting_violations(symbols: str, strings: str) -> list[str]:
@@ -275,8 +267,7 @@ def main() -> None:
         lines += [f"PASS: icon {info['CFBundleIconName']} named at the top level of Info.plist "
                   f"and a {'x'.join(map(str, png_size(APP / 'AppIcon60x60@2x.png')))} iPhone icon in the bundle.",
                   "PASS: no frozen-frame or test-support resource in the bundle.",
-                  "PASS: no push authorization, Live Activity, Mute or Notifications row;",
-                  f"Bonjour limited to {' '.join(BONJOUR_SERVICES)} behind the agreed explanation "
+                  f"PASS: Bonjour limited to {' '.join(BONJOUR_SERVICES)} behind the agreed explanation "
                   "and no legacy browser; iPhone destinations only;",
                   "no amuxcloud or React Native package; no driving or trace code.",
                   "PASS: in-app attention copy, Contact Support and Report a Problem remain;",

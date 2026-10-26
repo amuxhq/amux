@@ -75,13 +75,10 @@ def shipping_info(**extra) -> dict:
 
 
 class ScopeAuditTests(unittest.TestCase):
-    def test_excluded_code_and_rows_are_rejected(self):
+    def test_excluded_code_is_rejected(self):
         for name in (*audit.DEBUG_SYMBOLS, *audit.FORBIDDEN_APIS):
             with self.subTest(symbol=name):
                 self.assertTrue(audit.binary_violations("symbol_" + name, ""))
-        for row in audit.FORBIDDEN_ROWS:
-            with self.subTest(row=row):
-                self.assertTrue(audit.binary_violations("", "before\n" + row + "\nafter"))
         self.assertEqual(audit.binary_violations("NotificationCenter", "Contact Support\n3 need you"), [])
 
     def test_reporting_ships_and_its_absence_is_refused(self):

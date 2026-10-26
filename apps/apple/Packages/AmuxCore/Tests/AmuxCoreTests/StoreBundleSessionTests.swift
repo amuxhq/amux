@@ -114,7 +114,7 @@ final class StoreBundleSessionTests: XCTestCase {
         stores.moved(fleet("held"))
         stores.fleet.finishPresenting()
         stores.moved(fleet("newer"))
-        for _ in 0..<10 { await Task.yield() }
+        await stores.applyingHeld?.value
         XCTAssertEqual(stores.fleet.rows.map(\.name), ["newer"])
     }
 

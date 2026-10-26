@@ -34,7 +34,7 @@ tools:
 # before anything is compiled and says which line is wrong.
 # Check the Swift sources against the screens package's writing rules.
 lint:
-    {{bounded}} 300 sh -c 'sh apps/apple/Tools/feature-lint.sh && apps/apple/Tools/strings-lint.sh'
+    {{bounded}} 300 sh -c 'sh apps/apple/Tools/feature-lint.sh && sh apps/apple/Tools/test-waits-lint.sh && apps/apple/Tools/strings-lint.sh'
 
 # The bridge slice a development build links: the simulator, with the
 # driving tools, under the `phone-dev` profile (release without LTO), and with

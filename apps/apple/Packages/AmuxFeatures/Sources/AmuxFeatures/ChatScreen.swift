@@ -620,7 +620,7 @@ public struct ChatStanding: View {
             case .settings?:
                 if let settings = model.settings {
                     SettingsCard(
-                        view: settings, kind: model.frame?.kind, change: model.change,
+                        view: settings, kind: model.frame?.kind, change: { model.change($0) },
                         close: { showing = nil })
                 } else {
                     composerStack

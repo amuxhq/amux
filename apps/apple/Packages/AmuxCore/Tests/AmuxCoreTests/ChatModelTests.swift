@@ -319,12 +319,6 @@ private func numbered(_ numbers: ClosedRange<Int>) -> [Row] {
     numbers.map { row("m\($0)", UInt64($0)) }
 }
 
-/// Waits for the model's acts, which run on the main actor after a hop.
-@MainActor
-private func settle() async {
-    for _ in 0..<20 { await Task.yield() }
-}
-
 @MainActor
 final class ChatModelTests: XCTestCase {
     func testOpeningReadsTheKeysAndReadsARowOnlyWhenItsCellIsDrawn() {
@@ -480,10 +474,10 @@ final class ChatModelTests: XCTestCase {
         XCTAssertEqual(source.follows, [false, true, false, true], "and so does New activity")
         model.reading(atNewest: false)
         model.draft = "go on"
-        model.send()
+        let sending = model.send()
         XCTAssertEqual(source.follows.last, true, "and so does sending, before the send")
         XCTAssertTrue(source.sent.isEmpty)
-        await settle()
+        await sending?.value
         XCTAssertEqual(source.sent.count, 1)
     }
 
@@ -498,7 +492,6 @@ final class ChatModelTests: XCTestCase {
             source.deliver(to: model)
             model.reading(atNewest: true)
         }
-        await settle()
         XCTAssertTrue(source.paged.isEmpty, "a following chat pages nothing")
         XCTAssertEqual(model.ids, (1_101...1_300).map { "m\($0)" })
         XCTAssertEqual(source.follows, [])
@@ -564,19 +557,18 @@ final class ChatModelTests: XCTestCase {
         let model = ChatModel(source: source)
         model.reading(atNewest: false)
 
-        model.reachedTop()
+        let page = model.reachedTop()
         XCTAssertEqual(model.paging, .fetching)
-        model.reachedTop()
-        await settle()
-        XCTAssertEqual(source.paged.count, 1, "a page on its way is not asked for twice")
+        XCTAssertNil(model.reachedTop(), "a page on its way is not asked for twice")
+        await page?.value
+        XCTAssertEqual(source.paged.count, 1)
         XCTAssertEqual(model.paging, .idle)
         source.deliver(to: model)
         XCTAssertEqual(model.ids.first, "m961", "the page the reader waited for lands above")
-        for _ in 0..<5 { await settle() }
-        XCTAssertEqual(source.paged.count, 1, "a page landing asks for no other")
+        // An ask is marked fetching as it is made, so idle here is none made.
+        XCTAssertEqual(model.paging, .idle, "a page landing asks for no other")
 
-        model.reachedTop()
-        await settle()
+        await model.reachedTop()?.value
         XCTAssertEqual(source.paged.count, 2)
         source.deliver(to: model)
         XCTAssertEqual(model.ids.first, "m921")
@@ -602,8 +594,7 @@ final class ChatModelTests: XCTestCase {
         let source = FakeChat(rows: [row("r", 5, run: run), row("s", 6)], frame: frame(hasOlder: true))
         let model = ChatModel(source: source)
         _ = model.cell(for: "r")
-        model.reachedTop()
-        await settle()
+        await model.reachedTop()?.value
         XCTAssertEqual(source.paged, [300])
 
         let huge = Run(
@@ -613,15 +604,13 @@ final class ChatModelTests: XCTestCase {
         source.ordered[0] = row("r", 5, run: huge)
         source.pending = ChatChanges(keys: ["r"], reloaded: false, session: false)
         source.deliver(to: model)
-        model.reachedTop()
-        await settle()
+        await model.reachedTop()?.value
         XCTAssertEqual(source.paged.last, ChatModel.largestPage)
 
         let plain = FakeChat(rows: [row("a", 1)], frame: frame(hasOlder: true))
         let other = ChatModel(source: plain)
         _ = other.cell(for: "a")
-        other.reachedTop()
-        await settle()
+        await other.reachedTop()?.value
         XCTAssertEqual(plain.paged, [ChatModel.pageRows])
     }
 
@@ -640,8 +629,7 @@ final class ChatModelTests: XCTestCase {
     func testNothingIsAskedForWhenNoOlderHistoryExists() async {
         let source = FakeChat(rows: [row("a", 1)], frame: frame(hasOlder: false))
         let model = ChatModel(source: source)
-        model.reachedTop()
-        await settle()
+        await model.reachedTop()?.value
         XCTAssertTrue(source.paged.isEmpty)
     }
 
@@ -653,8 +641,7 @@ final class ChatModelTests: XCTestCase {
         let model = ChatModel(source: source)
         model.draft = "Run the tests."
         XCTAssertTrue(model.canSend)
-        model.send()
-        await settle()
+        await model.send()?.value
         XCTAssertEqual(source.sent.map(\.text), ["Run the tests."])
         XCTAssertEqual(model.draft, "")
     }
@@ -665,8 +652,7 @@ final class ChatModelTests: XCTestCase {
         model.draft = "Carry on."
         XCTAssertFalse(model.canSend)
         XCTAssertTrue(model.canResume)
-        model.resume()
-        await settle()
+        await model.resume()?.value
         XCTAssertEqual(source.resumed.map(\.text), ["Carry on."])
         XCTAssertEqual(model.draft, "")
     }
@@ -678,8 +664,7 @@ final class ChatModelTests: XCTestCase {
         let queued = QueuedRow(
             inputId: [7], text: [.text("Then run the Windows check.")], steered: false,
             canWithdraw: true, canSendNow: true, fromAgent: nil)
-        model.withdraw(queued)
-        await settle()
+        await model.withdraw(queued)?.value
         XCTAssertEqual(source.withdrawn, [[7]])
         XCTAssertEqual(model.draft, "Then run the Windows check.")
     }
@@ -704,8 +689,7 @@ final class ChatModelTests: XCTestCase {
                 .attachment(.text(name: "Pasted text", lines: 3, text: "line one\nline two\nline three")),
             ],
             steered: false, canWithdraw: true, canSendNow: true, fromAgent: nil)
-        model.withdraw(queued)
-        await settle()
+        await model.withdraw(queued)?.value
         XCTAssertEqual(source.withdrawn, [[7]])
         XCTAssertEqual(model.draft, "Look at these.\nhalf written")
         XCTAssertEqual(model.attachments, [pasted, review])
@@ -720,7 +704,6 @@ final class ChatModelTests: XCTestCase {
         let photo = BlobRef(hash: [5], name: "screen.png", mime: "image/png", size: 2048)
         source.drafts[[8]] = Draft(words: "What is this?", attachments: [.image(photo)])
         let model = ChatModel(source: source)
-        await settle()
         XCTAssertEqual(model.draft, "What is this?")
         XCTAssertEqual(model.attachments, [.image(photo)])
         XCTAssertEqual(model.notice, "Not sent: its host can’t be reached")
@@ -765,7 +748,6 @@ final class ChatModelTests: XCTestCase {
             SentPrompt(inputId: [2], text: [.text("later")], lands: .queue, underway: .mayNotHaveArrived),
         ]
         let model = ChatModel(source: FakeChat(rows: [], frame: sending))
-        await settle()
         XCTAssertEqual(model.landingInFeed.map(\.inputId), [[1]])
         XCTAssertEqual(model.landingInQueue.map(\.inputId), [[2]])
     }
@@ -786,8 +768,7 @@ final class ChatModelTests: XCTestCase {
         source.offered = offer(current: "opus")
         source.current.controls.model = "opus"
         let model = ChatModel(source: source)
-        model.change(.model("sonnet"))
-        await settle()
+        await model.change(.model("sonnet"))?.value
         XCTAssertEqual(source.changed, [.model("sonnet")])
         XCTAssertEqual(model.settings?.models.first { $0.current }?.value, "opus", "not before the agent says so")
         XCTAssertEqual(model.frame?.controls.model, "opus")
@@ -881,8 +862,7 @@ final class ChatModelTests: XCTestCase {
         XCTAssertEqual(model.attachments.count, 1)
         model.type(model.draft + String(repeating: "x", count: ChatModel.pasteCharacters))
         XCTAssertEqual(model.attachments.count, 2, "one very long line is a paste too")
-        model.send()
-        await settle()
+        await model.send()?.value
         XCTAssertEqual(
             source.sent.first?.text, "Look at this: two\nlines\u{FFFC}\u{FFFC}",
             "each paste's place follows the words, where the sent message draws it")
@@ -898,13 +878,12 @@ final class ChatModelTests: XCTestCase {
     func testEveryAttachmentSentHasItsPlaceholderInTheText() async {
         let source = FakeChat(rows: [], frame: frame())
         let model = ChatModel(source: source)
-        model.attach(Data("2048 bytes".utf8), name: "noext", mime: "application/octet-stream", image: false)
-        model.attach(Data("png".utf8), name: "red.png", mime: "image/png", image: true)
-        await settle()
+        let first = model.attach(Data("2048 bytes".utf8), name: "noext", mime: "application/octet-stream", image: false)
+        await model.attach(Data("png".utf8), name: "red.png", mime: "image/png", image: true)?.value
+        await first?.value
         XCTAssertEqual(model.attachments.count, 2)
         model.type("What is in these?")
-        model.send()
-        await settle()
+        await model.send()?.value
         let sent = source.sent.first
         let placeholders = sent?.text.unicodeScalars.filter { $0 == "\u{FFFC}" }.count
         XCTAssertEqual(sent?.attachments?.count, 2)
@@ -921,8 +900,7 @@ final class ChatModelTests: XCTestCase {
         let source = FakeChat(rows: [], frame: frame())
         source.blobFailure = RuntimeFailure("desk stopped answering; the call may or may not have arrived")
         let model = ChatModel(source: source)
-        model.attach(Data(count: 1024), name: "mid.bin", mime: "application/octet-stream", image: false)
-        await settle()
+        await model.attach(Data(count: 1024), name: "mid.bin", mime: "application/octet-stream", image: false)?.value
         model.type("what is in it?")
         let said = (model.notice ?? "") + model.attachments.map { "\($0)" }.joined()
         XCTAssertTrue(
@@ -935,8 +913,7 @@ final class ChatModelTests: XCTestCase {
         // before it uploads anything and refused in plain words naming it.
         let source = FakeChat(rows: [], frame: frame())
         let model = ChatModel(source: source)
-        model.attach(Data(count: 64 * 1024 * 1024 + 1), name: "huge.bin", mime: "application/octet-stream", image: false)
-        await settle()
+        await model.attach(Data(count: 64 * 1024 * 1024 + 1), name: "huge.bin", mime: "application/octet-stream", image: false)?.value
         XCTAssertEqual(source.stored, [], "a file over the limit was handed over for upload")
         XCTAssertTrue(model.attachments.isEmpty, "a file over the limit became a chip")
         XCTAssertTrue(
@@ -996,16 +973,13 @@ final class ChatModelTests: XCTestCase {
             choices: [], questionNote: true, questionSkip: true, questionReply: true,
             stopsTurn: true, state: .open)
         let model = ChatModel(source: source)
-        await settle()
         let answers = [
             QuestionResponse(note: "only on staging", other: nil, picked: [1]),
             QuestionResponse(note: nil, other: nil, picked: []),
         ]
-        model.answer(responses: answers)
-        await settle()
+        await model.answer(responses: answers)?.value
         XCTAssertEqual(source.responded, [answers], "a skip is an empty pick, and each note stays on its question")
-        model.replyInstead("Hold off for now", soFar: answers)
-        await settle()
+        await model.replyInstead("Hold off for now", soFar: answers)?.value
         XCTAssertEqual(source.replied, ["Hold off for now"])
         XCTAssertEqual(source.responded.last, answers)
     }
@@ -1020,7 +994,6 @@ final class ChatModelTests: XCTestCase {
         let source = FakeChat(rows: [row("a", 1)], frame: frame())
         source.card = card("ask:1")
         let model = ChatModel(source: source)
-        await settle()
         let picked = QuestionDraft(
             step: 1, picks: [[2], []], others: [nil, "Only on staging"], highlighted: [2, nil],
             skipped: [false, false], notes: ["", "and say when"], noting: [false, true])
@@ -1030,19 +1003,16 @@ final class ChatModelTests: XCTestCase {
 
         source.pending = ChatChanges(keys: [], reloaded: false, session: true)
         source.deliver(to: model)
-        await settle()
         XCTAssertEqual(model.questionDraft(onAsk: "ask:1"), picked, "the ask is still open")
 
         source.card = card("ask:2")
         source.pending = ChatChanges(keys: [], reloaded: false, session: true)
         source.deliver(to: model)
-        await settle()
         XCTAssertNil(model.questionDraft(onAsk: "ask:1"), "the ask closed")
 
         source.card = card("ask:1")
         source.pending = ChatChanges(keys: [], reloaded: false, session: true)
         source.deliver(to: model)
-        await settle()
         XCTAssertNil(model.questionDraft(onAsk: "ask:1"), "gone for good once closed")
     }
 
@@ -1057,7 +1027,6 @@ final class ChatModelTests: XCTestCase {
         let source = FakeChat(rows: [row("a", 1)], frame: frame())
         source.card = card("ask:1")
         let model = ChatModel(source: source)
-        await settle()
         let typed: [FormValue] = [.text("Fleet rows lose their branch"), .choice(0)]
         model.keep(form: typed, onAsk: "ask:1")
         model.keep(form: typed, onAsk: "ask:2")
@@ -1066,13 +1035,11 @@ final class ChatModelTests: XCTestCase {
 
         source.pending = ChatChanges(keys: [], reloaded: false, session: true)
         source.deliver(to: model)
-        await settle()
         XCTAssertEqual(model.formDraft(onAsk: "ask:1"), typed, "the ask is still open")
 
         source.card = card("ask:2")
         source.pending = ChatChanges(keys: [], reloaded: false, session: true)
         source.deliver(to: model)
-        await settle()
         XCTAssertNil(model.formDraft(onAsk: "ask:1"), "the ask closed")
         XCTAssertNil(model.formDraft(onAsk: "ask:2"), "a new form starts empty")
     }
@@ -1094,7 +1061,6 @@ final class ChatModelTests: XCTestCase {
         model.compare(.onBranch)
         XCTAssertEqual(model.changes, ChangeTotals(files: 6, added: 120, removed: 30))
         XCTAssertEqual(model.base, "main")
-        await settle()
         XCTAssertEqual(source.reviews, 0, "the totals come with the frame; nothing is asked")
         XCTAssertEqual(source.listings, [], "nor are files listed while the overview is not shown")
     }
@@ -1184,8 +1150,7 @@ final class ChatModelTests: XCTestCase {
         XCTAssertEqual(diff, ReviewFixtures.frozen.diff)
         XCTAssertEqual(comments.map(\.text), ["Keep the old name.", "Say why."])
 
-        model.send()
-        await settle()
+        await model.send()?.value
         XCTAssertEqual(source.sent.first?.attachments, [.review(diff: ReviewFixtures.frozen.diff, comments: comments)])
     }
 
@@ -1198,9 +1163,9 @@ final class ChatModelTests: XCTestCase {
         model.heard("run the")
         model.heard("rerun the tests")
         XCTAssertEqual(model.draft, "Please rerun the tests")
-        model.send()
+        let sending = model.send()
         XCTAssertFalse(model.dictation.active, "sending ends dictation")
-        await settle()
+        await sending?.value
         XCTAssertEqual(source.sent.map(\.text), ["Please rerun the tests"])
         model.heard("late words")
         XCTAssertEqual(model.draft, "", "nothing heard after the send lands in the next draft")

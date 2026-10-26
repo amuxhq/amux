@@ -38,6 +38,11 @@ under `target/ios/` that the bridge recipes build (see
 `AmuxFeatures` to three rules: no UIKit outside a registered leaf, no
 platform conditionals, and no spinners. A screen waits by showing what it
 already has, marked as not yet confirmed, rather than covering it.
+`apps/apple/Tools/test-waits-lint.sh`, run beside it, refuses a Swift test
+that yields a fixed number of times and hopes a task has finished: an
+action that waits on a host returns its task (`ChatModel.send()`,
+`attach`, `reachedTop()`, an answer), and a test awaits that, or yields
+until a condition holds.
 
 ## From the runtime to a screen
 

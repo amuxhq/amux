@@ -59,6 +59,9 @@ public final class StoreBundle {
     /// What moved in the fleet while the launch's first frame was going up,
     /// applied once it is up.
     @ObservationIgnored private var held: FleetDelta?
+    /// The held delta being applied after the first frame, so a test can
+    /// wait for it to land rather than guess when the next turn comes.
+    @ObservationIgnored private(set) var applyingHeld: Task<Void, Never>?
     /// How long what moved waits for the launch's first frame at most.
     public static let firstFrameHold: Duration = .milliseconds(250)
     /// Home's sections and the hosts as the fleet last stood.
@@ -81,8 +84,8 @@ public final class StoreBundle {
         self.newAgent = NewAgentStore()
         // Applied after the refresh that put the frame up, not inside it.
         fleet.presented = { [weak self] in
-            guard self?.held != nil else { return }
-            Task { [weak self] in
+            guard let self, self.held != nil else { return }
+            self.applyingHeld = Task { [weak self] in
                 guard let self, let held = self.held else { return }
                 self.held = nil
                 self.apply(held)

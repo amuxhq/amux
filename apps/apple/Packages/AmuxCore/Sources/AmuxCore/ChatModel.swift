@@ -542,15 +542,16 @@ public final class ChatModel {
 
     /// The oldest rows came near the top of the reader's view: ask for the
     /// page before them. One arrival at the top asks for one page at most.
-    public func reachedTop() {
+    @discardableResult
+    public func reachedTop() -> Task<Void, Never>? {
         askOlder()
     }
 
-    private func askOlder() {
-        guard frame?.hasOlder == true, paging != .fetching else { return }
+    private func askOlder() -> Task<Void, Never>? {
+        guard frame?.hasOlder == true, paging != .fetching else { return nil }
         paging = .fetching
         let rows = pageSize
-        Task {
+        return Task {
             let outcome = await source.pageOlder(rows)
             switch outcome {
             case .arrived?: paging = .idle
@@ -628,28 +629,32 @@ public final class ChatModel {
     /// screen opens it and clears this.
     public var asks: ChatAsk?
 
-    public func send() {
-        guard canSend else { return }
+    /// Each action that waits on the agent's host returns the task that
+    /// waits, so a test can wait for its outcome rather than guess how long
+    /// the host takes. A screen drops it: the task belongs to no view, so
+    /// leaving the chat does not cancel a send on its way.
+    @discardableResult
+    public func send() -> Task<Void, Never>? {
+        guard canSend else { return nil }
         dictation.stop()
         if draft.trimmingCharacters(in: .whitespaces).hasPrefix("/") {
-            runCommand(composed)
-            return
+            return runCommand(composed)
         }
-        sendAsTyped()
+        return sendAsTyped()
     }
 
     /// A draft that starts with "/" goes to the client library first: its
     /// own commands run here and never reach the agent, and one the agent
     /// does not run is refused with the draft kept.
-    private func runCommand(_ typed: Draft) {
+    private func runCommand(_ typed: Draft) -> Task<Void, Never> {
         sending = true
         notice = nil
-        Task {
+        return Task {
             let outcome = await source.command(typed)
             sending = false
             switch outcome {
             case .send?:
-                if composed == typed { sendAsTyped() }
+                if composed == typed { await sendAsTyped().value }
                 return
             case .pick?:
                 if composed == typed { clearDraft() }
@@ -702,14 +707,14 @@ public final class ChatModel {
         }
     }
 
-    private func sendAsTyped() {
+    private func sendAsTyped() -> Task<Void, Never> {
         let sent = composed
         clearDraft()
         sending = true
         notice = nil
         setFollowing(true)
         toNewest += 1
-        Task {
+        return Task {
             let outcome = await source.send(sent)
             sending = false
             if case .failure(let failure) = outcome {
@@ -721,13 +726,14 @@ public final class ChatModel {
 
     /// The exited composer's one tap: the draft starts the agent again as its
     /// first prompt.
-    public func resume() {
-        guard canResume else { return }
+    @discardableResult
+    public func resume() -> Task<Void, Never>? {
+        guard canResume else { return nil }
         dictation.stop()
         let sent = composed
         sending = true
         notice = nil
-        Task {
+        return Task {
             let outcome = await source.resume(with: sent)
             sending = false
             switch outcome {
@@ -921,11 +927,12 @@ public final class ChatModel {
     /// Stores a photo or file and adds it to the draft once it is stored. One
     /// that cannot be stored is named in the notice with the reason, so it
     /// never leaves the draft without a word.
-    public func attach(_ data: Data, name: String, mime: String, image: Bool) {
-        guard admits(name: name, size: data.count) else { return }
+    @discardableResult
+    public func attach(_ data: Data, name: String, mime: String, image: Bool) -> Task<Void, Never>? {
+        guard admits(name: name, size: data.count) else { return nil }
         uploading += 1
         notice = nil
-        Task {
+        return Task {
             let stored = await source.putBlob(data, name: name, mime: mime)
             uploading -= 1
             switch stored {
@@ -971,22 +978,25 @@ public final class ChatModel {
 
     /// Takes a queued prompt back; its words and attachments return to the
     /// draft. What it held is read before it leaves the queue.
-    public func withdraw(_ queued: QueuedRow) {
+    @discardableResult
+    public func withdraw(_ queued: QueuedRow) -> Task<Void, Never>? {
         let taken = source.draft(of: queued.inputId)
-        act({ await $0.withdraw(queued.inputId) }) { [weak self] in
+        return act({ await $0.withdraw(queued.inputId) }) { [weak self] in
             if let taken { self?.restore(taken) }
         }
     }
 
     /// Steers a queued prompt into the running turn.
-    public func sendNow(_ queued: QueuedRow) {
-        act({ await $0.sendNow(queued.inputId) })
+    @discardableResult
+    public func sendNow(_ queued: QueuedRow) -> Task<Void, Never>? {
+        return act({ await $0.sendNow(queued.inputId) })
     }
 
     /// Sends an input that was not confirmed again, under a new id.
-    public func resend(_ input: [UInt8]) {
+    @discardableResult
+    public func resend(_ input: [UInt8]) -> Task<Void, Never> {
         notice = nil
-        Task {
+        return Task {
             _ = await source.resend(input)
         }
     }
@@ -1053,47 +1063,54 @@ public final class ChatModel {
 
     /// Stop: the interrupt. The turn ends, an open ask is dismissed, and the
     /// agent stays.
-    public func interrupt() {
-        act({ await $0.interrupt() })
+    @discardableResult
+    public func interrupt() -> Task<Void, Never>? {
+        return act({ await $0.interrupt() })
     }
 
     /// Terminal Claude's own view resumed another conversation: puts this
     /// agent's back, so prompts reach it again.
-    public func switchBack() {
-        act({ await $0.switchBack() })
+    @discardableResult
+    public func switchBack() -> Task<Void, Never>? {
+        return act({ await $0.switchBack() })
     }
 
     /// Sends a pick from the settings card. Nothing changes here until the
     /// agent reports the new value, which moves the current mark and the
     /// strip together.
-    public func change(_ setting: SettingChange) {
-        act({ await $0.change(setting) })
+    @discardableResult
+    public func change(_ setting: SettingChange) -> Task<Void, Never>? {
+        return act({ await $0.change(setting) })
     }
 
     // MARK: - Answering
 
-    public func answer(choice: Int, note: String? = nil) {
-        guard let ask else { return }
-        act({ await $0.answer(ask.key, choice: choice, note: note) })
+    @discardableResult
+    public func answer(choice: Int, note: String? = nil) -> Task<Void, Never>? {
+        guard let ask else { return nil }
+        return act({ await $0.answer(ask.key, choice: choice, note: note) })
     }
 
     /// Answers the head question card: one response per question.
-    public func answer(responses: [QuestionResponse]) {
-        guard let ask else { return }
-        act({ await $0.answer(ask.key, responses: responses) })
+    @discardableResult
+    public func answer(responses: [QuestionResponse]) -> Task<Void, Never>? {
+        guard let ask else { return nil }
+        return act({ await $0.answer(ask.key, responses: responses) })
     }
 
     /// Replies to the head question card in the person's own words.
-    public func replyInstead(_ text: String, soFar: [QuestionResponse]) {
-        guard let ask else { return }
-        act({ await $0.replyInstead(ask.key, text: text, soFar: soFar) })
+    @discardableResult
+    public func replyInstead(_ text: String, soFar: [QuestionResponse]) -> Task<Void, Never>? {
+        guard let ask else { return nil }
+        return act({ await $0.replyInstead(ask.key, text: text, soFar: soFar) })
     }
 
     /// Submits the head form with one value per field, which the shared
     /// view checks and encodes.
-    public func submit(form values: [FormValue]) {
-        guard let ask else { return }
-        act({ await $0.answerForm(ask.key, values: values) })
+    @discardableResult
+    public func submit(form values: [FormValue]) -> Task<Void, Never>? {
+        guard let ask else { return nil }
+        return act({ await $0.answerForm(ask.key, values: values) })
     }
 
     /// Sends the head ask's answer again after the connection dropped.
@@ -1110,10 +1127,10 @@ public final class ChatModel {
     private func act(
         _ body: @escaping @Sendable (ChatSource) async -> ActOutcome?,
         done: (@MainActor () -> Void)? = nil
-    ) {
+    ) -> Task<Void, Never> {
         notice = nil
         let source = self.source
-        Task {
+        return Task {
             let outcome = await body(source)
             switch outcome {
             case .done?: done?()

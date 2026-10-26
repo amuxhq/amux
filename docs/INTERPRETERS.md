@@ -734,7 +734,9 @@ answer.
   carries the page's address, as the step's text too, since Codex says
   nothing else about it. `configWarning` (configuration Codex found and did
   not apply) is an error item of kind `configWarning` in Codex's words. A
-  goal's progress (`thread/goal/updated`) draws nothing, like its clearing.
+  goal's progress (`thread/goal/updated`) draws nothing, like its clearing,
+  and neither does a turn's moderation verdict (`turn/moderationMetadata`)
+  or which turn Codex's own app last showed (`thread/readState/changed`).
 - **Agent messages** go to Codex with `thread/inject_items`. Codex reports
   nothing about an injected item, so the interpreter writes the agent-message
   item itself, at acceptance. A probe of codex-cli 0.157.0 settled when the

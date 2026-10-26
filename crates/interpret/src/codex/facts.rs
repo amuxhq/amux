@@ -1423,6 +1423,8 @@ impl State {
             | ServerNotification::ThreadUnarchived(_)
             | ServerNotification::ThreadGoalUpdated(_)
             | ServerNotification::ThreadGoalCleared(_)
+            | ServerNotification::ThreadReadStateChanged(_)
+            | ServerNotification::TurnModerationMetadata(_)
             | ServerNotification::DeprecationNotice(_)
             | ServerNotification::RemoteControlStatusChanged(_)
             | ServerNotification::GuardianWarning(_)

@@ -1160,6 +1160,39 @@ fn codexs_goal_updates_and_config_warnings_are_not_unreadable_rows() {
     );
 }
 
+/// Codex 0.164 sends each turn's moderation verdict
+/// (`turn/moderationMetadata`) and which turn its own app last showed
+/// (`thread/readState/changed`), as QA recorded on Linux. Neither is
+/// something a chat draws, nor a row saying amux could not read it.
+#[test]
+fn codexs_moderation_and_read_state_notices_are_not_unreadable_rows() {
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        ..Default::default()
+    };
+    let (mut state, _) = Codex::initial(&spec, "test");
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"id": 2, "result": {"thread": {"id": "t1", "cliVersion": "0.164.0", "turns": []}, "model": "m"}}),
+        ),
+    );
+    let mut rows = Vec::new();
+    for notification in [
+        json!({"method": "turn/moderationMetadata", "params": {"threadId": "t1", "turnId": "turn-1",
+            "metadata": {"prompt": {"omnimod": {"protection_type": "omnimod",
+                "outputs": [{"results": [{"category_flags": {"A1": false, "REFUSED": false}}]}]}}}}}),
+        json!({"method": "thread/readState/changed", "params": {"threadId": "t1",
+            "readState": {"firstUnread": {"type": "turn", "turnId": "turn-1"}, "revision": "r1"}},
+            "emittedAtMs": 1792972625564_u64}),
+    ] {
+        for item in Codex::step(&mut state, rpc(notification)).step.items {
+            rows.push(item.text);
+        }
+    }
+    assert!(rows.is_empty(), "rows drawn for Codex's notices: {rows:?}");
+}
+
 /// Codex runs a model's command through the user's shell and asks about the
 /// wrapped form (`/bin/zsh -lc "printf '%s\\\\n' …"`), with the command the
 /// model wrote in `commandActions`, as QA recorded on Codex 0.162. Codex's

@@ -435,8 +435,9 @@ pub struct ProfileRuntime {
     offers: crate::offers::Offers,
 }
 
-/// A write waiting for its verdict: its number, and where the verdict goes.
-type Waiting = (u64, oneshot::Sender<SendInputResponse>);
+/// A write waiting for its verdict: its number, and where the verdict
+/// goes, or none once no verdict will be reported for the write.
+type Waiting = (u64, oneshot::Sender<Option<SendInputResponse>>);
 
 pub(crate) struct AgentHandle {
     dir: PathBuf,
@@ -520,18 +521,32 @@ impl AgentHandle {
     }
 
     /// Waits for the verdict on `input_id`, in place of any write of it
-    /// still waiting: the number of this write.
+    /// still waiting, which is told it will get none: the number of this
+    /// write.
     pub(crate) fn expect_reply(
         &self,
         input_id: Vec<u8>,
-        reply: oneshot::Sender<SendInputResponse>,
+        reply: oneshot::Sender<Option<SendInputResponse>>,
     ) -> u64 {
         let write = self.next_write.fetch_add(1, Ordering::SeqCst);
-        self.replies
+        let replaced = self
+            .replies
             .lock()
             .unwrap()
             .insert(input_id, (write, reply));
+        if let Some((_, replaced)) = replaced {
+            let _ = replaced.send(None);
+        }
         write
+    }
+
+    /// Tells the write waiting for the verdict on `input_id` that it will
+    /// get none.
+    fn give_up_reply(&self, input_id: &[u8]) {
+        let waiting = self.replies.lock().unwrap().remove(input_id);
+        if let Some((_, waiting)) = waiting {
+            let _ = waiting.send(None);
+        }
     }
 
     /// Stops waiting for the verdict on `write`, unless a later write of
@@ -544,16 +559,6 @@ impl AgentHandle {
         {
             replies.remove(input_id);
         }
-    }
-
-    /// Whether a later write of the input took the place of `write`, rather
-    /// than the connection ending.
-    fn superseded(&self, input_id: &[u8], write: u64) -> bool {
-        self.replies
-            .lock()
-            .unwrap()
-            .get(input_id)
-            .is_some_and(|(waiting, _)| *waiting != write)
     }
 
     pub(crate) fn expect_dump(&self, dump_id: Vec<u8>, part: oneshot::Sender<DumpPart>) {
@@ -1287,8 +1292,8 @@ impl ProfileRuntime {
     /// Writes a message the core handed to the agent, and reports the
     /// interpreter's verdict on it to the core, or that the connection
     /// ended before one came. The message is in hand until then, or until
-    /// reply patience runs out, when the core's own patience has given up
-    /// on it and a write of it again waits afresh.
+    /// the core gives up on its verdict (its reply patience runs on the
+    /// policy clock) or writes it again, when the later write waits afresh.
     pub(crate) fn write_message(
         &self,
         id: AgentId,
@@ -1316,24 +1321,28 @@ impl ProfileRuntime {
             return;
         };
         let (tx, rx) = oneshot::channel();
-        let input_id = input_id_of(&frame);
-        let write = handle.expect_reply(input_id.clone(), tx);
+        handle.expect_reply(input_id_of(&frame), tx);
         let _ = handle.writes.send(frame);
         handle.handed.fetch_add(1, Ordering::SeqCst);
-        let patience = ms(self.launch().reply_patience_ms);
         tokio::spawn(async move {
-            let waited = tokio::time::timeout(patience, rx).await;
+            let waited = rx.await;
             handle.handed.fetch_sub(1, Ordering::SeqCst);
             match waited {
-                Ok(Ok(verdict)) => report(Some(verdict)).await,
-                // A later write of the message waits in this one's place
-                // and is answered on its own.
-                Ok(Err(_)) if handle.superseded(&input_id, write) => {}
-                Ok(Err(_)) => report(None).await,
-                // The core concluded the message on its own patience.
-                Err(_) => handle.forget_reply(&input_id, write),
+                Ok(Some(verdict)) => report(Some(verdict)).await,
+                // The core gave up on this write, or a later write of the
+                // message waits in its place and is answered on its own.
+                Ok(None) => {}
+                Err(_) => report(None).await,
             }
         });
+    }
+
+    /// The core gave up on the verdict for the message it wrote under
+    /// `input_id`: its write stops waiting and reports nothing.
+    pub(crate) fn forget_verdict(&self, id: AgentId, input_id: &[u8]) {
+        if let Some(handle) = self.handle(id) {
+            handle.give_up_reply(input_id);
+        }
     }
 
     /// The core recorded the agent's exit: its handle goes, and with it the
@@ -1343,6 +1352,9 @@ impl ProfileRuntime {
             return;
         };
         handle.abort();
+        // Its connection's watcher is gone with its tasks: writes still
+        // waiting for a verdict learn here that none will come.
+        handle.replies.lock().unwrap().clear();
         let _ = std::fs::remove_file(handle.dir.join(agent_dir::TOOLS_SOCK));
         handle.exited.send_replace(true);
     }
@@ -1773,7 +1785,7 @@ impl ProfileRuntime {
                         })) => {
                             let waiting = watched.replies.lock().unwrap().remove(&reply.id);
                             if let (Some((_, waiting)), Some(verdict)) = (waiting, reply.verdict) {
-                                let _ = waiting.send(verdict);
+                                let _ = waiting.send(Some(verdict));
                             }
                         }
                         Ok(Some(CtlFrame {

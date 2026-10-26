@@ -1942,6 +1942,13 @@ impl Transition<'_> {
                     }
                 },
                 Output::WriteControl { agent, frame } => self.write_control(h, agent, frame),
+                // The driver stops waiting: neither a verdict that comes
+                // later nor the connection's end reports the write.
+                Output::ForgetVerdict { agent, input_id } => {
+                    if let Some(p) = self.process_of(agent) {
+                        self.w.processes[p].written.remove(&input_id);
+                    }
+                }
                 Output::SpawnAgent { spec, .. } => self.spawn_process(h, *spec),
                 Output::Job { id, op } => {
                     self.push(Lane::Job(h, id), Delivery::Job(h, id, Dbg(op)));

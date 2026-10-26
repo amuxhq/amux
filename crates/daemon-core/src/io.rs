@@ -505,6 +505,13 @@ pub enum Output {
         agent: AgentId,
         frame: ControlFrame,
     },
+    /// The core gave up waiting for the verdict on the message it wrote
+    /// under `input_id` and concluded it lost: stop waiting for that
+    /// write's verdict and report nothing more of it.
+    ForgetVerdict {
+        agent: AgentId,
+        input_id: Vec<u8>,
+    },
     /// Write `spec` into the agent's directory `dir` and start its process
     /// from it; a process that cannot be started is gone, reported as
     /// [`Input::ControlClosed`].

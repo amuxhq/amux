@@ -530,19 +530,31 @@ async fn a_message_waits_for_its_item_to_commit_and_one_envelope_is_handed_over_
 /// A message whose verdict comes after reply patience is concluded lost;
 /// the sender's retry is written again and concluded by the verdict that
 /// comes, not lost on arrival because the first write stopped waiting.
+/// Reply patience is policy time, so the clock is driven: nothing but the
+/// test moves it past the patience.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_retry_after_reply_patience_is_concluded_by_the_verdict_that_comes() {
+    const T0: i64 = 1_000_000;
     const REPLY_MS: i64 = 400;
     let install = Install::new();
     let mut recipient = SyntheticAgent::new(&install, "recipient", SEGMENTS);
     recipient.register_offline(&install);
     recipient.go_live();
     recipient.freeze();
+    let clock = agent_dir::ManualClock::new(T0);
     let launch = Launch {
         reply_patience_ms: REPLY_MS,
         ..quiet_launch()
     };
-    let daemon = install.start("boot-1", launch).await;
+    let daemon = node::start(
+        node::StartOptions {
+            clock: Arc::new(clock.clone()),
+            ..install.options("boot-1", launch)
+        },
+        None,
+    )
+    .await
+    .unwrap();
     let runtime = runtime(&daemon, &install);
     let envelope = SendMessageRequest {
         id: b"envelope-1".to_vec(),
@@ -554,22 +566,51 @@ async fn a_retry_after_reply_patience_is_concluded_by_the_verdict_that_comes() {
         ..SendMessageRequest::default()
     };
 
-    let first = runtime.send_message(envelope.clone(), None).await;
+    let first = tokio::spawn({
+        let runtime = runtime.clone();
+        let envelope = envelope.clone();
+        async move { runtime.send_message(envelope, None).await }
+    });
+    // The frozen recipient takes the message in and answers nothing.
+    until("the message handed over", || async {
+        handed(&recipient, 1)
+    })
+    .await
+    .unwrap();
+    // The core armed its patience as it wrote the message, at the time
+    // it wrote it, which only the test moves.
+    clock.set(T0 + REPLY_MS + 1);
+    let first = first.await.unwrap();
     assert!(matches!(first, Err(RelayError::Lost)), "{first:?}");
+    until(
+        "the first write to stop waiting for its verdict",
+        || async {
+            (!runtime.in_hand(recipient.id))
+                .then_some(())
+                .ok_or("still in hand")
+        },
+    )
+    .await
+    .unwrap();
+
+    // The retry is written to the recipient, which reads it once it has
+    // answered the first; the verdict that comes answers the retry, which
+    // a first write reporting no verdict as it stopped waiting would
+    // conclude lost. Thawed only once the retry is written: thawed before,
+    // the recipient's item can commit first and the retry, finding it, is
+    // never written.
     let retry = tokio::spawn({
         let runtime = runtime.clone();
         async move { runtime.send_message(envelope, None).await }
     });
-    // A window: the retry is written to the frozen recipient, which reads
-    // it only once it answers the first, and waits for its verdict; a first
-    // write that gave up must not answer for it.
-    holds_for(
-        "the retry to wait for its verdict",
-        Duration::from_millis(300),
-        || async { !retry.is_finished() },
-    )
+    until("the retry written", || async {
+        runtime
+            .in_hand(recipient.id)
+            .then_some(())
+            .ok_or("not in hand")
+    })
     .await
-    .expect("the retry waits for the verdict, not concluded lost by the first write");
+    .unwrap();
     recipient.thaw();
     retry
         .await

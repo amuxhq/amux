@@ -1251,6 +1251,9 @@ impl CoreThread {
                     _ => runtime.write_control(id, frame),
                 }
             }
+            Output::ForgetVerdict { agent, input_id } => {
+                runtime.forget_verdict(uuid::Uuid::from_bytes(agent.0), &input_id)
+            }
             Output::ForgetAgent { agent } => runtime.forget_agent(uuid::Uuid::from_bytes(agent.0)),
             Output::SendFile { call, path, range } => {
                 tokio::spawn(send_file(

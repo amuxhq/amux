@@ -221,12 +221,18 @@ impl ProfileRuntime {
             tokio::time::sleep(POLL).await;
         }
         let _handed = Handed::new(&handle);
-        match tokio::time::timeout(ms(launch.reply_patience_ms), rx).await {
-            Ok(Ok(verdict)) => Ok(verdict),
-            // The connection ended before the answer: the watcher dropped
-            // every waiting reply.
-            Ok(Err(_)) => Err(RelayError::Lost),
-            Err(_) => {
+        // Reply patience is policy time, on the profile's clock.
+        let patience = self
+            .clock()
+            .sleep_until(self.clock_now().saturating_add(launch.reply_patience_ms));
+        tokio::select! {
+            waited = rx => match waited {
+                Ok(Some(verdict)) => Ok(verdict),
+                // The connection ended before the answer, or a later write
+                // of the input waits in this one's place.
+                Ok(None) | Err(_) => Err(RelayError::Lost),
+            },
+            () = patience => {
                 handle.forget_reply(&input_id, write);
                 Err(RelayError::Lost)
             }

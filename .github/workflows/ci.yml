@@ -22,7 +22,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Check workspace
         run: just check
       - name: Run Clippy
@@ -39,7 +39,7 @@ jobs:
           toolchain: nightly-2026-08-30
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Check formatting
         run: just fmt-check
 
@@ -54,7 +54,7 @@ jobs:
           toolchain: nightly-2026-08-30
           components: miri, rust-src
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Run the C ABI tests under the checking interpreter
         run: just miri
 
@@ -69,7 +69,7 @@ jobs:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@1.98.0
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Check committed protobuf code
         run: just codegen-check
       - name: Check the protocol still reads what the latest release wrote
@@ -103,7 +103,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: test
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       # testnet's ctl test drives the terminal client in tmux; Linux runners
       # have it already.
       - name: Install tmux on macOS
@@ -131,7 +131,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: test
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Walk the simulated stories by seed
         # The same stories under TESTNET_MODE=simulated, a few seeds each;
         # a failure prints the seed and the `just sim --seed` that reruns
@@ -166,7 +166,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: models
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Check the model at its CI bounds
         run: just test-crate models -- --test ${{ matrix.target }}
 
@@ -181,7 +181,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.98.0
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Build product release
         run: just release-check
 
@@ -197,7 +197,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.98.0
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Install tmux on Linux
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y tmux
@@ -269,7 +269,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.98.0
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Check provider-free client graph
         run: just embedded-check
       - name: Test embedded ownership boundary
@@ -285,7 +285,7 @@ jobs:
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Check iOS device and simulator graphs
         run: just mobile-check
 
@@ -348,7 +348,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ios-gate
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Install build tools
         run: brew install xcodegen
       - name: Run the iOS gate

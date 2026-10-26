@@ -38,7 +38,7 @@ jobs:
         with:
           shared-key: ios-gate
           save-if: false
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Install build tools
         run: brew install xcodegen
       # Every suite here drives the golden device; the small one is not used.

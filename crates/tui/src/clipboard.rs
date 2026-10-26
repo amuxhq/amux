@@ -17,17 +17,24 @@ pub enum ClipboardContent {
     Empty,
 }
 
-/// Reads the clipboard, preferring an image over the text form.
+/// Reads the clipboard: a copied file, else an image, else text.
 ///
-/// A clipboard holding one line that names a readable file is a `Path`, so
-/// copying a file in a file manager and pressing Ctrl+V attaches the file
-/// rather than typing its name. Anything else is text, and an unavailable
-/// clipboard is `Empty` — no clipboard is a normal state on a headless
-/// host, never an error worth stating.
+/// A file copied in a file manager is a `Path`, so Ctrl+V attaches the file
+/// rather than typing its name. It comes before the image because a file
+/// manager's copy can carry a picture too, such as the file's icon. A
+/// clipboard holding one line that names a readable file is a `Path` as
+/// well. Anything else is text, and an unavailable clipboard is `Empty` —
+/// no clipboard is a normal state on a headless host, never an error worth
+/// stating.
 pub fn read_clipboard() -> ClipboardContent {
     let Ok(mut clipboard) = arboard::Clipboard::new() else {
         return ClipboardContent::Empty;
     };
+    if let Ok(files) = clipboard.get().file_list()
+        && let Some(path) = one_file(files)
+    {
+        return ClipboardContent::Path(path);
+    }
     if let Ok(image) = clipboard.get_image()
         && let Some(bytes) = encode_png(&image)
     {
@@ -39,6 +46,15 @@ pub fn read_clipboard() -> ClipboardContent {
     match clipboard.get_text() {
         Ok(text) => classify(text),
         Err(_) => ClipboardContent::Empty,
+    }
+}
+
+/// The file a copy names, when it names exactly one readable file. Several
+/// files, or a folder, are left to the clipboard's other forms.
+pub(crate) fn one_file(files: Vec<PathBuf>) -> Option<PathBuf> {
+    match <[PathBuf; 1]>::try_from(files) {
+        Ok([path]) if path.is_absolute() && path.is_file() => Some(path),
+        _ => None,
     }
 }
 
@@ -93,6 +109,19 @@ mod tests {
     fn a_path_that_names_nothing_stays_text() {
         let text = "/no/such/file.md".to_string();
         assert_eq!(classify(text.clone()), ClipboardContent::Text(text));
+    }
+
+    #[test]
+    fn a_copy_of_one_file_is_that_file_and_anything_else_is_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("notes.md");
+        let other = dir.path().join("other.md");
+        std::fs::write(&file, b"notes").unwrap();
+        std::fs::write(&other, b"other").unwrap();
+        assert_eq!(one_file(vec![file.clone()]), Some(file.clone()));
+        assert_eq!(one_file(vec![file, other]), None);
+        assert_eq!(one_file(vec![dir.path().to_owned()]), None);
+        assert_eq!(one_file(Vec::new()), None);
     }
 
     #[test]

@@ -627,10 +627,12 @@ program paints by clearing to the end of a line is not kept, and the font has no
 opens `amux attach` for an agent in a second pane: Claude's own interface for terminal Claude, Codex's own for Codex.
 `tui watch` attaches this terminal to a pane, to watch and use the client in it by hand; tmux's C-b d leaves it
 open.
-`tui clip` attaches as a person does in the terminal client: it puts a file's path (or, with `--image`, a PNG as
-picture data) on the Mac's clipboard and presses Ctrl+V in the pane. The clipboard is the machine's own, so `clip`
-holds a lock across every session for the moment the client reads it and then puts back the text the clipboard held;
-an image or file copied on the Mac is replaced.
+`tui clip` attaches as a person does in the terminal client: it puts a file (or, with `--image`, a PNG as picture
+data) on the machine's clipboard and presses Ctrl+V in the pane. On macOS the file goes as its path; on Linux it
+goes through `xclip` as a file manager copies one (`text/uri-list`), on the X display named by `DISPLAY`, so a
+headless Linux host needs an X server such as Xvfb and `DISPLAY` set before `ctl up`. The clipboard is the
+machine's own, so `clip` holds a lock across every session for the moment the client reads it and then puts back
+the text the clipboard held; an image or file copied on the machine is replaced.
 `phone attach` hands the open chat's draft a file or photo as the system's photo library or file browser would; those
 pickers are the system's own screens, which nothing outside them drives.
 

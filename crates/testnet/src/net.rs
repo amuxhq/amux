@@ -1821,12 +1821,13 @@ impl Net {
             } else if decl.bonjour {
                 // A client outside the net finds the host at its front
                 // gate, so the net can degrade the client's network.
-                let (lan, me) = (self.lan.clone(), decl.name.clone());
+                let (lan, me, on) = (self.lan.clone(), decl.name.clone(), self.client_ip);
                 Some(Arc::new(move || {
                     Ok(Arc::new(FrontAdvert::new(
                         Arc::new(crate::bonjour::SystemBonjour::new()),
                         &me,
                         lan.clone(),
+                        on,
                     ))
                         as Arc<dyn node::discovery::Discovery>)
                 }))

@@ -894,7 +894,7 @@ cargo = [
 
 [[suite]]
 name = "phone-performance-qualification"
-contract = "The optimised iPhone app on the enrolled Mac's simulator, against the served performance network, stays within its budgets for cold launch, store read, reconciliation over none and over 100 ms of latency directly and through the relay with every way to it gated, streaming and idle, and within reviewed drift of the machine's baseline."
+contract = "The optimised iPhone app on the enrolled Mac's simulator, or with --device on an enrolled phone plugged into it, against the served performance network, stays within its budgets for cold launch, store read, reconciliation over none and over 100 ms of latency directly and through the relay with every way to it gated, streaming and idle, and within reviewed drift of the machine's baseline."
 paths = ["crates/testnet/src/journey/perf.rs", "crates/qualification/src/perf/phone.rs", "perf/baselines/phone"]
 recipe = "just ios perf"
 boundary = "System composition"
@@ -906,7 +906,7 @@ capabilities = ["enrolled Mac14,6", "quiet machine", "iPhone simulator"]
 lane = "qualification"
 evidence = "target/ios/perf"
 update = "just ios perf -- --baseline, once every budget passes"
-baselines = ["perf/baselines/phone/pinned-mac.json"]
+baselines = ["perf/baselines/phone/pinned-mac.json", "perf/baselines/phone/iphone-14-pro-ios27.json"]
 cases = ["crates/testnet/src/journey/perf.rs"]
 cargo = []
 

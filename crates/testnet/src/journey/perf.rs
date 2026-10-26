@@ -682,7 +682,9 @@ impl Run {
         let record_cold = latency_ms == 0 && self.takes(Group::Cold);
         let record_reconciliation = self.takes(Group::Reconciliation);
         for attempt in 0..SAMPLES {
-            let group = if latency_ms == 0 {
+            // A launch with no latency is the first sample of both groups, so
+            // it is the one traced for either.
+            let group = if latency_ms == 0 && !self.traces(Group::Reconciliation) {
                 Group::Cold
             } else {
                 Group::Reconciliation

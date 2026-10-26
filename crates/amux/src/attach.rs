@@ -22,7 +22,7 @@ use anyhow::{Context as _, Result, anyhow};
 use settings::LeaderKey;
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
-use wire::{Agent, Kind, Lifecycle, ProfileInfo};
+use wire::{Agent, Kind, Lifecycle};
 
 /// How a stretch of raw attach ended.
 #[derive(Debug, PartialEq)]
@@ -44,7 +44,7 @@ pub struct Attacher {
 }
 
 impl Attacher {
-    pub fn new(profile: &ProfileInfo, leader: LeaderKey) -> Result<Attacher> {
+    pub fn new(profile: &wire::Profile, leader: LeaderKey) -> Result<Attacher> {
         let socket = Path::new(&profile.socket_path);
         let dir = socket
             .parent()
@@ -532,11 +532,11 @@ mod tests {
         );
     }
 
-    fn profile() -> ProfileInfo {
-        ProfileInfo {
+    fn profile() -> wire::Profile {
+        wire::Profile {
             socket_path: "/data/profiles/p/client.sock".into(),
             id: vec![7; 16],
-            ..ProfileInfo::default()
+            ..wire::Profile::default()
         }
     }
 

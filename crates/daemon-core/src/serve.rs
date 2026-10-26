@@ -10,8 +10,8 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use store::{AgentKey, AgentRow, Marker, PageEnd};
 use wire::{
-    Agent, AgentRef, CaughtUp, FetchRequest, FetchResponse, GetRequest, InventoryEvent, Lagged,
-    SessionEvent, Snapshot, inventory_event, session_event,
+    Agent, AgentRef, CaughtUp, GetItemRequest, InventoryEvent, Lagged, ListItemsRequest,
+    ListItemsResponse, SessionEvent, Snapshot, inventory_event, session_event,
 };
 
 use crate::ids::{CallId, JobId};
@@ -59,12 +59,12 @@ impl Key {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 enum OpenCall {
-    /// A Subscribe stream on one agent.
+    /// A SubscribeSession stream on one agent.
     Session(Key),
     /// A SubscribeInventory stream, `only` one host's when it names one.
     Inventory { only: Option<Vec<u8>> },
-    /// A Fetch waiting on the agent's origin.
-    Fetch,
+    /// A ListItems waiting on the agent's origin.
+    ListItems,
     /// A call forwarded to the host that owns its agent, waiting on its
     /// reply.
     Forward,
@@ -115,11 +115,11 @@ impl Daemon {
         out: &mut Vec<Output>,
     ) {
         let answered = match request {
-            ClientRequest::Subscribe { agent_id, tail } => {
-                self.subscribe(call, &agent_id, Opening::Tail(tail), out)
+            ClientRequest::SubscribeSession { agent_id, tail } => {
+                self.subscribe_session(call, &agent_id, Opening::Tail(tail), out)
             }
-            ClientRequest::Fetch(request) => self.fetch(call, &request, out),
-            ClientRequest::Get(request) => self.get(call, &request, out),
+            ClientRequest::ListItems(request) => self.list_items(call, &request, out),
+            ClientRequest::GetItem(request) => self.get_item(call, &request, out),
             ClientRequest::SubscribeInventory => self.subscribe_inventory(call, None, out),
             ClientRequest::Forward { host, request } => {
                 self.forward(call, host, request, out);
@@ -161,9 +161,9 @@ impl Daemon {
                 bytes,
             } => self.keep_blob(call, &agent_id, hash, bytes, out),
             ClientRequest::GetBlob(request) => self.get_blob(call, &request, out),
-            ClientRequest::Diff(request) => self.diff(call, request, out),
-            ClientRequest::SaveDraft { agent_id, draft } => {
-                self.save_draft(call, agent_id, &draft, out);
+            ClientRequest::GetDiff(request) => self.get_diff(call, request, out),
+            ClientRequest::UpdateDraft { agent_id, draft } => {
+                self.update_draft(call, agent_id, &draft, out);
                 Ok(())
             }
             ClientRequest::GetDraft { agent_id } => {
@@ -225,7 +225,7 @@ impl Daemon {
     /// cannot be continued, its Snapshot, the rows the opening asks for,
     /// its marker if one is set, then whatever follows. A replica's source
     /// is opened for it if none is.
-    pub(crate) fn subscribe(
+    pub(crate) fn subscribe_session(
         &mut self,
         call: CallId,
         agent_id: &[u8],
@@ -295,6 +295,7 @@ impl Daemon {
             // Nothing emitted yet: the kind tag and an empty body.
             agent_id: row.agent.agent.clone(),
             kind: row.kind,
+            phase: wire::Phase::Starting as i32,
             ..Snapshot::default()
         });
         answer(session_event::Of::Snapshot(snapshot));
@@ -359,13 +360,13 @@ impl Daemon {
     /// below a replica's block the history is at the origin, which is asked
     /// and whose answer extends the block where it joins it. An origin that
     /// cannot be asked is an error, never an empty page.
-    pub(crate) fn fetch(
+    pub(crate) fn list_items(
         &mut self,
         call: CallId,
-        request: &FetchRequest,
+        request: &ListItemsRequest,
         out: &mut Vec<Output>,
     ) -> Result<(), CallError> {
-        let limit = request.limit.min(MAX_PAGE);
+        let limit = request.page_size.min(MAX_PAGE);
         let row = self
             .store
             .agent_by_id(&request.agent_id)?
@@ -375,7 +376,7 @@ impl Daemon {
         if own || page.end != PageEnd::Boundary || page.items.len() >= limit as usize {
             answered(
                 call,
-                Response::Fetched(FetchResponse {
+                Response::Fetched(ListItemsResponse {
                     exhausted: page.end == PageEnd::Exhausted,
                     items: page.items,
                 }),
@@ -393,7 +394,7 @@ impl Daemon {
         let rest = limit - page.items.len() as u32;
         match self.ask_page(call, &row.agent, before_order, page.items, rest, out) {
             Ok(()) => {
-                self.answers.open.insert(call, OpenCall::Fetch);
+                self.answers.open.insert(call, OpenCall::ListItems);
             }
             Err(held) => crate::sources::answer_page(call, held, None, out),
         }
@@ -401,10 +402,10 @@ impl Daemon {
     }
 
     /// One item in full.
-    pub(crate) fn get(
+    pub(crate) fn get_item(
         &mut self,
         call: CallId,
-        request: &GetRequest,
+        request: &GetItemRequest,
         out: &mut Vec<Output>,
     ) -> Result<(), CallError> {
         let row = self
@@ -431,7 +432,7 @@ impl Daemon {
             Some(OpenCall::Inventory { .. }) => {
                 Response::Inventory(Arc::new(inventory(inventory_event::Of::Lagged(Lagged {}))))
             }
-            Some(OpenCall::Fetch | OpenCall::Forward) | None => return,
+            Some(OpenCall::ListItems | OpenCall::Forward) | None => return,
         };
         self.answers.release(call);
         answered(call, response, out);
@@ -673,8 +674,8 @@ mod tests {
         out
     }
 
-    fn subscribe(agent_id: &[u8]) -> ClientRequest {
-        ClientRequest::Subscribe {
+    fn subscribe_session(agent_id: &[u8]) -> ClientRequest {
+        ClientRequest::SubscribeSession {
             agent_id: agent_id.to_vec(),
             tail: 10,
         }
@@ -683,7 +684,7 @@ mod tests {
     #[test]
     fn a_call_on_an_unknown_agent_ends_refused_without_an_answer() {
         let mut daemon = daemon();
-        let get = ClientRequest::Get(GetRequest {
+        let get = ClientRequest::GetItem(GetItemRequest {
             agent_id: b"nobody-000000000".to_vec(),
             key: "k".into(),
         });
@@ -695,7 +696,7 @@ mod tests {
             }]
         );
         assert_eq!(
-            call(&mut daemon, 2, subscribe(b"nobody-000000000")),
+            call(&mut daemon, 2, subscribe_session(b"nobody-000000000")),
             vec![Output::EndCall {
                 call: CallId(2),
                 status: Status::Failed(CallError::NoAgent),
@@ -798,8 +799,8 @@ mod tests {
     fn a_muted_agent_is_told_nothing_until_unmuted_and_its_removal_ends_its_streams() {
         let mut daemon = daemon();
         let agent = AgentKey::new(*OWN, *b"agent-0000000000");
-        call(&mut daemon, 1, subscribe(b"agent-0000000000"));
-        call(&mut daemon, 2, subscribe(b"agent-0000000000"));
+        call(&mut daemon, 1, subscribe_session(b"agent-0000000000"));
+        call(&mut daemon, 2, subscribe_session(b"agent-0000000000"));
         let detached = Arc::new(event(session_event::Of::Detached(wire::Detached {})));
         step(
             &mut daemon,

@@ -136,12 +136,12 @@ fn writes(input: &Input, copying: JobId) -> bool {
     match input {
         Input::JobDone { job, .. } => *job != copying,
         Input::ClientCall { request, .. } => match request {
-            ClientRequest::Subscribe { .. }
-            | ClientRequest::Fetch(_)
-            | ClientRequest::Get(_)
+            ClientRequest::SubscribeSession { .. }
+            | ClientRequest::ListItems(_)
+            | ClientRequest::GetItem(_)
             | ClientRequest::SubscribeInventory
             | ClientRequest::GetBlob(_)
-            | ClientRequest::Diff(_) => false,
+            | ClientRequest::GetDiff(_) => false,
             ClientRequest::Forward { request, .. } => peer_writes(request),
             _ => true,
         },
@@ -174,12 +174,12 @@ fn writes(input: &Input, copying: JobId) -> bool {
 fn peer_writes(request: &PeerRequest) -> bool {
     !matches!(
         request,
-        PeerRequest::Subscribe(_)
+        PeerRequest::SubscribeSession(_)
             | PeerRequest::SubscribeInventory
-            | PeerRequest::Fetch(_)
-            | PeerRequest::Get(_)
+            | PeerRequest::ListItems(_)
+            | PeerRequest::GetItem(_)
             | PeerRequest::GetBlob(_)
-            | PeerRequest::Diff(_)
+            | PeerRequest::GetDiff(_)
             | PeerRequest::GetCatalogue(_)
             | PeerRequest::ListRepositories(_)
             | PeerRequest::Dump(_)
@@ -483,7 +483,7 @@ mod tests {
             &mut daemon,
             Input::ClientCall {
                 call: CallId(9),
-                request: ClientRequest::Subscribe {
+                request: ClientRequest::SubscribeSession {
                     agent_id: before.0.to_vec(),
                     tail: 8,
                 },

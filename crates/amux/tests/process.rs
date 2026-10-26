@@ -23,7 +23,7 @@ use tokio::process::{Child, Command};
 use tonic::transport::{Channel, Endpoint};
 use wire::client_service_client::ClientServiceClient;
 use wire::profile_service_client::ProfileServiceClient;
-use wire::{Empty, SubscribeRequest, session_event};
+use wire::{SubscribeSessionRequest, session_event};
 /// How long agents outlive their daemon. Long enough to restart a daemon
 /// under them in a test, short enough to wait out when a test wants them
 /// gone.
@@ -186,7 +186,7 @@ impl Install {
     async fn client(&self) -> ClientServiceClient<Channel> {
         let door = self.front_door().await.expect("a daemon answers");
         let profile = ProfileServiceClient::new(door)
-            .list_profiles(Empty {})
+            .list_profiles(wire::ListProfilesRequest {})
             .await
             .unwrap()
             .into_inner()
@@ -245,7 +245,7 @@ async fn channel(path: &Path) -> std::io::Result<Channel> {
 /// text, in order, read to CaughtUp.
 async fn chat(client: &mut ClientServiceClient<Channel>, agent: &[u8]) -> Vec<(String, String)> {
     let mut stream = client
-        .subscribe(SubscribeRequest {
+        .subscribe_session(SubscribeSessionRequest {
             agent_id: agent.to_vec(),
             tail: 1000,
         })

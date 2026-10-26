@@ -14,9 +14,8 @@ use uuid::Uuid;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::profile_service_client::ProfileServiceClient;
 use wire::{
-    BeginPairRequest, Empty, HostRef, InventoryEvent, PairingWindow, PendingPairRequest,
-    StartPairingRequest, begin_pair_request, host_ref, inventory_event, pairing_window,
-    start_pairing_request,
+    BeginPairRequest, Empty, HostRef, InventoryEvent, PairingWindow, StartPairingRequest,
+    begin_pair_request, host_ref, inventory_event, pairing_window, start_pairing_request,
 };
 
 /// A host listening for direct links on loopback and on the net's
@@ -107,7 +106,10 @@ pub fn carrier(net: &Net, host: &str) -> Option<RelayCarrier> {
 /// Reads a peer's inventory to its CaughtUp and returns the hosts it named.
 pub async fn peer_inventory_hosts(from: &Edge, to: Uuid) -> Result<Vec<Vec<u8>>, tonic::Status> {
     let mut client = from.peer(to).await.map_err(|error| error.status())?;
-    let mut events = client.subscribe_inventory(Empty {}).await?.into_inner();
+    let mut events = client
+        .subscribe_inventory(wire::SubscribeInventoryRequest {})
+        .await?
+        .into_inner();
     let mut hosts = Vec::new();
     loop {
         let InventoryEvent { of } = events
@@ -192,17 +194,17 @@ pub async fn confirm_pair(
     net: &Net,
     initiator: &str,
     token: Vec<u8>,
-) -> Result<wire::PeerEntry, tonic::Status> {
+) -> Result<wire::Peer, tonic::Status> {
     admin(net, initiator)
         .await
-        .confirm_pair(PendingPairRequest { token })
+        .confirm_pair(wire::ConfirmPairRequest { token })
         .await
         .map(tonic::Response::into_inner)
 }
 
 /// Pairs `initiator` with `responder` through both front doors with a PIN
 /// over the responder's LAN listener.
-pub async fn pair(net: &Net, initiator: &str, responder: &str) -> wire::PeerEntry {
+pub async fn pair(net: &Net, initiator: &str, responder: &str) -> wire::Peer {
     let started = start_pairing(net, responder, pin_window())
         .await
         .expect("the responder enters pairing mode");
@@ -232,9 +234,9 @@ pub async fn open_session(
         .await
         .map_err(|error| error.status())?;
     let mut events = client
-        .subscribe(wire::PeerSubscribeRequest {
+        .subscribe_session(wire::PeerSubscribeSessionRequest {
             agent_id: agent.as_bytes().to_vec(),
-            from: Some(wire::peer_subscribe_request::From::Tail(10)),
+            from: Some(wire::peer_subscribe_session_request::From::Tail(10)),
         })
         .await?
         .into_inner();

@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use agent::local_socket::{LocalListener, LocalStream};
 use agent::{NOT_RUNNING, TOOLS_SOCK, ToolsConfig};
-use prost::{Message as _, Name as _};
+use prost::Message as _;
 use provider_fakes::{Step, Tool, ToolClass};
 use serde_json::{Value, json};
 use support::*;
@@ -20,7 +20,7 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader
 use tonic::{Request, Response, Status};
 use wire::client_service_server::ClientService;
 use wire::{
-    Agent as Row, AgentRef, AgentSpec, AmbiguousAgentName, CreateAgentRequest, Empty, HostEntry,
+    Agent as Row, AgentRef, AgentSpec, AmbiguousAgentName, CreateAgentRequest, HostEntry,
     InventoryEvent, Kind, Lifecycle, Phase, SendInputRequest, SendInputResponse,
     SendMessageRequest, SendMessageResponse, create_agent_request, inventory_event,
 };
@@ -91,9 +91,12 @@ type Sessions =
 #[tonic::async_trait]
 impl ClientService for Fleet {
     type SubscribeInventoryStream = Events;
-    type SubscribeStream = Sessions;
+    type SubscribeSessionStream = Sessions;
 
-    async fn subscribe_inventory(&self, _: Request<Empty>) -> Result<Response<Events>, Status> {
+    async fn subscribe_inventory(
+        &self,
+        _: Request<wire::SubscribeInventoryRequest>,
+    ) -> Result<Response<Events>, Status> {
         self.record(Call::Inventory);
         let mut events = self
             .hosts
@@ -128,14 +131,8 @@ impl ClientService for Fleet {
             let message = format!(
                 "{name} names more than one agent; pick one with {name}@here or {name}@studio"
             );
-            let error = wire::Error {
-                code: wire::ErrorCode::FailedPrecondition as i32,
-                message: message.clone(),
-                details: vec![wire::ErrorDetail {
-                    r#type: AmbiguousAgentName::full_name(),
-                    value: detail.encode_to_vec(),
-                }],
-            };
+            let error = wire::Error::new(wire::ErrorCode::FailedPrecondition, message.clone())
+                .with_detail(&detail);
             return Err(Status::with_details(
                 tonic::Code::FailedPrecondition,
                 message,
@@ -197,19 +194,22 @@ impl ClientService for Fleet {
         Err(Status::unimplemented("send_input"))
     }
 
-    async fn subscribe(
+    async fn subscribe_session(
         &self,
-        _: Request<wire::SubscribeRequest>,
+        _: Request<wire::SubscribeSessionRequest>,
     ) -> Result<Response<Sessions>, Status> {
         Err(Status::unimplemented("subscribe"))
     }
-    async fn fetch(
+    async fn list_items(
         &self,
-        _: Request<wire::FetchRequest>,
-    ) -> Result<Response<wire::FetchResponse>, Status> {
+        _: Request<wire::ListItemsRequest>,
+    ) -> Result<Response<wire::ListItemsResponse>, Status> {
         Err(Status::unimplemented("fetch"))
     }
-    async fn get(&self, _: Request<wire::GetRequest>) -> Result<Response<wire::Item>, Status> {
+    async fn get_item(
+        &self,
+        _: Request<wire::GetItemRequest>,
+    ) -> Result<Response<wire::Item>, Status> {
         Err(Status::unimplemented("get"))
     }
     async fn rename_agent(
@@ -221,12 +221,12 @@ impl ClientService for Fleet {
     async fn stop_agent(
         &self,
         request: Request<wire::StopAgentRequest>,
-    ) -> Result<Response<Empty>, Status> {
+    ) -> Result<Response<wire::StopAgentResponse>, Status> {
         self.record(Call::Stop(request.into_inner()));
         self.severed().await?;
         match &self.refuse_stop {
             Some(status) => Err(status.clone()),
-            None => Ok(Response::new(Empty {})),
+            None => Ok(Response::new(wire::StopAgentResponse {})),
         }
     }
     async fn resume_agent(
@@ -253,13 +253,16 @@ impl ClientService for Fleet {
     ) -> Result<Response<wire::GetBlobResponse>, Status> {
         Err(Status::unimplemented("get_blob"))
     }
-    async fn diff(&self, _: Request<wire::DiffRequest>) -> Result<Response<wire::Diff>, Status> {
+    async fn get_diff(
+        &self,
+        _: Request<wire::GetDiffRequest>,
+    ) -> Result<Response<wire::Diff>, Status> {
         Err(Status::unimplemented("diff"))
     }
     async fn get_catalogue(
         &self,
         _: Request<wire::GetCatalogueRequest>,
-    ) -> Result<Response<wire::CatalogueBlob>, Status> {
+    ) -> Result<Response<wire::GetCatalogueResponse>, Status> {
         Err(Status::unimplemented("get_catalogue"))
     }
     async fn list_repositories(
@@ -271,19 +274,19 @@ impl ClientService for Fleet {
     async fn dump(
         &self,
         _: Request<wire::DumpRequest>,
-    ) -> Result<Response<wire::DumpReport>, Status> {
+    ) -> Result<Response<wire::DumpResponse>, Status> {
         Err(Status::unimplemented("dump"))
     }
-    async fn save_draft(
+    async fn update_draft(
         &self,
-        _: Request<wire::SaveDraftRequest>,
-    ) -> Result<Response<wire::Empty>, Status> {
+        _: Request<wire::UpdateDraftRequest>,
+    ) -> Result<Response<wire::Draft>, Status> {
         Err(Status::unimplemented("save_draft"))
     }
     async fn get_draft(
         &self,
         _: Request<wire::GetDraftRequest>,
-    ) -> Result<Response<wire::ComposerDraft>, Status> {
+    ) -> Result<Response<wire::Draft>, Status> {
         Err(Status::unimplemented("get_draft"))
     }
 }
@@ -633,7 +636,10 @@ async fn send_resolves_the_recipient_and_answers_the_envelope_id() {
     };
     assert_eq!(name, "reviewer");
     assert_eq!(sent, json!({ "id": interpret::to_hex(&request.id) }));
-    assert_eq!(request.text, "Please review.");
+    assert_eq!(
+        request.body.as_ref().map(|body| body.text.as_str()),
+        Some("Please review.")
+    );
     assert_eq!(request.context.as_deref(), Some(b"parser".as_slice()));
     assert_eq!(
         request.to,
@@ -1025,7 +1031,10 @@ async fn the_harness_runs_the_tool_server_from_the_install_path(kind: Kind) {
             _ => None,
         })
         .expect("the daemon took a message");
-    assert_eq!(sent.text, "Ready for review.");
+    assert_eq!(
+        sent.body.as_ref().map(|body| body.text.as_str()),
+        Some("Ready for review.")
+    );
     let messages = log
         .full_items()
         .into_values()

@@ -5,9 +5,8 @@
 use tonic::{Request, Response, Status};
 use wire::profile_admin_service_server::{ProfileAdminService, ProfileAdminServiceServer};
 use wire::{
-    BeginPairRequest, DeviceIdentity, Empty, ErrorCode, HostRef, ListPeersResponse, PairingStatus,
-    PairingWindow, PeerEntry, PendingPair, PendingPairRequest, ProfileInfo, StartPairingRequest,
-    TrustSshPeerRequest, UnpairRequest,
+    BeginPairRequest, DeviceIdentity, ErrorCode, ListPeersResponse, PairingStatus, PairingWindow,
+    PendingPair, StartPairingRequest, TrustSshPeerRequest, UnpairRequest,
 };
 
 use crate::ProfileId;
@@ -38,31 +37,40 @@ impl ProfileAdmin {
 }
 
 /// A pairing's token, which `BeginPair` handed out: never empty.
-fn token(request: &PendingPairRequest) -> Result<&[u8], Status> {
-    if request.token.is_empty() {
+fn token(token: &[u8]) -> Result<&[u8], Status> {
+    if token.is_empty() {
         return Err(failed(
             ErrorCode::InvalidArgument,
             "name the pairing by the token BeginPair answered",
         ));
     }
-    Ok(&request.token)
+    Ok(token)
 }
 
 #[tonic::async_trait]
 impl ProfileAdminService for ProfileAdmin {
-    async fn sign_out(&self, _request: Request<Empty>) -> Result<Response<ProfileInfo>, Status> {
+    async fn sign_out(
+        &self,
+        _request: Request<wire::SignOutRequest>,
+    ) -> Result<Response<wire::Profile>, Status> {
         Ok(Response::new(info(
             self.registry.sign_out(self.profile).await?,
         )))
     }
 
-    async fn pause(&self, _request: Request<Empty>) -> Result<Response<ProfileInfo>, Status> {
+    async fn pause_profile(
+        &self,
+        _request: Request<wire::PauseProfileRequest>,
+    ) -> Result<Response<wire::Profile>, Status> {
         Ok(Response::new(info(
             self.registry.set_paused(self.profile, true).await?,
         )))
     }
 
-    async fn resume(&self, _request: Request<Empty>) -> Result<Response<ProfileInfo>, Status> {
+    async fn resume_profile(
+        &self,
+        _request: Request<wire::ResumeProfileRequest>,
+    ) -> Result<Response<wire::Profile>, Status> {
         Ok(Response::new(info(
             self.registry.set_paused(self.profile, false).await?,
         )))
@@ -79,7 +87,7 @@ impl ProfileAdminService for ProfileAdmin {
 
     async fn get_pairing_status(
         &self,
-        _request: Request<Empty>,
+        _request: Request<wire::GetPairingStatusRequest>,
     ) -> Result<Response<PairingStatus>, Status> {
         let edge = self.edge()?;
         Ok(Response::new(PairingStatus {
@@ -88,9 +96,12 @@ impl ProfileAdminService for ProfileAdmin {
         }))
     }
 
-    async fn cancel_pairing(&self, _request: Request<Empty>) -> Result<Response<Empty>, Status> {
+    async fn cancel_pairing(
+        &self,
+        _request: Request<wire::CancelPairingRequest>,
+    ) -> Result<Response<wire::CancelPairingResponse>, Status> {
         self.edge()?.cancel_pairing().await?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(wire::CancelPairingResponse {}))
     }
 
     async fn begin_pair(
@@ -104,26 +115,26 @@ impl ProfileAdminService for ProfileAdmin {
 
     async fn confirm_pair(
         &self,
-        request: Request<PendingPairRequest>,
-    ) -> Result<Response<PeerEntry>, Status> {
+        request: Request<wire::ConfirmPairRequest>,
+    ) -> Result<Response<wire::Peer>, Status> {
         let request = request.into_inner();
         Ok(Response::new(
-            self.edge()?.confirm_pair(token(&request)?).await?,
+            self.edge()?.confirm_pair(token(&request.token)?).await?,
         ))
     }
 
     async fn abandon_pair(
         &self,
-        request: Request<PendingPairRequest>,
-    ) -> Result<Response<Empty>, Status> {
+        request: Request<wire::AbandonPairRequest>,
+    ) -> Result<Response<wire::AbandonPairResponse>, Status> {
         let request = request.into_inner();
-        self.edge()?.abandon_pair(token(&request)?).await?;
-        Ok(Response::new(Empty {}))
+        self.edge()?.abandon_pair(token(&request.token)?).await?;
+        Ok(Response::new(wire::AbandonPairResponse {}))
     }
 
     async fn get_device_identity(
         &self,
-        _request: Request<Empty>,
+        _request: Request<wire::GetDeviceIdentityRequest>,
     ) -> Result<Response<DeviceIdentity>, Status> {
         Ok(Response::new(self.edge()?.device_identity()))
     }
@@ -131,27 +142,33 @@ impl ProfileAdminService for ProfileAdmin {
     async fn trust_ssh_peer(
         &self,
         request: Request<TrustSshPeerRequest>,
-    ) -> Result<Response<Empty>, Status> {
+    ) -> Result<Response<wire::TrustSshPeerResponse>, Status> {
         self.edge()?.trust_ssh_peer(request.into_inner()).await?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(wire::TrustSshPeerResponse {}))
     }
 
     async fn list_peers(
         &self,
-        _request: Request<Empty>,
+        _request: Request<wire::ListPeersRequest>,
     ) -> Result<Response<ListPeersResponse>, Status> {
         Ok(Response::new(ListPeersResponse {
             peers: self.edge()?.list_peers()?,
         }))
     }
 
-    async fn get_peer(&self, request: Request<HostRef>) -> Result<Response<PeerEntry>, Status> {
-        Ok(Response::new(
-            self.edge()?.peer_entry(request.into_inner())?,
-        ))
+    async fn get_peer(
+        &self,
+        request: Request<wire::GetPeerRequest>,
+    ) -> Result<Response<wire::Peer>, Status> {
+        Ok(Response::new(self.edge()?.peer_entry(
+            request.into_inner().peer.unwrap_or_default(),
+        )?))
     }
 
-    async fn unpair(&self, request: Request<UnpairRequest>) -> Result<Response<PeerEntry>, Status> {
+    async fn unpair(
+        &self,
+        request: Request<UnpairRequest>,
+    ) -> Result<Response<wire::Peer>, Status> {
         let request = request.into_inner();
         let peer = request
             .peer

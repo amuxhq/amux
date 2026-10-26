@@ -38,7 +38,7 @@ mod tests {
 
     /// Saves `draft` on a core started from the profile's file, and writes
     /// the file the core asks for.
-    fn save(profile: &Path, draft: wire::ComposerDraft) {
+    fn save(profile: &Path, draft: wire::Draft) {
         let mut core = core();
         let mut out = Vec::new();
         core.step(
@@ -47,7 +47,7 @@ mod tests {
             },
             &mut out,
         );
-        let request = ClientRequest::SaveDraft {
+        let request = ClientRequest::UpdateDraft {
             agent_id: b"agent".to_vec(),
             draft,
         };
@@ -69,7 +69,7 @@ mod tests {
         }
     }
 
-    fn get(profile: &Path) -> wire::ComposerDraft {
+    fn get(profile: &Path) -> wire::Draft {
         let mut core = core();
         let mut out = Vec::new();
         core.step(
@@ -104,13 +104,13 @@ mod tests {
     #[test]
     fn a_draft_outlives_a_restart_and_an_empty_one_is_forgotten() {
         let temp = tempfile::tempdir().unwrap();
-        let draft = wire::ComposerDraft {
+        let draft = wire::Draft {
             text: "half typed".into(),
             attachments: Vec::new(),
         };
         save(temp.path(), draft.clone());
         assert_eq!(get(temp.path()), draft);
-        save(temp.path(), wire::ComposerDraft::default());
-        assert_eq!(get(temp.path()), wire::ComposerDraft::default());
+        save(temp.path(), wire::Draft::default());
+        assert_eq!(get(temp.path()), wire::Draft::default());
     }
 }

@@ -112,7 +112,7 @@ pub(crate) trait ForwardedDial: Send + Sync + 'static {
 
 /// Where a session subscription starts: the origin's tail, or after a
 /// revision this host already holds.
-pub type Cursor = wire::peer_subscribe_request::From;
+pub type Cursor = wire::peer_subscribe_session_request::From;
 
 /// The only calls the channel pool writes before a link's handshake
 /// finishes, as early data the far end may see more than once: each reads
@@ -124,20 +124,20 @@ pub type Cursor = wire::peer_subscribe_request::From;
 /// ```
 ///
 /// ```
-/// let _ = node::EarlyCall::Fetch(wire::FetchRequest::default());
+/// let _ = node::EarlyCall::ListItems(wire::ListItemsRequest::default());
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum EarlyCall {
     /// The host's inventory, which always opens with all of it: the wire
     /// gives it no cursor.
     SubscribeInventory,
-    Subscribe {
+    SubscribeSession {
         session: Vec<u8>,
         from: Cursor,
     },
-    Fetch(wire::FetchRequest),
+    ListItems(wire::ListItemsRequest),
     GetBlob(wire::GetBlobRequest),
-    Diff(wire::DiffRequest),
+    GetDiff(wire::GetDiffRequest),
 }
 
 impl EarlyCall {
@@ -145,10 +145,10 @@ impl EarlyCall {
     fn class(&self) -> ChannelClass {
         match self {
             EarlyCall::SubscribeInventory
-            | EarlyCall::Fetch(_)
+            | EarlyCall::ListItems(_)
             | EarlyCall::GetBlob(_)
-            | EarlyCall::Diff(_) => ChannelClass::Calls,
-            EarlyCall::Subscribe { .. } => ChannelClass::Session,
+            | EarlyCall::GetDiff(_) => ChannelClass::Calls,
+            EarlyCall::SubscribeSession { .. } => ChannelClass::Session,
         }
     }
 
@@ -156,10 +156,10 @@ impl EarlyCall {
     fn method(&self) -> &'static str {
         match self {
             EarlyCall::SubscribeInventory => "SubscribeInventory",
-            EarlyCall::Subscribe { .. } => "Subscribe",
-            EarlyCall::Fetch(_) => "Fetch",
+            EarlyCall::SubscribeSession { .. } => "SubscribeSession",
+            EarlyCall::ListItems(_) => "ListItems",
             EarlyCall::GetBlob(_) => "GetBlob",
-            EarlyCall::Diff(_) => "Diff",
+            EarlyCall::GetDiff(_) => "GetDiff",
         }
     }
 
@@ -167,26 +167,28 @@ impl EarlyCall {
         Ok(match self {
             EarlyCall::SubscribeInventory => EarlyAnswer::Inventory(
                 client
-                    .subscribe_inventory(wire::Empty {})
+                    .subscribe_inventory(wire::SubscribeInventoryRequest {})
                     .await?
                     .into_inner(),
             ),
-            EarlyCall::Subscribe { session, from } => EarlyAnswer::Session(
+            EarlyCall::SubscribeSession { session, from } => EarlyAnswer::Session(
                 client
-                    .subscribe(wire::PeerSubscribeRequest {
+                    .subscribe_session(wire::PeerSubscribeSessionRequest {
                         agent_id: session,
                         from: Some(from),
                     })
                     .await?
                     .into_inner(),
             ),
-            EarlyCall::Fetch(request) => {
-                EarlyAnswer::Fetched(client.fetch(request).await?.into_inner())
+            EarlyCall::ListItems(request) => {
+                EarlyAnswer::Fetched(client.list_items(request).await?.into_inner())
             }
             EarlyCall::GetBlob(request) => {
                 EarlyAnswer::Blob(client.get_blob(request).await?.into_inner())
             }
-            EarlyCall::Diff(request) => EarlyAnswer::Diff(client.diff(request).await?.into_inner()),
+            EarlyCall::GetDiff(request) => {
+                EarlyAnswer::Diff(client.get_diff(request).await?.into_inner())
+            }
         })
     }
 }
@@ -197,7 +199,7 @@ impl EarlyCall {
 pub enum EarlyAnswer {
     Inventory(tonic::Streaming<wire::InventoryEvent>),
     Session(tonic::Streaming<wire::SessionEvent>),
-    Fetched(wire::FetchResponse),
+    Fetched(wire::ListItemsResponse),
     Blob(wire::GetBlobResponse),
     Diff(wire::Diff),
 }
@@ -1134,21 +1136,21 @@ mod tests {
     fn an_early_call_is_only_a_call_that_changes_nothing() {
         let every = [
             EarlyCall::SubscribeInventory,
-            EarlyCall::Subscribe {
+            EarlyCall::SubscribeSession {
                 session: Vec::new(),
                 from: Cursor::Tail(10),
             },
-            EarlyCall::Fetch(wire::FetchRequest::default()),
+            EarlyCall::ListItems(wire::ListItemsRequest::default()),
             EarlyCall::GetBlob(wire::GetBlobRequest::default()),
-            EarlyCall::Diff(wire::DiffRequest::default()),
+            EarlyCall::GetDiff(wire::GetDiffRequest::default()),
         ];
         for call in &every {
             match call {
                 EarlyCall::SubscribeInventory
-                | EarlyCall::Subscribe { .. }
-                | EarlyCall::Fetch(_)
+                | EarlyCall::SubscribeSession { .. }
+                | EarlyCall::ListItems(_)
                 | EarlyCall::GetBlob(_)
-                | EarlyCall::Diff(_) => {}
+                | EarlyCall::GetDiff(_) => {}
             }
         }
         let methods: Vec<_> = every.iter().map(EarlyCall::method).collect();
@@ -1156,10 +1158,10 @@ mod tests {
             methods,
             [
                 "SubscribeInventory",
-                "Subscribe",
-                "Fetch",
+                "SubscribeSession",
+                "ListItems",
                 "GetBlob",
-                "Diff"
+                "GetDiff"
             ]
         );
         for writes in [
@@ -1212,11 +1214,11 @@ mod tests {
         #[tonic::async_trait]
         impl PeerService for Answering {
             type SubscribeInventoryStream = Events<wire::InventoryEvent>;
-            type SubscribeStream = Events<wire::SessionEvent>;
+            type SubscribeSessionStream = Events<wire::SessionEvent>;
 
             async fn subscribe_inventory(
                 &self,
-                _: Request<wire::Empty>,
+                _: Request<wire::SubscribeInventoryRequest>,
             ) -> Answer<Self::SubscribeInventoryStream> {
                 self.inventory.fetch_add(1, Ordering::SeqCst);
                 let event = wire::InventoryEvent::default();
@@ -1224,21 +1226,24 @@ mod tests {
                     event,
                 )]))))
             }
-            async fn subscribe(
+            async fn subscribe_session(
                 &self,
-                _: Request<wire::PeerSubscribeRequest>,
-            ) -> Answer<Self::SubscribeStream> {
+                _: Request<wire::PeerSubscribeSessionRequest>,
+            ) -> Answer<Self::SubscribeSessionStream> {
                 self.sessions.fetch_add(1, Ordering::SeqCst);
                 let event = wire::SessionEvent::default();
                 Ok(Response::new(Box::pin(futures_util::stream::iter([Ok(
                     event,
                 )]))))
             }
-            async fn fetch(&self, _: Request<wire::FetchRequest>) -> Answer<wire::FetchResponse> {
+            async fn list_items(
+                &self,
+                _: Request<wire::ListItemsRequest>,
+            ) -> Answer<wire::ListItemsResponse> {
                 self.fetches.fetch_add(1, Ordering::SeqCst);
-                Ok(Response::new(wire::FetchResponse::default()))
+                Ok(Response::new(wire::ListItemsResponse::default()))
             }
-            async fn get(&self, _: Request<wire::GetRequest>) -> Answer<wire::Item> {
+            async fn get_item(&self, _: Request<wire::GetItemRequest>) -> Answer<wire::Item> {
                 unanswered()
             }
             async fn send_input(
@@ -1259,7 +1264,10 @@ mod tests {
             ) -> Answer<wire::Agent> {
                 unanswered()
             }
-            async fn stop_agent(&self, _: Request<wire::StopAgentRequest>) -> Answer<wire::Empty> {
+            async fn stop_agent(
+                &self,
+                _: Request<wire::StopAgentRequest>,
+            ) -> Answer<wire::StopAgentResponse> {
                 unanswered()
             }
             async fn resume_agent(
@@ -1276,7 +1284,7 @@ mod tests {
             }
             async fn send_message(
                 &self,
-                _: Request<wire::Envelope>,
+                _: Request<wire::PeerSendMessageRequest>,
             ) -> Answer<wire::SendMessageResponse> {
                 unanswered()
             }
@@ -1289,13 +1297,13 @@ mod tests {
             ) -> Answer<wire::GetBlobResponse> {
                 unanswered()
             }
-            async fn diff(&self, _: Request<wire::DiffRequest>) -> Answer<wire::Diff> {
+            async fn get_diff(&self, _: Request<wire::GetDiffRequest>) -> Answer<wire::Diff> {
                 unanswered()
             }
             async fn get_catalogue(
                 &self,
                 _: Request<wire::GetCatalogueRequest>,
-            ) -> Answer<wire::CatalogueBlob> {
+            ) -> Answer<wire::GetCatalogueResponse> {
                 unanswered()
             }
             async fn list_repositories(
@@ -1496,11 +1504,11 @@ mod tests {
         fn calls() -> Vec<EarlyCall> {
             vec![
                 EarlyCall::SubscribeInventory,
-                EarlyCall::Subscribe {
+                EarlyCall::SubscribeSession {
                     session: b"agent".to_vec(),
                     from: Cursor::Tail(10),
                 },
-                EarlyCall::Fetch(wire::FetchRequest::default()),
+                EarlyCall::ListItems(wire::ListItemsRequest::default()),
             ]
         }
 

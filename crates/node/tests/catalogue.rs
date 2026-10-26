@@ -124,7 +124,7 @@ impl Pair {
                 .await
         );
         let subscription = until("the laptop to list the desk's agent", || {
-            laptop_runtime.subscribe(agent.id.as_bytes(), 10)
+            laptop_runtime.subscribe_session(agent.id.as_bytes(), 10)
         })
         .await
         .unwrap();

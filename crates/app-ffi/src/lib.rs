@@ -393,7 +393,7 @@ pub fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<Box<AmuxR
     let watch = phone.handle().spawn(async move {
         // A watch that falls behind ends; the list is read again from a
         // fresh one, and handed to the app once it has caught up.
-        while let Ok(mut events) = watching.watch_profiles() {
+        while let Ok(mut events) = watching.subscribe_profiles() {
             let mut caught_up = false;
             while let Some(event) = events.next().await {
                 caught_up |= event == ProfileEvent::CaughtUp;

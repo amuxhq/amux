@@ -213,12 +213,13 @@ message PtyFrame {
 }
 
 enum PtyMode {
+  PTY_MODE_UNSPECIFIED = 0;
   // Terminal Claude: the one terminal's bytes are the pty/ files; the
   // client reads them by position and the agent says how far they go.
-  PTY_MODE_FILES = 0;
+  PTY_MODE_FILES = 1;
   // Codex: each connection is its own `codex resume` on the agent's thread,
   // its bytes streamed and never retained.
-  PTY_MODE_STREAM = 1;
+  PTY_MODE_STREAM = 2;
 }
 
 message PtyHello {

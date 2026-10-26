@@ -437,7 +437,8 @@ impl SessionState {
         };
         match phase {
             wire::Phase::Starting => PhaseView::Starting,
-            wire::Phase::Idle => PhaseView::Idle,
+            // A phase from a newer build reads as the quietest one.
+            wire::Phase::Idle | wire::Phase::Unspecified => PhaseView::Idle,
             wire::Phase::Working => PhaseView::Working,
             wire::Phase::NeedsYou => PhaseView::NeedsYou,
         }

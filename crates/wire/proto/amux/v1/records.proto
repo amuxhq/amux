@@ -3,7 +3,8 @@ syntax = "proto3";
 package amux.v1;
 
 // Session records: what an agent's interpreter writes to its journal, what
-// the daemon commits to the store, and what every Subscribe stream carries.
+// the daemon commits to the store, and what every SubscribeSession stream
+// carries.
 //
 // The daemon and the store read only the envelope (Step, Item, Append,
 // Snapshot). An item or snapshot body is the per-kind message named by
@@ -95,9 +96,8 @@ message Sender {
 }
 
 message AgentSender {
-  bytes agent_id = 1;
-  bytes host_id = 2;
-  string name = 3;
+  AgentRef agent = 1;
+  string name = 2;
 }
 
 message Human {}
@@ -154,7 +154,7 @@ message Item {
 }
 
 // The one delta: extends `text` on an open item. Sent only live, after
-// CaughtUp; a base mismatch makes the client Get the item.
+// CaughtUp; a base mismatch makes the client call GetItem.
 message Append {
   bytes agent_id = 1;
   string key = 2;
@@ -171,7 +171,7 @@ message Snapshot {
   uint64 revision = 2;
   repeated QueuedInput queue = 3;
   // Which per-kind snapshot `body` holds. Before the interpreter's first
-  // snapshot is ingested, Subscribe answers with the kind and an empty body.
+  // snapshot is ingested, SubscribeSession answers with the kind and an empty body.
   Kind kind = 4;
   bytes body = 5;
   // STARTING until the provider accepts input; NEEDS_YOU whenever an ask is
@@ -261,11 +261,14 @@ message ChangeTotals {
   uint32 removed = 3;
 }
 
+// UNSPECIFIED is never sent: it is what a phase this build does not know
+// reads as.
 enum Phase {
-  PHASE_STARTING = 0;
-  PHASE_IDLE = 1;
-  PHASE_WORKING = 2;
-  PHASE_NEEDS_YOU = 3;
+  PHASE_UNSPECIFIED = 0;
+  PHASE_STARTING = 1;
+  PHASE_IDLE = 2;
+  PHASE_WORKING = 3;
+  PHASE_NEEDS_YOU = 4;
 }
 
 // What the daemon needs to notify a parent without decoding a body. An ask
@@ -358,9 +361,10 @@ message DiffFile {
 }
 
 enum DiffFileChange {
-  DIFF_FILE_CHANGE_CHANGED = 0;
-  DIFF_FILE_CHANGE_CREATED = 1;
-  DIFF_FILE_CHANGE_DELETED = 2;
+  DIFF_FILE_CHANGE_UNSPECIFIED = 0;
+  DIFF_FILE_CHANGE_CHANGED = 1;
+  DIFF_FILE_CHANGE_CREATED = 2;
+  DIFF_FILE_CHANGE_DELETED = 3;
 }
 
 message DiffBase {
@@ -371,7 +375,7 @@ message DiffBase {
   }
 }
 
-// A diff exactly as the Diff call returned it, frozen when the review page
+// A diff exactly as the GetDiff call returned it, frozen when the review page
 // opened, plus a person's comments.
 message Review {
   Diff diff = 1;

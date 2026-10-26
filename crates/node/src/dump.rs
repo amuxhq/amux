@@ -84,10 +84,8 @@ use prost::Message as _;
 use store::AgentRow;
 use tokio::sync::oneshot;
 use uuid::Uuid;
-use wire::{
-    AgentDumpRequest, ClientSessionHistory, CtlFrame, DumpFile, DumpPart, DumpRequest, Kind, Step,
-    ctl_frame,
-};
+use wire::dump::ClientSessionHistory;
+use wire::{AgentDumpRequest, CtlFrame, DumpFile, DumpPart, DumpRequest, Kind, Step, ctl_frame};
 
 use crate::blobs::hex;
 use crate::driver::{AGENT_DUMP, AGENT_VIOLATION_DUMP, Captured};
@@ -650,13 +648,20 @@ fn log_cut_note(errors: &mut Vec<String>, skipped: u64) {
 /// agent's kind, and returns their manifest entries. A session of an agent
 /// the dump does not cover is named in `errors` and left out.
 fn client_sessions(
-    sessions: &[ClientSessionHistory],
+    sessions: &[Vec<u8>],
     rows: &[AgentRow],
     bundle: &Path,
     errors: &mut Vec<String>,
 ) -> io::Result<Vec<serde_json::Value>> {
     let mut entries = Vec::new();
-    for history in sessions {
+    for encoded in sessions {
+        let history = match ClientSessionHistory::decode(encoded.as_slice()) {
+            Ok(history) => history,
+            Err(error) => {
+                errors.push(format!("a client session: {error}"));
+                continue;
+            }
+        };
         let id = Uuid::from_slice(&history.agent_id).unwrap_or_default();
         let Some(row) = rows.iter().find(|row| row.agent.agent == history.agent_id) else {
             errors.push(format!(
@@ -665,7 +670,7 @@ fn client_sessions(
             continue;
         };
         let kind = Kind::try_from(row.kind).unwrap_or(Kind::Unspecified);
-        let bytes = redacted(kind, RedactTarget::ClientSession(history.encode_to_vec()));
+        let bytes = redacted(kind, RedactTarget::ClientSession(encoded.clone()));
         let history = match ClientSessionHistory::decode(bytes.as_slice()) {
             Ok(history) => history,
             Err(error) => {

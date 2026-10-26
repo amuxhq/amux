@@ -27,10 +27,8 @@ use interpret::codex::Codex;
 use interpret::ring::Entry;
 use ui_state::{Msg, SessionState};
 use ui_view::{ChatOptions, Row};
-use wire::{
-    Agent, CaughtUp, ClientSession, ClientSessionEvents, ClientTraced, Item, Kind, SessionEvent,
-    Step, session_event,
-};
+use wire::dump::{ClientSession, ClientSessionEvents, ClientTraced};
+use wire::{Agent, CaughtUp, Item, Kind, SessionEvent, Step, session_event};
 
 /// The core's part of a bundle, and its files.
 pub const CORE: &str = "core";

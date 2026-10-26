@@ -18,7 +18,7 @@ use daemon_core::payload::{
 use store::{AgentRow, StoreError};
 use tonic::{Code, Response, Status};
 use uuid::Uuid;
-use wire::{AmbiguousHostName, ErrorCode, ErrorDetail, HostEntry};
+use wire::{AmbiguousHostName, ErrorCode, HostEntry};
 
 use crate::HostId;
 use crate::driver::Delivered;
@@ -77,21 +77,14 @@ impl ForwardError {
     /// the same answer it would have had from the owner directly.
     pub fn to_wire(&self) -> wire::Error {
         match self {
-            Self::NotSent { .. } | Self::Lapsed { .. } | Self::Uncertain { .. } => {
-                wire_error(self.code(), self.to_string())
+            Self::NotSent { .. } => {
+                wire::Error::because(wire::ErrorReason::HostUnreachable, self.to_string())
             }
+            Self::Lapsed { .. } => {
+                wire::Error::because(wire::ErrorReason::PaymentRequired, self.to_string())
+            }
+            Self::Uncertain { .. } => wire_error(ErrorCode::Aborted, self.to_string()),
             Self::Remote(error) => error.clone(),
-        }
-    }
-
-    pub fn code(&self) -> ErrorCode {
-        match self {
-            Self::NotSent { .. } => ErrorCode::Unreachable,
-            Self::Lapsed { .. } => ErrorCode::PaymentRequired,
-            Self::Uncertain { .. } => ErrorCode::Aborted,
-            Self::Remote(error) => {
-                ErrorCode::try_from(error.code).unwrap_or(ErrorCode::Unspecified)
-            }
         }
     }
 }
@@ -154,14 +147,14 @@ peer_rpc! {
         => PeerReply::SendMessage(reply) => reply;
     wire::PutBlobRequest => PutBlob, wire::BlobRef => PeerReply::Blob(blob) => blob;
     wire::GetBlobRequest => GetBlob, wire::GetBlobResponse => PeerReply::GetBlob(reply) => reply;
-    wire::DiffRequest => Diff, wire::Diff => PeerReply::Diff(diff) => diff;
-    wire::GetCatalogueRequest => GetCatalogue, wire::CatalogueBlob
+    wire::GetDiffRequest => GetDiff, wire::Diff => PeerReply::Diff(diff) => diff;
+    wire::GetCatalogueRequest => GetCatalogue, wire::GetCatalogueResponse
         => PeerReply::Catalogue(catalogue) => catalogue;
     wire::ListRepositoriesRequest => ListRepositories, wire::ListRepositoriesResponse
         => PeerReply::Repositories(repositories) => repositories;
     wire::DumpRequest => Dump, wire::DumpPart => PeerReply::Dump(part) => part;
-    wire::FetchRequest => Fetch, wire::FetchResponse => PeerReply::Fetched(page) => page;
-    wire::GetRequest => Get, wire::Item => PeerReply::Item(item) => item;
+    wire::ListItemsRequest => ListItems, wire::ListItemsResponse => PeerReply::Fetched(page) => page;
+    wire::GetItemRequest => GetItem, wire::Item => PeerReply::Item(item) => item;
 }
 
 /// A spawn's host name that answers to no trusted host, or to several.
@@ -178,15 +171,8 @@ impl HostNameError {
         match self {
             Self::NotFound { .. } => wire_error(ErrorCode::NotFound, self.to_string()),
             Self::Ambiguous(ambiguous) => {
-                use prost::{Message as _, Name as _};
-                wire::Error {
-                    code: ErrorCode::FailedPrecondition as i32,
-                    message: self.to_string(),
-                    details: vec![ErrorDetail {
-                        r#type: AmbiguousHostName::full_name(),
-                        value: ambiguous.encode_to_vec(),
-                    }],
-                }
+                wire::Error::new(ErrorCode::FailedPrecondition, self.to_string())
+                    .with_detail(ambiguous)
             }
         }
     }
@@ -398,8 +384,10 @@ async fn dispatch(
         answer.map(|answer| reply(answer.into_inner()))
     }
     match request {
-        PeerRequest::Fetch(request) => unary(client.fetch(request).await, PeerReply::Fetched),
-        PeerRequest::Get(request) => unary(client.get(request).await, PeerReply::Item),
+        PeerRequest::ListItems(request) => {
+            unary(client.list_items(request).await, PeerReply::Fetched)
+        }
+        PeerRequest::GetItem(request) => unary(client.get_item(request).await, PeerReply::Item),
         PeerRequest::SendInput(request) => {
             unary(client.send_input(request).await, PeerReply::SendInput)
         }
@@ -419,11 +407,14 @@ async fn dispatch(
             unary(client.delete_agent(request).await, |_| PeerReply::Done)
         }
         PeerRequest::SendMessage(envelope) => {
-            unary(client.send_message(envelope).await, PeerReply::SendMessage)
+            let request = wire::PeerSendMessageRequest {
+                envelope: Some(envelope),
+            };
+            unary(client.send_message(request).await, PeerReply::SendMessage)
         }
         PeerRequest::PutBlob(request) => unary(client.put_blob(request).await, PeerReply::Blob),
         PeerRequest::GetBlob(request) => unary(client.get_blob(request).await, PeerReply::GetBlob),
-        PeerRequest::Diff(request) => unary(client.diff(request).await, PeerReply::Diff),
+        PeerRequest::GetDiff(request) => unary(client.get_diff(request).await, PeerReply::Diff),
         PeerRequest::GetCatalogue(request) => {
             unary(client.get_catalogue(request).await, PeerReply::Catalogue)
         }
@@ -433,8 +424,8 @@ async fn dispatch(
         ),
         PeerRequest::Dump(request) => unary(client.dump(request).await, PeerReply::Dump),
         // Streams are opened by the replica's source, not forwarded.
-        PeerRequest::Subscribe(_) | PeerRequest::SubscribeInventory => Err(Status::unimplemented(
-            "a stream is not made as a forwarded call",
-        )),
+        PeerRequest::SubscribeSession(_) | PeerRequest::SubscribeInventory => Err(
+            Status::unimplemented("a stream is not made as a forwarded call"),
+        ),
     }
 }

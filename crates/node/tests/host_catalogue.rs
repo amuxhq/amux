@@ -15,7 +15,8 @@ use support::synthetic::*;
 use support::*;
 use wire::client_service_server::ClientService as _;
 use wire::{
-    Catalogue, CatalogueBlob, GetBlobRequest, GetCatalogueRequest, ProviderOnHost, inventory_event,
+    Catalogue, GetBlobRequest, GetCatalogueRequest, GetCatalogueResponse, ProviderOnHost,
+    inventory_event,
 };
 
 fn model(value: &str) -> OfferedModel {
@@ -101,7 +102,7 @@ fn by_host(host: uuid::Uuid, provider: wire::Provider) -> tonic::Request<GetCata
 /// What GetCatalogue answered, decoded.
 #[derive(Debug, PartialEq)]
 struct Asked {
-    blob: CatalogueBlob,
+    blob: GetCatalogueResponse,
     catalogue: Catalogue,
 }
 
@@ -408,7 +409,10 @@ async fn terminal_claude_offers_what_its_hosts_claude_offers() {
         )
         .await
         .unwrap();
-    let mut subscription = runtime.subscribe(&agent.agent_id, 10).await.unwrap();
+    let mut subscription = runtime
+        .subscribe_session(&agent.agent_id, 10)
+        .await
+        .unwrap();
     let mut seen = Vec::new();
     let named = |seen: &[wire::SessionEvent]| {
         seen.iter().find_map(|event| match &event.of {
@@ -518,7 +522,10 @@ async fn terminal_claude_offers_the_commands_of_the_project_it_runs_in() {
         )
         .await
         .unwrap();
-    let mut subscription = runtime.subscribe(&agent.agent_id, 10).await.unwrap();
+    let mut subscription = runtime
+        .subscribe_session(&agent.agent_id, 10)
+        .await
+        .unwrap();
     let mut seen = Vec::new();
     let named = |seen: &[wire::SessionEvent]| {
         seen.iter().find_map(|event| match &event.of {

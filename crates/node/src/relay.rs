@@ -17,7 +17,7 @@ use store::StoreError;
 use tokio::sync::oneshot;
 use uuid::Uuid;
 use wire::{
-    AgentSender, Envelope, ErrorCode, Human, Lifecycle, MessageBody, Refusal, Rejected,
+    AgentRef, AgentSender, Envelope, ErrorCode, Human, Lifecycle, Refusal, Rejected,
     SendInputRequest, SendInputResponse, SendMessageRequest, SendMessageResponse, Sender,
     ctl_frame, envelope, send_input_response, sender,
 };
@@ -248,10 +248,7 @@ impl ProfileRuntime {
             context: request.context,
             from: None,
             to: request.to,
-            body: Some(envelope::Body::Message(MessageBody {
-                text: request.text,
-                attachments: request.attachments,
-            })),
+            body: Some(envelope::Body::Message(request.body.unwrap_or_default())),
         };
         let from = caller.map_or(MessageFrom::Person, |caller| {
             MessageFrom::Agent(core_agent(caller))
@@ -291,7 +288,10 @@ impl ProfileRuntime {
             MessageFrom::Agent(caller) => {
                 Some((self.host().as_bytes().to_vec(), caller.0.to_vec()))
             }
-            MessageFrom::Peer(sender) => Some((sender.host_id.clone(), sender.agent_id.clone())),
+            MessageFrom::Peer(sender) => {
+                let agent = sender.agent.clone().unwrap_or_default();
+                Some((agent.host_id, agent.agent_id))
+            }
             MessageFrom::Person | MessageFrom::PeerPerson => None,
         };
         if let Some((host, agent)) = sender {
@@ -416,8 +416,10 @@ impl ProfileRuntime {
     pub(crate) fn agent_sender(&self, id: AgentId, row: Option<&store::AgentRow>) -> Sender {
         Sender {
             value: Some(sender::Value::Agent(AgentSender {
-                agent_id: id.as_bytes().to_vec(),
-                host_id: self.host().as_bytes().to_vec(),
+                agent: Some(AgentRef {
+                    host_id: self.host().as_bytes().to_vec(),
+                    agent_id: id.as_bytes().to_vec(),
+                }),
                 name: row.map(|row| row.name.clone()).unwrap_or_default(),
             })),
         }

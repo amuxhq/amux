@@ -74,9 +74,11 @@ fn message(id: &[u8], to: &AgentRef, text: &str) -> wire::SendMessageRequest {
     wire::SendMessageRequest {
         id: id.to_vec(),
         to: Some(to.clone()),
-        text: text.into(),
         context: None,
-        attachments: Vec::new(),
+        body: Some(wire::MessageBody {
+            text: text.into(),
+            attachments: Vec::new(),
+        }),
     }
 }
 
@@ -289,12 +291,9 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
         .unwrap_err();
     assert_eq!(refused.code(), Code::FailedPrecondition);
     let error = wire_error(&refused);
-    let detail = error
-        .details
-        .iter()
-        .find(|detail| detail.r#type == "amux.v1.AmbiguousHostName")
+    let ambiguous = error
+        .detail::<AmbiguousHostName>()
         .expect("the candidates ride the error");
-    let ambiguous = AmbiguousHostName::decode(detail.value.as_slice()).unwrap();
     let mut candidates: Vec<&str> = ambiguous
         .candidates
         .iter()

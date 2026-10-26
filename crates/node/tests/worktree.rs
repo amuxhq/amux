@@ -81,7 +81,7 @@ fn same_place(a: &Path, b: &Path) -> bool {
 /// The git facts the agent's snapshot reports once it has read them.
 async fn reported_git(runtime: &node::ProfileRuntime, agent: &wire::Agent) -> wire::Git {
     let mut subscription = until("a subscription to the new agent", || {
-        runtime.subscribe(&agent.agent_id, 10)
+        runtime.subscribe_session(&agent.agent_id, 10)
     })
     .await
     .unwrap();

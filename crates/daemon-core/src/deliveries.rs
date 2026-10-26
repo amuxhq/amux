@@ -400,8 +400,10 @@ impl Daemon {
             context: None,
             from: Some(Sender {
                 value: Some(sender::Value::Agent(AgentSender {
-                    agent_id: row.child_id.clone(),
-                    host_id: self.store.own_host().to_vec(),
+                    agent: Some(AgentRef {
+                        host_id: self.store.own_host().to_vec(),
+                        agent_id: row.child_id.clone(),
+                    }),
                     name: child.map(|child| child.name).unwrap_or_default(),
                 })),
             }),
@@ -597,14 +599,17 @@ impl Daemon {
                 let key = self.own_key(caller);
                 let name = self.store.agent(&key)?.map(|row| row.name);
                 let sender = AgentSender {
-                    agent_id: caller.0.to_vec(),
-                    host_id: self.store.own_host().to_vec(),
+                    agent: Some(AgentRef {
+                        host_id: self.store.own_host().to_vec(),
+                        agent_id: caller.0.to_vec(),
+                    }),
                     name: name.unwrap_or_default(),
                 };
                 (sender::Value::Agent(sender), Some(key))
             }
             MessageFrom::Peer(sender) => {
-                let key = AgentKey::new(sender.host_id.clone(), sender.agent_id.clone());
+                let agent = sender.agent.clone().unwrap_or_default();
+                let key = AgentKey::new(agent.host_id, agent.agent_id);
                 (sender::Value::Agent(sender), Some(key))
             }
         };

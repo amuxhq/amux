@@ -1251,7 +1251,7 @@ async fn a_changed_tier_reaches_a_process_host_and_the_plan_read_at_once() {
         net.front_door("box")
             .await
             .unwrap()
-            .list_profiles(wire::Empty {})
+            .list_profiles(wire::ListProfilesRequest {})
             .await
             .unwrap()
             .into_inner()
@@ -1391,7 +1391,7 @@ async fn a_link_behind_a_router_survives_its_host_changing_network() {
         .await
         .expect("a channel to the desk after the move");
     let mut inventory = peer
-        .subscribe_inventory(wire::Empty {})
+        .subscribe_inventory(wire::SubscribeInventoryRequest {})
         .await
         .expect("the desk answers across the moved link")
         .into_inner();

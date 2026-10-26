@@ -79,7 +79,7 @@ impl Daemon {
             .drafts
             .by_agent
             .get(agent_id)
-            .and_then(|bytes| wire::ComposerDraft::decode(bytes.as_slice()).ok())
+            .and_then(|bytes| wire::Draft::decode(bytes.as_slice()).ok())
             .unwrap_or_default();
         answered(call, Response::Draft(draft), out);
     }
@@ -87,11 +87,11 @@ impl Daemon {
     /// Keeps `draft` for the agent; an empty one forgets it. Answered at
     /// once: a save that fails to reach the file is logged, and the client
     /// still holds the words it showed.
-    pub(crate) fn save_draft(
+    pub(crate) fn update_draft(
         &mut self,
         call: CallId,
         agent_id: Vec<u8>,
-        draft: &wire::ComposerDraft,
+        draft: &wire::Draft,
         out: &mut Vec<Output>,
     ) {
         if draft.text.trim().is_empty() && draft.attachments.is_empty() {
@@ -182,9 +182,9 @@ mod tests {
         daemon.step(
             Input::ClientCall {
                 call: CallId(1),
-                request: ClientRequest::SaveDraft {
+                request: ClientRequest::UpdateDraft {
                     agent_id: vec![2; 16],
-                    draft: wire::ComposerDraft {
+                    draft: wire::Draft {
                         text: text.into(),
                         ..Default::default()
                     },
@@ -228,7 +228,7 @@ mod tests {
         let [(_, drafts)] = again.as_slice() else {
             panic!("one write: {out:?}");
         };
-        let draft = wire::ComposerDraft::decode(drafts[0].1.as_slice()).expect("a draft");
+        let draft = wire::Draft::decode(drafts[0].1.as_slice()).expect("a draft");
         assert_eq!(draft.text, "a whole thought");
 
         let mut out = Vec::new();

@@ -46,9 +46,9 @@ use wire::client_service_client::ClientServiceClient;
 use wire::profile_service_client::ProfileServiceClient;
 use wire::{
     ClaudeAnswer, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
-    CreateAgentRequest, Input, Item, Kind, Phase, SendInputRequest, Snapshot, SubscribeRequest,
-    claude_answer, claude_pty_input, claude_sdk_input, codex_input, permission_answer,
-    send_input_response, session_event,
+    CreateAgentRequest, Input, Item, Kind, Phase, SendInputRequest, Snapshot,
+    SubscribeSessionRequest, claude_answer, claude_pty_input, claude_sdk_input, codex_input,
+    permission_answer, send_input_response, session_event,
 };
 
 /// Claude runs on its cheapest model; the lane judges structure, not wit.
@@ -533,7 +533,7 @@ impl Install {
         .await
         .ok_or("its front door never answered")?;
         let profile = ProfileServiceClient::new(door)
-            .list_profiles(wire::Empty {})
+            .list_profiles(wire::ListProfilesRequest {})
             .await
             .map_err(|status| status.to_string())?
             .into_inner()
@@ -756,7 +756,7 @@ impl Install {
             async move {
                 loop {
                     let stream = client
-                        .subscribe(SubscribeRequest {
+                        .subscribe(SubscribeSessionRequest {
                             agent_id: agent.clone(),
                             tail: 1000,
                         })

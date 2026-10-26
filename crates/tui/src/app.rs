@@ -172,7 +172,7 @@ pub enum AppEvent {
         result: Result<Arc<Session>, String>,
         /// The draft this machine kept for the agent, from an earlier
         /// client.
-        kept: Option<wire::ComposerDraft>,
+        kept: Option<wire::Draft>,
     },
     Notice(String, Tone),
     /// Put words back in the composer of this agent's chat, saying why
@@ -338,8 +338,8 @@ fn terminal_elsewhere(agent: &Agent, config: &TuiConfig) -> Option<&'static str>
 }
 
 /// A composer's words and attachments, as the daemon keeps them.
-fn composer_draft(editor: &crate::editor::Editor) -> wire::ComposerDraft {
-    wire::ComposerDraft {
+fn composer_draft(editor: &crate::editor::Editor) -> wire::Draft {
+    wire::Draft {
         text: editor.text().to_owned(),
         attachments: editor.attachments().to_vec(),
     }
@@ -377,15 +377,15 @@ fn returning_prompts(
 
 /// Saves drafts with this machine's daemon; a failure loses only what a
 /// client kept in memory anyway.
-async fn save_drafts(client: Arc<dyn Client>, drafts: Vec<(Vec<u8>, wire::ComposerDraft)>) {
+async fn save_drafts(client: Arc<dyn Client>, drafts: Vec<(Vec<u8>, wire::Draft)>) {
     for (agent_id, draft) in drafts {
-        let request = wire::SaveDraftRequest {
+        let request = wire::UpdateDraftRequest {
             agent_id,
             draft: Some(draft),
         };
         // Nowhere to say it as the client closes; the draft was only ever
         // in this client's memory before.
-        let _ = client.save_draft(request).await;
+        let _ = client.update_draft(request).await;
     }
 }
 
@@ -826,7 +826,7 @@ impl App {
     /// closes: the open chat's, those of chats left, and, in each agent's,
     /// the words of prompts held for an unreachable host, which go back to
     /// the draft rather than being lost with the client.
-    fn drafts_to_keep(&mut self) -> Vec<(Vec<u8>, wire::ComposerDraft)> {
+    fn drafts_to_keep(&mut self) -> Vec<(Vec<u8>, wire::Draft)> {
         let mut editors: HashMap<AgentKey, crate::editor::Editor> =
             std::mem::take(&mut self.drafts);
         if let Some(chat) = &self.chat {
@@ -911,14 +911,14 @@ impl App {
             for (_, text, attachments) in held {
                 editor.restore(&text, attachments);
             }
-            let request = wire::SaveDraftRequest {
+            let request = wire::UpdateDraftRequest {
                 agent_id: key.agent.clone(),
                 draft: Some(composer_draft(&editor)),
             };
             self.held_saving.insert(key.clone(), ids.clone());
             let client = self.client.clone();
             self.spawn(async move {
-                let saved = client.save_draft(request).await.is_ok();
+                let saved = client.update_draft(request).await.is_ok();
                 Some(AppEvent::HeldSaved {
                     agent: key,
                     ids,
@@ -1837,7 +1837,7 @@ impl App {
         let sessions = self
             .chat
             .iter()
-            .map(|chat| chat.session.history())
+            .map(|chat| chat.session.history().encode_to_vec())
             .collect();
         tokio::spawn(async move {
             let response = client

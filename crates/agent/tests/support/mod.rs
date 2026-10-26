@@ -692,8 +692,10 @@ impl Daemon {
             id: id.to_vec(),
             from: Some(wire::Sender {
                 value: Some(wire::sender::Value::Agent(wire::AgentSender {
-                    agent_id: vec![2; 16],
-                    host_id: vec![1; 16],
+                    agent: Some(wire::AgentRef {
+                        host_id: vec![1; 16],
+                        agent_id: vec![2; 16],
+                    }),
                     name: "parent".into(),
                 })),
             }),

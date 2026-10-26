@@ -804,7 +804,7 @@ mod tests {
             Input::PlanChanged,
             Input::ClientCall {
                 call: CallId(2),
-                request: ClientRequest::Subscribe {
+                request: ClientRequest::SubscribeSession {
                     agent_id: vec![1, 2],
                     tail: 6,
                 },
@@ -812,13 +812,15 @@ mod tests {
             Input::PeerCall {
                 from: HostId([1; 16]),
                 call: CallId(7),
-                request: PeerRequest::Subscribe(wire::PeerSubscribeRequest {
+                request: PeerRequest::SubscribeSession(wire::PeerSubscribeSessionRequest {
                     agent_id: vec![1, 2],
-                    from: Some(wire::peer_subscribe_request::From::After(wire::After {
-                        revision: 3,
-                        cap: 4,
-                        generation: 5,
-                    })),
+                    from: Some(wire::peer_subscribe_session_request::From::After(
+                        wire::After {
+                            revision: 3,
+                            cap: 4,
+                            generation: 5,
+                        },
+                    )),
                 }),
             },
             Input::ClientCall {
@@ -850,9 +852,9 @@ mod tests {
             },
             Input::ClientCall {
                 call: CallId(3),
-                request: ClientRequest::Fetch(wire::FetchRequest {
+                request: ClientRequest::ListItems(wire::ListItemsRequest {
                     agent_id: vec![9],
-                    limit: 3,
+                    page_size: 3,
                     ..Default::default()
                 }),
             },

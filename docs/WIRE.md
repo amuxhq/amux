@@ -17,9 +17,11 @@ different versions talking. Host-to-host links, pairing and the relay are in
 | [`chat.proto`](../crates/wire/proto/amux/v1/chat.proto) | What the kinds share inside a body: item bodies, snapshot pieces, asks, input and answer pieces, the catalogue |
 | [`claude.proto`](../crates/wire/proto/amux/v1/claude.proto), [`codex.proto`](../crates/wire/proto/amux/v1/codex.proto) | The per-kind item, snapshot and input bodies |
 | [`agent.proto`](../crates/wire/proto/amux/v1/agent.proto) | The agent spec and what seeds its queue, and the `ctl.sock` and `pty.sock` frames |
-| [`error.proto`](../crates/wire/proto/amux/v1/error.proto) | The error carrier and its code |
+| [`error.proto`](../crates/wire/proto/amux/v1/error.proto) | `ErrorReason`, the amux reasons an error's `google.rpc.ErrorInfo` names |
 | [`link.proto`](../crates/wire/proto/amux/v1/link.proto), [`pairing.proto`](../crates/wire/proto/amux/v1/pairing.proto) | Host-to-host link control, and pairing |
 | [`front_door.proto`](../crates/wire/proto/amux/v1/front_door.proto) | The profile and installation services |
+| [`amux/dump/session.proto`](../crates/wire/proto/amux/dump/session.proto) | `amux.dump`: a client's session history as a dump carries it, outside the wire's promises |
+| [`google/rpc/`](../crates/wire/proto/google/rpc/) | `google.rpc.Status`, `Code` and `ErrorInfo`, vendored from googleapis |
 
 ## Where clients call
 
@@ -50,24 +52,28 @@ the local runtime, which forwards it one hop to the owning host. The peer
 service answers only for its host's own agents and never passes a call on:
 its inventory stream carries that host's entry and agents, and every call
 that names an agent it only replicates (reads, input, lifecycle, blobs and
-diffs) is `NOT_FOUND`. Three of its messages differ from the client's: `Subscribe` takes
-a `PeerSubscribeRequest`, which may carry a cursor; `SendMessage` takes the
+diffs) is `NOT_FOUND`. Three of its messages differ from the client's: `SubscribeSession` takes
+a `PeerSubscribeSessionRequest`, which may carry a cursor; `SendMessage` takes the
 `Envelope` the sending daemon stamped; and `Dump` answers with the host's
 `DumpPart` itself.
 
 ### Errors
 
-Every refusal carries an `amux.v1.Error` (a code, a message and typed details)
-encoded in the gRPC status details. `client::RpcError` decodes it: `Refused`
-when the runtime answered with an error, `Transport` when the connection
-failed and whether the call took effect is unknown. Codes a client meets often:
+Every refusal is a `google.rpc.Status` (a gRPC code, a message and details
+packed as `Any`), gRPC's richer error model, encoded in the gRPC status
+details. `client::RpcError` decodes it: `Refused` when the runtime answered
+with an error, `Transport` when the connection failed and whether the call
+took effect is unknown. Where the code alone does not say what happened, a
+`google.rpc.ErrorInfo` detail names an amux reason (domain `amux.sh`, reason
+an `ErrorReason` value's name without its prefix). Codes and reasons a client
+meets often:
 
 | Code | When |
 | --- | --- |
 | `NOT_FOUND` | No agent with that id or name, no item with that key, no blob with that hash |
 | `FAILED_PRECONDITION` | An ambiguous name (detail `AmbiguousAgentName` with the candidates) |
-| `UNREACHABLE` | Older history lives on a host that cannot be reached, and nothing is held locally; a forwarded call that never left |
-| `PAYMENT_REQUIRED` | A forwarded call to a host only the relay reaches, on an account whose subscription lapsed to the free plan (gRPC `PERMISSION_DENIED`); a stop is answered `UNREACHABLE` in the same words instead, so clients hold it |
+| `FAILED_PRECONDITION`, reason `HOST_UNREACHABLE` | Older history lives on a host that cannot be reached, and nothing is held locally; a forwarded call that never left |
+| `PERMISSION_DENIED`, reason `PAYMENT_REQUIRED` | A forwarded call to a host only the relay reaches, on an account whose subscription lapsed to the free plan; a stop is answered `HOST_UNREACHABLE` in the same words instead, so clients hold it |
 | `RESOURCE_EXHAUSTED` | An attachment over the 64 MB limit |
 | `ABORTED` | The input was handed to the agent and its answer was lost |
 | `PERMISSION_DENIED` | An agent caller sent input to, or stopped, an agent that is not its own direct child |
@@ -84,9 +90,9 @@ failed and whether the call took effect is unknown. Codes a client meets often:
 | --- | --- | --- |
 | `SubscribeInventory(Empty)` | stream of `InventoryEvent` | Hosts and agent rows: the current set, `CaughtUp`, then changes |
 | `ResolveAgent(ResolveAgentRequest)` | `Agent` | Fleet-wide reference to row: an id in any form amux prints (with or without dashes, or the short id's eight or more leading hex digits), a name, or `name@host`. Names are unique on a host, so `name@host` picks one; a bare name matching agents on two hosts is ambiguous, and the message offers those forms. Every other call takes an agent id. |
-| `Subscribe(SubscribeRequest)` | stream of `SessionEvent` | One agent: opening, snapshot, tail, then live |
-| `Fetch(FetchRequest)` | `FetchResponse` | A page of older items |
-| `Get(GetRequest)` | `Item` | One item in full |
+| `SubscribeSession(SubscribeSessionRequest)` | stream of `SessionEvent` | One agent: opening, snapshot, tail, then live |
+| `ListItems(ListItemsRequest)` | `ListItemsResponse` | A page of older items |
+| `GetItem(GetItemRequest)` | `Item` | One item in full |
 | `SendInput(SendInputRequest)` | `SendInputResponse` | The interpreter's verdict on one input |
 | `CreateAgent(CreateAgentRequest)` | `Agent` | Spawn, optionally with a first prompt (see [Creating and resuming](#creating-and-resuming)). Names are unique on a host, counting exited agents: a given name another agent on the host holds gets the next free suffix (`worker-2`), and the returned `Agent` says the name it got. Without a name the daemon gives a word pair (`quiet-otter`) that no other agent on the host and no branch in the folder's repository has. With `new_worktree` the agent's host first makes a worktree on a branch named after the agent, and the agent starts there |
 | `RenameAgent` | `Agent` | A name outside the rule (lowercase letters, digits and hyphens, starting with a letter or digit, at most 64) is refused `INVALID_ARGUMENT`, as it is for `CreateAgent`; a name another agent on the host holds, exited ones included, is refused `ALREADY_EXISTS` saying so. The agent's branch keeps the name it was made with |
@@ -96,10 +102,10 @@ failed and whether the call took effect is unknown. Codes a client meets often:
 | `SendMessage(SendMessageRequest)` | `SendMessageResponse` | Agent messaging: who it is from is the caller, never the request (see [Messages](#messages) and [agent tools](AGENT_TOOLS.md)) |
 | `PutBlob(PutBlobRequest)` | `BlobRef` | Bytes into an agent's directory |
 | `GetBlob(GetBlobRequest)` | `GetBlobResponse` | Bytes out |
-| `Diff(DiffRequest)` | `Diff` | The changed files on the owning host; the patch, stored as a blob, only when asked |
-| `GetCatalogue(GetCatalogueRequest)` | `CatalogueBlob` | What a provider on a host offers with no agent running: the encoded `Catalogue` and its hash. An agent's catalogue is a blob, read with `GetBlob` |
+| `GetDiff(GetDiffRequest)` | `Diff` | The changed files on the owning host; the patch, stored as a blob, only when asked |
+| `GetCatalogue(GetCatalogueRequest)` | `GetCatalogueResponse` | What a provider on a host offers with no agent running: the encoded `Catalogue` and its hash. An agent's catalogue is a blob, read with `GetBlob` |
 | `ListRepositories` | `ListRepositoriesResponse` | Repositories a host offers to spawn agents in |
-| `Dump(DumpRequest)` | `DumpReport` | A debug bundle, with the asking client's open chats for the daemon to redact and write in, and where it was written (see [debugging](DEBUGGING.md)) |
+| `Dump(DumpRequest)` | `DumpResponse` | A debug bundle, with the asking client's open chats for the daemon to redact and write in, and where it was written (see [debugging](DEBUGGING.md)) |
 
 There are no unary list calls: a listing is `SubscribeInventory` read to
 `CaughtUp`. There is no status call: what an agent is working on is a field of
@@ -145,12 +151,12 @@ exited chat's composer sends its draft that way.
 ## Subscribe
 
 ```proto
-message SubscribeRequest {
+message SubscribeSessionRequest {
   bytes agent_id = 1;
   uint32 tail = 2;
 }
 
-message PeerSubscribeRequest {
+message PeerSubscribeSessionRequest {
   bytes agent_id = 1;
   oneof from { uint32 tail = 2; After after = 3; }
 }
@@ -160,7 +166,7 @@ A client sends one integer, `tail`: how many of the newest rows it wants. It
 never sends a revision. The runtime caps the tail at K, the rows a replica
 keeps (200, `TAIL_ROWS` in [`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs)).
 The tail is a minimum: a client that cannot fill its screen pages older at once
-with `Fetch`. `after` exists only on the peer service's request: it is how a
+with `ListItems`. `after` exists only on the peer service's request: it is how a
 peer's source resumes toward an origin, with the revision it holds, a cap, and
 the origin generation that revision was taken under.
 
@@ -343,7 +349,7 @@ message Append { bytes agent_id = 1; string key = 2; uint64 base_revision = 3;
 
 A client applies an append when the item it holds for `key` is at
 `base_revision`: it adds `text` and takes `revision`. If it holds a newer
-revision it ignores the append. If it holds an older revision it calls `Get`
+revision it ignores the append. If it holds an older revision it calls `GetItem`
 for the item. If it holds nothing for the key it drops the append. Appends are
 only sent live, never in an opening, and every stream of appends ends with a
 full item, so a client that subscribes late receives the full item and never
@@ -354,7 +360,7 @@ a client that holds nothing for a key has let the item go: it is below the
 window the client keeps, or behind a reload it is waiting for. Whenever the
 client reads that row again (a page, a reload) the store gives it whole.
 Appends go to any item still open, not only the newest, so fetching instead
-would cost a client with a small window a `Get` for every running command
+would cost a client with a small window a `GetItem` for every running command
 below it.
 
 ![Exactly one appendable field, catch-up always full, every stream ends full. Those three rules are what keep streaming from needing per-kind code anywhere but the interpreter.](figures/appends.svg)
@@ -362,23 +368,23 @@ below it.
 ## Paging: Fetch and Get
 
 ```proto
-message FetchRequest  { bytes agent_id = 1; optional uint64 before_order = 2; uint32 limit = 3; }
-message FetchResponse { repeated Item items = 1; bool exhausted = 2; }
+message ListItemsRequest  { bytes agent_id = 1; optional uint64 before_order = 2; uint32 limit = 3; }
+message ListItemsResponse { repeated Item items = 1; bool exhausted = 2; }
 ```
 
-`Fetch` returns items by order, newest first, strictly below `before_order`,
-or the newest `limit` items when it is absent. `exhausted` means no older
+`ListItems` returns items by order, newest first, strictly below `before_order`,
+or the newest `page_size` items when it is absent. `exhausted` means no older
 history exists anywhere. A page is capped at 500 items (`MAX_PAGE` in
 [`crates/node/src/serve.rs`](../crates/node/src/serve.rs)); a client asks
 again below the oldest item it got.
 
-`Fetch` is a store read and never touches the agent. For a paired host's agent
+`ListItems` is a store read and never touches the agent. For a paired host's agent
 the part of a page below what this machine holds comes from the origin and is
 kept for next time. An origin that cannot be reached is an error
-(`UNREACHABLE`) when nothing is held, never an empty page; when some rows are
+(reason `HOST_UNREACHABLE`) when nothing is held, never an empty page; when some rows are
 held they are returned with `exhausted` false, and the next page asks again.
 
-`Get(agent_id, key)` returns one held item in full. It is how a client
+`GetItem(agent_id, key)` returns one held item in full. It is how a client
 recovers when an append's base does not match the revision it holds.
 
 ## Messages
@@ -596,7 +602,7 @@ that referenced the blob. For a paired host's agent the local runtime reads its
 replica copy, or fetches the bytes from the origin, checks their hash, keeps
 them under `replicas/` exactly as the origin sent them and returns them.
 
-`Diff(agent_id, base, with_patch)` compares the agent's working directory on
+`GetDiff(agent_id, base, with_patch)` compares the agent's working directory on
 its own host, through the `git-facts` crate the agent process also reads its
 row's totals with. It runs to the working tree, untracked files included, from
 HEAD for the `head` base, or from where the branch left the named base
@@ -624,7 +630,7 @@ so the picker still reads with the origin away. A hash that names no blob is
 
 `GetCatalogue(host_id, provider)` names a host and a `Provider`
 (`PROVIDER_CLAUDE` or `PROVIDER_CODEX`) and answers what that provider offers there with no agent running,
-as a `CatalogueBlob`: the encoded `Catalogue` and the SHA-256 of exactly
+as a `GetCatalogueResponse`: the encoded `Catalogue` and the SHA-256 of exactly
 those bytes, which is the hash the host's entry names for that provider. The
 daemon holds no provider code: it runs the hidden helper `amux catalogue <provider>`, which
 starts the provider just long enough to ask what it offers and whether it is
@@ -728,18 +734,31 @@ and close.
 
 ## Compatibility
 
-amux is unreleased, so nothing depends on an older build: every protobuf
-surface (the client and peer services, the `ctl.sock` frames and the journal's
-records) changes freely. A removed field or message is deleted outright,
-leaving no reservation, and every message keeps its field numbers in reading
-order. A store, journal or agent written by an earlier build is not read
-correctly after such a change; start it fresh.
+`amux.v1` is the released protocol. From amux 0.9.0 on, paired machines,
+long-running agent processes and long-lived clients run different versions at
+once, and stores and journals outlive the build that wrote them. So every
+surface in `amux.v1` (the client and peer services, the link and pairing
+messages, the `ctl.sock` frames and the journal's records) changes by field
+discipline alone:
 
-From the first release, paired machines, long-running agent processes and
-long-lived clients will run different versions of amux at once, and every
-surface will tolerate it by field discipline: fields only added, never
-renumbered, reused, retyped or required. That rule is taken up then, not
-before.
+- Fields, oneof arms, enum values, messages and calls are added freely.
+- A number is never renumbered, retyped or reused. A field or enum value that
+  goes leaves its number `reserved`.
+- A field never moves into, out of or between oneofs.
+- Names are not on the binary wire and may change, but for two: a service's
+  and a method's name, which are its gRPC path, and an error detail
+  message's, which is its `Any` type URL. A field or a method may take
+  another message that reads the same numbers, as an empty request may grow
+  into one with fields.
+
+`just proto-compat`, which CI runs, holds the tree to these rules against the
+newest release tag at or after 0.9.0, reading the descriptor set committed
+with that release; `just proto-compat <ref>` checks against any other ref. A
+break both ends of a link must take is a new `PROTOCOL_VERSION`, not an edit.
+
+What a client writes into a dump is `amux.dump`, outside these promises:
+`DumpRequest.sessions` carries each session as bytes, and only the build that
+wrote it reads it back.
 
 After any edit to a `.proto`, run `just protobuf` to regenerate the committed
 Rust; `just codegen-check`, which CI runs, fails on stale output.
@@ -750,6 +769,8 @@ What the design already relies on:
   the daemon and store pass bodies through without reading them.
 - An input arm an interpreter does not know is answered `Rejected` with
   `REFUSAL_UNSUPPORTED`.
+- A phase a client does not know decodes as `PHASE_UNSPECIFIED`, which the
+  views draw as idle.
 
 ### Versions
 
@@ -758,8 +779,8 @@ is checked in one place: the link handshake between hosts. A connecting host
 lists its versions in `Hello.supported_protocol_versions`; the acceptor
 refuses a `Hello` that does not include its own version, answering with a
 `ProtocolVersionMismatch` detail, and the link closes with
-`LINK_CLOSE_REASON_VERSION_MISMATCH`. It is 1 and stays 1 until the first
-release.
+`LINK_CLOSE_REASON_VERSION_MISMATCH`. It is 1, and moves only for a break
+both ends of a link must take.
 
 Nothing else carries a version integer:
 
@@ -781,15 +802,15 @@ A checklist for a client against `ClientService`:
 1. Subscribe to the inventory and draw the fleet from `Agent` rows; treat the
    first `CaughtUp` as "the list is complete". On `Lagged`, subscribe again at
    once and drop what the fresh listing no longer names at its `CaughtUp`.
-2. To open a chat, `Subscribe` with a tail. Draw from the snapshot at once;
+2. To open a chat, `SubscribeSession` with a tail. Draw from the snapshot at once;
    merge items by key, keep the highest revision, sort by order.
-3. Apply appends only on a matching base; `Get` an item held at another
+3. Apply appends only on a matching base; `GetItem` an item held at another
    revision; drop an append for a key you hold nothing for.
 4. On `Reset`, build a fresh transcript and swap it in at `CaughtUp`, and
    hold its generation as the window's. On
    `Lagged`, re-tail at once: subscribe again with a tail. On a dropped
    stream, subscribe again with a tail and back off between attempts.
-5. Page older history with `Fetch` below the oldest held order until
+5. Page older history with `ListItems` below the oldest held order until
    `exhausted`.
 6. Give every input a fresh `input_id`, keep an optimistic row, and settle it
    from the verdict, the snapshot's queue and the reflection item. Leave an

@@ -14,13 +14,14 @@ import "amux/v1/service.proto";
 // Calls are not retried by any client; a mutation that loses its reply is
 // re-run by the person.
 service ProfileService {
-  rpc ListProfiles(Empty) returns (ListProfilesResponse);
-  // Snapshot, CaughtUp, then ordered events; ABORTED requires a fresh watch.
-  rpc WatchProfiles(Empty) returns (stream ProfileEvent);
-  rpc CreateProfile(CreateProfileRequest) returns (ProfileInfo);
+  rpc ListProfiles(ListProfilesRequest) returns (ListProfilesResponse);
+  // Snapshot, CaughtUp, then ordered events; ABORTED requires a fresh
+  // subscription.
+  rpc SubscribeProfiles(SubscribeProfilesRequest) returns (stream ProfileEvent);
+  rpc CreateProfile(CreateProfileRequest) returns (Profile);
   // Names a profile, or lets the installation pick or create one.
-  rpc BindProfile(BindProfileRequest) returns (ProfileInfo);
-  rpc RenameProfile(RenameProfileRequest) returns (ProfileInfo);
+  rpc BindProfile(BindProfileRequest) returns (Profile);
+  rpc RenameProfile(RenameProfileRequest) returns (Profile);
   rpc DeleteProfile(DeleteProfileRequest) returns (Empty);
 }
 
@@ -30,25 +31,25 @@ service ProfileService {
 // hosts it trusts. The socket names the profile. Not retried, as the front
 // door.
 service ProfileAdminService {
-  rpc SignOut(Empty) returns (ProfileInfo);
-  rpc Pause(Empty) returns (ProfileInfo);
-  rpc Resume(Empty) returns (ProfileInfo);
+  rpc SignOut(SignOutRequest) returns (Profile);
+  rpc PauseProfile(PauseProfileRequest) returns (Profile);
+  rpc ResumeProfile(ResumeProfileRequest) returns (Profile);
   rpc StartPairing(StartPairingRequest) returns (PairingWindow);
-  rpc GetPairingStatus(Empty) returns (PairingStatus);
-  rpc CancelPairing(Empty) returns (Empty);
+  rpc GetPairingStatus(GetPairingStatusRequest) returns (PairingStatus);
+  rpc CancelPairing(CancelPairingRequest) returns (CancelPairingResponse);
   rpc BeginPair(BeginPairRequest) returns (PendingPair);
-  rpc ConfirmPair(PendingPairRequest) returns (PeerEntry);
-  rpc AbandonPair(PendingPairRequest) returns (Empty);
-  rpc GetDeviceIdentity(Empty) returns (DeviceIdentity);
-  rpc TrustSshPeer(TrustSshPeerRequest) returns (Empty);
-  rpc ListPeers(Empty) returns (ListPeersResponse);
-  rpc GetPeer(HostRef) returns (PeerEntry);
-  rpc Unpair(UnpairRequest) returns (PeerEntry);
+  rpc ConfirmPair(ConfirmPairRequest) returns (Peer);
+  rpc AbandonPair(AbandonPairRequest) returns (AbandonPairResponse);
+  rpc GetDeviceIdentity(GetDeviceIdentityRequest) returns (DeviceIdentity);
+  rpc TrustSshPeer(TrustSshPeerRequest) returns (TrustSshPeerResponse);
+  rpc ListPeers(ListPeersRequest) returns (ListPeersResponse);
+  rpc GetPeer(GetPeerRequest) returns (Peer);
+  rpc Unpair(UnpairRequest) returns (Peer);
 }
 
 service InstallationService {
-  rpc GetInfo(Empty) returns (InstallationInfo);
-  rpc Shutdown(Empty) returns (Empty);
+  rpc GetInstallation(GetInstallationRequest) returns (Installation);
+  rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
 }
 
 // A profile's standing with its cloud account: what the person asked for
@@ -95,7 +96,7 @@ enum RelayCarrier {
   RELAY_CARRIER_TCP = 2;
 }
 
-message ProfileInfo {
+message Profile {
   bytes id = 1;
   string label = 2;
   string email = 3;
@@ -110,11 +111,15 @@ message ProfileInfo {
   string account_picture = 8;
 }
 
-message ListProfilesResponse { repeated ProfileInfo profiles = 1; }
+message ListProfilesRequest {}
+
+message ListProfilesResponse { repeated Profile profiles = 1; }
+
+message SubscribeProfilesRequest {}
 
 message ProfileEvent {
   oneof of {
-    ProfileInfo upserted = 1;
+    Profile upserted = 1;
     bytes removed_id = 2;
     CaughtUp caught_up = 3;
   }
@@ -140,6 +145,12 @@ message RenameProfileRequest {
 message DeleteProfileRequest {
   bytes profile_id = 1;
 }
+
+message SignOutRequest {}
+
+message PauseProfileRequest {}
+
+message ResumeProfileRequest {}
 
 message StartPairingRequest {
   oneof method {
@@ -167,6 +178,8 @@ message PairingWindow {
   }
 }
 
+message GetPairingStatusRequest {}
+
 message PairingStatus {
   bool active = 1;
   // Too many wrong secrets closed the last window; a new one is needed.
@@ -188,9 +201,21 @@ message PendingPair {
   RouteKind via = 3;
 }
 
-message PendingPairRequest {
+message CancelPairingRequest {}
+
+message CancelPairingResponse {}
+
+message ConfirmPairRequest {
+  // PendingPair.token.
   bytes token = 1;
 }
+
+message AbandonPairRequest {
+  // PendingPair.token.
+  bytes token = 1;
+}
+
+message AbandonPairResponse {}
 
 // SSH has already authenticated its peer outside the secret-based pairing
 // protocol, so its identity commit is a separate, SSH-only operation.
@@ -199,12 +224,24 @@ message TrustSshPeerRequest {
   SshTarget ssh_target = 2;
 }
 
+message TrustSshPeerResponse {}
+
+message GetPeerRequest {
+  HostRef peer = 1;
+}
+
 message UnpairRequest {
   HostRef peer = 1;
   string reason = 2;
 }
 
-message InstallationInfo { string version = 1; }
+message GetInstallationRequest {}
+
+message Installation { string version = 1; }
+
+message ShutdownRequest {}
+
+message ShutdownResponse {}
 
 // An SSH destination; `amux relay` there joins the profile whose id is the
 // peer's host id.
@@ -224,7 +261,7 @@ message DirectReachability {
   repeated string addrs = 1;
 }
 
-message PeerEntry {
+message Peer {
   bytes host_id = 1;
   string name = 2;
   bytes pubkey = 3;
@@ -232,12 +269,16 @@ message PeerEntry {
   repeated PeerReachability reachabilities = 5;
 }
 
+message GetDeviceIdentityRequest {}
+
 message DeviceIdentity {
   bytes host_id = 1;
   string name = 2;
   bytes pubkey = 3;
 }
 
+message ListPeersRequest {}
+
 message ListPeersResponse {
-  repeated PeerEntry peers = 1;
+  repeated Peer peers = 1;
 }

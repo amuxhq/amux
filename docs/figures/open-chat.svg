@@ -30,14 +30,14 @@
 <rect class="box" x="400" y="16" width="140" height="36" rx="4"/><text class="t" x="470" y="39" text-anchor="middle">local runtime</text>
 <rect class="box" x="760" y="16" width="160" height="36" rx="4"/><text class="t" x="840" y="39" text-anchor="middle">origin daemon</text>
 <line class="lane" x1="110" y1="52" x2="110" y2="418"/><line class="lane" x1="470" y1="52" x2="470" y2="418"/><line class="lane" x1="840" y1="52" x2="840" y2="418"/>
-<path class="arrow-dashed" d="M470,84 L840,84" marker-end="url(#ah)"/><text class="s" x="655" y="70" text-anchor="middle">source, for every listed agent while the host is reachable:</text><text class="s" x="655" y="98" text-anchor="middle">Subscribe(after: cursor, cap: K) · or tail: K with no block</text>
+<path class="arrow-dashed" d="M470,84 L840,84" marker-end="url(#ah)"/><text class="s" x="655" y="70" text-anchor="middle">source, for every listed agent while the host is reachable:</text><text class="s" x="655" y="98" text-anchor="middle">SubscribeSession(after: cursor, cap: K) · or tail: K with no block</text>
 <path class="arrow-dashed" d="M840,122 L470,122" marker-end="url(#ah)"/><text class="s" x="655" y="116" text-anchor="middle">delta · CaughtUp   |   Reset · tail K · CaughtUp</text>
 <rect class="note" x="340" y="132" width="260" height="46" rx="3"/><text class="s sans" x="470" y="150" text-anchor="middle">absorb: a delta extends the block, Reset replaces it;</text><text class="s sans" x="470" y="166" text-anchor="middle">cursor = last revision delivered; events broadcast in order</text>
-<path class="arrow" d="M110,204 L470,204" marker-end="url(#ah)"/><text class="s" x="290" y="198" text-anchor="middle">Subscribe(agent, tail: N ≤ K)</text>
+<path class="arrow" d="M110,204 L470,204" marker-end="url(#ah)"/><text class="s" x="290" y="198" text-anchor="middle">SubscribeSession(agent, tail: N ≤ K)</text>
 <path class="arrow-file" d="M470,232 L110,232" marker-end="url(#ahf)"/><text class="s a" x="290" y="226" text-anchor="middle">Snapshot · newest N rows (broadcast joined first)</text>
 <rect class="note" x="20" y="242" width="280" height="46" rx="3"/><text class="s sans" x="160" y="260" text-anchor="middle">first render from the cached block; header from the entry;</text><text class="s sans" x="160" y="276" text-anchor="middle">draft any time; send enabled only while caught_up</text>
 <path class="arrow-file" d="M470,312 L110,312" marker-end="url(#ahf)"/><text class="s a" x="290" y="306" text-anchor="middle">live, as broadcast: Item · Append · Snapshot · markers</text>
-<path class="arrow" d="M110,344 L470,344" marker-end="url(#ah)"/><text class="s" x="290" y="338" text-anchor="middle">Fetch(before: oldest order, limit)</text>
+<path class="arrow" d="M110,344 L470,344" marker-end="url(#ah)"/><text class="s" x="290" y="338" text-anchor="middle">ListItems(before: oldest order, page_size)</text>
 <path class="arrow-dashed" d="M470,344 L840,344" marker-end="url(#ah)"/><text class="s" x="655" y="338" text-anchor="middle">below the boundary → Fetch the origin</text>
 <path class="arrow-dashed" d="M840,370 L470,370" marker-end="url(#ah)"/><text class="s" x="655" y="364" text-anchor="middle">page + exhausted → absorb: extends the block downward only</text>
 <path class="arrow" d="M470,396 L110,396" marker-end="url(#ah)"/><text class="s" x="290" y="410" text-anchor="middle">page + exhausted</text>

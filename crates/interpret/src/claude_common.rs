@@ -54,13 +54,19 @@ pub(crate) fn plan_mode_write(permission: Option<&str>, server: &str, tool: &str
 }
 
 /// How the person decided a plan Claude declared, kept on the declaring
-/// call.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+/// call; undecided until they do.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Verdict {
     verdict: i32,
     note: Option<String>,
     /// Approved switching: the permission switched to.
     permission: String,
+}
+
+impl Default for Verdict {
+    fn default() -> Self {
+        Self::of(wire::PlanVerdict::Undecided)
+    }
 }
 
 impl Verdict {

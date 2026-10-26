@@ -13,8 +13,8 @@ use tonic::Request;
 use wire::profile_admin_service_server::ProfileAdminService as _;
 use wire::profile_service_server::ProfileService as _;
 use wire::{
-    CreateProfileRequest, DeleteProfileRequest, Empty, PendingPairRequest, RenameProfileRequest,
-    StartPairingRequest, start_pairing_request,
+    CreateProfileRequest, DeleteProfileRequest, Empty, RenameProfileRequest, StartPairingRequest,
+    start_pairing_request,
 };
 
 /// The five minutes a window lasts when the request names no length.
@@ -58,7 +58,7 @@ async fn ttl_applies_to_each_method() {
         let admin = admin.clone();
         async move {
             admin
-                .get_pairing_status(Request::new(Empty {}))
+                .get_pairing_status(Request::new(wire::GetPairingStatusRequest {}))
                 .await
                 .unwrap()
                 .into_inner()
@@ -68,7 +68,10 @@ async fn ttl_applies_to_each_method() {
     let cancel = || {
         let admin = admin.clone();
         async move {
-            admin.cancel_pairing(Request::new(Empty {})).await.unwrap();
+            admin
+                .cancel_pairing(Request::new(wire::CancelPairingRequest {}))
+                .await
+                .unwrap();
         }
     };
 
@@ -136,21 +139,22 @@ async fn an_empty_pairing_token_is_invalid() {
     let install = Install::new();
     let daemon = install.start("boot-1", quiet_launch()).await;
     let admin = daemon.profile_admin(install.profile);
-    let request = || Request::new(PendingPairRequest { token: Vec::new() });
     let confirmed = admin
-        .confirm_pair(request())
+        .confirm_pair(Request::new(wire::ConfirmPairRequest { token: Vec::new() }))
         .await
         .expect_err("a confirm naming no pairing");
     assert_eq!(confirmed.code(), tonic::Code::InvalidArgument);
     let abandoned = admin
-        .abandon_pair(request())
+        .abandon_pair(Request::new(wire::AbandonPairRequest { token: Vec::new() }))
         .await
         .expect_err("an abandon naming no pairing");
     assert_eq!(abandoned.code(), tonic::Code::InvalidArgument);
     // A token that names no pending pairing reads as a wrong secret, as it
     // always has, so a guesser learns nothing.
     let unknown = admin
-        .confirm_pair(Request::new(PendingPairRequest { token: vec![7; 16] }))
+        .confirm_pair(Request::new(wire::ConfirmPairRequest {
+            token: vec![7; 16],
+        }))
         .await
         .expect_err("a token nothing began");
     assert_eq!(unknown.code(), tonic::Code::PermissionDenied);
@@ -187,7 +191,7 @@ async fn rename_and_delete_change_the_listed_profile() {
         let door = door.clone();
         let id = created.id.clone();
         async move {
-            door.list_profiles(Request::new(Empty {}))
+            door.list_profiles(Request::new(wire::ListProfilesRequest {}))
                 .await
                 .unwrap()
                 .into_inner()

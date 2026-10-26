@@ -13,7 +13,7 @@ use wire::installation_service_server::{InstallationService, InstallationService
 use wire::profile_service_server::{ProfileService, ProfileServiceServer};
 use wire::{
     BindProfileRequest, CaughtUp, CreateProfileRequest, DeleteProfileRequest, Empty, ErrorCode,
-    InstallationInfo, ListProfilesResponse, ProfileInfo, RenameProfileRequest, profile_event,
+    ListProfilesResponse, RenameProfileRequest, profile_event,
 };
 
 use crate::Tier;
@@ -22,7 +22,7 @@ use crate::grpc::{self, status, wire_error};
 use crate::registry::{ProfileEvent, ProfileRefusal, ProfileState, Registry, SignIn};
 
 /// A profile as the front door describes it.
-pub(crate) fn info(state: ProfileState) -> ProfileInfo {
+pub(crate) fn info(state: ProfileState) -> wire::Profile {
     use wire::cloud_standing::Standing;
     use wire::relay_link::State;
     let standing = match &state.cloud {
@@ -49,7 +49,7 @@ pub(crate) fn info(state: ProfileState) -> ProfileInfo {
         }),
     };
     let account = state.account.unwrap_or_default();
-    ProfileInfo {
+    wire::Profile {
         email: account.email.unwrap_or_default(),
         account_name: account.name.unwrap_or_default(),
         account_subject: account.subject,
@@ -111,22 +111,22 @@ type Events = Pin<Box<dyn Stream<Item = Result<wire::ProfileEvent, Status>> + Se
 
 #[tonic::async_trait]
 impl ProfileService for FrontDoor {
-    type WatchProfilesStream = Events;
+    type SubscribeProfilesStream = Events;
 
     async fn list_profiles(
         &self,
-        _request: Request<Empty>,
+        _request: Request<wire::ListProfilesRequest>,
     ) -> Result<Response<ListProfilesResponse>, Status> {
         Ok(Response::new(ListProfilesResponse {
             profiles: self.registry.list()?.into_iter().map(info).collect(),
         }))
     }
 
-    async fn watch_profiles(
+    async fn subscribe_profiles(
         &self,
-        _request: Request<Empty>,
-    ) -> Result<Response<Self::WatchProfilesStream>, Status> {
-        let mut watch = self.registry.watch()?;
+        _request: Request<wire::SubscribeProfilesRequest>,
+    ) -> Result<Response<Self::SubscribeProfilesStream>, Status> {
+        let mut watch = self.registry.subscribe()?;
         let opening = std::mem::take(&mut watch.listed)
             .into_iter()
             .map(|state| profile_event::Of::Upserted(info(state)))
@@ -159,7 +159,7 @@ impl ProfileService for FrontDoor {
     async fn create_profile(
         &self,
         request: Request<CreateProfileRequest>,
-    ) -> Result<Response<ProfileInfo>, Status> {
+    ) -> Result<Response<wire::Profile>, Status> {
         let label = request.into_inner().label;
         Ok(Response::new(info(
             self.registry.create(label.as_deref()).await?,
@@ -169,7 +169,7 @@ impl ProfileService for FrontDoor {
     async fn rename_profile(
         &self,
         request: Request<RenameProfileRequest>,
-    ) -> Result<Response<ProfileInfo>, Status> {
+    ) -> Result<Response<wire::Profile>, Status> {
         let request = request.into_inner();
         let id = profile_id(&request.profile_id)?;
         let label = request.override_name.unwrap_or_default();
@@ -188,7 +188,7 @@ impl ProfileService for FrontDoor {
     async fn bind_profile(
         &self,
         request: Request<BindProfileRequest>,
-    ) -> Result<Response<ProfileInfo>, Status> {
+    ) -> Result<Response<wire::Profile>, Status> {
         let request = request.into_inner();
         let sign_in = SignIn {
             profile: request.profile_id.as_deref().map(profile_id).transpose()?,
@@ -203,18 +203,21 @@ impl ProfileService for FrontDoor {
 
 #[tonic::async_trait]
 impl InstallationService for FrontDoor {
-    async fn get_info(
+    async fn get_installation(
         &self,
-        _request: Request<Empty>,
-    ) -> Result<Response<InstallationInfo>, Status> {
+        _request: Request<wire::GetInstallationRequest>,
+    ) -> Result<Response<wire::Installation>, Status> {
         self.registry.installation()?;
-        Ok(Response::new(InstallationInfo {
+        Ok(Response::new(wire::Installation {
             version: crate::version().to_owned(),
         }))
     }
 
-    async fn shutdown(&self, _request: Request<Empty>) -> Result<Response<Empty>, Status> {
+    async fn shutdown(
+        &self,
+        _request: Request<wire::ShutdownRequest>,
+    ) -> Result<Response<wire::ShutdownResponse>, Status> {
         self.registry.installation()?.request_shutdown();
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(wire::ShutdownResponse {}))
     }
 }

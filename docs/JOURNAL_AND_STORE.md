@@ -323,7 +323,7 @@ history any client on the machine reads.
 The profile runtime is the store's only writer and only reader: the daemon on
 a desktop, and the embedded runtime in the phone app. No client opens the file,
 not even the terminal client on the same machine. Every client reads through
-`Subscribe`, `Fetch` and `Get` against its local runtime; on the phone that is
+`SubscribeSession`, `ListItems` and `GetItem` against its local runtime; on the phone that is
 an in-process call. The runtime holds the store behind one async mutex, and
 every read the runtime serves runs in one read transaction, so each read sees
 one commit point.
@@ -464,7 +464,7 @@ only by delete and by retention.
 Replica rows are a cache of a paired host's agent. Only `absorb` writes their
 records, copying the origin's revisions and orders as received. Each replica
 agent has one source in [`crates/daemon-core/src/sources.rs`](../crates/daemon-core/src/sources.rs):
-one `Subscribe` to the origin. With no block it asks for a tail of K rows; with
+one `SubscribeSession` to the origin. With no block it asks for a tail of K rows; with
 one it asks for what came after its `source_cursor`, capped at K, under its
 `source_generation`, and the origin answers either that delta or `Reset` and a
 fresh tail. The source holds
@@ -483,7 +483,7 @@ it is fetched from the origin and extends the block.
 | `Absorb` | Effect |
 | --- | --- |
 | `Delta { events, live }` | Joins the block above its newest row. Items are upserted unless a newer revision is held; an append applies only when its base matches; a snapshot only when newer. Live records advance `source_cursor`; a catch-up does not. |
-| `Reset { tail, snapshot, generation }` | Starts the block again from the tail under the origin's `generation`: `complete_from_order` moves to the tail's oldest order. Rows below stay stored and are served by `Get`, but do not count as contiguous. Under a generation other than the block's, every held row is forgotten first: the origin numbers orders and revisions afresh after an unclean reboot, so nothing held compares with the tail. |
+| `Reset { tail, snapshot, generation }` | Starts the block again from the tail under the origin's `generation`: `complete_from_order` moves to the tail's oldest order. Rows below stay stored and are served by `GetItem`, but do not count as contiguous. Under a generation other than the block's, every held row is forgotten first: the origin numbers orders and revisions afresh after an unclean reboot, so nothing held compares with the tail. |
 | `Page { before_order, items, exhausted }` | Extends the block downward, only when `before_order` is the block's boundary. A page that does not join is served to its requester and not stored, because only a source starts a block. |
 | `CaughtUp(revision)` | Sets `source_cursor` to the revision the origin's replay is complete through |
 
@@ -520,7 +520,7 @@ the profile's own budget:
 3. When every live agent is at K and the pool is still over, the sweep stops;
    from there the budget is soft.
 
-A trim sets the agent's `complete_from_order` and `exhausted`, so `Fetch`
+A trim sets the agent's `complete_from_order` and `exhausted`, so `ListItems`
 truthfully reports no older history. Trimmed own history is gone for good,
 since the journal below the cursor was already deleted.
 

@@ -54,7 +54,7 @@ pub use streams::{InventorySubscription, Subscription};
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
-use wire::{FetchRequest, GetRequest};
+use wire::{GetItemRequest, ListItemsRequest};
 
 use crate::connection::ConnectionManager;
 use crate::install::{CORE_RING, STORE, write_durably};
@@ -164,12 +164,12 @@ pub(crate) enum Report {
 /// A client call as it arrives. What the request also carries from the
 /// shell is read on the core thread, at the point the core answers.
 pub(crate) enum Ask {
-    Subscribe {
+    SubscribeSession {
         agent_id: Vec<u8>,
         tail: u32,
     },
-    Fetch(FetchRequest),
-    Get(GetRequest),
+    ListItems(ListItemsRequest),
+    GetItem(GetItemRequest),
     SubscribeInventory,
     /// A request the shell already completed.
     Ready(ClientRequest),
@@ -862,7 +862,7 @@ impl CoreThread {
                 let request = runtime.peer_request(*request);
                 let stream = match &request {
                     PeerRequest::SubscribeInventory => Some("inventory"),
-                    PeerRequest::Subscribe(_) => Some("session"),
+                    PeerRequest::SubscribeSession(_) => Some("session"),
                     _ => None,
                 };
                 if let Some(stream) = stream {
@@ -1198,11 +1198,12 @@ impl CoreThread {
                 let reports = self.reports.clone();
                 let inputs = self.inputs.clone();
                 let task = match request {
-                    request @ (PeerRequest::Subscribe(_) | PeerRequest::SubscribeInventory) => {
+                    request @ (PeerRequest::SubscribeSession(_)
+                    | PeerRequest::SubscribeInventory) => {
                         tokio::spawn(origin::stream(runtime, host, call, request, inputs))
                     }
                     request => tokio::spawn(async move {
-                        let answer = if matches!(request, PeerRequest::Fetch(_)) {
+                        let answer = if matches!(request, PeerRequest::ListItems(_)) {
                             tokio::time::timeout(PAGE_PATIENCE, call_peer(runtime, host, request))
                                 .await
                                 .unwrap_or(Some(Answer::Failed(PeerFailure::Uncertain)))
@@ -1586,16 +1587,16 @@ impl ProfileRuntime {
     /// point the core answers it.
     fn client_request(&self, store: &Sqlite, ask: Ask) -> ClientRequest {
         match ask {
-            Ask::Subscribe { agent_id, tail } => {
+            Ask::SubscribeSession { agent_id, tail } => {
                 self.used(store, &agent_id);
                 self.run_join_hook();
-                ClientRequest::Subscribe { agent_id, tail }
+                ClientRequest::SubscribeSession { agent_id, tail }
             }
-            Ask::Fetch(request) => {
+            Ask::ListItems(request) => {
                 self.used(store, &request.agent_id);
-                ClientRequest::Fetch(request)
+                ClientRequest::ListItems(request)
             }
-            Ask::Get(request) => ClientRequest::Get(request),
+            Ask::GetItem(request) => ClientRequest::GetItem(request),
             Ask::SubscribeInventory => ClientRequest::SubscribeInventory,
             Ask::Ready(request) => request,
         }
@@ -1605,9 +1606,9 @@ impl ProfileRuntime {
     /// [`ProfileRuntime::client_request`] does a client's.
     fn peer_request(&self, request: PeerRequest) -> PeerRequest {
         match request {
-            PeerRequest::Subscribe(request) => {
+            PeerRequest::SubscribeSession(request) => {
                 self.run_join_hook();
-                PeerRequest::Subscribe(request)
+                PeerRequest::SubscribeSession(request)
             }
             request => request,
         }

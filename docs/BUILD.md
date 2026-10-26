@@ -134,9 +134,10 @@ just codegen-check
 ```
 
 `just protobuf` runs `cargo run -p xtask -- codegen`. `just codegen-check`
-regenerates and fails if the committed result differs. Until the first
-release a schema change may remove or renumber anything; [the wire](WIRE.md)
-explains why.
+regenerates and fails if the committed result differs. `just proto-compat`
+fails when the schema no longer reads what the latest release wrote: a field
+removed without reserving its number, a number reused or retyped, a call
+renamed; [the wire](WIRE.md#compatibility) has the rules.
 
 **Swift value types.** The Swift mirrors of the view values the phone reads,
 `apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values.swift`, are generated

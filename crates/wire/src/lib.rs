@@ -3,8 +3,8 @@
 //! and control frames, and the client, peer, pairing, profile and
 //! installation services.
 
-/// Protocol version for the native-stream link handshake. It stays 1 until
-/// the first release; see the header of `service.proto`.
+/// Protocol version for the native-stream link handshake. It moves only for
+/// a break both ends of a link must take; see the header of `service.proto`.
 pub const PROTOCOL_VERSION: u32 = 1;
 
 pub mod amux {
@@ -12,12 +12,39 @@ pub mod amux {
         #![allow(dead_code, clippy::enum_variant_names, clippy::large_enum_variant)]
         include!("generated/amux.v1.rs");
     }
+
+    /// What a client writes into a dump, read back only by the build that
+    /// wrote it; outside the protocol's compatibility promises.
+    pub mod dump {
+        #![allow(dead_code, clippy::enum_variant_names, clippy::large_enum_variant)]
+        include!("generated/amux.dump.rs");
+    }
 }
 
+pub use amux::dump;
+
+/// gRPC's richer error model, from the vendored googleapis protos.
+pub mod google {
+    pub mod rpc {
+        #![allow(dead_code, clippy::enum_variant_names, clippy::doc_lazy_continuation)]
+        include!("generated/google.rpc.rs");
+    }
+}
+
+pub use google::rpc;
+
+mod error;
 pub use amux::v1::*;
+pub use error::DOMAIN as ERROR_DOMAIN;
+/// An error's code, gRPC's own.
+pub use rpc::Code as ErrorCode;
+/// amux's error, a `google.rpc.Status`: named apart so it never reads as
+/// tonic's `Status`, the transport's carrier for it.
+pub use rpc::Status as Error;
 
 pub mod pb {
     pub use super::amux::v1::*;
+    pub use super::{Error, ErrorCode};
 }
 
 /// Bound for link-control messages and application-stream prefaces.
@@ -161,7 +188,7 @@ impl create_agent_request::Agent {
     }
 }
 
-impl ProfileInfo {
+impl Profile {
     /// The profile's standing with its cloud account.
     pub fn standing(&self) -> Option<&cloud_standing::Standing> {
         self.cloud.as_ref()?.standing.as_ref()
@@ -421,9 +448,9 @@ mod tests {
                 [
                     "SubscribeInventory",
                     "ResolveAgent",
-                    "Subscribe",
-                    "Fetch",
-                    "Get",
+                    "SubscribeSession",
+                    "ListItems",
+                    "GetItem",
                     "SendInput",
                     "CreateAgent",
                     "RenameAgent",
@@ -433,11 +460,11 @@ mod tests {
                     "SendMessage",
                     "PutBlob",
                     "GetBlob",
-                    "Diff",
+                    "GetDiff",
                     "ListRepositories",
                     "Dump",
                     "GetCatalogue",
-                    "SaveDraft",
+                    "UpdateDraft",
                     "GetDraft",
                 ]
                 .map(str::to_owned)
@@ -451,14 +478,14 @@ mod tests {
         // host-side parts.
         let mut peer_expected = client.clone();
         peer_expected.remove("ResolveAgent");
-        peer_expected.remove("SaveDraft");
+        peer_expected.remove("UpdateDraft");
         peer_expected.remove("GetDraft");
         assert_eq!(methods(&set, "PeerService"), peer_expected);
 
         let installation = methods(&set, "InstallationService");
         assert_eq!(
             installation,
-            BTreeSet::from(["GetInfo", "Shutdown"].map(str::to_owned))
+            BTreeSet::from(["GetInstallation", "Shutdown"].map(str::to_owned))
         );
     }
 
@@ -479,33 +506,22 @@ mod tests {
             .collect()
     }
 
-    /// The enums whose zero is a meaning, not "unknown": an absent field
-    /// reads as that meaning, so the zero must stay where it is documented.
+    /// Every enum's zero says nothing is known, so an absent field, and a
+    /// value from a newer build, read as that rather than as a meaning.
     #[test]
-    fn zero_defaults_are_the_documented_ones() {
-        let enums = enums(&descriptor());
-        for (enumeration, zero) in [
-            ("Phase", "PHASE_STARTING"),
-            ("PtyMode", "PTY_MODE_FILES"),
-            ("UsageState", "USAGE_STATE_UNKNOWN"),
-            ("HealthState", "HEALTH_STATE_UNKNOWN"),
-            ("SignInState", "SIGN_IN_STATE_UNKNOWN"),
-            ("DecisionOutcome", "DECISION_OUTCOME_NONE"),
-            ("PlanVerdict", "PLAN_VERDICT_UNDECIDED"),
-            ("AskOutcome", "ASK_OUTCOME_UNSPECIFIED"),
-        ] {
-            let values = enums
-                .get(enumeration)
-                .unwrap_or_else(|| panic!("no enum {enumeration}"));
-            let found = values.iter().find(|(_, number)| *number == 0);
-            assert_eq!(
-                found.map(|(name, _)| name.as_str()),
-                Some(zero),
-                "{enumeration}'s zero"
+    fn every_enum_zero_is_unspecified_or_unknown() {
+        for (enumeration, values) in enums(&descriptor()) {
+            let zero = values
+                .iter()
+                .find(|(_, number)| *number == 0)
+                .map(|(name, _)| name.as_str());
+            assert!(
+                zero.is_some_and(
+                    |name| name.ends_with("_UNSPECIFIED") || name.ends_with("_UNKNOWN")
+                ),
+                "{enumeration}'s zero is {zero:?}"
             );
         }
-        assert_eq!(Phase::default(), Phase::Starting);
-        assert_eq!(PtyMode::default(), PtyMode::Files);
     }
 
     /// The types code encodes on its own rather than inside another
@@ -521,6 +537,8 @@ mod tests {
         "Step",
         "Message",
         "ProtocolVersionMismatch",
+        // Named, not encoded: an ErrorInfo's reason is a value's name.
+        "ErrorReason",
         "AmbiguousAgentName",
         "AmbiguousHostName",
         "ClaudePtyItem",
@@ -552,7 +570,12 @@ mod tests {
             messages.insert(name, message.clone());
         }
         let (mut messages, mut enums) = (BTreeMap::new(), BTreeSet::new());
-        for file in &set.file {
+        // The vendored googleapis files are whole, used or not.
+        for file in set
+            .file
+            .iter()
+            .filter(|file| file.package().starts_with("amux."))
+        {
             let package = format!(".{}", file.package());
             for message in &file.message_type {
                 walk(&package, message, &mut messages, &mut enums);
@@ -594,6 +617,8 @@ mod tests {
                     .iter()
                     .map(|name| format!(".amux.v1.{name}")),
             )
+            // A client encodes its session history into DumpRequest.sessions.
+            .chain([".amux.dump.ClientSessionHistory".to_owned()])
             .collect::<Vec<_>>();
         let mut reached = BTreeSet::new();
         while let Some(name) = pending.pop() {

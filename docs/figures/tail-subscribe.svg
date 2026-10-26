@@ -36,7 +36,7 @@
       <line class="lane" x1="820" y1="56" x2="820" y2="480"/>
 
       <path class="arrow" d="M100,90 H350" marker-end="url(#ah)"/>
-      <text class="s" x="225" y="82" text-anchor="middle">Subscribe(agent, tail: 10)</text>
+      <text class="s" x="225" y="82" text-anchor="middle">SubscribeSession(agent, tail: 10)</text>
       <rect class="note" x="230" y="108" width="300" height="34" rx="3"/>
       <text class="s sans" x="380" y="122" text-anchor="middle">join the agent's broadcast first</text>
       <text class="s sans" x="380" y="136" text-anchor="middle">then read; no cursor, no state per subscription</text>
@@ -58,7 +58,7 @@
       <text class="s" x="225" y="387" text-anchor="middle">item 121</text>
 
       <path class="arrow" d="M100,435 H350" marker-end="url(#ah)"/>
-      <text class="s" x="225" y="427" text-anchor="middle">Fetch(agent, before: 111, limit: 50)</text>
+      <text class="s" x="225" y="427" text-anchor="middle">ListItems(agent, before: 111, page_size: 50)</text>
       <path class="arrow" d="M350,465 H100" marker-end="url(#ah)"/>
       <text class="s" x="225" y="480" text-anchor="middle">items 61…110 (a plain store read)</text>
 </svg>

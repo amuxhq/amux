@@ -11,7 +11,6 @@ use anyhow::{Context as _, Result, bail};
 use node::supervisor::login::LoginItem;
 use node::supervisor::{Files, Request, ask};
 use settings::{Channel, InstallationConfig, Switch};
-use wire::Empty;
 
 use crate::connect;
 use crate::server::running_supervisor;
@@ -249,7 +248,7 @@ pub async fn update(config: &InstallationConfig, retry: bool) -> Result<()> {
     while Instant::now() < deadline {
         let running = match connect::front_door_now(config).await {
             Some(door) => connect::installation(door)
-                .get_info(Empty {})
+                .get_installation(wire::GetInstallationRequest {})
                 .await
                 .ok()
                 .map(|info| info.into_inner().version),

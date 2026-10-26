@@ -9,7 +9,6 @@ use std::sync::Weak;
 use daemon_core::payload::{Answer, PeerFailure, PeerRequest};
 use daemon_core::{CallId, HostId, Input};
 use store::AgentKey;
-use wire::Empty;
 
 use super::feed;
 use crate::link::EarlyAnswer;
@@ -28,7 +27,7 @@ pub(super) async fn stream(
 ) {
     let answer = |answer| feed(&inputs, Input::PeerAnswer { call, answer });
     let ended = match request {
-        PeerRequest::Subscribe(request) => {
+        PeerRequest::SubscribeSession(request) => {
             session(&runtime, host, request, |event| {
                 answer(Answer::Session(event))
             })
@@ -50,7 +49,7 @@ pub(super) async fn stream(
 async fn session<F: Future<Output = ()>>(
     runtime: &Weak<ProfileRuntime>,
     host: HostId,
-    request: wire::PeerSubscribeRequest,
+    request: wire::PeerSubscribeSessionRequest,
     mut answer: impl FnMut(wire::SessionEvent) -> F,
 ) -> Answer {
     let key = AgentKey::new(host.0.to_vec(), request.agent_id.clone());
@@ -64,7 +63,7 @@ async fn session<F: Future<Output = ()>>(
     let peer = host_from_core(host);
     let early = edge
         .first_flights()
-        .take(peer, &PeerRequest::Subscribe(request.clone()))
+        .take(peer, &PeerRequest::SubscribeSession(request.clone()))
         .await;
     let opened = match early {
         // The launch's first flight carried this call.
@@ -80,7 +79,7 @@ async fn session<F: Future<Output = ()>>(
             };
             drop(edge);
             client
-                .subscribe(request)
+                .subscribe_session(request)
                 .await
                 .map(|response| response.into_inner())
         }
@@ -144,7 +143,7 @@ async fn inventory<F: Future<Output = ()>>(
             drop(edge);
             (
                 client
-                    .subscribe_inventory(Empty {})
+                    .subscribe_inventory(wire::SubscribeInventoryRequest {})
                     .await
                     .map(|response| response.into_inner()),
                 None,

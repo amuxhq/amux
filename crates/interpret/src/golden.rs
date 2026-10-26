@@ -726,8 +726,10 @@ fn agent_message(body: &Value) -> Result<Envelope, String> {
         context: None,
         from: Some(Sender {
             value: Some(sender::Value::Agent(wire::AgentSender {
-                agent_id: message.from.clone().into_bytes(),
-                host_id: b"host".to_vec(),
+                agent: Some(wire::AgentRef {
+                    host_id: b"host".to_vec(),
+                    agent_id: message.from.clone().into_bytes(),
+                }),
                 name: message.from,
             })),
         }),

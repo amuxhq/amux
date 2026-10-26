@@ -3,7 +3,7 @@
 use anyhow::Result;
 use tonic::transport::Channel;
 use wire::profile_service_client::ProfileServiceClient;
-use wire::{CreateProfileRequest, DeleteProfileRequest, Empty, RenameProfileRequest};
+use wire::{CreateProfileRequest, DeleteProfileRequest, RenameProfileRequest};
 
 use crate::connect;
 
@@ -11,7 +11,7 @@ type Profiles = ProfileServiceClient<Channel>;
 
 pub async fn list(profiles: &mut Profiles) -> Result<()> {
     let listed = profiles
-        .list_profiles(Empty {})
+        .list_profiles(wire::ListProfilesRequest {})
         .await
         .map_err(crate::plain)?
         .into_inner()

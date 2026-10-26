@@ -444,7 +444,7 @@ fn replay_client(agent: &str, history: &ClientHistory) -> Result<Result<usize, F
     }
     let mut step = 0;
     for traced in &history.events {
-        let Some(wire::client_traced::Event::Msg(msg)) = &traced.event else {
+        let Some(wire::dump::client_traced::Event::Msg(msg)) = &traced.event else {
             continue;
         };
         step += 1;

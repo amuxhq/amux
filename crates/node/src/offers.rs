@@ -21,7 +21,7 @@ use prost::Message as _;
 use sha2::{Digest as _, Sha256};
 use store::StoreError;
 pub use wire::Provider;
-use wire::{Catalogue, CatalogueBlob, ErrorCode, ProviderOffer, ProviderOnHost};
+use wire::{Catalogue, ErrorCode, GetCatalogueResponse, ProviderOffer, ProviderOnHost};
 
 use crate::runtime::{Launch, ProfileRuntime};
 
@@ -87,7 +87,7 @@ fn provider_command(provider: Provider, launch: &Launch) -> &str {
 pub struct HostCatalogue {
     /// The catalogue encoded once, and the SHA-256 of exactly those bytes:
     /// what GetCatalogue answers and the host's entry names.
-    pub blob: CatalogueBlob,
+    pub blob: GetCatalogueResponse,
     /// The same catalogue decoded, for an agent whose kind cannot ask its
     /// provider itself.
     pub catalogue: Catalogue,
@@ -171,7 +171,7 @@ fn host_catalogue(offer: ProviderOffer) -> HostCatalogue {
     let catalogue = offer.catalogue.unwrap_or_default();
     let bytes = catalogue.encode_to_vec();
     HostCatalogue {
-        blob: CatalogueBlob {
+        blob: GetCatalogueResponse {
             hash: Sha256::digest(&bytes).to_vec(),
             bytes,
         },

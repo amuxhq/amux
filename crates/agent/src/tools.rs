@@ -24,8 +24,8 @@ use tonic::transport::{Channel, Endpoint};
 use tonic::{Code, Status};
 use wire::client_service_client::ClientServiceClient;
 use wire::{
-    Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, Empty, ExitCause, HostEntry, HostRef,
-    Kind, Lifecycle, PromptInput, PromptSubmission, ResolveAgentRequest, SendMessageRequest,
+    Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, ExitCause, HostEntry, HostRef, Kind,
+    Lifecycle, PromptInput, PromptSubmission, ResolveAgentRequest, SendMessageRequest,
     StopAgentRequest, attachment, create_agent_request, host_ref, inventory_event,
 };
 
@@ -328,9 +328,11 @@ impl Server {
                 host_id: recipient.host_id,
                 agent_id: recipient.agent_id,
             }),
-            text: positioned.text,
             context,
-            attachments: positioned.attachments,
+            body: Some(wire::MessageBody {
+                text: positioned.text,
+                attachments: positioned.attachments,
+            }),
         };
         let sent = self
             .daemon_once(format!("the message to {to}"), |mut client| {
@@ -435,7 +437,10 @@ impl Server {
     /// The inventory read to CaughtUp: every host entry and agent row.
     async fn inventory(&self) -> Result<(Vec<HostEntry>, Vec<Agent>), Refusal> {
         self.daemon(|mut client| async move {
-            let mut stream = client.subscribe_inventory(Empty {}).await?.into_inner();
+            let mut stream = client
+                .subscribe_inventory(wire::SubscribeInventoryRequest {})
+                .await?
+                .into_inner();
             let (mut hosts, mut agents) = (Vec::<HostEntry>::new(), Vec::<Agent>::new());
             while let Some(event) = stream.message().await? {
                 match event.of {

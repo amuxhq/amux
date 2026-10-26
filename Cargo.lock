@@ -6015,6 +6015,8 @@ dependencies = [
  "app-runtime",
  "model",
  "png 0.17.16",
+ "prost",
+ "prost-types",
  "protoc-bin-vendored",
  "release",
  "schemars",

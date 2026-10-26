@@ -52,7 +52,7 @@ pub enum ProfileEvent {
 }
 
 /// Every profile as it was when the watch began, then each change after.
-pub struct ProfileWatch {
+pub struct ProfileSubscription {
     pub listed: Vec<ProfileState>,
     events: broadcast::Receiver<ProfileEvent>,
 }
@@ -63,7 +63,7 @@ pub struct ProfileWatch {
 #[error("the watch fell behind; watch again")]
 pub struct FellBehind;
 
-impl ProfileWatch {
+impl ProfileSubscription {
     /// The next change; none once the daemon stops.
     pub async fn next(&mut self) -> Option<Result<ProfileEvent, FellBehind>> {
         match self.events.recv().await {
@@ -243,14 +243,14 @@ impl Registry {
     }
 
     /// Every profile as it is now, then each change as it happens.
-    pub fn watch(&self) -> Result<ProfileWatch, ProfileRefusal> {
+    pub fn subscribe(&self) -> Result<ProfileSubscription, ProfileRefusal> {
         let installation = self.installation()?;
         // The publishing lock is held while every change is published, so
         // the list read under it is exactly the state before the first
         // event the receiver sees.
         let _publishing = installation.publishing.lock().unwrap();
         let events = installation.events.subscribe();
-        Ok(ProfileWatch {
+        Ok(ProfileSubscription {
             listed: Self::listed(&installation),
             events,
         })

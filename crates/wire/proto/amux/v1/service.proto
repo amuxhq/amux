@@ -8,10 +8,20 @@
 // links exchange length-prefixed Message values on their control stream and
 // carry application channels on separate native streams.
 //
-// Until amux's first release nothing depends on an older build, so messages,
-// fields and numbers change freely: a removed field leaves no reservation and
-// the numbers stay in reading order. PROTOCOL_VERSION
-// (Hello.supported_protocol_versions) stays 1 until then.
+// amux.v1 is the released protocol. From amux 0.9.0 on, builds of different
+// versions meet: paired hosts, agent processes that outlive a daemon upgrade,
+// and the stores and journals an earlier build left on disk. So every change
+// keeps what a released build wrote decoding as it meant: fields, oneof arms
+// and enum values are only added; a number is never renumbered, retyped or
+// reused, and one that goes is left `reserved`. Names are not on the binary
+// wire and may change, but for two: a service's and a method's, which are the
+// gRPC path, and an error detail message's, which is its Any type URL. A
+// field or method may take another message that reads the same numbers.
+// `just proto-compat` checks all of this against the latest release. PROTOCOL_VERSION (Hello.supported_protocol_versions) moves only
+// for a break both ends of a link must take.
+//
+// What a client writes into a dump is amux.dump (amux/dump/session.proto),
+// read only by the build that wrote it and outside these promises.
 
 syntax = "proto3";
 
@@ -194,17 +204,17 @@ message AgentRemoved {
 
 // The whole client-facing surface.
 service ClientService {
-  rpc SubscribeInventory(Empty) returns (stream InventoryEvent);
+  rpc SubscribeInventory(SubscribeInventoryRequest) returns (stream InventoryEvent);
   // Fleet-wide name to row: NOT_FOUND, or AmbiguousAgentName with the
   // candidates. Every other call takes an agent id.
   rpc ResolveAgent(ResolveAgentRequest) returns (Agent);
-  rpc Subscribe(SubscribeRequest) returns (stream SessionEvent);
-  rpc Fetch(FetchRequest) returns (FetchResponse);
-  rpc Get(GetRequest) returns (Item);
+  rpc SubscribeSession(SubscribeSessionRequest) returns (stream SessionEvent);
+  rpc ListItems(ListItemsRequest) returns (ListItemsResponse);
+  rpc GetItem(GetItemRequest) returns (Item);
   rpc SendInput(SendInputRequest) returns (SendInputResponse);
   rpc CreateAgent(CreateAgentRequest) returns (Agent);
   rpc RenameAgent(RenameAgentRequest) returns (Agent);
-  rpc StopAgent(StopAgentRequest) returns (Empty);
+  rpc StopAgent(StopAgentRequest) returns (StopAgentResponse);
   // Spawn the directory again.
   rpc ResumeAgent(ResumeAgentRequest) returns (Agent);
   // Removes the agent for good, stopping it first when it is live. Its
@@ -217,63 +227,65 @@ service ClientService {
   rpc PutBlob(PutBlobRequest) returns (BlobRef);
   rpc GetBlob(GetBlobRequest) returns (GetBlobResponse);
   // The changed files; with_patch also puts the patch blob on the host.
-  rpc Diff(DiffRequest) returns (amux.v1.Diff);
+  rpc GetDiff(GetDiffRequest) returns (Diff);
   // What a provider on a host offers with no agent running, read from the
   // host's own copy; an agent's catalogue is a blob named by its snapshot.
-  rpc GetCatalogue(GetCatalogueRequest) returns (CatalogueBlob);
+  rpc GetCatalogue(GetCatalogueRequest) returns (GetCatalogueResponse);
   rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
   // The one bundle format.
-  rpc Dump(DumpRequest) returns (DumpReport);
+  rpc Dump(DumpRequest) returns (DumpResponse);
   // The unsent draft of an agent's composer, kept by this machine's daemon
   // for its clients so it outlives a client closing. Never synced to other
   // machines; an empty draft forgets it.
-  rpc SaveDraft(SaveDraftRequest) returns (Empty);
-  rpc GetDraft(GetDraftRequest) returns (ComposerDraft);
+  rpc UpdateDraft(UpdateDraftRequest) returns (Draft);
+  rpc GetDraft(GetDraftRequest) returns (Draft);
 }
 
 // Daemon to daemon, over the link's application streams. Replication is a
 // daemon being a client of its peer. The peer service answers only for
 // this host's own agents and never passes a call on, so no two hosts can
 // bounce a call between them: its inventory stream carries this host's
-// entry and this host's agents; every call that names an agent (Subscribe,
-// Fetch, Get, SendInput, the rename, stop, resume and delete calls,
-// PutBlob, GetBlob and Diff) refuses an agent owned elsewhere with
-// NOT_FOUND.
+// entry and this host's agents; every call that names an agent
+// (SubscribeSession, FetchHistory, GetItem, SendInput, the rename, stop,
+// resume and delete calls, PutBlob, GetBlob and GetDiff) refuses an agent
+// owned elsewhere with NOT_FOUND.
 service PeerService {
-  rpc SubscribeInventory(Empty) returns (stream InventoryEvent);
+  rpc SubscribeInventory(SubscribeInventoryRequest) returns (stream InventoryEvent);
   // A peer source sends `after` toward its origin once it holds a cursor,
   // else `tail`.
-  rpc Subscribe(PeerSubscribeRequest) returns (stream SessionEvent);
-  rpc Fetch(FetchRequest) returns (FetchResponse);
-  rpc Get(GetRequest) returns (Item);
+  rpc SubscribeSession(PeerSubscribeSessionRequest) returns (stream SessionEvent);
+  rpc ListItems(ListItemsRequest) returns (ListItemsResponse);
+  rpc GetItem(GetItemRequest) returns (Item);
   rpc SendInput(SendInputRequest) returns (SendInputResponse);
   rpc CreateAgent(CreateAgentRequest) returns (Agent);
   rpc RenameAgent(RenameAgentRequest) returns (Agent);
-  rpc StopAgent(StopAgentRequest) returns (Empty);
+  rpc StopAgent(StopAgentRequest) returns (StopAgentResponse);
   rpc ResumeAgent(ResumeAgentRequest) returns (Agent);
   rpc DeleteAgent(DeleteAgentRequest) returns (Empty);
-  rpc SendMessage(Envelope) returns (SendMessageResponse);
+  rpc SendMessage(PeerSendMessageRequest) returns (SendMessageResponse);
   rpc PutBlob(PutBlobRequest) returns (BlobRef);
   rpc GetBlob(GetBlobRequest) returns (GetBlobResponse);
-  rpc Diff(DiffRequest) returns (amux.v1.Diff);
-  rpc GetCatalogue(GetCatalogueRequest) returns (CatalogueBlob);
+  rpc GetDiff(GetDiffRequest) returns (Diff);
+  rpc GetCatalogue(GetCatalogueRequest) returns (GetCatalogueResponse);
   rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
   // The host-side parts of the caller's dump for agents this host runs,
   // packed in the response.
   rpc Dump(DumpRequest) returns (DumpPart);
 }
 
+message SubscribeInventoryRequest {}
+
 message ResolveAgentRequest {
   string name = 1;
 }
 
 // Clients tail; the daemon never accepts a cursor from a client.
-message SubscribeRequest {
+message SubscribeSessionRequest {
   bytes agent_id = 1;
   uint32 tail = 2;
 }
 
-message PeerSubscribeRequest {
+message PeerSubscribeSessionRequest {
   bytes agent_id = 1;
   oneof from {
     uint32 tail = 2;
@@ -335,19 +347,19 @@ message Reset {
 // The origin is not being followed; rows may be stale.
 message Detached {}
 
-message FetchRequest {
+message ListItemsRequest {
   bytes agent_id = 1;
   optional uint64 before_order = 2;
-  uint32 limit = 3;
+  uint32 page_size = 3;
 }
 
 // By order, newest first; exhausted means no older history exists.
-message FetchResponse {
+message ListItemsResponse {
   repeated Item items = 1;
   bool exhausted = 2;
 }
 
-message GetRequest {
+message GetItemRequest {
   bytes agent_id = 1;
   string key = 2;
 }
@@ -407,6 +419,8 @@ message StopAgentRequest {
   bytes agent_id = 1;
 }
 
+message StopAgentResponse {}
+
 // The composer of an exited chat sends its draft through initial_prompt.
 message ResumeAgentRequest {
   bytes agent_id = 1;
@@ -425,10 +439,14 @@ message DeleteAgentRequest {
 message SendMessageRequest {
   bytes id = 1;
   AgentRef to = 2;
-  string text = 3;
-  optional bytes context = 4;
-  // Blobs in the sender's directory on the sender's host.
-  repeated Attachment attachments = 5;
+  optional bytes context = 3;
+  MessageBody body = 4;
+}
+
+// A message a paired host sends for one of its agents or people, its sender
+// stamped by that host.
+message PeerSendMessageRequest {
+  Envelope envelope = 1;
 }
 
 message SendMessageResponse {
@@ -452,7 +470,7 @@ message GetBlobResponse {
   bytes bytes = 1;
 }
 
-message DiffRequest {
+message GetDiffRequest {
   bytes agent_id = 1;
   DiffBase base = 2;
   // Also build the patch and store it as the agent's blob.
@@ -475,20 +493,20 @@ enum Provider {
 
 // The encoded Catalogue and the SHA-256 of exactly these bytes, which is
 // what HostEntry.providers names.
-message CatalogueBlob {
+message GetCatalogueResponse {
   bytes hash = 1;
   bytes bytes = 2;
 }
 
 // An agent's unsent draft: its words and the attachments already stored.
-message ComposerDraft {
+message Draft {
   string text = 1;
   repeated Attachment attachments = 2;
 }
 
-message SaveDraftRequest {
+message UpdateDraftRequest {
   bytes agent_id = 1;
-  ComposerDraft draft = 2;
+  Draft draft = 2;
 }
 
 message GetDraftRequest {
@@ -523,166 +541,18 @@ message DumpRequest {
   string reason = 2;
   // Produced on an invariant violation or panic rather than on request.
   bool automatic = 3;
-  // The asking client's open sessions, each as its trace began and every
-  // message since: the client stage of a replay. Unredacted as the client
-  // holds it; the daemon redacts each through its agent's kind before it
-  // writes it into the bundle, and passes none on to another host.
-  repeated ClientSessionHistory sessions = 4;
+  // The asking client's open sessions, each an encoded
+  // amux.dump.ClientSessionHistory: the session as its trace began and every
+  // message since, the client stage of a replay. Opaque here because only the
+  // build that wrote it reads it; a daemon that cannot decode one leaves it
+  // out of the bundle and says so. Unredacted as the client holds it; the
+  // daemon redacts each through its agent's kind before it writes it into the
+  // bundle, and passes none on to another host.
+  repeated bytes sessions = 4;
 }
-
-// One open chat as a client's dump carries it: the session's state when its
-// trace began, and everything its driver saw since, in the order it saw it.
-message ClientSessionHistory {
-  bytes agent_id = 1;
-  ClientSession start = 2;
-  ClientSessionEvents events = 3;
-}
-
-// A client's session state: the rows and every value the session model
-// keeps. Indexes over the rows are not carried; they are rebuilt from them.
-message ClientSession {
-  Agent agent = 1;
-  HostEntry host = 2;
-  // The newest snapshot, when one arrived.
-  Snapshot snapshot = 3;
-  // The catalogue last fetched for the agent, with the hash it was fetched
-  // by.
-  ClientCatalogue catalogue = 4;
-  ClientTranscript transcript = 5;
-  // A transcript being built apart, swapped in at the next CaughtUp.
-  ClientTranscript pending = 6;
-  bool retail = 7;
-  optional uint64 generation = 8;
-  repeated ClientInput inputs = 9;
-  bool caught_up = 10;
-  bool detached = 11;
-  ClientConnection connection = 12;
-  optional uint32 exited_under = 13;
-  uint64 reach = 14;
-  uint64 epoch = 15;
-  repeated ClientBlob blobs = 16;
-  uint64 cap = 17;
-  bool following = 18;
-  // Rows held above the window while the reader is in history.
-  repeated Item arrivals = 19;
-  bool arrivals_moved_on = 20;
-  uint64 arrivals_changes = 21;
-  bool reload_owed = 22;
-}
-
-message ClientTranscript {
-  repeated Item items = 1;
-  bool exhausted = 2;
-}
-
-message ClientCatalogue {
-  bytes hash = 1;
-  Catalogue catalogue = 2;
-}
-
-enum ClientConnection {
-  CLIENT_CONNECTION_CONNECTING = 0;
-  CLIENT_CONNECTION_LIVE = 1;
-  CLIENT_CONNECTION_RECONNECTING = 2;
-}
-
-// One input this client sent, and what became of it.
-message ClientInput {
-  Input input = 1;
-  ClientInputState state = 2;
-  // Why it was refused, when its state is REJECTED.
-  Rejected rejected = 3;
-  bool seen_queued = 4;
-  uint64 left_at = 5;
-}
-
-enum ClientInputState {
-  CLIENT_INPUT_STATE_SENT = 0;
-  CLIENT_INPUT_STATE_QUEUED = 1;
-  CLIENT_INPUT_STATE_SETTLED = 2;
-  CLIENT_INPUT_STATE_REJECTED = 3;
-  CLIENT_INPUT_STATE_UNCERTAIN = 4;
-  CLIENT_INPUT_STATE_HELD = 5;
-}
-
-// An attachment's bytes in the client's cache.
-message ClientBlob {
-  bytes hash = 1;
-  ClientBlobState state = 2;
-  // Why the fetch failed, when its state is FAILED.
-  string failed = 3;
-}
-
-enum ClientBlobState {
-  CLIENT_BLOB_STATE_MISSING = 0;
-  CLIENT_BLOB_STATE_FETCHING = 1;
-  CLIENT_BLOB_STATE_READY = 2;
-  CLIENT_BLOB_STATE_FAILED = 3;
-}
-
-message ClientSessionEvents {
-  repeated ClientTraced traced = 1;
-}
-
-// One event a session's driver saw.
-message ClientTraced {
-  // Position in everything the driver saw since the chat opened.
-  uint64 seq = 1;
-  // When, on the driver's clock.
-  int64 at_ms = 2;
-  oneof event {
-    // A message the driver applied to the session.
-    ClientSessionMsg msg = 3;
-    // Something the driver did that is not a message, as it describes it.
-    string driver = 4;
-  }
-}
-
-// A message the session model applies.
-message ClientSessionMsg {
-  oneof of {
-    SessionEvent event = 1;
-    ClientPage page = 2;
-    ClientConnection connection = 3;
-    Input send = 4;
-    ClientSent sent = 5;
-    bytes discard_input_id = 6;
-    Agent entry = 7;
-    HostEntry host = 8;
-    ClientBlob blob = 9;
-    bool following = 10;
-    ClientReloading reloading = 11;
-    uint64 window = 12;
-    ClientCatalogue catalogue = 13;
-  }
-}
-
-message ClientPage {
-  repeated Item items = 1;
-  bool exhausted = 2;
-  uint64 epoch = 3;
-}
-
-message ClientReloading {}
-
-// What became of a send.
-message ClientSent {
-  bytes input_id = 1;
-  oneof outcome {
-    SendInputResponse reply = 2;
-    // The transport failed before a reply.
-    ClientLost lost = 3;
-    // It never left: held to send once the host is back.
-    ClientHeld held = 4;
-  }
-}
-
-message ClientLost {}
-
-message ClientHeld {}
 
 // Where the bundle was written, for a caller on the same machine.
-message DumpReport {
+message DumpResponse {
   string report_path = 1;
 }
 

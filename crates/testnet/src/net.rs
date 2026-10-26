@@ -643,7 +643,7 @@ impl Net {
             .map_err(refused)?
             .into_inner();
         admin_a
-            .confirm_pair(wire::PendingPairRequest {
+            .confirm_pair(wire::ConfirmPairRequest {
                 token: pending.token,
             })
             .await
@@ -1296,7 +1296,10 @@ impl Net {
     ) -> Result<(Vec<u8>, wire::Catalogue), NetError> {
         use prost::Message as _;
         let id = self.agent(name)?.id;
-        let mut subscription = self.runtime(host)?.subscribe(id.as_bytes(), 1).await?;
+        let mut subscription = self
+            .runtime(host)?
+            .subscribe_session(id.as_bytes(), 1)
+            .await?;
         let mut named = None;
         while let Some(event) = subscription.next().await {
             match &event.of {
@@ -1948,7 +1951,7 @@ impl Net {
                     .front_door(host)
                     .await
                     .map_err(|error| error.to_string())?
-                    .list_profiles(wire::Empty {})
+                    .list_profiles(wire::ListProfilesRequest {})
                     .await
                     .map_err(|status| status.message().to_owned())?
                     .into_inner()
@@ -1956,7 +1959,7 @@ impl Net {
                 let cloud = profiles.first().map(|info| &info.cloud);
                 profiles
                     .first()
-                    .and_then(wire::ProfileInfo::relay_connected)
+                    .and_then(wire::Profile::relay_connected)
                     .map(|_| ())
                     .ok_or_else(|| format!("cloud {cloud:?}"))
             })
@@ -2011,7 +2014,7 @@ impl Net {
             let info = self
                 .front_door(&host)
                 .await?
-                .list_profiles(wire::Empty {})
+                .list_profiles(wire::ListProfilesRequest {})
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
                 .into_inner()
@@ -2036,7 +2039,7 @@ impl Net {
             } else {
                 let mut admin = self.admin(&host).await?;
                 admin
-                    .pause(wire::Empty {})
+                    .pause_profile(wire::PauseProfileRequest {})
                     .await
                     .map_err(|status| NetError::Refused(Box::new(status)))?;
                 let kept = node::profile_dir(&self.host(&host)?.data_dir, profile)
@@ -2048,7 +2051,7 @@ impl Net {
                     _ => {}
                 }
                 admin
-                    .resume(wire::Empty {})
+                    .resume_profile(wire::ResumeProfileRequest {})
                     .await
                     .map_err(|status| NetError::Refused(Box::new(status)))?;
             }
@@ -2058,7 +2061,7 @@ impl Net {
                     .front_door(&host)
                     .await
                     .map_err(|error| error.to_string())?
-                    .list_profiles(wire::Empty {})
+                    .list_profiles(wire::ListProfilesRequest {})
                     .await
                     .map_err(|status| status.message().to_owned())?
                     .into_inner()
@@ -2068,7 +2071,7 @@ impl Net {
                 let seen = info.as_ref().map(|info| &info.cloud);
                 (info
                     .as_ref()
-                    .and_then(wire::ProfileInfo::relay_connected)
+                    .and_then(wire::Profile::relay_connected)
                     .map(wire::RelayConnected::tier)
                     == Some(wanted))
                 .then_some(())
@@ -2816,7 +2819,7 @@ impl Net {
                     host: host.to_owned(),
                     why,
                 })?
-                .subscribe(wire::SubscribeRequest {
+                .subscribe_session(wire::SubscribeSessionRequest {
                     agent_id: id.as_bytes().to_vec(),
                     tail,
                 })
@@ -2837,7 +2840,10 @@ impl Net {
                 reader,
             ));
         }
-        let mut subscription = self.runtime(host)?.subscribe(id.as_bytes(), tail).await?;
+        let mut subscription = self
+            .runtime(host)?
+            .subscribe_session(id.as_bytes(), tail)
+            .await?;
         let (sender, incoming) = mpsc::unbounded_channel();
         let reader = tokio::spawn(async move {
             while let Some(event) = subscription.next().await {
@@ -2863,7 +2869,7 @@ impl Net {
                     host: host.to_owned(),
                     why,
                 })?
-                .subscribe_inventory(wire::Empty {})
+                .subscribe_inventory(wire::SubscribeInventoryRequest {})
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
                 .into_inner();
@@ -3113,7 +3119,7 @@ impl Net {
             let mut rows: BTreeMap<String, wire::Item> = BTreeMap::new();
             let mut stream = match tokio::time::timeout_at(
                 deadline,
-                client.subscribe(wire::SubscribeRequest {
+                client.subscribe_session(wire::SubscribeSessionRequest {
                     agent_id: agent.id.as_bytes().to_vec(),
                     tail: 200,
                 }),
@@ -3156,10 +3162,10 @@ impl Net {
                         let mut before = rows.values().map(|item| item.order).min();
                         while let Some(order) = before.filter(|order| *order > 1) {
                             let page = client
-                                .fetch(wire::FetchRequest {
+                                .list_items(wire::ListItemsRequest {
                                     agent_id: agent.id.as_bytes().to_vec(),
                                     before_order: Some(order),
-                                    limit: 500,
+                                    page_size: 500,
                                 })
                                 .await
                                 .map_err(|status| NetError::Refused(Box::new(status)))?

@@ -164,9 +164,9 @@ secret, optional host id and addresses) returns a `PendingPair`: an
 opaque token, the responder's `PairingIdentity` (host id, public key, name and
 an expiry sealed inside the responder identity) and the route pairing found
 (a `RouteKind`: direct or through the relay). When no address and no relay
-route reaches the other host, `BeginPair` answers `ERROR_CODE_UNREACHABLE`
-naming what it tried, never `UNAVAILABLE`, which means this daemon is not
-answering.
+route reaches the other host, `BeginPair` answers `FAILED_PRECONDITION` with
+reason `HOST_UNREACHABLE`, naming what it tried, never `UNAVAILABLE`, which
+means this daemon is not answering.
 Neither trust store changes during this phase. The profile's pairing
 administration holds the open stream behind the single-use token until that
 expiry, and holds at most 32 at once. The token is a local capability, not a
@@ -400,7 +400,7 @@ finished, gives up after two seconds.
 **The early-call rule.** Only reads go in 0-RTT data, because the far end may
 see early data more than once. The channel pool writes early only calls of
 one type (`EarlyCall` in `crates/node/src/link/channels.rs`):
-`SubscribeInventory`, `Subscribe`, `Fetch`, `GetBlob` and `Diff`. A send, a
+`SubscribeInventory`, `SubscribeSession`, `ListItems`, `GetBlob` and `GetDiff`. A send, a
 stop or a pairing call has no constructor there, so it cannot be early data.
 If the far end refuses the early data (it lost the ticket, or the ticket was
 spent), the dialler opens the same streams again in the same order, control
@@ -518,11 +518,11 @@ forwarder's and none is up, opens a stream, and gives it to tonic as one
 HTTP/2 channel. It has two channel classes:
 
 - `Calls`: one cached channel per peer and route. The inventory subscription,
-  forwarded calls, `Fetch`, `GetBlob`, `Diff` and every other one-shot call
+  forwarded calls, `ListItems`, `GetBlob`, `GetDiff` and every other one-shot call
   ride it. A cached channel whose connection ended is dropped, and the next
   call opens a fresh stream.
 - `Session`: one cached channel per peer and route for the replica agents'
-  `Subscribe` streams, so they neither wait behind nor hold up the host's
+  `SubscribeSession` streams, so they neither wait behind nor hold up the host's
   calls, and a host with many agents costs one stream, not one per agent.
 
 Separate streams give separate flow control, so a long subscription does not
@@ -649,7 +649,7 @@ never does, because its directory and journal are its whole interface (see
 | Endpoint | Services | Who dials it |
 | --- | --- | --- |
 | The installation front door | `ProfileService`, `InstallationService` | the CLI and the terminal client, to find profiles and manage them |
-| A profile's client socket, `<data_dir>/profiles/<id>/sock` | `ClientService`, `ProfileAdminService` | the terminal client and the CLI, at the path the front door reports as `ProfileInfo.socket_path` |
+| A profile's client socket, `<data_dir>/profiles/<id>/sock` | `ClientService`, `ProfileAdminService` | the terminal client and the CLI, at the path the front door reports as `Profile.socket_path` |
 | An agent's `agents/<id>/tools.sock` | `ClientService`, with that agent as the caller | the agent's MCP tool server, and nothing else |
 | A profile's `link.sock` | a link, not a service | `amux relay`, carrying an SSH link |
 | A link stream whose handshake presented a pinned key | `PeerService` | paired daemons, including a phone's embedded daemon |
@@ -685,16 +685,17 @@ service manager and waits for it.
 profiles. A bind names its profile or lets the installation pick the one
 already bound to that account, else one that holds nothing, else a new one.
 A call about one profile names it by id, and profile and host ids travel as
-their 16 bytes; the CLI reads and prints their text form. `WatchProfiles`
+their 16 bytes; the CLI reads and prints their text form. `SubscribeProfiles`
 sends every profile, `CaughtUp`, then each change in the order it happened;
-a watcher that falls behind is ended with `ABORTED` and watches again.
-`InstallationService` answers `GetInfo` (the daemon's version) and
+a subscriber that falls behind is ended with `ABORTED` and subscribes again.
+`InstallationService` answers `GetInstallation` (the daemon's version) and
 `Shutdown`. The rules behind these calls are `node::Registry`'s; the front
 door (`crates/node/src/front_door.rs`) converts.
 
 `ProfileAdminService`, on each profile's own socket, is that profile's
 administration, so none of its calls names a profile: it signs the profile
-out, pauses and resumes its relay link; opens, reports and cancels pairing
+out, pauses and resumes its relay link (`SignOut`, `PauseProfile`,
+`ResumeProfile`); opens, reports and cancels pairing
 windows (`StartPairing`, `GetPairingStatus`, `CancelPairing`); runs the
 initiator's side of pairing (`BeginPair`, `ConfirmPair`, `AbandonPair`);
 reports this device's identity; records a peer an SSH exchange
@@ -714,16 +715,16 @@ command again.
 | --- | --- |
 | `SubscribeInventory` | The host set and every agent row: current state, `CaughtUp`, then deltas. A listing is this stream read to `CaughtUp`. |
 | `ResolveAgent` | A fleet-wide reference to one row: an id with or without dashes, the eight-character short id (or any longer prefix), a name, or `name@host`. `NOT_FOUND`, or `AmbiguousAgentName` with the candidates when a bare name matches agents on several hosts; the message offers the `name@host` forms that pick each. Every other agent call takes an id. |
-| `Subscribe`, `Fetch`, `Get` | An agent's session stream, older pages, and one item; see [the wire](WIRE.md). |
+| `SubscribeSession`, `ListItems`, `GetItem` | An agent's session stream, older pages, and one item; see [the wire](WIRE.md). |
 | `SendInput` | A person's input to an agent; the answer is the interpreter's verdict. |
 | `CreateAgent` | Creates an agent, on this host or on a trusted host named by id or by name. |
 | `RenameAgent`, `StopAgent`, `ResumeAgent`, `DeleteAgent` | Registry operations. A stop ends the agent now (its turn cancelled the provider's own way); a delete stops it if live and removes it. Both act on the named agent alone; its children follow on their own hosts by [the family rule](#the-family-rule), so the answer says nothing of them. |
 | `SendMessage` | A message to an agent, whose sender the daemon stamps from the caller; see [agent tools](AGENT_TOOLS.md). |
-| `PutBlob`, `GetBlob`, `Diff` | Bytes in an agent's directory; see [attachments](ATTACHMENTS.md). |
+| `PutBlob`, `GetBlob`, `GetDiff` | Bytes in an agent's directory; see [attachments](ATTACHMENTS.md). |
 | `GetCatalogue` | What a provider on a host offers with no agent running, from the host's own copy. What an agent offers is a blob its snapshot names, read with `GetBlob`; see [the wire](WIRE.md). |
 | `ListRepositories` | Where a host offers to start an agent: recent working directories and repositories under its configured roots. |
 | `Dump` | A debug report; see [debugging](DEBUGGING.md). |
-| `SaveDraft`, `GetDraft` | An agent's unsent draft, kept by this machine's daemon for its own clients so it outlives a client closing; never synced, and refused to a paired host. |
+| `UpdateDraft`, `GetDraft` | An agent's unsent draft, kept by this machine's daemon for its own clients so it outlives a client closing; never synced, and refused to a paired host. |
 
 The implementation is `ClientApi` in `crates/node/src/grpc.rs`, a thin mapping
 onto the profile runtime. It holds the runtime weakly, so a connection that
@@ -740,20 +741,20 @@ reached the owner:
 
 - **Not sent.** The call never left: no link to the owner, the owner is not
   trusted, or no channel opened within 10 seconds. That is
-  `ERROR_CODE_UNREACHABLE` naming the host by the name it was paired under,
+  reason `HOST_UNREACHABLE` naming the host by the name it was paired under,
   except for `SendInput`, which answers with a rejected verdict,
   `REFUSAL_HOST_UNREACHABLE`, so a composer treats it like any other refusal.
   When only the relay reaches the owner and the account is on the free plan
   (its subscription lapsed), the relay carries no calls between hosts, and
-  the call is refused at once as that: `ERROR_CODE_PAYMENT_REQUIRED` with a
+  the call is refused at once as that: reason `PAYMENT_REQUIRED` with a
   sentence naming the lapse, for `SendInput` the same rejected verdict
   with that sentence as its detail, and for `StopAgent`
-  `ERROR_CODE_UNREACHABLE` with that sentence, so a client holds the stop
+  reason `HOST_UNREACHABLE` with that sentence, so a client holds the stop
   as it holds any stop that never left.
 - **Uncertain.** The call went out and its answer did not come back: the
   link failed under it, or 30 seconds passed (enough for a spawn, which waits
   for the child's process to start on the far side). That is
-  `ERROR_CODE_ABORTED` for every call, `SendInput` included: the sender holds
+  `ABORTED` for every call, `SendInput` included: the sender holds
   the input as uncertain and settles it at its next catch-up, and nothing
   sends it again.
 
@@ -801,11 +802,11 @@ differs from `ClientService` in these ways:
 
 - It answers only for this host's own agents. Its inventory stream carries
   this host's entry and this host's agents, never what this host knows of
-  other hosts. Every call that names an agent (`Subscribe`, `Fetch`, `Get`,
+  other hosts. Every call that names an agent (`SubscribeSession`, `ListItems`, `GetItem`,
   `SendInput`, `RenameAgent`, `StopAgent`, `ResumeAgent`, `DeleteAgent`,
-  `PutBlob`, `GetBlob` and `Diff`) is `NOT_FOUND` for an agent this host only
+  `PutBlob`, `GetBlob` and `GetDiff`) is `NOT_FOUND` for an agent this host only
   replicates, even when this host holds that agent's rows or blobs.
-- `Subscribe` takes a `PeerSubscribeRequest`, which may ask for what came
+- `SubscribeSession` takes a `PeerSubscribeSessionRequest`, which may ask for what came
   `after` a revision: that is how a replica catches up from its cursor
   ([the wire](WIRE.md) describes it).
 - `SendMessage` takes the `Envelope` the calling host's daemon stamped, and
@@ -894,21 +895,25 @@ for any other incarnation.
 
 ### Errors
 
-A refusal is a `wire::Error`: an `ErrorCode`, a message, and typed details
-named by their protobuf message type (`AmbiguousAgentName`,
-`AmbiguousHostName`, `ProtocolVersionMismatch`). On the gRPC status the whole
-error travels in the details, beside a coarse gRPC code for generic clients
-(`crates/node/src/grpc.rs`, `status`). `UNAVAILABLE` means this daemon is not
-answering, which a caller retries; another host being unreachable, and a
-failed precondition, both map to `FAILED_PRECONDITION`, because they are
-answers, not outages. `PAYMENT_REQUIRED` maps to `PERMISSION_DENIED`.
+A refusal is a `google.rpc.Status`, gRPC's richer error model (Rust:
+`wire::Error`): a gRPC code, a message, and details packed as `Any`, among
+them typed details (`AmbiguousAgentName`, `AmbiguousHostName`,
+`ProtocolVersionMismatch`). It travels whole in the gRPC status details, its
+code on the status itself (`crates/node/src/grpc.rs`, `status`), so generic
+gRPC tooling reads it. What the code alone does not say, a
+`google.rpc.ErrorInfo` detail names: domain `amux.sh`, reason an
+`ErrorReason` value's name without its prefix. `UNAVAILABLE` means this
+daemon is not answering, which a caller retries; another host being
+unreachable is `FAILED_PRECONDITION` with reason `HOST_UNREACHABLE`, because
+it is an answer, not an outage. A lapsed plan is `PERMISSION_DENIED` with
+reason `PAYMENT_REQUIRED`. The googleapis files are vendored under
+`crates/wire/proto/google/`.
 
-Until the first release the protobuf files change freely, as the top of
-`service.proto` says: a removed field is deleted outright, leaving no
-reservation, and the remaining fields are renumbered so the numbers stay in
-reading order (see [the wire](WIRE.md#compatibility)). `PROTOCOL_VERSION`
-exists only in the link handshake and stays 1 until then. The local sockets
-carry no version at all.
+The protobuf files change only as the top of `service.proto` and
+[the wire](WIRE.md#compatibility) allow: added to, never renumbered, with a
+removed field's number reserved; `just proto-compat` checks it against the
+latest release. `PROTOCOL_VERSION` exists only in the link handshake. The
+local sockets carry no version at all.
 
 ## Chapter 8: Diagnostics
 
@@ -924,7 +929,7 @@ report.
 
 ## Chapter 9: Blob routing
 
-`GetBlob`, `PutBlob` and `Diff` on another host's agent, and `GetCatalogue` for
+`GetBlob`, `PutBlob` and `GetDiff` on another host's agent, and `GetCatalogue` for
 another host's provider, are forwarded calls like any other, on the `Calls`
 channel. The bytes are content-addressed, so a relay never needs to understand
 them and the reader verifies them against the hash it asked for. An agent's

@@ -71,7 +71,7 @@ pub fn redact(kind: Kind, target: RedactTarget) -> RedactTarget {
             // Walked with every body, which no kind is there to decode,
             // emptied.
             RedactTarget::ClientSession(history) => RedactTarget::ClientSession(redact_message(
-                &wire::ClientSessionHistory::full_name(),
+                &wire::dump::ClientSessionHistory::full_name(),
                 &history,
             )),
         },
@@ -142,7 +142,7 @@ pub(crate) fn redact_kind<ItemBody: Name, SnapshotBody: Name, InputBody: Name, S
             RedactTarget::Agent(scrubber.twice(|s| s.message(&name, &agent)))
         }
         RedactTarget::ClientSession(history) => {
-            let name = type_name::<wire::ClientSessionHistory>();
+            let name = type_name::<wire::dump::ClientSessionHistory>();
             RedactTarget::ClientSession(scrubber.twice(|s| s.message(&name, &history)))
         }
     }

@@ -1,4 +1,5 @@
 pub mod ios_verify;
+pub mod proto_compat;
 pub mod swift_types;
 
 /// The repository's wall-clock bound wrapper (`scripts/bounded`), addressed

@@ -64,11 +64,16 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The compatibility check reads the latest release tag's schema.
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@1.98.0
       - uses: Swatinem/rust-cache@v2
       - uses: extractions/setup-just@v2
       - name: Check committed protobuf code
         run: just codegen-check
+      - name: Check the protocol still reads what the latest release wrote
+        run: just proto-compat
       - name: Enforce dependency boundaries
         run: just dependency-policy
       - name: Check the state-machine cores carry no runtime, lock or await
@@ -79,8 +84,6 @@ jobs:
         run: just tests-check
       - name: Check the documentation's links, figures and map
         run: just docs-check
-      - name: Check nothing names a removed mechanism
-        run: just deletion-ledger-check
 
   test:
     name: Test (${{ matrix.os }})

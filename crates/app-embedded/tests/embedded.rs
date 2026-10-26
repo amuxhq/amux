@@ -464,7 +464,7 @@ async fn each_account_is_a_profile_and_only_the_resumed_one_holds_a_relay_link()
     )
     .await
     .unwrap();
-    let mut events = embedded.watch_profiles().unwrap();
+    let mut events = embedded.subscribe_profiles().unwrap();
     let ada = only_profile(&embedded).await;
     embedded
         .bind(Some(ada), relay.url(), "mobile", &Relay::login("ada"))

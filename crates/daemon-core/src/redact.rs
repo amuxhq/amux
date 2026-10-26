@@ -506,7 +506,7 @@ mod tests {
     }
 
     fn draft(text: &str) -> Vec<u8> {
-        wire::ComposerDraft {
+        wire::Draft {
             text: text.to_owned(),
             ..Default::default()
         }
@@ -537,7 +537,7 @@ mod tests {
         let redacted = checkpoint.redacted(&redactor).expect("it redacts");
         assert!(!holds(&redacted.state), "the planted word is gone");
         assert!(
-            redactor.names.borrow().contains("amux.v1.ComposerDraft"),
+            redactor.names.borrow().contains("amux.v1.Draft"),
             "the draft went through as its message: {:?}",
             redactor.names.borrow()
         );

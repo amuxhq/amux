@@ -31,7 +31,8 @@ pub fn attention(agent: &Agent) -> Attention {
     }
     match agent.phase() {
         wire::Phase::Starting => Attention::Starting,
-        wire::Phase::Idle => Attention::Idle,
+        // A phase from a newer build reads as the quietest one.
+        wire::Phase::Idle | wire::Phase::Unspecified => Attention::Idle,
         wire::Phase::Working => Attention::Working,
         wire::Phase::NeedsYou => Attention::NeedsYou,
     }

@@ -12,6 +12,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("door") => door::main(),
         Some("golden") => golden::main(),
         Some("ios-verify") => ios_verify::run(),
+        Some("proto-compat") => {
+            xtask::proto_compat::main(&std::env::args().skip(2).collect::<Vec<_>>())
+        }
         Some("swift-types") => {
             xtask::swift_types::main(&std::env::args().skip(2).collect::<Vec<_>>())
         }
@@ -19,7 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("restamp") => restamp(&std::env::args().skip(2).collect::<Vec<_>>()),
         _ => {
             eprintln!(
-                "usage: xtask <codegen|swift-types [--check]|golden diff [ARGS]|restamp FROM TO [VERSION]|release <key generate|key public|cut VERSION|deploy VERSION [--channel C] [--rollout N]>|door [--simulator NAME] [--bundle-id ID] [--install APP] [--timeout SECS] [--requests FILE] [JSON...]|ios-verify>"
+                "usage: xtask <codegen|proto-compat [REF]|swift-types [--check]|golden diff [ARGS]|restamp FROM TO [VERSION]|release <key generate|key public|cut VERSION|deploy VERSION [--channel C] [--rollout N]>|door [--simulator NAME] [--bundle-id ID] [--install APP] [--timeout SECS] [--requests FILE] [JSON...]|ios-verify>"
             );
             std::process::exit(2);
         }
@@ -87,6 +90,10 @@ const PROTO_FILES: &[&str] = &[
     "amux/v1/agent.proto",
     "amux/v1/claude.proto",
     "amux/v1/codex.proto",
+    "amux/dump/session.proto",
+    "google/rpc/code.proto",
+    "google/rpc/status.proto",
+    "google/rpc/error_details.proto",
 ];
 
 /// Regenerates the committed protobuf code under
@@ -117,6 +124,9 @@ fn codegen() -> Result<(), Box<dyn std::error::Error>> {
     // such as the dump redactor, find the descriptor of a generated type.
     let mut config = tonic_prost_build::Config::new();
     config.enable_type_names();
+    // A detail packed as Any names its type by URL, gRPC's richer error
+    // model's way.
+    config.type_name_domain(["."], "type.googleapis.com");
     // The wire values the chat views carry to the phone serialize, with
     // schemas, so the Swift mirrors are generated from these definitions.
     for path in VIEW_VALUES {
@@ -146,7 +156,9 @@ fn codegen() -> Result<(), Box<dyn std::error::Error>> {
                 .iter()
                 .map(|file| proto_dir.join(file))
                 .collect::<Vec<_>>(),
-            &[proto_dir],
+            // The vendored protoc's own include directory holds the
+            // well-known types the googleapis files import.
+            &[proto_dir, protoc_bin_vendored::include_path()?],
         )?;
     Ok(())
 }

@@ -21,11 +21,11 @@ use ui_state::{
     RefusalReason, SessionState,
 };
 use ui_view::SessionLine;
+use wire::dump::{ClientSessionEvents, ClientSessionHistory, ClientTraced, client_traced};
 use wire::{
-    Agent, BlobRef, ClientSessionEvents, ClientSessionHistory, ClientTraced, DumpRequest,
-    ErrorCode, FetchRequest, GetBlobRequest, GetRequest, HostEntry, Input, PromptSubmission,
-    PutBlobRequest, ResumeAgentRequest, SendInputRequest, SendInputResponse, SessionEvent,
-    SubscribeRequest, client_traced, send_input_response, session_event,
+    Agent, BlobRef, DumpRequest, ErrorCode, GetBlobRequest, GetItemRequest, HostEntry, Input,
+    ListItemsRequest, PromptSubmission, PutBlobRequest, ResumeAgentRequest, SendInputRequest,
+    SendInputResponse, SessionEvent, SubscribeSessionRequest, send_input_response, session_event,
 };
 
 use crate::trace::{DriverEvent, DriverTrace, Ring, TraceEvent};
@@ -240,8 +240,8 @@ impl Inner {
         trace.record(state, at_ms, TraceEvent::Driver(event));
     }
 
-    fn subscribe_request(&self) -> SubscribeRequest {
-        SubscribeRequest {
+    fn subscribe_request(&self) -> SubscribeSessionRequest {
+        SubscribeSessionRequest {
             agent_id: self.agent_id.clone(),
             tail: self.tail.load(Ordering::Acquire),
         }
@@ -260,11 +260,11 @@ impl Inner {
         }
         if let Some(key) = &outcome.need_get {
             self.note(DriverEvent::Get { key: key.clone() });
-            let request = GetRequest {
+            let request = GetItemRequest {
                 agent_id: self.agent_id.clone(),
                 key: key.clone(),
             };
-            match self.client.get(request).await {
+            match self.client.get_item(request).await {
                 Ok(item) => {
                     self.apply(Msg::Event(SessionEvent {
                         of: Some(session_event::Of::Item(item)),
@@ -298,7 +298,7 @@ impl Inner {
             agent_ids: vec![self.agent_id.clone()],
             reason: format!("{TRANSCRIPT_DUMP}{why}"),
             automatic: true,
-            sessions: vec![cut.history(&self.agent_id)],
+            sessions: vec![cut.history(&self.agent_id).encode_to_vec()],
         };
         let inner = self.clone();
         tokio::spawn(async move {
@@ -579,7 +579,10 @@ impl Session {
             catalogues,
             asked: Mutex::new(None),
         });
-        let mut stream = inner.client.subscribe(inner.subscribe_request()).await?;
+        let mut stream = inner
+            .client
+            .subscribe_session(inner.subscribe_request())
+            .await?;
         inner.note(DriverEvent::Subscribed { tail });
         inner.apply(Msg::Connection(Connection::Live));
         let mut ended = None;
@@ -781,12 +784,12 @@ impl Session {
             return Ok(0);
         }
         self.inner.note(DriverEvent::Page { before, limit: n });
-        let request = FetchRequest {
+        let request = ListItemsRequest {
             agent_id: self.inner.agent_id.clone(),
             before_order: before,
-            limit: n,
+            page_size: n,
         };
-        match self.inner.client.fetch(request).await {
+        match self.inner.client.list_items(request).await {
             Ok(page) => {
                 let count = page.items.len();
                 self.inner.apply(Msg::Page {
@@ -800,7 +803,7 @@ impl Session {
                 self.inner.note(DriverEvent::PageFailed {
                     error: error.to_string(),
                 });
-                if error.code() == Some(ErrorCode::Unreachable) {
+                if error.reason() == Some(wire::ErrorReason::HostUnreachable) {
                     Err(PageError::OriginUnreachable)
                 } else {
                     Err(PageError::Rpc(error))
@@ -1132,7 +1135,11 @@ async fn pump(inner: Arc<Inner>, stream: Option<EventStream<SessionEvent>>, ende
                 inner.note(DriverEvent::Backoff { until_ms });
                 inner.clock.sleep_until(until_ms).await;
             }
-            match inner.client.subscribe(inner.subscribe_request()).await {
+            match inner
+                .client
+                .subscribe_session(inner.subscribe_request())
+                .await
+            {
                 Ok(opened) => {
                     inner.note(DriverEvent::Subscribed {
                         tail: inner.tail.load(Ordering::Acquire),

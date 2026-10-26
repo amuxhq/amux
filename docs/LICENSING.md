@@ -81,7 +81,7 @@ the restriction temporary.
 ## What this does not cover
 
 Third-party material vendored into the repository keeps its own licence,
-recorded beside it. Fonts are the only such material:
+recorded beside it. Fonts and three protobuf files are the only such material:
 
 | Files | Licence |
 | --- | --- |
@@ -89,6 +89,7 @@ recorded beside it. Fonts are the only such material:
 | `crates/shot/assets/JetBrainsMono-*.ttf` | SIL Open Font License 1.1, [`crates/shot/assets/OFL.txt`](../crates/shot/assets/OFL.txt) |
 | `apps/apple/Packages/AmuxDesign/Sources/AmuxDesign/Resources/Fonts/GeistMono.ttf` | SIL Open Font License 1.1, [`OFL-GeistMono.txt`](../apps/apple/Packages/AmuxDesign/Sources/AmuxDesign/Resources/Fonts/OFL-GeistMono.txt) beside it |
 | `apps/apple/Packages/AmuxDesign/Sources/AmuxDesign/Resources/Fonts/InstrumentSans.ttf` | SIL Open Font License 1.1, [`OFL-InstrumentSans.txt`](../apps/apple/Packages/AmuxDesign/Sources/AmuxDesign/Resources/Fonts/OFL-InstrumentSans.txt) beside it |
+| `crates/wire/proto/google/rpc/*.proto`, and the Rust generated from them in `crates/wire/src/generated/google.rpc.rs` | Apache License 2.0, in each file's header; where they come from is in [`crates/wire/proto/google/README.md`](../crates/wire/proto/google/README.md) |
 
 Dependencies fetched by Cargo, Swift Package Manager or other tools are not
 part of the repository and carry their own licences.

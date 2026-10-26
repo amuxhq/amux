@@ -206,7 +206,7 @@ mod tests {
     fn an_exited_agent_over_the_budget_is_removed_with_its_streams_and_its_directory_named() {
         let mut daemon = daemon();
         let key = AgentKey::new(*OWN, *AGENT);
-        let subscribe = ClientRequest::Subscribe {
+        let subscribe = ClientRequest::SubscribeSession {
             agent_id: AGENT.to_vec(),
             tail: 10,
         };

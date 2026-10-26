@@ -605,7 +605,7 @@ fn decision_view(
 ) -> Option<Decision> {
     let decision = decision?;
     let outcome = match DecisionOutcome::try_from(decision.outcome).ok()? {
-        DecisionOutcome::None => return None,
+        DecisionOutcome::None | DecisionOutcome::Unspecified => return None,
         DecisionOutcome::Allowed => DecisionView::Allowed,
         DecisionOutcome::Denied => DecisionView::Denied,
         DecisionOutcome::AutoApproved => DecisionView::AutoApproved,
@@ -864,7 +864,8 @@ fn plan_row(state: &SessionState, held: &Held, plan: &wire::Plan) -> RowKind {
         wire::PlanVerdict::Approved => PlanVerdict::Approved,
         wire::PlanVerdict::ApprovedSwitching => PlanVerdict::ApprovedSwitching,
         wire::PlanVerdict::SentBack => PlanVerdict::SentBack,
-        wire::PlanVerdict::Dismissed => PlanVerdict::Dismissed,
+        // A verdict from a newer build reads as closed, never as a call to act.
+        wire::PlanVerdict::Dismissed | wire::PlanVerdict::Unspecified => PlanVerdict::Dismissed,
     };
     let (title, body) = plan_parts(&held.item.text, !plan.complete);
     RowKind::Ask(AskRow::Plan {

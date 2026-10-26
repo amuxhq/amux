@@ -271,7 +271,7 @@ pub fn changes(diff: &Diff) -> Changes {
                 added: file.added,
                 removed: file.removed,
                 status: match file.change() {
-                    DiffFileChange::Changed => FileStatus::Modified,
+                    DiffFileChange::Changed | DiffFileChange::Unspecified => FileStatus::Modified,
                     DiffFileChange::Created => FileStatus::Added,
                     DiffFileChange::Deleted => FileStatus::Deleted,
                 },

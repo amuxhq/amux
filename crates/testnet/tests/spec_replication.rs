@@ -24,7 +24,7 @@ use store::{AgentKey, CommitClock, Marker, PageEnd};
 use testnet::observe::{self, Mark, marks};
 use testnet::{AgentDecl, JournalCut, Net, NetOptions, PATIENCE, Topology, until};
 use wire::client_service_server::ClientService as _;
-use wire::{FetchRequest, InventoryEvent, Item, SessionEvent, inventory_event, session_event};
+use wire::{InventoryEvent, Item, ListItemsRequest, SessionEvent, inventory_event, session_event};
 
 fn text(text: &str) -> Step {
     Step::Text {
@@ -160,14 +160,14 @@ async fn fetch(
     agent: &str,
     before_order: Option<u64>,
     limit: u32,
-) -> Result<wire::FetchResponse, node::ServeError> {
+) -> Result<wire::ListItemsResponse, node::ServeError> {
     let id = net.agent(agent).unwrap().id;
     net.runtime(host)
         .unwrap()
-        .fetch(&FetchRequest {
+        .list_items(&ListItemsRequest {
             agent_id: id.as_bytes().to_vec(),
             before_order,
-            limit,
+            page_size: limit,
         })
         .await
 }
@@ -1125,7 +1125,7 @@ async fn blobs_and_diffs_of_a_peers_agent_are_made_at_its_origin_and_kept_by_the
         let agent_id = agent_id.clone();
         async move {
             laptop
-                .diff(tonic::Request::new(wire::DiffRequest {
+                .get_diff(tonic::Request::new(wire::GetDiffRequest {
                     agent_id,
                     base: Some(wire::DiffBase {
                         base: Some(wire::diff_base::Base::Head(wire::Empty {})),

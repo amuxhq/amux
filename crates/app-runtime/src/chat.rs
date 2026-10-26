@@ -48,7 +48,7 @@ pub struct Chat {
     /// opened.
     kept: Option<Draft>,
     /// The draft as it last stood, for the saver to hand the daemon.
-    draft: watch::Sender<Option<wire::ComposerDraft>>,
+    draft: watch::Sender<Option<wire::Draft>>,
     /// What the host was last handed; None until its model opens on the
     /// chat, and no delta is computed before.
     sent: Mutex<Option<Sent>>,
@@ -130,7 +130,7 @@ impl Chat {
     pub fn keep_draft(&self, draft: &Draft) {
         let (text, attachments) = draft.to_prompt();
         self.draft
-            .send_replace(Some(wire::ComposerDraft { text, attachments }));
+            .send_replace(Some(wire::Draft { text, attachments }));
     }
 
     /// Where the reader is: at the newest row, or in history.
@@ -551,17 +551,17 @@ impl Drop for Chat {
 async fn save_drafts(
     client: Arc<dyn Client>,
     agent_id: Vec<u8>,
-    mut drafts: watch::Receiver<Option<wire::ComposerDraft>>,
+    mut drafts: watch::Receiver<Option<wire::Draft>>,
 ) {
     while drafts.changed().await.is_ok() {
         let Some(draft) = drafts.borrow_and_update().clone() else {
             continue;
         };
-        let request = wire::SaveDraftRequest {
+        let request = wire::UpdateDraftRequest {
             agent_id: agent_id.clone(),
             draft: Some(draft),
         };
-        if let Err(error) = client.save_draft(request).await {
+        if let Err(error) = client.update_draft(request).await {
             tracing::warn!(%error, "cannot keep the draft");
         }
     }

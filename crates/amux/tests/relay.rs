@@ -24,7 +24,7 @@ use support::desk::{Desk, GRACE_SECS};
 use support::{amux_binary, grpc_channel, until};
 use tokio::io::{AsyncBufReadExt as _, BufReader};
 use wire::profile_service_client::ProfileServiceClient;
-use wire::{BindProfileRequest, Empty, RelayCarrier};
+use wire::{BindProfileRequest, RelayCarrier};
 
 /// The key the stand-in cloud signs connection tokens with, and the same
 /// key's public modulus in its key set.
@@ -279,7 +279,7 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
     );
     let mut profiles = ProfileServiceClient::new(grpc_channel(&desk.socket).await.unwrap());
     let profile = profiles
-        .list_profiles(Empty {})
+        .list_profiles(wire::ListProfilesRequest {})
         .await
         .unwrap()
         .into_inner()
@@ -301,14 +301,14 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
         let profile = &profile;
         async move {
             let listed = profiles
-                .list_profiles(Empty {})
+                .list_profiles(wire::ListProfilesRequest {})
                 .await
                 .unwrap()
                 .into_inner()
                 .profiles;
             let listed = listed.iter().find(|p| p.id == profile.id);
             listed
-                .and_then(wire::ProfileInfo::relay_connected)
+                .and_then(wire::Profile::relay_connected)
                 .map(|_| ())
                 .ok_or_else(|| format!("cloud {:?}", listed.map(|p| &p.cloud)))
         }
@@ -316,7 +316,7 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
     .await
     .unwrap();
     let linked = profiles
-        .list_profiles(Empty {})
+        .list_profiles(wire::ListProfilesRequest {})
         .await
         .unwrap()
         .into_inner()

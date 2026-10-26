@@ -104,8 +104,8 @@ pub use profiles::{
     PROFILE_SOCKET, ProfileEntry, ProfileId, create_profile, create_profile_as, profile_dir,
 };
 pub use registry::{
-    AccountState, FellBehind, ProfileEvent, ProfileRefusal, ProfileState, ProfileWatch, Registry,
-    SignIn,
+    AccountState, FellBehind, ProfileEvent, ProfileRefusal, ProfileState, ProfileSubscription,
+    Registry, SignIn,
 };
 pub use relay::RelayError;
 pub use replicas::{InventoryHook, SourceHook, SourcePolicy, SourceVerdict};

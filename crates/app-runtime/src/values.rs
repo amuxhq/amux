@@ -263,7 +263,7 @@ impl Draft {
     }
 
     /// A draft as this device's daemon kept it.
-    pub fn kept(draft: &wire::ComposerDraft) -> Draft {
+    pub fn kept(draft: &wire::Draft) -> Draft {
         Draft::of(&draft.text, &draft.attachments)
     }
 

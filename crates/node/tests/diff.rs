@@ -12,7 +12,7 @@ use std::process::Command;
 use node::{BlobError, PATCH_MIME};
 use support::synthetic::*;
 use support::*;
-use wire::{DiffBase, DiffFile, DiffFileChange, DiffRequest, ErrorCode, Lifecycle, diff_base};
+use wire::{DiffBase, DiffFile, DiffFileChange, ErrorCode, GetDiffRequest, Lifecycle, diff_base};
 
 const SEGMENTS: u64 = 1 << 20;
 
@@ -75,8 +75,8 @@ fn repository(work: &Path) -> Repository {
     Repository { head, fork }
 }
 
-fn request(agent: &SyntheticAgent, base: diff_base::Base, with_patch: bool) -> DiffRequest {
-    DiffRequest {
+fn request(agent: &SyntheticAgent, base: diff_base::Base, with_patch: bool) -> GetDiffRequest {
+    GetDiffRequest {
         agent_id: agent.id.as_bytes().to_vec(),
         base: Some(DiffBase { base: Some(base) }),
         with_patch,
@@ -122,7 +122,7 @@ async fn without_a_patch_the_host_lists_the_files_and_stores_nothing() {
     let before = files_under(&agent.dir);
 
     let uncommitted = runtime
-        .diff(request(&agent, working_tree(), false))
+        .get_diff(request(&agent, working_tree(), false))
         .await
         .unwrap();
     println!("uncommitted: {uncommitted:#?}");
@@ -138,7 +138,7 @@ async fn without_a_patch_the_host_lists_the_files_and_stores_nothing() {
     );
 
     let on_branch = runtime
-        .diff(request(
+        .get_diff(request(
             &agent,
             diff_base::Base::Branch("main".into()),
             false,
@@ -180,7 +180,7 @@ async fn with_a_patch_the_host_stores_it_as_the_agents_blob() {
     };
 
     let tree = runtime
-        .diff(request(&agent, working_tree(), true))
+        .get_diff(request(&agent, working_tree(), true))
         .await
         .unwrap();
     assert_eq!(tree.head, repo.head);
@@ -208,7 +208,7 @@ async fn with_a_patch_the_host_stores_it_as_the_agents_blob() {
     );
 
     let branch = runtime
-        .diff(request(
+        .get_diff(request(
             &agent,
             diff_base::Base::Branch("main".into()),
             true,
@@ -236,7 +236,7 @@ async fn a_comparison_git_cannot_make_says_why() {
     let runtime = runtime(&daemon, &install);
 
     let outside = runtime
-        .diff(request(&agent, working_tree(), false))
+        .get_diff(request(&agent, working_tree(), false))
         .await
         .unwrap_err();
     println!("outside a repository: {outside}");
@@ -245,7 +245,7 @@ async fn a_comparison_git_cannot_make_says_why() {
 
     repository(&install.work);
     let unknown = runtime
-        .diff(request(
+        .get_diff(request(
             &agent,
             diff_base::Base::Branch("nowhere".into()),
             false,
@@ -256,7 +256,7 @@ async fn a_comparison_git_cannot_make_says_why() {
     assert_eq!(unknown.to_wire().code, ErrorCode::FailedPrecondition as i32);
 
     let no_base = runtime
-        .diff(DiffRequest {
+        .get_diff(GetDiffRequest {
             agent_id: agent.id.as_bytes().to_vec(),
             base: None,
             with_patch: false,

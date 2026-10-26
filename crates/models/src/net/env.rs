@@ -1741,7 +1741,7 @@ impl Transition<'_> {
         let served = CallId(server.next_call);
         let stream = matches!(
             request,
-            PeerRequest::Subscribe(_) | PeerRequest::SubscribeInventory
+            PeerRequest::SubscribeSession(_) | PeerRequest::SubscribeInventory
         );
         let silent = match request {
             PeerRequest::StopAgent(_) | PeerRequest::DeleteAgent(_) => Some(PeerReply::Done),
@@ -2604,10 +2604,10 @@ pub fn wire_error(error: &CallError) -> wire::Error {
 
 fn peer_request(request: &PeerRequest) -> &'static str {
     match request {
-        PeerRequest::Subscribe(_) => "Subscribe",
+        PeerRequest::SubscribeSession(_) => "SubscribeSession",
         PeerRequest::SubscribeInventory => "SubscribeInventory",
-        PeerRequest::Fetch(_) => "Fetch",
-        PeerRequest::Get(_) => "Get",
+        PeerRequest::ListItems(_) => "ListItems",
+        PeerRequest::GetItem(_) => "GetItem",
         PeerRequest::SendInput(_) => "SendInput",
         PeerRequest::CreateAgent(_) => "CreateAgent",
         PeerRequest::RenameAgent(_) => "RenameAgent",
@@ -2617,7 +2617,7 @@ fn peer_request(request: &PeerRequest) -> &'static str {
         PeerRequest::SendMessage(_) => "SendMessage",
         PeerRequest::PutBlob(_) => "PutBlob",
         PeerRequest::GetBlob(_) => "GetBlob",
-        PeerRequest::Diff(_) => "Diff",
+        PeerRequest::GetDiff(_) => "GetDiff",
         PeerRequest::GetCatalogue(_) => "GetCatalogue",
         PeerRequest::ListRepositories(_) => "ListRepositories",
         PeerRequest::Dump(_) => "Dump",

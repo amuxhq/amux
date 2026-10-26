@@ -18,12 +18,12 @@ use tonic::{Code, Request, Status};
 use wire::client_service_client::ClientServiceClient;
 use wire::client_service_server::ClientService;
 use wire::{
-    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, Diff, DiffRequest, DumpReport,
-    DumpRequest, Empty, ErrorCode, FetchRequest, FetchResponse, GetBlobRequest, GetBlobResponse,
-    GetRequest, InventoryEvent, Item, ListRepositoriesRequest, ListRepositoriesResponse,
+    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, Diff, DumpRequest, DumpResponse,
+    ErrorCode, GetBlobRequest, GetBlobResponse, GetDiffRequest, GetItemRequest, InventoryEvent,
+    Item, ListItemsRequest, ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse,
     PutBlobRequest, RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest, SendInputRequest,
     SendInputResponse, SendMessageRequest, SendMessageResponse, SessionEvent, StopAgentRequest,
-    SubscribeRequest,
+    SubscribeSessionRequest,
 };
 
 /// A server stream. An `Err` item or the end of the stream both mean the
@@ -47,9 +47,15 @@ impl RpcError {
     pub fn code(&self) -> Option<ErrorCode> {
         match self {
             RpcError::Transport(_) => None,
-            RpcError::Refused(error) => {
-                Some(ErrorCode::try_from(error.code).unwrap_or(ErrorCode::Unspecified))
-            }
+            RpcError::Refused(error) => Some(error.code()),
+        }
+    }
+
+    /// The amux reason the runtime gave, when it gave one.
+    pub fn reason(&self) -> Option<wire::ErrorReason> {
+        match self {
+            RpcError::Transport(_) => None,
+            RpcError::Refused(error) => error.reason(),
         }
     }
 
@@ -64,33 +70,24 @@ impl From<Status> for RpcError {
     /// longer running, and says nothing about whether the call landed.
     fn from(status: Status) -> RpcError {
         if let Ok(error) = wire::Error::decode(status.details())
-            && error.code != ErrorCode::Unspecified as i32
+            && error.code != ErrorCode::Ok as i32
         {
             return RpcError::Refused(error);
         }
-        let code = match status.code() {
+        match status.code() {
             Code::Unavailable
             | Code::Unknown
             | Code::Cancelled
             | Code::DeadlineExceeded
             | Code::Internal
-            | Code::Aborted => return RpcError::Transport(status.message().to_owned()),
-            Code::InvalidArgument | Code::OutOfRange => ErrorCode::InvalidArgument,
-            Code::NotFound => ErrorCode::NotFound,
-            Code::AlreadyExists => ErrorCode::AlreadyExists,
-            Code::PermissionDenied => ErrorCode::PermissionDenied,
-            Code::Unauthenticated => ErrorCode::Unauthenticated,
-            Code::FailedPrecondition => ErrorCode::FailedPrecondition,
-            Code::ResourceExhausted => ErrorCode::ResourceExhausted,
-            Code::Unimplemented => ErrorCode::Unimplemented,
-            Code::DataLoss => ErrorCode::DataLoss,
-            Code::Ok => ErrorCode::Unspecified,
-        };
-        RpcError::Refused(wire::Error {
-            code: code as i32,
-            message: status.message().to_owned(),
-            details: Vec::new(),
-        })
+            | Code::Aborted
+            | Code::Ok => RpcError::Transport(status.message().to_owned()),
+            // tonic's codes are gRPC's, as an error's are.
+            code => RpcError::Refused(wire::Error::new(
+                ErrorCode::try_from(code as i32).unwrap_or(ErrorCode::Unknown),
+                status.message(),
+            )),
+        }
     }
 }
 
@@ -100,12 +97,12 @@ impl From<Status> for RpcError {
 pub trait Client: Send + Sync + 'static {
     async fn subscribe_inventory(&self) -> Result<EventStream<InventoryEvent>, RpcError>;
     async fn resolve_agent(&self, request: ResolveAgentRequest) -> Result<Agent, RpcError>;
-    async fn subscribe(
+    async fn subscribe_session(
         &self,
-        request: SubscribeRequest,
+        request: SubscribeSessionRequest,
     ) -> Result<EventStream<SessionEvent>, RpcError>;
-    async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, RpcError>;
-    async fn get(&self, request: GetRequest) -> Result<Item, RpcError>;
+    async fn list_items(&self, request: ListItemsRequest) -> Result<ListItemsResponse, RpcError>;
+    async fn get_item(&self, request: GetItemRequest) -> Result<Item, RpcError>;
     async fn send_input(&self, request: SendInputRequest) -> Result<SendInputResponse, RpcError>;
     async fn create_agent(&self, request: CreateAgentRequest) -> Result<Agent, RpcError>;
     async fn rename_agent(&self, request: RenameAgentRequest) -> Result<Agent, RpcError>;
@@ -118,25 +115,25 @@ pub trait Client: Send + Sync + 'static {
     ) -> Result<SendMessageResponse, RpcError>;
     async fn put_blob(&self, request: PutBlobRequest) -> Result<BlobRef, RpcError>;
     async fn get_blob(&self, request: GetBlobRequest) -> Result<GetBlobResponse, RpcError>;
-    async fn diff(&self, request: DiffRequest) -> Result<Diff, RpcError>;
+    async fn get_diff(&self, request: GetDiffRequest) -> Result<Diff, RpcError>;
     async fn get_catalogue(
         &self,
         request: wire::GetCatalogueRequest,
-    ) -> Result<wire::CatalogueBlob, RpcError>;
+    ) -> Result<wire::GetCatalogueResponse, RpcError>;
     async fn list_repositories(
         &self,
         request: ListRepositoriesRequest,
     ) -> Result<ListRepositoriesResponse, RpcError>;
-    async fn dump(&self, request: DumpRequest) -> Result<DumpReport, RpcError>;
+    async fn dump(&self, request: DumpRequest) -> Result<DumpResponse, RpcError>;
     /// Keeps an agent's unsent draft on this machine; an empty one forgets
     /// it. A client that keeps none of its own answers Unimplemented.
-    async fn save_draft(&self, _request: wire::SaveDraftRequest) -> Result<(), RpcError> {
-        Err(unimplemented("save_draft"))
-    }
-    async fn get_draft(
+    async fn update_draft(
         &self,
-        _request: wire::GetDraftRequest,
-    ) -> Result<wire::ComposerDraft, RpcError> {
+        _request: wire::UpdateDraftRequest,
+    ) -> Result<wire::Draft, RpcError> {
+        Err(unimplemented("update_draft"))
+    }
+    async fn get_draft(&self, _request: wire::GetDraftRequest) -> Result<wire::Draft, RpcError> {
         Err(unimplemented("get_draft"))
     }
 }
@@ -158,26 +155,26 @@ macro_rules! client_impl {
         #[async_trait]
         impl<$($generics)*> Client for $ty {
             async fn subscribe_inventory(&self) -> Result<EventStream<InventoryEvent>, RpcError> {
-                Ok(events($call!(self, subscribe_inventory, Empty {}).await?.into_inner()))
+                Ok(events($call!(self, subscribe_inventory, wire::SubscribeInventoryRequest {}).await?.into_inner()))
             }
 
             async fn resolve_agent(&self, request: ResolveAgentRequest) -> Result<Agent, RpcError> {
                 Ok($call!(self, resolve_agent, request).await?.into_inner())
             }
 
-            async fn subscribe(
+            async fn subscribe_session(
                 &self,
-                request: SubscribeRequest,
+                request: SubscribeSessionRequest,
             ) -> Result<EventStream<SessionEvent>, RpcError> {
-                Ok(events($call!(self, subscribe, request).await?.into_inner()))
+                Ok(events($call!(self, subscribe_session, request).await?.into_inner()))
             }
 
-            async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, RpcError> {
-                Ok($call!(self, fetch, request).await?.into_inner())
+            async fn list_items(&self, request: ListItemsRequest) -> Result<ListItemsResponse, RpcError> {
+                Ok($call!(self, list_items, request).await?.into_inner())
             }
 
-            async fn get(&self, request: GetRequest) -> Result<Item, RpcError> {
-                Ok($call!(self, get, request).await?.into_inner())
+            async fn get_item(&self, request: GetItemRequest) -> Result<Item, RpcError> {
+                Ok($call!(self, get_item, request).await?.into_inner())
             }
 
             async fn send_input(
@@ -224,14 +221,14 @@ macro_rules! client_impl {
                 Ok($call!(self, get_blob, request).await?.into_inner())
             }
 
-            async fn diff(&self, request: DiffRequest) -> Result<Diff, RpcError> {
-                Ok($call!(self, diff, request).await?.into_inner())
+            async fn get_diff(&self, request: GetDiffRequest) -> Result<Diff, RpcError> {
+                Ok($call!(self, get_diff, request).await?.into_inner())
             }
 
             async fn get_catalogue(
                 &self,
                 request: wire::GetCatalogueRequest,
-            ) -> Result<wire::CatalogueBlob, RpcError> {
+            ) -> Result<wire::GetCatalogueResponse, RpcError> {
                 Ok($call!(self, get_catalogue, request).await?.into_inner())
             }
 
@@ -242,19 +239,21 @@ macro_rules! client_impl {
                 Ok($call!(self, list_repositories, request).await?.into_inner())
             }
 
-            async fn dump(&self, request: DumpRequest) -> Result<DumpReport, RpcError> {
+            async fn dump(&self, request: DumpRequest) -> Result<DumpResponse, RpcError> {
                 Ok($call!(self, dump, request).await?.into_inner())
             }
 
-            async fn save_draft(&self, request: wire::SaveDraftRequest) -> Result<(), RpcError> {
-                $call!(self, save_draft, request).await?;
-                Ok(())
+            async fn update_draft(
+                &self,
+                request: wire::UpdateDraftRequest,
+            ) -> Result<wire::Draft, RpcError> {
+                Ok($call!(self, update_draft, request).await?.into_inner())
             }
 
             async fn get_draft(
                 &self,
                 request: wire::GetDraftRequest,
-            ) -> Result<wire::ComposerDraft, RpcError> {
+            ) -> Result<wire::Draft, RpcError> {
                 Ok($call!(self, get_draft, request).await?.into_inner())
             }
         }
@@ -342,14 +341,14 @@ mod tests {
 
     #[test]
     fn a_status_carrying_the_runtimes_error_is_that_error() {
-        let error = wire::Error {
-            code: ErrorCode::Unreachable as i32,
-            message: "older history is held by the agent's host".into(),
-            details: Vec::new(),
-        };
+        let error = wire::Error::because(
+            wire::ErrorReason::HostUnreachable,
+            "older history is held by the agent's host",
+        );
         let rpc = RpcError::from(status_with(&error, Code::FailedPrecondition));
         assert_eq!(rpc, RpcError::Refused(error));
-        assert_eq!(rpc.code(), Some(ErrorCode::Unreachable));
+        assert_eq!(rpc.code(), Some(ErrorCode::FailedPrecondition));
+        assert_eq!(rpc.reason(), Some(wire::ErrorReason::HostUnreachable));
     }
 
     #[test]

@@ -20,12 +20,12 @@ use uuid::Uuid;
 use wire::client_service_server::ClientService;
 use wire::profile_admin_service_server::ProfileAdminServiceServer;
 use wire::{
-    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, DiffRequest, DumpReport, DumpRequest,
-    Empty, ErrorCode, FetchRequest, FetchResponse, GetBlobRequest, GetBlobResponse, GetRequest,
-    InventoryEvent, Item, ListRepositoriesRequest, ListRepositoriesResponse, PutBlobRequest,
-    RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest, SendInputRequest,
+    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, DumpRequest, DumpResponse, Empty,
+    ErrorCode, GetBlobRequest, GetBlobResponse, GetDiffRequest, GetItemRequest, InventoryEvent,
+    Item, ListItemsRequest, ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse,
+    PutBlobRequest, RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest, SendInputRequest,
     SendInputResponse, SendMessageRequest, SendMessageResponse, SessionEvent, StopAgentRequest,
-    SubscribeRequest,
+    SubscribeSessionRequest,
 };
 
 use crate::blobs::BlobError;
@@ -37,22 +37,12 @@ use crate::telemetry::{self, InputShape};
 /// A wire error as a gRPC status: the coarse code for generic clients, and
 /// the whole error, details included, in the status details for ours.
 pub fn status(error: wire::Error) -> Status {
-    let code = match ErrorCode::try_from(error.code).unwrap_or(ErrorCode::Unspecified) {
-        ErrorCode::Unspecified | ErrorCode::Internal => Code::Internal,
-        ErrorCode::Cancelled => Code::Cancelled,
-        ErrorCode::InvalidArgument => Code::InvalidArgument,
-        ErrorCode::NotFound => Code::NotFound,
-        ErrorCode::AlreadyExists => Code::AlreadyExists,
-        ErrorCode::PermissionDenied | ErrorCode::PaymentRequired => Code::PermissionDenied,
-        ErrorCode::Unauthenticated => Code::Unauthenticated,
-        // Unavailable means this daemon is not answering, which a caller
-        // retries; another host being unreachable is an answer.
-        ErrorCode::FailedPrecondition | ErrorCode::Unreachable => Code::FailedPrecondition,
-        ErrorCode::Aborted => Code::Aborted,
-        ErrorCode::ResourceExhausted => Code::ResourceExhausted,
-        ErrorCode::Unimplemented => Code::Unimplemented,
-        ErrorCode::Unavailable => Code::Unavailable,
-        ErrorCode::DataLoss => Code::DataLoss,
+    // The error's code is gRPC's own; the whole error rides in the details,
+    // as gRPC's richer error model carries it.
+    let code = match Code::from_i32(error.code) {
+        // An error that names no failure is still one.
+        Code::Ok => Code::Internal,
+        code => code,
     };
     Status::with_details(code, error.message.clone(), error.encode_to_vec().into())
 }
@@ -154,7 +144,7 @@ impl ClientApi {
     async fn host_catalogue(
         &self,
         request: wire::GetCatalogueRequest,
-    ) -> Result<Response<wire::CatalogueBlob>, Status> {
+    ) -> Result<Response<wire::GetCatalogueResponse>, Status> {
         let runtime = self.runtime()?;
         let host = host_id(&request.host_id)?;
         if host != runtime.host() {
@@ -253,11 +243,11 @@ type EventStream<T> = Pin<Box<dyn Stream<Item = Result<T, Status>> + Send>>;
 #[tonic::async_trait]
 impl ClientService for ClientApi {
     type SubscribeInventoryStream = EventStream<InventoryEvent>;
-    type SubscribeStream = EventStream<SessionEvent>;
+    type SubscribeSessionStream = EventStream<SessionEvent>;
 
     async fn subscribe_inventory(
         &self,
-        _request: Request<Empty>,
+        _request: Request<wire::SubscribeInventoryRequest>,
     ) -> Result<Response<Self::SubscribeInventoryStream>, Status> {
         let runtime = self.runtime()?;
         let subscription = runtime
@@ -288,14 +278,14 @@ impl ClientService for ClientApi {
             .map_err(|error| status(error.to_wire()))
     }
 
-    async fn subscribe(
+    async fn subscribe_session(
         &self,
-        request: Request<SubscribeRequest>,
-    ) -> Result<Response<Self::SubscribeStream>, Status> {
+        request: Request<SubscribeSessionRequest>,
+    ) -> Result<Response<Self::SubscribeSessionStream>, Status> {
         let request = request.into_inner();
         let subscription = self
             .runtime()?
-            .subscribe(&request.agent_id, request.tail)
+            .subscribe_session(&request.agent_id, request.tail)
             .await
             .map_err(|error| status(error.to_wire()))?;
         let stream = futures_util::stream::unfold(subscription, |mut subscription| async move {
@@ -305,20 +295,20 @@ impl ClientService for ClientApi {
         Ok(Response::new(Box::pin(stream)))
     }
 
-    async fn fetch(
+    async fn list_items(
         &self,
-        request: Request<FetchRequest>,
-    ) -> Result<Response<FetchResponse>, Status> {
+        request: Request<ListItemsRequest>,
+    ) -> Result<Response<ListItemsResponse>, Status> {
         self.runtime()?
-            .fetch(&request.into_inner())
+            .list_items(&request.into_inner())
             .await
             .map(Response::new)
             .map_err(|error| status(error.to_wire()))
     }
 
-    async fn get(&self, request: Request<GetRequest>) -> Result<Response<Item>, Status> {
+    async fn get_item(&self, request: Request<GetItemRequest>) -> Result<Response<Item>, Status> {
         self.runtime()?
-            .get(&request.into_inner())
+            .get_item(&request.into_inner())
             .await
             .map(Response::new)
             .map_err(|error| status(error.to_wire()))
@@ -432,7 +422,7 @@ impl ClientService for ClientApi {
     async fn stop_agent(
         &self,
         request: Request<StopAgentRequest>,
-    ) -> Result<Response<Empty>, Status> {
+    ) -> Result<Response<wire::StopAgentResponse>, Status> {
         let request = request.into_inner();
         let runtime = self.runtime()?;
         self.lineage(
@@ -444,12 +434,12 @@ impl ClientService for ClientApi {
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
             let stopped = runtime.on_peer(host, request).await;
             return match stopped {
-                Ok(empty) => Ok(Response::new(empty)),
+                Ok(_) => Ok(Response::new(wire::StopAgentResponse {})),
                 // Never left, and the lapse is why: answered as unreachable
                 // in the lapse's words, so a client holds the stop as it
                 // holds a send and says the reason.
-                Err(error @ ForwardError::Lapsed { .. }) => Err(status(wire_error(
-                    ErrorCode::Unreachable,
+                Err(error @ ForwardError::Lapsed { .. }) => Err(status(wire::Error::because(
+                    wire::ErrorReason::HostUnreachable,
                     error.to_string(),
                 ))),
                 Err(error) => Err(status(error.to_wire())),
@@ -458,7 +448,7 @@ impl ClientService for ClientApi {
         runtime
             .stop(agent_id(&request.agent_id)?)
             .await
-            .map(|_| Response::new(Empty {}))
+            .map(|_| Response::new(wire::StopAgentResponse {}))
             .map_err(|error| status(error.to_wire()))
     }
 
@@ -567,7 +557,10 @@ impl ClientService for ClientApi {
         Ok(fetched)
     }
 
-    async fn diff(&self, request: Request<DiffRequest>) -> Result<Response<wire::Diff>, Status> {
+    async fn get_diff(
+        &self,
+        request: Request<GetDiffRequest>,
+    ) -> Result<Response<wire::Diff>, Status> {
         let request = request.into_inner();
         let runtime = self.runtime()?;
         // The working tree is on the agent's own host, and so is the patch.
@@ -575,7 +568,7 @@ impl ClientService for ClientApi {
             return forwarded(&runtime, host, request).await;
         }
         runtime
-            .diff(request)
+            .get_diff(request)
             .await
             .map(Response::new)
             .map_err(|error| status(error.to_wire()))
@@ -584,7 +577,7 @@ impl ClientService for ClientApi {
     async fn get_catalogue(
         &self,
         request: Request<wire::GetCatalogueRequest>,
-    ) -> Result<Response<wire::CatalogueBlob>, Status> {
+    ) -> Result<Response<wire::GetCatalogueResponse>, Status> {
         self.host_catalogue(request.into_inner()).await
     }
 
@@ -612,10 +605,10 @@ impl ClientService for ClientApi {
         ))
     }
 
-    async fn save_draft(
+    async fn update_draft(
         &self,
-        request: Request<wire::SaveDraftRequest>,
-    ) -> Result<Response<wire::Empty>, Status> {
+        request: Request<wire::UpdateDraftRequest>,
+    ) -> Result<Response<wire::Draft>, Status> {
         if !self.forwards {
             return Err(status(wire_error(
                 ErrorCode::InvalidArgument,
@@ -623,16 +616,17 @@ impl ClientService for ClientApi {
             )));
         }
         let request = request.into_inner();
+        let draft = request.draft.unwrap_or_default();
         self.runtime()?
-            .save_draft(&request.agent_id, &request.draft.unwrap_or_default())
+            .update_draft(&request.agent_id, &draft)
             .await;
-        Ok(Response::new(wire::Empty {}))
+        Ok(Response::new(draft))
     }
 
     async fn get_draft(
         &self,
         request: Request<wire::GetDraftRequest>,
-    ) -> Result<Response<wire::ComposerDraft>, Status> {
+    ) -> Result<Response<wire::Draft>, Status> {
         if !self.forwards {
             return Err(status(wire_error(
                 ErrorCode::InvalidArgument,
@@ -645,14 +639,14 @@ impl ClientService for ClientApi {
         ))
     }
 
-    async fn dump(&self, request: Request<DumpRequest>) -> Result<Response<DumpReport>, Status> {
+    async fn dump(&self, request: Request<DumpRequest>) -> Result<Response<DumpResponse>, Status> {
         // A local caller reads the bundle where it was written.
         let path = self
             .runtime()?
             .dump(request.into_inner())
             .await
             .map_err(|error| status(error.to_wire()))?;
-        Ok(Response::new(DumpReport {
+        Ok(Response::new(DumpResponse {
             report_path: path.to_string_lossy().into_owned(),
         }))
     }

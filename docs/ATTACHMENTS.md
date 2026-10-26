@@ -16,7 +16,7 @@ The pieces are:
   text and the `<amux-attachment>` element a model sees.
 - The daemon's blob calls in
   [`crates/node/src/blobs.rs`](../crates/node/src/blobs.rs): `PutBlob`,
-  `GetBlob` and `Diff`.
+  `GetBlob` and `GetDiff`.
 - The review document in
   [`crates/ui-view/src/review.rs`](../crates/ui-view/src/review.rs), drawn by
   the terminal's review page and the phone's.
@@ -45,7 +45,7 @@ reference alone (`ui_view::AttachmentView`): the name, type and size of an
 image or file, the line count of pasted text, and the comment count of a
 review. No bytes are needed to draw a row.
 
-A review's `Diff` is exactly what the `Diff` call returned when asked for the
+A review's `Diff` is exactly what the `GetDiff` call returned when asked for the
 patch: the patch as a `text/x-diff` blob, the base (the working tree or a
 branch), the head commit, the merge base for a branch, and the call's file
 list. The review document parses files, hunks and per-file identity from the
@@ -173,7 +173,7 @@ with the directory it sits in:
   children follow by the family rule), or when own retention removes the agent: exited
   agents are removed whole, least recently active first, when the profile's
   own rows pass `retention.own_budget_mib`.
-- A patch written by `Diff` goes into the requesting agent's directory and
+- A patch written by `GetDiff` goes into the requesting agent's directory and
   lives with that agent whether or not a review is ever sent.
 - A replica's directory, blobs included, goes when its host stops listing the
   agent or is untrusted. Replica blob files also have a byte budget of their
@@ -214,7 +214,7 @@ their elements.
 
 ## The review document
 
-A review starts with the `Diff` call. The daemon runs git in the agent's
+A review starts with the `GetDiff` call. The daemon runs git in the agent's
 working directory on the agent's own host and writes the patch as a blob of
 that agent:
 
@@ -228,7 +228,7 @@ that agent:
   each file's identity), `--no-renames`, and no external diff or text
   conversion.
 
-`Diff` answers with the `Diff` value: the patch reference, the base, the head
+`GetDiff` answers with the `Diff` value: the patch reference, the base, the head
 commit and, for a branch, the merge base. A client freezes that value when its
 review page opens: `ui_runtime::review::working_tree_review` makes the call
 and fetches the patch, so the review a person sends names the same patch the
@@ -264,7 +264,7 @@ its element, with the path to the patch and the comments in its body.
   every way a candidate stays text.
 - [`crates/node/tests/blobs.rs`](../crates/node/tests/blobs.rs): `PutBlob`
   writes the agent's directory, `GetBlob` reads own and replica files, a
-  failed write leaves nothing behind, and `Diff` writes the patch as the
+  failed write leaves nothing behind, and `GetDiff` writes the patch as the
   agent's blob.
 - [`crates/agent/tests/tools.rs`](../crates/agent/tests/tools.rs): the `attach`
   tool stores the file by its hash and answers its element without a daemon.

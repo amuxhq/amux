@@ -2,8 +2,8 @@ syntax = "proto3";
 
 package amux.v1;
 
-import "amux/v1/error.proto";
 import "amux/v1/records.proto";
+import "google/rpc/status.proto";
 
 // Host-to-host link control: what crosses a link's control stream, the
 // preface of every other stream it carries, and the host each end
@@ -49,7 +49,7 @@ message Hello {
 message HelloAck {
   oneof outcome {
     HelloAccepted accepted = 1;
-    Error error = 2;
+    google.rpc.Status error = 2;
   }
 }
 
@@ -135,7 +135,7 @@ message Capabilities {
 // the link as gone the moment this arrives.
 message LinkClose {
   LinkCloseReason reason = 1;
-  optional Error error = 2;
+  optional google.rpc.Status error = 2;
 }
 
 enum LinkCloseReason {

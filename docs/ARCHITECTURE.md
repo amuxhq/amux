@@ -28,10 +28,10 @@ What the design holds itself to:
    self-contained items any client can draw without knowing the provider.
 3. **A client opens a chat with "the last N items"** and pages older
    history only if it needs it. There is no replay protocol.
-4. **From the first release, every surface tolerates version skew by field
-   discipline,** because paired machines, pinned agent processes and
-   long-lived clients never update together. Until then the protocols change
-   freely ([the wire](WIRE.md#compatibility)).
+4. **Every surface tolerates version skew by field discipline,** because
+   paired machines, pinned agent processes and long-lived clients never
+   update together; from 0.9.0 `just proto-compat` holds the protocol to it
+   against the latest release ([the wire](WIRE.md#compatibility)).
 5. **Lean on the operating system.** Files, file locks, sockets closing on
    process death and inodes surviving a binary swap do the work before any
    protocol does.
@@ -209,9 +209,8 @@ and writes inputs and stops. The agent never dials the daemon.
 
 Every surface is protobuf. The link carries a version integer for a
 deliberate break both sides must take; the control socket and the journal
-carry none. Until the first release nothing depends on an older build, so
-the schemas change freely; [the wire](WIRE.md) has the calls, the records
-and the rule.
+carry none. From 0.9.0 the schemas change only by adding; [the wire](WIRE.md)
+has the calls, the records and the rule.
 
 ## Inside the daemon
 

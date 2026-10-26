@@ -1194,7 +1194,9 @@ impl fmt::Debug for AgentValue {
 /// The agent that sent a message; empty for a person's.
 fn sender_id(envelope: &wire::Envelope) -> &[u8] {
     match envelope.from.as_ref().and_then(|from| from.value.as_ref()) {
-        Some(wire::sender::Value::Agent(agent)) => &agent.agent_id,
+        Some(wire::sender::Value::Agent(wire::AgentSender {
+            agent: Some(agent), ..
+        })) => &agent.agent_id,
         _ => &[],
     }
 }

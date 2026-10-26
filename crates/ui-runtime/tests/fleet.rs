@@ -10,7 +10,7 @@ use prost::Message as _;
 use support::*;
 use ui_runtime::{DriverEvent, Fleet, HELD_ROWS, TraceEvent, Window};
 use ui_state::{AgentKey, Connection};
-use wire::{FetchResponse, Kind, SessionEvent};
+use wire::{Kind, ListItemsResponse, SessionEvent};
 
 fn named(id: &[u8]) -> wire::Agent {
     wire::Agent {
@@ -198,7 +198,7 @@ impl Streams {
     /// Answers the next call, a Subscribe, and checks the agent had no
     /// other stream open. Returns the agent and the tail it asked for.
     async fn answer(&mut self, calls: &mut Calls) -> (Vec<u8>, u32) {
-        let (request, feed) = calls.subscribe().await;
+        let (request, feed) = calls.subscribe_session().await;
         let tail = request.tail;
         let agent = request.agent_id;
         assert_eq!(
@@ -299,15 +299,15 @@ async fn home_and_the_chat_share_one_session_per_live_agent_and_never_subscribe_
         let opened = fleet.clone();
         async move { (opened.open(&key(b"a"), CHAT).await, fleet) }
     });
-    let (request, reply) = calls.fetch().await;
+    let (request, reply) = calls.list_items().await;
     assert_eq!(request.before_order, Some(15));
-    assert_eq!(request.limit, CHAT.tail - HELD_ROWS);
+    assert_eq!(request.page_size, CHAT.tail - HELD_ROWS);
     let items = (1..=14)
         .rev()
         .map(|order| text_item(Kind::Codex, order, order, "older"))
         .collect();
     reply
-        .send(Ok(FetchResponse {
+        .send(Ok(ListItemsResponse {
             items,
             exhausted: true,
         }))

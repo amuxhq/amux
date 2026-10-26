@@ -147,7 +147,7 @@ async fn a_relay_link_whose_credential_lapses_at_the_relay_first_comes_back_on_a
 async fn reconnect(net: &Net, host: &str) {
     let mut admin = admin(net, host).await;
     admin
-        .pause(wire::Empty {})
+        .pause_profile(wire::PauseProfileRequest {})
         .await
         .expect("the profile pauses");
     until(&format!("{host}'s relay link to close"), || async {
@@ -159,7 +159,7 @@ async fn reconnect(net: &Net, host: &str) {
     .await
     .unwrap();
     admin
-        .resume(wire::Empty {})
+        .resume_profile(wire::ResumeProfileRequest {})
         .await
         .expect("the profile resumes");
     until(&format!("{host}'s relay link to come back"), || async {
@@ -270,7 +270,7 @@ async fn a_pairing_window_is_one_shot_attempt_capped_and_expires() {
         assert!(edge(&net, "laptop").trusted().is_empty());
         admin(&net, "laptop")
             .await
-            .abandon_pair(wire::PendingPairRequest {
+            .abandon_pair(wire::AbandonPairRequest {
                 token: pending.token,
             })
             .await
@@ -460,7 +460,7 @@ async fn a_pairing_rerun_after_the_daemon_restarts_opens_a_fresh_window() {
     net.restart_daemon("desk").await.unwrap();
     let open = admin(&net, "desk")
         .await
-        .get_pairing_status(wire::Empty {})
+        .get_pairing_status(wire::GetPairingStatusRequest {})
         .await
         .unwrap()
         .into_inner()
@@ -1111,7 +1111,7 @@ async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_t
             .peer(desk)
             .await
             .unwrap()
-            .subscribe_inventory(wire::Empty {})
+            .subscribe_inventory(wire::SubscribeInventoryRequest {})
             .await
             .unwrap()
             .into_inner();
@@ -1262,16 +1262,16 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     assert_eq!(across.code(), tonic::Code::FailedPrecondition);
     assert_eq!(
         <wire::Error as prost::Message>::decode(across.details())
-            .map(|error| error.code())
-            .ok(),
-        Some(wire::ErrorCode::Unreachable)
+            .ok()
+            .and_then(|error| error.reason()),
+        Some(wire::ErrorReason::HostUnreachable)
     );
     start_pairing(&net, "desk", qr_window())
         .await
         .expect_err("the desk's PIN window is still open");
     admin(&net, "desk")
         .await
-        .cancel_pairing(wire::Empty {})
+        .cancel_pairing(wire::CancelPairingRequest {})
         .await
         .unwrap();
     let qr = start_pairing(&net, "desk", qr_window()).await.unwrap();
@@ -1291,7 +1291,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     assert_eq!(across_qr.message(), across.message());
     admin(&net, "desk")
         .await
-        .cancel_pairing(wire::Empty {})
+        .cancel_pairing(wire::CancelPairingRequest {})
         .await
         .unwrap();
     let started = start_pairing(&net, "desk", pin_window()).await.unwrap();
@@ -1411,7 +1411,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     // above opened there) but not the installation's profiles.
     let tunnel = edge(&net, "laptop").channel(desk).await.unwrap();
     let over_tunnel = wire::profile_service_client::ProfileServiceClient::new(tunnel.clone())
-        .list_profiles(wire::Empty {})
+        .list_profiles(wire::ListProfilesRequest {})
         .await
         .expect_err("no profile administration over a peer tunnel");
     assert_eq!(over_tunnel.code(), tonic::Code::Unimplemented);
@@ -1429,7 +1429,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     let on_socket = wire::profile_service_client::ProfileServiceClient::new(
         testnet::local_channel(&socket).await.unwrap(),
     )
-    .list_profiles(wire::Empty {})
+    .list_profiles(wire::ListProfilesRequest {})
     .await
     .expect_err("no installation administration on a profile's socket");
     assert_eq!(on_socket.code(), tonic::Code::Unimplemented);
@@ -1443,7 +1443,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
             testnet::local_channel(socket).await.unwrap(),
         );
         let mut events = client
-            .subscribe_inventory(wire::Empty {})
+            .subscribe_inventory(wire::SubscribeInventoryRequest {})
             .await
             .unwrap()
             .into_inner();
@@ -1680,7 +1680,7 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
         .peer(desk)
         .await
         .unwrap()
-        .subscribe_inventory(wire::Empty {})
+        .subscribe_inventory(wire::SubscribeInventoryRequest {})
         .await
         .unwrap()
         .into_inner();
@@ -1764,35 +1764,35 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     let mut answers = Vec::new();
     answers.push((
         "Subscribe with a three-byte agent id",
-        peer.subscribe(wire::PeerSubscribeRequest {
+        peer.subscribe_session(wire::PeerSubscribeSessionRequest {
             agent_id: short.clone(),
-            from: Some(wire::peer_subscribe_request::From::Tail(5)),
+            from: Some(wire::peer_subscribe_session_request::From::Tail(5)),
         })
         .await
         .map(|_| ()),
     ));
     answers.push((
         "Subscribe to an agent the desk never had",
-        peer.subscribe(wire::PeerSubscribeRequest {
+        peer.subscribe_session(wire::PeerSubscribeSessionRequest {
             agent_id: unknown.clone(),
-            from: Some(wire::peer_subscribe_request::From::Tail(5)),
+            from: Some(wire::peer_subscribe_session_request::From::Tail(5)),
         })
         .await
         .map(|_| ()),
     ));
     answers.push((
         "Fetch with a three-byte agent id",
-        peer.fetch(wire::FetchRequest {
+        peer.list_items(wire::ListItemsRequest {
             agent_id: short.clone(),
             before_order: None,
-            limit: 10,
+            page_size: 10,
         })
         .await
         .map(|_| ()),
     ));
     answers.push((
         "Get with an empty key",
-        peer.get(wire::GetRequest {
+        peer.get_item(wire::GetItemRequest {
             agent_id: worker.clone(),
             key: String::new(),
         })
@@ -1816,9 +1816,11 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     ));
     answers.push((
         "SendMessage with no sender or recipient",
-        peer.send_message(wire::Envelope::default())
-            .await
-            .map(|_| ()),
+        peer.send_message(wire::PeerSendMessageRequest {
+            envelope: Some(wire::Envelope::default()),
+        })
+        .await
+        .map(|_| ()),
     ));
     answers.push((
         "GetBlob with a malformed hash",
@@ -2008,7 +2010,7 @@ async fn bind(
     profile: &[u8],
     refresh: String,
     adopt: bool,
-) -> Result<wire::ProfileInfo, tonic::Status> {
+) -> Result<wire::Profile, tonic::Status> {
     door(net, host)
         .await
         .bind_profile(wire::BindProfileRequest {
@@ -2022,10 +2024,10 @@ async fn bind(
         .map(tonic::Response::into_inner)
 }
 
-async fn profile_info(net: &Net, host: &str, profile: &[u8]) -> wire::ProfileInfo {
+async fn profile_info(net: &Net, host: &str, profile: &[u8]) -> wire::Profile {
     door(net, host)
         .await
-        .list_profiles(wire::Empty {})
+        .list_profiles(wire::ListProfilesRequest {})
         .await
         .unwrap()
         .into_inner()
@@ -2162,7 +2164,7 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     // Resuming, twice over, brings back one link.
     admin(&net, "desk")
         .await
-        .pause(wire::Empty {})
+        .pause_profile(wire::PauseProfileRequest {})
         .await
         .unwrap();
     until("Ada's relay link to close", || async {
@@ -2178,7 +2180,7 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     for _ in 0..2 {
         admin(&net, "desk")
             .await
-            .resume(wire::Empty {})
+            .resume_profile(wire::ResumeProfileRequest {})
             .await
             .unwrap();
     }
@@ -2206,7 +2208,7 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     let key = edge(&net, "desk").public_key().to_vec();
     admin(&net, "desk")
         .await
-        .sign_out(wire::Empty {})
+        .sign_out(wire::SignOutRequest {})
         .await
         .unwrap();
     until("Ada's relay link to close", || async {
@@ -2239,7 +2241,7 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     // A watcher from here on sees everything that follows, in order.
     let mut watch = door(&net, "desk")
         .await
-        .watch_profiles(wire::Empty {})
+        .subscribe_profiles(wire::SubscribeProfilesRequest {})
         .await
         .unwrap()
         .into_inner();
@@ -2450,7 +2452,7 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
     .await;
     admin(&net, "desk")
         .await
-        .sign_out(wire::Empty {})
+        .sign_out(wire::SignOutRequest {})
         .await
         .unwrap();
     net.sever_link("desk", "laptop").unwrap();
@@ -2534,7 +2536,7 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
     // opens no pairing window.
     let identity = admin(&net, "desk")
         .await
-        .get_device_identity(wire::Empty {})
+        .get_device_identity(wire::GetDeviceIdentityRequest {})
         .await
         .unwrap()
         .into_inner();
@@ -2970,8 +2972,8 @@ async fn a_call_to_a_host_only_a_lapsed_account_reached_names_the_lapse_at_once(
         wire::Error::decode(stop.details()).expect("a typed error")
     };
     assert_eq!(
-        stop_error.code(),
-        wire::ErrorCode::Unreachable,
+        stop_error.reason(),
+        Some(wire::ErrorReason::HostUnreachable),
         "a stop that never left is held like an unreachable one: {stop_error:?}"
     );
     assert!(

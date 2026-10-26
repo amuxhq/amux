@@ -158,50 +158,50 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
         })
         .await
         .unwrap();
-    let client_msg = |of| wire::ClientTraced {
+    let client_msg = |of| wire::dump::ClientTraced {
         seq: 0,
         at_ms: 0,
-        event: Some(wire::client_traced::Event::Msg(wire::ClientSessionMsg {
-            of: Some(of),
-        })),
+        event: Some(wire::dump::client_traced::Event::Msg(
+            wire::dump::ClientSessionMsg { of: Some(of) },
+        )),
     };
-    let session = wire::ClientSessionHistory {
+    let session = wire::dump::ClientSessionHistory {
         agent_id: live.as_bytes().to_vec(),
-        start: Some(wire::ClientSession {
+        start: Some(wire::dump::ClientSession {
             agent: Some(runtime.agent(live).await.unwrap()),
             snapshot: held.snapshot.clone(),
-            transcript: Some(wire::ClientTranscript {
+            transcript: Some(wire::dump::ClientTranscript {
                 items: held.held.clone(),
                 exhausted: true,
             }),
-            ..wire::ClientSession::default()
+            ..wire::dump::ClientSession::default()
         }),
-        events: Some(wire::ClientSessionEvents {
+        events: Some(wire::dump::ClientSessionEvents {
             traced: vec![
-                client_msg(wire::client_session_msg::Of::Send(sdk_prompt(
+                client_msg(wire::dump::client_session_msg::Of::Send(sdk_prompt(
                     b"from-the-client",
                     &format!("again with {TOKEN}; cc {EMAIL}"),
                 ))),
-                wire::ClientTraced {
+                wire::dump::ClientTraced {
                     seq: 1,
                     at_ms: 0,
-                    event: Some(wire::client_traced::Event::Driver(format!(
+                    event: Some(wire::dump::client_traced::Event::Driver(format!(
                         "GetFailed {{ error: \"Authorization: Bearer {KEY}\" }}"
                     ))),
                 },
             ],
         }),
     };
-    let elsewhere = wire::ClientSessionHistory {
+    let elsewhere = wire::dump::ClientSessionHistory {
         agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-        ..wire::ClientSessionHistory::default()
+        ..wire::dump::ClientSessionHistory::default()
     };
     let bundle = runtime
         .dump(DumpRequest {
             agent_ids: Vec::new(),
             reason: format!("the chat froze; my key is {KEY}"),
             automatic: false,
-            sessions: vec![session, elsewhere.clone()],
+            sessions: vec![session.encode_to_vec(), elsewhere.encode_to_vec()],
         })
         .await
         .unwrap();
@@ -316,7 +316,7 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
             .starts_with(&format!("{elsewhere} client session"))),
         "{errors:?}"
     );
-    let start = wire::ClientSession::decode(
+    let start = wire::dump::ClientSession::decode(
         std::fs::read(bundle.join(&client).join(node::CLIENT_CHECKPOINT))
             .unwrap()
             .as_slice(),
@@ -338,7 +338,7 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
         window.iter().any(|item| item.text.contains("<REDACTED>")),
         "the client's rows are kept, redacted"
     );
-    let events = wire::ClientSessionEvents::decode(
+    let events = wire::dump::ClientSessionEvents::decode(
         std::fs::read(bundle.join(&client).join(node::CLIENT_EVENTS))
             .unwrap()
             .as_slice(),
@@ -751,7 +751,10 @@ async fn a_dump_cannot_compute_the_pin_of_a_window_opened_after_it() {
         })
         .await
         .unwrap();
-    admin.cancel_pairing(Request::new(Empty {})).await.unwrap();
+    admin
+        .cancel_pairing(Request::new(wire::CancelPairingRequest {}))
+        .await
+        .unwrap();
     let second = open().await;
 
     // What the bundle can compute: its checkpoint, every randomness its

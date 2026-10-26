@@ -45,8 +45,8 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use store::{Absorb, AgentKey, AgentRow, Marker, Record, SourceEvent, StoreError};
 use wire::{
-    Agent, AgentRemoved, FetchResponse, Item, PeerSubscribeRequest, RemovalReason, SessionEvent,
-    inventory_event, peer_subscribe_request, session_event,
+    Agent, AgentRemoved, Item, ListItemsResponse, PeerSubscribeSessionRequest, RemovalReason,
+    SessionEvent, inventory_event, peer_subscribe_session_request, session_event,
 };
 
 use crate::ids::{AgentId, CallId, HostId, TimerId};
@@ -1032,7 +1032,7 @@ impl Daemon {
     ) -> Option<(CallId, bool)> {
         let row = self.store.agent(agent).ok().flatten()?;
         let from = self.source_from(&row);
-        let tail = matches!(from, peer_subscribe_request::From::Tail(_));
+        let tail = matches!(from, peer_subscribe_session_request::From::Tail(_));
         let call = self.pending.peers.mint();
         self.pending.peers.waiting.insert(
             call,
@@ -1043,7 +1043,7 @@ impl Daemon {
         out.push(Output::Call {
             host,
             call,
-            request: PeerRequest::Subscribe(PeerSubscribeRequest {
+            request: PeerRequest::SubscribeSession(PeerSubscribeSessionRequest {
                 agent_id: agent.agent.clone(),
                 from: Some(from),
             }),
@@ -1054,16 +1054,16 @@ impl Daemon {
 
     /// Where a replica's Subscribe starts: a tail of K with no block,
     /// otherwise after its cursor.
-    fn source_from(&self, row: &AgentRow) -> peer_subscribe_request::From {
+    fn source_from(&self, row: &AgentRow) -> peer_subscribe_session_request::From {
         let k = self.settings.tail_rows;
         if row.complete_from_order.is_some() {
-            peer_subscribe_request::From::After(wire::After {
+            peer_subscribe_session_request::From::After(wire::After {
                 revision: row.source_cursor,
                 cap: k,
                 generation: row.source_generation,
             })
         } else {
-            peer_subscribe_request::From::Tail(k)
+            peer_subscribe_session_request::From::Tail(k)
         }
     }
 
@@ -1088,7 +1088,7 @@ impl Daemon {
                         {
                             continue;
                         }
-                        calls.push(PeerRequest::Subscribe(PeerSubscribeRequest {
+                        calls.push(PeerRequest::SubscribeSession(PeerSubscribeSessionRequest {
                             agent_id: row.agent.agent.clone(),
                             from: Some(self.source_from(row)),
                         }));
@@ -1472,10 +1472,10 @@ impl Daemon {
         out.push(Output::Call {
             host,
             call: made,
-            request: PeerRequest::Fetch(wire::FetchRequest {
+            request: PeerRequest::ListItems(wire::ListItemsRequest {
                 agent_id: agent.agent.clone(),
                 before_order,
-                limit,
+                page_size: limit,
             }),
             absorbed: true,
         });
@@ -1550,14 +1550,14 @@ impl Daemon {
 pub(crate) fn answer_page(
     call: CallId,
     held: Vec<Item>,
-    older: Option<FetchResponse>,
+    older: Option<ListItemsResponse>,
     out: &mut Vec<Output>,
 ) {
     let response = match older {
         Some(older) => {
             let mut items = held;
             items.extend(older.items);
-            FetchResponse {
+            ListItemsResponse {
                 items,
                 exhausted: older.exhausted,
             }
@@ -1569,7 +1569,7 @@ pub(crate) fn answer_page(
             });
             return;
         }
-        None => FetchResponse {
+        None => ListItemsResponse {
             items: held,
             exhausted: false,
         },
@@ -1629,6 +1629,7 @@ fn fold_tail(
     let snapshot = snapshot.unwrap_or_else(|| wire::Snapshot {
         agent_id: row.agent.agent.clone(),
         kind: row.kind,
+        phase: wire::Phase::Starting as i32,
         ..wire::Snapshot::default()
     });
     let mut tail: Vec<Item> = items.into_values().collect();
@@ -1880,11 +1881,11 @@ mod tests {
         assert!(daemon.sources().ready(HostId(PEER)));
         assert_eq!(daemon.store.host_generation(&PEER).unwrap(), Some(3));
         let source = match calls(&caught_up).as_slice() {
-            [(call, PeerRequest::Subscribe(request))] => {
+            [(call, PeerRequest::SubscribeSession(request))] => {
                 assert_eq!(request.agent_id, THEIRS.to_vec());
                 assert_eq!(
                     request.from,
-                    Some(peer_subscribe_request::From::Tail(200)),
+                    Some(peer_subscribe_session_request::From::Tail(200)),
                     "with no block it asks for a tail of K"
                 );
                 *call
@@ -1991,7 +1992,7 @@ mod tests {
             &mut daemon,
             Input::ClientCall {
                 call: WATCHING,
-                request: ClientRequest::Subscribe {
+                request: ClientRequest::SubscribeSession {
                     agent_id: THEIRS.to_vec(),
                     tail: 10,
                 },
@@ -2070,7 +2071,7 @@ mod tests {
             &mut daemon,
             Input::ClientCall {
                 call: WATCHING,
-                request: ClientRequest::Subscribe {
+                request: ClientRequest::SubscribeSession {
                     agent_id: THEIRS.to_vec(),
                     tail: 10,
                 },
@@ -2150,15 +2151,15 @@ mod tests {
                 &mut daemon,
                 Input::ClientCall {
                     call,
-                    request: ClientRequest::Fetch(wire::FetchRequest {
+                    request: ClientRequest::ListItems(wire::ListItemsRequest {
                         agent_id: THEIRS.to_vec(),
                         before_order: None,
-                        limit: 10,
+                        page_size: 10,
                     }),
                 },
             );
             match calls(&asked).as_slice() {
-                [(page, PeerRequest::Fetch(request))] => {
+                [(page, PeerRequest::ListItems(request))] => {
                     assert_eq!(request.before_order, Some(5));
                     *page
                 }
@@ -2171,7 +2172,7 @@ mod tests {
                 &mut daemon,
                 Input::PeerAnswer {
                     call: page,
-                    answer: Answer::Reply(Box::new(PeerReply::Fetched(wire::FetchResponse {
+                    answer: Answer::Reply(Box::new(PeerReply::Fetched(wire::ListItemsResponse {
                         items,
                         exhausted: false,
                     }))),
@@ -2228,15 +2229,15 @@ mod tests {
             &mut daemon,
             Input::ClientCall {
                 call: CallId(60),
-                request: ClientRequest::Fetch(wire::FetchRequest {
+                request: ClientRequest::ListItems(wire::ListItemsRequest {
                     agent_id: THEIRS.to_vec(),
                     before_order: None,
-                    limit: 10,
+                    page_size: 10,
                 }),
             },
         );
         let page = match calls(&asked).as_slice() {
-            [(page, PeerRequest::Fetch(_))] => *page,
+            [(page, PeerRequest::ListItems(_))] => *page,
             other => panic!("the origin is asked below the block: {other:?}"),
         };
 
@@ -2261,7 +2262,7 @@ mod tests {
             .unwrap_or_else(|| panic!("the source opens again: {ended:?}"));
         let opened = step(&mut daemon, Input::Timer { id: timer });
         let again = match calls(&opened).as_slice() {
-            [(call, PeerRequest::Subscribe(_))] => *call,
+            [(call, PeerRequest::SubscribeSession(_))] => *call,
             other => panic!("the source asks again: {other:?}"),
         };
         for of in [
@@ -2286,7 +2287,7 @@ mod tests {
             &mut daemon,
             Input::PeerAnswer {
                 call: page,
-                answer: Answer::Reply(Box::new(PeerReply::Fetched(wire::FetchResponse {
+                answer: Answer::Reply(Box::new(PeerReply::Fetched(wire::ListItemsResponse {
                     items: vec![item("c", 3, 2)],
                     exhausted: false,
                 }))),

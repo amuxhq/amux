@@ -106,6 +106,11 @@ protobuf:
 codegen-check:
     {{bounded}} 600 scripts/codegen-check.sh
 
+# Check that amux.v1 still reads what the latest release wrote; with a ref,
+# check against that ref instead.
+proto-compat *ARGS:
+    {{bounded}} 600 cargo run --locked -p xtask -- proto-compat "$@"
+
 # Build the shipping binary and enforce the release dependency policy.
 release-check *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 cargo build --locked --release -p amux --bins --no-default-features {{desktop_features}} "$@"
@@ -303,18 +308,13 @@ docs-check:
 typed-provider-check:
     {{bounded}} 60 scripts/py scripts/typed-provider-check.py
 
-# Fail when code, config, protos, recipes, scripts, workflows or docs still
-# name a mechanism amux removed.
-deletion-ledger-check:
-    {{bounded}} 120 scripts/py scripts/deletion-ledger-check.py
-
 # Refuse fixture-regeneration flags before any asserted CI check runs.
 [private]
 no-update-flags:
     scripts/no-update-flags.sh
 
 # Run the same task sequence exercised across continuous-integration jobs.
-ci: no-update-flags check lint fmt-check codegen-check dependency-policy cores-check typed-provider-check deletion-ledger-check docs-check tests-check test contracts-check doctest release-check embedded-check embedded-test mobile-check
+ci: no-update-flags check lint fmt-check codegen-check proto-compat dependency-policy cores-check typed-provider-check docs-check tests-check test contracts-check doctest release-check embedded-check embedded-test mobile-check
 
 # Run the live provider compatibility lane for one kind (claude_pty,
 # claude_sdk or codex) and scenario (initialize, respond, decide, interrupt,

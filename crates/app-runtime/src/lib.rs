@@ -400,7 +400,7 @@ impl AppRuntime {
             .fleet
             .sessions()
             .iter()
-            .map(|session| session.history())
+            .map(|session| session.history().encode_to_vec())
             .collect();
         let response = self
             .client

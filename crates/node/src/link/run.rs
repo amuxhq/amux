@@ -1301,7 +1301,8 @@ fn link_close_status(close: &wire::pb::LinkClose) -> Option<tonic::Status> {
 
 /// A refresh refused for want of payment is the plan's word, not a fault.
 fn refresh_refusal_is_worth_a_line(status: &tonic::Status) -> bool {
-    net_error::code_of(status) != Some(wire::ErrorCode::PaymentRequired)
+    net_error::from_status(status).and_then(|error| error.reason())
+        != Some(wire::ErrorReason::PaymentRequired)
 }
 
 /// `peer` said on `link` that it no longer trusts this host. Its other

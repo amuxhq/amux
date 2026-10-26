@@ -271,7 +271,10 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
     let envelope = SendMessageRequest {
         id: b"envelope-1".to_vec(),
         to: to(&recipient, &install),
-        text: "can you look at the build?".into(),
+        body: Some(wire::MessageBody {
+            text: "can you look at the build?".into(),
+            ..Default::default()
+        }),
         ..SendMessageRequest::default()
     };
     let sent = runtime
@@ -295,7 +298,10 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
     };
     match handed.from.as_ref().and_then(|from| from.value.as_ref()) {
         Some(sender::Value::Agent(from)) => {
-            assert_eq!(from.agent_id, sender.id.as_bytes().to_vec());
+            assert_eq!(
+                from.agent.as_ref().unwrap().agent_id,
+                sender.id.as_bytes().to_vec()
+            );
             assert_eq!(from.name, "sender");
         }
         other => panic!("the sender is the calling agent, not {other:?}"),
@@ -326,7 +332,10 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
             SendMessageRequest {
                 id: b"envelope-2".to_vec(),
                 to: to(&recipient, &install),
-                text: "still there?".into(),
+                body: Some(wire::MessageBody {
+                    text: "still there?".into(),
+                    ..Default::default()
+                }),
                 ..SendMessageRequest::default()
             },
             Some(sender.id),
@@ -363,9 +372,11 @@ async fn send_message_sender_is_the_caller() {
             .send_message(Request::new(SendMessageRequest {
                 id: id.to_vec(),
                 to: to(&recipient, &install),
-                text: "a word".into(),
+                body: Some(wire::MessageBody {
+                    text: "a word".into(),
+                    ..Default::default()
+                }),
                 context: None,
-                attachments: Vec::new(),
             }))
             .await
             .unwrap();
@@ -389,8 +400,14 @@ async fn send_message_sender_is_the_caller() {
         .and_then(|from| from.value.as_ref())
     {
         Some(sender::Value::Agent(from)) => {
-            assert_eq!(from.agent_id, sender.id.as_bytes().to_vec());
-            assert_eq!(from.host_id, host(&install).as_bytes().to_vec());
+            assert_eq!(
+                from.agent.as_ref().unwrap().agent_id,
+                sender.id.as_bytes().to_vec()
+            );
+            assert_eq!(
+                from.agent.as_ref().unwrap().host_id,
+                host(&install).as_bytes().to_vec()
+            );
             assert_eq!(from.name, "sender");
         }
         other => panic!("the calling agent sent it, not {other:?}"),
@@ -424,9 +441,11 @@ async fn resend_with_same_id_is_one_item() {
     let request = SendMessageRequest {
         id: b"chosen-by-the-caller".to_vec(),
         to: to(&recipient, &install),
-        text: "can you look at the build?".into(),
+        body: Some(wire::MessageBody {
+            text: "can you look at the build?".into(),
+            ..Default::default()
+        }),
         context: Some(b"build".to_vec()),
-        attachments: Vec::new(),
     };
     for _ in 0..2 {
         let sent = api
@@ -461,7 +480,10 @@ async fn a_message_waits_for_its_item_to_commit_and_one_envelope_is_handed_over_
     let envelope = SendMessageRequest {
         id: b"envelope-1".to_vec(),
         to: to(&recipient, &install),
-        text: "can you look at the build?".into(),
+        body: Some(wire::MessageBody {
+            text: "can you look at the build?".into(),
+            ..Default::default()
+        }),
         ..SendMessageRequest::default()
     };
     let send = || {
@@ -525,7 +547,10 @@ async fn a_retry_after_reply_patience_is_concluded_by_the_verdict_that_comes() {
     let envelope = SendMessageRequest {
         id: b"envelope-1".to_vec(),
         to: to(&recipient, &install),
-        text: "can you look at the build?".into(),
+        body: Some(wire::MessageBody {
+            text: "can you look at the build?".into(),
+            ..Default::default()
+        }),
         ..SendMessageRequest::default()
     };
 
@@ -575,7 +600,10 @@ async fn connect_patience_running_out_behind_the_hello_does_not_lose_the_message
     let envelope = SendMessageRequest {
         id: b"envelope-1".to_vec(),
         to: to(&recipient, &install),
-        text: "can you look at the build?".into(),
+        body: Some(wire::MessageBody {
+            text: "can you look at the build?".into(),
+            ..Default::default()
+        }),
         ..SendMessageRequest::default()
     };
     let sent = tokio::spawn({
@@ -650,7 +678,10 @@ async fn a_child_answering_exiting_to_its_parents_message_is_resumed_with_it() {
     let envelope = SendMessageRequest {
         id: b"wrap-up".to_vec(),
         to: to(&child, &install),
-        text: "wrap up and report".into(),
+        body: Some(wire::MessageBody {
+            text: "wrap up and report".into(),
+            ..Default::default()
+        }),
         ..SendMessageRequest::default()
     };
     let sent = tokio::spawn({
@@ -752,7 +783,10 @@ async fn a_delivery_waiting_on_its_parents_lane_is_dropped_when_the_parent_resum
         let envelope = SendMessageRequest {
             id: b"hold".to_vec(),
             to: to(&parent, &install),
-            text: "a word".into(),
+            body: Some(wire::MessageBody {
+                text: "a word".into(),
+                ..Default::default()
+            }),
             ..SendMessageRequest::default()
         };
         async move { runtime.send_message(envelope, None).await }
@@ -1195,7 +1229,10 @@ async fn a_parents_message_resumes_its_exited_child_and_the_child_finishes_again
             host_id: runtime.host().as_bytes().to_vec(),
             agent_id: child.as_bytes().to_vec(),
         }),
-        text: "one more thing".into(),
+        body: Some(wire::MessageBody {
+            text: "one more thing".into(),
+            ..Default::default()
+        }),
         ..SendMessageRequest::default()
     };
     runtime
@@ -1239,7 +1276,10 @@ async fn a_parents_message_resumes_its_exited_child_and_the_child_finishes_again
                     host_id: runtime.host().as_bytes().to_vec(),
                     agent_id: child.as_bytes().to_vec(),
                 }),
-                text: "hello?".into(),
+                body: Some(wire::MessageBody {
+                    text: "hello?".into(),
+                    ..Default::default()
+                }),
                 ..SendMessageRequest::default()
             },
             None,

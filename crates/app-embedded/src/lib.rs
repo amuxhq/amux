@@ -33,14 +33,14 @@ pub use app_runtime::values::{PairRequest, ProfileView, StartConfig, UsageEvent}
 use client::{Client, Clock, InProcess};
 use node::{
     ClientApi, Cloud, CloudOptions, Daemon, DiscoveryFactory, EdgeOptions, LanOptions,
-    ProfileRefusal, ProfileRuntime, ProfileState, ProfileWatch, Registry, Relay, SignIn,
+    ProfileRefusal, ProfileRuntime, ProfileState, ProfileSubscription, Registry, Relay, SignIn,
     SourcePolicy, StartError, StartOptions, Tier,
 };
 pub use node::{Cores, ProfileId};
 pub use phone::Phone;
 use sha2::{Digest, Sha256};
 use wire::{
-    BeginPairRequest, Empty, HostRef, PeerEntry, StartPairingRequest, begin_pair_request, host_ref,
+    BeginPairRequest, Empty, HostRef, StartPairingRequest, begin_pair_request, host_ref,
     pairing_window, start_pairing_request,
 };
 
@@ -156,7 +156,7 @@ pub enum ProfileEvent {
 /// The registry's changes, from a snapshot of every profile on.
 pub struct ProfileEvents {
     opening: VecDeque<ProfileEvent>,
-    watch: ProfileWatch,
+    watch: ProfileSubscription,
 }
 
 impl ProfileEvents {
@@ -349,8 +349,8 @@ impl EmbeddedRuntime {
     }
 
     /// Every profile as it is now, then each change as it happens.
-    pub fn watch_profiles(&self) -> Result<ProfileEvents, EmbeddedError> {
-        let mut watch = self.registry.watch()?;
+    pub fn subscribe_profiles(&self) -> Result<ProfileEvents, EmbeddedError> {
+        let mut watch = self.registry.subscribe()?;
         let opening = std::mem::take(&mut watch.listed)
             .iter()
             .map(|state| ProfileEvent::Upserted(profile_view(state)))
@@ -548,7 +548,7 @@ impl EmbeddedRuntime {
         &self,
         profile: ProfileId,
         token: &[u8],
-    ) -> Result<PeerEntry, EmbeddedError> {
+    ) -> Result<wire::Peer, EmbeddedError> {
         Ok(self.edge(profile)?.confirm_pair(token).await?)
     }
 
@@ -566,7 +566,7 @@ impl EmbeddedRuntime {
         &self,
         profile: ProfileId,
         request: &PairRequest,
-    ) -> Result<PeerEntry, EmbeddedError> {
+    ) -> Result<wire::Peer, EmbeddedError> {
         let pending = self.begin_pair(profile, request).await?;
         self.confirm_pair(profile, &pending.token).await
     }

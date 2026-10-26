@@ -87,16 +87,18 @@ fn a_dump_a_client_asked_for_replays_its_session_to_the_failing_message() {
         .iter()
         .rev()
         .find_map(|traced| match &traced.event {
-            Some(wire::client_traced::Event::Msg(msg)) => Some(msg),
+            Some(wire::dump::client_traced::Event::Msg(msg)) => Some(msg),
             _ => None,
         })
         .expect("a message");
     assert!(
         matches!(
             &last.of,
-            Some(wire::client_session_msg::Of::Event(wire::SessionEvent {
-                of: Some(wire::session_event::Of::CaughtUp(_))
-            }))
+            Some(wire::dump::client_session_msg::Of::Event(
+                wire::SessionEvent {
+                    of: Some(wire::session_event::Of::CaughtUp(_))
+                }
+            ))
         ),
         "{last:?}"
     );
@@ -244,7 +246,7 @@ fn a_dump_the_core_asked_for_replays_to_its_failing_step_and_names_the_invariant
         matches!(
             input.as_ref(),
             daemon_core::Input::ClientCall {
-                request: daemon_core::payload::ClientRequest::Subscribe { .. },
+                request: daemon_core::payload::ClientRequest::SubscribeSession { .. },
                 ..
             }
         ),

@@ -115,7 +115,7 @@ impl FirstFlights {
 fn early_call(request: &PeerRequest) -> Option<EarlyCall> {
     match request {
         PeerRequest::SubscribeInventory => Some(EarlyCall::SubscribeInventory),
-        PeerRequest::Subscribe(request) => Some(EarlyCall::Subscribe {
+        PeerRequest::SubscribeSession(request) => Some(EarlyCall::SubscribeSession {
             session: request.agent_id.clone(),
             from: request.from?,
         }),

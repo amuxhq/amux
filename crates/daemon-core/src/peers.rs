@@ -15,7 +15,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use wire::peer_subscribe_request;
+use wire::peer_subscribe_session_request;
 
 use crate::ids::{CallId, HostId};
 use crate::io::Output;
@@ -145,26 +145,26 @@ impl Daemon {
     ) {
         let own = self.store.own_host().to_vec();
         let answered = match request {
-            PeerRequest::Subscribe(request) => {
+            PeerRequest::SubscribeSession(request) => {
                 let from = match request.from {
-                    Some(peer_subscribe_request::From::After(after)) => Opening::After {
+                    Some(peer_subscribe_session_request::From::After(after)) => Opening::After {
                         revision: after.revision,
                         cap: after.cap,
                         generation: after.generation,
                     },
-                    Some(peer_subscribe_request::From::Tail(tail)) => Opening::Tail(tail),
+                    Some(peer_subscribe_session_request::From::Tail(tail)) => Opening::Tail(tail),
                     None => Opening::Tail(0),
                 };
                 self.own(&request.agent_id)
-                    .and_then(|()| self.subscribe(call, &request.agent_id, from, out))
+                    .and_then(|()| self.subscribe_session(call, &request.agent_id, from, out))
             }
             PeerRequest::SubscribeInventory => self.subscribe_inventory(call, Some(own), out),
-            PeerRequest::Fetch(request) => self
+            PeerRequest::ListItems(request) => self
                 .own(&request.agent_id)
-                .and_then(|()| self.fetch(call, &request, out)),
-            PeerRequest::Get(request) => self
+                .and_then(|()| self.list_items(call, &request, out)),
+            PeerRequest::GetItem(request) => self
                 .own(&request.agent_id)
-                .and_then(|()| self.get(call, &request, out)),
+                .and_then(|()| self.get_item(call, &request, out)),
             PeerRequest::SendInput(_)
             | PeerRequest::CreateAgent(_)
             | PeerRequest::RenameAgent(_)
@@ -174,7 +174,7 @@ impl Daemon {
             | PeerRequest::SendMessage(_)
             | PeerRequest::PutBlob(_)
             | PeerRequest::GetBlob(_)
-            | PeerRequest::Diff(_)
+            | PeerRequest::GetDiff(_)
             | PeerRequest::GetCatalogue(_)
             | PeerRequest::ListRepositories(_)
             | PeerRequest::Dump(_) => {
@@ -447,10 +447,10 @@ mod tests {
         let mut daemon = daemon();
         let before = daemon.store().dump().expect("the store dumps");
         let read = || {
-            PeerRequest::Fetch(wire::FetchRequest {
+            PeerRequest::ListItems(wire::ListItemsRequest {
                 agent_id: MINE.to_vec(),
                 before_order: None,
-                limit: 8,
+                page_size: 8,
             })
         };
         for (link, call) in [(1, minted(1)), (2, minted(2))] {

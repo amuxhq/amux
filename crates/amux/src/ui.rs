@@ -11,7 +11,7 @@ use tui::{
     AttachFn, AttachReturn, ColorPreference, TerminalColors, Theme, ThemeError, TuiConfig,
     detect_color_mode, parse_theme_file, query_terminal_colors, theme_from_file,
 };
-use wire::{Agent, ProfileInfo};
+use wire::Agent;
 
 use crate::attach::{Attacher, Outcome, farewell};
 
@@ -47,7 +47,7 @@ pub async fn attach(config: &InstallationConfig, profile: Option<&str>, agent: &
 
 async fn open(
     config: &InstallationConfig,
-    profile: &ProfileInfo,
+    profile: &wire::Profile,
     attacher: Attacher,
 ) -> Result<()> {
     let socket = Path::new(&profile.socket_path);

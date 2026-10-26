@@ -10,8 +10,8 @@ use uuid::Uuid;
 use wire::client_service_client::ClientServiceClient;
 use wire::{
     Agent, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
-    CreateAgentRequest, DeleteAgentRequest, DumpRequest, Empty, HostEntry, Input, Kind, Lifecycle,
-    Phase, PromptInput, PromptSubmission, Refusal, RenameAgentRequest, ResolveAgentRequest,
+    CreateAgentRequest, DeleteAgentRequest, DumpRequest, HostEntry, Input, Kind, Lifecycle, Phase,
+    PromptInput, PromptSubmission, Refusal, RenameAgentRequest, ResolveAgentRequest,
     ResumeAgentRequest, SendInputRequest, StopAgentRequest, claude_pty_input, claude_sdk_input,
     codex_input, create_agent_request, inventory_event, send_input_response,
 };
@@ -21,7 +21,7 @@ type Client = ClientServiceClient<Channel>;
 /// Every host entry and agent row, read to the inventory's CaughtUp.
 pub async fn inventory(client: &mut Client) -> Result<(Vec<HostEntry>, Vec<Agent>)> {
     let mut stream = client
-        .subscribe_inventory(Empty {})
+        .subscribe_inventory(wire::SubscribeInventoryRequest {})
         .await
         .map_err(crate::plain)?
         .into_inner();
@@ -119,7 +119,8 @@ fn state(agent: &Agent) -> String {
             None => "exited".to_owned(),
         };
     }
-    let phase = match Phase::try_from(agent.phase).unwrap_or(Phase::Starting) {
+    let phase = match Phase::try_from(agent.phase).unwrap_or(Phase::Unspecified) {
+        Phase::Unspecified => "unknown",
         Phase::Starting => "starting",
         Phase::Idle => "idle",
         Phase::Working => "working",

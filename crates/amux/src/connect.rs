@@ -10,7 +10,6 @@ use tonic::transport::{Channel, Endpoint};
 use wire::client_service_client::ClientServiceClient;
 use wire::installation_service_client::InstallationServiceClient;
 use wire::profile_service_client::ProfileServiceClient;
-use wire::{Empty, ProfileInfo};
 
 /// How long a client waits for a daemon it did not find.
 const WAIT_FOR_DAEMON: Duration = Duration::from_secs(30);
@@ -109,9 +108,9 @@ pub fn installation(channel: Channel) -> InstallationServiceClient<Channel> {
 pub async fn select(
     profiles: &mut ProfileServiceClient<Channel>,
     wanted: Option<&str>,
-) -> Result<ProfileInfo> {
+) -> Result<wire::Profile> {
     let listed = profiles
-        .list_profiles(Empty {})
+        .list_profiles(wire::ListProfilesRequest {})
         .await
         .map_err(crate::plain)?
         .into_inner()
@@ -139,18 +138,18 @@ pub async fn select(
 }
 
 /// A profile's id as a person reads and types it.
-pub fn profile_id(profile: &ProfileInfo) -> String {
+pub fn profile_id(profile: &wire::Profile) -> String {
     uuid::Uuid::from_slice(&profile.id).map_or_else(|_| "unknown".to_owned(), |id| id.to_string())
 }
 
 /// The selected profile, as the front door describes it.
-pub async fn profile(config: &InstallationConfig, profile: Option<&str>) -> Result<ProfileInfo> {
+pub async fn profile(config: &InstallationConfig, profile: Option<&str>) -> Result<wire::Profile> {
     let door = front_door(config).await?;
     select(&mut profiles(door), profile).await
 }
 
 /// The socket of a profile the front door described.
-async fn profile_channel(profile: &ProfileInfo) -> Result<Channel> {
+async fn profile_channel(profile: &wire::Profile) -> Result<Channel> {
     let socket = Path::new(&profile.socket_path);
     channel(socket)
         .await
@@ -158,13 +157,13 @@ async fn profile_channel(profile: &ProfileInfo) -> Result<Channel> {
 }
 
 /// The client service of a profile the front door described.
-pub async fn client_of(profile: &ProfileInfo) -> Result<ClientServiceClient<Channel>> {
+pub async fn client_of(profile: &wire::Profile) -> Result<ClientServiceClient<Channel>> {
     Ok(wire::client_service_client(profile_channel(profile).await?))
 }
 
 /// The administration of a profile the front door described: its pairing,
 /// peers and sign-out.
-pub async fn admin_of(profile: &ProfileInfo) -> Result<crate::pairing::Admin> {
+pub async fn admin_of(profile: &wire::Profile) -> Result<crate::pairing::Admin> {
     Ok(crate::pairing::Admin::new(profile_channel(profile).await?))
 }
 

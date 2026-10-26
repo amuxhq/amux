@@ -16,11 +16,11 @@ use tonic::{Request, Response, Status};
 use wire::client_service_server::ClientService;
 use wire::peer_service_server::PeerService;
 use wire::{
-    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, DiffRequest, DumpPart, DumpRequest,
-    Empty, Envelope, FetchRequest, FetchResponse, GetBlobRequest, GetBlobResponse, GetRequest,
-    InventoryEvent, Item, ListRepositoriesRequest, ListRepositoriesResponse, PeerSubscribeRequest,
-    PutBlobRequest, RenameAgentRequest, ResumeAgentRequest, SendInputRequest, SendInputResponse,
-    SendMessageResponse, SessionEvent, StopAgentRequest,
+    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, DumpPart, DumpRequest, Empty,
+    GetBlobRequest, GetBlobResponse, GetDiffRequest, GetItemRequest, InventoryEvent, Item,
+    ListItemsRequest, ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse,
+    PeerSubscribeSessionRequest, PutBlobRequest, RenameAgentRequest, ResumeAgentRequest,
+    SendInputRequest, SendInputResponse, SendMessageResponse, SessionEvent, StopAgentRequest,
 };
 
 use crate::HostId;
@@ -97,11 +97,11 @@ fn caller<T>(request: &Request<T>) -> Result<HostId, Status> {
 #[tonic::async_trait]
 impl PeerService for PeerApi {
     type SubscribeInventoryStream = <ClientApi as ClientService>::SubscribeInventoryStream;
-    type SubscribeStream = <ClientApi as ClientService>::SubscribeStream;
+    type SubscribeSessionStream = <ClientApi as ClientService>::SubscribeSessionStream;
 
     async fn subscribe_inventory(
         &self,
-        request: Request<Empty>,
+        request: Request<wire::SubscribeInventoryRequest>,
     ) -> Result<Response<Self::SubscribeInventoryStream>, Status> {
         let from = caller(&request)?;
         let subscription = self
@@ -118,17 +118,17 @@ impl PeerService for PeerApi {
 
     /// A peer asks for a tail, like a client, or for what came after the
     /// revision its replica holds, capped.
-    async fn subscribe(
+    async fn subscribe_session(
         &self,
-        request: Request<PeerSubscribeRequest>,
-    ) -> Result<Response<Self::SubscribeStream>, Status> {
+        request: Request<PeerSubscribeSessionRequest>,
+    ) -> Result<Response<Self::SubscribeSessionStream>, Status> {
         let from = caller(&request)?;
         let request = request.into_inner();
         let agent_id = request.agent_id.clone();
         let asked = std::time::Instant::now();
         let subscription = self
             .runtime()?
-            .peer_subscribe(from, request)
+            .peer_subscribe_session(from, request)
             .await
             .map_err(|error| status(error.to_wire()))?;
         tracing::debug!(
@@ -143,22 +143,22 @@ impl PeerService for PeerApi {
         Ok(Response::new(Box::pin(stream)))
     }
 
-    async fn fetch(
+    async fn list_items(
         &self,
-        request: Request<FetchRequest>,
-    ) -> Result<Response<FetchResponse>, Status> {
+        request: Request<ListItemsRequest>,
+    ) -> Result<Response<ListItemsResponse>, Status> {
         let from = caller(&request)?;
         self.runtime()?
-            .peer_fetch(from, request.into_inner())
+            .peer_list_items(from, request.into_inner())
             .await
             .map(Response::new)
             .map_err(|error| status(error.to_wire()))
     }
 
-    async fn get(&self, request: Request<GetRequest>) -> Result<Response<Item>, Status> {
+    async fn get_item(&self, request: Request<GetItemRequest>) -> Result<Response<Item>, Status> {
         let from = caller(&request)?;
         self.runtime()?
-            .peer_get(from, request.into_inner())
+            .peer_get_item(from, request.into_inner())
             .await
             .map(Response::new)
             .map_err(|error| status(error.to_wire()))
@@ -195,7 +195,7 @@ impl PeerService for PeerApi {
     async fn stop_agent(
         &self,
         request: Request<StopAgentRequest>,
-    ) -> Result<Response<Empty>, Status> {
+    ) -> Result<Response<wire::StopAgentResponse>, Status> {
         caller(&request)?;
         self.own(&request.get_ref().agent_id).await?;
         self.client.stop_agent(request).await
@@ -221,11 +221,11 @@ impl PeerService for PeerApi {
 
     async fn send_message(
         &self,
-        request: Request<Envelope>,
+        request: Request<wire::PeerSendMessageRequest>,
     ) -> Result<Response<SendMessageResponse>, Status> {
         caller(&request)?;
         self.runtime()?
-            .send_peer_message(request.into_inner())
+            .send_peer_message(request.into_inner().envelope.unwrap_or_default())
             .await
             .map(Response::new)
             .map_err(|error| status(error.to_wire()))
@@ -249,16 +249,19 @@ impl PeerService for PeerApi {
         self.client.get_blob(request).await
     }
 
-    async fn diff(&self, request: Request<DiffRequest>) -> Result<Response<wire::Diff>, Status> {
+    async fn get_diff(
+        &self,
+        request: Request<GetDiffRequest>,
+    ) -> Result<Response<wire::Diff>, Status> {
         caller(&request)?;
         self.own(&request.get_ref().agent_id).await?;
-        self.client.diff(request).await
+        self.client.get_diff(request).await
     }
 
     async fn get_catalogue(
         &self,
         request: Request<wire::GetCatalogueRequest>,
-    ) -> Result<Response<wire::CatalogueBlob>, Status> {
+    ) -> Result<Response<wire::GetCatalogueResponse>, Status> {
         caller(&request)?;
         self.client.get_catalogue(request).await
     }

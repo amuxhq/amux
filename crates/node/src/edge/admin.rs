@@ -18,8 +18,8 @@ use uuid::Uuid;
 use wire::pairing_window::Secret;
 use wire::start_pairing_request::Method;
 use wire::{
-    BeginPairRequest, DeviceIdentity, HostRef, PairingIdentity, PairingWindow, PeerEntry,
-    RouteKind, StartPairingRequest, TrustSshPeerRequest,
+    BeginPairRequest, DeviceIdentity, HostRef, PairingIdentity, PairingWindow, RouteKind,
+    StartPairingRequest, TrustSshPeerRequest,
 };
 
 use super::Edge;
@@ -109,8 +109,8 @@ fn opaque(error: Status) -> Status {
     }
 }
 
-pub(crate) fn peer_entry_to_wire(host_id: HostId, entry: &TrustEntry) -> PeerEntry {
-    PeerEntry {
+pub(crate) fn peer_entry_to_wire(host_id: HostId, entry: &TrustEntry) -> wire::Peer {
+    wire::Peer {
         host_id: host_id.as_bytes().to_vec(),
         name: entry.name.clone(),
         pubkey: entry.pubkey.clone(),
@@ -434,8 +434,8 @@ impl Edge {
         // The other host not answering is this daemon's answer, not this
         // daemon going away: Unavailable would read as the latter.
         let (pending, via) = selected.ok_or_else(|| {
-            crate::grpc::status(crate::grpc::wire_error(
-                wire::ErrorCode::Unreachable,
+            crate::grpc::status(wire::Error::because(
+                wire::ErrorReason::HostUnreachable,
                 format!(
                     "the other host could not be reached: {}",
                     last_unreachable.unwrap_or_else(|| {
@@ -453,7 +453,7 @@ impl Edge {
 
     /// Finishes a pairing a person confirmed: both sides commit the other's
     /// key, and this side dials the peer at the route pairing found.
-    pub async fn confirm_pair(&self, token: &[u8]) -> Result<PeerEntry, Status> {
+    pub async fn confirm_pair(&self, token: &[u8]) -> Result<wire::Peer, Status> {
         let answer = self
             .ask(ClientRequest::ConfirmPair {
                 token: token.to_vec(),
@@ -531,7 +531,7 @@ impl Edge {
     }
 
     /// Paired hosts, by name.
-    pub fn list_peers(&self) -> Result<Vec<PeerEntry>, Status> {
+    pub fn list_peers(&self) -> Result<Vec<wire::Peer>, Status> {
         let store = self
             .trust
             .read()
@@ -551,7 +551,7 @@ impl Edge {
             .collect())
     }
 
-    pub fn peer_entry(&self, peer: HostRef) -> Result<PeerEntry, Status> {
+    pub fn peer_entry(&self, peer: HostRef) -> Result<wire::Peer, Status> {
         let store = self
             .trust
             .read()
@@ -562,7 +562,7 @@ impl Edge {
 
     /// Forgets a paired host: its key leaves the trust store, its links
     /// close with USER_REVOKED, and every connection it holds here ends.
-    pub async fn unpair(&self, peer: HostRef, _reason: String) -> Result<PeerEntry, Status> {
+    pub async fn unpair(&self, peer: HostRef, _reason: String) -> Result<wire::Peer, Status> {
         // The reason the client gave stays on the wire for a client that
         // may show it; nothing here records it.
         let host = {

@@ -99,10 +99,10 @@ fn peer_key() -> PublicKey {
 
 /// The peer's early read: a page of the agent's rows.
 fn early_read() -> PeerRequest {
-    PeerRequest::Fetch(wire::FetchRequest {
+    PeerRequest::ListItems(wire::ListItemsRequest {
         agent_id: AGENT.0.to_vec(),
         before_order: None,
-        limit: TAIL,
+        page_size: TAIL,
     })
 }
 
@@ -632,7 +632,7 @@ impl Machine for SingleDaemon {
                     lagged: false,
                     ended: false,
                 });
-                let request = ClientRequest::Subscribe {
+                let request = ClientRequest::SubscribeSession {
                     agent_id: AGENT.0.to_vec(),
                     tail: TAIL,
                 };

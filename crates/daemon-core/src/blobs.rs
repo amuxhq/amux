@@ -16,7 +16,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use store::AgentRow;
-use wire::{BlobRef, DiffRequest, ErrorCode, GetBlobRequest, PutBlobRequest, diff_base};
+use wire::{BlobRef, ErrorCode, GetBlobRequest, GetDiffRequest, PutBlobRequest, diff_base};
 
 use crate::Daemon;
 use crate::ids::{AgentId, CallId, JobId};
@@ -188,10 +188,10 @@ impl Daemon {
     /// How one of this host's agents' working tree differs from a base:
     /// compared by a job, and its patch, when asked for, written as the
     /// agent's blob before the diff is answered.
-    pub(crate) fn diff(
+    pub(crate) fn get_diff(
         &mut self,
         call: CallId,
-        request: DiffRequest,
+        request: GetDiffRequest,
         out: &mut Vec<Output>,
     ) -> Result<(), CallError> {
         let row = self.blob_owner(&request.agent_id)?;

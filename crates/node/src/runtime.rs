@@ -1053,21 +1053,21 @@ impl ProfileRuntime {
     }
 
     /// An agent's unsent draft, as this machine's clients last saved it.
-    pub async fn draft(&self, agent_id: &[u8]) -> wire::ComposerDraft {
+    pub async fn draft(&self, agent_id: &[u8]) -> wire::Draft {
         let request = ClientRequest::GetDraft {
             agent_id: agent_id.to_vec(),
         };
         let mut answers = self.driver().call(Ask::Ready(request), 1).await;
         match answers.next().await {
             Some(Delivered::Answer(Response::Draft(draft))) => draft,
-            _ => wire::ComposerDraft::default(),
+            _ => wire::Draft::default(),
         }
     }
 
     /// Keeps an agent's unsent draft for this machine's clients; an empty
     /// one forgets it.
-    pub async fn save_draft(&self, agent_id: &[u8], draft: &wire::ComposerDraft) {
-        let request = ClientRequest::SaveDraft {
+    pub async fn update_draft(&self, agent_id: &[u8], draft: &wire::Draft) {
+        let request = ClientRequest::UpdateDraft {
             agent_id: agent_id.to_vec(),
             draft: draft.clone(),
         };

@@ -383,7 +383,7 @@ mod tests {
                 .append(&item(n))
                 .expect("the journal takes a step");
         }
-        let subscribe = ClientRequest::Subscribe {
+        let subscribe = ClientRequest::SubscribeSession {
             agent_id: AGENT.0.to_vec(),
             tail: 10,
         };
@@ -502,7 +502,7 @@ mod tests {
             &mut rig.daemon,
             Input::ClientCall {
                 call,
-                request: ClientRequest::Subscribe {
+                request: ClientRequest::SubscribeSession {
                     agent_id: AGENT.0.to_vec(),
                     tail: 10,
                 },
@@ -641,7 +641,7 @@ mod tests {
             daemon,
             Input::ClientCall {
                 call,
-                request: ClientRequest::Subscribe {
+                request: ClientRequest::SubscribeSession {
                     agent_id: AGENT.0.to_vec(),
                     tail: 10,
                 },

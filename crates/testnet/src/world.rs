@@ -137,7 +137,7 @@ pub trait World {
         agent: &str,
         before_order: Option<u64>,
         limit: u32,
-    ) -> Result<wire::FetchResponse, NetError>;
+    ) -> Result<wire::ListItemsResponse, NetError>;
     /// Sets which replica agents keep a source open on the host, as its
     /// app does going to the background and back.
     fn set_source_policy(&self, host: &str, policy: node::SourcePolicy) -> Result<Ack, NetError>;
@@ -291,10 +291,12 @@ impl World for Net {
                 host: from.to_owned(),
                 error: format!("no channel to {to}: {error}"),
             })?;
-        peer.send_message(envelope)
-            .await
-            .map(tonic::Response::into_inner)
-            .map_err(|status| NetError::Refused(Box::new(status)))
+        peer.send_message(wire::PeerSendMessageRequest {
+            envelope: Some(envelope),
+        })
+        .await
+        .map(tonic::Response::into_inner)
+        .map_err(|status| NetError::Refused(Box::new(status)))
     }
 
     async fn observe(&self, host: &str, agent: &str, tail: u32) -> Result<Observer, NetError> {
@@ -342,14 +344,14 @@ impl World for Net {
         agent: &str,
         before_order: Option<u64>,
         limit: u32,
-    ) -> Result<wire::FetchResponse, NetError> {
+    ) -> Result<wire::ListItemsResponse, NetError> {
         let id = Net::agent(self, agent)?.id;
         Ok(self
             .runtime(host)?
-            .fetch(&wire::FetchRequest {
+            .list_items(&wire::ListItemsRequest {
                 agent_id: id.as_bytes().to_vec(),
                 before_order,
-                limit,
+                page_size: limit,
             })
             .await?)
     }

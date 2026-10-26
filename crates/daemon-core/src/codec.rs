@@ -308,9 +308,7 @@ pub(crate) mod drafts {
 
     type Line = (String, String);
 
-    fn line<'a>(
-        (agent, draft): (&'a Vec<u8>, &'a Vec<u8>),
-    ) -> (Id, EncodedAs<'a, wire::ComposerDraft>) {
+    fn line<'a>((agent, draft): (&'a Vec<u8>, &'a Vec<u8>)) -> (Id, EncodedAs<'a, wire::Draft>) {
         (Id(hex(agent)), EncodedAs(draft, PhantomData))
     }
 

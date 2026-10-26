@@ -12,6 +12,12 @@ struct AmuxApp: App {
         // First, before anything this app does: the mark that divides the
         // system's share of a launch from this app's.
         Signposts.emit(.appEntered)
+        // The bundled faces are registered with Core Text off the main
+        // thread while UIKit connects the scene, so the shell's first frame
+        // finds them ready instead of registering them in the middle of it.
+        // Registration happens once; a screen that sets type first waits for
+        // it rather than starting it again.
+        DispatchQueue.global(qos: .userInitiated).async { BundledFonts.register() }
         #if AMUX_DEBUG_TOOLS
         DoorServer.freshStartIfRequested()
         DoorServer.startIfRequested()

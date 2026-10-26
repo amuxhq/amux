@@ -2862,20 +2862,21 @@ mod tests {
         }
     }
 
+    /// Taking the remembered port again is best effort: anything on the
+    /// machine may have it by now. Only the fallback is certain here, the
+    /// port held by this test's own socket.
     #[tokio::test]
-    async fn socket_bind_reuses_the_remembered_port() {
-        let first = LinkSocket::bind_dual_stack("0.0.0.0:0".parse().unwrap(), None).unwrap();
-        let port = first.local_addr().unwrap().port();
-        drop(first);
-        let again = LinkSocket::bind_dual_stack("0.0.0.0:0".parse().unwrap(), Some(port)).unwrap();
-        assert_eq!(again.local_addr().unwrap().port(), port);
+    async fn socket_bind_takes_another_port_when_the_remembered_one_is_held() {
+        let holder = LinkSocket::bind_dual_stack("0.0.0.0:0".parse().unwrap(), None).unwrap();
+        let port = holder.local_addr().unwrap().port();
         // Taken: any port rather than none.
         let other = LinkSocket::bind_dual_stack("0.0.0.0:0".parse().unwrap(), Some(port)).unwrap();
         assert_ne!(other.local_addr().unwrap().port(), port);
-        // An explicit port is bound as given.
+        // An explicit address is bound as given.
         let loopback =
             LinkSocket::bind_dual_stack("127.0.0.1:0".parse().unwrap(), Some(port)).unwrap();
         assert_eq!(loopback.local_addr().unwrap().ip(), Ipv4Addr::LOCALHOST);
+        drop(holder);
     }
 
     async fn recv(substrate: &dyn Datagrams) -> (usize, SocketAddr) {

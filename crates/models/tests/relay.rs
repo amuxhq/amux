@@ -4,13 +4,14 @@
 
 use models::{Bounds, RelayModel, check, walk};
 
-/// How long each exhaustive run may take under `just test`. No CI runner
-/// figure yet, so it is sized by the README's rule from the slower of the
-/// two four-thread Mac times: 2.3 s, times 4.7, doubled and rounded up to a
-/// whole minute. A run past it says the bounds have outgrown their place.
-const BUDGET_SECONDS: f64 = 60.0;
+/// How many states each exhaustive run may explore: its count at these
+/// bounds on 2026-10-26 with two percent over, since the count can move
+/// with the threads. A run past it says the bounds have outgrown their
+/// place; a run that hangs is the test harness's bound to catch.
+const CLOUD_RELAY_STATES: u64 = 708_400;
+const DAEMON_FORWARDING_STATES: u64 = 733_500;
 
-fn holds_within_budget(model: &RelayModel) {
+fn holds_within_budget(model: &RelayModel, budget: u64) {
     let threads = models::threads();
     let verdict = check(model, Bounds::exhaustive().threads(threads));
     println!("{verdict}");
@@ -21,20 +22,20 @@ fn holds_within_budget(model: &RelayModel) {
     );
     verdict.assert_holds();
     assert!(
-        measured.seconds <= BUDGET_SECONDS,
-        "the relay model took {:.1}s, past its {BUDGET_SECONDS}s budget",
-        measured.seconds
+        measured.states <= budget,
+        "the relay model explored {} states, past its {budget}",
+        measured.states
     );
 }
 
 #[test]
 fn every_relay_forwarding_promise_holds_at_ci_bounds() {
-    holds_within_budget(&RelayModel::ci());
+    holds_within_budget(&RelayModel::ci(), CLOUD_RELAY_STATES);
 }
 
 #[test]
 fn every_relay_forwarding_promise_holds_for_a_daemon_forwarding_at_ci_bounds() {
-    holds_within_budget(&RelayModel::daemon());
+    holds_within_budget(&RelayModel::daemon(), DAEMON_FORWARDING_STATES);
 }
 
 #[test]

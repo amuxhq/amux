@@ -5,11 +5,11 @@ use daemon_core::Presence;
 use models::presence::{Action, State, Via};
 use models::{Bounds, Machine, PresenceRouting, check, walk};
 
-/// How long the exhaustive run may take under `just test`. The bounds
-/// explore 50,510 states in 0.2 s on a twelve-thread Mac; the budget leaves
-/// CI's four-core runner a hundredfold margin, so a run past it says the
-/// bounds have outgrown their place.
-const BUDGET_SECONDS: f64 = 30.0;
+/// How many states the exhaustive run may explore: its count at these
+/// bounds (50,510 on 2026-10-26) with two percent over, since the count can
+/// move with the threads. A run past it says the bounds have outgrown their
+/// place; a run that hangs is the test harness's bound to catch.
+const BUDGET_STATES: u64 = 51_600;
 
 #[test]
 fn every_presence_promise_holds_at_ci_bounds() {
@@ -26,9 +26,9 @@ fn every_presence_promise_holds_at_ci_bounds() {
     );
     verdict.assert_holds();
     assert!(
-        measured.seconds <= BUDGET_SECONDS,
-        "the presence model took {:.1}s, past its {BUDGET_SECONDS}s budget",
-        measured.seconds
+        measured.states <= BUDGET_STATES,
+        "the presence model explored {} states, past its {BUDGET_STATES}",
+        measured.states
     );
 }
 

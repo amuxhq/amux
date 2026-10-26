@@ -3,26 +3,30 @@
 
 use models::{Bounds, PathModel, check, walk};
 
-/// Each CI world and how long its exhaustive run may take under `just
-/// test`. No CI runner figure yet, so each is sized by the README's rule
-/// from its four-thread Mac time (29.8 s, 28.3 s and 33.8 s), times 4.7,
-/// doubled and rounded up to a whole minute. A run past it says the bounds
-/// have outgrown their place.
-fn ci_worlds() -> [(&'static str, PathModel, f64); 3] {
+/// Each CI world and how many states its exhaustive run may explore: its
+/// count at these bounds on 2026-10-26 (12,929,251, 11,118,688 and
+/// 12,701,530) with two percent over, since the count can move with the
+/// threads. A run past it says the bounds have outgrown their place; a run
+/// that hangs is the test harness's bound to catch.
+fn ci_worlds() -> [(&'static str, PathModel, u64); 3] {
     [
-        ("the addresses and the network", PathModel::ci(), 300.0),
-        ("the peer's own packets", PathModel::ci_arrivals(), 300.0),
+        ("the addresses and the network", PathModel::ci(), 13_187_900),
+        (
+            "the peer's own packets",
+            PathModel::ci_arrivals(),
+            11_341_100,
+        ),
         (
             "answers, refusals and forgotten addresses",
             PathModel::ci_answers(),
-            360.0,
+            12_955_600,
         ),
     ]
 }
 
 /// The worlds run one after another: each holds about 5 GB of states and
-/// every core, so side by side they would crowd the runner past its memory
-/// and their budgets.
+/// every core, so side by side they would crowd the runner past its
+/// memory.
 #[test]
 fn every_path_machine_promise_holds_at_ci_bounds() {
     let threads = models::threads();
@@ -36,9 +40,9 @@ fn every_path_machine_promise_holds_at_ci_bounds() {
         );
         verdict.assert_holds();
         assert!(
-            measured.seconds <= budget,
-            "the path model's world of {world} took {:.1}s, past its {budget}s budget",
-            measured.seconds
+            measured.states <= budget,
+            "the path model's world of {world} explored {} states, past its {budget}",
+            measured.states
         );
     }
 }

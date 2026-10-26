@@ -360,10 +360,10 @@ model is the testnet's simulated mode. The properties are in
 A model explores real stores, so a state costs a store transaction or two
 rather than a few instructions, and its bounds are sized so a run fits the
 CI runner's time. Every model's test prints its measured cost as `states`,
-`seconds` and `states_per_second`. The tests that assert a budget assert
-it on the state count, which the bounds decide and the machine does not:
-the count at the CI bounds with two percent over, since it moves by a few
-dozen states with the threads. A run past its count says the bounds have
+`seconds` and `states_per_second`. Every test asserts its budget on the
+state count, which the bounds decide and the machine does not: the count at
+the CI bounds with two percent over, since for some models it moves with the
+threads (the family model's by about 1.5%). A run past its count says the bounds have
 outgrown their place; a run that hangs is the test harness's bound to
 catch, not a verdict the model gives.
 

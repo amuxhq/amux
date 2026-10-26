@@ -3,13 +3,12 @@
 
 use models::{Bounds, Outcome, Replication, check, walk};
 
-/// How long the exhaustive run may take under `just test`, sized to CI's
-/// four-core runner. No runner has timed these bounds, with the replica's
-/// opening replayed, so the budget is the four-thread Mac time (49.5 s)
-/// times 4.7, the slowest runner-to-Mac ratio, doubled and rounded up to a
-/// whole minute; the README lists the runner's figures at the bounds before.
-/// A run past it says the bounds have outgrown their place.
-const BUDGET_SECONDS: f64 = 480.0;
+/// How many states the exhaustive run may explore: its count at these
+/// bounds (157,754 on 2026-10-26; 157,737 on four threads) with two percent
+/// over, since the count moves with the threads. A run past it says the
+/// bounds have outgrown their place; a run that hangs is the test harness's
+/// bound to catch.
+const BUDGET_STATES: u64 = 161_000;
 
 #[test]
 fn every_replication_promise_holds_at_ci_bounds() {
@@ -23,9 +22,9 @@ fn every_replication_promise_holds_at_ci_bounds() {
     );
     verdict.assert_holds();
     assert!(
-        measured.seconds <= BUDGET_SECONDS,
-        "the replication model took {:.1}s, past its {BUDGET_SECONDS}s budget",
-        measured.seconds
+        measured.states <= BUDGET_STATES,
+        "the replication model explored {} states, past its {BUDGET_STATES}",
+        measured.states
     );
 }
 

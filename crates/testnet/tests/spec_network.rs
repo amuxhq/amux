@@ -1696,17 +1696,22 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
     .await
     .unwrap();
     // A refresh re-authenticates the link it rides and then arms the next
-    // one, five minutes before the fresh credential expires: three timers
-    // at that deadline say every refresh is through.
-    let next_refresh =
-        net.now_ms() + (testnet::CREDENTIAL_TTL - Duration::from_secs(5 * 60)).as_millis() as i64;
-    until("every link to arm its next refresh", || async {
-        let sleeping = net.clock().unwrap().sleeping();
-        let armed = sleeping.iter().filter(|at| **at == next_refresh).count();
-        (armed >= 3)
-            .then_some(())
-            .ok_or_else(|| format!("{armed} armed at {next_refresh}; sleeping {sleeping:?}"))
-    })
+    // one, five minutes before the fresh credential expires: at that
+    // boundary every link presenting a fresh credential again says every
+    // refresh went through. A refresh armed after the clock got there
+    // fires as it is armed.
+    let presented = net.relay().unwrap().presented().len();
+    net.advance(testnet::CREDENTIAL_TTL - Duration::from_secs(5 * 60))
+        .unwrap();
+    until(
+        "every link to refresh again at its next boundary",
+        || async {
+            let now = net.relay().unwrap().presented().len();
+            (now >= presented + 3)
+                .then_some(())
+                .ok_or_else(|| format!("{now} presented, {presented} before"))
+        },
+    )
     .await
     .unwrap();
     assert_eq!(

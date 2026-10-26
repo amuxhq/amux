@@ -22,7 +22,7 @@ use prost::Message as _;
 use provider_fakes::script::{Ask, Question, Step};
 use store::{AgentKey, CommitClock, Marker, PageEnd};
 use testnet::observe::{self, Mark, marks};
-use testnet::{AgentDecl, JournalCut, Net, NetOptions, PATIENCE, Topology, until};
+use testnet::{AgentDecl, JournalCut, Net, NetOptions, PATIENCE, Topology, holds_for, until};
 use wire::client_service_server::ClientService as _;
 use wire::{InventoryEvent, Item, ListItemsRequest, SessionEvent, inventory_event, session_event};
 
@@ -184,7 +184,11 @@ async fn restore(net: &mut Net) {
 
 /// Waits until a source's first retry is armed on the policy clock, one
 /// backoff from now. Policy time stands still, so the deadline is exact;
-/// with it armed and unfired, nothing has reconnected early.
+/// with it armed and unfired, nothing has reconnected early. A host's
+/// driver sleeps only until its soonest timer, so a retry due after
+/// another is not seen here: this is for a loss that shows nothing else
+/// of the step arming the retry, which counts its backoff from then, so
+/// the clock must not move first.
 async fn backoff_armed(net: &Net) {
     let at = net.now_ms() + Launch::default().source_backoff_ms;
     tokio::time::timeout(PATIENCE, net.clock().unwrap().armed(at))
@@ -517,20 +521,27 @@ async fn a_stream_lost_with_the_link_up_detaches_through_the_backoff() {
     assert!(dropped.load(Ordering::SeqCst));
     let desk = net.host("desk").unwrap().host_id;
     assert!(laptop.host_ready(desk), "the host was never lost");
-    backoff_armed(&net).await;
-    assert_eq!(
-        stage(
-            "read the replica's marker",
-            replica_state(&net, "laptop", "worker")
-        )
-        .await
-        .unwrap()
-        .1,
-        Some(Marker::Detached),
-        "the marker reads Detached through the backoff"
-    );
+    // The step that published the Detached the chat saw armed the
+    // source's retry one backoff from then. Short of it the marker reads
+    // Detached; at it the source opens again.
+    let backoff = Duration::from_millis(Launch::default().source_backoff_ms as u64);
+    net.advance(backoff - Duration::from_millis(1)).unwrap();
+    stage(
+        "the marker through the backoff",
+        holds_for(
+            "the marker to read Detached through the backoff",
+            Duration::from_millis(500),
+            || async {
+                replica_state(&net, "laptop", "worker")
+                    .await
+                    .is_some_and(|(_, marker)| marker == Some(Marker::Detached))
+            },
+        ),
+    )
+    .await
+    .unwrap();
 
-    net.advance(Duration::from_secs(1)).unwrap();
+    net.advance(Duration::from_millis(1)).unwrap();
     chat.observe_until(
         |events| {
             since_last_detached(&events[seen..])

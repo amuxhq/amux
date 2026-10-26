@@ -15,7 +15,9 @@ use std::time::Duration;
 use hyper_util::rt::TokioIo;
 use node::Edge;
 use node::harness::{LiveRoute, Tier};
-use testnet::{ClockMode, HostDecl, Net, NetOptions, PATIENCE, Relay, TierDecl, Topology, until};
+use testnet::{
+    ClockMode, HostDecl, Net, NetOptions, PATIENCE, Relay, TierDecl, Topology, holds_for, until,
+};
 use tonic::transport::{Channel, Endpoint};
 use uuid::Uuid;
 use wire::cloud_standing::Standing;
@@ -118,7 +120,10 @@ async fn dial_failed(net: &Net, host: &str, to: Uuid, before: Option<String>) ->
 
 /// Waits until a policy timer is armed for exactly `at_ms`: the step that
 /// arms it is complete and it has not fired. Policy time stands still, so
-/// the deadline is exact.
+/// the deadline is exact. A host's driver sleeps only until its soonest
+/// timer, so one due after another is not seen here: this is for a
+/// deadline counted from the step that arms it, which nothing else shows,
+/// where the clock must not move before that step.
 async fn armed(net: &Net, at_ms: i64) {
     tokio::time::timeout(PATIENCE, net.clock().unwrap().armed(at_ms))
         .await
@@ -133,6 +138,11 @@ async fn armed(net: &Net, at_ms: i64) {
 /// The free tier's refresh interval the signed-in net sets, short enough
 /// to step past.
 const FREE_REFRESH: Duration = Duration::from_secs(60);
+
+/// How long a test watches, at a policy time that stands still or just
+/// short of a deadline, for what must not happen yet: a timer due then
+/// fires and is answered on loopback well inside it.
+const QUIET: Duration = Duration::from_millis(500);
 
 /// How long a Pro link waits after a fresh credential before refreshing:
 /// five minutes before the credential expires.
@@ -557,10 +567,24 @@ async fn a_relaunch_presents_its_kept_relay_credential_without_calling_the_cloud
         1,
         "the relaunch made no call to the account service"
     );
-    // The credential is not an hour old: its refresh waits for that.
-    armed(&net, net.now_ms() + HOUR.as_millis() as i64).await;
-    assert_eq!(net.relay().unwrap().connects().len(), 1);
-    println!("relaunched: relay-ada-1 presented again; the cloud's connects stayed at 1");
+    // The credential is not an hour old: its refresh waits for that, to
+    // the millisecond, counted from its fetch.
+    net.advance(HOUR - Duration::from_millis(1)).unwrap();
+    holds_for("nothing fetched short of the hour", QUIET, || async {
+        net.relay().unwrap().connects().len() == 1
+    })
+    .await
+    .unwrap();
+    net.advance(Duration::from_millis(1)).unwrap();
+    assert_eq!(
+        presented(net.relay().unwrap(), 3).await.last().unwrap(),
+        "relay-ada-2",
+        "the hour-old credential is refreshed"
+    );
+    assert_eq!(net.relay().unwrap().connects().len(), 2);
+    println!(
+        "relaunched: relay-ada-1 presented again; the cloud's connects stayed at 1 until the hour"
+    );
 
     net.shutdown().await.unwrap();
 }
@@ -569,7 +593,6 @@ async fn a_relaunch_presents_its_kept_relay_credential_without_calling_the_cloud
 async fn a_kept_relay_credential_over_an_hour_old_is_refreshed_at_once_and_then_hourly() {
     let mut net = pro_desk(WEEK).await;
     sign_in_desk(&net).await;
-    armed(&net, net.now_ms() + HOUR.as_millis() as i64).await;
     net.stop_daemon("desk").await.unwrap();
     net.advance(2 * HOUR).unwrap();
     net.restart_daemon("desk").await.unwrap();
@@ -582,9 +605,9 @@ async fn a_kept_relay_credential_over_an_hour_old_is_refreshed_at_once_and_then_
     assert_eq!(net.relay().unwrap().connects().len(), 2);
     println!("relaunched two hours later: Hello with relay-ada-1, Reauth with relay-ada-2");
 
-    // Connected, the link refreshes every hour.
+    // Connected, the link refreshes every hour, counted from each fetch:
+    // a refresh armed after the clock got there fires as it is armed.
     for (count, token) in [(4, "relay-ada-3"), (5, "relay-ada-4")] {
-        armed(&net, net.now_ms() + HOUR.as_millis() as i64).await;
         net.advance(HOUR).unwrap();
         assert_eq!(
             presented(net.relay().unwrap(), count).await.last().unwrap(),
@@ -718,12 +741,13 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
     println!("clock +60s: Reauth with relay-ada-2, tier Pro");
     // On Pro the next refresh is armed five minutes before the fresh
     // credential expires, so nothing refreshes again at once.
-    armed(&net, net.now_ms() + pro_refresh_ms()).await;
-    assert_eq!(
-        relay.connects().len(),
-        2,
-        "a fresh Pro credential is not refreshed again at once"
-    );
+    holds_for(
+        "a fresh Pro credential not to be refreshed again at once",
+        QUIET,
+        || async { relay.connects().len() == 2 },
+    )
+    .await
+    .unwrap();
 
     // On Pro the link refreshes five minutes before its credential expires.
     // Past the first credential's expiry on the relay's clock, the link
@@ -738,10 +762,24 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
     })
     .await
     .unwrap();
-    armed(&net, net.now_ms() + pro_refresh_ms()).await;
+    // The refresh went through: the next comes at its own boundary, five
+    // minutes before relay-ada-3 expires.
+    net.advance(Duration::from_millis(pro_refresh_ms() as u64))
+        .unwrap();
+    until("the next refresh at its boundary", || async {
+        let presented = relay.presented();
+        presented
+            .contains(&"relay-ada-4".to_owned())
+            .then_some(())
+            .ok_or_else(|| format!("presented: {presented:?}"))
+    })
+    .await
+    .unwrap();
     assert_eq!(relay.links("ada").await, vec![(host_id, 1)]);
     assert!(info(&net, "desk").await.relay_connected().is_some());
-    println!("clock +610s: relay-ada-1 expired, the link lives on relay-ada-3");
+    println!(
+        "clock +910s: relay-ada-1 expired, the link lived on relay-ada-3 and then relay-ada-4"
+    );
 
     // Pausing drops the link and keeps the credential; resuming brings it
     // back; signing out forgets the credential and keeps the binding.

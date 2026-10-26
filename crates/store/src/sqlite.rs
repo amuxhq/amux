@@ -33,7 +33,7 @@ pub enum OpenError {
         "{path} predates this release's store schema (its migration {id} is not this build's); \
          amux leaves it untouched: move it aside to start this profile's store afresh"
     )]
-    EditedMigration { path: String, id: u32 },
+    OtherHistory { path: String, id: u32 },
 }
 
 pub struct Sqlite {
@@ -187,14 +187,17 @@ impl Sqlite {
     }
 }
 
+/// Checks the store's history and applies the migrations it lacks, all in
+/// one transaction that takes the write lock first, so the history it
+/// checked is the one it migrates.
 fn migrate(conn: &mut Connection, name: &str) -> Result<(), OpenError> {
-    let stamp: u32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    let application_id: i32 = conn.pragma_query_value(None, "application_id", |row| row.get(0))?;
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let stamp: u32 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    let application_id: i32 = tx.pragma_query_value(None, "application_id", |row| row.get(0))?;
     let fresh = stamp == 0 && application_id == 0;
     if !fresh && application_id != APPLICATION_ID {
         return Err(OpenError::Foreign(name.into()));
     }
-    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let recorded: bool = tx.query_row(
         "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'schema_migrations')",
         [],
@@ -216,7 +219,7 @@ fn migrate(conn: &mut Connection, name: &str) -> Result<(), OpenError> {
     for (id, hash) in &applied {
         let index = (*id as usize).wrapping_sub(1);
         if index < MIGRATIONS.len() && shipped_hash(index) != hash {
-            return Err(OpenError::EditedMigration {
+            return Err(OpenError::OtherHistory {
                 path: name.into(),
                 id: *id,
             });
@@ -226,24 +229,24 @@ fn migrate(conn: &mut Connection, name: &str) -> Result<(), OpenError> {
     if stamp > known {
         return Err(OpenError::TooNew { stamp, known });
     }
-    tx.execute_batch(
-        "CREATE TABLE IF NOT EXISTS schema_migrations (id INTEGER PRIMARY KEY, sha256 TEXT NOT NULL);",
-    )?;
-    tx.commit()?;
     let done = applied.last().map_or(0, |(id, _)| *id);
+    if done as usize >= MIGRATIONS.len() {
+        return Ok(());
+    }
+    tx.execute_batch(
+        "CREATE TABLE IF NOT EXISTS schema_migrations \
+         (id INTEGER PRIMARY KEY, sha256 TEXT NOT NULL) STRICT;",
+    )?;
     for (index, text) in MIGRATIONS.iter().enumerate().skip(done as usize) {
-        let id = index as u32 + 1;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute_batch(text)?;
         tx.execute(
             "INSERT INTO schema_migrations (id, sha256) VALUES (?1, ?2)",
-            params![id, shipped_hash(index)],
+            params![index as u32 + 1, shipped_hash(index)],
         )?;
-        tx.pragma_update(None, "application_id", APPLICATION_ID)?;
-        let current: u32 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        tx.pragma_update(None, "user_version", current.max(SCHEMA_STAMP))?;
-        tx.commit()?;
     }
+    tx.pragma_update(None, "application_id", APPLICATION_ID)?;
+    tx.pragma_update(None, "user_version", stamp.max(SCHEMA_STAMP))?;
+    tx.commit()?;
     Ok(())
 }
 

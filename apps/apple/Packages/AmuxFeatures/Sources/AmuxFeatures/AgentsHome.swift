@@ -1088,6 +1088,7 @@ struct StateMark: View {
     @Environment(\.photographed) private var photographed
     @Environment(\.reducesMotion) private var reducesMotion
     @Environment(\.workingMark) private var working
+    @Environment(\.hidesNeedsYouDot) private var hidesNeedsYou
     let state: RowState
 
     static let size: CGFloat = 10
@@ -1096,7 +1097,7 @@ struct StateMark: View {
         Group {
             switch state {
             case .needsYou:
-                Circle().fill(design.accent.color)
+                Circle().fill(design.accent.color).opacity(hidesNeedsYou ? 0 : 1)
             case .working, .starting:
                 Working(style: working, still: photographed || reducesMotion)
             case .idle:

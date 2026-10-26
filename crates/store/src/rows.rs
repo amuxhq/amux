@@ -632,11 +632,19 @@ impl Rows<'_> {
             End::TurnEnded(turn) => (Some(turn.text.clone()), None, Some(turn.outcome), turn.last),
             End::Exited(exited) => (None, exited.ended.clone(), None, false),
         };
+        // An upsert naming its columns, never a replace: a replace rewrites
+        // the whole row, so a binary older than a migration that added a
+        // column would reset that column on every write.
         self.conn
             .prepare_cached(
-                "INSERT OR REPLACE INTO deliveries (child_id, incarnation, turn_id, parent_host, \
+                "INSERT INTO deliveries (child_id, incarnation, turn_id, parent_host, \
                  parent_id, parent_incarnation, exited, text, exit_cause, exit_detail, outcome, \
-                 last) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                 last) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) \
+                 ON CONFLICT (child_id, incarnation, exited, turn_id) DO UPDATE SET \
+                 parent_host = excluded.parent_host, parent_id = excluded.parent_id, \
+                 parent_incarnation = excluded.parent_incarnation, text = excluded.text, \
+                 exit_cause = excluded.exit_cause, exit_detail = excluded.exit_detail, \
+                 outcome = excluded.outcome, last = excluded.last",
             )?
             .execute(params![
                 delivery.child_id,
@@ -682,10 +690,13 @@ impl Rows<'_> {
     }
 
     pub(crate) fn put_notification(&self, notification: &Notification) -> Result<(), StoreError> {
+        // An upsert, for the reason `put_delivery` gives.
         self.conn
             .prepare_cached(
-                "INSERT OR REPLACE INTO notifications (agent_id, revision, due_at_ms, name, \
-                 working_on, text) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO notifications (agent_id, revision, due_at_ms, name, working_on, \
+                 text) VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+                 ON CONFLICT (agent_id, revision) DO UPDATE SET due_at_ms = excluded.due_at_ms, \
+                 name = excluded.name, working_on = excluded.working_on, text = excluded.text",
             )?
             .execute(params![
                 notification.agent_id,

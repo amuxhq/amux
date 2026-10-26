@@ -433,9 +433,13 @@ push being sent.
 
 The first migration is the schema the first release ships. From that release
 on, migrations are forward only, append only and additive: a column with a
-default, a table, an index. Each runs in its own transaction. Shipped text is
-never edited: the store records each migration's hash in `schema_migrations`
-and refuses to open a file whose history disagrees (`OpenError::EditedMigration`).
+default, a table, an index. Every table is `STRICT`, so a value of the wrong
+type is refused rather than stored. Opening a store takes the write lock, checks
+its history and applies the migrations it lacks in one transaction, so the
+history it checked is the one it migrates. Shipped
+text is never edited: the store records each migration's hash in
+`schema_migrations` and refuses to open a file whose history disagrees
+(`OpenError::OtherHistory`).
 
 That refusal is also what happens to a store written before the release
 schema: its history is a different first migration, so it is never carried
@@ -448,8 +452,14 @@ migrations a binary must know to read the file. A binary opens any store whose
 stamp is at most the migrations it ships, so an older binary opens a store a
 later one migrated; one that is too old fails with `OpenError::TooNew`. The
 history is checked before the stamp, so a store from before the release reads
-as that, not as one from a newer build. A drop, rename or rewrite ships only
-after the stamp has been raised past every binary that read the earlier shape.
+as that, not as one from a newer build. Because an older binary keeps writing
+a store a later one migrated, every write names its columns and updates a held
+row in place (`ON CONFLICT ... DO UPDATE`), never `INSERT OR REPLACE`: a
+replace rewrites the whole row and would reset a column the older binary does
+not know. `crates/store/tests/fixtures/store-v1.sqlite` is a store the first
+release's schema wrote; every later build must open it and read its rows. A
+drop, rename or rewrite ships only after the stamp has been raised past every
+binary that read the earlier shape.
 The file's `application_id` marks it as an amux store; any other SQLite file is
 refused as foreign.
 

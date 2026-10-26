@@ -78,7 +78,7 @@ async fn a_store_from_before_the_release_schema_stops_the_daemon_and_is_kept() {
         matches!(
             error,
             StartError::Store {
-                error: store::OpenError::EditedMigration { id: 1, .. },
+                error: store::OpenError::OtherHistory { id: 1, .. },
                 ..
             }
         ),

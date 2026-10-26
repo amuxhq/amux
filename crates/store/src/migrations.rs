@@ -2,7 +2,8 @@
 //!
 //! The first migration is the schema the first release ships. From that
 //! release on, migrations are append-only and additive (a column with a
-//! default, a table, an index), each one transaction, and shipped text is
+//! default, a table, an index), applied together in one transaction with
+//! the history check that chose them, and shipped text is
 //! never edited: the store records each applied migration's hash and refuses
 //! a file whose history disagrees, and a test pins the hash of every shipped
 //! migration. A drop, rename or rewrite ships only after the schema stamp
@@ -22,6 +23,7 @@ pub const MIGRATIONS: &[&str] = &[r#"
 -- One profile's store: this host's own agents and the replicas it follows.
 -- Enum-valued columns hold the wire integer and are never interpreted by
 -- the store, so a value this binary does not know is stored and served.
+-- Every table is STRICT: a value of the wrong type is refused, not stored.
 CREATE TABLE agents (
   origin_host         BLOB    NOT NULL,  -- the host that runs the agent
   agent_id            BLOB    NOT NULL,  -- the agent's id, unique across hosts
@@ -51,7 +53,7 @@ CREATE TABLE agents (
   background_jobs     INTEGER NOT NULL DEFAULT 0, -- copied from the newest snapshot: jobs the provider runs in the background
   descendants         INTEGER NOT NULL DEFAULT 0, -- live agents below this one: own rows counted here, replicas as their origin counts
   PRIMARY KEY (origin_host, agent_id)
-);
+) STRICT;
 
 -- A child's reports owed to its parent, kept until delivered.
 CREATE TABLE deliveries (
@@ -68,7 +70,7 @@ CREATE TABLE deliveries (
   outcome             INTEGER,           -- turn: amux.v1.TurnOutcome, how the turn ended
   last                INTEGER NOT NULL DEFAULT 0, -- turn: it was the incarnation's last (an exit report always is)
   PRIMARY KEY (child_id, incarnation, exited, turn_id)
-);
+) STRICT;
 
 -- A needs-you transition owed to the person, keyed by the snapshot that
 -- raised it; built from envelope fields only.
@@ -80,14 +82,14 @@ CREATE TABLE notifications (
   working_on          TEXT,              -- the snapshot's working_on
   text                TEXT    NOT NULL DEFAULT '', -- the newest item's text: usually the question
   PRIMARY KEY (agent_id, revision)
-);
+) STRICT;
 
 -- The generation last seen from each origin; bumped only after that
 -- host's unclean reboot.
 CREATE TABLE hosts (
   host_id             BLOB    PRIMARY KEY, -- a paired host, never this one
   generation          INTEGER NOT NULL   -- the generation its inventory last reported
-);
+) STRICT;
 
 -- Items: full state per key, newest revision only.
 CREATE TABLE items (
@@ -104,7 +106,7 @@ CREATE TABLE items (
   attachments         BLOB,              -- amux.v1.Attachment list, length-delimited
   body                BLOB    NOT NULL,  -- the per-kind item, opaque
   PRIMARY KEY (origin_host, agent_id, key)
-);
+) STRICT;
 CREATE UNIQUE INDEX items_by_position ON items (origin_host, agent_id, position);
 CREATE INDEX items_by_revision ON items (origin_host, agent_id, revision);
 CREATE INDEX items_by_input ON items (origin_host, agent_id, input_id) WHERE input_id IS NOT NULL;

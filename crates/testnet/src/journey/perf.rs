@@ -123,6 +123,8 @@ const STREAM_AGENT: &str = "stream";
 /// The relay account every machine signs in to, and the phone away from home.
 const ACCOUNT: &str = "ada";
 const STREAM_SECONDS: f64 = 20.0;
+/// Rows in each streamed burst, as `qualification::perf::phone` writes them.
+const STREAM_ROWS: i64 = 1_000;
 const IDLE_SECONDS: f64 = 5.0;
 /// How long a chat's opening is watched from just before the tap: the
 /// push, the transcript's first build and its settling.
@@ -850,8 +852,28 @@ impl Run {
             }
             std::thread::sleep(Duration::from_millis(200));
         }
-        self.app(json!({"kind": "settle"}), Duration::from_secs(90))?;
+        // The page's push and first build finish before anything is watched.
+        // Not the door's settle: that photographs the window until two
+        // pictures agree, which they never do while the working line moves,
+        // so it held the main thread for its whole bound, seconds on a phone.
+        std::thread::sleep(Duration::from_secs(1));
         Ok(())
+    }
+
+    /// How many rows have arrived since the chat's newest stood at
+    /// `before`, once the burst has delivered them all or stopped coming.
+    fn burst_arrived(&self, before: i64) -> Result<i64, String> {
+        let mut arrived = 0;
+        let mut moved = Instant::now();
+        while arrived < STREAM_ROWS && moved.elapsed() < Duration::from_secs(5) {
+            std::thread::sleep(Duration::from_millis(200));
+            let now = self.newest_order()?.unwrap_or_default() - before;
+            if now > arrived {
+                arrived = now;
+                moved = Instant::now();
+            }
+        }
+        Ok(arrived)
     }
 
     /// The order of the newest row the chat on screen holds, or nothing
@@ -1005,16 +1027,18 @@ impl Run {
                 None,
             )?;
             let measured = self.measure(STREAM_SECONDS)?;
-            // The burst outlasts the watch by a little; let it end so the
-            // next sample starts from rest, then check the rows arrived.
-            std::thread::sleep(Duration::from_secs(2));
+            // The burst outlasts the watch: its pauses run a little long, so
+            // its rows take a few seconds more than they are paced for. Every
+            // one is waited for, so the next sample starts from rest and a row
+            // that never reaches the phone is caught, not taken for a slow
+            // burst.
+            let arrived = self.burst_arrived(before)?;
             if let Some(profiler) = profiler {
                 self.finish_profiler(profiler)?;
             }
-            let arrived = self.newest_order()?.unwrap_or_default() - before;
-            if arrived < 900 {
+            if arrived < STREAM_ROWS {
                 return Err(format!(
-                    "stream sample {}: only {arrived} rows reached the phone; the number would be about an idle screen",
+                    "stream sample {}: {arrived} of {STREAM_ROWS} rows reached the phone and no more came",
                     attempt + 1
                 ));
             }

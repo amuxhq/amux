@@ -241,8 +241,8 @@ legs. The account service is not gated, since a launch reuses the phone's relay 
 Every number is taken by the app: the launch marks (`Signposts` in `AmuxCore`, emitted in every build) and the
 door's `measure` verb, which watches the display, the main thread and the footprint for a stretch while the run
 streams into the chat on screen. The script only arranges the workload and judges. Five samples per metric, the
-median against the budget; the run stops and says so if a mark it needs never appears or a stream never reached
-the phone, rather than reporting a number about an idle screen.
+median against the budget; the run stops and says so if a mark it needs never appears or any of a stream's rows
+never reach the phone, rather than reporting a number about an idle screen or a lossy one.
 
 | Metric | Group | What is measured | Budget | Worst | Tolerance |
 | --- | --- | --- | --- | --- | --- |

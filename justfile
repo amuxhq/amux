@@ -260,13 +260,12 @@ parked-check:
 
 # Check the protocol models at their nightly bounds: each model's ignored
 # test, one test binary after another, every core each. Names of test
-# targets (`just models-nightly family`) narrow it to those models. On a
-# twelve-core Mac the models that finish take 3,362 s together (the README's
-# table) and the single daemon's peer runs past 4,000 s, so the whole run
-# takes over two hours: replication and the single daemon push it past the
-# bound, which leaves room for the rest on a machine busy with other work.
+# targets (`just models-nightly family`) narrow it to those models. The bound
+# leaves the nightly job, one model each on a four-core runner, a quarter of an
+# hour of its six for the build; the single daemon's peer alone took two hours
+# on the twelve-core Mac.
 models-nightly *TARGETS:
-    if [ "${1-}" = -- ]; then shift; fi; targets=--tests; [ $# -eq 0 ] || targets=$(printf -- '--test %s ' "$@"); {{bounded}} 4800 cargo test --locked -p models $targets -- --ignored --nocapture
+    if [ "${1-}" = -- ]; then shift; fi; targets=--tests; [ $# -eq 0 ] || targets=$(printf -- '--test %s ' "$@"); {{bounded}} 20700 cargo test --locked -p models $targets -- --ignored --nocapture
 
 # Walk the testnet's simulated stories by seed: every suite tests/catalog.toml
 # declares a simulated mode for, under TESTNET_MODE=simulated, a few seeds per

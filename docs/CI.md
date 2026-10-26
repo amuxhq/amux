@@ -177,10 +177,10 @@ waits for both before the suites run what was built. `mobile-check` is left
 to the iOS target check, which runs it on every push. None of it compares a
 photograph of the whole display, so it answers the same on any machine. The
 component snapshot batch runs under its own bound, sized by the rule above
-from a clean CI run: 144 s with only the examples marked to settle late
-waiting, so 300 s, and 487 s in the nightly captures run, where every one
-of the 230 pictures waits a quiet second (`--settle-all`, also used by
-every recording), so 800 s. The job uploads the component snapshot
+from the slowest clean CI run: 466 s with only the examples marked to settle
+late waiting (371 to 429 s is usual), so 700 s, and 629 s in the nightly
+captures run, where every picture waits a quiet second (`--settle-all`, also
+used by every recording), so 1000 s. The job uploads the component snapshot
 comparisons and the shipped-scope audit directory to the run, whether it
 passed or not.
 

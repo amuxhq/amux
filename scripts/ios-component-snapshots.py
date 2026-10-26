@@ -27,12 +27,11 @@ MISMATCH = "does not match reference"
 # Hang detector for one test-without-building batch (startup and every
 # example), sized by docs/CI.md's rule: the slowest clean run times 1.5,
 # rounded up to the hundred. An ordinary batch, where only the examples
-# marked to settle late wait, takes about 330 s on a CI runner for 416
-# examples (one cut off at 300 s had started in 37 s and drawn 379); one that
-# settles every example (--settle-all, and every recording) took 487 s in the
-# nightly captures run, whose test host took 180 s of that to start.
-BATCH_BOUND = 500
-SETTLED_BOUND = 800
+# marked to settle late wait, takes 371 to 429 s on a CI runner and 466 s at
+# the slowest seen; one that settles every example (--settle-all, and every
+# recording) took 629 s in the nightly captures run.
+BATCH_BOUND = 700
+SETTLED_BOUND = 1000
 # The same for a batch of review captures, every frosted example held 2.5 s
 # for its glass: 372 s for all of them on a local Mac.
 REVIEW_BOUND = 600

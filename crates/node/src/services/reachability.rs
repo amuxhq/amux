@@ -715,7 +715,8 @@ impl ForwardedDialer {
             }
             match tokio::time::timeout(DIRECT_LINK_ESTABLISHMENT_TIMEOUT, established).await {
                 Ok(Ok(Ok(_))) => {}
-                // The host refused the identity the ticket named.
+                // The host refused the identity the ticket named, or, the
+                // flight not resumed, this host's certificate.
                 Ok(Ok(Err(status))) if says_revoked(&status) => {
                     return Err(ChannelError::from(revoked(&context, peer)));
                 }
@@ -1074,17 +1075,13 @@ async fn establish_carrier(
     let failed = match tokio::time::timeout(DIRECT_LINK_ESTABLISHMENT_TIMEOUT, established_rx).await
     {
         Ok(Ok(Ok(host))) => return Ok((host, connector_task, abort_on_failure)),
-        // A dial resuming with a ticket whose key the host no longer pins.
+        // The host refused this one's certificate after the handshake, or
+        // the key a resumed dial's ticket named.
         Ok(Ok(Err(status))) if says_revoked(&status) => return Err(revoked(context, peer)),
         Ok(Ok(Err(status))) => status.to_string(),
         Ok(Err(_)) => "reachability Link task ended before establishment".to_owned(),
         Err(_) => "reachability Link establishment timed out".to_owned(),
     };
-    // The handshake seemed done, but the peer refused the certificate
-    // after it, as TLS 1.3 lets a server.
-    if native_carrier.close_reason() == Some(wire::pb::LinkCloseReason::UserRevoked) {
-        return Err(revoked(context, peer));
-    }
     Err(DialError::Failed(failed))
 }
 

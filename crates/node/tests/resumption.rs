@@ -27,7 +27,7 @@ fn lan(socket: Option<Arc<std::net::UdpSocket>>) -> node::EdgeOptions {
 /// desk's LAN listener, so the desk has given it a ticket.
 struct Linked {
     desk: Install,
-    _laptop: Install,
+    laptop: Install,
     desk_daemon: Option<Daemon>,
     /// The port a restarted desk listens on, held for as long as it runs.
     desk_socket: Option<Arc<std::net::UdpSocket>>,
@@ -53,7 +53,7 @@ impl Linked {
         let laptop_edge = laptop_runtime.edge().unwrap();
         let linked = Self {
             desk,
-            _laptop: laptop,
+            laptop,
             desk_daemon: Some(desk_daemon),
             desk_socket: None,
             old_port: None,
@@ -91,6 +91,26 @@ impl Linked {
                     Ok(0) => Err("none yet".to_owned()),
                     Ok(_) => Ok(()),
                     Err(status) => Err(status.to_string()),
+                }
+            }
+        })
+        .await
+        .unwrap();
+        // The desk's ticket follows the link's handshake on its own
+        // schedule; a test that resumes, or refuses a resumption, needs it
+        // on the laptop's disk first.
+        let desk_tickets = linked
+            .laptop
+            .profile_dir()
+            .join(node::CLIENT_TICKETS_DIR)
+            .join(desk_edge.host_id().to_string());
+        until("the laptop to keep a ticket from the desk", || {
+            let kept = tickets_beneath(&desk_tickets);
+            async move {
+                if kept > 0 {
+                    Ok(())
+                } else {
+                    Err("no ticket on disk".to_owned())
                 }
             }
         })
@@ -234,6 +254,24 @@ async fn a_host_resumed_with_a_ticket_for_a_key_no_longer_pinned_is_refused_as_r
     .await
     .unwrap();
     linked.stop().await;
+}
+
+/// How many ticket files are anywhere beneath `dir`.
+fn tickets_beneath(dir: &std::path::Path) -> usize {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| {
+            let path = entry.path();
+            if path.is_dir() {
+                tickets_beneath(&path)
+            } else {
+                usize::from(path.extension().is_some_and(|ext| ext == "ticket"))
+            }
+        })
+        .sum()
 }
 
 /// What the process logs of links and of the streams peers open, for a

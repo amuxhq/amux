@@ -68,8 +68,8 @@ pub(crate) const NO_PAIRING_WINDOW: &[u8] = b"no pairing window is open";
 /// A connection as far as the dispatcher takes it before serving it.
 enum Arrival {
     /// Resuming a session whose ticket names this key, its handshake
-    /// still finishing.
-    Resumed(quinn::Connection, Vec<u8>),
+    /// still finishing until the watch turns true.
+    Resumed(quinn::Connection, Vec<u8>, watch::Receiver<bool>),
     /// Through a full handshake.
     Full(quinn::Connection),
 }
@@ -264,14 +264,16 @@ impl TunnelDispatcher {
         if let Some(key) = resumed_key(&connection) {
             let timeout = self.handshake_timeout;
             let handshaking = connection.clone();
+            let (over, handshake) = watch::channel(false);
             tokio::spawn(async move {
                 let _permit = permit;
                 if tokio::time::timeout(timeout, handshaken).await.is_err() {
                     tracing::warn!(peer = %addr, "resumed QUIC handshake timed out");
                     handshaking.close(0_u32.into(), b"handshake timed out");
                 }
+                over.send_replace(true);
             });
-            return Some(Arrival::Resumed(connection, key));
+            return Some(Arrival::Resumed(connection, key, handshake));
         }
         let finished = self.finish_handshake(
             async {
@@ -347,8 +349,8 @@ impl TunnelDispatcher {
         let connection = match arrival {
             // The core decides the identity the ticket names, with the
             // host the Hello names, before anything on the link is served.
-            Arrival::Resumed(connection, key) => {
-                return serve(link_ctx()?.with_resumed(key), connection)
+            Arrival::Resumed(connection, key, handshake) => {
+                return serve(link_ctx()?.with_resumed(key, handshake), connection)
                     .await
                     .map_err(link_outcome);
             }

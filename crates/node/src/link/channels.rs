@@ -417,10 +417,18 @@ impl ChannelPool {
             let channel = match opened.iter().find(|(opened, ..)| *opened == class) {
                 Some((_, channel, ..)) => channel.clone(),
                 None => {
-                    let stream = carrier
-                        .open_stream()
-                        .await
-                        .map_err(|error| map_open_error(error, Route::Via(peer)))?;
+                    let stream = match carrier.open_stream().await {
+                        Ok(stream) => stream,
+                        // The link ended before its early calls went out:
+                        // why it ended (a host refusing the ticket, say) is
+                        // the dial's answer.
+                        Err(error) => {
+                            return Err(match established.await {
+                                Err(ended) => ended,
+                                Ok(_) => map_open_error(error, Route::Via(peer)),
+                            });
+                        }
+                    };
                     tracing::debug!(%peer, ?class, "opened an early link stream");
                     let ended = Arc::new(Ending::default());
                     let lifetime = Arc::new(CancellationToken::new());

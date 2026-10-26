@@ -231,9 +231,9 @@ pub struct LinkCtx {
     incoming_streams_tx: Option<mpsc::Sender<super::InboundStream>>,
     expected_peer: Option<HostId>,
     authenticated_peer: Option<HostId>,
-    /// The key a resumed handshake's ticket names, which no certificate
-    /// proved this time: the core decides it before the link answers.
-    resumed: Option<Vec<u8>>,
+    /// The session a resumed handshake picked up, whose key the core
+    /// decides before the link answers.
+    resumed: Option<Resumed>,
     link_role: LinkRole,
     acceptor_session: Option<LinkAuthSession>,
     authenticator: Option<Arc<dyn LinkTokenAuthenticator>>,
@@ -246,6 +246,16 @@ pub struct LinkCtx {
     /// On a relay: the socket whose senders' addresses a paid host is told
     /// it is seen at.
     observes: Option<Arc<super::socket::LinkSocket>>,
+}
+
+/// A link resuming a session, served before its handshake has finished.
+#[derive(Clone)]
+struct Resumed {
+    /// The key the session's ticket names, which no certificate proved
+    /// this time.
+    key: Vec<u8>,
+    /// Whether the connection's handshake is over.
+    handshaken: watch::Receiver<bool>,
 }
 
 pub(crate) type LinkConnectorCtx = LinkCtx;
@@ -309,8 +319,9 @@ impl LinkCtx {
     /// The link resumed a session whose ticket names `key`. Its peer is the
     /// host its Hello names, and the core decides whether that host's pin
     /// is `key` before the link answers the Hello or serves a stream.
-    pub(crate) fn with_resumed(mut self, key: Vec<u8>) -> Self {
-        self.resumed = Some(key);
+    /// `handshaken` turns true once the connection's handshake is over.
+    pub(crate) fn with_resumed(mut self, key: Vec<u8>, handshaken: watch::Receiver<bool>) -> Self {
+        self.resumed = Some(Resumed { key, handshaken });
         self
     }
 
@@ -408,33 +419,53 @@ pub async fn run_link(
     let ((peer_host, peer_instance), peer_neighbors, snapshot) = match role {
         crate::routing::ConnectRole::Connector => {
             let snapshot = neighbor_snapshot(&ctx, carrier.as_ref()).await;
-            write_message(&mut sink, &connector_hello(&ctx, &snapshot, &own)).await?;
-            tracing::debug!(path = %carrier.path_stats(), "sent Hello");
-            let first = read_first(&mut source, "HelloAck").await?;
-            tracing::debug!(path = %carrier.path_stats(), "received the first message after Hello");
-            if let Some(wire::pb::message::Body::LinkClose(close)) = first.body.as_ref() {
-                let status = link_close_status(close).unwrap_or_else(|| {
-                    // The host refused the identity a resumed handshake's
-                    // ticket named: it no longer trusts this one.
-                    if close.reason == wire::pb::LinkCloseReason::UserRevoked as i32 {
-                        return super::ChannelError::Revoked.status();
+            let answered = async {
+                write_message(&mut sink, &connector_hello(&ctx, &snapshot, &own)).await?;
+                tracing::debug!(path = %carrier.path_stats(), "sent Hello");
+                let first = read_first(&mut source, "HelloAck").await?;
+                tracing::debug!(path = %carrier.path_stats(), "received the first message after Hello");
+                if let Some(wire::pb::message::Body::LinkClose(close)) = first.body.as_ref() {
+                    let status = link_close_status(close).unwrap_or_else(|| {
+                        // The host refused the identity a resumed handshake's
+                        // ticket named: it no longer trusts this one.
+                        if close.reason == wire::pb::LinkCloseReason::UserRevoked as i32 {
+                            return super::ChannelError::Revoked.status();
+                        }
+                        tonic::Status::unavailable("link closed during authentication")
+                    });
+                    return Err(status.into());
+                }
+                let frame = first.body.clone();
+                match handshake.receive(first) {
+                    Ok(ConnectHandshakeEvent::Accepted(accepted)) => {
+                        let (peer, neighbors, runtime_instance) =
+                            accept_peer_hello_ack(&ctx, accepted).map_err(protocol_status)?;
+                        Ok((frame, (peer, runtime_instance), neighbors))
                     }
-                    tonic::Status::unavailable("link closed during authentication")
-                });
-                return Err(status.into());
-            }
-            peer_frame = first.body.clone();
-            match handshake.receive(first) {
-                Ok(ConnectHandshakeEvent::Accepted(accepted)) => {
-                    let (peer, neighbors, runtime_instance) =
-                        accept_peer_hello_ack(&ctx, accepted).map_err(protocol_status)?;
-                    ((peer, runtime_instance), neighbors, snapshot)
+                    Ok(ConnectHandshakeEvent::Rejected(error)) => {
+                        Err(protocol_status(error).into())
+                    }
+                    Ok(_) => Err(tonic::Status::invalid_argument("expected HelloAck").into()),
+                    Err(error) => Err(tonic::Status::invalid_argument(error.to_string()).into()),
                 }
-                Ok(ConnectHandshakeEvent::Rejected(error)) => {
-                    return Err(protocol_status(error).into());
+            };
+            match answered.await {
+                Ok((frame, peer, neighbors)) => {
+                    peer_frame = frame;
+                    (peer, neighbors, snapshot)
                 }
-                Ok(_) => return Err(tonic::Status::invalid_argument("expected HelloAck").into()),
-                Err(error) => return Err(tonic::Status::invalid_argument(error.to_string()).into()),
+                // A host that no longer trusts this one can say so by its
+                // connection's end rather than a LinkClose: refusing this
+                // host's certificate after a handshake that seemed done (as
+                // TLS 1.3 lets a server), or closing a resumed link whose
+                // close outran its LinkClose. Either way the end carries the
+                // revocation, and every dial reads it here.
+                Err(_)
+                    if carrier.close_reason() == Some(wire::pb::LinkCloseReason::UserRevoked) =>
+                {
+                    return Err(super::ChannelError::Revoked.status().into());
+                }
+                Err(error) => return Err(error),
             }
         }
         crate::routing::ConnectRole::Acceptor => {
@@ -707,7 +738,10 @@ async fn run_established(
         link: link.core(),
         peer: core_host(peer_host.id),
         kind: carrier_tag,
-        resumed: ctx.resumed.clone().map(daemon_core::payload::PublicKey),
+        resumed: ctx
+            .resumed
+            .as_ref()
+            .map(|resumed| daemon_core::payload::PublicKey(resumed.key.clone())),
     };
     match held_ack {
         None => ctx.report(up),
@@ -725,6 +759,14 @@ async fn run_established(
                     peer = %peer_host.id,
                     "refused a resumed link: its ticket names a key not pinned for its peer"
                 );
+                // A close sent while the handshake is finishing goes out in
+                // handshake packets too, where QUIC strips its reason, and
+                // the peer reads that one first: it would hear only that
+                // its connection was lost, perhaps before the LinkClose.
+                // Once the handshake is over the close says why.
+                if let Some(resumed) = &ctx.resumed {
+                    let _ = resumed.handshaken.clone().wait_for(|over| *over).await;
+                }
                 let _ = write_message(
                     &mut sink,
                     &link_close(wire::pb::LinkCloseReason::UserRevoked),

@@ -732,16 +732,17 @@ final class ChatModelTests: XCTestCase {
     /// goes back to the draft, which the phone keeps on the device. So the
     /// kept draft carries the held prompt's words from the moment it is
     /// held, beside what is typed after it, and drops them once the prompt
-    /// is released and sent.
-    func testAHeldPromptIsKeptInTheDraftUntilItIsSent() async {
+    /// is released and sent. The prompt is held as the host's frame says, which
+    /// is all the model reads; how a send comes to be held is the source's.
+    func testAHeldPromptIsKeptInTheDraftUntilItIsSent() {
         let source = FakeChat(rows: [], frame: frame())
-        source.holdsSends = true
         let model = ChatModel(source: source)
         var kept: [Draft] = []
         model.keeping = { kept.append($0) }
-        model.draft = "Run the tests."
-        model.send()
-        await settle()
+        source.drafts[[1]] = Draft(words: "Run the tests.", attachments: [])
+        source.current.underway.append(
+            SentPrompt(inputId: [1], text: [.text("Run the tests.")], lands: .feed, underway: .held))
+        source.pending.session = true
         source.deliver(to: model)
         XCTAssertEqual(model.draft, "", "the composer is free for the next prompt")
         XCTAssertEqual(kept.last?.words, "Run the tests.", "the held prompt is kept in the draft")

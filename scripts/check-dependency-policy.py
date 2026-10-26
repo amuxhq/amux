@@ -167,7 +167,7 @@ SUPPORT_ALLOWED_LOCAL = {
 # fork carrying the amux patch (docs/ARCHITECTURE.md, "The rustls patch")
 # at whatever commit the lockfile pins.
 CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
-GIT_SOURCES = {"rustls": "git+https://github.com/jordanwebster/rustls?rev="}
+GIT_SOURCES = {"rustls": "git+https://github.com/amuxhq/rustls?rev="}
 
 
 def source_failures() -> list[str]:

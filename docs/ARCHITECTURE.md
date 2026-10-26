@@ -676,7 +676,7 @@ rustls 0.23 cannot save a client's TLS 1.3 session ticket, so a process
 that starts again (the phone above all, which the system ends between
 launches) would begin every link with a full handshake and send nothing
 early. The workspace takes rustls from a fork,
-[`jordanwebster/rustls`](https://github.com/jordanwebster/rustls), through
+[`amuxhq/rustls`](https://github.com/amuxhq/rustls), through
 one `[patch.crates-io]` line in `Cargo.toml`. The maintained diff is the
 branch `amux/<version>`: the rustls release named in its `.amux-base` file
 plus two commits:

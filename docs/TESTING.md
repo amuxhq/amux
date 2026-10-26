@@ -173,7 +173,7 @@ just test-crate interpret -- --test codex  # one crate, then Cargo arguments
 just test-store                            # the store's reader and writer suite, retention and SQLite file
 just test-ui                               # the client model spec
 just test-tui                              # terminal presentation and goldens
-just offline-test                          # workspace tests with isolated config and no network
+just offline-test                          # workspace tests with isolated config and no network (Linux, sudo)
 just journey terminal reach-host           # one terminal journey
 just journey terminal all                  # every terminal story, one line each, keeps going after a failure
 just journey system survive-daemon         # the built binaries' system journey

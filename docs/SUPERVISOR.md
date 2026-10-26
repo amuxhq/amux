@@ -214,7 +214,7 @@ supervisor installs it only when all of these hold:
 
 - the version is newer than the running one; updates only move forward;
 - it is not the build this machine rolled back (see below), unless the check
-  came from `amux update`;
+  came from `amux update --retry`;
 - the host is inside the manifest's `rollout` percentage, if it has one. A
   host's place is fixed: SHA-256 of its first profile's host id, mod 100,
   compared with the percentage. A host with no id yet waits for a full
@@ -252,7 +252,11 @@ running · restart to update` on the fleet screen.
 
 **`amux update`** prints `Installing amux <version>.`, then waits up to three
 minutes for the new daemon to report that version and prints `amux <version>
-is running.` Without a supervisor it prints that updates on this install are
+is running.` If the supervisor rolls the build back instead, which `amux
+update` sees as `amux.rejected` beside its own binary changing to name that
+version, it fails saying the build did not start, which version the
+supervisor put back, where the log is, and that `amux update --retry` tries
+it again. Without a supervisor it prints that updates on this install are
 deploys and does nothing. A build that trusts no release key answers every
 check with `this build trusts no release key, so it installs nothing`.
 
@@ -270,7 +274,8 @@ progress.
   the rejected build's version to `amux.rejected`, syncs it, then renames
   `amux.prev` back over the install path and starts it at once.
 - The hourly check skips the version in `amux.rejected` until the channel
-  names a different one. `amux update` ignores it and tries that build again.
+  names a different one, and so does `amux update`, which says the build was
+  rolled back here. `amux update --retry` tries that build again.
 
 The order of the last two writes matters. A crash between them leaves a
 rejected version equal to the installed binary with `amux.prev` present, which
@@ -336,7 +341,7 @@ logged and leaves the machine free to sleep, which is no worse than
 | Where | What it shows |
 | --- | --- |
 | [`crates/node/tests/supervisor.rs`](../crates/node/tests/supervisor.rs) | The real supervisor driving a stand-in binary (`fake-amux`) whose daemon mode is scripted per version, against a local manifest server, with releases signed by the test key. Restart on every exit and stop on request; install a newer signed release and exec it keeping pid, child, pipe and lock; refuse a bad hash or signature; roll back after K starts that never prepare and skip the rejected build; stop a daemon that hangs before `prepared` at the start deadline; restart without rollback after `go`; kill at the stop deadline; the three recovery cases above; the real `amux daemon` exiting when its supervisor dies; rollout and version choice. |
-| [`crates/amux/tests/supervise_cli.rs`](../crates/amux/tests/supervise_cli.rs) | The CLI around it, with the real binary: login units matching their goldens, `amux init` writing and registering one, stop going to the supervisor first or to the daemon when there is none, a client starting the supervisor only where the install has one, the sleep assertion under `keep_awake` (macOS), `amux config channel`, and `amux update` installing a build this machine had rolled back. |
+| [`crates/amux/tests/supervise_cli.rs`](../crates/amux/tests/supervise_cli.rs) | The CLI around it, with the real binary: login units matching their goldens, `amux init` writing and registering one, stop going to the supervisor first or to the daemon when there is none, a client starting the supervisor only where the install has one, the sleep assertion under `keep_awake` (macOS), `amux config channel`, and `amux update` reporting a build that never started and leaving it alone after, and `amux update --retry` installing a build this machine had rolled back. |
 | [`crates/amux/tests/overlap.rs`](../crates/amux/tests/overlap.rs) | Releases overlapping on one machine. Agents started by the previous build work on after an update; a terminal client of the previous build keeps working and names the newer daemon; the previous build reopens and works in a store the new build migrated before it was killed ahead of `prepared`; restarting the generated LaunchAgent under a running turn leaves the agent running. "The previous build" is a copy of the build under test re-stamped one version lower (`node::release::restamp`). |
 | [`crates/amux/tests/process.rs`](../crates/amux/tests/process.rs) | A daemon killed mid-turn loses nothing: agents finish without it and the next daemon adopts them. |
 

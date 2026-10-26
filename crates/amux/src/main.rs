@@ -175,9 +175,12 @@ enum Command {
         #[arg(long, hide = true)]
         dry_run: bool,
     },
-    /// Ask the supervisor to install the channel's release now, even one
-    /// that was rolled back here.
-    Update,
+    /// Ask the supervisor to install the channel's release now.
+    Update {
+        /// Install it even if it was rolled back here.
+        #[arg(long)]
+        retry: bool,
+    },
     /// Change a setting.
     Config {
         #[command(subcommand)]
@@ -394,7 +397,7 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                 )
                 .await
             }
-            Command::Update => setup::update(&config).await,
+            Command::Update { retry } => setup::update(&config, retry).await,
             Command::Server {
                 command: ServerCommand::Start { .. },
             } => server::start(&config, config_path.as_deref()).await,

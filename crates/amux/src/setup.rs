@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, bail};
 use node::supervisor::login::LoginItem;
-use node::supervisor::{Request, ask};
+use node::supervisor::{Files, Request, ask};
 use settings::{Channel, InstallationConfig, Switch};
 use wire::Empty;
 
@@ -213,9 +213,10 @@ fn words(words: &[&str]) -> Vec<String> {
     words.iter().map(|word| (*word).to_owned()).collect()
 }
 
-/// `amux update`: asks the supervisor to check the channel now, ignoring a
-/// rolled-back build, and waits for a build it installs to answer.
-pub async fn update(config: &InstallationConfig) -> Result<()> {
+/// `amux update`: asks the supervisor to check the channel now (with
+/// `retry`, a build rolled back here too), and waits for a build it
+/// installs to answer, or for the supervisor to roll it back.
+pub async fn update(config: &InstallationConfig, retry: bool) -> Result<()> {
     if config.supervisor == Switch::Off {
         println!(
             "This install has no supervisor, so updates are deploys: install the new build \
@@ -226,7 +227,16 @@ pub async fn update(config: &InstallationConfig) -> Result<()> {
     if running_supervisor(&config.root)?.is_none() {
         bail!("amux supervise is not running; `amux server start` starts it");
     }
-    let answer = ask(&config.root, Request::Check, CHECK_PATIENCE)
+    // The supervisor records a rollback beside the binary it runs, which
+    // is this one wherever amux was installed by its installer.
+    let files = Files::beside(&std::env::current_exe().context("finding the amux binary")?);
+    let recorded = rejection(&files);
+    let request = if retry {
+        Request::Retry
+    } else {
+        Request::Check
+    };
+    let answer = ask(&config.root, request, CHECK_PATIENCE)
         .await
         .context("asking amux supervise to check for a release")?;
     let Some(version) = answer.strip_prefix("installing ") else {
@@ -235,15 +245,39 @@ pub async fn update(config: &InstallationConfig) -> Result<()> {
     };
     println!("Installing amux {version}.");
     let deadline = Instant::now() + RESTART_PATIENCE;
+    let mut rolled_back = false;
     while Instant::now() < deadline {
-        if let Some(door) = connect::front_door_now(config).await
-            && let Ok(info) = connect::installation(door).get_info(Empty {}).await
-            && info.get_ref().version == version
-        {
+        let running = match connect::front_door_now(config).await {
+            Some(door) => connect::installation(door)
+                .get_info(Empty {})
+                .await
+                .ok()
+                .map(|info| info.into_inner().version),
+            None => None,
+        };
+        if running.as_deref() == Some(version) {
             println!("amux {version} is running.");
             return Ok(());
         }
+        rolled_back = rolled_back
+            || rejection(&files)
+                .is_some_and(|now| Some(&now) != recorded.as_ref() && now.0 == version);
+        // The build put back is up once a daemon answers.
+        if rolled_back && let Some(running) = running {
+            bail!(
+                "amux {version} did not start, so the supervisor put amux {running} back. \
+                 Its log is {}; `amux update --retry` tries {version} again.",
+                config.root.join(SUPERVISOR_LOG).display()
+            );
+        }
         tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    if rolled_back {
+        bail!(
+            "amux {version} did not start, so the supervisor is putting the previous build \
+             back. Its log is {}.",
+            config.root.join(SUPERVISOR_LOG).display()
+        );
     }
     println!(
         "amux {version} has not come up yet. If it never does, the supervisor puts the \
@@ -251,6 +285,16 @@ pub async fn update(config: &InstallationConfig) -> Result<()> {
         config.root.join(SUPERVISOR_LOG).display()
     );
     Ok(())
+}
+
+/// The build the supervisor last rolled back, with when it was recorded,
+/// so a rollback of the same build again still reads as new.
+fn rejection(files: &Files) -> Option<(String, std::time::SystemTime)> {
+    let version = files.rejected()?.to_string();
+    let recorded = std::fs::metadata(&files.rejected)
+        .and_then(|metadata| metadata.modified())
+        .ok()?;
+    Some((version, recorded))
 }
 
 /// The supervisor's answer as a sentence.

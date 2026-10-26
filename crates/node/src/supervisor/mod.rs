@@ -416,7 +416,8 @@ impl Driver {
         core::Input::Asked {
             ask,
             request: match asked.request {
-                Request::Check => core::Request::Check,
+                Request::Check => core::Request::Check { retry: false },
+                Request::Retry => core::Request::Check { retry: true },
                 Request::Stop => core::Request::Stop,
             },
         }

@@ -36,8 +36,20 @@ pub async fn exchange_over_ssh(
 ) -> Result<PairingIdentity, SshPairingError> {
     let mut io = crate::transport::spawn_ssh_pair_recv(target)
         .map_err(|error| SshPairingError::Transport(error.to_string()))?;
-    write_ssh_identity(&mut io, own).await?;
-    read_ssh_identity(&mut io).await
+    let stderr = io.take_stderr();
+    let traded = async {
+        write_ssh_identity(&mut io, own).await?;
+        read_ssh_identity(&mut io).await
+    }
+    .await;
+    match traded {
+        Ok(peer) => Ok(peer),
+        // A session that ends early shows here as a bare end of stream; what
+        // ssh or the far end said is the useful part.
+        Err(error) => Err(SshPairingError::Transport(
+            crate::transport::with_said(format!("{error} (over SSH to {target})"), stderr).await,
+        )),
+    }
 }
 
 /// This process's stdin and stdout as one stream: what SSH gives the

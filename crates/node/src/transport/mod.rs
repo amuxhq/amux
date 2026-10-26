@@ -20,7 +20,7 @@ pub use relay_tls::{
     create_tls_acceptor, relay_quic_server_config, relay_quic_server_config_from_der,
 };
 pub(crate) use single_io::channel_from_single_io;
-pub(crate) use ssh::{spawn_ssh_pair_recv, spawn_ssh_relay};
+pub(crate) use ssh::{spawn_ssh_pair_recv, spawn_ssh_relay, with_said};
 pub(crate) use tcp::tcp_incoming;
 use thiserror::Error;
 pub use tls::relay_quic_client_config_with_roots;

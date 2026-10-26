@@ -145,7 +145,11 @@ public enum DoorRequest: Sendable, Equatable {
     /// app's own to write — a driver on the Mac reads it back out of the
     /// app's container.
     case capture(path: String)
-    case tap(identifier: String)
+    /// Press the element named `identifier`. With `after`, the element is
+    /// found and the screen held still first, and the press waits that many
+    /// seconds more, so a measurement begun meanwhile sees the app's answer
+    /// to the press and none of the driver's search for it.
+    case tap(identifier: String, after: Double? = nil)
     /// Activate the item reading `label` in what the system presented over
     /// the app, a dialog or a menu, whose items carry no names of their own.
     case choose(label: String)
@@ -604,7 +608,7 @@ extension DoorRequest: Codable {
     private enum Key: String, CodingKey {
         case kind, screen, fixture, cloud, store, relay, token, user, appearance, size, path
         case account, refresh, saying
-        case identifier, text, seconds, qr, agent, base, prose, from, to
+        case identifier, text, seconds, after, qr, agent, base, prose, from, to
         case attachment, name, mime, base64, host, pin
         case note, marks
         case motion, transparency, on
@@ -682,7 +686,9 @@ extension DoorRequest: Codable {
         case "capture":
             self = .capture(path: try fields.decode(String.self, forKey: .path))
         case "tap":
-            self = .tap(identifier: try fields.decode(String.self, forKey: .identifier))
+            self = .tap(
+                identifier: try fields.decode(String.self, forKey: .identifier),
+                after: try fields.decodeIfPresent(Double.self, forKey: .after))
         case "choose":
             self = .choose(label: try fields.decode(String.self, forKey: .label))
         case "perform":
@@ -864,9 +870,10 @@ extension DoorRequest: Codable {
         case .capture(let path):
             try fields.encode("capture", forKey: .kind)
             try fields.encode(path, forKey: .path)
-        case .tap(let identifier):
+        case .tap(let identifier, let after):
             try fields.encode("tap", forKey: .kind)
             try fields.encode(identifier, forKey: .identifier)
+            try fields.encodeIfPresent(after, forKey: .after)
         case .choose(let label):
             try fields.encode("choose", forKey: .kind)
             try fields.encode(label, forKey: .label)

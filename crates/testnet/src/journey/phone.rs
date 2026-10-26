@@ -1216,35 +1216,16 @@ impl PhoneJourney {
     }
 
     pub(crate) fn app_within(&self, request: Value, timeout: Duration) -> Result<Value, AppError> {
-        let unreachable =
-            |error: std::io::Error| AppError::Unreachable(format!("the app's door: {error}"));
-        let address = match &self.phone {
+        ask(self.door(), &request, timeout)
+    }
+
+    /// Where the app's door listens, for a request made off this driver's
+    /// thread.
+    pub(crate) fn door(&self) -> SocketAddr {
+        match &self.phone {
             Some(phone) => phone.door(self.port),
             None => SocketAddr::from(([127, 0, 0, 1], self.port)),
-        };
-        let mut stream = TcpStream::connect_timeout(&address, timeout).map_err(unreachable)?;
-        stream
-            .set_read_timeout(Some(timeout))
-            .map_err(unreachable)?;
-        writeln!(stream, "{request}").map_err(unreachable)?;
-        let mut line = String::new();
-        BufReader::new(&stream)
-            .read_line(&mut line)
-            .map_err(unreachable)?;
-        if line.is_empty() {
-            return Err(AppError::Refused(format!(
-                "the app's door closed on {request}"
-            )));
         }
-        let reply: Value = serde_json::from_str(&line)
-            .map_err(|error| AppError::Unreachable(format!("the app's reply: {error}: {line}")))?;
-        if reply["kind"] == "error" {
-            return Err(AppError::Refused(format!(
-                "the app refused {request}: {}",
-                reply["message"].as_str().unwrap_or_default()
-            )));
-        }
-        Ok(reply)
     }
 
     pub(crate) fn query(&self) -> Result<Value, String> {
@@ -1796,6 +1777,41 @@ fn truthy(value: &Value) -> bool {
 /// the links' and streams' debug lines.
 fn rust_log() -> String {
     std::env::var("RUST_LOG").unwrap_or_else(|_| RUST_LOG.to_owned())
+}
+
+/// One request to the app's door at `address` and its reply. The door
+/// answers each connection on a thread of its own, so a request that waits
+/// (a measurement) does not hold up another made meanwhile.
+pub(crate) fn ask(
+    address: SocketAddr,
+    request: &Value,
+    timeout: Duration,
+) -> Result<Value, AppError> {
+    let unreachable =
+        |error: std::io::Error| AppError::Unreachable(format!("the app's door: {error}"));
+    let mut stream = TcpStream::connect_timeout(&address, timeout).map_err(unreachable)?;
+    stream
+        .set_read_timeout(Some(timeout))
+        .map_err(unreachable)?;
+    writeln!(stream, "{request}").map_err(unreachable)?;
+    let mut line = String::new();
+    BufReader::new(&stream)
+        .read_line(&mut line)
+        .map_err(unreachable)?;
+    if line.is_empty() {
+        return Err(AppError::Refused(format!(
+            "the app's door closed on {request}"
+        )));
+    }
+    let reply: Value = serde_json::from_str(&line)
+        .map_err(|error| AppError::Unreachable(format!("the app's reply: {error}: {line}")))?;
+    if reply["kind"] == "error" {
+        return Err(AppError::Refused(format!(
+            "the app refused {request}: {}",
+            reply["message"].as_str().unwrap_or_default()
+        )));
+    }
+    Ok(reply)
 }
 
 #[cfg(test)]

@@ -36,7 +36,7 @@ use serde_json::{Value, json};
 
 use super::device::{self, Phone};
 use super::phone::{
-    BUNDLE_ID, Launch, Launcher, PhoneJourney, SCRATCH_DIR, Setup, Target, golden_device,
+    BUNDLE_ID, Launch, Launcher, PhoneJourney, SCRATCH_DIR, Setup, Target, ask, golden_device,
 };
 use super::root;
 use crate::door::Control;
@@ -73,6 +73,8 @@ const PHONES: &[EnrolledPhone] = &[EnrolledPhone {
         ("reconciliation at 0 ms", 60.0, None),
         ("reconciliation at 100 ms", 283.0, None),
         ("reconciliation through the relay at 100 ms", 513.0, None),
+        ("opening hitch time", 120.0, None),
+        ("opening main-thread CPU", 25.0, None),
         ("streaming hitch time", 5.0, None),
         ("streaming main-thread CPU", 60.0, None),
         ("streaming footprint", 100.0, None),
@@ -122,6 +124,9 @@ const STREAM_AGENT: &str = "stream";
 const ACCOUNT: &str = "ada";
 const STREAM_SECONDS: f64 = 20.0;
 const IDLE_SECONDS: f64 = 5.0;
+/// How long a chat's opening is watched from just before the tap: the
+/// push, the transcript's first build and its settling.
+const OPENING_SECONDS: f64 = 2.5;
 const LATENCIES_MS: [u64; 2] = [0, 100];
 /// A machine admits ten QUIC handshakes a minute from one address (its
 /// guard against a flood), and every launch here is one handshake to each
@@ -140,6 +145,7 @@ const LAUNCH_TRACE_SECONDS: f64 = 12.0;
 pub(crate) enum Group {
     Cold,
     Reconciliation,
+    Opening,
     Streaming,
     Idle,
 }
@@ -149,6 +155,7 @@ impl Group {
         match self {
             Group::Cold => "cold",
             Group::Reconciliation => "reconciliation",
+            Group::Opening => "opening",
             Group::Streaming => "streaming",
             Group::Idle => "idle",
         }
@@ -252,6 +259,28 @@ const BUDGETS: &[Budget] = &[
         "ms",
         Group::Reconciliation,
         566.0,
+        None,
+        Some(15),
+    ),
+    // Opening a chat whose agent is working, from home. The push is played
+    // by the render server, but the main thread spends about 200 ms building
+    // and laying out the page and its first rows, and the display link's
+    // hitch time is that stall: anything the main thread animates stops for
+    // it. The first measurement read 78 ms/s and 12.5%; the ceiling holds a
+    // stall half as long again.
+    budget(
+        "opening hitch time",
+        "ms/s",
+        Group::Opening,
+        120.0,
+        None,
+        None,
+    ),
+    budget(
+        "opening main-thread CPU",
+        "%",
+        Group::Opening,
+        20.0,
         None,
         Some(15),
     ),
@@ -878,6 +907,68 @@ impl Run {
         Ok(())
     }
 
+    /// The working agent's chat opened from home and left again, five
+    /// times: what the display missed and the main thread spent over the
+    /// opening. The door finds the row and holds the screen still, then
+    /// presses it `PRESS_AFTER` later; the measurement starts in between, on
+    /// the driver's own connection while the press waits on another, so it
+    /// sees the app's answer to the press and none of the driver's search.
+    /// One opening first is not measured: the first press of a process
+    /// starts UIKit's accessibility machinery, which a person's finger never
+    /// does. Element frames are reported throughout, since a page only
+    /// reports what it was built reporting and the driver needs the chat's
+    /// back button; that cost is in every sample alike.
+    fn openings(&mut self) -> Result<(), String> {
+        const PRESS_AFTER: f64 = 0.6;
+        let row = format!("home.row.{}", self.journey.agent_id(STREAM_AGENT));
+        self.journey.geometry(true)?;
+        self.journey.tab("Agents")?;
+        for attempt in 0..=SAMPLES {
+            self.journey.wait_for(&[&row])?;
+            std::thread::sleep(Duration::from_secs(2));
+            if attempt == 0 {
+                self.journey.tap(&row)?;
+                self.journey.wait_for(&["chat.field"])?;
+                self.journey.tap("chat.back")?;
+                continue;
+            }
+            let profiler = if self.traces(Group::Opening) {
+                Some(self.start_profiler(OPENING_SECONDS + 4.0, Watch::App)?)
+            } else {
+                None
+            };
+            let door = self.journey.door();
+            let press = json!({"kind": "tap", "identifier": row, "after": PRESS_AFTER});
+            let pressing = std::thread::spawn(move || ask(door, &press, Duration::from_secs(30)));
+            // The door's search is done well inside this, and the press is
+            // still to come.
+            std::thread::sleep(Duration::from_secs_f64(PRESS_AFTER / 2.0));
+            let measurement = self.measure(OPENING_SECONDS)?;
+            pressing
+                .join()
+                .map_err(|_| "the opening's press panicked".to_owned())??;
+            if let Some(profiler) = profiler {
+                self.finish_profiler(profiler)?;
+            }
+            self.journey.wait_for(&["chat.field"])?;
+            self.journey.tap("chat.back")?;
+            let hitch = measurement["hitchMsPerS"].as_f64().unwrap_or_default();
+            let cpu = measurement["mainThreadCpuPercent"]
+                .as_f64()
+                .unwrap_or_default();
+            let frames = measurement["frames"].as_f64().unwrap_or_default();
+            self.sample("opening hitch time", hitch);
+            self.sample("opening main-thread CPU", cpu);
+            self.note(format!(
+                "opening {attempt}: {frames} frames, hitch {hitch:.2} ms/s, main thread {cpu:.1}% over {OPENING_SECONDS} s"
+            ));
+        }
+        // Left on: the conversation is opened next, by a tap that needs
+        // frames, and a page shown while they were switched off and on again
+        // reports none.
+        Ok(())
+    }
+
     /// Home with nothing arriving, after the same settle: what the main
     /// thread costs while somebody looks at a fleet whose agents work.
     fn idle_home(&mut self) -> Result<(), String> {
@@ -1171,13 +1262,16 @@ impl Run {
             self.relay_launches(LATENCIES_MS[LATENCIES_MS.len() - 1])?;
             self.come_home()?;
         }
-        if self.takes(Group::Idle) || self.takes(Group::Streaming) {
+        if self.takes(Group::Idle) || self.takes(Group::Opening) || self.takes(Group::Streaming) {
             self.journey.quit()?;
             self.space_launches();
             self.relaunch()?;
             self.await_reconciled(Duration::from_secs(120))?;
             if self.takes(Group::Idle) {
                 self.idle_home()?;
+            }
+            if self.takes(Group::Opening) {
+                self.openings()?;
             }
             self.open_the_conversation()?;
             self.check_condition("before idle and streaming")?;

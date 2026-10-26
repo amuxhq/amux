@@ -50,6 +50,7 @@ final class DoorTests: XCTestCase {
             .query,
             .capture(path: "/tmp/home.png"),
             .tap(identifier: "home.row.aurora"),
+            .tap(identifier: "home.row.aurora", after: 0.6),
             .choose(label: "Rename"),
             .perform(identifier: "review.line.0.0.2", action: "Select line"),
             .type(identifier: "composer.field", text: "hello"),

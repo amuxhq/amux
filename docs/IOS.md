@@ -384,7 +384,10 @@ loopback, one request per line, defined in `AmuxTestSupport/Door.swift`. The
 door drives the running app itself. It never opens a screen with invented
 state behind it; every picture it takes is of the app. `query` returns what
 is drawn, with accessibility identifiers, labels, values, frames and enabled
-states; `tap`, `type`, `paste` and `scroll` act the way a finger does;
+states; `tap`, `type`, `paste` and `scroll` act the way a finger does, and
+`tap` with `after` finds its element and holds the screen still first, then
+presses that many seconds later, so a measurement begun meanwhile sees only
+the app's answer;
 `search` makes the system search field on show hold some text, since that
 field takes no name from the screen; `choose` picks an item by its title
 from a dialog or a menu the system drew, whose items carry no names;

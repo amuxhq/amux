@@ -252,6 +252,8 @@ the phone, rather than reporting a number about an idle screen.
 | `reconciliation at 0 ms` | reconciliation | From that point to the first presented frame after every trusted machine's agents were current with the machine, over loopback | 250 ms | | 15% |
 | `reconciliation at 100 ms` | reconciliation | The same, with every gate holding each packet 100 ms | 336 ms | | 15% |
 | `reconciliation through the relay at 100 ms` | reconciliation | The same, the phone away from home: signed in to the machines' account at the served relay, every direct dial lost, and every way to the relay, the phone's and each machine's, holding each packet 100 ms | 566 ms | | 15% |
+| `opening hitch time` | opening | Missed frame time per second from just before a tap on the working agent's row on home until 2.5 s later: the chat's push, its transcript's first build and its activity line starting. The push is the render server's; what this counts is the main thread's stall building the page, during which nothing it animates moves | 120 ms/s | | ceiling only |
+| `opening main-thread CPU` | opening | The main thread's share of one core over the same 2.5 s | 20 % | | 15% |
 | `streaming hitch time` | streaming | Missed frame time per second while fifty rows a second arrive for twenty seconds into the conversation on screen, resting at its tail | 5 ms/s | | ceiling only |
 | `streaming main-thread CPU` | streaming | The main thread's share of one core over the same stream | 60 % | | 15% |
 | `streaming footprint` | streaming | The process's footprint at the end of the stream | 120 MB | | 10% |
@@ -314,7 +316,7 @@ trips into a resumed link, one after the catch-up. The run keeps each launch ope
 seconds apart, as a person looking at their fleet does; quit as soon as the fleet reconciled, every other launch
 found no ticket and paid a full handshake (839 ms through the relay).
 
-`--only cold|reconciliation|streaming|idle` takes one group, for working on it; `--baseline` needs a whole run, and
+`--only cold|reconciliation|opening|streaming|idle` takes one group, for working on it; `--baseline` needs a whole run, and
 judges it on the budgets alone, since the baseline it replaces is no reference for its own successor.
 `--trace <path>.trace` records an Instruments trace through the first sample of one group (`--during`, streaming
 unless named; `--template`, Time Profiler unless named), for finding where the main thread's time goes. On the
@@ -391,6 +393,8 @@ its baseline as a share. Units, groups and tolerances are the simulator's.
 | `reconciliation at 0 ms` | `iphone-14-pro` | 60 ms | |
 | `reconciliation at 100 ms` | `iphone-14-pro` | 283 ms | |
 | `reconciliation through the relay at 100 ms` | `iphone-14-pro` | 513 ms | |
+| `opening hitch time` | `iphone-14-pro` | 120 ms/s | |
+| `opening main-thread CPU` | `iphone-14-pro` | 25 % | |
 | `streaming hitch time` | `iphone-14-pro` | 5 ms/s | |
 | `streaming main-thread CPU` | `iphone-14-pro` | 60 % | |
 | `streaming footprint` | `iphone-14-pro` | 100 MB | |

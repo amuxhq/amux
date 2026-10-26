@@ -177,10 +177,10 @@ final class DoorHost {
         // page at its final place before it has slid there: acted on
         // mid-slide, a point aimed at a row in a rising sheet lands on what
         // the sheet is about to cover. So every action waits for stillness.
-        case .tap(let identifier):
+        case .tap(let identifier, let after):
             await still()
             await reveal(identifier)
-            return tap(identifier)
+            return await tap(identifier, after: after)
         case .choose(let label): await still(); return choose(label)
         case .perform(let identifier, let action): await still(); return perform(action, on: identifier)
         case .type(let identifier, let text): await still(); return type(text, into: identifier)
@@ -719,11 +719,12 @@ final class DoorHost {
         for _ in 0..<3 { await DoorFrames.next() }
     }
 
-    private func tap(_ identifier: String) -> DoorReply {
+    private func tap(_ identifier: String, after: Double? = nil) async -> DoorReply {
         guard let window = DoorWindow.current else { return .error("no window on screen") }
         guard let element = element(named: identifier, in: window) else {
             return .error("no element named \(identifier)")
         }
+        if let after { try? await Task.sleep(for: .seconds(after)) }
         // What VoiceOver does to a control, which is the one way to act on a
         // SwiftUI element from inside the process.
         if element.accessibilityActivate() { return .ack }

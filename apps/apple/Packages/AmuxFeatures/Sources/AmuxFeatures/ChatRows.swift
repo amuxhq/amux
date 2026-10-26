@@ -979,9 +979,14 @@ struct Prose: View {
 
     /// What is drawn: the parsed document, or in front of a camera, which
     /// cannot wait for the parse, the same document parsed on the spot.
+    /// The feed measures a row as photographed before placing its cell, so
+    /// a row arriving finds its text already parsed and draws it in its
+    /// first frame, rather than standing as an empty slot until its own
+    /// parse returns.
     private var blocks: [MarkdownBlock] {
         if parsed == markdown, let document { return document.blocks }
-        if photographed { return MarkdownDocument.parse(markdown).blocks }
+        if photographed { return ParsedMarkdown.parse(markdown).blocks }
+        if let recent = ParsedMarkdown.recent(markdown) { return recent.blocks }
         return document?.blocks ?? []
     }
 
@@ -998,15 +1003,46 @@ struct Prose: View {
         .tint(design.accent.color)
         .task(id: markdown) {
             let source = markdown
-            let document = await Task.detached(priority: .userInitiated) {
-                MarkdownDocument.parse(source)
-            }.value
+            let document = if let recent = ParsedMarkdown.recent(source) {
+                recent
+            } else {
+                await Task.detached(priority: .userInitiated) { ParsedMarkdown.parse(source) }.value
+            }
             guard !Task.isCancelled else { return }
             self.document = document
             parsed = source
         }
         .reported(
             "chat.prose.render", value: parsed == markdown || photographed ? "rendered" : "pending")
+    }
+}
+
+/// Documents parsed lately, by their markdown, so text parsed once (to
+/// measure its row, or by an earlier cell for the same row) is not parsed
+/// again to draw it.
+enum ParsedMarkdown {
+    private final class Parsed {
+        let document: MarkdownDocument
+        init(_ document: MarkdownDocument) { self.document = document }
+    }
+
+    /// Enough for every row a screen or two of the feed holds. NSCache
+    /// locks for itself, so it is read and filled from any thread.
+    private nonisolated(unsafe) static let parsed: NSCache<NSString, Parsed> = {
+        let cache = NSCache<NSString, Parsed>()
+        cache.countLimit = 64
+        return cache
+    }()
+
+    nonisolated static func recent(_ markdown: String) -> MarkdownDocument? {
+        parsed.object(forKey: markdown as NSString)?.document
+    }
+
+    nonisolated static func parse(_ markdown: String) -> MarkdownDocument {
+        if let recent = recent(markdown) { return recent }
+        let document = MarkdownDocument.parse(markdown)
+        parsed.setObject(Parsed(document), forKey: markdown as NSString)
+        return document
     }
 }
 

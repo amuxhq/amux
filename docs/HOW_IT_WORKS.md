@@ -151,7 +151,8 @@ other side:
 - **The phone:** scan the QR code with the camera, or choose the host in the
   app and type the PIN.
 - **Over SSH:** `amux pair user@host` pairs with the amux on that machine
-  through your SSH login, with no PIN; the SSH login is the proof.
+  through your SSH login, with no PIN; the SSH login is the proof. The other
+  machine needs a Unix shell, so a Windows host pairs by PIN instead.
 
 The PIN never crosses the network. Both hosts run a password-authenticated
 key exchange (SPAKE2) that proves each is talking to the machine in front of

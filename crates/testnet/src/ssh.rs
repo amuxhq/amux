@@ -1,16 +1,18 @@
 //! The net's stand-in for SSH. A daemon reaches a peer over SSH by running
-//! `ssh <target> amux relay --profile <id>` and carrying the link over its
-//! stdio; in a story `ssh` is `stand-in/ssh`, which this module puts first
-//! on the process's PATH. A target is a host's directory, holding a login
-//! the net writes when it makes the host: the far host's own `amux` against
-//! its own installation, so the relay joins the far daemon's link socket.
-//! No real SSH runs, and no network is crossed beyond the two sockets.
+//! `amux relay --profile <id>` on it through `ssh <target>` and carrying
+//! the link over its stdio; in a story `ssh` is `stand-in/ssh`, which this
+//! module puts first on the process's PATH. A target is a host's directory,
+//! holding a login the net writes when it makes the host: an `amux` that is
+//! the far host's own against its own installation, so the relay joins the
+//! far daemon's link socket. No real SSH runs, and no network is crossed
+//! beyond the two sockets.
 
 use std::path::{Path, PathBuf};
 use std::sync::Once;
 
-/// The login a target's directory holds, which the stand-in runs.
-const LOGIN: &str = "ssh-login";
+/// The directory in a target that the stand-in puts first on the PATH of the
+/// command it runs, holding the login as `amux`.
+const LOGIN_DIR: &str = "ssh-path";
 
 /// Where the stand-in lives: beside this crate's sources.
 fn stand_in_dir() -> PathBuf {
@@ -37,7 +39,9 @@ pub(crate) fn install() {
 /// Writes the login that makes `dir` a target: `amux` against `config`,
 /// with whatever the far side was asked to run.
 pub(crate) fn write_login(dir: &Path, amux: &Path, config: &Path) -> std::io::Result<()> {
-    let login = dir.join(LOGIN);
+    let login_dir = dir.join(LOGIN_DIR);
+    std::fs::create_dir_all(&login_dir)?;
+    let login = login_dir.join("amux");
     std::fs::write(
         &login,
         format!(

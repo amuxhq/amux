@@ -196,6 +196,20 @@ async fn a_host_resumed_with_a_ticket_for_a_key_no_longer_pinned_is_refused_as_r
         })
         .await
         .unwrap();
+    // The link the laptop's old key holds is closed as the desk pins the
+    // new one, but not at once. A resumed link that finds it still up is
+    // refused as a second link before the desk can refuse the ticket.
+    until("the laptop's link under its old key to close", || {
+        let edge = linked.laptop_edge.clone();
+        async move {
+            match edge.via(desk).await {
+                node::harness::LiveRoute::Offline => Ok(()),
+                route => Err(format!("still {route:?}")),
+            }
+        }
+    })
+    .await
+    .unwrap();
 
     let refused = linked
         .laptop_edge

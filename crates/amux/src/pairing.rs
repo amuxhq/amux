@@ -535,6 +535,15 @@ pub async fn peers(mut admin: Admin, client: &mut ClientServiceClient<Channel>) 
     Ok(())
 }
 
+/// The PAIRED column of a host this machine cannot use until it pairs.
+fn pair_again(name: &str) -> String {
+    if name.contains(char::is_whitespace) {
+        format!("no: amux pair '{name}'")
+    } else {
+        format!("no: amux pair {name}")
+    }
+}
+
 fn peer_table(trusted: &[PeerEntry], hosts: &[HostEntry]) -> String {
     let mut rows = vec![[
         "HOST".to_owned(),
@@ -545,7 +554,14 @@ fn peer_table(trusted: &[PeerEntry], hosts: &[HostEntry]) -> String {
     let mut paired = trusted.to_vec();
     paired.sort_by(|a, b| a.name.cmp(&b.name));
     for peer in &paired {
-        let reached = match hosts.iter().find(|host| host.host_id() == peer.host_id) {
+        let listed = hosts.iter().find(|host| host.host_id() == peer.host_id);
+        // Trust is each side's own: this machine still trusts a host that
+        // no longer trusts it, which only pairing again undoes.
+        let revoked = listed.is_some_and(|host| {
+            matches!(host.reach(), Some(wire::trusted::Reach::Offline(offline)) if offline.revoked)
+        });
+        let reached = match listed {
+            Some(_) if revoked => "no longer trusts this machine",
             Some(host) => match host.online() {
                 Some(wire::RouteKind::Relay) => "online, through the relay",
                 Some(wire::RouteKind::Ssh) => "online, over SSH",
@@ -568,7 +584,11 @@ fn peer_table(trusted: &[PeerEntry], hosts: &[HostEntry]) -> String {
                 Some(target) => format!("{reached} (ssh {target})"),
                 None => reached.to_owned(),
             },
-            "yes".to_owned(),
+            if revoked {
+                pair_again(&peer.name)
+            } else {
+                "yes".to_owned()
+            },
         ]);
     }
     let mut found = hosts
@@ -577,16 +597,11 @@ fn peer_table(trusted: &[PeerEntry], hosts: &[HostEntry]) -> String {
         .collect::<Vec<_>>();
     found.sort_by(|a, b| a.name().cmp(b.name()));
     for candidate in found {
-        let name = if candidate.name().contains(char::is_whitespace) {
-            format!("'{}'", candidate.name())
-        } else {
-            candidate.name().to_owned()
-        };
         rows.push([
             candidate.name().to_owned(),
             host(candidate.host_id()),
             "found nearby".to_owned(),
-            format!("no: amux pair {name}"),
+            pair_again(candidate.name()),
         ]);
     }
     if rows.len() == 1 {
@@ -852,5 +867,29 @@ mod tests {
             table.contains("away: the free plan does not relay between hosts"),
             "{table}"
         );
+    }
+
+    /// A host that unpaired this machine is still trusted here, but the
+    /// table says it no longer trusts this machine and how to pair again,
+    /// not a bare "away" beside "yes".
+    #[test]
+    fn a_peer_that_no_longer_trusts_this_machine_says_to_pair_again() {
+        let revoked = HostEntry::trusted_host(
+            vec![1; 16],
+            "desk",
+            wire::trusted::Reach::Offline(wire::Offline {
+                revoked: true,
+                ..Default::default()
+            }),
+        );
+        let trusted = [PeerEntry {
+            host_id: vec![1; 16],
+            name: "desk".into(),
+            ..PeerEntry::default()
+        }];
+        let table = peer_table(&trusted, &[revoked]);
+        let row = table.lines().nth(1).unwrap();
+        assert!(row.contains("no longer trusts this machine"), "{table}");
+        assert!(row.ends_with("no: amux pair desk"), "{table}");
     }
 }

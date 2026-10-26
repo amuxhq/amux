@@ -560,7 +560,10 @@ nothing is inferred.
 - **Asks.** A `can_use_tool` control request opens a permission ask (with its
   scope suggestions, reason and description), a question ask for
   `AskUserQuestion`, or a plan ask for `ExitPlanMode`, pointing at the call
-  it names. An `elicitation` request opens a tool server's form or link, with
+  it names. The reason is Claude's own, else "outside the allowed
+  directories" when the path it blocked is beyond the agent's folder;
+  Claude names the path a command would write inside the folder too, and
+  that ask has no reason. An `elicitation` request opens a tool server's form or link, with
   an item of its own. Answers go back as control responses. A control
   request of any other subtype is answered with an error.
 - **Offers.** The answer to the agent process's `initialize` request lists
@@ -734,7 +737,9 @@ answer.
   carries the page's address, as the step's text too, since Codex says
   nothing else about it. `configWarning` (configuration Codex found and did
   not apply) is an error item of kind `configWarning` in Codex's words. A
-  goal's progress (`thread/goal/updated`) draws nothing, like its clearing.
+  goal's progress (`thread/goal/updated`) draws nothing, like its clearing,
+  and neither does a turn's moderation verdict (`turn/moderationMetadata`)
+  or which turn Codex's own app last showed (`thread/readState/changed`).
 - **Agent messages** go to Codex with `thread/inject_items`. Codex reports
   nothing about an injected item, so the interpreter writes the agent-message
   item itself, at acceptance. A probe of codex-cli 0.157.0 settled when the

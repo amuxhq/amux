@@ -65,12 +65,20 @@ pub async fn conformance(kind: Kind, binary: &Path, recording: &Path) -> Result<
 }
 
 async fn stdio(binary: &Path, recording: &Path, process: &Process) -> Result<(), String> {
+    // The fake writes its transcript under Claude's configuration directory,
+    // as Claude does; a scratch one keeps every replay out of the person's
+    // own `~/.claude`.
+    let config = tempfile::Builder::new()
+        .prefix("fake-claude-config-")
+        .tempdir()
+        .map_err(|error| format!("scratch directory: {error}"))?;
     let mut child = tokio::process::Command::new(binary)
         .args(&process.argv)
         .env(
             PLAYBACK_ENV,
             playback::selector(recording, &process.transport),
         )
+        .env("CLAUDE_CONFIG_DIR", config.path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

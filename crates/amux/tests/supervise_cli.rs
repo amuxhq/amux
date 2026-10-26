@@ -408,7 +408,7 @@ async fn update_says_updates_are_deploys_without_a_supervisor() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn update_installs_the_channel_build_now_even_one_rolled_back_here() {
+async fn update_retry_installs_the_channel_build_now_even_one_rolled_back_here() {
     let builds = tempfile::tempdir().unwrap();
     let bin = builds.path().join("bin");
     std::fs::create_dir_all(&bin).unwrap();
@@ -429,10 +429,10 @@ async fn update_installs_the_channel_build_now_even_one_rolled_back_here() {
     install.amux(&["server", "start"]);
     let supervisor = install.supervisor_pid().unwrap();
 
-    let output = install.amux(&["update"]);
+    let output = install.amux(&["update", "--retry"]);
     let said = stdout(&output);
     println!(
-        "$ amux update   (1.0.0 installed; the channel names 2.0.0, rolled back here before)\n{said}"
+        "$ amux update --retry   (1.0.0 installed; the channel names 2.0.0, rolled back here before)\n{said}"
     );
     assert!(said.contains("Installing amux 2.0.0."), "{said}");
     assert!(said.contains("amux 2.0.0 is running."), "{said}");
@@ -448,6 +448,58 @@ async fn update_installs_the_channel_build_now_even_one_rolled_back_here() {
     println!("$ amux update\n{}", stdout(&again));
     assert!(
         stdout(&again).contains("Up to date: 2.0.0 is running and the channel names 2.0.0."),
+        "{}",
+        stdout(&again)
+    );
+}
+
+/// A build that never starts is rolled back by the supervisor; `amux
+/// update` says so and fails, rather than leaving the person to read the
+/// log, and a later `amux update` leaves that build alone unless retried.
+#[tokio::test(flavor = "multi_thread")]
+async fn update_reports_a_build_that_never_started_and_then_leaves_it_alone() {
+    let builds = tempfile::tempdir().unwrap();
+    let bin = builds.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let installed = bin.join("amux");
+    release::restamp(amux_binary(), &installed, "1.0.0").unwrap();
+    let channel = Channel::serve().await;
+    channel.publish("2.0.0", b"#!/bin/sh\nexit 3\n".to_vec());
+
+    let install = Install::with_binary(
+        true,
+        &format!("releases_url: {}\n", channel.url()),
+        installed.clone(),
+    );
+    install.amux(&["server", "start"]);
+
+    let output = install.command(&["update"]).output().unwrap();
+    let said = format!(
+        "{}{}",
+        stdout(&output),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    println!(
+        "$ amux update   (1.0.0 installed; the channel names 2.0.0, which exits at once)\n{said}"
+    );
+    assert!(!output.status.success(), "{said}");
+    assert!(said.contains("Installing amux 2.0.0."), "{said}");
+    assert!(
+        said.contains("amux 2.0.0 did not start, so the supervisor put amux 1.0.0 back."),
+        "{said}"
+    );
+    assert!(
+        said.contains("`amux update --retry` tries 2.0.0 again"),
+        "{said}"
+    );
+    let version = Command::new(&installed).arg("--version").output().unwrap();
+    assert_eq!(stdout(&version).trim(), "amux 1.0.0");
+
+    let again = install.amux(&["update"]);
+    println!("$ amux update\n{}", stdout(&again));
+    assert!(
+        stdout(&again)
+            .contains("2.0.0 was rolled back here; `amux update --retry` tries it again."),
         "{}",
         stdout(&again)
     );

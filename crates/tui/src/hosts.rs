@@ -57,7 +57,7 @@ pub fn caption(fleet: &FleetState, entry: &HostEntry, local_host: &[u8]) -> Stri
     parts.join(" · ")
 }
 
-fn shell_target(target: &str) -> String {
+pub(crate) fn shell_target(target: &str) -> String {
     if target
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))

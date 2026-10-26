@@ -720,7 +720,7 @@ impl Machine for SupervisorUpdate {
                     &mut state,
                     Input::Asked {
                         ask,
-                        request: Request::Check,
+                        request: Request::Check { retry: true },
                     },
                 );
             }

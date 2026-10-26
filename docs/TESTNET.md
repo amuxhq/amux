@@ -325,13 +325,14 @@ path carried a link the way a person reading the log would:
 
 ### SSH
 
-A host reaches a peer over SSH by running `ssh <target> amux relay --profile <id>`, where the id is the peer's host id
+A host reaches a peer over SSH by running `amux relay --profile <id>` on it through `ssh <target>`, where the id is the peer's host id
 (a profile's id is its host's), and carrying the link over that
 process's stdio into the far daemon's link socket (`link.sock` in its profile directory), where the pinned QUIC
 handshake admits only a paired key. Every in-process host serves its link socket. The net puts a stand-in `ssh`
 (`crates/testnet/stand-in/ssh`) first on its process's PATH, which process hosts inherit; no real SSH runs. A target
-is a host's directory, which `ssh_target(host)` answers: the stand-in runs the far host's own `amux` against its own
-installation there, so `amux relay` joins the far daemon's link socket, and `amux pair-recv` answers an SSH pairing.
+is a host's directory, which `ssh_target(host)` answers: the stand-in runs amux's command through a shell, as sshd
+would, with the far host's own `amux` against its own installation first on that shell's PATH, so `amux relay` joins
+the far daemon's link socket, and `amux pair-recv` answers an SSH pairing.
 Give the target to a peer as an SSH pairing does; `amux pair` reads a target as SSH in `user@host` form, and the
 stand-in drops the user.
 
@@ -626,10 +627,12 @@ program paints by clearing to the end of a line is not kept, and the font has no
 opens `amux attach` for an agent in a second pane: Claude's own interface for terminal Claude, Codex's own for Codex.
 `tui watch` attaches this terminal to a pane, to watch and use the client in it by hand; tmux's C-b d leaves it
 open.
-`tui clip` attaches as a person does in the terminal client: it puts a file's path (or, with `--image`, a PNG as
-picture data) on the Mac's clipboard and presses Ctrl+V in the pane. The clipboard is the machine's own, so `clip`
-holds a lock across every session for the moment the client reads it and then puts back the text the clipboard held;
-an image or file copied on the Mac is replaced.
+`tui clip` attaches as a person does in the terminal client: it puts a file (or, with `--image`, a PNG as picture
+data) on the machine's clipboard and presses Ctrl+V in the pane. On macOS the file goes as its path; on Linux it
+goes through `xclip` as a file manager copies one (`text/uri-list`), on the X display named by `DISPLAY`, so a
+headless Linux host needs an X server such as Xvfb and `DISPLAY` set before `ctl up`. The clipboard is the
+machine's own, so `clip` holds a lock across every session for the moment the client reads it and then puts back
+the text the clipboard held; an image or file copied on the machine is replaced.
 `phone attach` hands the open chat's draft a file or photo as the system's photo library or file browser would; those
 pickers are the system's own screens, which nothing outside them drives.
 

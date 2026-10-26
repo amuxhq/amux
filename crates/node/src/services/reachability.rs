@@ -961,16 +961,24 @@ async fn prepare_ssh_carrier(
     target: &str,
 ) -> Result<Arc<QuicCarrier>, DialError> {
     let failed = |error: &dyn std::fmt::Display| DialError::Failed(error.to_string());
-    let io = spawn_ssh_relay(target, peer).map_err(|error| failed(&error))?;
+    let mut io = spawn_ssh_relay(target, peer).map_err(|error| failed(&error))?;
+    let stderr = io.take_stderr();
     let stream = StreamEndpoint::new(io, FramedKind::Ssh, None).map_err(|error| failed(&error))?;
     let config = context
         .identity
         .quic_client_config_for_peer(context.trust_store.clone(), peer)
         .map_err(|error| failed(&error))?;
-    QuicCarrier::connect_over_stream(stream, config, DEVICE_SERVER_NAME)
-        .await
-        .map(Arc::new)
-        .map_err(|error| dial_failed(context, peer, error))
+    match QuicCarrier::connect_over_stream(stream, config, DEVICE_SERVER_NAME).await {
+        Ok(carrier) => Ok(Arc::new(carrier)),
+        Err(error) => match dial_failed(context, peer, error) {
+            // A session that ended before the handshake did, and what ssh or
+            // the far end said about it, such as amux not being installed.
+            DialError::Failed(failed) => Err(DialError::Failed(
+                crate::transport::with_said(failed, stderr).await,
+            )),
+            revoked => Err(revoked),
+        },
+    }
 }
 
 async fn prepare_direct_carrier(

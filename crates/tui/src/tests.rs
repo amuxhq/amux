@@ -1216,6 +1216,18 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
         "{screen}"
     );
     assert!(screen.contains("it sends once you pair again"), "{screen}");
+
+    // Home's top line says how to pair again, and does not count it away.
+    let mut fleet_view = FleetView {
+        local_host: b"laptop".to_vec(),
+        ..FleetView::default()
+    };
+    let screen = fleet_screen(&mut fleet_view, &fleet);
+    assert!(
+        screen.contains("desk no longer trusts this machine · amux pair desk"),
+        "{screen}"
+    );
+    assert!(!screen.contains("away"), "{screen}");
 }
 
 #[test]

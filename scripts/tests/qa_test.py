@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
 import unittest
@@ -17,6 +18,22 @@ specification.loader.exec_module(qa)
 def result(turns: int, cost: float, duration_ms: int) -> str:
     return json.dumps({"type": "result", "subtype": "success", "num_turns": turns,
                        "total_cost_usd": cost, "duration_ms": duration_ms})
+
+
+class Machine(unittest.TestCase):
+    """The process table and memory figures read on the machine running the
+    test, macOS or Linux, whose tools differ."""
+
+    def test_the_process_table_lists_this_process_with_its_parent_and_footprint(self):
+        table = qa.processes()
+        self.assertIn(os.getpid(), table)
+        parent, footprint, command = table[os.getpid()]
+        self.assertEqual(parent, os.getppid())
+        self.assertGreater(footprint, 0)
+        self.assertIn("python", command.lower())
+
+    def test_the_machine_has_memory_in_use(self):
+        self.assertGreater(qa.memory_in_use(), 0)
 
 
 class Results(unittest.TestCase):

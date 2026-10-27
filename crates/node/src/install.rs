@@ -243,7 +243,16 @@ mod tests {
             fs::create_dir(&path).unwrap();
             fs::write(path.join("manifest.json"), b"{}").unwrap();
             let at = old + std::time::Duration::from_secs(n as u64);
-            File::open(&path).unwrap().set_modified(at).unwrap();
+            let mut options = fs::OpenOptions::new();
+            options.read(true);
+            // Windows opens a directory only with backup semantics, and
+            // sets its times only through a handle that may write them.
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::OpenOptionsExt;
+                options.write(true).custom_flags(0x0200_0000);
+            }
+            options.open(&path).unwrap().set_modified(at).unwrap();
         }
         let text = dir.path().join("relay-1-ab.txt");
         fs::write(&text, b"window").unwrap();

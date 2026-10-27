@@ -66,7 +66,7 @@ impl Write for LogFile {
         // The length is the file's, so what other handles wrote counts.
         let len = self.file.metadata()?.len();
         if len > 0 && len + bytes.len() as u64 > self.cap {
-            rotate(&self.path, &self.file)?;
+            rotate(&self.path)?;
         }
         self.file.write(bytes)
     }
@@ -79,13 +79,13 @@ impl Write for LogFile {
 /// Rotates `path` if it has passed `cap`: for a log other processes
 /// write, which its owner trims now and then rather than on every write.
 pub fn trim(path: &Path, cap: u64) -> io::Result<()> {
-    let file = match OpenOptions::new().write(true).open(path) {
-        Ok(file) => file,
+    let len = match std::fs::metadata(path) {
+        Ok(meta) => meta.len(),
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
         Err(error) => return Err(error),
     };
-    if file.metadata()?.len() > cap {
-        rotate(path, &file)?;
+    if len > cap {
+        rotate(path)?;
     }
     Ok(())
 }
@@ -162,10 +162,12 @@ fn append(path: &Path) -> io::Result<File> {
     options.open(path)
 }
 
-/// Copies the log to its previous file and empties it in place.
-fn rotate(path: &Path, file: &File) -> io::Result<()> {
+/// Copies the log to its previous file and empties it in place. The
+/// truncation goes through a handle of its own, because Windows lets an
+/// append-only handle add to a file but not shorten it.
+fn rotate(path: &Path) -> io::Result<()> {
     std::fs::copy(path, previous(path))?;
-    file.set_len(0)
+    OpenOptions::new().write(true).open(path)?.set_len(0)
 }
 
 #[cfg(test)]

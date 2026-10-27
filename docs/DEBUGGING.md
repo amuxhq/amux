@@ -23,33 +23,11 @@ page says where things are on disk, how to take and read a dump, and how to narr
 
 ## Where things are
 
-The installation root is `root` in the installation config (`$XDG_CONFIG_HOME/amux/config.toml`, normally
-`~/.config/amux/config.toml`, or the file `--config` or `AMUX_CONFIG` names). It defaults to
-`$XDG_DATA_HOME/amux`, normally `~/.local/share/amux`.
-
-```text
-<root>/
-  daemon.log                 the daemon's log; AMUX_LOG names another file
-  supervisor.log             the supervisor's log, when amux runs under one
-  reports/                   dumps: dump-<unix ms>-<id>/
-  profiles/<profile id>/
-    store.sqlite             the profile's store: own rows and replica rows
-    agents/<agent id>/       one agent's directory
-      lock                   held by the agent process for its lifetime
-      ctl.sock  pty.sock     the agent's control and raw-terminal sockets
-      tools.sock             the daemon's socket for this agent's tool server
-      spec.<n>               what each incarnation was started with
-      journal/<segment>      the agent's steps, segments named by byte offset
-      pty/<segment>          raw terminal bytes, for terminal Claude
-      blobs/<hash>           bytes the agent's items reference
-      agent.log              the agent process's standard error
-      private/               the agent's own state; the daemon never reads it
-        facts/<segment>      the facts ring
-        facts/<segment>.checkpoint
-        provider.log         the provider's standard error
-        provider-session     the provider's own session id, for resume
-    replicas/                blobs fetched from other hosts
-```
+Every file amux keeps is in [the one on-disk listing](ARCHITECTURE.md#everything-else-on-disk), with the agent
+directory [just before it](ARCHITECTURE.md#the-agent-directory-is-the-contract). For debugging, the installation
+root (`<root>`, normally `~/.local/share/amux`) holds `daemon.log`, `supervisor.log` when amux runs under one, and
+`reports/`; each agent's directory, `profiles/<profile id>/agents/<agent id>/`, holds `agent.log` and its
+`private/provider.log`.
 
 Every log is capped the same way: past its cap its contents move to `<name>.1`, replacing the previous one, and
 the file starts again from empty, so a log and its `.1` are all there is. The caps are 8 MiB for `daemon.log`,

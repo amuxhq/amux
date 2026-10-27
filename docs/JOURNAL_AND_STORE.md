@@ -24,21 +24,13 @@ and [interpreters](INTERPRETERS.md). How the daemon is laid out as a whole is in
 
 ## On disk
 
-```
-<data_dir>/
-  generation                         boot id, clean flag and counter (see Durability)
-  profiles/<profile-id>/
-    store.sqlite                     the profile's store (WAL mode)
-    agents/<agent-id>/               one directory per own agent
-      journal/0000000000             journal segments, named by global byte offset
-      journal/0001048576
-      pty/                           raw terminal bytes, same naming (terminal Claude only)
-      blobs/<sha256-hex>             attachment bytes this agent references
-      private/facts/                 the interpreter's facts ring and checkpoints
-      spec.<n>, lock, ctl.sock, ...
-    replicas/<host-id>/agents/<agent-id>/blobs/<sha256-hex>
-                                     bytes fetched for a paired host's agent
-```
+A profile's store is `profiles/<profile-id>/store.sqlite` under the
+installation root, in WAL mode, and each own agent's journal, raw terminal
+bytes and blobs are under `profiles/<profile-id>/agents/<agent-id>/`; bytes
+fetched for a paired host's agent are under
+`profiles/<profile-id>/replicas/<host-id>/agents/<agent-id>/blobs/`. The
+generation file is `<root>/generation`. Everything else is in
+[the one on-disk listing](ARCHITECTURE.md#everything-else-on-disk).
 
 The names are constants: `GENERATION`, `STORE`, `AGENTS` and `REPLICAS` in
 [`crates/node/src/install.rs`](../crates/node/src/install.rs), and `JOURNAL`,
@@ -324,9 +316,15 @@ The profile runtime is the store's only writer and only reader: the daemon on
 a desktop, and the embedded runtime in the phone app. No client opens the file,
 not even the terminal client on the same machine. Every client reads through
 `SubscribeSession`, `ListItems` and `GetItem` against its local runtime; on the phone that is
-an in-process call. The runtime holds the store behind one async mutex, and
-every read the runtime serves runs in one read transaction, so each read sees
-one commit point.
+an in-process call. The profile's core thread owns the open store: every
+write is made in the core step that decides it, and every read the runtime
+serves runs on that thread in one read transaction, so each read sees one
+commit point and no lock is needed. The one other connection is the passive
+WAL checkpoint, which the driver runs as a job off the core thread (see
+Durability). A write is an ordinary commit, left to the WAL and the next
+checkpoint, unless it is `Durability::Synced`: that transaction runs with
+`synchronous=FULL` and `fullfsync`, and only pairing, unpairing, a key
+replacement and a pairing's rollback ask for it.
 
 The runtime's interface is `store::Sqlite`, in
 [`crates/store/src/sqlite.rs`](../crates/store/src/sqlite.rs):
@@ -341,8 +339,16 @@ The runtime's interface is `store::Sqlite`, in
 | `after(agent, revision, cap)` | What a peer holding everything through `revision` is missing, or `None` when that is more than `cap` rows |
 | `commit` | Journal frames into an own row |
 | `absorb` | Records from a peer into a replica row |
-| `rewind_cursor`, `record_host_generation` | Power-loss recovery on this host; the generation a peer last reported |
-| `sweep_own`, `sweep_replicas` | Retention |
+| `item_by_input`, `last_n`, `cursor`, `live_descendants` | The item carrying an input (for an agent message, proof its recipient took it), the newest rows of the block, a row's cursor (ingest for an own row, source for a replica), and the live agents below a parent across hosts |
+| `put_agent`, `set_descendants`, `delete_agent`, `set_marker` | A row whole, or the columns its role owns; an own row's count of live descendants; an agent removed whole, with its items, deliveries and notifications; the in-memory CaughtUp and Detached markers |
+| `rewind_cursor`, `record_host_generation`, `host_generation` | Power-loss recovery on this host; the generation a peer last reported |
+| `trusted_hosts`, `put_trusted_host`, `remove_trusted_host` | Paired hosts; a removal forgets the host's generation too |
+| `draft`, `put_draft`, `delete_draft` | The unsent draft for an agent, as the client encoded it |
+| `record_recent_directory`, `recent_directories` | The folders agents were started in, newest first, the 200 most recent kept |
+| `put_delivery`, `deliveries`, `remove_delivery` | Completion reports a child owes its parent on another host |
+| `notifications`, `remove_notifications`, `remove_notification` | Pushes owed for an agent's attention |
+| `pool_bytes`, `sweep_own`, `sweep_replicas` | Retention |
+| `flush_to_drive`, `checkpoint_wal` | Clean shutdown's synced checkpoint; the passive checkpoint on a connection of its own |
 
 Each call is one transaction, and SQL does the work: an item is one upsert
 that keeps a held key's order, a replica's item is written only over an older

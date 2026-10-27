@@ -67,7 +67,8 @@ pub struct TuiConfig {
 }
 
 /// How this client lays its screens out, kept between runs: a person's
-/// preference for this terminal, not state any other client shares.
+/// preference, shared by every terminal on the installation and by no other
+/// kind of client.
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Layout {
     /// The chat's overview pane stays open across chats until closed.

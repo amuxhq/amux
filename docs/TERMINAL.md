@@ -7,8 +7,11 @@ opens it. It is a library ([`crates/tui`](../crates/tui/src/lib.rs)) that the `a
 ([`crates/amux`](../crates/amux/src/main.rs)) calls, never a second executable, and it is built on the shared
 client library described in [CLIENT.md](CLIENT.md): it reads the local runtime only through the session and fleet
 drivers, composes the view values (fleet rows, chat rows, asks, composer tokens) in its own layout, and owns only
-the overview pane, the scroll anchor, opened rows, drafts and focus. Nothing it holds outlives the process except
-the overview's layout, kept per terminal in `<root>/tui/layout.json`.
+the overview pane, the scroll anchor, opened rows and focus. A chat's unsent draft is the runtime's, kept in the
+profile's store, so it follows the chat to another terminal or the phone. Nothing the client holds outlives the
+process except its layout file, `<root>/tui/layout.json`: whether the overview pane is open, what changes are
+counted against, and each chat's folds and tool modes, kept for the 200 chats changed most recently. It is one file for every terminal on the installation,
+written whole through a temporary file and a rename, so two terminals never tear it, though the last to write wins.
 
 The same binary carries the command-line verbs, listed [at the end of this page](#command-line-verbs).
 
@@ -17,7 +20,7 @@ The same binary carries the command-line verbs, listed [at the end of this page]
 ```sh
 amux                        # the terminal client on the first profile
 amux --profile work         # on a profile named by label or id
-amux --config path/to.yaml  # with another installation config (or AMUX_CONFIG)
+amux --config path/to.toml  # with another installation config (or AMUX_CONFIG)
 ```
 
 `amux` connects to the selected profile's local socket with the gRPC client, opens home, and draws. If the daemon

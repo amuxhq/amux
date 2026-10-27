@@ -134,6 +134,9 @@ and are tuned the same way:
 | Wait on an origin for a page | 10 s | `PAGE_PATIENCE` in [`crates/node/src/driver/mod.rs`](../crates/node/src/driver/mod.rs) |
 | Largest journal or control-socket frame | 64 MiB | `journal::MAX_FRAME_BYTES`; `agent_dir::MAX_FRAME_BYTES` |
 | Fixed per-row allowance in retention's byte count | 48 bytes | `ITEM_OVERHEAD_BYTES` in [`crates/store/src/lib.rs`](../crates/store/src/lib.rs) |
+| Reports kept in `reports/` | The newest 20, dumps and core reports alike | `REPORTS_KEPT` in [`crates/node/src/install.rs`](../crates/node/src/install.rs) |
+| Recent directories kept per profile | 200 | `RECENT_DIRECTORIES` in [`crates/store/src/lib.rs`](../crates/store/src/lib.rs) |
+| Chats in the terminal client's layout file | The 200 changed most recently | `CHATS_KEPT` in [`crates/tui/src/app.rs`](../crates/tui/src/app.rs) |
 | Analytics batch: wait, size and queue | Sent every 60 s, or at once at 50 events; at most 1,000 waiting, beyond which new events are dropped; at most 100 events in one request, the server's limit | `Params` in [`crates/analytics/src/upload.rs`](../crates/analytics/src/upload.rs) |
 | Analytics retries | Two more tries, 5 s then 10 s apart, then the batch is dropped; 10 s per request; a shutdown waits at most 2 s and the phone 3 s as it leaves the screen | `Params` in [`crates/analytics/src/upload.rs`](../crates/analytics/src/upload.rs); `SHUTDOWN_FLUSH` in [`crates/node/src/telemetry.rs`](../crates/node/src/telemetry.rs); `BACKGROUND_FLUSH` in [`crates/app-embedded/src/lib.rs`](../crates/app-embedded/src/lib.rs) |
 | Analytics check-in | Once a day per profile, never sooner than a minute after a start | `CHECK_IN_EVERY_MS` and `CHECK_IN_SETTLE_MS` in [`crates/node/src/telemetry.rs`](../crates/node/src/telemetry.rs) |

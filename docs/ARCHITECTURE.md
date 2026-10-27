@@ -289,7 +289,7 @@ agents/<agent_id>/            the agent's UUID; ours, never the provider's
   ctl.sock                    the agent listens; the daemon is its only client
   pty.sock                    the agent listens; local terminal clients connect (terminal Claude and Codex only)
   tools.sock                  the daemon listens; the agent's tool server is its only client
-  agent.log                   the agent process's stderr
+  agent.log, agent.log.1      the agent process's stderr, and the part before its last move (1 MiB each)
   journal/0000000000          length-prefixed protobuf steps; the file name is the global offset of its first byte
   journal/0001048576          the next segment (1 MiB by default)
   pty/0000000000              raw terminal bytes, named the same way (terminal Claude only; the newest four kept)
@@ -297,11 +297,19 @@ agents/<agent_id>/            the agent's UUID; ours, never the provider's
   private/                    the agent's own state; the daemon never reads it
     facts/                    the ring of recent provider facts and interpreter checkpoints
     provider-session          the provider's session or thread id, so a resume continues it
-    provider.log              the provider child's stderr
+    provider.log, .1          the provider child's stderr, capped as agent.log is
     transcript-cursor         how far terminal Claude's transcript has been read
     hooks.sock                terminal Claude's hook command connects here
     messaging.sock            terminal Claude's messaging socket
+    codex.sock                Codex's app server, for Codex agents; removed when the agent exits
 ```
+
+A Unix socket's path must be short, and an agent directory under a deep
+root is often too long. Then a socket is bound through a link to its folder
+(`agents/<agent_id>` or its `private/`) under `$TMPDIR/amux-<uid>/`, named
+by a hash of the folder; terminal Claude's messaging socket, which Claude
+binds itself in a real directory, gets one there named the same with `.d`.
+The daemon removes both with the agent's directory.
 
 | Path | Created by | Written by | Read by | Deleted by |
 |---|---|---|---|---|
@@ -314,25 +322,67 @@ agents/<agent_id>/            the agent's UUID; ours, never the provider's
 | `blobs/*` | agent or daemon | the agent for what the model attaches and for its catalogue, before the step whose snapshot names it; the daemon for what a person attaches and for diff patches; temp file then rename, so two writers are safe | the provider by path; the daemon to serve `GetBlob` | with the directory |
 | `private/*` | agent | agent | agent, and its part of a debug bundle | with the directory |
 
-The rest of the installation:
+### Everything else on disk
+
+This is the one complete listing; other pages link here rather than keep
+their own copies.
 
 ```text
-<data_dir>/                   default ~/.local/share/amux ($XDG_DATA_HOME/amux)
-  installation.lock           one daemon per data directory
+~/.config/amux/config.toml    the installation config ($XDG_CONFIG_HOME/amux; --config or AMUX_CONFIG name another)
+~/.amux/bin/amux              the installed binary; an update stages amux.staged and keeps amux.prev beside it
+
+<root>/                       the config's `root`; default ~/.local/share/amux ($XDG_DATA_HOME/amux)
+  installation.lock           one daemon per installation
+  installation_id             minted at the first start; what usage analytics count an install by
   generation                  boot id, clean-shutdown flag and a counter a replica compares
-  reports/                    dumps (debug bundles)
-  profiles/<profile_id>/      one per profile; its id is its host id
+  supervisor.lock             one supervisor per installation
+  supervisor.sock             how the CLI reaches a running supervisor (`amux update`, and stop on Windows)
+  daemon.log, daemon.log.1    the daemon's log, 8 MiB each; AMUX_LOG names another file
+  supervisor.log, .1          the supervisor's log, when amux runs under one, capped the same
+  reports/                    dumps and core reports, the newest 20 kept; .dump-* is one being written
+  worktrees/<repository>/<agent name>/
+                              the git worktrees amux makes for new agents; never removed by amux
+  tui/layout.json             the terminal client's folds, comparison and tool modes, shared by every
+                              terminal on this installation; the 200 most recently changed chats kept
+  profiles/<profile_id>/      one per profile; its id is its host id; built under a dotted name
     profile                   what it is called and when it was made
     device.key                this profile's key; it never leaves the machine
     account                   the account binding and its credential, when bound
+    relay-token               the week-long relay token the account service issued, so a launch dials at once
     sock                      the client socket, owner-only
     link.sock                 where `amux relay` hands in a peer's link over SSH
     store.sqlite              agents, items, paired hosts, drafts, recent directories, deliveries,
-                              notifications; written only by this profile runtime
+                              notifications; written only by this profile's core
+    core-ring/                the core's newest checkpoint and the inputs since, for dumps and replay
+    tickets/                  TLS session tickets this profile's server issued, so a peer resumes
+    client-tickets/           tickets other hosts and the relay gave this profile's dials
+    client-tokens/            address-validation tokens other hosts gave this profile's dials
+    lan_port                  the port this profile last listened on, so peers find it there again
+    checked_in                when this profile last sent its daily usage event
+    providers/<provider>      the newest copy of what each provider offers (models, modes)
     agents/<agent_id>/        as above
     replicas/<host_id>/agents/<agent_id>/blobs/<sha256>
                               bytes fetched for a peer's agent, deleted with its rows
 ```
+
+Unpairing a host removes the tickets and tokens it gave, beside its store
+row. A dump interrupted by a crash leaves a `.dump-*` folder under
+`reports/` and an unredacted `.dump-*` store copy beside `store.sqlite`; the
+daemon removes both at start.
+
+The phone app keeps the same `<root>` layout in its container, under
+`Application Support/installation/`, with no supervisor, worktrees or
+terminal client; its log is `runtime.log`, capped at 8 MiB like the
+daemon's. Beside it, `Application Support/accounts.json` records which
+account is selected and, for each account, the host and attention counts
+it last listed and the entitlement the account service last gave, which the
+app draws from before the cloud answers. The Appearance and
+Share Usage settings are in the app's UserDefaults.
+
+The relay keeps its config in the one TOML file `--config` names (see
+[Cloud](CLOUD.md)). Its `state_dir`, which defaults to systemd's
+`$STATE_DIRECTORY`, holds `tickets/` and `reports/`, the newest 20 kept. It
+logs to standard error, for journald.
 
 The journal, ingest, the store's schema, durability and retention are on
 [the journal and store](JOURNAL_AND_STORE.md) page. What happens inside the

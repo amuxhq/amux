@@ -644,7 +644,7 @@ staging and file moves in
 ### Channels
 
 There are two channels, `stable` and `preview`. An install follows `stable`
-unless someone chose otherwise (`amux config channel preview`): preview is for
+unless someone chose otherwise (`amux config set channel preview`): preview is for
 people who asked for builds ahead of stable, and it is never picked by
 chance. Each channel is one manifest at a fixed address:
 

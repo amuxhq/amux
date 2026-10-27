@@ -95,7 +95,7 @@ chats with their agents, the installation's `ui.chat_in`:
   says is signed out reads `Codex (not signed in)`. Long lists filter as you type; the folder's panel lists that
   host's recent folders and takes a typed path; hosts that are away cannot be picked. Shift+Tab steps Codex's mode,
   or Claude's permissions that still ask, as in a chat. Claude runs headless here, Codex on its app server.
-- **In each agent's own terminal** (`terminal`): a small window over home with the name, the agent (Claude or
+- **In each agent's own interface** (`native`): a small window over home with the name, the agent (Claude or
   Codex, each marked `not signed in` where the chosen host says so), the folder and the host, and no prompt or model,
   which the agent's own terminal sets. Enter moves from row to row and starts the agent from the last; ←/→ change
   a choice. Started on this machine, the terminal is
@@ -310,7 +310,7 @@ so one file serves an older or newer amux; a known key with a bad value is still
 [ui]
 theme = "terminal"    # terminal, dark, light, or a path to a base16 or base24 YAML theme file
 color = "auto"        # auto, truecolor or ansi
-chat_in = "amux"      # amux, or terminal: chat in each agent's own terminal
+chat_in = "amux"      # amux, or native: chat in each agent's own interface, Claude Code's or Codex's
 
 [keybinds]
 leader = "ctrl+a"     # ctrl+<a-z>
@@ -454,20 +454,23 @@ kitty keyboard protocol.
 ## Raw attach
 
 Raw attach hands the terminal to an agent's own interface: terminal Claude's own screen, or a Codex terminal view of
-the agent's thread. It is reached with `amux attach <agent>`, with `a` or Ctrl+Enter on home, with the leader then
-`a` in a chat, by starting an agent for someone who chats in each agent's own terminal, or from an ask this client
-cannot answer.
+the agent's thread. It is reached with `amux attach <agent>` where `ui.chat_in` is `native` (or with `--in native`),
+with `a` or Ctrl+Enter on home, with the leader then `a` in a chat, by starting an agent for someone who chats in each
+agent's own interface, or from an ask this client cannot answer. Where `ui.chat_in` is `amux`, `amux attach <agent>`
+opens the terminal client on the agent's chat instead.
 
 Terminal bytes never travel over the wire. The client finds the agent's directory by convention,
 `<profile directory>/agents/<agent id>/`, and connects straight to its `pty.sock`; the daemon is not involved.
 [AGENT_PROCESS.md](AGENT_PROCESS.md) describes the socket, including how terminal Claude's screen is replayed to a
 late attacher and how each Codex attach gets its own view of the thread. Three refusals come before any socket is
-tried:
+tried. Where the agent's own interface is only the configured preference, `amux attach` opens its chat in the
+terminal client instead; where it was asked for with `--in native`, the refusal is the answer:
 
-- **An agent on another host.** Its terminal is on another machine. `amux attach` says so and suggests opening its
-  chat with `amux` and Enter; home shows the same notice.
+- **An agent on another host.** Its terminal is on another machine. The refusal points at
+  `amux attach <agent> --in amux`; home shows the same notice.
 - **A stopped agent.** It has no process and so no terminal; the refusal says it is stopped and how to resume it.
-- **Headless Claude** (`claude_sdk`). It has no terminal; the refusal points at its chat.
+- **Claude started for amux's chat** (headless Claude, as every agent the phone starts is). It has no Claude Code
+  interface; the refusal points at its chat.
 
 While attached, typing and resizes go to the agent. How it ends:
 
@@ -485,40 +488,57 @@ modes the agent's interface switched on.
 
 ## Command-line verbs
 
-Every verb takes the global `--config <path>` (or `AMUX_CONFIG`) and `--profile <label or id>`. An agent is named
-by its name, `name@host` where agents on two hosts share a name, its id, or the short id `amux ls` prints.
+Every verb takes `--profile <label or id>`; without it, the first profile. An agent is named by its name,
+`name@host` where agents on two hosts share a name, its id, or the short id `amux ls` prints. `amux --help` lists
+these; the entries amux and service managers run are hidden from it and listed after the table.
 
 | Verb | What it does |
 |---|---|
 | `amux` | Opens the terminal client. |
-| `amux ls` (`list`) | Lists the agents with children beneath their parent: name, short id, kind and state. |
-| `amux create <kind>` (`new`) | Starts an agent: `claude_pty` (also `claude`), `claude_sdk` or `codex`, with `--name`, `--cwd` (the current directory otherwise), `--model`, `--prompt` for its first prompt, and extra arguments for Claude after `--`. |
-| `amux attach <agent>` | Hands this terminal to the agent's own interface; see [raw attach](#raw-attach). |
+| `amux attach <agent>` | Opens the agent's chat in this terminal, in the interface `ui.chat_in` names, or the one `--in amux\|native` asks for; see [raw attach](#raw-attach). |
+| `amux ls` | Lists the agents with children beneath their parent: name, short id, agent and state. |
+| `amux new claude\|codex` | Starts an agent in the current directory (`--cwd` for another), for the interface `ui.chat_in` names or `--in amux\|native`: Claude runs headless for amux's chat and in a terminal for its own. `--name`, `--model`, `--effort`, `--permission` and `--prompt` for its first prompt; the model, effort and permission come from `new_agent` otherwise, except in the agent's own interface, which sets its own. Extra arguments for Claude go after `--`. |
 | `amux send <agent> <text…>` | Sends a prompt and prints whether the agent took it, and if not, why in a sentence. |
 | `amux stop <agent>` | Stops the agent now, and every descendant follows on its own host: its turn is cancelled the provider's own way (a question waiting on you is dismissed) and it exits, to be resumed later. |
-| `amux resume <agent> [text…]` | Starts an exited agent again, with an optional first prompt. |
+| `amux resume <agent> [text…]` | Starts a stopped agent again, with an optional first prompt. |
 | `amux rename <agent> <name>` | Renames an agent. |
-| `amux delete <agent>` (`rm`) | Deletes an agent and its history; its children follow on their own hosts, a host that is away once it is back. |
+| `amux rm <agent>` | Deletes an agent and its history; its children follow on their own hosts, a host that is away once it is back. |
 | `amux dump [agents…]` | Writes a debug bundle for the named agents, or all of them, with an optional `--reason`, and prints its path. See [DEBUGGING.md](DEBUGGING.md). |
-| `amux pair [target]` | Pairs with another host found nearby by name, an address, or `user@host` over SSH. With no target this host opens pairing mode and shows a PIN, or a QR code for the phone with `--qr` (`--print-link` also prints its link); `--link` pairs from an `amux://pair` link; `--cancel` closes pairing mode. `--demo --pin <digits> --for <duration>` holds a PIN you choose open for an unattended demo (`30d`, `12h`, `45m`; at most 90 days) and returns at once. |
-| `amux peers` | Lists the paired hosts and the hosts found nearby. |
-| `amux unpair <peer>` | Stops trusting a paired host, asking first unless `--force`. |
-| `amux login` | Signs the profile in to an amux account so its hosts reach each other through the relay (`--cloud-url` for another account service). |
+| `amux pair [target]` | Pairs with another host found nearby by name, an address, or `user@host` over SSH. With no target this host opens pairing mode and shows a PIN with what the phone and another computer do with it, or with `--qr` a QR code for the phone's camera. |
+| `amux hosts` | Lists the paired hosts and the hosts found nearby. |
+| `amux unpair <host>` | Stops trusting a paired host, asking first unless `--force`. |
+| `amux login` | Signs the profile in to an amux account so its hosts reach each other through the relay. |
 | `amux logout` | Signs the profile out; its agents and paired hosts stay. |
-| `amux profiles` | Lists the installation's profiles. |
-| `amux profile list\|create [label]\|rename <profile> <name>\|delete <profile>` | Manages the installation's profiles. |
+| `amux profile ls\|new [label]\|rename <profile> <name>\|rm <profile>` | Lists and manages the installation's profiles. |
+| `amux status` | Says whether amux is running and under what, its version and this command's, how updates arrive, each profile's account and relay link, telemetry, and the config file's path. Starts nothing; exits 0 when the daemon answers and 3 when it does not. |
 | `amux init` | Sets up this install, including whether amux starts at login (`--login-item yes\|no`, asked when omitted). |
 | `amux update` | Asks the supervisor to install the channel's release now and says whether it started; `--retry` installs it even if it was rolled back here. |
-| `amux config channel stable\|preview` | Chooses which releases the supervisor follows. |
-| `amux config telemetry [on\|off]` | Turns the usage events amux sends on or off; with no value, says whether they are on and where they go. See [what amux sends](ANALYTICS.md). |
-| `amux server start` | Starts amux detached from the terminal: the supervisor where the install has one, the daemon otherwise. With `--cloud` it runs the cloud relay in the foreground instead. |
+| `amux config get\|set\|unset <key>` | Reads a setting (its default when the file does not set it), sets one, or removes one so its default applies. A key is dotted (`ui.chat_in`, `new_agent.claude.model`); a value is read as TOML where it is one and as a string otherwise. A write changes that key alone, comments and layout kept, and only when the file still reads after it. |
+| `amux config edit\|path` | Opens the config file in `$VISUAL` or `$EDITOR` and checks it after, or prints where it is. |
+| `amux server start` | Starts amux detached from the terminal: the supervisor where the install has one, the daemon otherwise. |
 | `amux server stop` | Stops amux cleanly, the supervisor first where one runs; agents keep running. |
-| `amux supervise` | Runs the daemon under a supervisor that restarts it and, under `updates = "auto"`, installs releases. See [SUPERVISOR.md](SUPERVISOR.md). |
 
-Hidden subcommands exist for amux's own processes rather than for people: `daemon` (the daemon in the
-foreground), `agent <dir>` (the agent process), `mcp <dir>` (the tool server an agent's provider launches),
-`hooks claude` (terminal Claude's hook command), and `pair-recv` and `relay` (the far end of SSH pairing and a
-peer's link over SSH).
+Hidden flags serve tests and demos: the global `--config <path>` (or `AMUX_CONFIG`) names another config file;
+`amux pair --qr --print-link` also prints the QR code's link, to paste into a simulator; `amux pair --link` pairs
+from an `amux://pair` link; `amux pair --demo --pin <digits> --for <duration>` holds a PIN you choose open for an
+unattended demo (`30d`, `12h`, `45m`; at most 90 days) and returns at once, and `amux pair --cancel` closes it;
+`amux login --cloud-url` signs in to another account service.
+
+Hidden commands are for service managers and for amux itself. Each is called by another amux build — a login item,
+a service unit, an agent's provider started by the last release, the far host of an SSH pairing — so one changes
+only with all of its callers:
+
+| Command | Who runs it |
+|---|---|
+| `amux supervise` | The login item: the daemon under a supervisor that restarts it and, under `updates = "auto"`, installs releases. See [SUPERVISOR.md](SUPERVISOR.md). |
+| `amux daemon` | A service manager on a host with `supervisor = false`: the daemon in the foreground. |
+| `amux relay` | The cloud relay's service unit: the relay in the foreground, from the configuration `--config` names. See [CLOUD.md](CLOUD.md). |
+| `amux internal agent <dir>` | The daemon: one agent's process. |
+| `amux internal catalogue <provider>` | The daemon: asks a provider what it offers on this host. |
+| `amux internal mcp <dir>` | An agent's provider: amux's tool server. |
+| `amux internal hook claude` | Terminal Claude: its hook command. |
+| `amux internal ssh-pair` | SSH, on the far host of an SSH pairing. |
+| `amux internal ssh-link` | SSH, on the far host of every SSH link after it. |
 
 ## Tests and evidence
 

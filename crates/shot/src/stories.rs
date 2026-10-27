@@ -127,7 +127,7 @@ pub fn all() -> Vec<Story> {
             "The New Agent window `n` opens when the person chats in each agent's own terminal.",
             || {
                 let mut home = tui::vocabulary::authored_home();
-                home.chat_in = ChatIn::Terminal;
+                home.chat_in = ChatIn::Native;
                 home.key(KeyCode::Char('n'));
                 Scene::Home(Box::new(home))
             }

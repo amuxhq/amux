@@ -1,4 +1,4 @@
-//! The agent process: `amux agent <dir>` hosts one provider for one agent.
+//! The agent process: `amux internal agent <dir>` hosts one provider for one agent.
 //!
 //! It takes `<dir>/lock` for its lifetime, reads the newest `spec.<n>`,
 //! listens on `ctl.sock` (and `pty.sock` and `private/hooks.sock` for the
@@ -110,7 +110,7 @@ async fn trim_logs(dir: PathBuf) {
     }
 }
 
-/// `amux agent <dir>`: runs the agent on the wall clock and returns the
+/// `amux internal agent <dir>`: runs the agent on the wall clock and returns the
 /// process exit code. The runtime is shut down without waiting for its
 /// blocking threads, since a terminal reader can stay blocked for as long
 /// as a straggler the provider left behind holds the terminal.

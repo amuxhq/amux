@@ -1,4 +1,4 @@
-//! amux's tool server: `amux mcp <dir>`, which the harness spawns from the
+//! amux's tool server: `amux internal mcp <dir>`, which the harness spawns from the
 //! install path and speaks MCP to over stdio.
 //!
 //! Its identity is its agent's directory. The fleet tools (agents, hosts,
@@ -82,7 +82,7 @@ pub enum ToolsError {
     Write(std::io::Error),
 }
 
-/// `amux mcp <dir>`: serves the harness on stdin and stdout until it
+/// `amux internal mcp <dir>`: serves the harness on stdin and stdout until it
 /// closes stdin.
 pub async fn serve_tools(dir: PathBuf) -> Result<(), ToolsError> {
     serve_tools_on(

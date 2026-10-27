@@ -29,7 +29,7 @@ warm = "just warm"
 [resource.daemon]
 tied_to = "tree"
 name = "{{name_short()}}"
-exists = 'test -S "{{root()}}/.wt/amux/amux.sock" && amux profiles >/dev/null 2>&1'
+exists = 'test -S "{{root()}}/.wt/amux/amux.sock" && amux status >/dev/null 2>&1'
 create = "amux server start"
 destroy = "amux server stop"
 

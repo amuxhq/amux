@@ -19,8 +19,10 @@ fn ssh_program() -> std::ffi::OsString {
     }
     "ssh".into()
 }
-const RELAY_ARGS: [&str; 1] = ["relay"];
-const PAIR_RECV_ARGS: [&str; 1] = ["pair-recv"];
+/// What the far host runs: amux's own hidden commands, which every amux
+/// build answers to, so hosts on different releases still pair and link.
+const RELAY_ARGS: [&str; 2] = ["internal", "ssh-link"];
+const PAIR_RECV_ARGS: [&str; 2] = ["internal", "ssh-pair"];
 
 /// Where an install method puts `amux` when that place may not be on the
 /// PATH of a command run over SSH. sshd hands the command to the remote
@@ -113,13 +115,13 @@ pub(crate) fn spawn_ssh_relay(target: &str, profile: crate::ProfileId) -> Result
     spawn_ssh_amux_command(
         &ssh_program(),
         target,
-        &[RELAY_ARGS[0], "--profile", &profile],
+        &[RELAY_ARGS[0], RELAY_ARGS[1], "--profile", &profile],
         "SSH relay",
     )
 }
 
 pub(crate) fn spawn_ssh_pair_recv(target: &str) -> Result<SshPairRecvIo> {
-    spawn_ssh_amux_command(&ssh_program(), target, &PAIR_RECV_ARGS, "SSH pair-recv")
+    spawn_ssh_amux_command(&ssh_program(), target, &PAIR_RECV_ARGS, "SSH pairing")
 }
 
 fn spawn_ssh_amux_command(
@@ -252,7 +254,7 @@ mod tests {
             vec!["-T", "-o", "BatchMode=yes", "--", "workstation", &command]
         );
         assert!(command.starts_with("sh -c '"));
-        assert!(command.ends_with("' amux pair-recv"));
+        assert!(command.ends_with("' amux internal ssh-pair"));
     }
 
     #[test]
@@ -273,10 +275,10 @@ mod tests {
     #[test]
     fn an_argument_a_shell_would_read_is_refused() {
         for arg in ["", "a b", "$(id)", "x;y", "'", "~"] {
-            assert_eq!(remote_amux_command(&["relay", arg]), None, "{arg:?}");
+            assert_eq!(remote_amux_command(&["internal", arg]), None, "{arg:?}");
         }
         let profile = uuid::Uuid::nil().to_string();
-        assert!(remote_amux_command(&["relay", "--profile", &profile]).is_some());
+        assert!(remote_amux_command(&["internal", "ssh-link", "--profile", &profile]).is_some());
     }
 
     /// A stand-in for ssh that drops its options and target and runs the
@@ -315,7 +317,7 @@ mod tests {
             spawn_ssh_amux_command(ssh.as_os_str(), "far", &PAIR_RECV_ARGS, "test").unwrap();
         let mut out = String::new();
         io.read_to_string(&mut out).await.unwrap();
-        assert_eq!(out, "installed amux pair-recv\n");
+        assert_eq!(out, "installed amux internal ssh-pair\n");
     }
 
     #[cfg(unix)]

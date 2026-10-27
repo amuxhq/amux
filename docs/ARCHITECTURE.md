@@ -137,16 +137,16 @@ On a desktop, four kinds of process run, each with one job:
 |---|---|---|
 | **supervisor** | `amux supervise`, by the login item or `amux server start` | Parent of the daemon: restarts it whenever it exits and, under `updates = "auto"`, installs releases. See [the supervisor](SUPERVISOR.md). |
 | **daemon** | `amux daemon`, by the supervisor (or by a service manager on a host without one) | The installation: every profile runtime, their stores, network edges and client sockets. |
-| **agent process** | `amux agent <dir>`, by the daemon, detached into its own process group | One agent: holds its directory's lock, runs the provider child and the interpreter, writes the journal. See [the agent process](AGENT_PROCESS.md). |
+| **agent process** | `amux internal agent <dir>`, by the daemon, detached into its own process group | One agent: holds its directory's lock, runs the provider child and the interpreter, writes the journal. See [the agent process](AGENT_PROCESS.md). |
 | **provider child** | by the agent process | `claude` on a pseudo-terminal, `claude` speaking stream-JSON on stdio, or `codex app-server` on stdio. |
 
 Two small helpers run on the provider's behalf, from the installed `amux`
-binary: `amux mcp <dir>`, the tool server the provider launches for amux's
-[agent tools](AGENT_TOOLS.md), and `amux hooks claude`, the command terminal
+binary: `amux internal mcp <dir>`, the tool server the provider launches for amux's
+[agent tools](AGENT_TOOLS.md), and `amux internal hook claude`, the command terminal
 Claude runs for each hook event, which forwards the payload to the agent's
 `private/hooks.sock`.
 
-The cloud relay is the same binary run as `amux server start --cloud`. It is
+The cloud relay is the same binary run as `amux relay`. It is
 not an installation: no profiles, no agents, no supervisor.
 
 On the phone, the app hosts the daemon's profile runtime inside its own
@@ -359,7 +359,7 @@ $TMPDIR/amux-<uid>/<hash>, <hash>.d
     account                   the account binding and its credential, when bound
     relay-token               the week-long relay token the account service issued, so a launch dials at once
     sock                      the client socket, owner-only
-    link.sock                 where `amux relay` hands in a peer's link over SSH
+    link.sock                 where `amux internal ssh-link` hands in a peer's link over SSH
     store.sqlite              agents, items, paired hosts, drafts, recent directories, deliveries,
                               notifications; written only by this profile's core
     core-ring/                the core's newest checkpoint and the inputs since, for dumps and replay
@@ -463,7 +463,7 @@ Each profile holds one link to each host it trusts: one QUIC connection,
 pinned at pairing, carrying a control stream and plain application
 streams. Its handshake is the authority for every call on it, whichever way
 its packets go: direct on the local network or across the internet, through
-the relay over UDP or TLS on TCP, over SSH (`amux relay` joining the SSH
+the relay over UDP or TLS on TCP, over SSH (`amux internal ssh-link` joining the SSH
 session to the profile's `link.sock`), or through another paired daemon.
 Every UDP path leaves from the profile's one dual-stack link socket
 ([`link/socket.rs`](../crates/node/src/link/socket.rs)), which sits under
@@ -510,7 +510,7 @@ chats see as a Reset.
 The reset happens on each replica's own stream, whichever of the two
 catch-ups lands first; the inventory's only records the new generation.
 
-**The relay** is the same binary run as `amux server start --cloud`
+**The relay** is the same binary run as `amux relay`
 ([`crates/amux/src/relay.rs`](../crates/amux/src/relay.rs)). A signed-in
 profile keeps one cloud link to it, over QUIC with a TLS-over-TCP fallback,
 authenticated by a week-long token from the account service that the
@@ -606,7 +606,7 @@ checks.
 | [`agent-dir`](../crates/agent-dir/src/lib.rs) | The directory contract: names, the lock, local sockets, control-socket framing and the clock both sides' deadlines run on. |
 | [`journal`](../crates/journal/src/lib.rs) | Append-only journal segments: writer, reader and reclaiming. |
 | [`interpret`](../crates/interpret/src/lib.rs) | The per-kind interpreters (`claude_pty`, `claude_sdk`, `codex`), their shared core, the per-kind body redactor and the golden harness. See [interpreters](INTERPRETERS.md). |
-| [`agent`](../crates/agent/src/lib.rs) | The agent process (`amux agent <dir>`) and the tool server (`amux mcp <dir>`). |
+| [`agent`](../crates/agent/src/lib.rs) | The agent process (`amux internal agent <dir>`) and the tool server (`amux internal mcp <dir>`). |
 | [`git-facts`](../crates/git-facts/src/lib.rs) | An agent folder's branch, base branch and change totals, read by running git; shared by the agent process and the daemon. |
 | [`claude-protocol`](../crates/claude-protocol/src/lib.rs) | Claude Code's headless stream, transcript rows and hook payloads as types, with a tolerant decoder. See [provider crates](PROVIDER_CRATES.md). |
 | [`codex-protocol`](../crates/codex-protocol/src/lib.rs) | Codex's app-server messages as types, with a tolerant decoder. |

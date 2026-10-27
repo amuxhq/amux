@@ -2975,7 +2975,7 @@ fn a_new_agent_says_when_its_provider_is_not_signed_in() {
         version: HOME_PLACE.version,
         working_dir: HOME_PLACE.working_dir,
         attach: false,
-        chat_in: crate::setup::ChatIn::Terminal,
+        chat_in: crate::setup::ChatIn::Native,
         defaults: HOME_PLACE.defaults,
     };
     let mut home = crate::home::Home::default();
@@ -3059,7 +3059,7 @@ fn a_new_agent_asks_for_a_new_worktree_and_shows_why_a_start_failed() {
         version: HOME_PLACE.version,
         working_dir: HOME_PLACE.working_dir,
         attach: false,
-        chat_in: crate::setup::ChatIn::Terminal,
+        chat_in: crate::setup::ChatIn::Native,
         defaults: HOME_PLACE.defaults,
     };
     let mut home = crate::home::Home::default();

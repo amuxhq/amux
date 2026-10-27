@@ -1229,7 +1229,12 @@ fn claude_launch(spec: &AgentSpec, dir: &Path, hooks: bool) -> io::Result<(Vec<S
     let config = spec.config.clone().unwrap_or_default();
     let managed = claude::launch::ManagedSettings {
         hook_command: if hooks && !config.install_path.is_empty() {
-            vec![config.install_path, "hooks".into(), "claude".into()]
+            vec![
+                config.install_path,
+                "internal".into(),
+                "hook".into(),
+                "claude".into(),
+            ]
         } else {
             Vec::new()
         },
@@ -1343,7 +1348,11 @@ fn tool_server(spec: &AgentSpec, dir: &Path) -> Option<(String, Vec<String>)> {
     (!install_path.is_empty()).then(|| {
         (
             install_path,
-            vec!["mcp".to_owned(), dir.display().to_string()],
+            vec![
+                "internal".to_owned(),
+                "mcp".to_owned(),
+                dir.display().to_string(),
+            ],
         )
     })
 }

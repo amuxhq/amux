@@ -1,6 +1,5 @@
 //! The verbs that set an install up rather than talk to its agents:
-//! `amux init` (whether amux starts at login), `amux update` and
-//! `amux config channel`.
+//! `amux init` (whether amux starts at login) and `amux update`.
 
 use std::io::{BufRead as _, IsTerminal as _, Write as _};
 use std::path::{Path, PathBuf};
@@ -10,7 +9,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context as _, Result, bail};
 use node::supervisor::login::LoginItem;
 use node::supervisor::{Files, Request, ask};
-use settings::{Channel, InstallationConfig};
+use settings::InstallationConfig;
 
 use crate::connect;
 use crate::server::running_supervisor;
@@ -303,83 +302,4 @@ fn sentence(answer: &str) -> String {
         Some(first) => format!("{}{}.", first.to_uppercase(), chars.as_str()),
         None => String::new(),
     }
-}
-
-/// `amux config channel`: which releases the supervisor follows. It reads
-/// the config before every check, so the change needs no restart.
-pub fn set_channel(config_path: Option<&Path>, channel: Channel) -> Result<()> {
-    let name = match channel {
-        Channel::Stable => "stable",
-        Channel::Preview => "preview",
-    };
-    set_key(config_path, "channel", name.into())?;
-    println!(
-        "Channel: {name}. The supervisor follows it from its next check; `amux update` checks now."
-    );
-    Ok(())
-}
-
-/// `amux config telemetry [on|off]`: turns product analytics on or off, or
-/// says whether it is on and where it goes. The daemon reads the setting
-/// before every upload, so off takes effect at once and on resumes a daemon
-/// that started with it on; a daemon that started with it off has no
-/// uploader and starts sending when it next starts.
-pub fn telemetry(config_path: Option<&Path>, state: Option<bool>) -> Result<()> {
-    if let Some(state) = state {
-        set_key(config_path, "telemetry", state.into())?;
-    }
-    let config = crate::connect::load_config(config_path)?;
-    let destination = analytics::Endpoint::resolve(node::release::is_published())
-        .map(|endpoint| endpoint.describe(settings::DEFAULT_CLOUD_URL));
-    let line = match (config.telemetry, destination) {
-        (false, _) => "Telemetry: off. amux sends no product analytics.".to_owned(),
-        (true, _) if analytics::do_not_track() => {
-            // This command sees its own shell's environment, not the
-            // daemon's: one started at login never sees a variable set in a
-            // shell profile, so only the setting is sure to reach it.
-            "Telemetry: on, but DO_NOT_TRACK is set in this shell, so a daemon started from \
-             it sends nothing. A daemon started at login does not see it; \
-             `amux config telemetry off` turns telemetry off for every daemon."
-                .to_owned()
-        }
-        (true, None) => {
-            "Telemetry: on, but this is a development build, which sends nothing.".to_owned()
-        }
-        (true, Some(destination)) => format!(
-            "Telemetry: on. Usage events go to {destination}, then to PostHog in the EU. \
-             `amux config telemetry off` stops them."
-        ),
-    };
-    println!("{line}");
-    if state == Some(true) {
-        println!("A daemon that started with telemetry off starts sending when it next starts.");
-    }
-    Ok(())
-}
-
-/// Sets one top-level key in the installation's config file, keeping the
-/// rest as it is, comments and layout included, and checks that the file
-/// still reads.
-fn set_key(config_path: Option<&Path>, key: &str, value: toml_edit::Value) -> Result<()> {
-    let path = config_path
-        .map(Path::to_owned)
-        .unwrap_or_else(InstallationConfig::default_path);
-    let mut document = match std::fs::read_to_string(&path) {
-        Ok(text) => text
-            .parse::<toml_edit::DocumentMut>()
-            .with_context(|| format!("reading {}", path.display()))?,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => toml_edit::DocumentMut::new(),
-        Err(error) => return Err(error).with_context(|| format!("reading {}", path.display())),
-    };
-    document[key] = toml_edit::value(value);
-    let text = document.to_string();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
-    }
-    node::write_durably(&path, text.as_bytes())
-        .with_context(|| format!("writing {}", path.display()))?;
-    InstallationConfig::from_file(&path)
-        .with_context(|| format!("reading back {}", path.display()))?;
-    Ok(())
 }

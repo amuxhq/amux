@@ -37,13 +37,7 @@ async fn a_send_to_an_exited_agent_is_refused_in_plain_words() {
     let work = desk.work.to_string_lossy().into_owned();
     let created = desk
         .run(&[
-            "create",
-            "claude_sdk",
-            "--name",
-            "worker",
-            "--cwd",
-            &work,
-            "--prompt",
+            "new", "claude", "--in", "amux", "--name", "worker", "--cwd", &work, "--prompt",
             "start",
         ])
         .await;

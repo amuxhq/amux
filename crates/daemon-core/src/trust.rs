@@ -60,7 +60,7 @@ pub struct TrustEntry {
     pub direct: Vec<SocketAddr>,
     /// The SSH destination the host is reached at, where it paired that
     /// way: the one way of reaching it the host cannot tell this one
-    /// itself. `amux relay` there joins the profile whose id is the host's.
+    /// itself. `amux internal ssh-link` there joins the profile whose id is the host's.
     pub ssh: Option<String>,
     pub signed_in: Option<bool>,
     /// The operating system the peer announced, last it said one.

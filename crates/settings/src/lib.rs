@@ -311,12 +311,45 @@ impl Default for AgentSettings {
 /// client: per agent, the model, reasoning effort and permission. Shipped
 /// with real values, so a new agent always shows what it will run; a person
 /// changes them in the config file, and starting one beside a running chat
-/// copies that chat's instead.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
+/// copies that chat's instead. A file that sets some of an agent's values
+/// keeps the shipped ones for the rest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct NewAgentSettings {
     pub claude: NewAgentDefaults,
     pub codex: NewAgentDefaults,
+}
+
+impl<'de> Deserialize<'de> for NewAgentSettings {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        #[derive(Default, Deserialize)]
+        #[serde(default)]
+        struct Given {
+            model: Option<String>,
+            effort: Option<String>,
+            permission: Option<String>,
+        }
+        #[derive(Default, Deserialize)]
+        #[serde(default)]
+        struct Both {
+            claude: Given,
+            codex: Given,
+        }
+        fn over(given: Given, shipped: NewAgentDefaults) -> NewAgentDefaults {
+            NewAgentDefaults {
+                model: given.model.unwrap_or(shipped.model),
+                effort: given.effort.unwrap_or(shipped.effort),
+                permission: given.permission.unwrap_or(shipped.permission),
+            }
+        }
+        let given = Both::deserialize(deserializer)?;
+        let shipped = Self::default();
+        Ok(Self {
+            claude: over(given.claude, shipped.claude),
+            codex: over(given.codex, shipped.codex),
+        })
+    }
 }
 
 /// One agent's starting model, effort and permission, in the agent's own
@@ -399,13 +432,14 @@ pub enum ColorSetting {
 }
 
 /// Where a person chats with their agents: in amux's own chat, or in each
-/// agent's own terminal, which a new agent is attached to when it starts.
+/// agent's own interface (Claude Code's or Codex's), which a new agent is
+/// attached to when it starts and `amux attach` opens.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ChatInSetting {
     #[default]
     Amux,
-    Terminal,
+    Native,
 }
 
 /// Client UI configuration (the TUI; future desktop clients read the same
@@ -417,7 +451,7 @@ pub struct UiSettings {
     pub theme: ThemeSetting,
     /// Whether to detect, force, or disable truecolor output.
     pub color: ColorSetting,
-    /// Where new agents are chatted with: `amux` or `terminal`.
+    /// Where agents are chatted with: `amux` or `native`.
     pub chat_in: ChatInSetting,
 }
 
@@ -575,6 +609,35 @@ impl InstallationConfig {
     }
 }
 
+/// Every key the installation's file takes, dotted as `amux config` names
+/// them, in the order the file documents them.
+pub const INSTALLATION_KEYS: &[&str] = &[
+    "host_name",
+    "repository_roots",
+    "supervisor",
+    "updates",
+    "channel",
+    "keep_awake",
+    "telemetry",
+    "ui.theme",
+    "ui.color",
+    "ui.chat_in",
+    "keybinds.leader",
+    "new_agent.claude.model",
+    "new_agent.claude.effort",
+    "new_agent.claude.permission",
+    "new_agent.codex.model",
+    "new_agent.codex.effort",
+    "new_agent.codex.permission",
+    "root",
+    "front_door_socket",
+    "releases_url",
+    "discovery.scope",
+    "agent.grace_secs",
+    "agent.drain_secs",
+    "agent.facts_ring_mib",
+];
+
 // Resolve aliases in the existing ancestor, even before a socket or state file
 // exists. This gives /tmp and /private/tmp the same identity on macOS.
 fn absolute_path(path: &Path, base: &Path) -> Result<PathBuf, ConfigError> {
@@ -608,6 +671,48 @@ mod tests {
 
     fn installation(text: &str) -> Result<InstallationConfig, ConfigError> {
         InstallationConfig::from_toml(text)
+    }
+
+    /// The key list `amux config` checks against is every field the file
+    /// takes: the leaves of a default config, and the two that are absent
+    /// until set.
+    #[test]
+    fn an_agent_setting_given_alone_keeps_the_shipped_rest() {
+        let config = installation("[new_agent.claude]\nmodel = \"sonnet\"\n").unwrap();
+        assert_eq!(config.new_agent.claude.model, "sonnet");
+        assert_eq!(
+            config.new_agent.claude.effort,
+            NewAgentSettings::default().claude.effort
+        );
+        assert_eq!(config.new_agent.codex, NewAgentSettings::default().codex);
+    }
+
+    #[test]
+    fn the_key_list_is_every_field() {
+        fn leaves(prefix: &str, table: &toml::Table, out: &mut Vec<String>) {
+            for (key, value) in table {
+                let path = if prefix.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{prefix}.{key}")
+                };
+                match value {
+                    toml::Value::Table(inner) => leaves(&path, inner, out),
+                    _ => out.push(path),
+                }
+            }
+        }
+        let default = toml::Table::try_from(InstallationConfig::default()).unwrap();
+        let mut found = Vec::new();
+        leaves("", &default, &mut found);
+        found.extend(["host_name".to_owned(), "updates".to_owned()]);
+        found.sort();
+        let mut listed: Vec<String> = INSTALLATION_KEYS
+            .iter()
+            .map(|key| key.to_string())
+            .collect();
+        listed.sort();
+        assert_eq!(found, listed);
     }
 
     #[test]

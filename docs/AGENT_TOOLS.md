@@ -22,7 +22,7 @@ per-kind carriers are in the interpreters (`crates/interpret`) and in
 
 ## The tool server
 
-The harness starts the tool server itself, as `amux mcp <dir>` run from the
+The harness starts the tool server itself, as `amux internal mcp <dir>` run from the
 install path, so the server is always the agent's own version for the life of
 its session. The agent process registers it when it launches the provider:
 Claude gets it through `--mcp-config` as a server named `amux`, with
@@ -275,7 +275,7 @@ parent edge: it talks to its user, and the daemon knows who that is.
 The daemon writes the child's row first, so a crash leaves a row the next
 start marks exited rather than a directory nothing lists; then the directory
 and `spec.1` with the kind, working directory, parent and the first prompt;
-then it binds the child's `tools.sock` and starts `amux agent <dir>`. It
+then it binds the child's `tools.sock` and starts `amux internal agent <dir>`. It
 answers once the process has taken its lock and sent its hello on
 `ctl.sock`, or has exited, within the start deadline (20 seconds). It does
 not wait for the provider to be ready: the child seeds its queue from the

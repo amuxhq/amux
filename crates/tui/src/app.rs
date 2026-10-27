@@ -1290,7 +1290,7 @@ impl App {
                 attachments,
                 open,
             } => {
-                let attach = setup.chat_in == crate::setup::ChatIn::Terminal;
+                let attach = setup.chat_in == crate::setup::ChatIn::Native;
                 self.spawn(async move {
                     // An agent used in its own terminal gets its first
                     // prompt there.

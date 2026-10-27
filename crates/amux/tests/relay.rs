@@ -241,7 +241,7 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
     )
     .unwrap();
     let mut relay = tokio::process::Command::new(amux_binary())
-        .args(["server", "start", "--cloud", "--foreground"])
+        .arg("relay")
         .env("AMUX_CONFIG", &config)
         .env("AMUX_LOG", dir.path().join("relay.log"))
         .env_remove("STATE_DIRECTORY")

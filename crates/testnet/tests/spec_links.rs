@@ -139,7 +139,7 @@ async fn route_ssh_reaches_a_session_through_the_far_hosts_link_socket() {
 }
 
 /// `amux pair <target>` on the laptop pairs it with the desk over SSH
-/// alone: SSH runs `amux pair-recv` on the desk, the two trade identities
+/// alone: SSH runs `amux internal ssh-pair` on the desk, the two trade identities
 /// through their own daemons, each trusts the other, the laptop remembers
 /// the desk's SSH destination, and the link comes up over SSH. The same
 /// command aimed at the laptop itself is refused as a pairing with itself.

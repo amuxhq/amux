@@ -1,4 +1,4 @@
-//! `amux server start --cloud`: the cloud relay a deployment runs.
+//! `amux relay`: the cloud relay a deployment runs.
 //!
 //! The relay accepts every host of an account over QUIC and a TLS-over-TCP
 //! fallback, checks each host's connection token against the cloud's

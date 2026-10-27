@@ -348,8 +348,10 @@ async fn a_daemon_killed_mid_turn_loses_nothing() {
     let sdk = created_id(
         &install
             .ok(&[
-                "create",
-                "claude_sdk",
+                "new",
+                "claude",
+                "--in",
+                "amux",
                 "--name",
                 "sdk",
                 "--cwd",
@@ -362,7 +364,7 @@ async fn a_daemon_killed_mid_turn_loses_nothing() {
     let codex = created_id(
         &install
             .ok(&[
-                "create",
+                "new",
                 "codex",
                 "--name",
                 "codex",
@@ -555,12 +557,14 @@ async fn the_cli_verbs_work_against_a_started_daemon() {
             .contains("already running")
     );
 
-    let profiles = install.ok(&["profiles"]).await;
+    let profiles = install.ok(&["profile", "ls"]).await;
     assert!(profiles.contains("default"), "{profiles}");
 
     let helper = created_id(
         &install
-            .ok(&["create", "claude_sdk", "--name", "helper", "--cwd", &work])
+            .ok(&[
+                "new", "claude", "--in", "amux", "--name", "helper", "--cwd", &work,
+            ])
             .await,
     );
     let client = install.client().await;
@@ -585,10 +589,7 @@ async fn the_cli_verbs_work_against_a_started_daemon() {
 
     install.ok(&["rename", "helper", "aide"]).await;
     let listing = install.ok(&["ls"]).await;
-    assert!(
-        line_of(&listing, "aide").contains("claude_sdk"),
-        "{listing}"
-    );
+    assert!(line_of(&listing, "aide").contains("claude"), "{listing}");
 
     let bundle = install.ok(&["dump", "aide", "--reason", "a test"]).await;
     let bundle = PathBuf::from(bundle.trim());
@@ -606,8 +607,8 @@ async fn the_cli_verbs_work_against_a_started_daemon() {
     // Profiles are made, renamed and removed at the front door; a new one
     // does not take over as the profile verbs act in by default.
     let helper_dir = install.agent_dir(&helper);
-    install.ok(&["profile", "create", "work"]).await;
-    let profiles = install.ok(&["profiles"]).await;
+    install.ok(&["profile", "new", "work"]).await;
+    let profiles = install.ok(&["profile", "ls"]).await;
     assert!(
         profiles.find("default") < profiles.find("work"),
         "{profiles}"
@@ -618,10 +619,10 @@ async fn the_cli_verbs_work_against_a_started_daemon() {
         install.ok(&["--profile", "office", "ls"]).await,
         "No agents.\n"
     );
-    install.ok(&["profile", "delete", "office"]).await;
-    assert!(!install.ok(&["profiles"]).await.contains("office"));
+    install.ok(&["profile", "rm", "office"]).await;
+    assert!(!install.ok(&["profile", "ls"]).await.contains("office"));
 
-    install.ok(&["delete", "aide"]).await;
+    install.ok(&["rm", "aide"]).await;
     assert_eq!(install.ok(&["ls"]).await, "No agents.\n");
     assert!(!helper_dir.exists());
 

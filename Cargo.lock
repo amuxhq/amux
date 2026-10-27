@@ -126,6 +126,7 @@ dependencies = [
  "quinn",
  "rcgen",
  "release",
+ "semver",
  "serde",
  "serde_ignored",
  "serde_json",

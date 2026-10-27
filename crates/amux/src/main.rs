@@ -1,15 +1,21 @@
-//! The amux binary: the daemon entry, the CLI verbs, and the hidden
-//! subcommands an agent's harness runs from the canonical install path —
-//! the agent process itself, the tool server its provider launches, and
-//! the hook command terminal Claude runs for each hook event.
+//! The amux binary: the terminal app, the commands a person or a script
+//! runs, and the hidden entries the rest of amux runs. Those are the
+//! service manager's (`supervise`, `daemon`, `relay`) and amux's own
+//! (`internal …`: the agent process, the tool server and hook command its
+//! provider launches, the provider catalogue, and both ends of an SSH
+//! link). Every hidden name is called by another amux build — an agent's
+//! provider started by the last one, the far host of an SSH pairing, a
+//! service unit — so it changes only with all of its callers.
 
 mod attach;
+mod config;
 mod connect;
 mod pairing;
 mod profiles;
 mod relay;
 mod server;
 mod setup;
+mod status;
 mod supervise;
 mod ui;
 mod verbs;
@@ -22,54 +28,75 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use tonic::Code;
 
-use crate::verbs::CliKind;
+use crate::verbs::{CliAgent, Interface};
 
 #[derive(Debug, Parser)]
-#[command(name = "amux", version = node::version(), about = "Agent multiplexer")]
+#[command(
+    name = "amux",
+    version = node::version(),
+    about = "Every Claude Code and Codex agent on your machines, in one place",
+    long_about = "Every Claude Code and Codex agent on your machines, in one place.\n\n\
+                  With no command, the terminal app opens."
+)]
 struct Cli {
     /// The installation config file.
-    #[arg(long, global = true, env = "AMUX_CONFIG")]
+    #[arg(long, global = true, env = "AMUX_CONFIG", hide = true)]
     config: Option<PathBuf>,
 
     /// The profile to act in, by label or id; the first one otherwise.
     #[arg(long, global = true)]
     profile: Option<String>,
 
-    /// With none, the terminal client opens.
     #[command(subcommand)]
     command: Option<Command>,
 }
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Open an agent's chat in this terminal.
+    ///
+    /// It opens in the interface `ui.chat_in` names: amux's chat, or the
+    /// agent's own (Claude Code's or Codex's) where it has one here. An agent
+    /// with no interface of its own on this machine, such as one on another
+    /// host or one started from the phone, opens in amux's chat.
+    ///
+    /// In an agent's own interface, <leader> d leaves it for the shell and
+    /// <leader> s opens the fleet over it.
+    Attach {
+        /// The agent's name or id.
+        agent: String,
+        /// Open it in this interface instead of the configured one.
+        #[arg(long = "in", value_name = "INTERFACE")]
+        interface: Option<Interface>,
+    },
     /// List the agents, children beneath their parent.
-    #[command(alias = "list")]
     Ls,
-    /// Start a new agent.
-    #[command(alias = "new")]
-    Create {
-        /// Which agent: claude_pty, claude_sdk or codex.
-        kind: CliKind,
+    /// Start a new agent in this directory.
+    New {
+        agent: CliAgent,
         #[arg(long)]
         name: Option<String>,
         /// Its working directory; the current one otherwise.
         #[arg(long)]
         cwd: Option<PathBuf>,
+        /// Chat with it in this interface instead of the configured one.
+        #[arg(long = "in", value_name = "INTERFACE")]
+        interface: Option<Interface>,
+        /// Its model; `new_agent.<agent>.model` otherwise.
         #[arg(long)]
         model: Option<String>,
+        /// Its reasoning effort; `new_agent.<agent>.effort` otherwise.
+        #[arg(long)]
+        effort: Option<String>,
+        /// Its permission; `new_agent.<agent>.permission` otherwise.
+        #[arg(long)]
+        permission: Option<String>,
         /// Its first prompt.
         #[arg(long)]
         prompt: Option<String>,
         /// Extra arguments for Claude, after `--`.
         #[arg(last = true)]
         args: Vec<String>,
-    },
-    /// Hand this terminal to an agent's own interface: terminal Claude's
-    /// or a Codex view. Only agents on this machine; <leader> d detaches,
-    /// <leader> s opens the fleet over it.
-    Attach {
-        /// The agent's name or id.
-        agent: String,
     },
     /// Send an agent a prompt.
     Send {
@@ -80,36 +107,43 @@ enum Command {
     },
     /// Stop an agent now: its turn is cancelled and it exits, resumable.
     Stop { agent: String },
-    /// Start an exited agent again, with an optional first prompt.
+    /// Start a stopped agent again, with an optional first prompt.
     Resume { agent: String, text: Vec<String> },
     /// Rename an agent.
     Rename { agent: String, name: String },
     /// Delete an agent, its history and its children.
-    #[command(alias = "rm")]
-    Delete { agent: String },
-    /// Gather a dump of the named agents, or all of them, into one
-    /// directory.
+    Rm { agent: String },
+    /// Gather what amux knows about the named agents, or all of them, into
+    /// one directory for a bug report.
     Dump {
         agents: Vec<String>,
+        /// What looks wrong, kept with the dump.
         #[arg(long)]
         reason: Option<String>,
     },
-    /// Pair with another host: one found nearby by name, an address, or
-    /// user@host over SSH. With none, this host opens pairing mode and shows
-    /// a PIN, or a QR code for the phone.
+    /// Pair with another host, or open this one for pairing.
+    ///
+    /// With a target — a host found nearby by name, an address, or
+    /// user@host over SSH — this host pairs with it. With none, this host
+    /// opens pairing mode and shows a PIN, or a QR code for the phone.
     Pair {
         target: Option<String>,
-        /// Show a QR code instead of a PIN.
+        /// Show a QR code for the phone instead of a PIN.
         #[arg(long, conflicts_with_all = ["target", "link", "cancel"])]
         qr: bool,
         /// With --qr, print the QR code's link too, to paste into a simulator.
-        #[arg(long = "print-link", requires = "qr")]
+        #[arg(long = "print-link", requires = "qr", hide = true)]
         print_link: bool,
         /// Pair with the host whose QR code carries this amux://pair link.
-        #[arg(long, value_name = "LINK", conflicts_with_all = ["target", "cancel"])]
+        #[arg(
+            long,
+            value_name = "LINK",
+            conflicts_with_all = ["target", "cancel"],
+            hide = true
+        )]
         link: Option<String>,
         /// Close this host's pairing mode.
-        #[arg(long, conflicts_with = "target")]
+        #[arg(long, conflicts_with = "target", hide = true)]
         cancel: bool,
         /// Hold a PIN you choose open for an unattended demo, such as an app
         /// reviewer pairing a phone with a machine nobody watches. Every
@@ -119,26 +153,28 @@ enum Command {
         #[arg(
             long,
             requires_all = ["pin", "for"],
-            conflicts_with_all = ["target", "qr", "link", "cancel"]
+            conflicts_with_all = ["target", "qr", "link", "cancel"],
+            hide = true
         )]
         demo: bool,
         /// The six-digit PIN a demo window holds.
-        #[arg(long, value_name = "DIGITS", requires = "demo")]
+        #[arg(long, value_name = "DIGITS", requires = "demo", hide = true)]
         pin: Option<String>,
         /// How long a demo window stays open: 30d, 12h, 45m; at most 90 days.
         #[arg(
             long = "for",
             value_name = "DURATION",
             requires = "demo",
-            value_parser = pairing::parse_duration
+            value_parser = pairing::parse_duration,
+            hide = true
         )]
         r#for: Option<std::time::Duration>,
     },
     /// List the paired hosts and the hosts found nearby.
-    Peers,
+    Hosts,
     /// Stop trusting a paired host, by name or id.
     Unpair {
-        peer: String,
+        host: String,
         /// Unpair without asking.
         #[arg(long)]
         force: bool,
@@ -147,24 +183,19 @@ enum Command {
     /// other through the relay.
     Login {
         /// The account service.
-        #[arg(long, default_value = settings::DEFAULT_CLOUD_URL)]
+        #[arg(long, default_value = settings::DEFAULT_CLOUD_URL, hide = true)]
         cloud_url: String,
     },
     /// Sign the profile out; its agents and paired hosts stay.
     Logout,
-    /// The far end of an SSH pairing, over stdin and stdout.
-    #[command(name = "pair-recv", hide = true)]
-    PairRecv,
-    /// A peer's link over SSH, joined to the profile's link socket.
-    #[command(hide = true)]
-    Relay,
-    /// List the installation's profiles.
-    Profiles,
-    /// Manage the installation's profiles.
+    /// List or change the installation's profiles.
     Profile {
         #[command(subcommand)]
         command: ProfileCommand,
     },
+    /// Say whether amux is running, which version, and each profile's
+    /// account.
+    Status,
     /// Set up this install: whether amux starts at login.
     Init {
         /// Start amux at login, or not; asked when omitted.
@@ -175,38 +206,84 @@ enum Command {
         #[arg(long, hide = true)]
         dry_run: bool,
     },
-    /// Ask the supervisor to install the channel's release now.
+    /// Install the channel's release now.
     Update {
         /// Install it even if it was rolled back here.
         #[arg(long)]
         retry: bool,
     },
-    /// Change a setting.
+    /// Read or change a setting in the config file.
     Config {
         #[command(subcommand)]
         command: ConfigCommand,
     },
-    /// Start or stop amux.
+    /// Start or stop amux on this machine.
     Server {
         #[command(subcommand)]
         command: ServerCommand,
     },
-    /// Run the daemon in the foreground.
-    #[command(hide = true)]
-    Daemon,
     /// Run the daemon under a supervisor that restarts it and, under
-    /// `updates = "auto"`, installs releases.
+    /// `updates = "auto"`, installs releases: what the login item runs.
+    #[command(hide = true)]
     Supervise {
         /// The state a supervisor hands the binary it execs after an update.
         #[arg(long, hide = true)]
         inherit: Option<String>,
     },
-    /// Host one agent: the directory holds its lock, specs and sockets.
+    /// Run the daemon in the foreground: what a service manager runs on a
+    /// host with `supervisor = false`.
     #[command(hide = true)]
+    Daemon,
+    /// Run the cloud relay in the foreground, from the relay configuration
+    /// `--config` names.
+    #[command(hide = true)]
+    Relay,
+    /// What amux runs on itself.
+    #[command(hide = true)]
+    Internal {
+        #[command(subcommand)]
+        command: Internal,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ProfileCommand {
+    Ls,
+    New { label: Option<String> },
+    Rename { profile: String, name: String },
+    Rm { profile: String },
+}
+
+#[derive(Debug, Subcommand)]
+enum ServerCommand {
+    /// Start amux, detached from this terminal: the supervisor where the
+    /// install has one, the daemon otherwise.
+    Start,
+    /// Stop amux cleanly: the supervisor first where one runs. Agents keep
+    /// running.
+    Stop,
+}
+
+#[derive(Debug, Subcommand)]
+enum ConfigCommand {
+    /// Print a setting's value, the default when the file does not set it.
+    Get { key: String },
+    /// Set a setting, keeping the rest of the file as it is.
+    Set { key: String, value: String },
+    /// Remove a setting from the file, so its default applies.
+    Unset { key: String },
+    /// Open the config file in $VISUAL or $EDITOR, and check it after.
+    Edit,
+    /// Print where the config file is.
+    Path,
+}
+
+#[derive(Debug, Subcommand)]
+enum Internal {
+    /// Host one agent: the directory holds its lock, specs and sockets.
     Agent { dir: PathBuf },
     /// Ask a provider what it offers on this host and whether it is signed
     /// in, and write the answer to a file.
-    #[command(hide = true)]
     Catalogue {
         /// The provider: claude or codex.
         provider: String,
@@ -217,62 +294,16 @@ enum Command {
         out: PathBuf,
     },
     /// Serve amux's tools over stdio to the agent in the directory.
-    #[command(hide = true)]
     Mcp { dir: PathBuf },
     /// Hand a provider's hook payload on stdin to its agent.
-    #[command(hide = true)]
-    Hooks {
+    Hook {
         #[command(subcommand)]
-        provider: Hooks,
+        provider: Hook,
     },
-}
-
-#[derive(Debug, Subcommand)]
-enum ProfileCommand {
-    List,
-    Create { label: Option<String> },
-    Rename { profile: String, name: String },
-    Delete { profile: String },
-}
-
-#[derive(Debug, Subcommand)]
-enum ServerCommand {
-    /// Start amux, detached from this terminal: the supervisor where the
-    /// install has one, the daemon otherwise.
-    Start {
-        /// Run the cloud relay instead, in the foreground, from the relay
-        /// configuration `--config` names.
-        #[arg(long)]
-        cloud: bool,
-        /// The relay always runs in the foreground; accepted for the
-        /// service units that say so.
-        #[arg(long, requires = "cloud")]
-        foreground: bool,
-    },
-    /// Stop amux cleanly: the supervisor first where one runs. Agents keep
-    /// running.
-    Stop,
-}
-
-#[derive(Debug, Subcommand)]
-enum ConfigCommand {
-    /// Which releases the supervisor follows.
-    Channel { channel: CliChannel },
-    /// Whether amux sends product analytics; with no value, says whether
-    /// it does and where.
-    Telemetry { state: Option<OnOff> },
-}
-
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
-enum OnOff {
-    On,
-    Off,
-}
-
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
-enum CliChannel {
-    Stable,
-    Preview,
+    /// The far end of an SSH pairing, over stdin and stdout.
+    SshPair,
+    /// A peer's link over SSH, joined to the profile's link socket.
+    SshLink,
 }
 
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
@@ -282,7 +313,7 @@ enum YesNo {
 }
 
 #[derive(Debug, Subcommand)]
-enum Hooks {
+enum Hook {
     Claude,
 }
 
@@ -292,20 +323,27 @@ fn main() -> ExitCode {
         return report(open_ui(cli.config, cli.profile));
     };
     match command {
-        Command::Agent { dir } => ExitCode::from(agent::main(dir).clamp(0, 255) as u8),
-        Command::Catalogue {
-            provider,
-            command,
-            out,
+        Command::Internal {
+            command: Internal::Agent { dir },
+        } => ExitCode::from(agent::main(dir).clamp(0, 255) as u8),
+        Command::Internal {
+            command:
+                Internal::Catalogue {
+                    provider,
+                    command,
+                    out,
+                },
         } => ExitCode::from(agent::catalogue::main(&provider, &command, &out).clamp(0, 255) as u8),
-        Command::Hooks {
-            provider: Hooks::Claude,
+        Command::Internal {
+            command: Internal::Hook {
+                provider: Hook::Claude,
+            },
         } => {
             // Claude reads a hook's exit code as a verdict (2 blocks the
             // action), so a payload that cannot be delivered is reported
             // and the hook still succeeds.
             if let Err(error) = claude_hook() {
-                eprintln!("amux hooks claude: {error}");
+                eprintln!("amux internal hook claude: {error}");
             }
             ExitCode::SUCCESS
         }
@@ -318,14 +356,20 @@ fn main() -> ExitCode {
                     .and_then(|(pipe, config)| server::run_daemon(&config, pipe)),
             )
         }
-        Command::Server {
-            command: ServerCommand::Start { cloud: true, .. },
-        } => report(relay::run(cli.config.as_deref())),
+        Command::Relay => report(relay::run(cli.config.as_deref())),
         Command::Supervise { inherit } => report(
             connect::load_config(cli.config.as_deref()).and_then(|config| {
                 supervise::run(&config, cli.config.as_deref(), inherit.as_deref())
             }),
         ),
+        Command::Status => match block_on(status::run(cli.config.as_deref())) {
+            // Not running is an answer, not a failure to give one; the exit
+            // code carries it for scripts that ask, as `systemctl status`
+            // does.
+            Ok(true) => ExitCode::SUCCESS,
+            Ok(false) => ExitCode::from(3),
+            Err(error) => report(Err(error)),
+        },
         command => report(run(command, cli.config, cli.profile)),
     }
 }
@@ -340,44 +384,44 @@ fn report(result: Result<()>) -> ExitCode {
     }
 }
 
-fn open_ui(config_path: Option<PathBuf>, profile: Option<String>) -> Result<()> {
-    let runtime = tokio::runtime::Builder::new_multi_thread()
+fn block_on<T>(future: impl std::future::Future<Output = Result<T>>) -> Result<T> {
+    tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .build()?;
-    runtime.block_on(async move {
+        .build()?
+        .block_on(future)
+}
+
+fn open_ui(config_path: Option<PathBuf>, profile: Option<String>) -> Result<()> {
+    block_on(async move {
         let config = connect::load_config(config_path.as_deref())?;
         ui::run(&config, profile.as_deref()).await
     })
 }
 
 fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) -> Result<()> {
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
-    runtime.block_on(async move {
-        if let Command::Mcp { dir } = command {
-            return agent::serve_tools(dir).await.map_err(anyhow::Error::from);
-        }
-        if let Command::Config {
-            command: ConfigCommand::Channel { channel },
-        } = command
-        {
-            return setup::set_channel(
-                config_path.as_deref(),
-                match channel {
-                    CliChannel::Stable => settings::Channel::Stable,
-                    CliChannel::Preview => settings::Channel::Preview,
-                },
-            );
-        }
-        if let Command::Config {
-            command: ConfigCommand::Telemetry { state },
-        } = command
-        {
-            return setup::telemetry(
-                config_path.as_deref(),
-                state.map(|state| matches!(state, OnOff::On)),
-            );
+    block_on(async move {
+        match command {
+            Command::Internal {
+                command: Internal::Mcp { dir },
+            } => return agent::serve_tools(dir).await.map_err(anyhow::Error::from),
+            // The config verbs read and write the file alone: they work with
+            // amux stopped, and on a file that does not read yet.
+            Command::Config { command } => {
+                let path = config_path
+                    .clone()
+                    .unwrap_or_else(settings::InstallationConfig::default_path);
+                return match command {
+                    ConfigCommand::Get { key } => config::get(&path, &key),
+                    ConfigCommand::Set { key, value } => config::set(&path, &key, &value),
+                    ConfigCommand::Unset { key } => config::unset(&path, &key),
+                    ConfigCommand::Edit => config::edit(&path),
+                    ConfigCommand::Path => {
+                        println!("{}", path.display());
+                        Ok(())
+                    }
+                };
+            }
+            _ => {}
         }
         let config = connect::load_config(config_path.as_deref())?;
         let profile = profile.as_deref();
@@ -396,33 +440,26 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
             }
             Command::Update { retry } => setup::update(&config, retry).await,
             Command::Server {
-                command: ServerCommand::Start { .. },
+                command: ServerCommand::Start,
             } => server::start(&config, config_path.as_deref()).await,
             Command::Server {
                 command: ServerCommand::Stop,
             } => server::stop(&config).await,
-            Command::Profiles
-            | Command::Profile {
-                command: ProfileCommand::List,
-            } => {
-                let door = connect::front_door(&config).await?;
-                profiles::list(&mut connect::profiles(door)).await
-            }
             Command::Profile { command } => {
                 let door = connect::front_door(&config).await?;
                 let mut door = connect::profiles(door);
                 match command {
-                    ProfileCommand::List => unreachable!("listed above"),
-                    ProfileCommand::Create { label } => profiles::create(&mut door, label).await,
+                    ProfileCommand::Ls => profiles::list(&mut door).await,
+                    ProfileCommand::New { label } => profiles::create(&mut door, label).await,
                     ProfileCommand::Rename { profile, name } => {
                         profiles::rename(&mut door, &profile, &name).await
                     }
-                    ProfileCommand::Delete { profile } => {
-                        profiles::delete(&mut door, &profile).await
-                    }
+                    ProfileCommand::Rm { profile } => profiles::delete(&mut door, &profile).await,
                 }
             }
-            Command::Attach { agent } => ui::attach(&config, profile, &agent).await,
+            Command::Attach { agent, interface } => {
+                ui::attach(&config, profile, &agent, interface).await
+            }
             Command::Pair {
                 target,
                 qr,
@@ -449,14 +486,14 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                     pairing::wait(admin, qr, print_link).await
                 }
             }
-            Command::Peers => {
+            Command::Hosts => {
                 let selected = connect::profile(&config, profile).await?;
                 let mut client = connect::client_of(&selected).await?;
-                pairing::peers(connect::admin_of(&selected).await?, &mut client).await
+                pairing::hosts(connect::admin_of(&selected).await?, &mut client).await
             }
-            Command::Unpair { peer, force } => {
+            Command::Unpair { host, force } => {
                 let selected = connect::profile(&config, profile).await?;
-                pairing::unpair(connect::admin_of(&selected).await?, &peer, force).await
+                pairing::unpair(connect::admin_of(&selected).await?, &host, force).await
             }
             Command::Login { cloud_url } => {
                 let door = connect::profiles(connect::front_door(&config).await?);
@@ -473,35 +510,48 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                 pairing::logout(connect::admin_of(&selected).await?, &selected).await
             }
             #[cfg(unix)]
-            Command::PairRecv => {
+            Command::Internal {
+                command: Internal::SshPair,
+            } => {
                 let selected = connect::profile(&config, profile).await?;
                 pairing::pair_recv(connect::admin_of(&selected).await?).await
             }
             #[cfg(unix)]
-            Command::Relay => pairing::relay(&connect::profile(&config, profile).await?).await,
+            Command::Internal {
+                command: Internal::SshLink,
+            } => pairing::relay(&connect::profile(&config, profile).await?).await,
             #[cfg(not(unix))]
-            Command::PairRecv | Command::Relay => {
+            Command::Internal {
+                command: Internal::SshPair | Internal::SshLink,
+            } => {
                 anyhow::bail!("pairing over SSH needs a Unix host")
             }
             command => {
                 let mut client = connect::client(&config, profile).await?;
                 match command {
                     Command::Ls => verbs::ls(&mut client).await,
-                    Command::Create {
-                        kind,
+                    Command::New {
+                        agent,
                         name,
                         cwd,
+                        interface,
                         model,
+                        effort,
+                        permission,
                         prompt,
                         args,
                     } => {
                         verbs::create(
                             &mut client,
+                            &config,
                             verbs::Create {
-                                kind,
+                                agent,
+                                interface,
                                 name,
                                 cwd,
                                 model,
+                                effort,
+                                permission,
                                 prompt,
                                 args,
                             },
@@ -520,7 +570,7 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                     Command::Rename { agent, name } => {
                         verbs::rename(&mut client, &agent, &name).await
                     }
-                    Command::Delete { agent } => verbs::delete(&mut client, &agent).await,
+                    Command::Rm { agent } => verbs::delete(&mut client, &agent).await,
                     Command::Dump { agents, reason } => {
                         let selected = connect::profile(&config, profile).await?;
                         let mut admin = connect::admin_of(&selected).await?;
@@ -558,6 +608,8 @@ fn claude_hook() -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use clap::CommandFactory as _;
+
     use super::*;
 
     #[test]
@@ -583,5 +635,54 @@ mod tests {
             }
             other => panic!("not a pairing: {other:?}"),
         }
+    }
+
+    /// The help a person sees lists the commands they run and nothing amux
+    /// runs on itself; the hidden entries still parse.
+    #[test]
+    fn help_lists_only_what_people_run() {
+        let help = Cli::command().render_help().to_string();
+        let listed: Vec<&str> = help
+            .lines()
+            .skip_while(|line| !line.starts_with("Commands:"))
+            .skip(1)
+            .take_while(|line| !line.is_empty())
+            .filter_map(|line| line.split_whitespace().next())
+            .collect();
+        assert_eq!(
+            listed,
+            [
+                "attach", "ls", "new", "send", "stop", "resume", "rename", "rm", "dump", "pair",
+                "hosts", "unpair", "login", "logout", "profile", "status", "init", "update",
+                "config", "server", "help",
+            ]
+        );
+        for hidden in [
+            &["amux", "supervise"][..],
+            &["amux", "daemon"],
+            &["amux", "relay"],
+            &["amux", "internal", "agent", "/dir"],
+            &["amux", "internal", "mcp", "/dir"],
+            &["amux", "internal", "hook", "claude"],
+            &["amux", "internal", "ssh-pair"],
+            &["amux", "internal", "ssh-link", "--profile", "abc"],
+            &[
+                "amux",
+                "internal",
+                "catalogue",
+                "claude",
+                "--command",
+                "claude",
+                "--out",
+                "/out",
+            ],
+        ] {
+            assert!(Cli::try_parse_from(hidden).is_ok(), "{hidden:?}");
+        }
+    }
+
+    #[test]
+    fn the_clap_definition_is_consistent() {
+        Cli::command().debug_assert();
     }
 }

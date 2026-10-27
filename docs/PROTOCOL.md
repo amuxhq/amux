@@ -160,7 +160,7 @@ attempts do not close it. A window lives in the daemon's memory, so none
 survives a restart, and a start run again afterwards opens a fresh one.
 SSH pairing instead exchanges
 identities over the already-authenticated SSH stream (`amux pair user@host`
-runs `amux pair-recv` on the far side) and records outbound reachability only
+runs `amux internal ssh-pair` on the far side) and records outbound reachability only
 on the side that knows how to dial it.
 
 A client can pause SPAKE2 before granting trust. `BeginPair` (PIN or QR
@@ -296,7 +296,7 @@ nothing of the host. A link that comes back and still carries no call reads
 online until its next call fails, and the redial backoff paces any repeat. A
 client releases what it held for the host when it reads online again.
 
-An SSH link reaches the far daemon through `amux relay`, a hidden command the
+An SSH link reaches the far daemon through `amux internal ssh-link`, a hidden command the
 SSH session runs, which joins its stdio to the profile's `link.sock`. The QUIC
 handshake through it pins both hosts' keys as a direct one does; the far
 daemon takes the peer from the key it presented and refuses one it does not
@@ -606,7 +606,7 @@ give it in its profile, so a relaunch presents them too. While a host has a link
 of its own to a peer, that link carries the peer's calls ahead of one a
 forwarder carries.
 
-The cloud relay is the same code run as `amux server start --cloud`
+The cloud relay is the same code run as `amux relay`
 (`crates/amux/src/relay.rs` and `crates/node/src/edge/relay_server.rs`). It is
 not an installation: no profiles, no agents, no supervisor. It accepts every
 host of an account over QUIC and a TLS-over-TCP fallback on one socket, checks
@@ -655,7 +655,7 @@ never does, because its directory and journal are its whole interface (see
 | The installation front door | `InstallationService` | the CLI and the terminal client, to find profiles and manage them |
 | A profile's client socket, `<data_dir>/profiles/<id>/sock` | `AgentService`, `SessionService`, `ProfileAdminService` | the terminal client, the CLI and third-party clients, at the path the front door reports as `Profile.socket_path` |
 | An agent's `agents/<id>/tools.sock` | `AgentService` and `SessionService`, with that agent as the caller | the agent's MCP tool server, and nothing else |
-| A profile's `link.sock` | a link, not a service | `amux relay`, carrying an SSH link |
+| A profile's `link.sock` | a link, not a service | `amux internal ssh-link`, carrying an SSH link |
 | A link stream whose handshake presented a pinned key | `PeerAgentService`, `PeerSessionService` | paired daemons, including a phone's embedded daemon |
 | A link stream admitted by an open pairing window | `PairingService` | a host pairing with this one |
 

@@ -375,13 +375,17 @@ fn init_writes_a_login_item_that_runs_amux_supervise() {
 }
 
 #[test]
-fn config_channel_sets_the_channel_and_keeps_the_rest() {
+fn config_set_changes_the_channel_and_keeps_the_rest() {
     let install = Install::new(
         true,
         "# the desk in the study\nhost_name = \"desk\"\n\n[ui]\ncolor = \"ansi\" # for tmux\n",
     );
-    let output = install.amux(&["config", "channel", "preview"]);
-    assert!(stdout(&output).contains("Channel: preview."));
+    let output = install.amux(&["config", "set", "channel", "preview"]);
+    assert!(stdout(&output).contains("channel = \"preview\""));
+    assert_eq!(
+        stdout(&install.amux(&["config", "get", "channel"])).trim(),
+        "preview"
+    );
     let config = settings::InstallationConfig::from_file(&install.config).unwrap();
     assert_eq!(config.channel, settings::Channel::Preview);
     assert_eq!(config.host_name(), "desk");
@@ -393,12 +397,12 @@ fn config_channel_sets_the_channel_and_keeps_the_rest() {
         "{text}"
     );
 
-    install.amux(&["config", "channel", "stable"]);
+    install.amux(&["config", "set", "channel", "stable"]);
     let config = settings::InstallationConfig::from_file(&install.config).unwrap();
     assert_eq!(config.channel, settings::Channel::Stable);
 
     let refused = install
-        .command(&["config", "channel", "nightly"])
+        .command(&["config", "set", "channel", "nightly"])
         .output()
         .unwrap();
     assert!(!refused.status.success());

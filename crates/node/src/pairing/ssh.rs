@@ -2,7 +2,7 @@
 //!
 //! SSH authenticated both machines, so the two hosts only trade
 //! identities, each a length-prefixed `PairingIdentity`: the near end runs
-//! `amux pair-recv` over SSH, writes its own and reads the far end's; the
+//! `amux internal ssh-pair` over SSH, writes its own and reads the far end's; the
 //! far end reads, trusts the near end, then answers. Each side stores the
 //! trust through its own daemon, which validates the identity and refuses
 //! a pairing with itself.
@@ -27,7 +27,7 @@ pub enum SshPairingError {
     Transport(String),
 }
 
-/// Runs `amux pair-recv` at `target` over SSH and trades identities with
+/// Runs `amux internal ssh-pair` at `target` over SSH and trades identities with
 /// it: `own` goes first, and the far end's comes back once it has trusted
 /// this host.
 pub async fn exchange_over_ssh(

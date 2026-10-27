@@ -98,6 +98,9 @@ async fn session(app: &mut App) -> Result<Leave> {
     terminal.backend_mut().clear_region(ClearType::All)?;
     let mut events = EventStream::new();
     let mut fleet_changed = app.fleet.changed();
+    // The receiver sees only changes after it: a first chat whose row
+    // arrived before this session began opens from what is already there.
+    app.fleet_changed();
     let mut chat: Option<(Vec<u8>, watch::Receiver<()>)> = None;
     let leave = loop {
         app.housekeep();

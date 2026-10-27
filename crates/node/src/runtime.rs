@@ -1963,7 +1963,7 @@ fn spawn_agent(install_path: &Path, dir: &Path) -> io::Result<tokio::process::Ch
         .open(dir.join(AGENT_LOG))?;
     let mut command = tokio::process::Command::new(install_path);
     command
-        .arg("agent")
+        .args(["internal", "agent"])
         .arg(dir)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())

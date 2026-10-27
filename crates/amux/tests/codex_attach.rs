@@ -64,7 +64,7 @@ async fn codex_app_attaches_to_a_fresh_agent_and_codrives_it_with_amux() {
     desk.run(&["server", "start"]).await;
     let work = desk.work.to_string_lossy().into_owned();
     let created = desk
-        .run(&["create", "codex", "--name", "coder", "--cwd", &work])
+        .run(&["new", "codex", "--name", "coder", "--cwd", &work])
         .await;
     let coder = support::created_id(&created);
     let mut chats = client(&desk.socket).await;

@@ -646,7 +646,7 @@ so the picker still reads with the origin away. A hash that names no blob is
 (`PROVIDER_CLAUDE` or `PROVIDER_CODEX`) and answers what that provider offers there with no agent running,
 as a `GetCatalogueResponse`: the encoded `Catalogue` and the SHA-256 of exactly
 those bytes, which is the hash the host's entry names for that provider. The
-daemon holds no provider code: it runs the hidden helper `amux catalogue <provider>`, which
+daemon holds no provider code: it runs the hidden helper `amux internal catalogue <provider>`, which
 starts the provider just long enough to ask what it offers and whether it is
 signed in, and keeps the answer per provider under the profile's `providers/`
 folder. It asks again when the copy is half an hour old, when the provider's

@@ -36,11 +36,12 @@ fn desk(steps: Vec<Step>) -> Desk {
     )
 }
 
-async fn create(desk: &Desk, kind: &str, name: &str) -> Vec<u8> {
+/// Starts `agent` (claude or codex) for `interface` (amux or native).
+async fn create(desk: &Desk, agent: &str, interface: &str, name: &str) -> Vec<u8> {
     let work = desk.work.to_string_lossy().into_owned();
     let created = desk
         .run(&[
-            "create", kind, "--name", name, "--cwd", &work, "--prompt", "start",
+            "new", agent, "--in", interface, "--name", name, "--cwd", &work, "--prompt", "start",
         ])
         .await;
     created_id(&created)
@@ -55,7 +56,7 @@ async fn terminal_claude_attaches_twice_takes_keys_and_a_resize_and_detaches() {
         Step::TurnEnd,
     ]);
     desk.run(&["server", "start"]).await;
-    let scout = create(&desk, "claude_pty", "scout").await;
+    let scout = create(&desk, "claude", "native", "scout").await;
     let chats = client(&desk.socket).await;
     until("the first turn", || {
         let mut chats = chats.clone();
@@ -99,7 +100,7 @@ async fn terminal_claude_attaches_twice_takes_keys_and_a_resize_and_detaches() {
 async fn codex_attaches_in_stream_mode_and_the_fleet_returns_to_the_same_view() {
     let desk = desk(vec![text("codex was here"), Step::TurnEnd]);
     desk.run(&["server", "start"]).await;
-    let coder = create(&desk, "codex", "coder").await;
+    let coder = create(&desk, "codex", "native", "coder").await;
     let chats = client(&desk.socket).await;
     until("the codex turn", || {
         let mut chats = chats.clone();
@@ -134,17 +135,27 @@ async fn codex_attaches_in_stream_mode_and_the_fleet_returns_to_the_same_view() 
     assert!(said.contains("[detached from coder]"), "{said}");
 }
 
+/// Headless Claude has no interface of its own: asked for by name it is
+/// refused with the way to its chat, and a plain `amux attach` opens that
+/// chat, amux's, whatever the config prefers.
 #[tokio::test]
-async fn headless_claude_has_no_terminal_and_is_pointed_at_its_chat() {
+async fn headless_claude_has_no_terminal_and_attach_opens_its_chat() {
     let desk = desk(vec![text("headless"), Step::TurnEnd]);
     desk.run(&["server", "start"]).await;
-    create(&desk, "claude_sdk", "quiet").await;
-    let refused = desk.amux(&["attach", "quiet"]).await;
+    create(&desk, "claude", "amux", "quiet").await;
+    let refused = desk.amux(&["attach", "quiet", "--in", "native"]).await;
     let said = String::from_utf8_lossy(&refused.stderr);
-    say(format!("$ amux attach quiet\n  {said}"));
+    say(format!("$ amux attach quiet --in native\n  {said}"));
     assert!(!refused.status.success());
-    assert!(said.contains("has no terminal"), "{said}");
-    assert!(said.contains("open its chat"), "{said}");
+    assert!(said.contains("has no Claude Code interface"), "{said}");
+    assert!(
+        said.contains("`amux attach quiet --in amux` opens its chat"),
+        "{said}"
+    );
+
+    say("$ amux attach quiet");
+    let mut chat = Term::run(&desk, &desk.amux_path(), &["attach", "quiet"], 30, 100);
+    chat.shows("headless").await;
 }
 
 /// Leaving a raw attach gives the shell its own screen back: the attach
@@ -157,7 +168,7 @@ async fn leaving_a_raw_attach_gives_the_shell_its_own_screen_back() {
     const LEAVE: &str = "\x1b[?1049l";
     let desk = desk(vec![text("hello from the agent"), Step::TurnEnd]);
     desk.run(&["server", "start"]).await;
-    let scout = create(&desk, "claude_pty", "scout").await;
+    let scout = create(&desk, "claude", "native", "scout").await;
     let chats = client(&desk.socket).await;
     until("the first turn", || {
         let mut chats = chats.clone();

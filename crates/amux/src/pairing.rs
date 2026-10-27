@@ -1,7 +1,7 @@
-//! Pairing, peers and sign-in: the selected profile's calls on its own
+//! Pairing, hosts and sign-in: the selected profile's calls on its own
 //! socket, a sign-in on the front door, and the two hidden commands SSH
-//! runs on the far host of an SSH pairing (`amux pair-recv`) and of every
-//! SSH link after it (`amux relay`).
+//! runs on the far host of an SSH pairing (`amux internal ssh-pair`) and of
+//! every SSH link after it (`amux internal ssh-link`).
 
 use std::io::{IsTerminal as _, Write as _};
 use std::net::SocketAddr;
@@ -37,7 +37,7 @@ pub enum Target {
     Found(String),
     /// A host's direct address.
     Addr(SocketAddr),
-    /// An ssh destination: pairing runs `amux pair-recv` there.
+    /// An ssh destination: pairing runs `amux internal ssh-pair` there.
     Ssh(String),
 }
 
@@ -130,9 +130,10 @@ pub async fn demo(mut admin: Admin, pin: String, ttl: Duration) -> Result<()> {
         .await
         .map_err(already_open)?
         .into_inner();
-    invitation(&started, false)?
-        .iter()
-        .for_each(|line| println!("{line}"));
+    // The PIN alone: the next steps are for a window someone watches.
+    if let Some(pin) = invitation(&started, false)?.first() {
+        println!("{pin}");
+    }
     println!(
         "Demo pairing is open for {}: this PIN pairs any device that presents it, again and \
          again, until it expires, `amux pair --cancel` closes it, or amux restarts.",
@@ -222,17 +223,37 @@ fn invitation(started: &PairingWindow, link: bool) -> Result<Vec<String>> {
     let mut lines = Vec::new();
     match &started.secret {
         Some(pairing_window::Secret::Pin(pin)) => {
+            // What to do next on each kind of device, so the PIN is never
+            // left to the docs to explain.
+            let name = started
+                .identity
+                .as_ref()
+                .map(|identity| identity.name.as_str())
+                .unwrap_or_default();
             lines.push(format!("Pairing PIN: {}", spaced(pin)));
-            if !started.addrs.is_empty() {
-                lines.push(format!(
-                    "This host listens at {}.",
-                    started.addrs.join(", ")
-                ));
-            }
+            lines.push(String::new());
+            lines.push(format!(
+                "On the phone: choose {} and enter the PIN, or run `amux pair --qr` here to scan \
+                 instead.",
+                if name.is_empty() { "this host" } else { name }
+            ));
+            let computer = match (name, started.addrs.first()) {
+                ("", Some(addr)) => format!("`amux pair {addr}`"),
+                ("", None) => "`amux pair <this host>`".to_owned(),
+                (name, Some(addr)) => format!(
+                    "`{}` (or `amux pair {addr}` if it is not found nearby)",
+                    pair_command(name)
+                ),
+                (name, None) => format!("`{}`", pair_command(name)),
+            };
+            lines.push(format!(
+                "On another computer: run {computer} and enter the PIN."
+            ));
         }
         Some(pairing_window::Secret::QrSecret(secret)) => {
             let payload = pair_link(started, secret)?;
             lines.push(terminal_qr(&payload)?);
+            lines.push("Scan it with the phone's camera.".to_owned());
             if link {
                 lines.push(format!("Pairing link: {payload}"));
             }
@@ -357,10 +378,10 @@ fn candidate<'a>(hosts: &'a [HostEntry], name: &str) -> Result<&'a HostEntry> {
     match found.as_slice() {
         [host] => Ok(host),
         [] => Err(anyhow!(
-            "no host named {name} is waiting nearby; `amux peers` lists the hosts found"
+            "no host named {name} is waiting nearby; `amux hosts` lists the hosts found"
         )),
         _ => Err(anyhow!(
-            "more than one host nearby is named {name}; pair by the id `amux peers` shows"
+            "more than one host nearby is named {name}; pair by the id `amux hosts` shows"
         )),
     }
 }
@@ -492,7 +513,7 @@ async fn pair_over_ssh(admin: Admin, target: String) -> Result<()> {
     Ok(())
 }
 
-/// `amux pair-recv`, run by SSH on this host: the identity exchange's far
+/// `amux internal ssh-pair`, run by SSH on this host: the identity exchange's far
 /// end, over stdin and stdout. It trusts the near end before answering, so
 /// the near end trusts only a host that has trusted it.
 #[cfg(unix)]
@@ -510,7 +531,7 @@ pub async fn pair_recv(admin: Admin) -> Result<()> {
     Ok(())
 }
 
-/// `amux relay`, run by SSH on this host: stdin and stdout joined to the
+/// `amux internal ssh-link`, run by SSH on this host: stdin and stdout joined to the
 /// profile's link socket, carrying a peer's link.
 #[cfg(unix)]
 pub async fn relay(profile: &wire::Profile) -> Result<()> {
@@ -520,7 +541,7 @@ pub async fn relay(profile: &wire::Profile) -> Result<()> {
 }
 
 /// The trusted hosts and the hosts found nearby that could be paired.
-pub async fn peers(mut admin: Admin, client: &mut wire::ClientStubs) -> Result<()> {
+pub async fn hosts(mut admin: Admin, client: &mut wire::ClientStubs) -> Result<()> {
     let trusted = admin
         .list_peers(wire::ListPeersRequest {})
         .await
@@ -534,10 +555,15 @@ pub async fn peers(mut admin: Admin, client: &mut wire::ClientStubs) -> Result<(
 
 /// The PAIRED column of a host this machine cannot use until it pairs.
 fn pair_again(name: &str) -> String {
+    format!("no: {}", pair_command(name))
+}
+
+/// The command that pairs with the host of this name, quoted for a shell.
+fn pair_command(name: &str) -> String {
     if name.contains(char::is_whitespace) {
-        format!("no: amux pair '{name}'")
+        format!("amux pair '{name}'")
     } else {
-        format!("no: amux pair {name}")
+        format!("amux pair {name}")
     }
 }
 
@@ -793,8 +819,12 @@ mod tests {
     }
 
     #[test]
-    fn a_pin_reads_in_two_groups() {
+    fn a_pin_reads_in_two_groups_with_what_each_device_does_next() {
         let started = PairingWindow {
+            identity: Some(PairingIdentity {
+                name: "den mac".into(),
+                ..PairingIdentity::default()
+            }),
             ttl_seconds: 300,
             addrs: vec!["10.0.0.2:7420".into()],
             secret: Some(pairing_window::Secret::Pin("482913".into())),
@@ -804,7 +834,13 @@ mod tests {
             invitation(&started, false).unwrap(),
             vec![
                 "Pairing PIN: 482 913".to_owned(),
-                "This host listens at 10.0.0.2:7420.".to_owned(),
+                String::new(),
+                "On the phone: choose den mac and enter the PIN, or run `amux pair --qr` here \
+                 to scan instead."
+                    .to_owned(),
+                "On another computer: run `amux pair 'den mac'` (or `amux pair 10.0.0.2:7420` \
+                 if it is not found nearby) and enter the PIN."
+                    .to_owned(),
             ]
         );
     }
@@ -829,7 +865,7 @@ mod tests {
     }
 
     #[test]
-    fn peers_list_trusted_hosts_then_hosts_found_nearby() {
+    fn hosts_lists_trusted_hosts_then_hosts_found_nearby() {
         let online = HostEntry::trusted_host(
             vec![1; 16],
             "studio",

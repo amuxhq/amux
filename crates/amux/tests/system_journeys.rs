@@ -41,15 +41,17 @@ async fn survive_daemon() {
 
     desk.run(&["server", "start"]).await;
     let mut agents: BTreeMap<&str, Vec<u8>> = BTreeMap::new();
-    for (name, kind) in [
-        ("terminal", "claude_pty"),
-        ("headless", "claude_sdk"),
-        ("codex", "codex"),
+    for (name, agent, interface) in [
+        ("terminal", "claude", "native"),
+        ("headless", "claude", "amux"),
+        ("codex", "codex", "amux"),
     ] {
         let created = desk
             .run(&[
-                "create",
-                kind,
+                "new",
+                agent,
+                "--in",
+                interface,
                 "--name",
                 name,
                 "--cwd",

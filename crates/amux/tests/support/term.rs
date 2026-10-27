@@ -19,9 +19,16 @@ pub struct Term {
 }
 
 impl Term {
-    /// `amux attach <agent>` from the desk's own binary.
+    /// `amux attach <agent> --in native` from the desk's own binary: the
+    /// agent's own interface, whatever the desk's config prefers.
     pub fn attach(desk: &Desk, agent: &str, rows: u16, cols: u16) -> Term {
-        Term::run(desk, &desk.amux_path(), &["attach", agent], rows, cols)
+        Term::run(
+            desk,
+            &desk.amux_path(),
+            &["attach", agent, "--in", "native"],
+            rows,
+            cols,
+        )
     }
 
     /// `binary args…` against the desk's install, in a terminal of its own.

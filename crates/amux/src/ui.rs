@@ -1,5 +1,6 @@
 //! Bare `amux`: the terminal client on the selected profile; and `amux
-//! attach`, whose fleet chord opens that client over the attached agent.
+//! attach`, which opens one agent's chat in it or in the agent's own
+//! interface, whose fleet chord opens the client over it.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -14,6 +15,7 @@ use tui::{
 use wire::Agent;
 
 use crate::attach::{Attacher, Outcome, farewell};
+use crate::verbs::Interface;
 
 /// How long to wait for a terminal to say what colours it paints with.
 /// Terminals that answer do so in a few milliseconds; the bound is for the
@@ -23,32 +25,46 @@ const TERMINAL_COLOR_QUERY: Duration = Duration::from_millis(250);
 pub async fn run(config: &InstallationConfig, profile: Option<&str>) -> Result<()> {
     let profile = crate::connect::profile(config, profile).await?;
     let attacher = Attacher::new(&profile, config.keybinds.leader.clone())?;
-    open(config, &profile, attacher).await
+    open(config, &profile, attacher, None).await
 }
 
-/// `amux attach`: the agent's own interface on this terminal, and the fleet
-/// over it on the fleet chord.
-pub async fn attach(config: &InstallationConfig, profile: Option<&str>, agent: &str) -> Result<()> {
+/// `amux attach`: the agent's chat on this terminal, in the interface asked
+/// for or configured. Its own interface opens where it has one here, with
+/// the fleet over it on the fleet chord; anywhere else, amux's chat opens,
+/// unless its own was asked for by name, which is refused with the reason.
+pub async fn attach(
+    config: &InstallationConfig,
+    profile: Option<&str>,
+    agent: &str,
+    asked: Option<Interface>,
+) -> Result<()> {
     let profile = crate::connect::profile(config, profile).await?;
     let mut client = crate::connect::client_of(&profile).await?;
     let agent = crate::verbs::resolve(&mut client, agent).await?;
     let mut attacher = Attacher::new(&profile, config.keybinds.leader.clone())?;
-    if let Some(why) = attacher.refusal(&agent) {
-        return Err(anyhow!(why));
-    }
-    match attacher.attach(&agent).await? {
-        Outcome::Fleet => open(config, &profile, attacher).await,
-        outcome => {
-            println!("{}", farewell(&agent, &outcome));
-            Ok(())
+    if Interface::chosen(asked, config) == Interface::Native {
+        match attacher.refusal(&agent) {
+            None => {
+                return match attacher.attach(&agent).await? {
+                    Outcome::Fleet => open(config, &profile, attacher, None).await,
+                    outcome => {
+                        println!("{}", farewell(&agent, &outcome));
+                        Ok(())
+                    }
+                };
+            }
+            Some(why) if asked == Some(Interface::Native) => return Err(anyhow!(why)),
+            Some(_) => {}
         }
     }
+    open(config, &profile, attacher, Some(agent.agent_id)).await
 }
 
 async fn open(
     config: &InstallationConfig,
     profile: &wire::Profile,
     attacher: Attacher,
+    initial_chat: Option<Vec<u8>>,
 ) -> Result<()> {
     let socket = Path::new(&profile.socket_path);
     let client = client::GrpcClient::connect(socket)
@@ -66,7 +82,7 @@ async fn open(
         working_dir: std::env::current_dir()?,
         leader: char::from(config.keybinds.leader.char),
         theme,
-        initial_chat: None,
+        initial_chat,
         attach: false,
         version: node::version().to_owned(),
         local_host: attacher.local_host().to_vec(),
@@ -74,7 +90,7 @@ async fn open(
         reports: Some(config.root.join("reports")),
         chat_in: match config.ui.chat_in {
             settings::ChatInSetting::Amux => tui::setup::ChatIn::Amux,
-            settings::ChatInSetting::Terminal => tui::setup::ChatIn::Terminal,
+            settings::ChatInSetting::Native => tui::setup::ChatIn::Native,
         },
         defaults: {
             let of = |agent: &settings::NewAgentDefaults| tui::setup::AgentDefaults {

@@ -35,8 +35,9 @@ pub enum ChatIn {
     /// In amux's own chat.
     #[default]
     Amux,
-    /// In each agent's own terminal, attached on start.
-    Terminal,
+    /// In each agent's own interface, Claude Code's or Codex's, attached
+    /// on start.
+    Native,
 }
 
 /// The two agents a person chooses between.
@@ -60,7 +61,7 @@ impl Agent {
     fn kind(self, chat_in: ChatIn) -> Kind {
         match (self, chat_in) {
             (Agent::Claude, ChatIn::Amux) => Kind::ClaudeSdk,
-            (Agent::Claude, ChatIn::Terminal) => Kind::ClaudePty,
+            (Agent::Claude, ChatIn::Native) => Kind::ClaudePty,
             (Agent::Codex, _) => Kind::Codex,
         }
     }
@@ -471,7 +472,7 @@ impl Setup {
         prompt: Option<PromptSubmission>,
     ) -> CreateAgentRequest {
         // Used in its own terminal, the agent's terminal sets these.
-        let own = self.chat_in == ChatIn::Terminal;
+        let own = self.chat_in == ChatIn::Native;
         let permission = if own { None } else { self.permission.clone() };
         let model = if own { None } else { self.model.clone() };
         let effort = if own { None } else { self.effort.clone() };

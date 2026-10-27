@@ -328,7 +328,7 @@ impl ProfileRuntime {
         let _ = std::fs::remove_file(&out);
         let mut helper = tokio::process::Command::new(&launch.install_path);
         helper
-            .arg("catalogue")
+            .args(["internal", "catalogue"])
             .arg(provider_word(provider))
             .arg("--command")
             .arg(command)

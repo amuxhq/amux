@@ -331,7 +331,7 @@ def start_the_agent(journal: Journal, profile: str) -> str:
     has never ended a session.
 
     The agent is created without a name, which is what makes its identifier
-    readable off `amux list` — the phone opens a conversation by identifier,
+    readable off `amux ls` — the phone opens a conversation by identifier,
     and there is nowhere else on this Mac to read one."""
     before = agent_ids(profile)
     terminal, side = pty.openpty()

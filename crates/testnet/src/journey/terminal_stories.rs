@@ -1606,7 +1606,7 @@ fn composer_limits(journey: &mut TerminalJourney) -> Proved {
 }
 
 fn new_agent_terminal(journey: &mut TerminalJourney) -> Proved {
-    journey.configure("laptop", "[ui]\nchat_in = \"terminal\"")?;
+    journey.configure("laptop", "[ui]\nchat_in = \"native\"")?;
     let before = ids(&journey.inventory("laptop", Some("inventory-before"))?);
     let pane = journey.launch("terminal", "laptop", &[])?;
     journey.wait(&pane, at_home, "home")?;

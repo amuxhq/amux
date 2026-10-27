@@ -271,7 +271,7 @@ payload to the app directly.
 
 ## Running the relay
 
-The relay is `amux server start --cloud --foreground`, run by a service
+The relay is `amux relay`, a hidden command run by a service
 manager. It reads one TOML file, named by `--config` or `AMUX_CONFIG`. A key
 it does not know is logged and ignored, so the same file serves the relay
 versions either side of a deploy or a rollback:

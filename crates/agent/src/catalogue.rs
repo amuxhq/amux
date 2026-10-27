@@ -1,4 +1,4 @@
-//! `amux catalogue <provider>`: runs the provider just long enough to ask
+//! `amux internal catalogue <provider>`: runs the provider just long enough to ask
 //! what it offers and whether it is signed in, writes the answer and exits.
 //! The daemon starts it when it needs a host's copy, in the folder the copy
 //! is kept in, with the environment it starts agents' providers with.

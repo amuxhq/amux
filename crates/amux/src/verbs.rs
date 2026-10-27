@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use anyhow::{Result, anyhow, bail};
+use settings::{ChatInSetting, InstallationConfig};
 use uuid::Uuid;
 use wire::{
     Agent, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
@@ -73,15 +74,13 @@ fn short_id(id: &[u8]) -> String {
         .unwrap_or_default()
 }
 
-/// A kind as the listing says it: the enum value's own name, lowercase,
-/// without the enum's prefix.
-fn kind_word(kind: i32) -> String {
+/// A kind as the listing says it: the agent a person chose, whichever
+/// interface it runs for.
+fn kind_word(kind: i32) -> &'static str {
     match Kind::try_from(kind).unwrap_or(Kind::Unspecified) {
-        Kind::Unspecified => "unknown".to_owned(),
-        known => known
-            .as_str_name()
-            .trim_start_matches("KIND_")
-            .to_ascii_lowercase(),
+        Kind::Unspecified => "unknown",
+        Kind::ClaudePty | Kind::ClaudeSdk => "claude",
+        Kind::Codex => "codex",
     }
 }
 
@@ -203,11 +202,11 @@ fn ls_table(hosts: &[HostEntry], agents: &[Agent]) -> String {
         .collect();
     let width = names.iter().map(String::len).max().unwrap_or(4).max(4);
     let mut out = String::new();
-    let _ = writeln!(out, "{:width$}  {:8}  {:10}  STATE", "NAME", "ID", "KIND");
+    let _ = writeln!(out, "{:width$}  {:8}  {:7}  STATE", "NAME", "ID", "KIND");
     for (name, (_, agent)) in names.iter().zip(&rows) {
         let _ = writeln!(
             out,
-            "{name:width$}  {:8}  {:10}  {}",
+            "{name:width$}  {:8}  {:7}  {}",
             short_id(&agent.agent_id),
             kind_word(agent.kind),
             listed_state(agent, hosts, &host_name(&agent.host_id)),
@@ -232,15 +231,39 @@ fn listed_state(agent: &Agent, hosts: &[HostEntry], host_name: &str) -> String {
     }
 }
 
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
-pub enum CliKind {
-    /// Claude in a terminal.
-    #[value(name = "claude_pty", alias = "claude-pty", alias = "claude")]
-    ClaudePty,
-    /// Headless Claude.
-    #[value(name = "claude_sdk", alias = "claude-sdk")]
-    ClaudeSdk,
+/// The agents a person chooses between.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum CliAgent {
+    Claude,
     Codex,
+}
+
+/// Where a person chats with an agent: amux's chat, or the agent's own
+/// interface (Claude Code's or Codex's), as `ui.chat_in` names them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum Interface {
+    Amux,
+    Native,
+}
+
+impl Interface {
+    /// The interface asked for, else the configured one.
+    pub fn chosen(asked: Option<Interface>, config: &InstallationConfig) -> Interface {
+        asked.unwrap_or(match config.ui.chat_in {
+            ChatInSetting::Amux => Interface::Amux,
+            ChatInSetting::Native => Interface::Native,
+        })
+    }
+}
+
+/// What a new agent runs on. Claude runs headless for amux's chat and in a
+/// terminal for its own; Codex is the same agent for both.
+fn kind_for(agent: CliAgent, interface: Interface) -> Kind {
+    match (agent, interface) {
+        (CliAgent::Claude, Interface::Amux) => Kind::ClaudeSdk,
+        (CliAgent::Claude, Interface::Native) => Kind::ClaudePty,
+        (CliAgent::Codex, _) => Kind::Codex,
+    }
 }
 
 /// A prompt in the input arm the agent's kind takes.
@@ -275,34 +298,60 @@ pub fn prompt(kind: i32, text: &str) -> Input {
 }
 
 pub struct Create {
-    pub kind: CliKind,
+    pub agent: CliAgent,
+    pub interface: Option<Interface>,
     pub name: Option<String>,
     pub cwd: Option<PathBuf>,
     pub model: Option<String>,
+    pub effort: Option<String>,
+    pub permission: Option<String>,
     pub prompt: Option<String>,
     pub args: Vec<String>,
 }
 
-pub async fn create(client: &mut Client, create: Create) -> Result<()> {
+/// `amux new`: an agent as the terminal app starts one, with its starting
+/// model, effort and permission from `new_agent` where none is given. In
+/// the agent's own interface those are its own to set, as in the app.
+pub async fn create(
+    client: &mut Client,
+    config: &InstallationConfig,
+    create: Create,
+) -> Result<()> {
     let cwd = match create.cwd {
         Some(cwd) => std::path::absolute(cwd)?,
         None => std::env::current_dir()?,
     };
+    let interface = Interface::chosen(create.interface, config);
+    let defaults = match create.agent {
+        CliAgent::Claude => &config.new_agent.claude,
+        CliAgent::Codex => &config.new_agent.codex,
+    };
+    let configured = |given: &Option<String>, default: &str| {
+        given
+            .clone()
+            .or_else(|| (interface == Interface::Amux).then(|| default.to_owned()))
+    };
+    let model = configured(&create.model, &defaults.model);
+    let effort = configured(&create.effort, &defaults.effort);
+    let permission = configured(&create.permission, &defaults.permission);
     let claude = || ClaudeCreateConfig {
         args: create.args.clone(),
-        model: create.model.clone(),
-        ..ClaudeCreateConfig::default()
+        model: model.clone(),
+        effort: effort.clone(),
+        permission: permission.clone(),
     };
-    let config = match create.kind {
-        CliKind::ClaudePty => create_agent_request::Agent::ClaudePty(claude()),
-        CliKind::ClaudeSdk => create_agent_request::Agent::ClaudeSdk(claude()),
-        CliKind::Codex => {
+    let config = match kind_for(create.agent, interface) {
+        Kind::ClaudePty => create_agent_request::Agent::ClaudePty(claude()),
+        Kind::ClaudeSdk => create_agent_request::Agent::ClaudeSdk(claude()),
+        _ => {
             if !create.args.is_empty() {
                 bail!("codex agents take no extra provider arguments");
             }
             create_agent_request::Agent::Codex(CodexCreateConfig {
-                model: create.model.clone(),
-                ..CodexCreateConfig::default()
+                model: model.clone(),
+                effort: effort.clone(),
+                permission: permission.clone(),
+                mode: None,
             })
         }
     };

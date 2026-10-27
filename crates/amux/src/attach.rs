@@ -70,8 +70,8 @@ impl Attacher {
         let name = agent.name.clone();
         if agent.host_id != self.local_host {
             Some(format!(
-                "{name} runs on another host, and raw attach is only for agents on this \
-                 machine; open its chat instead: run `amux` and press enter on it"
+                "{name} runs on another host, and its own interface opens only on its own \
+                 machine; `amux attach {name} --in amux` opens its chat"
             ))
         } else if agent.lifecycle() == Lifecycle::Exited {
             Some(format!(
@@ -80,13 +80,13 @@ impl Attacher {
             ))
         } else if agent.kind() == Kind::ClaudeSdk {
             Some(format!(
-                "{name} is headless Claude and has no terminal; open its chat instead: run \
-                 `amux` and press enter on it"
+                "{name} was started for amux's chat and has no Claude Code interface; \
+                 `amux attach {name} --in amux` opens its chat"
             ))
         } else if agent.kind() == Kind::Codex && cfg!(windows) {
             Some(format!(
-                "attach is not available for Codex on Windows, where {name}'s Codex has room \
-                 for amux alone; open its chat instead: run `amux` and press enter on it"
+                "Codex's own interface does not open on Windows, where {name}'s Codex has room \
+                 for amux alone; `amux attach {name} --in amux` opens its chat"
             ))
         } else {
             None
@@ -555,19 +555,25 @@ mod tests {
         let codex = attacher.refusal(&agent([7; 16], Kind::Codex));
         if cfg!(windows) {
             let codex = codex.unwrap();
+            assert!(codex.contains("does not open on Windows"), "{codex}");
             assert!(
-                codex.contains("not available for Codex on Windows"),
+                codex.contains("`amux attach scout --in amux` opens its chat"),
                 "{codex}"
             );
-            assert!(codex.contains("open its chat"), "{codex}");
         } else {
             assert_eq!(codex, None);
         }
         let remote = attacher.refusal(&agent([8; 16], Kind::ClaudePty)).unwrap();
         assert!(remote.contains("another host"), "{remote}");
-        assert!(remote.contains("open its chat"), "{remote}");
+        assert!(
+            remote.contains("`amux attach scout --in amux` opens its chat"),
+            "{remote}"
+        );
         let headless = attacher.refusal(&agent([7; 16], Kind::ClaudeSdk)).unwrap();
-        assert!(headless.contains("open its chat"), "{headless}");
+        assert!(
+            headless.contains("`amux attach scout --in amux` opens its chat"),
+            "{headless}"
+        );
     }
 
     /// An exited agent has no terminal to attach to: the refusal says it

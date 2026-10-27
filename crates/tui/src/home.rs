@@ -746,7 +746,7 @@ impl Home {
             .draft
             .setup
             .as_ref()
-            .is_some_and(|setup| setup.chat_in == ChatIn::Terminal)
+            .is_some_and(|setup| setup.chat_in == ChatIn::Native)
         {
             let (Some(setup), Some(form)) = (&mut self.draft.setup, &mut self.draft.form) else {
                 return vec![];
@@ -1052,7 +1052,7 @@ impl Home {
                 .draft
                 .setup
                 .as_ref()
-                .is_some_and(|setup| setup.chat_in == ChatIn::Terminal);
+                .is_some_and(|setup| setup.chat_in == ChatIn::Native);
         if modal && self.draft.form.is_none() {
             self.draft.form = self.draft.setup.as_ref().map(Form::new);
         }

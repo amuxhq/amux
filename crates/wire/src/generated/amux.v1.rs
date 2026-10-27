@@ -990,7 +990,7 @@ impl DiffFileChange {
 /// Host-to-host control envelope exchanged on the link's control stream.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Message {
-    #[prost(oneof = "message::Body", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
+    #[prost(oneof = "message::Body", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
     pub body: ::core::option::Option<message::Body>,
 }
 /// Nested message and enum types in `Message`.
@@ -1015,6 +1015,8 @@ pub mod message {
         ObservedAddress(super::ObservedAddress),
         #[prost(message, tag = "9")]
         ForwardRefused(super::ForwardRefused),
+        #[prost(message, tag = "10")]
+        RefreshCredential(super::RefreshCredential),
     }
 }
 impl ::prost::Name for Message {
@@ -1247,6 +1249,24 @@ impl ::prost::Name for Reauth {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.Reauth".into()
+    }
+}
+/// From the relay to a link whose plan is free: another link of the same
+/// account has just presented a paid plan, so this link's credential is
+/// likely out of date. The receiver fetches a fresh credential and presents
+/// it with `Reauth`, as its own refresh would, and answers nothing else. It
+/// names no plan: the fresh credential says the plan, and the relay judges by
+/// that alone.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RefreshCredential {}
+impl ::prost::Name for RefreshCredential {
+    const NAME: &'static str = "RefreshCredential";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.RefreshCredential".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.RefreshCredential".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

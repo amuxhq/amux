@@ -176,8 +176,15 @@ one older than that) and hourly while connected, sending each renewal to the
 relay as `Reauth`. A lapse therefore reaches the relay within the hour. A free
 profile renews every three minutes so that a purchase reaches the link
 promptly. After a purchase the app does not wait for that: it asks the profile
-to refresh at once (`amux_runtime_refresh_entitlement`). Every renewal is kept
-for the next launch.
+to refresh at once (`amux_runtime_refresh_entitlement`). Nor do the account's
+other machines: when a link presents a paid credential, the relay sends
+`RefreshCredential` to each of the account's links still on the free plan,
+and those profiles refresh at once, so a purchase made on the phone reaches
+the desktops it connects to within a round trip. A free link that connects
+beside a paid one on its account is asked the same way, since a credential
+kept from an earlier launch can name a plan the account has since left. The
+three-minute renewal covers a purchase no link has presented yet. Every
+renewal is kept for the next launch.
 
 ## A purchase reaching amux.sh
 

@@ -92,7 +92,7 @@ impl LinkRegistry {
         let out = self
             .relaying
             .step([relay_core::Input::LinkDown { link: link.core() }]);
-        tell_neighbors(state, out, None);
+        tell_links(state, out, None);
     }
 
     /// The profile's core, when this is a profile's registry.
@@ -398,7 +398,7 @@ impl LinkRegistry {
             tx: &outgoing_tx,
             close_tx: &close_tx,
         };
-        tell_neighbors(&state, out, Some(new));
+        tell_links(&state, out, Some(new));
 
         let old = state.writers.insert(
             link,
@@ -692,10 +692,11 @@ impl LinkRegistry {
         };
         if matches!(writer.admission, LinkAdmission::CloudToken { .. }) {
             writer.admission = LinkAdmission::CloudToken { tier };
-            self.relaying.step([relay_core::Input::TierChanged {
+            let out = self.relaying.step([relay_core::Input::TierChanged {
                 link: link.core(),
                 tier,
             }]);
+            tell_links(&state, out, None);
         }
     }
 
@@ -774,17 +775,18 @@ struct NewLink<'a> {
     close_tx: &'a mpsc::Sender<LinkCloseRequest>,
 }
 
-/// Sends each neighbor the core told of down the link it named. A full
-/// queue requests the link's closure; the connect task then removes it
-/// through the normal path.
-fn tell_neighbors(
-    state: &LinkRegistryState,
-    out: Vec<relay_core::Output>,
-    new: Option<NewLink<'_>>,
-) {
+/// Sends each neighbor the core told of, and each request for a fresh
+/// credential, down the link it named. A full queue requests the link's
+/// closure; the connect task then removes it through the normal path.
+fn tell_links(state: &LinkRegistryState, out: Vec<relay_core::Output>, new: Option<NewLink<'_>>) {
     for output in out {
-        let relay_core::Output::Neighbor { to, host, up } = output else {
-            continue;
+        let (to, host, up) = match output {
+            relay_core::Output::Neighbor { to, host, up } => (to, host, up),
+            relay_core::Output::RefreshCredential { link } => {
+                send_to(state, new.as_ref(), link, refresh_credential_message());
+                continue;
+            }
+            _ => continue,
         };
         let host = host_from_core(host);
         let message = if up {
@@ -799,16 +801,35 @@ fn tell_neighbors(
         } else {
             neighbor_down_message(host)
         };
-        match &new {
-            Some(new) if new.link == to => {
-                try_send_or_request_close(new.tx, new.close_tx, message);
-            }
-            _ => {
-                if let Some(writer) = state.writers.iter().find(|(id, _)| id.core() == to) {
-                    try_send_or_request_close(&writer.1.tx, &writer.1.close_tx, message);
-                }
+        send_to(state, new.as_ref(), to, message);
+    }
+}
+
+/// Writes `message` on the link the core named: the link coming up, which
+/// is not yet among the writers, or one already held.
+fn send_to(
+    state: &LinkRegistryState,
+    new: Option<&NewLink<'_>>,
+    to: daemon_core::LinkId,
+    message: pb::Message,
+) {
+    match new {
+        Some(new) if new.link == to => {
+            try_send_or_request_close(new.tx, new.close_tx, message);
+        }
+        _ => {
+            if let Some(writer) = state.writers.iter().find(|(id, _)| id.core() == to) {
+                try_send_or_request_close(&writer.1.tx, &writer.1.close_tx, message);
             }
         }
+    }
+}
+
+fn refresh_credential_message() -> pb::Message {
+    pb::Message {
+        body: Some(pb::message::Body::RefreshCredential(
+            pb::RefreshCredential {},
+        )),
     }
 }
 

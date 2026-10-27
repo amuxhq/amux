@@ -42,6 +42,12 @@ meant:
   which is its `Any` type URL. A field or method may take another message
   that reads the same numbers.
 
+A host-to-host control message (`link.proto`'s `Message.body`) may be added
+only if a peer that predates it can ignore it and lose nothing it needs: a
+receiver drops a control message it does not know once the handshake is
+done, so the link carries on. A message the other end must understand is a
+break both ends take, and moves `PROTOCOL_VERSION`.
+
 `just proto-compat` checks all of this against the latest release.
 `PROTOCOL_VERSION` (`Hello.supported_protocol_versions`) moves only for a
 break both ends of a link must take.

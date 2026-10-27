@@ -419,6 +419,18 @@ enum ComponentCatalog {
                      draft: "Please tighten the retry path and keep the error visible.", settlesLate: true) {
                 $0.attach(F.photoData, name: "screen.jpg", mime: "image/jpeg", image: true)
             },
+            // Each file's name wraps rather than losing its extension, its
+            // size under it, each remove mark a thumb's target. One after the
+            // other: two attached together land in whichever order they finish.
+            composer("attachments-large-text", height: 760, frame: ScriptedChat.frame(phase: .idle),
+                     settlesLate: true, size: .accessibility3) { model in
+                Task {
+                    await model.attach(
+                        Data("# Pairing errors\n".utf8), name: "pairing-errors-before-and-after.md",
+                        mime: "text/plain", image: false)?.value
+                    _ = model.attach(Data("relay up\n".utf8), name: "relay.log", mime: "text/plain", image: false)
+                }
+            },
             composer("working", height: 190, rows: [F.runningCommand], frame: ScriptedChat.frame(
                 phase: .working,
                 activity: Activity(kind: .running(key: F.runningCommand.id), sinceMs: 0, elapsedMs: 12_000, turnElapsedMs: 12_000))),
@@ -430,11 +442,7 @@ enum ComponentCatalog {
                 activity: Activity(kind: .retrying(attempt: 2, maxAttempts: 10, retryAtMs: nil), sinceMs: 0, elapsedMs: 3_000, turnElapsedMs: 3_000))),
             composer("queued", height: 400, frame: ScriptedChat.frame(
                 phase: .working, activity: Activity(kind: .working, sinceMs: 0, elapsedMs: 41_000, turnElapsedMs: 41_000),
-                queue: [
-                    QueuedRow(inputId: [1], text: [.text("Then run the Windows check.")], steered: false, canWithdraw: true, canSendNow: true, fromAgent: nil),
-                    QueuedRow(inputId: [2], text: [.text("Use the new error table instead.")], steered: true, canWithdraw: false, canSendNow: false, fromAgent: nil),
-                    QueuedRow(inputId: [3], text: [.text("worker-2 finished the specs.")], steered: false, canWithdraw: false, canSendNow: true, fromAgent: "worker-2"),
-                ])),
+                queue: F.queue)),
             composer("not-confirmed", height: 280, frame: ScriptedChat.frame(underway: [
                 SentPrompt(inputId: [4], text: [.text("Run the focused tests.")], lands: .queue, underway: .mayNotHaveArrived),
             ])),
@@ -512,8 +520,7 @@ enum ComponentCatalog {
             composer("strip-trouble", height: 220, frame: ScriptedChat.frame(), strip: ScriptedChat.strip(
                 model: "gpt-5", usage: UsageView(blocked: false, windows: [UsageWindowView(label: .fiveHour, usedPercent: 91, state: .nearLimit, resetsAtMs: nil)], credits: nil),
                 failedServers: [ServerView(name: "github", error: "exited", needsAuth: false)])),
-            composer("sign-in", height: 240, frame: ScriptedChat.frame(), strip: ScriptedChat.strip(
-                signIn: SignInView(state: .expired, account: "ada@example.com", message: "OAuth token has expired."))),
+            composer("sign-in", height: 240, frame: ScriptedChat.frame(), strip: ScriptedChat.strip(signIn: F.expiredSignIn)),
             // The settings card once per provider kind, from the settings
             // view each kind's interpreter state gives.
             composer("settings-claude-sdk", height: 640, frame: ScriptedChat.frame(kind: .claudeSdk),
@@ -586,7 +593,7 @@ enum ComponentCatalog {
             },
             // The header pill stops growing past the largest ordinary size;
             // the step rows stack their verb, file and counts.
-            chat("conversation-large-text", chat: {
+            chat("large-text", chat: {
                 ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(phase: .idle), strip: ScriptedChat.strip(model: "opus 4.6"))
             }, size: .accessibility3),
             chat("asking", chat: {
@@ -603,6 +610,20 @@ enum ComponentCatalog {
             chat("away", chat: {
                 ScriptedChat(rows: [], frame: ScriptedChat.frame(mode: .holds(.detached), caughtUp: false, waiting: .detached))
             }, subject: F.awaySubject),
+            chat("queued", chat: {
+                ScriptedChat(
+                    rows: F.working,
+                    frame: ScriptedChat.frame(
+                        phase: .working,
+                        activity: Activity(kind: .running(key: "w06"), sinceMs: 0, elapsedMs: 33_000, turnElapsedMs: 33_000),
+                        queue: F.queue),
+                    strip: ScriptedChat.strip(model: "opus 4.6"))
+            }),
+            chat("signed-out", chat: {
+                ScriptedChat(
+                    rows: F.conversation, frame: ScriptedChat.frame(phase: .idle),
+                    strip: ScriptedChat.strip(signIn: F.expiredSignIn))
+            }),
             chat("new-activity", readiness: ("chat.newActivity", "shown"), chat: {
                 ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(phase: .working))
             }) { model, source in
@@ -697,7 +718,7 @@ extension ComponentCatalog {
     fileprivate static let overview: [ComponentExample] = {
         typealias F = CatalogFixtures
         return [
-            overview("uncommitted", settlesLate: true) { F.surroundings },
+            overview("overview", settlesLate: true) { F.surroundings },
         ]
     }()
 
@@ -706,7 +727,7 @@ extension ComponentCatalog {
         strip: @escaping @MainActor () -> ScriptedChat.Surroundings
     ) -> ComponentExample {
         ComponentExample(
-            id: "overview.\(id)", family: .chat, canvas: CGSize(width: 390, height: 844),
+            id: "chat.\(id)", family: .chat, canvas: CGSize(width: 390, height: 844),
             readinessIdentifier: "chat.overview.comparison", readinessValue: comparison.rawValue,
             settlesLate: settlesLate
         ) {
@@ -805,6 +826,18 @@ private struct CatalogChat<Content: View>: View {
 /// The catalogue's invented chat.
 @MainActor
 enum CatalogFixtures {
+    // MARK: - Composer
+
+    /// Prompts behind a running turn: one that can be withdrawn or sent now,
+    /// one steering, one from another agent.
+    static let queue = [
+        QueuedRow(inputId: [1], text: [.text("Then run the Windows check.")], steered: false, canWithdraw: true, canSendNow: true, fromAgent: nil),
+        QueuedRow(inputId: [2], text: [.text("Use the new error table instead.")], steered: true, canWithdraw: false, canSendNow: false, fromAgent: nil),
+        QueuedRow(inputId: [3], text: [.text("worker-2 finished the specs.")], steered: false, canWithdraw: false, canSendNow: true, fromAgent: "worker-2"),
+    ]
+
+    static let expiredSignIn = SignInView(state: .expired, account: "ada@example.com", message: "OAuth token has expired.")
+
     // MARK: - Settings
 
     private static let claudeModes = ["default", "acceptEdits", "plan", "auto", "bypassPermissions"]
@@ -1493,15 +1526,18 @@ extension ComponentCatalog {
         hostsList("list") { _ in },
         hostsList("empty", hosts: []) { _ in },
         hostsList("network-refused", hosts: []) { $0.sawLocalNetwork(.denied) },
+        hostsList("large-text", size: .accessibility3) { _ in },
         hostPage("page", host: CatalogFixtures.deskHost),
         hostPage("revoked", host: CatalogFixtures.oldLaptop),
     ]
 
     private static func hostsList(
-        _ id: String, hosts: [HostView] = CatalogFixtures.machines,
+        _ id: String, hosts: [HostView] = CatalogFixtures.machines, size: DynamicTypeSize = .large,
         setUp: @escaping @MainActor (HostsStore) -> Void
     ) -> ComponentExample {
-        ComponentExample(id: "hosts.\(id)", family: .hosts, canvas: CGSize(width: 390, height: 844)) {
+        ComponentExample(
+            id: "hosts.\(id)", family: .hosts, canvas: CGSize(width: 390, height: 844), dynamicTypeSize: size
+        ) {
             let store = CatalogFixtures.hostsStore(hosts)
             // In a navigation stack, as the tab holds it, so its title is the
             // system's.
@@ -1613,6 +1649,7 @@ extension ComponentCatalog {
         sheet("two-accounts") { StoryApp(settingsOpen: true) { StoryFleet.busy(accounts: 2) }.settings },
         sheet("signed-out") { StoryApp(settingsOpen: true) { StoryFleet.busy(accounts: 0) }.settings },
         sheet("notifications") { StoryApp(settingsOpen: true, notifications: .on).settings },
+        sheet("large-text", size: .accessibility3) { StoryApp(settingsOpen: true).settings },
         sheet("delete") {
             let stores = StoryFleet.busy()
             return DeleteAccountOverlay(
@@ -1666,8 +1703,12 @@ extension ComponentCatalog {
         },
     ]
 
-    private static func sheet(_ id: String, build: @escaping @MainActor () -> some View) -> ComponentExample {
-        ComponentExample(id: "settings.\(id)", family: .settings, canvas: CGSize(width: 390, height: 844)) {
+    private static func sheet(
+        _ id: String, size: DynamicTypeSize = .large, build: @escaping @MainActor () -> some View
+    ) -> ComponentExample {
+        ComponentExample(
+            id: "settings.\(id)", family: .settings, canvas: CGSize(width: 390, height: 844), dynamicTypeSize: size
+        ) {
             NavigationStack { build() }
         }
     }

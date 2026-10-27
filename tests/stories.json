@@ -1,0 +1,320 @@
+{
+  "about": "The storybook both clients are held to: every whole screen a person reaches, in each state that changes how the screen is put together. One piece in one variant (a row kind, an ask card, a message inside an otherwise identical screen) is a component example instead. A story either client lacks says why. The terminal's storybook is crates/shot/src/stories.rs; the phone's stories are examples of apps/apple/Amux/Debug/ComponentCatalog.swift, compared by its component snapshots. Each side's tests check its storybook against this list.",
+  "stories": [
+    {
+      "name": "fleet.first-run",
+      "shows": "The agent list on a client paired with nothing yet: what to do first.",
+      "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "fleet.first-run-looking",
+      "shows": "Nothing paired and nothing found yet: still looking, and the two steps on the computer.",
+      "clients": ["phone"],
+      "why": "The terminal does not look for machines from its agent list; machines found nearby show in its hosts window."
+    },
+    {
+      "name": "fleet.first-run-refused",
+      "shows": "Nothing paired on a phone refused the local network.",
+      "clients": ["phone"],
+      "why": "Only the phone asks for the local network."
+    },
+    {
+      "name": "fleet.first-run-signed-out",
+      "shows": "Nothing paired on a phone with no account, offering to sign in under pairing.",
+      "clients": ["phone"],
+      "why": "Only the phone has accounts on screen; the terminal signs in with amux login."
+    },
+    {
+      "name": "fleet.no-agents",
+      "shows": "A phone paired with a machine that runs no agents yet.",
+      "clients": ["phone"],
+      "why": "The terminal's agent list reads the same with no agents whether or not machines are paired, as fleet.first-run shows."
+    },
+    {
+      "name": "fleet.busy",
+      "shows": "A day's agents on several machines, one of them away: agents that need you first, then working, idle, a family, and the exited ones.",
+      "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "fleet.filter",
+      "shows": "The agent list narrowed to the agents whose names match a word.",
+      "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "fleet.no-matches",
+      "shows": "The agent list narrowed to nothing.",
+      "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "fleet.signed-out",
+      "shows": "The busy list on a phone with no account: a hollow person where the account disc would be.",
+      "clients": ["phone"],
+      "why": "Only the phone has accounts on screen; the terminal signs in with amux login."
+    },
+    {
+      "name": "fleet.stop",
+      "shows": "Stopping a working agent from the agent list: what stopping cuts short, and the confirm.",
+      "clients": ["terminal"],
+      "why": "The phone stops an agent from its chat, as chat.stop shows."
+    },
+    {
+      "name": "fleet.delete",
+      "shows": "Deleting an exited agent and its history from the agent list.",
+      "clients": ["terminal"],
+      "why": "The phone deletes an agent from its chat, as chat.delete shows."
+    },
+    {
+      "name": "fleet.rename",
+      "shows": "Renaming an agent in place on its row in the agent list.",
+      "clients": ["terminal"],
+      "why": "The phone renames an agent from its chat, as chat.rename shows."
+    },
+    {
+      "name": "fleet.large-text",
+      "shows": "The busy list at the largest accessibility text size.",
+      "clients": ["phone"],
+      "why": "The terminal draws every story at each of its sizes instead."
+    },
+    {
+      "name": "hosts.list",
+      "shows": "Every paired machine, each saying how it is reached, one away, with one found nearby and not paired.",
+      "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "hosts.empty",
+      "shows": "Hosts with no other machine paired or found.",
+      "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "hosts.network-refused",
+      "shows": "Hosts with nothing found because this phone was refused the local network.",
+      "clients": ["phone"],
+      "why": "Only the phone asks for the local network."
+    },
+    {
+      "name": "hosts.large-text",
+      "shows": "Hosts at the largest accessibility text size.",
+      "clients": ["phone"],
+      "why": "The terminal draws every story at each of its sizes instead."
+    },
+    {
+      "name": "host.page",
+      "shows": "One machine's page: how it is reached, what it runs, its addresses and key.",
+      "clients": ["phone"],
+      "why": "The terminal gives each machine one line in its hosts window, with no page of its own."
+    },
+    {
+      "name": "pair.code-empty",
+      "shows": "Pairing with a machine found on this network: an empty keypad and where to get the code.",
+      "clients": ["phone"],
+      "why": "The terminal pairs with amux pair on its command line."
+    },
+    {
+      "name": "pair.code-checking",
+      "shows": "All six digits typed and the code being checked.",
+      "clients": ["phone"],
+      "why": "The terminal pairs with amux pair on its command line."
+    },
+    {
+      "name": "pair.code-refused",
+      "shows": "A code that did not work, with the keypad ready for another.",
+      "clients": ["phone"],
+      "why": "The terminal pairs with amux pair on its command line."
+    },
+    {
+      "name": "pair.code-subscribe",
+      "shows": "A code that reached a machine only the relay can carry, on the free plan.",
+      "clients": ["phone"],
+      "why": "The terminal pairs with amux pair on its command line."
+    },
+    {
+      "name": "pair.needs-account",
+      "shows": "An invitation naming a machine only the relay can reach, on a phone with no account.",
+      "clients": ["phone"],
+      "why": "The terminal pairs with amux pair on its command line."
+    },
+    {
+      "name": "pair.confirm",
+      "shows": "The machine's own name and key, waiting for Pair or Not Now.",
+      "clients": ["phone"],
+      "why": "The terminal pairs with amux pair on its command line."
+    },
+    {
+      "name": "pair.trusted",
+      "shows": "The pairing done.",
+      "clients": ["phone"],
+      "why": "The terminal pairs with amux pair on its command line."
+    },
+    {
+      "name": "new-agent.claude",
+      "shows": "Starting a Claude agent: the host, the folder, the name, the model, effort and permission.",
+      "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "new-agent.browsing",
+      "shows": "Choosing the folder a new agent starts in: recent ones, and a typed path.",
+      "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "new-agent.terminal",
+      "shows": "The New Agent window for a person who chats in each agent's own terminal.",
+      "clients": ["terminal"],
+      "why": "Only the terminal can open an agent's own terminal to chat in."
+    },
+    {
+      "name": "new-agent.large-text",
+      "shows": "New Agent at the largest accessibility text size: every field's value under its label, and the last row clear of the Start bar.",
+      "clients": ["phone"],
+      "why": "The terminal draws every story at each of its sizes instead."
+    },
+    {
+      "name": "chat.loading",
+      "shows": "A chat opening with nothing of it held yet.",
+      "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "chat.not-opened",
+      "shows": "A chat that could not be opened, and why.",
+      "clients": ["phone"],
+      "why": "The terminal says so on its notice line and stays on the agent list."
+    },
+    {
+      "name": "chat.working",
+      "shows": "A turn at work: what it has said so far and the step it is on.",
+      "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "chat.conversation",
+      "shows": "A finished conversation of several turns: prompts, steps, replies and the composer.",
+      "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "chat.asking",
+      "shows": "A chat whose agent is asking: the ask stands in the composer's place.",
+      "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "chat.plan",
+      "shows": "A plan the agent proposes, read whole, waiting to be approved.",
+      "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "chat.queued",
+      "shows": "Prompts queued behind a turn still running.",
+      "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "chat.away",
+      "shows": "A chat whose host is away: it says so, and a prompt sent meanwhile waits until the host is back.",
+      "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "chat.exited",
+      "shows": "A chat whose agent exited, ready to be resumed.",
+      "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "chat.signed-out",
+      "shows": "The provider refused its sign-in: in the composer's place, how to sign in on its host.",
+      "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "chat.overview",
+      "shows": "What runs around a chat: background jobs, the uncommitted changes by folder, and the usage windows.",
+      "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "chat.settings",
+      "shows": "Changing the agent's model, effort or permission from its chat.",
+      "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "chat.stop",
+      "shows": "Stopping an agent from its chat: the plain confirm.",
+      "clients": ["phone"],
+      "why": "The terminal interrupts a turn at once from its chat and stops an agent from the agent list, as fleet.stop shows."
+    },
+    {
+      "name": "chat.delete",
+      "shows": "Deleting an exited agent from its chat.",
+      "clients": ["phone"],
+      "why": "The terminal deletes an agent from the agent list, as fleet.delete shows."
+    },
+    {
+      "name": "chat.rename",
+      "shows": "Renaming the agent from its chat.",
+      "clients": ["phone"],
+      "why": "The terminal renames an agent on its row in the agent list, as fleet.rename shows."
+    },
+    {
+      "name": "chat.large-text",
+      "shows": "A chat at the largest accessibility text size: the header held at the largest ordinary size, and the step rows stacking verb, subject and counts.",
+      "clients": ["phone"],
+      "why": "The terminal draws every story at each of its sizes instead."
+    },
+    {
+      "name": "ask.question-large-text",
+      "shows": "A question at the largest accessibility text size: the question, every option and Something else clear of each other.",
+      "clients": ["phone"],
+      "why": "The terminal draws every story at each of its sizes instead."
+    },
+    {
+      "name": "review.page",
+      "shows": "The review page over a diff of several files, with a comment written.",
+      "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "review.no-changes",
+      "shows": "The review page for an agent with nothing changed.",
+      "clients": ["phone"],
+      "why": "The terminal says there is nothing to review on its notice line instead of opening the page."
+    },
+    {
+      "name": "settings.signed-in",
+      "shows": "The whole app with the settings sheet raised: the account, this phone and help.",
+      "clients": ["phone"],
+      "why": "The terminal has no settings screen; it is set up with amux on its command line."
+    },
+    {
+      "name": "settings.signed-out",
+      "shows": "Settings on a phone with no account signed in.",
+      "clients": ["phone"],
+      "why": "The terminal has no settings screen; it is set up with amux on its command line."
+    },
+    {
+      "name": "settings.sign-in",
+      "shows": "Signing in: what an account adds, and continuing on amux.sh.",
+      "clients": ["phone"],
+      "why": "The terminal signs in with amux login."
+    },
+    {
+      "name": "settings.paywall",
+      "shows": "Subscribing: the plans, the one chosen, and restoring a purchase.",
+      "clients": ["phone"],
+      "why": "Subscriptions are bought on the phone."
+    },
+    {
+      "name": "settings.delete",
+      "shows": "Asking before an account is deleted, with the address typed to confirm.",
+      "clients": ["phone"],
+      "why": "The terminal has no settings screen; accounts are deleted from the phone."
+    },
+    {
+      "name": "settings.large-text",
+      "shows": "Settings at the largest accessibility text size.",
+      "clients": ["phone"],
+      "why": "The terminal draws every story at each of its sizes instead."
+    },
+    {
+      "name": "report.ready",
+      "shows": "Reporting a problem over a frozen copy of the screen, nothing written yet.",
+      "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "report.sent",
+      "shows": "A sent report and the reference to quote.",
+      "clients": ["phone"],
+      "why": "The terminal saves a report on this machine and says where on its notice line."
+    }
+  ]
+}

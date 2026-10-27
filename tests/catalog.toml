@@ -1346,8 +1346,8 @@ cases = ["scripts/qa-live-journey.py"]
 
 [[suite]]
 name = "phone-component-snapshots"
-contract = "Every catalogued phone component renders to its reviewed image in each declared appearance and size."
-paths = ["apps/apple/AmuxComponentSnapshotTests", "apps/apple/Amux/Debug/ComponentCatalog.swift", "apps/apple/Tools/ios-component-snapshots.py"]
+contract = "Every catalogued phone component and storybook story renders to its reviewed image in each declared appearance and size, and the catalogue draws every story tests/stories.json gives the phone."
+paths = ["apps/apple/AmuxComponentSnapshotTests", "apps/apple/Amux/Debug/ComponentCatalog.swift", "apps/apple/Amux/Debug/Stories.swift", "apps/apple/Tools/ios-component-snapshots.py", "tests/stories.json"]
 recipe = "just ios component-snapshots"
 boundary = "Native presentation"
 oracle = "Image comparison against the reviewed snapshot for each component, appearance and size."

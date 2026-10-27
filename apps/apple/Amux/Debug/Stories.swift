@@ -19,10 +19,9 @@ extension ComponentCatalog {
     // MARK: - Fleet
 
     static let fleet: [ComponentExample] = [
-        fleet("busy") { StoryFleet.busy() },
+        fleet("busy") { StoryFleet.busy(away: true) },
         fleet("notifications-offer", offerNotifications: true) { StoryFleet.busy(nearby: false) },
         fleet("stopped-open") { StoryFleet.busy(stoppedOpen: true) },
-        fleet("away") { StoryFleet.busy(away: true) },
         fleet("no-agents") { StoryFleet.noAgents() },
         fleet("first-run") { StoryFleet.firstRun() },
         fleet("first-run-two-found") { StoryFleet.firstRun(found: [StoryFleet.laptop, StoryFleet.studioFound]) },
@@ -30,10 +29,26 @@ extension ComponentCatalog {
         fleet("first-run-refused") { StoryFleet.firstRun(found: [], network: .denied) },
         fleet("first-run-signed-out") { StoryFleet.firstRun(found: [], accounts: 0) },
         fleet("first-run-signed-out-found") { StoryFleet.firstRun(accounts: 0) },
-        fleet("busy-large-text", size: .accessibility3) { StoryFleet.busy() },
+        fleet("large-text", size: .accessibility3) { StoryFleet.busy() },
         fleet("two-accounts") { StoryFleet.busy(accounts: 2) },
         fleet("signed-out") { StoryFleet.busy(accounts: 0) },
         fleet("picture") { StoryFleet.busy(accounts: 2, picture: true) },
+        fleet("filter") {
+            // The runtime filters the rows; filtered, it lists the two whose
+            // step runs the tests.
+            var stores = StoryFleet.busy()
+            stores.fleet.filter = FleetFilter(words: "test", only: nil)
+            let matching: Set = ["auth-refactor", "flaky-e2e"]
+            let sections = stores.view.sections.compactMap { section -> FleetSection? in
+                var section = section
+                section.rows = section.rows.filter { matching.contains($0.card.name) }
+                section.families = UInt32(section.rows.count)
+                return section.rows.isEmpty ? nil : section
+            }
+            stores.view = FleetView(sections: sections, needYou: stores.view.needYou, working: stores.view.working)
+            stores.fleet.show(stores.view, hosts: stores.hostViews)
+            return stores
+        },
         fleet("no-matches") {
             // The runtime filters the rows; filtered to nothing, it lists none.
             var stores = StoryFleet.busy()
@@ -47,11 +62,11 @@ extension ComponentCatalog {
             settlesLate: true
         ) { StoryApp(chatOpen: true) },
         ComponentExample(
-            id: "fleet.chat-exited", family: .fleet, canvas: CGSize(width: 390, height: 844),
+            id: "chat.exited", family: .chat, canvas: CGSize(width: 390, height: 844),
             settlesLate: true
         ) { StoryApp(chatOpen: true, chatPhase: .exited(cause: .failed("while the daemon was away"))) },
         ComponentExample(
-            id: "fleet.settings-open", family: .fleet, canvas: CGSize(width: 390, height: 844),
+            id: "settings.signed-in", family: .settings, canvas: CGSize(width: 390, height: 844),
             settlesLate: true
         ) { StoryApp(settingsOpen: true).settings },
     ]

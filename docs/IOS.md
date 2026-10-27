@@ -531,6 +531,21 @@ from typed values and a scripted chat with inert actions, on a fixed canvas,
 traits, locale and time zone, and is drawn in one app-hosted test process
 without navigating or photographing the simulator.
 
+Some examples are whole screens: the phone's storybook. A story is a screen a
+person reaches in one state that changes how that screen is put together
+(empty or busy, filtered, an ask taking over the chat, a sheet raised, large
+text); one piece in one variant is an ordinary example. The stories are the
+ones `tests/stories.json` gives the phone. That list is shared with the
+terminal's storybook, so the two clients show the same screens by the same
+names, and a story only one client has says why. It also says what each story
+shows; the golden manifest (`Goldens/manifest.json`) says it for every other
+example. The suite fails when an example is described in neither or both, or
+when the list names a story the catalogue does not draw, and
+`just ios script-tests` fails when a story has no Xcode preview. The previews
+(the `…Previews.swift` files beside the catalogue) open each story on a device
+of its own, and each family's gallery preview scrolls through every example of
+that family.
+
 ```sh
 just ios component-snapshots
 just ios component-snapshots composer.draft ask.plan
@@ -564,7 +579,7 @@ failure, never a flaky one. These in-process images say nothing about system
 chrome, keyboards, scrolling or layering between screens; those belong to the
 goldens and journeys.
 
-Examples whose ids end in `-large-text` are drawn at an accessibility text
+Examples whose ids end in `large-text` are drawn at an accessibility text
 size (accessibility3, accessibility5 for the question card). For these the
 suite also reads the window's accessibility tree, which a SwiftUI screen
 builds only while something reads it, so the suite turns on the automation

@@ -1,5 +1,5 @@
 //! One profile's administration on its own socket: its account connection,
-//! its pairing and the hosts it trusts. The socket names the profile, so
+//! its pairing, the hosts it trusts and its diagnostic dump. The socket names the profile, so
 //! no call carries its id.
 
 use tonic::{Request, Response, Status};
@@ -176,5 +176,21 @@ impl ProfileAdminService for ProfileAdmin {
         Ok(Response::new(
             self.edge()?.unpair(peer, request.reason).await?,
         ))
+    }
+
+    async fn dump(
+        &self,
+        request: Request<wire::DumpRequest>,
+    ) -> Result<Response<wire::DumpResponse>, Status> {
+        // A local caller reads the bundle where it was written.
+        let path = self
+            .registry
+            .runtime(self.profile)?
+            .dump(request.into_inner())
+            .await
+            .map_err(|error| crate::grpc::status(error.to_wire()))?;
+        Ok(Response::new(wire::DumpResponse {
+            report_path: path.to_string_lossy().into_owned(),
+        }))
     }
 }

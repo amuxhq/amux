@@ -87,7 +87,10 @@ async fn open(net: &Net) -> (AppRuntime, Host) {
 
 /// The runtime, with home not yet opened.
 async fn connect(net: &Net) -> (AppRuntime, Host) {
-    let client: Arc<dyn Client> = Arc::new(InProcess::new(net.client("desk").unwrap()));
+    let client: Arc<dyn Client> = Arc::new(
+        InProcess::new(net.client("desk").unwrap())
+            .with_admin(Arc::new(net.profile_admin("desk").unwrap())),
+    );
     let (sender, wakes) = mpsc::unbounded_channel();
     let wake = Arc::new(move |wake: Wake| {
         let _ = sender.send(wake);

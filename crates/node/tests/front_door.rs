@@ -10,8 +10,8 @@ use std::sync::Arc;
 use support::synthetic::*;
 use support::*;
 use tonic::Request;
+use wire::installation_service_server::InstallationService as _;
 use wire::profile_admin_service_server::ProfileAdminService as _;
-use wire::profile_service_server::ProfileService as _;
 use wire::{
     CreateProfileRequest, DeleteProfileRequest, Empty, RenameProfileRequest, StartPairingRequest,
     start_pairing_request,

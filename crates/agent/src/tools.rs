@@ -22,7 +22,6 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tonic::transport::{Channel, Endpoint};
 use tonic::{Code, Status};
-use wire::client_service_client::ClientServiceClient;
 use wire::{
     Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, ExitCause, HostEntry, HostRef, Kind,
     Lifecycle, PromptInput, PromptSubmission, ResolveAgentRequest, SendMessageRequest,
@@ -337,7 +336,7 @@ impl Server {
         let sent = self
             .daemon_once(format!("the message to {to}"), |mut client| {
                 let request = request.clone();
-                async move { client.send_message(request).await }
+                async move { client.agents.send_message(request).await }
             })
             .await
             .map_err(|refusal| refusal.or_else(|status| refused(&status, &to)))?;
@@ -390,7 +389,7 @@ impl Server {
         let agent = self
             .daemon_once("the new agent".to_owned(), |mut client| {
                 let request = request.clone();
-                async move { client.create_agent(request).await }
+                async move { client.agents.create_agent(request).await }
             })
             .await
             .map_err(|refusal| refusal.or_else(|status| Refusal(plain(&status))))?;
@@ -413,7 +412,7 @@ impl Server {
         };
         self.daemon_once(format!("the stop for {name}"), |mut client| {
             let request = request.clone();
-            async move { client.stop_agent(request).await }
+            async move { client.agents.stop_agent(request).await }
         })
         .await
         .map_err(|refusal| {
@@ -428,7 +427,7 @@ impl Server {
         };
         self.daemon(|mut client| {
             let request = request.clone();
-            async move { client.resolve_agent(request).await }
+            async move { client.agents.resolve_agent(request).await }
         })
         .await
         .map_err(|status| refused(&status, name))
@@ -438,6 +437,7 @@ impl Server {
     async fn inventory(&self) -> Result<(Vec<HostEntry>, Vec<Agent>), Refusal> {
         self.daemon(|mut client| async move {
             let mut stream = client
+                .agents
                 .subscribe_inventory(wire::SubscribeInventoryRequest {})
                 .await?
                 .into_inner();
@@ -484,7 +484,7 @@ impl Server {
     /// the window closes; then the call reports that no daemon is running.
     async fn daemon<T, F, Fut>(&self, call: F) -> Result<T, Status>
     where
-        F: Fn(ClientServiceClient<Channel>) -> Fut,
+        F: Fn(wire::ClientStubs) -> Fut,
         Fut: std::future::Future<Output = Result<tonic::Response<T>, Status>>,
     {
         self.dial(call, true).await.map_err(|(status, _)| status)
@@ -497,7 +497,7 @@ impl Server {
     /// is the daemon's own refusal.
     async fn daemon_once<T, F, Fut>(&self, what: String, call: F) -> Result<T, Settled>
     where
-        F: Fn(ClientServiceClient<Channel>) -> Fut,
+        F: Fn(wire::ClientStubs) -> Fut,
         Fut: std::future::Future<Output = Result<tonic::Response<T>, Status>>,
     {
         match self.dial(call, false).await {
@@ -512,14 +512,14 @@ impl Server {
     /// The error says whether the call reached the daemon.
     async fn dial<T, F, Fut>(&self, call: F, resend: bool) -> Result<T, (Status, bool)>
     where
-        F: Fn(ClientServiceClient<Channel>) -> Fut,
+        F: Fn(wire::ClientStubs) -> Fut,
         Fut: std::future::Future<Output = Result<tonic::Response<T>, Status>>,
     {
         let deadline = tokio::time::Instant::now() + self.config.retry_window;
         let mut backoff = Duration::from_millis(50);
         loop {
             let failed = match connect(&self.dir.join(TOOLS_SOCK)).await {
-                Ok(channel) => match call(wire::client_service_client(channel)).await {
+                Ok(channel) => match call(wire::client_stubs(channel)).await {
                     Ok(response) => return Ok(response.into_inner()),
                     Err(status) if resend && lost(&status) => (status, true),
                     Err(status) => return Err((status, true)),

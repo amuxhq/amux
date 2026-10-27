@@ -390,3 +390,13 @@ message ReviewComment {
   uint32 old_line = 3;
   string text = 4;
 }
+
+// "You hold what the origin holds as of now", on every stream. On a session
+// stream, the origin's revision replay is complete through: a source stores
+// it as its cursor and clients ignore it.
+message CaughtUp {
+  uint64 revision = 1;
+}
+
+// The stream closes after this; the client re-tails.
+message Lagged {}

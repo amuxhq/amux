@@ -27,9 +27,9 @@ use serde::{Deserialize, Serialize};
 use store::AgentKey;
 use tokio::sync::mpsc;
 use uuid::Uuid;
-use wire::client_service_server::ClientService as _;
+use wire::agent_service_server::AgentService as _;
+use wire::installation_service_client::InstallationServiceClient;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
-use wire::profile_service_client::ProfileServiceClient;
 use wire::{
     AgentRef, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
     CreateAgentRequest, DeleteAgentRequest, Input, PromptInput, WithdrawQueued, claude_pty_input,
@@ -897,14 +897,14 @@ impl Net {
     pub async fn front_door(
         &self,
         name: &str,
-    ) -> Result<ProfileServiceClient<tonic::transport::Channel>, NetError> {
+    ) -> Result<InstallationServiceClient<tonic::transport::Channel>, NetError> {
         let channel = local_channel(&self.host(name)?.front_door)
             .await
             .map_err(|error| NetError::Host {
                 host: name.to_owned(),
                 error: error.to_string(),
             })?;
-        Ok(ProfileServiceClient::new(channel))
+        Ok(InstallationServiceClient::new(channel))
     }
 
     /// The administration of `name`'s profile on its own socket: its
@@ -1042,6 +1042,7 @@ impl Net {
                     host: decl.host.clone(),
                     why,
                 })?
+                .agents
                 .create_agent(request)
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
@@ -1196,6 +1197,7 @@ impl Net {
                     host: agent.host.clone(),
                     why,
                 })?
+                .agents
                 .resume_agent(wire::ResumeAgentRequest {
                     agent_id: agent.id.as_bytes().to_vec(),
                     initial_prompt: submission,
@@ -1241,6 +1243,7 @@ impl Net {
                     host: agent.host.clone(),
                     why,
                 })?
+                .sessions
                 .send_input(request)
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
@@ -1272,6 +1275,7 @@ impl Net {
                         host: agent.host.clone(),
                         why,
                     })?
+                    .agents
                     .stop_agent(request)
                     .await
             }
@@ -1344,6 +1348,7 @@ impl Net {
                         host: agent.host.clone(),
                         why,
                     })?
+                    .agents
                     .delete_agent(request)
                     .await
             }
@@ -1363,6 +1368,21 @@ impl Net {
     /// agent lives there.
     pub fn client(&self, host: &str) -> Result<ClientApi, NetError> {
         Ok(ClientApi::new(&self.runtime(host)?, None))
+    }
+
+    /// The administration of `host`'s profile, called in process as the
+    /// phone calls it.
+    pub fn profile_admin(&self, host: &str) -> Result<node::ProfileAdmin, NetError> {
+        self.in_process(host, "this")?;
+        let entry = self
+            .hosts
+            .get(host)
+            .ok_or_else(|| NetError::NoHost(host.to_owned()))?;
+        let daemon = entry
+            .daemon
+            .as_ref()
+            .ok_or_else(|| NetError::Down(host.to_owned()))?;
+        Ok(daemon.lock().unwrap().profile_admin(entry.info.profile))
     }
 
     /// The client service as `name`'s tools socket serves it: every call
@@ -2819,6 +2839,7 @@ impl Net {
                     host: host.to_owned(),
                     why,
                 })?
+                .sessions
                 .subscribe_session(wire::SubscribeSessionRequest {
                     agent_id: id.as_bytes().to_vec(),
                     tail,
@@ -2869,6 +2890,7 @@ impl Net {
                     host: host.to_owned(),
                     why,
                 })?
+                .agents
                 .subscribe_inventory(wire::SubscribeInventoryRequest {})
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
@@ -3119,10 +3141,12 @@ impl Net {
             let mut rows: BTreeMap<String, wire::Item> = BTreeMap::new();
             let mut stream = match tokio::time::timeout_at(
                 deadline,
-                client.subscribe_session(wire::SubscribeSessionRequest {
-                    agent_id: agent.id.as_bytes().to_vec(),
-                    tail: 200,
-                }),
+                client
+                    .sessions
+                    .subscribe_session(wire::SubscribeSessionRequest {
+                        agent_id: agent.id.as_bytes().to_vec(),
+                        tail: 200,
+                    }),
             )
             .await
             {
@@ -3162,6 +3186,7 @@ impl Net {
                         let mut before = rows.values().map(|item| item.order).min();
                         while let Some(order) = before.filter(|order| *order > 1) {
                             let page = client
+                                .sessions
                                 .list_items(wire::ListItemsRequest {
                                     agent_id: agent.id.as_bytes().to_vec(),
                                     before_order: Some(order),

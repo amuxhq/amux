@@ -40,7 +40,7 @@ tool server finds the socket
 by its own directory, so the daemon knows which agent is calling from the
 connection it arrived on. No environment variable or token carries an id, and
 nothing in a request can claim one. The socket serves the ordinary
-`ClientService` with a few calls refused; [the protocol](PROTOCOL.md)
+`AgentService` and `SessionService` with a few calls refused; [the protocol](PROTOCOL.md)
 describes what the tools socket allows.
 
 Five tools are fleet tools and dial the daemon; two never reach it. The tool

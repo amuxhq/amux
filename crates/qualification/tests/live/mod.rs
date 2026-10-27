@@ -42,8 +42,7 @@ use interpret::Replayed;
 use tokio::process::{Child, Command};
 use tonic::transport::{Channel, Endpoint};
 use ui_state::{AgentState, ItemBody, OpenAsk};
-use wire::client_service_client::ClientServiceClient;
-use wire::profile_service_client::ProfileServiceClient;
+use wire::installation_service_client::InstallationServiceClient;
 use wire::{
     ClaudeAnswer, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
     CreateAgentRequest, Input, Item, Kind, Phase, SendInputRequest, Snapshot,
@@ -461,7 +460,7 @@ struct Install {
     amux: PathBuf,
     env: Vec<(String, OsString)>,
     daemon: tokio::sync::Mutex<Child>,
-    client: ClientServiceClient<Channel>,
+    client: wire::ClientStubs,
     driver_fixture: Box<dyn Fn(Scenario) -> Option<PathBuf> + Send + Sync>,
     replay: fn(&Path) -> Result<Vec<Replayed>, String>,
     model: Mutex<Option<String>>,
@@ -532,7 +531,7 @@ impl Install {
         })
         .await
         .ok_or("its front door never answered")?;
-        let profile = ProfileServiceClient::new(door)
+        let profile = InstallationServiceClient::new(door)
             .list_profiles(wire::ListProfilesRequest {})
             .await
             .map_err(|status| status.to_string())?
@@ -541,7 +540,7 @@ impl Install {
             .into_iter()
             .next()
             .ok_or("it has no profile")?;
-        let client = wire::client_service_client(
+        let client = wire::client_stubs(
             channel(Path::new(&profile.socket_path))
                 .await
                 .map_err(|error| error.to_string())?,

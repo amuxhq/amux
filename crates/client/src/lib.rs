@@ -9,14 +9,17 @@
 
 use std::path::Path;
 use std::pin::Pin;
+use std::sync::Arc;
 
 pub use agent_dir::{Clock, ManualClock, SystemClock};
 use async_trait::async_trait;
 use futures_util::{Stream, StreamExt as _};
 use prost::Message as _;
 use tonic::{Code, Request, Status};
-use wire::client_service_client::ClientServiceClient;
-use wire::client_service_server::ClientService;
+use wire::agent_service_server::AgentService;
+use wire::profile_admin_service_client::ProfileAdminServiceClient;
+use wire::profile_admin_service_server::ProfileAdminService;
+use wire::session_service_server::SessionService;
 use wire::{
     Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, Diff, DumpRequest, DumpResponse,
     ErrorCode, GetBlobRequest, GetBlobResponse, GetDiffRequest, GetItemRequest, InventoryEvent,
@@ -147,62 +150,62 @@ fn unimplemented(call: &str) -> RpcError {
     })
 }
 
-/// One implementation of [`Client`] per way of reaching the service:
-/// `$call!(self, method, request)` makes the service call and yields its
-/// `Result<Response<_>, Status>`.
+/// One implementation of [`Client`] per way of reaching the services:
+/// `$call!(self, service, method, request)` makes the call on `agents`,
+/// `sessions` or `admin` and yields its `Result<Response<_>, Status>`.
 macro_rules! client_impl {
     (impl[$($generics:tt)*] Client for $ty:ty, $call:ident) => {
         #[async_trait]
         impl<$($generics)*> Client for $ty {
             async fn subscribe_inventory(&self) -> Result<EventStream<InventoryEvent>, RpcError> {
-                Ok(events($call!(self, subscribe_inventory, wire::SubscribeInventoryRequest {}).await?.into_inner()))
+                Ok(events($call!(self, agents, subscribe_inventory, wire::SubscribeInventoryRequest {}).await?.into_inner()))
             }
 
             async fn resolve_agent(&self, request: ResolveAgentRequest) -> Result<Agent, RpcError> {
-                Ok($call!(self, resolve_agent, request).await?.into_inner())
+                Ok($call!(self, agents, resolve_agent, request).await?.into_inner())
             }
 
             async fn subscribe_session(
                 &self,
                 request: SubscribeSessionRequest,
             ) -> Result<EventStream<SessionEvent>, RpcError> {
-                Ok(events($call!(self, subscribe_session, request).await?.into_inner()))
+                Ok(events($call!(self, sessions, subscribe_session, request).await?.into_inner()))
             }
 
             async fn list_items(&self, request: ListItemsRequest) -> Result<ListItemsResponse, RpcError> {
-                Ok($call!(self, list_items, request).await?.into_inner())
+                Ok($call!(self, sessions, list_items, request).await?.into_inner())
             }
 
             async fn get_item(&self, request: GetItemRequest) -> Result<Item, RpcError> {
-                Ok($call!(self, get_item, request).await?.into_inner())
+                Ok($call!(self, sessions, get_item, request).await?.into_inner())
             }
 
             async fn send_input(
                 &self,
                 request: SendInputRequest,
             ) -> Result<SendInputResponse, RpcError> {
-                Ok($call!(self, send_input, request).await?.into_inner())
+                Ok($call!(self, sessions, send_input, request).await?.into_inner())
             }
 
             async fn create_agent(&self, request: CreateAgentRequest) -> Result<Agent, RpcError> {
-                Ok($call!(self, create_agent, request).await?.into_inner())
+                Ok($call!(self, agents, create_agent, request).await?.into_inner())
             }
 
             async fn rename_agent(&self, request: RenameAgentRequest) -> Result<Agent, RpcError> {
-                Ok($call!(self, rename_agent, request).await?.into_inner())
+                Ok($call!(self, agents, rename_agent, request).await?.into_inner())
             }
 
             async fn stop_agent(&self, request: StopAgentRequest) -> Result<(), RpcError> {
-                $call!(self, stop_agent, request).await?;
+                $call!(self, agents, stop_agent, request).await?;
                 Ok(())
             }
 
             async fn resume_agent(&self, request: ResumeAgentRequest) -> Result<Agent, RpcError> {
-                Ok($call!(self, resume_agent, request).await?.into_inner())
+                Ok($call!(self, agents, resume_agent, request).await?.into_inner())
             }
 
             async fn delete_agent(&self, request: DeleteAgentRequest) -> Result<(), RpcError> {
-                $call!(self, delete_agent, request).await?;
+                $call!(self, agents, delete_agent, request).await?;
                 Ok(())
             }
 
@@ -210,51 +213,51 @@ macro_rules! client_impl {
                 &self,
                 request: SendMessageRequest,
             ) -> Result<SendMessageResponse, RpcError> {
-                Ok($call!(self, send_message, request).await?.into_inner())
+                Ok($call!(self, agents, send_message, request).await?.into_inner())
             }
 
             async fn put_blob(&self, request: PutBlobRequest) -> Result<BlobRef, RpcError> {
-                Ok($call!(self, put_blob, request).await?.into_inner())
+                Ok($call!(self, agents, put_blob, request).await?.into_inner())
             }
 
             async fn get_blob(&self, request: GetBlobRequest) -> Result<GetBlobResponse, RpcError> {
-                Ok($call!(self, get_blob, request).await?.into_inner())
+                Ok($call!(self, agents, get_blob, request).await?.into_inner())
             }
 
             async fn get_diff(&self, request: GetDiffRequest) -> Result<Diff, RpcError> {
-                Ok($call!(self, get_diff, request).await?.into_inner())
+                Ok($call!(self, agents, get_diff, request).await?.into_inner())
             }
 
             async fn get_catalogue(
                 &self,
                 request: wire::GetCatalogueRequest,
             ) -> Result<wire::GetCatalogueResponse, RpcError> {
-                Ok($call!(self, get_catalogue, request).await?.into_inner())
+                Ok($call!(self, agents, get_catalogue, request).await?.into_inner())
             }
 
             async fn list_repositories(
                 &self,
                 request: ListRepositoriesRequest,
             ) -> Result<ListRepositoriesResponse, RpcError> {
-                Ok($call!(self, list_repositories, request).await?.into_inner())
+                Ok($call!(self, agents, list_repositories, request).await?.into_inner())
             }
 
             async fn dump(&self, request: DumpRequest) -> Result<DumpResponse, RpcError> {
-                Ok($call!(self, dump, request).await?.into_inner())
+                Ok($call!(self, admin, dump, request).await?.into_inner())
             }
 
             async fn update_draft(
                 &self,
                 request: wire::UpdateDraftRequest,
             ) -> Result<wire::Draft, RpcError> {
-                Ok($call!(self, update_draft, request).await?.into_inner())
+                Ok($call!(self, sessions, update_draft, request).await?.into_inner())
             }
 
             async fn get_draft(
                 &self,
                 request: wire::GetDraftRequest,
             ) -> Result<wire::Draft, RpcError> {
-                Ok($call!(self, get_draft, request).await?.into_inner())
+                Ok($call!(self, sessions, get_draft, request).await?.into_inner())
             }
         }
     };
@@ -274,7 +277,8 @@ where
 /// ends, and its reader subscribes again.
 #[derive(Clone)]
 pub struct GrpcClient {
-    service: ClientServiceClient<tonic::transport::Channel>,
+    service: wire::ClientStubs,
+    admin: ProfileAdminServiceClient<tonic::transport::Channel>,
 }
 
 impl GrpcClient {
@@ -297,39 +301,70 @@ impl GrpcClient {
 
     pub fn new(channel: tonic::transport::Channel) -> GrpcClient {
         GrpcClient {
-            service: wire::client_service_client(channel),
+            service: wire::client_stubs(channel.clone()),
+            admin: ProfileAdminServiceClient::new(channel),
         }
     }
 }
 
 macro_rules! grpc_call {
-    ($client:expr, $name:ident, $request:expr) => {
-        $client.service.clone().$name($request)
+    ($client:expr, admin, $name:ident, $request:expr) => {
+        $client.admin.clone().$name($request)
+    };
+    ($client:expr, $service:ident, $name:ident, $request:expr) => {
+        $client.service.$service.clone().$name($request)
     };
 }
 
 client_impl!(impl[] Client for GrpcClient, grpc_call);
 
-/// A client service hosted in this process, called directly: the phone's
-/// embedded runtime. Errors take the same shape they would over a socket.
+/// The client services hosted in this process, called directly: the
+/// phone's embedded runtime. Errors take the same shape they would over a
+/// socket. Without the profile's administration, a dump is unimplemented.
 #[derive(Clone)]
 pub struct InProcess<S> {
     service: S,
+    admin: Option<Arc<dyn ProfileAdminService>>,
 }
 
-impl<S: ClientService> InProcess<S> {
+impl<S: AgentService + SessionService> InProcess<S> {
     pub fn new(service: S) -> InProcess<S> {
-        InProcess { service }
+        InProcess {
+            service,
+            admin: None,
+        }
+    }
+
+    /// Serves the dump through the profile's administration.
+    pub fn with_admin(mut self, admin: Arc<dyn ProfileAdminService>) -> InProcess<S> {
+        self.admin = Some(admin);
+        self
     }
 }
 
 macro_rules! in_process_call {
-    ($client:expr, $name:ident, $request:expr) => {
-        ClientService::$name(&$client.service, Request::new($request))
+    ($client:expr, admin, $name:ident, $request:expr) => {
+        async {
+            match &$client.admin {
+                Some(admin) => {
+                    ProfileAdminService::$name(admin.as_ref(), Request::new($request)).await
+                }
+                None => Err(Status::unimplemented(concat!(
+                    stringify!($name),
+                    " is not served here"
+                ))),
+            }
+        }
+    };
+    ($client:expr, agents, $name:ident, $request:expr) => {
+        AgentService::$name(&$client.service, Request::new($request))
+    };
+    ($client:expr, sessions, $name:ident, $request:expr) => {
+        SessionService::$name(&$client.service, Request::new($request))
     };
 }
 
-client_impl!(impl[S: ClientService] Client for InProcess<S>, in_process_call);
+client_impl!(impl[S: AgentService + SessionService] Client for InProcess<S>, in_process_call);
 
 #[cfg(test)]
 mod tests {

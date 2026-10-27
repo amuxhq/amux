@@ -23,7 +23,7 @@ use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use support::desk::{Desk, GRACE_SECS};
 use support::{amux_binary, grpc_channel, until};
 use tokio::io::{AsyncBufReadExt as _, BufReader};
-use wire::profile_service_client::ProfileServiceClient;
+use wire::installation_service_client::InstallationServiceClient;
 use wire::{BindProfileRequest, RelayCarrier};
 
 /// The key the stand-in cloud signs connection tokens with, and the same
@@ -277,7 +277,7 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
         "{}",
         String::from_utf8_lossy(&started.stderr)
     );
-    let mut profiles = ProfileServiceClient::new(grpc_channel(&desk.socket).await.unwrap());
+    let mut profiles = InstallationServiceClient::new(grpc_channel(&desk.socket).await.unwrap());
     let profile = profiles
         .list_profiles(wire::ListProfilesRequest {})
         .await

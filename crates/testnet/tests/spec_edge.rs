@@ -21,8 +21,8 @@ use testnet::{
 use tonic::transport::{Channel, Endpoint};
 use uuid::Uuid;
 use wire::cloud_standing::Standing;
+use wire::installation_service_client::InstallationServiceClient;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
-use wire::profile_service_client::ProfileServiceClient;
 use wire::{
     BeginPairRequest, BindProfileRequest, Empty, HostRef, InventoryEvent, StartPairingRequest,
     UnpairRequest, begin_pair_request, host_ref, inventory_event, pairing_window,
@@ -52,8 +52,8 @@ fn id(net: &Net, host: &str) -> Vec<u8> {
     net.host(host).unwrap().profile.as_bytes().to_vec()
 }
 
-async fn door(net: &Net, host: &str) -> ProfileServiceClient<Channel> {
-    ProfileServiceClient::new(channel(&net.host(host).unwrap().front_door).await)
+async fn door(net: &Net, host: &str) -> InstallationServiceClient<Channel> {
+    InstallationServiceClient::new(channel(&net.host(host).unwrap().front_door).await)
 }
 
 /// The host's profile's administration, on its socket.
@@ -154,6 +154,7 @@ fn pro_refresh_ms() -> i64 {
 async fn peer_inventory_hosts(from: &Edge, to: Uuid) -> Vec<Vec<u8>> {
     let mut client = from.peer(to).await.expect("a route to the peer");
     let mut events = client
+        .agents
         .subscribe_inventory(wire::SubscribeInventoryRequest {})
         .await
         .expect("the peer answers a trusted caller")
@@ -321,11 +322,11 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     let from_desk = peer_inventory_hosts(&edge(&net, "desk"), laptop_id).await;
     assert!(from_laptop.contains(&desk_id.as_bytes().to_vec()));
     assert!(from_desk.contains(&laptop_id.as_bytes().to_vec()));
-    println!("PeerService answered laptop -> desk and desk -> laptop");
+    println!("the peer services answered laptop -> desk and desk -> laptop");
 
     // A stranger that trusts the desk but that the desk never paired with
     // is refused: its pinned dial never becomes a link, and on the desk's
-    // listener, without a trusted key, there is no PeerService to reach.
+    // listener, without a trusted key, there are no peer services to reach.
     edge(&net, "stranger")
         .trust(&edge(&net, "desk"))
         .await
@@ -344,11 +345,11 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     println!("the stranger's dial was refused: {refused}");
     let desk_addr = edge(&net, "desk").lan_addr().unwrap();
     let outside_pairing = match edge(&net, "stranger").unpinned_channel(desk_addr).await {
-        Ok(channel) => wire::peer_service_client(channel)
+        Ok(channel) => wire::peer_agent_service_client(channel)
             .subscribe_inventory(wire::SubscribeInventoryRequest {})
             .await
             .map(|_| ())
-            .expect_err("a stranger reaches no PeerService")
+            .expect_err("a stranger reaches no peer service")
             .code(),
         Err(_) => tonic::Code::Unavailable,
     };
@@ -362,7 +363,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
         })
         .await
         .unwrap();
-    let in_pairing = wire::peer_service_client(
+    let in_pairing = wire::peer_agent_service_client(
         edge(&net, "stranger")
             .unpinned_channel(desk_addr)
             .await
@@ -380,7 +381,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
         .await
         .unwrap();
     println!(
-        "stranger refused: pinned dial never links; unpinned PeerService call {outside_pairing:?}, \
+        "stranger refused: pinned dial never links; unpinned peer services call {outside_pairing:?}, \
          in pairing mode {in_pairing:?}"
     );
     assert!(!edge(&net, "desk").is_trusted(stranger_id));

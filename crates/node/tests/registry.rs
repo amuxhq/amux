@@ -1512,7 +1512,7 @@ fn listing(
 /// answer through it; once it no longer trusts that host, nothing.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_host_lists_where_its_agents_ran_and_its_repositories_for_trusted_hosts() {
-    use wire::client_service_server::ClientService as _;
+    use wire::agent_service_server::AgentService as _;
 
     let desk = Install::new();
     let roots = desk.path("code");

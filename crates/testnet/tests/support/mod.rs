@@ -11,8 +11,8 @@ use node::{Edge, Relay, RelayCarrier};
 use testnet::{HostDecl, Net, PATIENCE, until};
 use tonic::transport::Channel;
 use uuid::Uuid;
+use wire::installation_service_client::InstallationServiceClient;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
-use wire::profile_service_client::ProfileServiceClient;
 use wire::{
     BeginPairRequest, Empty, HostRef, InventoryEvent, PairingWindow, StartPairingRequest,
     begin_pair_request, host_ref, inventory_event, pairing_window, start_pairing_request,
@@ -46,7 +46,7 @@ pub fn profile(net: &Net, host: &str) -> Vec<u8> {
         .to_vec()
 }
 
-pub async fn door(net: &Net, host: &str) -> ProfileServiceClient<Channel> {
+pub async fn door(net: &Net, host: &str) -> InstallationServiceClient<Channel> {
     net.front_door(host).await.expect("the front door answers")
 }
 
@@ -107,6 +107,7 @@ pub fn carrier(net: &Net, host: &str) -> Option<RelayCarrier> {
 pub async fn peer_inventory_hosts(from: &Edge, to: Uuid) -> Result<Vec<Vec<u8>>, tonic::Status> {
     let mut client = from.peer(to).await.map_err(|error| error.status())?;
     let mut events = client
+        .agents
         .subscribe_inventory(wire::SubscribeInventoryRequest {})
         .await?
         .into_inner();
@@ -234,6 +235,7 @@ pub async fn open_session(
         .await
         .map_err(|error| error.status())?;
     let mut events = client
+        .sessions
         .subscribe_session(wire::PeerSubscribeSessionRequest {
             agent_id: agent.as_bytes().to_vec(),
             from: Some(wire::peer_subscribe_session_request::From::Tail(10)),

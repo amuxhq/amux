@@ -11,7 +11,7 @@ use std::sync::Arc;
 use node::{Daemon, Edge, Owner, ProfileRuntime};
 use support::synthetic::*;
 use support::*;
-use wire::client_service_server::ClientService as _;
+use wire::session_service_server::SessionService as _;
 use wire::{SendInputRequest, SendInputResponse, send_input_response};
 
 const SEGMENTS: u64 = 1 << 20;

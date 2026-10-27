@@ -18,7 +18,7 @@ use provider_fakes::script::Step;
 use support::*;
 use testnet::{AgentDecl, HostDecl, Net, PATIENCE, Topology, observe, until};
 use wire::begin_pair_request;
-use wire::client_service_server::ClientService as _;
+use wire::session_service_server::SessionService as _;
 
 /// Two hosts bound to IPv6 alone pair, link over IPv6, and one
 /// streams the other's session live.

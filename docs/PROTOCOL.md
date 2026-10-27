@@ -19,9 +19,13 @@ the relay server), and `crates/node/src/grpc.rs`,
 services). The protobuf source is in
 [`crates/wire/proto/amux/v1/`](../crates/wire/proto/amux/v1/): link control in
 [`link.proto`](../crates/wire/proto/amux/v1/link.proto), pairing in
-[`pairing.proto`](../crates/wire/proto/amux/v1/pairing.proto), the front door
-and each profile's administration in
-[`front_door.proto`](../crates/wire/proto/amux/v1/front_door.proto).
+[`pairing_service.proto`](../crates/wire/proto/amux/v1/pairing_service.proto),
+the front door in
+[`installation_service.proto`](../crates/wire/proto/amux/v1/installation_service.proto),
+each profile's administration in
+[`profile_admin_service.proto`](../crates/wire/proto/amux/v1/profile_admin_service.proto),
+and the peer services in
+[`peer_service.proto`](../crates/wire/proto/amux/v1/peer_service.proto).
 
 ## The promises, as properties
 
@@ -118,7 +122,7 @@ streams immediately. Deleting a profile destroys its whole trust store.
 Profiles never inherit another profile's pairing window, pins, routes or
 account.
 
-Trusted peers call the agent operations of `PeerService`
+Trusted peers call the agent operations of `PeerAgentService` and `PeerSessionService`
 ([chapter 7](#chapter-7-the-front-door-and-the-amuxv1-services)).
 Installation and profile lifecycle live on the installation front door;
 a profile's trust and pairing-window administration live on that profile's
@@ -538,7 +542,7 @@ route: one streaming zstd compressor each way, between HTTP/2 and the stream,
 inside the link's encryption, so a forwarder carries it without knowing it is
 there (`crates/node/src/transport/compress.rs`). The opener wraps its end in
 `ChannelPool::channel_over`; the acceptor wraps its
-end as `TunnelDispatcher` hands a paired host's stream to `PeerService`.
+end as `TunnelDispatcher` hands a paired host's stream to the peer services.
 Pairing channels, the link's control stream and local sockets are not
 compressed. Nothing on the wire announces it: both ends always compress.
 
@@ -648,11 +652,11 @@ never does, because its directory and journal are its whole interface (see
 
 | Endpoint | Services | Who dials it |
 | --- | --- | --- |
-| The installation front door | `ProfileService`, `InstallationService` | the CLI and the terminal client, to find profiles and manage them |
-| A profile's client socket, `<data_dir>/profiles/<id>/sock` | `ClientService`, `ProfileAdminService` | the terminal client and the CLI, at the path the front door reports as `Profile.socket_path` |
-| An agent's `agents/<id>/tools.sock` | `ClientService`, with that agent as the caller | the agent's MCP tool server, and nothing else |
+| The installation front door | `InstallationService` | the CLI and the terminal client, to find profiles and manage them |
+| A profile's client socket, `<data_dir>/profiles/<id>/sock` | `AgentService`, `SessionService`, `ProfileAdminService` | the terminal client, the CLI and third-party clients, at the path the front door reports as `Profile.socket_path` |
+| An agent's `agents/<id>/tools.sock` | `AgentService` and `SessionService`, with that agent as the caller | the agent's MCP tool server, and nothing else |
 | A profile's `link.sock` | a link, not a service | `amux relay`, carrying an SSH link |
-| A link stream whose handshake presented a pinned key | `PeerService` | paired daemons, including a phone's embedded daemon |
+| A link stream whose handshake presented a pinned key | `PeerAgentService`, `PeerSessionService` | paired daemons, including a phone's embedded daemon |
 | A link stream admitted by an open pairing window | `PairingService` | a host pairing with this one |
 
 The front door's path is the installation setting `front_door_socket`. By
@@ -681,14 +685,14 @@ service manager and waits for it.
 
 ### The front door
 
-`ProfileService` lists, watches, creates, binds, renames and deletes
+`InstallationService` lists, watches, creates, binds, renames and deletes
 profiles. A bind names its profile or lets the installation pick the one
 already bound to that account, else one that holds nothing, else a new one.
 A call about one profile names it by id, and profile and host ids travel as
 their 16 bytes; the CLI reads and prints their text form. `SubscribeProfiles`
 sends every profile, `CaughtUp`, then each change in the order it happened;
 a subscriber that falls behind is ended with `ABORTED` and subscribes again.
-`InstallationService` answers `GetInstallation` (the daemon's version) and
+It also answers `GetInstallation` (the daemon's version) and
 `Shutdown`. The rules behind these calls are `node::Registry`'s; the front
 door (`crates/node/src/front_door.rs`) converts.
 
@@ -699,7 +703,8 @@ out, pauses and resumes its relay link (`SignOut`, `PauseProfile`,
 windows (`StartPairing`, `GetPairingStatus`, `CancelPairing`); runs the
 initiator's side of pairing (`BeginPair`, `ConfirmPair`, `AbandonPair`);
 reports this device's identity; records a peer an SSH exchange
-authenticated (`TrustSshPeer`); and lists, describes and unpairs peers. The
+authenticated (`TrustSshPeer`); lists, describes and unpairs peers; and
+writes the profile's debug report (`Dump`, [chapter 8](#chapter-8-diagnostics)). The
 implementation is `crates/node/src/profile_admin.rs`.
 
 None of this is reachable from a link or from an agent's tools socket. No
@@ -707,23 +712,27 @@ client retries one of these calls. A call whose reply is lost, which on a
 local socket means the daemon went away, fails, and the person runs the
 command again.
 
-### ClientService
+### AgentService and SessionService
 
-`ClientService` is the whole client-facing surface of one profile:
+`AgentService` and `SessionService` are the client-facing surface of one profile. `AgentService` is the fleet and its agents:
 
 | Call | What it does |
 | --- | --- |
 | `SubscribeInventory` | The host set and every agent row: current state, `CaughtUp`, then deltas. A listing is this stream read to `CaughtUp`. |
 | `ResolveAgent` | A fleet-wide reference to one row: an id with or without dashes, the eight-character short id (or any longer prefix), a name, or `name@host`. `NOT_FOUND`, or `AmbiguousAgentName` with the candidates when a bare name matches agents on several hosts; the message offers the `name@host` forms that pick each. Every other agent call takes an id. |
-| `SubscribeSession`, `ListItems`, `GetItem` | An agent's session stream, older pages, and one item; see [the wire](WIRE.md). |
-| `SendInput` | A person's input to an agent; the answer is the interpreter's verdict. |
 | `CreateAgent` | Creates an agent, on this host or on a trusted host named by id or by name. |
 | `RenameAgent`, `StopAgent`, `ResumeAgent`, `DeleteAgent` | Registry operations. A stop ends the agent now (its turn cancelled the provider's own way); a delete stops it if live and removes it. Both act on the named agent alone; its children follow on their own hosts by [the family rule](#the-family-rule), so the answer says nothing of them. |
 | `SendMessage` | A message to an agent, whose sender the daemon stamps from the caller; see [agent tools](AGENT_TOOLS.md). |
 | `PutBlob`, `GetBlob`, `GetDiff` | Bytes in an agent's directory; see [attachments](ATTACHMENTS.md). |
 | `GetCatalogue` | What a provider on a host offers with no agent running, from the host's own copy. What an agent offers is a blob its snapshot names, read with `GetBlob`; see [the wire](WIRE.md). |
 | `ListRepositories` | Where a host offers to start an agent: recent working directories and repositories under its configured roots. |
-| `Dump` | A debug report; see [debugging](DEBUGGING.md). |
+
+`SessionService` is one agent's conversation:
+
+| Call | What it does |
+| --- | --- |
+| `SubscribeSession`, `ListItems`, `GetItem` | An agent's session stream, older pages, and one item; see [the wire](WIRE.md). |
+| `SendInput` | A person's input to an agent; the answer is the interpreter's verdict. |
 | `UpdateDraft`, `GetDraft` | An agent's unsent draft, kept by this machine's daemon for its own clients so it outlives a client closing; never synced, and refused to a paired host. |
 
 The implementation is `ClientApi` in `crates/node/src/grpc.rs`, a thin mapping
@@ -734,7 +743,7 @@ outlives its runtime is answered `UNAVAILABLE` and the client redials.
 
 Only the host that owns an agent can act on it. When a call names an agent
 whose row here is a replica, `ClientApi` makes the same call on the owner's
-daemon through `PeerService`, exactly as a phone would, and answers with what
+daemon through the peer services, exactly as a phone would, and answers with what
 the owner answered (`crates/node/src/forward.rs`). A forwarded call fails in
 one of two ways, and they are kept apart because only the second may have
 reached the owner:
@@ -758,7 +767,7 @@ reached the owner:
   the input as uncertain and settles it at its next catch-up, and nothing
   sends it again.
 
-Forwarding goes one hop. `PeerService` answers only for this host's own
+Forwarding goes one hop. The peer services answer only for this host's own
 agents and never passes a call on, so no two hosts can bounce a call between
 them, and no host reaches a third host's agent, or speaks for one, through
 another.
@@ -790,15 +799,15 @@ amux never removes a worktree or its branch. The worktree is made behind one
 seam, `MakeWorktree`, so another tool could make it instead; the daemon takes
 the folder, branch and base it gets back as given.
 
-### PeerService
+### PeerAgentService and PeerSessionService
 
-`PeerService` (`crates/node/src/edge/peer.rs`) is the daemon-to-daemon
-service; replication is a daemon being a client of its peer. The caller is the
+`PeerAgentService` and `PeerSessionService` (`crates/node/src/edge/peer.rs`)
+are the daemon-to-daemon services; replication is a daemon being a client of its peer. The caller is the
 host whose pinned key the stream's handshake presented, and a call without one
-is refused as `UNAUTHENTICATED`. Only amux daemons call it, and each stamps
+is refused as `UNAUTHENTICATED`. Only amux daemons call them, and each stamps
 what it says on behalf of its own callers, a message's sender and a create's
-parent, from those callers; the answering daemon takes them as given. It
-differs from `ClientService` in these ways:
+parent, from those callers; the answering daemon takes them as given. They
+differ from the client services in these ways:
 
 - It answers only for this host's own agents. Its inventory stream carries
   this host's entry and this host's agents, never what this host knows of
@@ -812,8 +821,10 @@ differs from `ClientService` in these ways:
 - `SendMessage` takes the `Envelope` the calling host's daemon stamped, and
   takes its sender as given.
 - `ListRepositories` answers for this host only.
-- `Dump` answers with this host's part of the caller's report, a `DumpPart`,
-  since the caller is on another machine.
+- `PeerAgentService.Dump` answers with this host's part of the caller's
+  report, a `DumpPart`, since the caller is on another machine.
+- There is no `ResolveAgent`, and no drafts: a draft stays on the machine it
+  was typed on.
 
 ### The family rule
 
@@ -867,8 +878,8 @@ children, which may be on hosts that are away.
 
 ### The tools socket
 
-Each agent's `tools.sock` serves the same `ClientService`, with one
-difference: the socket is the caller's identity. The daemon binds it when it
+Each agent's `tools.sock` serves the same `AgentService` and
+`SessionService`, and not `ProfileAdminService`, with one difference: the socket is the caller's identity. The daemon binds it when it
 starts the agent's process, and whatever arrives on it is from that agent, so
 no request carries an agent id or a token claiming one. On that socket:
 
@@ -909,7 +920,8 @@ it is an answer, not an outage. A lapsed plan is `PERMISSION_DENIED` with
 reason `PAYMENT_REQUIRED`. The googleapis files are vendored under
 `crates/wire/proto/google/`.
 
-The protobuf files change only as the top of `service.proto` and
+The protobuf files change only as
+[their README](../crates/wire/proto/amux/v1/README.md) and
 [the wire](WIRE.md#compatibility) allow: added to, never renumbered, with a
 removed field's number reserved; `just proto-compat` checks it against the
 latest release. `PROTOCOL_VERSION` exists only in the link handshake. The
@@ -917,11 +929,11 @@ local sockets carry no version at all.
 
 ## Chapter 8: Diagnostics
 
-`Dump` on the profile socket writes a debug report on this host (rows, store
+`ProfileAdminService.Dump` on the profile socket writes a debug report on this host (rows, store
 slices, journal tails and each agent process's own redacted part) and answers
 with its path. For an agent another host runs, the report holds only this
 host's row and store slice, and asks that host for its side through
-`PeerService.Dump`; the answer is that host's own bundle as one `DumpPart`,
+`PeerAgentService.Dump`; the answer is that host's own bundle as one `DumpPart`,
 and a host that cannot be reached is named in the
 report's manifest. Diagnostics use the ordinary calls; they create no extra
 link messages or authority path. [Debugging](DEBUGGING.md) covers reading a

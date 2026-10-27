@@ -20,8 +20,9 @@ use node::RelayCarrier;
 use node::harness::{Advertisement, LiveRoute};
 use support::*;
 use testnet::{Net, RELAY_HOST, Topology, holds_for, until};
+use wire::agent_service_server::AgentService as _;
 use wire::begin_pair_request;
-use wire::client_service_server::ClientService as _;
+use wire::session_service_server::SessionService as _;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn hosts_on_one_account_reach_each_other_through_the_relay_over_quic_or_tcp() {
@@ -1111,6 +1112,7 @@ async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_t
             .peer(desk)
             .await
             .unwrap()
+            .agents
             .subscribe_inventory(wire::SubscribeInventoryRequest {})
             .await
             .unwrap()
@@ -1410,10 +1412,11 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     // profile's socket serves its own pairing (the work profile's window
     // above opened there) but not the installation's profiles.
     let tunnel = edge(&net, "laptop").channel(desk).await.unwrap();
-    let over_tunnel = wire::profile_service_client::ProfileServiceClient::new(tunnel.clone())
-        .list_profiles(wire::ListProfilesRequest {})
-        .await
-        .expect_err("no profile administration over a peer tunnel");
+    let over_tunnel =
+        wire::installation_service_client::InstallationServiceClient::new(tunnel.clone())
+            .list_profiles(wire::ListProfilesRequest {})
+            .await
+            .expect_err("no profile administration over a peer tunnel");
     assert_eq!(over_tunnel.code(), tonic::Code::Unimplemented);
     let pairing_over_tunnel =
         wire::profile_admin_service_client::ProfileAdminServiceClient::new(tunnel)
@@ -1426,7 +1429,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
         net.host("desk").unwrap().profile,
     )
     .join(node::PROFILE_SOCKET);
-    let on_socket = wire::profile_service_client::ProfileServiceClient::new(
+    let on_socket = wire::installation_service_client::InstallationServiceClient::new(
         testnet::local_channel(&socket).await.unwrap(),
     )
     .list_profiles(wire::ListProfilesRequest {})
@@ -1439,10 +1442,9 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     let work_socket = node::profile_dir(&net.host("desk").unwrap().data_dir, work_profile)
         .join(node::PROFILE_SOCKET);
     for (socket, own) in [(&socket, desk), (&work_socket, work_edge.host_id())] {
-        let mut client = wire::client_service_client::ClientServiceClient::new(
-            testnet::local_channel(socket).await.unwrap(),
-        );
+        let mut client = wire::client_stubs(testnet::local_channel(socket).await.unwrap());
         let mut events = client
+            .agents
             .subscribe_inventory(wire::SubscribeInventoryRequest {})
             .await
             .unwrap()
@@ -1680,6 +1682,7 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
         .peer(desk)
         .await
         .unwrap()
+        .agents
         .subscribe_inventory(wire::SubscribeInventoryRequest {})
         .await
         .unwrap()
@@ -1769,80 +1772,89 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     let mut answers = Vec::new();
     answers.push((
         "Subscribe with a three-byte agent id",
-        peer.subscribe_session(wire::PeerSubscribeSessionRequest {
-            agent_id: short.clone(),
-            from: Some(wire::peer_subscribe_session_request::From::Tail(5)),
-        })
-        .await
-        .map(|_| ()),
+        peer.sessions
+            .subscribe_session(wire::PeerSubscribeSessionRequest {
+                agent_id: short.clone(),
+                from: Some(wire::peer_subscribe_session_request::From::Tail(5)),
+            })
+            .await
+            .map(|_| ()),
     ));
     answers.push((
         "Subscribe to an agent the desk never had",
-        peer.subscribe_session(wire::PeerSubscribeSessionRequest {
-            agent_id: unknown.clone(),
-            from: Some(wire::peer_subscribe_session_request::From::Tail(5)),
-        })
-        .await
-        .map(|_| ()),
+        peer.sessions
+            .subscribe_session(wire::PeerSubscribeSessionRequest {
+                agent_id: unknown.clone(),
+                from: Some(wire::peer_subscribe_session_request::From::Tail(5)),
+            })
+            .await
+            .map(|_| ()),
     ));
     answers.push((
         "Fetch with a three-byte agent id",
-        peer.list_items(wire::ListItemsRequest {
-            agent_id: short.clone(),
-            before_order: None,
-            page_size: 10,
-        })
-        .await
-        .map(|_| ()),
+        peer.sessions
+            .list_items(wire::ListItemsRequest {
+                agent_id: short.clone(),
+                before_order: None,
+                page_size: 10,
+            })
+            .await
+            .map(|_| ()),
     ));
     answers.push((
         "Get with an empty key",
-        peer.get_item(wire::GetItemRequest {
-            agent_id: worker.clone(),
-            key: String::new(),
-        })
-        .await
-        .map(|_| ()),
+        peer.sessions
+            .get_item(wire::GetItemRequest {
+                agent_id: worker.clone(),
+                key: String::new(),
+            })
+            .await
+            .map(|_| ()),
     ));
     answers.push((
         "SendInput with no input",
-        peer.send_input(wire::SendInputRequest {
-            agent_id: worker.clone(),
-            input: None,
-        })
-        .await
-        .map(|_| ()),
+        peer.sessions
+            .send_input(wire::SendInputRequest {
+                agent_id: worker.clone(),
+                input: None,
+            })
+            .await
+            .map(|_| ()),
     ));
     answers.push((
         "CreateAgent with no configuration",
-        peer.create_agent(wire::CreateAgentRequest::default())
+        peer.agents
+            .create_agent(wire::CreateAgentRequest::default())
             .await
             .map(|_| ()),
     ));
     answers.push((
         "SendMessage with no sender or recipient",
-        peer.send_message(wire::PeerSendMessageRequest {
-            envelope: Some(wire::Envelope::default()),
-        })
-        .await
-        .map(|_| ()),
+        peer.agents
+            .send_message(wire::PeerSendMessageRequest {
+                envelope: Some(wire::Envelope::default()),
+            })
+            .await
+            .map(|_| ()),
     ));
     answers.push((
         "GetBlob with a malformed hash",
-        peer.get_blob(wire::GetBlobRequest {
-            agent_id: worker.clone(),
-            hash: vec![0; 3],
-        })
-        .await
-        .map(|_| ()),
+        peer.agents
+            .get_blob(wire::GetBlobRequest {
+                agent_id: worker.clone(),
+                hash: vec![0; 3],
+            })
+            .await
+            .map(|_| ()),
     ));
     answers.push((
         "StopAgent with a three-byte agent id",
-        peer.stop_agent(wire::StopAgentRequest {
-            agent_id: short.clone(),
-        })
-        .await
-        .map(|_| ()),
+        peer.agents
+            .stop_agent(wire::StopAgentRequest {
+                agent_id: short.clone(),
+            })
+            .await
+            .map(|_| ()),
     ));
     for (what, answer) in &answers {
         let status = answer.as_ref().expect_err(&format!("{what} is refused"));
@@ -2284,7 +2296,7 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     // Two logins for one account at once land on one profile, with one
     // link.
     net.relay().unwrap().add_account("dan", node::Tier::Pro);
-    let login = |door: wire::profile_service_client::ProfileServiceClient<_>| {
+    let login = |door: wire::installation_service_client::InstallationServiceClient<_>| {
         let mut door = door;
         let request = wire::BindProfileRequest {
             profile_id: None,
@@ -2584,7 +2596,7 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_direct_link_keeps_its_session_through_a_rebind_a_large_transfer_and_a_poor_network() {
     use provider_fakes::script::Step;
-    use wire::client_service_server::ClientService as _;
+    use wire::agent_service_server::AgentService as _;
 
     let say = |text: &str| Step::Text {
         chunks: vec![text.to_owned()],
@@ -2663,6 +2675,7 @@ async fn a_direct_link_keeps_its_session_through_a_rebind_a_large_transfer_and_a
             .peer(desk)
             .await
             .unwrap()
+            .agents
             .get_blob(wire::GetBlobRequest {
                 agent_id: worker.as_bytes().to_vec(),
                 hash: stored.hash.clone(),
@@ -3037,7 +3050,7 @@ async fn an_attachment_at_the_stated_limit_stores_and_one_over_it_is_refused_nam
         net.host("desk").unwrap().profile,
     )
     .join(node::PROFILE_SOCKET);
-    let mut client = wire::client_service_client(testnet::local_channel(&socket).await.unwrap());
+    let mut client = wire::client_stubs(testnet::local_channel(&socket).await.unwrap());
     const LIMIT: usize = 64 * 1024 * 1024;
     let put = |size: usize| wire::PutBlobRequest {
         agent_id: net.agent("w").unwrap().id.as_bytes().to_vec(),
@@ -3045,8 +3058,8 @@ async fn an_attachment_at_the_stated_limit_stores_and_one_over_it_is_refused_nam
         mime: "application/octet-stream".into(),
         bytes: vec![7; size],
     };
-    let at_limit = client.put_blob(put(LIMIT)).await;
-    let over = client.put_blob(put(LIMIT + 1)).await;
+    let at_limit = client.agents.put_blob(put(LIMIT)).await;
+    let over = client.agents.put_blob(put(LIMIT + 1)).await;
     drop(client);
     net.shutdown().await.unwrap();
     println!(

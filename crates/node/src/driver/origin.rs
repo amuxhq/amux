@@ -79,6 +79,7 @@ async fn session<F: Future<Output = ()>>(
             };
             drop(edge);
             client
+                .sessions
                 .subscribe_session(request)
                 .await
                 .map(|response| response.into_inner())
@@ -143,6 +144,7 @@ async fn inventory<F: Future<Output = ()>>(
             drop(edge);
             (
                 client
+                    .agents
                     .subscribe_inventory(wire::SubscribeInventoryRequest {})
                     .await
                     .map(|response| response.into_inner()),

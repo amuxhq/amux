@@ -11,7 +11,8 @@ use node::{ClientApi, Daemon, Generation, ProfileRuntime, StartOptions, Telemetr
 use support::synthetic::*;
 use support::*;
 use tonic::Request;
-use wire::client_service_server::ClientService as _;
+use wire::agent_service_server::AgentService as _;
+use wire::session_service_server::SessionService as _;
 use wire::{
     ClaudeAnswer, ClaudeSdkInput, Input, Interrupt, Kind as WireKind, PromptInput, QuestionAnswer,
     SendInputRequest, claude_answer, claude_sdk_input,

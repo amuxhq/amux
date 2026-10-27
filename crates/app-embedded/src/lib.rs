@@ -419,10 +419,20 @@ impl EmbeddedRuntime {
 
     // --- one profile ---------------------------------------------------------
 
-    /// A profile's client service in process, as its chats and fleet call it.
+    /// A profile's client services in process, as its chats and fleet call
+    /// them, with its administration for the dump.
     pub fn client(&self, profile: ProfileId) -> Result<Arc<dyn Client>, EmbeddedError> {
         let runtime = self.runtime(profile)?;
-        Ok(Arc::new(InProcess::new(ClientApi::new(&runtime, None))))
+        let admin = self
+            .daemon
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .as_ref()
+            .map(|daemon| daemon.profile_admin(profile))
+            .ok_or(EmbeddedError::NoProfile(profile))?;
+        Ok(Arc::new(
+            InProcess::new(ClientApi::new(&runtime, None)).with_admin(Arc::new(admin)),
+        ))
     }
 
     /// Runs `work` where the profile's core steps, between two of its

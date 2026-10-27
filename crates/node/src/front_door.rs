@@ -10,7 +10,6 @@ use tokio::task::JoinHandle;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 use wire::installation_service_server::{InstallationService, InstallationServiceServer};
-use wire::profile_service_server::{ProfileService, ProfileServiceServer};
 use wire::{
     BindProfileRequest, CaughtUp, CreateProfileRequest, DeleteProfileRequest, Empty, ErrorCode,
     ListProfilesResponse, RenameProfileRequest, profile_event,
@@ -69,7 +68,6 @@ pub(crate) fn serve(listener: LocalListener, registry: Registry) -> JoinHandle<(
     let door = FrontDoor::new(registry);
     tokio::spawn(async move {
         let served = tonic::transport::Server::builder()
-            .add_service(ProfileServiceServer::new(door.clone()))
             .add_service(InstallationServiceServer::new(door))
             .serve_with_incoming(grpc::incoming(listener))
             .await;
@@ -110,7 +108,7 @@ fn profile_id(bytes: &[u8]) -> Result<Uuid, Status> {
 type Events = Pin<Box<dyn Stream<Item = Result<wire::ProfileEvent, Status>> + Send>>;
 
 #[tonic::async_trait]
-impl ProfileService for FrontDoor {
+impl InstallationService for FrontDoor {
     type SubscribeProfilesStream = Events;
 
     async fn list_profiles(
@@ -199,10 +197,7 @@ impl ProfileService for FrontDoor {
         };
         Ok(Response::new(info(self.registry.bind(sign_in).await?)))
     }
-}
 
-#[tonic::async_trait]
-impl InstallationService for FrontDoor {
     async fn get_installation(
         &self,
         _request: Request<wire::GetInstallationRequest>,

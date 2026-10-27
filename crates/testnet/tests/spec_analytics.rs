@@ -10,7 +10,7 @@ use provider_fakes::script::Step;
 use support::*;
 use testnet::{AgentDecl, Net, NetOptions, Topology, until};
 use tonic::Request;
-use wire::client_service_server::ClientService as _;
+use wire::session_service_server::SessionService as _;
 use wire::{ClaudeSdkInput, PromptInput, SendInputRequest, begin_pair_request, claude_sdk_input};
 
 const SCOPE: &str = "analytics-test";

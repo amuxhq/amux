@@ -3,9 +3,9 @@
 amux is unreleased and in active development. Never preserve backwards
 compatibility — old local protocols, config keys, and public APIs may be
 broken freely. Simplify decisions accordingly. The protobuf schemas are the
-exception: `amux.v1` is frozen from 0.9.0 and changes only as the header of
-`service.proto` allows (add; reserve a retired number, never renumber), which
-`just proto-compat` checks. `amux.dump` is exempt.
+exception: `amux.v1` is frozen from 0.9.0 and changes only as
+`crates/wire/proto/amux/v1/README.md` allows (add; reserve a retired number,
+never renumber), which `just proto-compat` checks. `amux.dump` is exempt.
 
 - Build, test and lint through `just` (`just --list`); `wt` is for worktrees,
   sessions and this tree's daemon. Recipes carry timeouts; a firing timeout is

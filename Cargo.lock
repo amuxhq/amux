@@ -96,7 +96,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "amux"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "agent",
  "agent-dir",
@@ -2570,7 +2570,7 @@ dependencies = [
 
 [[package]]
 name = "node"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "agent-dir",
  "analytics",

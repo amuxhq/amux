@@ -41,7 +41,6 @@ struct Consequence: View {
 /// became a column of gaps.
 public struct NeedsYouDot: View {
     @Environment(\.design) private var design
-    @Environment(\.hidesNeedsYouDot) private var hidden
 
     public init() {}
 
@@ -49,24 +48,7 @@ public struct NeedsYouDot: View {
         Circle()
             .fill(design.accent.color)
             .frame(width: 8, height: 8)
-            .opacity(hidden ? 0 : 1)
             .accessibilityHidden(true)
-    }
-}
-
-private struct HidesNeedsYouDotKey: EnvironmentKey {
-    static let defaultValue = false
-}
-
-extension EnvironmentValues {
-    /// Whether the needs-you dots are drawn clear: the one beside a row's
-    /// age and the mark in front of a row whose agent waits on you. Only a
-    /// driving build sets it, through the door's `perturb` request, to take
-    /// one small mark away on purpose; the dots are too small to be elements
-    /// the geometry names.
-    public var hidesNeedsYouDot: Bool {
-        get { self[HidesNeedsYouDotKey.self] }
-        set { self[HidesNeedsYouDotKey.self] = newValue }
     }
 }
 

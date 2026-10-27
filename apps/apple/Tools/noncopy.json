@@ -18,7 +18,6 @@
       {"literal": "\"no search field on screen\"", "context": "return .error(\"no search field on screen\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"\\(identifier) offers no action named \\(action)\"", "context": "return .error(\"\\(identifier) offers no action named \\(action)\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"amux-cloud-script\"", "context": "if let json = Self.said(\"amux-cloud-script\"),", "reason": "Debug driving protocol, scripted credential, or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"the design has no colour token named \\(token)\"", "context": "return .error(\"the design has no colour token named \\(token)\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"no type size named \\(name)\"", "context": "return .error(\"no type size named \\(name)\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"account \\(id)\"", "context": "case .account(let id): \"account \\(id)\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"entitlement \\(id)\"", "context": "case .entitlement(let id): \"entitlement \\(id)\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
@@ -122,20 +121,6 @@
     ],
     "apps/apple/Amux/Debug/DoorWindow.swift": [
       {"literal": "\"capture failed: \\(error.localizedDescription)\"", "context": "return .error(\"capture failed: \\(error.localizedDescription)\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}
-    ],
-    "apps/apple/Amux/Debug/Perturbation.swift": [
-      {"literal": "\"needs-you-dot\"", "context": "static let needsYouDot = \"needs-you-dot\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"ground\"", "context": "ground: ramp(\"ground\", base.ground),", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"raised\"", "context": "raised: ramp(\"raised\", base.raised),", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"sunken\"", "context": "sunken: ramp(\"sunken\", base.sunken),", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"hairline\"", "context": "hairline: ramp(\"hairline\", base.hairline),", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"ink\"", "context": "ink: ramp(\"ink\", base.ink),", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"inkMuted\"", "context": "inkMuted: ramp(\"inkMuted\", base.inkMuted),", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"inkFaint\"", "context": "inkFaint: ramp(\"inkFaint\", base.inkFaint),", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"accent\"", "context": "accent: ramp(\"accent\", base.accent),", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"onAccent\"", "context": "onAccent: ramp(\"onAccent\", base.onAccent),", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"added\"", "context": "added: ramp(\"added\", base.added),", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"removed\"", "context": "removed: ramp(\"removed\", base.removed),", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}
     ],
     "apps/apple/Amux/Sources/AmuxApp.swift": [
       {"literal": "\"suspending\"", "context": "let held = UIApplication.shared.beginBackgroundTask(withName: \"suspending\") { [weak self] in", "reason": "Background task name the system logs, not app interface copy.", "count": 1},
@@ -800,7 +785,6 @@
       {"literal": "\"dynamicType\"", "context": "case \"dynamicType\":", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"states\"", "context": "case \"states\": self = .states", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"assist\"", "context": "case \"assist\":", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"perturb\"", "context": "case \"perturb\":", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"settle\"", "context": "case \"settle\": self = .settle", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"query\"", "context": "case \"query\": self = .query", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"capture\"", "context": "case \"capture\":", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
@@ -848,7 +832,6 @@
       {"literal": "\"assist\"", "context": "try fields.encode(\"assist\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"geometry\"", "context": "case \"geometry\":", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"geometry\"", "context": "try fields.encode(\"geometry\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"perturb\"", "context": "try fields.encode(\"perturb\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"settle\"", "context": "try fields.encode(\"settle\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"query\"", "context": "try fields.encode(\"query\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"capture\"", "context": "try fields.encode(\"capture\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},

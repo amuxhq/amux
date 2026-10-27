@@ -131,10 +131,6 @@ public enum DoorRequest: Sendable, Equatable {
     /// whatever has been built today without a second list of it to keep in
     /// step.
     case states
-    /// Move one named colour token, or put it back when nothing is named.
-    /// The one thing a driver can ask for that makes the app draw something
-    /// its baseline does not show.
-    case perturb(token: String?)
     /// Select one of the Debug-only layouts compiled together for a design round.
     case designVariant(String?)
     /// Wait until the screen has stopped changing. A capture that does not
@@ -677,8 +673,6 @@ extension DoorRequest: Codable {
                 transparency: try fields.decode(Bool.self, forKey: .transparency))
         case "geometry":
             self = .geometry(on: try fields.decode(Bool.self, forKey: .on))
-        case "perturb":
-            self = .perturb(token: try fields.decodeIfPresent(String.self, forKey: .token))
         case "designVariant":
             self = .designVariant(try fields.decodeIfPresent(String.self, forKey: .name))
         case "settle": self = .settle
@@ -857,9 +851,6 @@ extension DoorRequest: Codable {
         case .geometry(let on):
             try fields.encode("geometry", forKey: .kind)
             try fields.encode(on, forKey: .on)
-        case .perturb(let token):
-            try fields.encode("perturb", forKey: .kind)
-            try fields.encodeIfPresent(token, forKey: .token)
         case .designVariant(let name):
             try fields.encode("designVariant", forKey: .kind)
             try fields.encodeIfPresent(name, forKey: .name)

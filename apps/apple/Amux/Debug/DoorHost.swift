@@ -31,9 +31,6 @@ final class DoorHost {
     /// the phone would choose; nothing until it asks.
     private(set) var appearance: Appearance?
     private(set) var design: Design = .app
-    /// Whether the needs-you dot is drawn clear, the one small mark a
-    /// perturbation can take away.
-    private(set) var hidesNeedsYouDot = false
     private(set) var designVariant: DesignVariant = .production
     private(set) var typeSize: DynamicTypeSize = .large
     private(set) var reduceMotion = false
@@ -121,21 +118,6 @@ final class DoorHost {
         case .appearance(let appearance):
             await wear(appearance)
             events.append(.appearance(appearance))
-            return .ack
-        case .perturb(let token):
-            guard let token else {
-                design = .app
-                hidesNeedsYouDot = false
-                return .ack
-            }
-            if token == Perturbation.needsYouDot {
-                hidesNeedsYouDot = true
-                return .ack
-            }
-            guard let moved = Perturbation.design(.app, moving: token) else {
-                return .error("the design has no colour token named \(token)")
-            }
-            design = moved
             return .ack
         case .designVariant(let name):
             guard let variant = DesignVariant(name: name) else {
@@ -978,7 +960,6 @@ struct DrivenRoot<Content: View>: View {
         content
             .preferredColorScheme(host.worn?.colorScheme)
             .environment(\.design, host.design)
-            .environment(\.hidesNeedsYouDot, host.hidesNeedsYouDot)
             .modifier(DesignVariantLayout(variant: host.designVariant))
             .dynamicTypeSize(host.typeSize)
             .transformEnvironment(\.reducesMotion) { $0 = $0 || host.reduceMotion }

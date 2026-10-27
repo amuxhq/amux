@@ -25,7 +25,7 @@ chat.title | planner | planner | 96,66,160,36
  | Plan sent back, “Check the copy before switching.” |  | 16,198,370,65
  | Plan approved, Move the journal |  | 16,249,370,44
  | Moving the journal as planned. |  | 16,295,370,20
- | Worked <t> · $0.00 |  | 16,323,116,16
+ | Worked <t> |  | 16,323,74,16
  | Back |  | 20,66,56,36
  | planner, /t/a/n/d/work · desk |  | 96,66,160,36
  | More |  | 342,66,36,36

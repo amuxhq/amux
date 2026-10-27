@@ -3,9 +3,9 @@ chat |  | decision-codex | 0,116,402,724
 chat.row.boundary | Started |  | 16,124,370,34
 chat.row.prompt | Check the deployment once. |  | 16,158,370,40
 chat.row.command | Wants to run, deploy --check |  | 16,210,370,20
-ask | Wants to run a command | open | 12,551,378,279
-ask.more | More |  | 338,559,44,44
-ask.subject | deploy --check |  | 28,607,346,40
+ask | Wants to run a command | open | 12,569,378,261
+ask.more | More |  | 338,577,44,44
+ask.subject | deploy --check |  | 28,625,346,40
 ask.choice.1 | Allow for this session |  | 28,708,346,50
 ask.choice.0 | Allow |  | 28,770,169,44
 ask.deny | Deny… |  | 205,770,169,44
@@ -13,10 +13,10 @@ chat.more | More |  | 342,66,36,36
 chat.back | Back |  | 20,66,56,36
 chat.header | /t/a/n/d/work · desk | live | 96,66,161,36
 chat.title | decision-codex | decision-codex | 96,66,161,36
- | Wants to run a command |  | 62,571,189,20
- | More |  | 338,559,44,44
- | deploy --check |  | 28,607,346,40
- | The script asks before running this. · in /tmp/amux-phone-journey/net/desk/work |  | 28,659,302,37
+ | Wants to run a command |  | 62,590,189,20
+ | More |  | 338,577,44,44
+ | deploy --check |  | 28,625,346,40
+ | The script asks before running this. |  | 28,678,239,18
  | Allow for this session |  | 28,708,346,50
  | Allow |  | 28,770,169,44
  | Deny… |  | 205,770,169,44

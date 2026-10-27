@@ -17,10 +17,10 @@ chat.title | planner-codex | planner-codex | 96,66,160,36
  | More |  | 338,710,44,44
  | Approve |  | 28,770,169,44
  | Send back… |  | 205,770,169,44
- | Plan proposed, Move the journal, Move the journal, 1., Copy the journal to the new store., 2., Point the daemon at it., 3., Delete the old journal. |  | 16,210,370,160
- | Worked <t> |  | 16,379,74,16
  | Started |  | 16,124,370,34
  | Move the journal. |  | 16,158,370,40
+ | Plan proposed, Move the journal, Move the journal, 1., Copy the journal to the new store., 2., Point the daemon at it., 3., Delete the old journal. |  | 16,210,370,160
+ | Worked <t> |  | 16,379,74,16
  | Back |  | 20,66,56,36
  | planner-codex, /t/a/n/d/work · desk |  | 96,66,160,36
  | More |  | 342,66,36,36

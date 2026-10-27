@@ -27,12 +27,12 @@ chat.title | helper | helper | 96,66,173,36
  | Started |  | 16,124,370,34
  | Say hello. |  | 16,158,370,40
  | Ready when you are. |  | 16,210,370,20
- | Worked <t> · $0.00 |  | 16,237,116,16
+ | Worked <t> |  | 16,237,74,16
  | Ended · stopped |  | 16,267,370,34
  | Resumed |  | 16,301,370,34
  | Welcome back. |  | 16,335,370,40
  | Ready when you are. |  | 16,387,370,20
- | Worked <t> · $0.00 |  | 16,415,116,16
+ | Worked <t> |  | 16,415,74,16
  | Back |  | 20,66,56,36
  | helper, /p/t/a/n/d/work · desk |  | 96,66,173,36
  | More |  | 342,66,36,36

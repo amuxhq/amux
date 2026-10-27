@@ -8,20 +8,23 @@ you.appearance.light | Light | not chosen | 32,427,89,66
 you.appearance.dark | Dark | not chosen | 121,427,84,66
 you.appearance.system | System | chosen | 204,427,120,66
 you.shareUsage |  | on | 16,496,370,133
+you.notifications | Notifications | Off | 16,629,370,114
 you.name | <volatile>
 you.fingerprint | <volatile>
-you.support | Contact Support |  | 16,1032,370,69
-you.report | Report a Problem |  | 16,1102,370,69
-you.dump | Export Diagnostics |  | 16,1171,370,112
-you.help.caption |  |  | 16,1291,366,106
+you.support | Contact Support |  | 16,1147,370,69
+you.report | Report a Problem |  | 16,1216,370,69
+you.dump | Export Diagnostics |  | 16,1286,370,112
+you.help.caption |  |  | 16,1405,366,106
 you.close | Close |  | 326,82,56,36
  | All |  | 16,114,60,44
  | Needs you, 2 |  | 84,114,191,44
  | Working |  | 283,114,140,44
- | dialog, Needs you, Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,160,370,150
- | asker, Needs you, Which changes should the release notes keep?, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,310,370,150
- | keeper, Idle, The recovery state is safely stored., desk, /tmp/amux-phone-journey/net/desk/work, <age>, unread |  | 16,460,370,150
- | planner, Idle, The pairing errors all come from one table in the wire crate, so they can share one string., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,611,370,150
+ | Get notified, When an agent needs you, Turn On |  | 16,164,326,81
+ | Close |  | 342,174,44,60
+ | dialog, Needs you, Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,253,370,150
+ | asker, Needs you, Which changes should the release notes keep?, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,403,370,150
+ | keeper, Idle, The recovery state is safely stored., desk, /tmp/amux-phone-journey/net/desk/work, <age>, unread |  | 16,553,370,150
+ | planner, Idle, The pairing errors all come from one table in the wire crate, so they can share one string., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,703,370,150
  | Switch account |  | 21,66,42,36
  | Agents |  | 167,65,68,25
  | New Agent |  | 338,62,44,44
@@ -43,13 +46,14 @@ you.close | Close |  | 326,82,56,36
  | Dark |  | 121,427,84,66
  | System |  | 204,427,120,66
  | Share Usage, Counts and choices, never what you type | 1 | 30,504,342,115
- | Name, <device> |  | 16,629,370,114
- | Fingerprint, <key> |  | 30,756,342,203
- | HELP |  | 18,988,76,36
- | Contact Support |  | 16,1032,370,69
- | Report a Problem |  | 16,1102,370,69
- | Export Diagnostics |  | 16,1171,370,112
- | A report includes a screenshot and this phone’s diagnostic dump. |  | 30,1291,338,106
+ | Notifications, Off |  | 16,629,370,114
+ | Name, <device> |  | 16,744,370,114
+ | Fingerprint, <key> |  | 30,870,342,203
+ | HELP |  | 18,1103,76,36
+ | Contact Support |  | 16,1147,370,69
+ | Report a Problem |  | 16,1216,370,69
+ | Export Diagnostics |  | 16,1286,370,112
+ | A report includes a screenshot and this phone’s diagnostic dump. |  | 30,1405,338,106
  | Settings |  | 161,88,80,25
  | Close |  | 326,82,56,36
  | Agents | selected | 111,795,94,54

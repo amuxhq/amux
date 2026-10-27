@@ -12,12 +12,13 @@ you.appearance.light | Light | not chosen | 205,469,51,46
 you.appearance.dark | Dark | not chosen | 256,469,49,46
 you.appearance.system | System | chosen | 305,469,65,46
 you.shareUsage |  | on | 16,518,370,55
+you.notifications | Notifications | Off | 16,573,370,46
 you.name | <volatile>
 you.fingerprint | <volatile>
-you.support | Contact Support |  | 16,742,370,46
-you.report | Report a Problem |  | 16,789,370,46
-you.dump | Export Diagnostics |  | 16,835,370,46
-you.help.caption |  |  | 16,888,310,32
+you.support | Contact Support |  | 16,789,370,46
+you.report | Report a Problem |  | 16,835,370,46
+you.dump | Export Diagnostics |  | 16,881,370,46
+you.help.caption |  |  | 16,935,310,32
 you.close | Close |  | 326,4,56,36
 sign-in |  | ada@example.com | 0,132,402,708
 sign-in.title |  | Sign in | 16,140,80,32

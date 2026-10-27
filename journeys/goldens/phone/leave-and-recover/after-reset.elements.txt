@@ -31,13 +31,13 @@ chat.title | keeper | keeper | 96,66,216,36
  | Started |  | 16,124,370,34
  | Remember this recovery turn. |  | 16,158,370,40
  | The recovery state is safely stored. |  | 16,210,370,20
- | Worked <t> · $0.00 |  | 16,237,116,16
+ | Worked <t> |  | 16,237,74,16
  | Carry on. |  | 16,267,370,40
  | A second turn arrived while you were away. |  | 16,319,370,20
- | Worked <t> · $0.00 |  | 16,347,116,16
+ | Worked <t> |  | 16,347,74,16
  | Pick up where we left off. |  | 16,377,370,40
  | Back after the restart. |  | 16,428,370,20
- | Worked <t> · $0.00 |  | 16,456,116,16
+ | Worked <t> |  | 16,456,74,16
  | Back |  | 20,66,56,36
  | keeper, Exited · while the daemon was away |  | 96,66,216,36
  | More |  | 342,66,36,36

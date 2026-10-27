@@ -4,11 +4,11 @@ chat.row.boundary | Started |  | 16,124,370,34
 chat.row.prompt | hello |  | 16,158,370,40
 chat.row.prose | Ready. | final | 16,210,370,20
 chat.prose.render |  | rendered | 16,210,370,20
-chat.row.turn-end | Worked <t> · $0.00 |  | 16,237,116,16
+chat.row.turn-end | Worked <t> |  | 16,237,74,16
 chat.row.prompt | Are you there? |  | 16,267,370,40
 chat.row.prose | Only this account reaches me. | final | 16,319,370,20
 chat.prose.render |  | rendered | 16,319,370,20
-chat.row.turn-end | Worked <t> · $0.00 |  | 16,347,116,16
+chat.row.turn-end | Worked <t> |  | 16,347,74,16
 chat.dock |  | folded | 12,668,378,60
 chat.underway.0 | Still there? | held · sends when desk is back | 12,668,378,60
 chat.underway.0.cancel | Cancel |  | 344,676,40,44
@@ -32,10 +32,10 @@ chat.title | guarded | guarded | 96,66,215,36
  | Started |  | 16,124,370,34
  | hello |  | 16,158,370,40
  | Ready. |  | 16,210,370,20
- | Worked <t> · $0.00 |  | 16,237,116,16
+ | Worked <t> |  | 16,237,74,16
  | Are you there? |  | 16,267,370,40
  | Only this account reaches me. |  | 16,319,370,20
- | Worked <t> · $0.00 |  | 16,347,116,16
+ | Worked <t> |  | 16,347,74,16
  | Back |  | 20,66,56,36
  | guarded, desk · this phone is signed out |  | 96,66,215,36
  | More |  | 342,66,36,36

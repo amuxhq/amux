@@ -4,7 +4,7 @@ chat.row.boundary | Started |  | 16,124,370,34
 chat.row.prompt | Rewrite the pricing page's FAQ. |  | 16,158,370,40
 chat.row.prose | The FAQ is rewritten. | final | 16,210,370,20
 chat.prose.render |  | rendered | 16,210,370,20
-chat.row.turn-end | Worked <t> · $0.00 |  | 16,237,116,16
+chat.row.turn-end | Worked <t> |  | 16,237,74,16
 chat.strip | <volatile>
 chat.field | Message limited |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
@@ -23,7 +23,7 @@ chat.title | limited | limited | 96,66,160,36
  | Started |  | 16,124,370,34
  | Rewrite the pricing page's FAQ. |  | 16,158,370,40
  | The FAQ is rewritten. |  | 16,210,370,20
- | Worked <t> · $0.00 |  | 16,237,116,16
+ | Worked <t> |  | 16,237,74,16
  | Back |  | 20,66,56,36
  | limited, /t/a/n/d/work · desk |  | 96,66,160,36
  | More |  | 342,66,36,36

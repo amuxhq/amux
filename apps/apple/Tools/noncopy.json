@@ -676,7 +676,9 @@
       {"literal": "\"~\"", "context": "} else if parts.first == \"~\" {", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"~\"", "context": "guard let last = parts.last else { return \"~\" }", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\".\"", "context": "if part.hasPrefix(\".\"), part.count > 1 { return String(part.prefix(2)) }", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
-      {"literal": "\"/\"", "context": "return root + (parents + [last]).joined(separator: \"/\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1}
+      {"literal": "\"/\"", "context": "return root + (parents + [last]).joined(separator: \"/\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
+      {"literal": "\"~\"", "context": "return parts.isEmpty ? \"~\" : root + parts.joined(separator: \"/\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
+      {"literal": "\"/\"", "context": "return parts.isEmpty ? \"~\" : root + parts.joined(separator: \"/\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Report.swift": [
       {"literal": "\"\\(number)\"", "context": "Text(\"\\(number)\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},

@@ -28,7 +28,7 @@ chat.title | worker | worker | 96,66,160,36
  | 1 command |  | 16,229,370,44
  | Also log the peak., steered |  | 16,275,370,62
  | The run finished. |  | 16,349,370,20
- | Worked <t> · $0.00 |  | 16,377,116,16
+ | Worked <t> |  | 16,377,74,16
  | Back |  | 20,66,56,36
  | worker, /t/a/n/d/work · desk |  | 96,66,160,36
  | More |  | 342,66,36,36

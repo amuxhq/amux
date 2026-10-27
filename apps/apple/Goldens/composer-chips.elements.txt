@@ -34,7 +34,7 @@ chat.title | planner | planner | 96,66,169,36
  | Reading the pairing code first. |  | 16,44,370,90
  | 1 read |  | 16,133,370,63
  | The pairing errors all come from one table in the wire crate, so they can share one string. |  | 16,199,370,183
- | Worked <t> · $0.00 |  | 16,390,258,36
+ | Worked <t> |  | 16,390,164,36
  | Back |  | 20,66,56,36
  | planner, /t/a/n/d/work · desk |  | 96,66,169,36
  | More |  | 342,66,36,36

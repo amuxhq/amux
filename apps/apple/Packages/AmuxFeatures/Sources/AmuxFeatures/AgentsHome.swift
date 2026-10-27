@@ -221,7 +221,7 @@ public struct AgentsHome: View {
                     .fixedSize()
                     .frame(width: 30, height: 30)
                     // The picture covers the whole button, glass and all:
-                    // a face in a teal ring would be a badge, not a person.
+                    // a face in a coloured ring would be a badge, not a person.
                     .overlay { AccountPicture(url: entry.account.picture, size: Self.barButton) }
             }
             .menuStyle(.button)

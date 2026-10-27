@@ -11,7 +11,8 @@ recipes; [Testing](TESTING.md) describes the suites they run.
 
 | Workflow | File | When | What |
 | --- | --- | --- | --- |
-| CI | [`ci.yml`](../.github/workflows/ci.yml) | Pushes to `main`; pull requests into `main` | Every check a change is held to, on Linux, macOS and Windows, plus the iOS gate |
+| CI | [`ci.yml`](../.github/workflows/ci.yml) | Pushes to `main`; pull requests into `main` | Every check a change is held to, on Linux, macOS and Windows |
+| iOS gate | [`ios.yml`](../.github/workflows/ios.yml) | Pushes to `main` and pull requests into `main` that touch the phone's paths, and by hand | `just ios gate` on Xcode 26.6 |
 | Weekly offline tests | [`offline.yml`](../.github/workflows/offline.yml) | Sundays 04:00 UTC (GitHub often starts it hours late), and by hand | The workspace tests with no external network |
 | iOS captures | [`ios-captures.yml`](../.github/workflows/ios-captures.yml) | Nightly 03:00 UTC (GitHub often starts it hours late), and by hand | The phone's photographed suites |
 | Models at nightly bounds | [`models-nightly.yml`](../.github/workflows/models-nightly.yml) | Daily 02:00 UTC (GitHub often starts it hours late), and by hand | Every protocol model at its nightly bounds, one Linux job per model, and every simulated testnet story under 2000 seeds |
@@ -26,7 +27,7 @@ Every workflow sets `CARGO_INCREMENTAL=0`, and every job has a
 | --- | --- | --- |
 | Check and Clippy | `ubuntu-latest` | `just check`, `just lint` |
 | Format | `ubuntu-latest` | `just fmt-check` with `nightly-2026-08-30` |
-| Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just cores-check`, `just typed-provider-check`, `just tests-check`, `just docs-check`, `just deletion-ledger-check` |
+| Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just cores-check`, `just typed-provider-check`, `just tests-check`, `just script-tests`, `just docs-check`, `just proto-compat` |
 | Test | `ubuntu-latest`, `macos-latest`, `windows-latest` | `scripts/no-update-flags.sh`, `just test -- --no-fail-fast --exclude models` |
 | Simulated stories, doctests and contracts | `ubuntu-latest` | `just sim`, `just contracts-check`, `just doctest`: what reads the same on every platform, run once |
 | Models | `ubuntu-latest`, one job per protocol-models test target | `just test-crate models -- --test <target>`: one model at its CI bounds |
@@ -35,7 +36,6 @@ Every workflow sets `CARGO_INCREMENTAL=0`, and every job has a
 | Embedded client | `ubuntu-latest` | `just embedded-check`, `just embedded-test` |
 | Pointer checks over the C ABI | `ubuntu-latest` | `just miri`: the phone's C ABI tests under the pinned nightly's interpreter, which fails on any undefined behaviour in a pointer handed across the boundary, read or freed; the tests that start an installation or a tokio runtime are ignored there, each saying why |
 | iOS target check | `macos-latest` | `just mobile-check` |
-| iOS gate | `macos-26` | `just ios gate` on Xcode 26.6, when a push touches the phone's paths |
 
 The test job runs with `--no-fail-fast`, so a platform reports every failing
 test binary, not only the first. Its matrix does not fail fast either: a
@@ -82,11 +82,11 @@ or slow test.
 
 What the bounds were sized from, on a warm cache:
 
-| Platform | CI run | Compile | Test run | Whole job |
-| --- | --- | --- | --- | --- |
-| `ubuntu-latest` | [36448433638](https://github.com/jordanwebster/amux/actions/runs/36448433638) | 145 s | 601 s | 13 min 6 s |
-| `macos-latest` | [36448433638](https://github.com/jordanwebster/amux/actions/runs/36448433638) | 95 s | 449 s | 13 min 13 s |
-| `windows-latest` | [36467514576](https://github.com/jordanwebster/amux/actions/runs/36467514576) | 239 s | 286 s | 11 min 41 s |
+| Platform | Compile | Test run | Whole job |
+| --- | --- | --- | --- |
+| `ubuntu-latest` | 145 s | 601 s | 13 min 6 s |
+| `macos-latest` | 95 s | 449 s | 13 min 13 s |
+| `windows-latest` | 239 s | 286 s | 11 min 41 s |
 
 Linux is the slowest clean test run: 601 s × 1.5 is 902 s, so the run's
 bound is 1000 s. Every job ends near 13 minutes, well inside the 30-minute
@@ -102,8 +102,7 @@ Tests that build `amux` or the fake providers mid-run start cargo through
 the package under test. Started with them, every test crate's build reran
 `ring`'s build script and recompiled everything above it, about a minute a
 crate on the macOS runner; that pushed the macOS run from 449 s to past its
-1000 s bound in
-[36616922626](https://github.com/jordanwebster/amux/actions/runs/36616922626).
+1000 s bound.
 
 ### Protocol models
 
@@ -117,8 +116,9 @@ tests-check` fails when a protocol-models test target is missing from the
 job's matrix. Linux minutes cost a public repository nothing, and each job
 stays far inside the run's wall time, which the iOS gate sets.
 
-A model's budget is sized to that runner. CI run
-[39185561814](https://github.com/jordanwebster/amux/actions/runs/39185561814)
+A model's bounds are sized to that runner; its test asserts the state count
+those bounds explore, not the time (a run that hangs is the job guard's).
+A CI run
 measured the models there at their CI bounds: the runner took 2.1 to 4.2 times
 the enrolled Mac's four-thread time, and replication, the model heaviest on
 the store, was the slowest (274 s against 66 s); a later run measured presence
@@ -151,10 +151,18 @@ seeds and then runs `just models-nightly`.
 
 ### The iOS gate
 
-The iOS gate runs only when a push or pull request touches a path that
-reaches the phone: `apps/apple`, the three `app-*` crates, `xtask`,
-`scripts`, the root justfile and Cargo manifests, the toolchain pin or
-`ci.yml` itself (the `iOS changes` job decides). The rest of the bridge's
+The iOS gate is its own workflow so that it runs only when a push or pull
+request touches a path that reaches the phone: `apps/apple`, the three
+`app-*` crates, `ios-tools`, the Cargo manifests, the toolchain pin, the
+phone's loopback topology, the shared runner scripts the gate's recipes call
+(`scripts/bounded`, `py`, `python`, `with`, `no-update-flags.sh`,
+`sqlite_linkage.py`), the `setup-just` action or `ios.yml` itself. The phone's
+own scripts live in `apps/apple/Tools` and its Rust tools in `ios-tools`, so
+they need no entry of their own; anything shared stays in `scripts/` or
+`xtask` and leaves the gate alone. The root justfile is not on the list: the
+gate reaches it only through `mod ios`, and a workspace test in `ios-tools`
+fails on Linux when a root recipe the phone's verification names is renamed
+or removed. The rest of the bridge's
 Rust graph needs no entry: everything it hands Swift crosses as the
 generated mirrors in `apps/apple/Packages/AmuxCore/Sources/AmuxValues`,
 which a workspace test holds to the Rust definitions, so a change to their
@@ -175,15 +183,15 @@ waits for both before the suites run what was built. `mobile-check` is left
 to the iOS target check, which runs it on every push. None of it compares a
 photograph of the whole display, so it answers the same on any machine. The
 component snapshot batch runs under its own bound, sized by the rule above
-from a clean CI run: 144 s with only the examples marked to settle late
-waiting, so 300 s, and 487 s in the nightly captures run, where every one
-of the 230 pictures waits a quiet second (`--settle-all`, also used by
-every recording), so 800 s. The job uploads the component snapshot
+from the slowest clean CI run: 466 s with only the examples marked to settle
+late waiting (371 to 429 s is usual), so 700 s, and 629 s in the nightly
+captures run, where every picture waits a quiet second (`--settle-all`, also
+used by every recording), so 1000 s. The job uploads the component snapshot
 comparisons and the shipped-scope audit directory to the run, whether it
 passed or not.
 
 `just ios verify` is the whole sequence a developer runs before pushing a
-phone change: the workspace's `fmt-check`, `lint`, `test` and `spec`, then the
+phone change: the workspace's `fmt-check`, `lint` and `test` (which runs the spec suites), then the
 gate, then the captures (`ios goldens`, `ios goldens-perturb`,
 `test-store-ios`, `ios journey`, `ios accessibility`), then the
 shipping stages (`ios package`, `ios scope-audit`). It refuses to start if
@@ -229,7 +237,7 @@ journey or baseline that does not exist.
 | --- | --- | --- |
 | `fast` | Offline, credential-free tests with no wall-time settling: unit tests, spec suites, adapter replays, store and effect integration, renderer goldens | `just test` on every push, on all three platforms |
 | `system` | Real processes and transports with bounded deadlines: the built `amux` binary and its supervisor, the phone bridge on a simulator, the store on iOS | The desktop suites in `just test` on every push (Unix runners); `ios loopback-smoke` in the iOS gate; `test-store-ios` in `just ios captures` |
-| `tool` | The repository's own machinery: script contracts, source and dependency policy, the CI tooling, the shipping scope audit | The Rust side in `just test`; `ios script-tests` and `ios lint` in the iOS gate; `ios scope-audit` before every app release |
+| `tool` | The repository's own machinery: script contracts, source and dependency policy, the CI tooling, the shipping scope audit | The Rust side in `just test`; `just script-tests` on every push; `ios script-tests` and `ios lint` in the iOS gate; `ios scope-audit` before every app release |
 | `journey` | Complete client stories through the shared manifest, and the phone's whole-screen goldens | The terminal journeys job and the system journey inside `just test` on every push; phone goldens nightly; phone journeys and the accessibility sweep in iOS captures run by hand |
 | `qualification` | Real providers, real cloud accounts and measured performance | Never on an ordinary push: `just live`, `just perf` and the `just ios qa-*` recipes by hand, on machines that have the credentials or hardware; `just ios perf` by hand on the enrolled Mac, last in `just ios verify` |
 
@@ -247,10 +255,10 @@ stopping at the first failure:
 | `lint` | Clippy, warnings denied |
 | `fmt-check` | Formatting, with the pinned nightly |
 | `codegen-check` | The committed protobuf output matches the schemas |
+| `proto-compat` | `amux.v1` still reads what the latest release from 0.9.0 wrote; with a ref, what that ref wrote |
 | `dependency-policy` | Production and test-infrastructure dependency boundaries ([`scripts/check-dependency-policy.py`](../scripts/check-dependency-policy.py)) |
 | `cores-check` | No state-machine core (`daemon-core`, `relay-core`, `agent-core`, `supervisor-core`) nor the `core-ring` they record inputs in has tokio in its dependency graph on any target, and none of their sources holds a lock, spawns a task or awaits ([`scripts/cores-check.py`](../scripts/cores-check.py)) |
 | `typed-provider-check` | The interpreters, the agent's provider handshake and Claude's messaging socket read and write provider messages only through the protocol crates: no `json!`, field looked up by name or untyped `Value` outside the listed tool payloads ([`scripts/typed-provider-check.py`](../scripts/typed-provider-check.py)) |
-| `deletion-ledger-check` | No code, config, proto, recipe, script, workflow or doc names a mechanism amux removed |
 | `docs-check` | Every link, image and heading anchor under `docs/` resolves, every figure is referenced and standalone, and `docs/README.md` lists every page once ([`scripts/docs-check.py`](../scripts/docs-check.py)) |
 | `tests-check` | The suite catalogue names only things that exist |
 | `test` | Every workspace test target |
@@ -260,7 +268,7 @@ stopping at the first failure:
 | `embedded-check`, `embedded-test` | The provider-free client graph and the embedded owner and client boundary |
 | `mobile-check` | The provider-free graph for iOS devices and simulators |
 
-The terminal journeys and the iOS gate are in `ci.yml` but not in `just ci`.
+The terminal journeys are in `ci.yml` but not in `just ci`, and neither is the iOS gate.
 
 ## Checking Windows from a Mac
 

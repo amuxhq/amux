@@ -255,7 +255,7 @@ impl Install {
         let mut inventory = self
             .client
             .clone()
-            .subscribe_inventory(Empty {})
+            .subscribe_inventory(wire::SubscribeInventoryRequest {})
             .await
             .map_err(|status| status.to_string())?
             .into_inner();

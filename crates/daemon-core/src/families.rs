@@ -162,6 +162,10 @@ pub struct Create {
     /// Start in a new worktree of the repository at `cwd`, named by the
     /// agent's name.
     pub new_worktree: bool,
+    /// `cwd` as the file system resolves it, kept among the profile's
+    /// recent directories once the agent is made; `None` when it does not
+    /// resolve.
+    pub recent: Option<String>,
     /// What the incarnation starts with but for what the registry decides:
     /// its name, working directory, creation time, number and base branch.
     /// Its parent, when it has one, is the new agent's.
@@ -519,6 +523,7 @@ impl Daemon {
         let cwd = create.cwd.clone();
         let row = self.new_row(&create, &name, &cwd);
         self.put_own_row(&row, out)?;
+        self.remember_directory(&create);
         Ok(Began::Waiting(
             self.start_incarnation(create, name, cwd, None, out),
         ))
@@ -542,6 +547,19 @@ impl Daemon {
             return Err(Refusal::ParentEnded(id));
         }
         Ok(())
+    }
+
+    /// Keeps the directory an agent was made in among the recent ones. A
+    /// failed write is logged: an agent that was made is not a failed
+    /// create for want of history.
+    fn remember_directory(&mut self, create: &Create) {
+        let Some(path) = &create.recent else {
+            return;
+        };
+        let at_ms = self.timers.now_ms as i64;
+        if let Err(error) = self.store.record_recent_directory(path, at_ms) {
+            tracing::warn!(%error, "cannot keep the recent directory");
+        }
     }
 
     fn new_row(&self, create: &Create, name: &str, cwd: &str) -> AgentRow {
@@ -590,6 +608,7 @@ impl Daemon {
         if let Err(error) = self.put_own_row(&row, out) {
             return self.finish(agent, Err(error.into()), out);
         }
+        self.remember_directory(&create);
         let doing = self.start_incarnation(create, name, path, Some(base_branch), out);
         if let Some(lane) = self.families.lanes.get_mut(&agent)
             && let Some(operation) = lane.current.as_mut()
@@ -807,6 +826,7 @@ impl Daemon {
             self.unmute_published(&key, out);
             return Err(error.into());
         }
+        self.journal_readers.remove(&agent);
         let job = self.pending.mint();
         out.push(Output::Job {
             id: job,
@@ -1122,7 +1142,7 @@ impl Daemon {
                 self.answers.unmute(&key);
                 let outcome = match result {
                     JobResult::Done => {
-                        self.forget_draft(&agent.0, out);
+                        self.forget_draft(&agent.0);
                         Ok(None)
                     }
                     other => Err(Refusal::Directory(format!("{other:?}"))),
@@ -1263,6 +1283,9 @@ impl Daemon {
         if !if_live || row.lifecycle != Lifecycle::Exited as i32 {
             self.record_exit(row, fallback, out)?;
         }
+        // Nothing more comes, so its journal's file is not held open: a
+        // daemon may hold the history of many agents that have ended.
+        self.journal_readers.remove(&agent);
         if self.store.markers().get(&key) == Some(&Marker::CaughtUp) {
             // A subscriber that joined since read it at its cut, and one
             // that joined before was told then.
@@ -1537,6 +1560,7 @@ mod tests {
             given: Some(name.into()),
             branches: BTreeSet::new(),
             new_worktree: false,
+            recent: None,
             spec: AgentSpec {
                 agent_id: agent.0.to_vec(),
                 kind: wire::Kind::Codex as i32,
@@ -1590,6 +1614,30 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn an_agent_that_ended_holds_no_journal_file_open() {
+        let mut rig = rig();
+        rig.live(PARENT, "lead", None);
+        let mut journal = journal::Writer::open(rig.daemon.journal_dir(PARENT), 1 << 20)
+            .expect("the journal opens");
+        journal
+            .append(&wire::Step::default())
+            .expect("a frame is written");
+        rig.step(Input::Nudge { agent: PARENT });
+        assert!(
+            rig.daemon.journal_readers.contains_key(&PARENT),
+            "a live agent's reader is held between reads"
+        );
+        rig.step(Input::ControlClosed {
+            agent: PARENT,
+            ended: Ended::Exited,
+        });
+        assert!(
+            !rig.daemon.journal_readers.contains_key(&PARENT),
+            "an ended agent's reader is closed"
+        );
     }
 
     /// A resume issued while the process is still on its way out builds

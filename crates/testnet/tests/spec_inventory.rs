@@ -20,9 +20,7 @@ use testnet::{
     AgentDecl, HostDecl, JournalCut, Net, PATIENCE, Stuck, Topology, holds_for, withdraw,
 };
 use uuid::Uuid;
-use wire::{
-    HostEntry, InventoryEvent, Presence, SessionEvent, Trust, inventory_event, session_event,
-};
+use wire::{HostEntry, InventoryEvent, SessionEvent, inventory_event, session_event};
 
 fn text(text: &str) -> Step {
     Step::Text {
@@ -44,20 +42,30 @@ fn desk_and_laptop() -> Topology {
 
 fn host_named<'a>(net: &Net, hosts: &'a [HostEntry], name: &str) -> Option<&'a HostEntry> {
     let id = net.host(name).unwrap().host_id;
-    hosts.iter().find(|host| host.host_id == id.as_bytes())
+    hosts.iter().find(|host| host.host_id() == id.as_bytes())
 }
 
-/// Whether the inventory seen so far lists `name` with this trust and
-/// presence.
-fn lists_host(
-    net: &Net,
-    events: &[InventoryEvent],
-    name: &str,
-    trust: Trust,
-    presence: Presence,
-) -> bool {
-    host_named(net, &inventory_hosts(events), name)
-        .is_some_and(|host| host.trust == trust as i32 && host.presence == presence as i32)
+/// How a host is listed: trusted and online or , or a candidate.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Listed {
+    Online,
+    Offline,
+    Candidate,
+}
+
+fn listed(host: &HostEntry) -> Option<Listed> {
+    if host.candidate().is_some() {
+        Some(Listed::Candidate)
+    } else if host.online().is_some() {
+        Some(Listed::Online)
+    } else {
+        host.offline().map(|_| Listed::Offline)
+    }
+}
+
+/// Whether the inventory seen so far lists `name` so.
+fn lists_host(net: &Net, events: &[InventoryEvent], name: &str, how: Listed) -> bool {
+    host_named(net, &inventory_hosts(events), name).is_some_and(|host| listed(host) == Some(how))
 }
 
 fn lists_agent(net: &Net, events: &[InventoryEvent], agent: &str) -> bool {
@@ -92,8 +100,8 @@ async fn a_trusted_host_stays_in_every_snapshot_while_unreachable() {
         .observe_until(
             |events| {
                 observe::inventory_caught_up(events)
-                    && lists_host(&net, events, "desk", Trust::Trusted, Presence::Online)
-                    && lists_host(&net, events, "laptop", Trust::Trusted, Presence::Online)
+                    && lists_host(&net, events, "desk", Listed::Online)
+                    && lists_host(&net, events, "laptop", Listed::Online)
                     && lists_agent(&net, events, "worker")
             },
             PATIENCE,
@@ -104,14 +112,14 @@ async fn a_trusted_host_stays_in_every_snapshot_while_unreachable() {
     net.sever_link("desk", "laptop").unwrap();
     fleet
         .observe_until(
-            |events| lists_host(&net, events, "desk", Trust::Trusted, Presence::Offline),
+            |events| lists_host(&net, events, "desk", Listed::Offline),
             PATIENCE,
         )
         .await
         .unwrap();
     // A call that has to reach it says which host could not be reached, by
     // the name a person knows it by.
-    let refused = wire::client_service_server::ClientService::stop_agent(
+    let refused = wire::agent_service_server::AgentService::stop_agent(
         &net.client("laptop").unwrap(),
         tonic::Request::new(wire::StopAgentRequest {
             agent_id: net.agent("worker").unwrap().id.as_bytes().to_vec(),
@@ -126,8 +134,7 @@ async fn a_trusted_host_stays_in_every_snapshot_while_unreachable() {
         .await
         .unwrap();
     assert!(
-        lists_host(&net, opening, "desk", Trust::Trusted, Presence::Offline)
-            && lists_agent(&net, opening, "worker"),
+        lists_host(&net, opening, "desk", Listed::Offline) && lists_agent(&net, opening, "worker"),
         "an unreachable trusted host and its agents are in the snapshot:\n{}",
         reopened.transcript()
     );
@@ -144,8 +151,7 @@ async fn a_trusted_host_stays_in_every_snapshot_while_unreachable() {
         .observe_until(
             |events| {
                 let hosts = inventory_hosts(events);
-                host_named(&net, &hosts, "desk")
-                    .is_some_and(|desk| desk.presence == Presence::Online as i32)
+                host_named(&net, &hosts, "desk").is_some_and(|desk| desk.online().is_some())
                     && lists_agent(&net, events, "worker")
             },
             PATIENCE,
@@ -186,8 +192,8 @@ async fn discovery_candidates_appear_only_from_the_same_scope() {
     fleet
         .observe_until(
             |events| {
-                lists_host(&net, events, "near", Trust::Candidate, Presence::Online)
-                    && lists_host(&net, events, "desk", Trust::Trusted, Presence::Online)
+                lists_host(&net, events, "near", Listed::Candidate)
+                    && lists_host(&net, events, "desk", Listed::Online)
             },
             PATIENCE,
         )
@@ -203,7 +209,7 @@ async fn discovery_candidates_appear_only_from_the_same_scope() {
         let hosts = inventory_hosts(fleet.events());
         let seen = outsiders
             .iter()
-            .any(|id| hosts.iter().any(|host| host.host_id == id.as_bytes()));
+            .any(|id| hosts.iter().any(|host| host.host_id() == id.as_bytes()));
         async move { !seen }
     })
     .await
@@ -211,11 +217,7 @@ async fn discovery_candidates_appear_only_from_the_same_scope() {
     let desk = host_named(&net, &inventory_hosts(fleet.events()), "desk")
         .unwrap()
         .clone();
-    assert_eq!(
-        desk.trust,
-        Trust::Trusted as i32,
-        "found and trusted is trusted"
-    );
+    assert!(desk.trusted().is_some(), "found and trusted is trusted");
 
     let near = net.host("near").unwrap().host_id;
     net.stop_daemon("near").await.unwrap();
@@ -365,6 +367,11 @@ async fn a_generation_change_resets_one_hosts_replicas_and_nothing_else() {
         )
         .agent(AgentDecl::new("other", "lab").steps(says("o")).prompt("go"));
     let mut net = Net::start(topology).await.unwrap();
+    // Each agent's first turn comes to rest at its host before its replica
+    // is taken as current, so the rows read below are all the turn writes:
+    // a reply replicated after them would look like a change.
+    net.settle("worker").await.unwrap();
+    net.settle("other").await.unwrap();
     net.current("laptop", "worker").await.unwrap();
     net.current("laptop", "other").await.unwrap();
     net.checkpoint_host("desk").await.unwrap();
@@ -519,7 +526,7 @@ async fn the_own_entry_carries_this_profiles_sign_in() {
         .await
         .unwrap();
     let own = |events: &[InventoryEvent]| {
-        host_named(&net, &inventory_hosts(events), "laptop").map(|entry| entry.account_signed_in)
+        host_named(&net, &inventory_hosts(events), "laptop").map(|entry| entry.account_signed_in())
     };
     let mut fleet = net.observe_inventory("laptop").await.unwrap();
     let opening = fleet
@@ -534,13 +541,10 @@ async fn the_own_entry_carries_this_profiles_sign_in() {
         .await
         .unwrap();
 
-    let profile = net.host("laptop").unwrap().profile;
-    net.front_door("laptop")
+    net.admin("laptop")
         .await
         .unwrap()
-        .logout_profile(wire::ProfileRequest {
-            profile_id: profile.as_bytes().to_vec(),
-        })
+        .sign_out(wire::SignOutRequest {})
         .await
         .unwrap();
     fleet
@@ -753,7 +757,7 @@ async fn a_peer_that_revokes_trust_is_listed_as_having_revoked_it() {
     let mut fleet = net.observe_inventory("laptop").await.unwrap();
     fleet
         .observe_until(
-            |events| lists_host(&net, events, "desk", Trust::Trusted, Presence::Online),
+            |events| lists_host(&net, events, "desk", Listed::Online),
             PATIENCE,
         )
         .await
@@ -762,19 +766,16 @@ async fn a_peer_that_revokes_trust_is_listed_as_having_revoked_it() {
     let desk = move |events: &[InventoryEvent]| {
         inventory_hosts(events)
             .into_iter()
-            .find(|host| host.host_id == desk_id.as_bytes())
+            .find(|host| host.host_id() == desk_id.as_bytes())
     };
-    assert_eq!(desk(fleet.events()).unwrap().revoked, None);
+    assert!(!desk(fleet.events()).unwrap().revoked());
 
     net.untrust("desk", "laptop").await.unwrap();
     fleet
         .observe_until(
             |events| {
-                desk(events).is_some_and(|entry| {
-                    entry.revoked == Some(true)
-                        && entry.presence == Presence::Offline as i32
-                        && entry.trust == Trust::Trusted as i32
-                })
+                desk(events)
+                    .is_some_and(|entry| entry.revoked() && listed(&entry) == Some(Listed::Offline))
             },
             PATIENCE,
         )
@@ -836,18 +837,16 @@ async fn a_peer_that_revokes_trust_over_the_relay_is_listed_as_having_revoked_it
     let desk = move |events: &[InventoryEvent]| {
         inventory_hosts(events)
             .into_iter()
-            .find(|host| host.host_id == desk_id.as_bytes())
+            .find(|host| host.host_id() == desk_id.as_bytes())
     };
     let ever_revoked = move |events: &[InventoryEvent]| {
         events.iter().any(|event| {
             matches!(&event.of, Some(inventory_event::Of::Host(host))
-                if host.host_id == desk_id.as_bytes() && host.revoked.is_some())
+                if host.host_id() == desk_id.as_bytes() && host.revoked())
         })
     };
     let online = |events: &[InventoryEvent]| {
-        desk(events).is_some_and(|entry| {
-            entry.presence == Presence::Online as i32 && entry.revoked.is_none()
-        })
+        desk(events).is_some_and(|entry| entry.online().is_some() && !entry.revoked())
     };
     let mut fleet = net.observe_inventory("tablet").await.unwrap();
     fleet.observe_until(online, PATIENCE).await.unwrap();
@@ -857,7 +856,7 @@ async fn a_peer_that_revokes_trust_over_the_relay_is_listed_as_having_revoked_it
     net.stop_daemon("desk").await.unwrap();
     fleet
         .observe_until(
-            |events| desk(events).is_some_and(|entry| entry.presence != Presence::Online as i32),
+            |events| desk(events).is_some_and(|entry| entry.online().is_none()),
             PATIENCE,
         )
         .await
@@ -879,11 +878,7 @@ async fn a_peer_that_revokes_trust_over_the_relay_is_listed_as_having_revoked_it
 
     net.untrust("desk", "tablet").await.unwrap();
     reconnecting_until(&net, &mut fleet, |events| {
-        desk(events).is_some_and(|entry| {
-            entry.revoked == Some(true)
-                && entry.presence != Presence::Online as i32
-                && entry.trust == Trust::Trusted as i32
-        })
+        desk(events).is_some_and(|entry| entry.revoked() && listed(&entry) == Some(Listed::Offline))
     })
     .await;
     // The relay still says the desk is online, which is what pairing again
@@ -919,19 +914,17 @@ async fn pairing_again_with_a_peer_that_revoked_trust_clears_the_mark_at_once() 
     let desk = move |events: &[InventoryEvent]| {
         inventory_hosts(events)
             .into_iter()
-            .find(|host| host.host_id == desk_id.as_bytes())
+            .find(|host| host.host_id() == desk_id.as_bytes())
     };
     let online = move |events: &[InventoryEvent]| {
-        desk(events).is_some_and(|entry| {
-            entry.presence == Presence::Online as i32 && entry.revoked.is_none()
-        })
+        desk(events).is_some_and(|entry| entry.online().is_some() && !entry.revoked())
     };
     let mut fleet = net.observe_inventory("tablet").await.unwrap();
     fleet.observe_until(online, PATIENCE).await.unwrap();
 
     net.untrust("desk", "tablet").await.unwrap();
     reconnecting_until(&net, &mut fleet, |events| {
-        desk(events).is_some_and(|entry| entry.revoked == Some(true))
+        desk(events).is_some_and(|entry| entry.revoked())
     })
     .await;
     // Refused, the tablet cannot see what the desk starts meanwhile.
@@ -998,8 +991,8 @@ async fn a_hosts_entry_says_whether_its_inventory_is_current() {
     let current = move |events: &[InventoryEvent], wanted: bool| {
         inventory_hosts(events)
             .into_iter()
-            .find(|host| host.host_id == desk_id.as_bytes())
-            .is_some_and(|entry| entry.current == Some(wanted))
+            .find(|host| host.host_id() == desk_id.as_bytes())
+            .is_some_and(|entry| entry.current() == wanted)
     };
     let mut fleet = net.observe_inventory("tablet").await.unwrap();
     fleet

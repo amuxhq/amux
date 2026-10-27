@@ -13,6 +13,7 @@ use crate::rows::{self, ABSORBED, COMMITTED, Rows};
 use crate::{
     Absorb, Absorbed, AgentKey, AgentRow, Append, CommitClock, Committed, Cut, Delivery, Item,
     Marker, Notification, Page, PageEnd, Record, Snapshot, SourceEvent, Step, StoreError,
+    TrustedHost,
 };
 
 /// Marks a file as an amux profile store ("amux").
@@ -27,13 +28,25 @@ pub enum OpenError {
     #[error("this store needs a newer amux: its schema stamp is {stamp}, this build knows {known}")]
     TooNew { stamp: u32, known: u32 },
     /// The store's recorded history is not this build's: written before
-    /// the release schema, or by a build whose migration text differs. The
-    /// file is left exactly as it is.
+    /// the release schema, or by a build whose migration text differs, or
+    /// with no history recorded at all (`id` 0). The file is left exactly
+    /// as it is.
     #[error(
         "{path} predates this release's store schema (its migration {id} is not this build's); \
          amux leaves it untouched: move it aside to start this profile's store afresh"
     )]
-    EditedMigration { path: String, id: u32 },
+    OtherHistory { path: String, id: u32 },
+}
+
+/// How far a write must reach before it returns. Commits are otherwise not
+/// synced one by one (`synchronous=NORMAL`): they survive the process
+/// crashing, and a crash of the machine may lose those since the owner's
+/// last checkpoint. A synced write survives that too, at the cost of a
+/// sync of the WAL to the drive.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Durability {
+    Normal,
+    Synced,
 }
 
 pub struct Sqlite {
@@ -81,6 +94,9 @@ impl Sqlite {
     ) -> Result<Self, OpenError> {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
+        // Every statement the rows run is one of a few dozen fixed texts;
+        // kept prepared, a commit skips parsing them again for each frame.
+        conn.set_prepared_statement_cache_capacity(64);
         migrate(&mut conn, name)?;
         Ok(Self {
             conn,
@@ -151,6 +167,10 @@ impl Sqlite {
             path,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
+        // The journal segments below the checkpoint are deleted once it
+        // completes, so its sync must pass the drive's cache too, which on
+        // macOS takes a full flush (F_FULLFSYNC) rather than a plain fsync.
+        conn.pragma_update(None, "checkpoint_fullfsync", true)?;
         // SQLite answers busy, the WAL's pages and the pages moved; a
         // checkpoint that could not run at all, because another connection
         // holds the checkpoint lock, answers busy with both counts -1.
@@ -180,19 +200,30 @@ impl Sqlite {
     }
 }
 
+/// Checks the store's history and applies the migrations it lacks, all in
+/// one transaction that takes the write lock first, so the history it
+/// checked is the one it migrates.
 fn migrate(conn: &mut Connection, name: &str) -> Result<(), OpenError> {
-    let stamp: u32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    let application_id: i32 = conn.pragma_query_value(None, "application_id", |row| row.get(0))?;
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let stamp: u32 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    let application_id: i32 = tx.pragma_query_value(None, "application_id", |row| row.get(0))?;
     let fresh = stamp == 0 && application_id == 0;
     if !fresh && application_id != APPLICATION_ID {
         return Err(OpenError::Foreign(name.into()));
     }
-    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let recorded: bool = tx.query_row(
         "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'schema_migrations')",
         [],
         |row| row.get(0),
     )?;
+    // An amux store with no history is no store this build wrote: its
+    // tables are not to be made again over whatever it holds.
+    if !fresh && !recorded {
+        return Err(OpenError::OtherHistory {
+            path: name.into(),
+            id: 0,
+        });
+    }
     let applied = if recorded {
         let mut statement = tx.prepare("SELECT id, sha256 FROM schema_migrations ORDER BY id")?;
         statement
@@ -209,7 +240,7 @@ fn migrate(conn: &mut Connection, name: &str) -> Result<(), OpenError> {
     for (id, hash) in &applied {
         let index = (*id as usize).wrapping_sub(1);
         if index < MIGRATIONS.len() && shipped_hash(index) != hash {
-            return Err(OpenError::EditedMigration {
+            return Err(OpenError::OtherHistory {
                 path: name.into(),
                 id: *id,
             });
@@ -219,24 +250,24 @@ fn migrate(conn: &mut Connection, name: &str) -> Result<(), OpenError> {
     if stamp > known {
         return Err(OpenError::TooNew { stamp, known });
     }
-    tx.execute_batch(
-        "CREATE TABLE IF NOT EXISTS schema_migrations (id INTEGER PRIMARY KEY, sha256 TEXT NOT NULL);",
-    )?;
-    tx.commit()?;
     let done = applied.last().map_or(0, |(id, _)| *id);
+    if done as usize >= MIGRATIONS.len() {
+        return Ok(());
+    }
+    tx.execute_batch(
+        "CREATE TABLE IF NOT EXISTS schema_migrations \
+         (id INTEGER PRIMARY KEY, sha256 TEXT NOT NULL) STRICT;",
+    )?;
     for (index, text) in MIGRATIONS.iter().enumerate().skip(done as usize) {
-        let id = index as u32 + 1;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute_batch(text)?;
         tx.execute(
             "INSERT INTO schema_migrations (id, sha256) VALUES (?1, ?2)",
-            params![id, shipped_hash(index)],
+            params![index as u32 + 1, shipped_hash(index)],
         )?;
-        tx.pragma_update(None, "application_id", APPLICATION_ID)?;
-        let current: u32 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        tx.pragma_update(None, "user_version", current.max(SCHEMA_STAMP))?;
-        tx.commit()?;
     }
+    tx.pragma_update(None, "application_id", APPLICATION_ID)?;
+    tx.pragma_update(None, "user_version", stamp.max(SCHEMA_STAMP))?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -260,7 +291,6 @@ fn held_snapshot(row: &AgentRow) -> u64 {
 fn copy_envelope(row: &mut AgentRow, snapshot: &Snapshot) {
     row.phase = snapshot.phase;
     row.working_on = snapshot.working_on.clone();
-    row.last_activity_ms = Some(snapshot.at_ms);
     row.phase_since_ms = Some(snapshot.phase_since_ms);
     row.git = snapshot.git.clone();
     row.background_jobs = snapshot.background_jobs;
@@ -292,6 +322,32 @@ impl Sqlite {
         });
         tx.finish()?;
         result
+    }
+
+    /// Runs `f` in one write transaction; a [`Durability::Synced`] one is
+    /// on the drive, past its cache, when this returns.
+    fn write_with<R>(
+        &mut self,
+        durability: Durability,
+        f: impl FnOnce(&Rows<'_>) -> Result<R, StoreError>,
+    ) -> Result<R, StoreError> {
+        match durability {
+            Durability::Normal => self.write(f),
+            Durability::Synced => {
+                // In WAL mode FULL syncs the WAL as the transaction commits;
+                // fullfsync makes that sync pass the drive's cache on macOS.
+                self.conn.pragma_update(None, "synchronous", "FULL")?;
+                self.conn.pragma_update(None, "fullfsync", true)?;
+                let result = self.write(f);
+                let restored = self
+                    .conn
+                    .pragma_update(None, "fullfsync", false)
+                    .and_then(|()| self.conn.pragma_update(None, "synchronous", "NORMAL"));
+                let result = result?;
+                restored?;
+                Ok(result)
+            }
+        }
     }
 
     /// Runs `f` in one write transaction: all of it lands or none of it
@@ -550,6 +606,59 @@ impl Sqlite {
         Ok(absorbed)
     }
 
+    /// Every paired host.
+    pub fn trusted_hosts(&self) -> Result<Vec<TrustedHost>, StoreError> {
+        self.read(|rows| rows.trusted_hosts())
+    }
+
+    /// Writes `host` over what was kept of it.
+    pub fn put_trusted_host(
+        &mut self,
+        host: &TrustedHost,
+        durability: Durability,
+    ) -> Result<(), StoreError> {
+        if host.host_id == self.own_host {
+            return Err(StoreError::OwnHost);
+        }
+        self.write_with(durability, |rows| rows.put_trusted_host(host))
+    }
+
+    /// Forgets the paired host, and with it the generation its inventory
+    /// last reported.
+    pub fn remove_trusted_host(
+        &mut self,
+        host: &[u8],
+        durability: Durability,
+    ) -> Result<(), StoreError> {
+        self.write_with(durability, |rows| rows.remove_trusted_host(host))
+    }
+
+    /// The agent's draft, encoded, when one is kept.
+    pub fn draft(&self, agent_id: &[u8]) -> Result<Option<Vec<u8>>, StoreError> {
+        self.read(|rows| rows.draft(agent_id))
+    }
+
+    /// Keeps the encoded draft for the agent.
+    pub fn put_draft(&mut self, agent_id: &[u8], draft: &[u8]) -> Result<(), StoreError> {
+        self.write(|rows| rows.put_draft(agent_id, draft))
+    }
+
+    /// Forgets the agent's draft; true when one was kept.
+    pub fn delete_draft(&mut self, agent_id: &[u8]) -> Result<bool, StoreError> {
+        self.write(|rows| rows.delete_draft(agent_id))
+    }
+
+    /// Marks `path` used at `at_ms` (a later use wins) and keeps only the
+    /// [`RECENT_DIRECTORIES`](crate::RECENT_DIRECTORIES) most recently used.
+    pub fn record_recent_directory(&mut self, path: &str, at_ms: i64) -> Result<(), StoreError> {
+        self.write(|rows| rows.record_recent_directory(path, at_ms))
+    }
+
+    /// The directories agents were started in, most recently used first.
+    pub fn recent_directories(&self) -> Result<Vec<(String, i64)>, StoreError> {
+        self.read(|rows| rows.recent_directories())
+    }
+
     /// Records the generation `host`'s inventory last reported.
     pub fn record_host_generation(
         &mut self,
@@ -690,7 +799,7 @@ fn commit(
                     agent_id: agent.agent.clone(),
                     revision: snapshot.revision,
                     due_at_ms: clock.now_ms + clock.notify_delay_ms,
-                    name: Some(row.name.clone()),
+                    name: row.name.clone(),
                     working_on: row.working_on.clone(),
                     text: rows.newest_text(agent)?,
                 })?;

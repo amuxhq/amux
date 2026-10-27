@@ -4,7 +4,7 @@
 //! replays as the original does.
 //!
 //! The core decodes no agent's bodies and knows no redaction rules, so the
-//! caller brings a [`Redactor`]. The values are walked by serialization: a
+//! caller brings the store's [`Redactor`]. The values are walked by serialization: a
 //! protocol message is written by `codec` as its encoding in hex, and says
 //! so on its way through, so the redactor sees it whole and by name;
 //! content bytes, such as a kept blob or a diff's patch, are written as hex
@@ -17,18 +17,10 @@ use serde::ser::{
     self, Serialize, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant,
     SerializeTuple, SerializeTupleStruct, SerializeTupleVariant, Serializer,
 };
+pub use store::redact::Redactor;
 
 use crate::io::{Input, Recorded};
 use crate::{Checkpoint, RestoreError};
-
-/// What a dump's redaction does to the core's values.
-pub trait Redactor {
-    /// An encoded protocol message, by its full name (`amux.v1.Item`),
-    /// redacted and encoded again.
-    fn message(&self, name: &str, bytes: &[u8]) -> Vec<u8>;
-    /// Free text, redacted.
-    fn text(&self, text: &str) -> String;
-}
 
 /// What the next string written is, when it is not free text.
 #[derive(Clone, Copy)]
@@ -501,18 +493,27 @@ mod tests {
         fn text(&self, text: &str) -> String {
             String::from_utf8(swap(text.as_bytes())).expect("still text")
         }
+        fn agent(&self, _: i32, agent: wire::Agent) -> wire::Agent {
+            agent
+        }
+        fn step(&self, _: i32, step: store::Step) -> store::Step {
+            step
+        }
     }
 
     fn holds(bytes: &[u8]) -> bool {
         bytes.windows(PLANTED.len()).any(|window| window == PLANTED)
     }
 
-    fn draft(text: &str) -> Vec<u8> {
-        wire::ComposerDraft {
-            text: text.to_owned(),
+    fn own(name: &str) -> wire::HostEntry {
+        wire::HostEntry {
+            host: Some(wire::Host {
+                host_id: vec![7; 16],
+                name: name.to_owned(),
+                ..Default::default()
+            }),
             ..Default::default()
         }
-        .encode_to_vec()
     }
 
     #[test]
@@ -525,11 +526,8 @@ mod tests {
                 ..StartOptions::default()
             },
         );
-        let agent = vec![7; 16];
         daemon.step(
-            Input::Drafts {
-                drafts: vec![(agent.clone(), draft("the key is PLANTED"))],
-            },
+            Input::OwnHost(Box::new(own("the desk PLANTED"))),
             &mut Vec::new(),
         );
         let checkpoint = daemon.checkpoint();
@@ -539,19 +537,19 @@ mod tests {
         let redacted = checkpoint.redacted(&redactor).expect("it redacts");
         assert!(!holds(&redacted.state), "the planted word is gone");
         assert!(
-            redactor.names.borrow().contains("amux.v1.ComposerDraft"),
-            "the draft went through as its message: {:?}",
+            redactor.names.borrow().contains("amux.v1.HostEntry"),
+            "the host's entry went through as its message: {:?}",
             redactor.names.borrow()
         );
         let store = Sqlite::open_in_memory(*b"own-host-0000000").expect("a store opens");
         let restored = Daemon::restore(redacted, store).expect("the redacted checkpoint restores");
         let again = restored.checkpoint().state;
-        let kept = hex(&draft("the key is REMOVED"));
+        let kept = hex(&own("the desk REMOVED").encode_to_vec());
         assert!(
             again
                 .windows(kept.len())
                 .any(|window| window == kept.as_bytes()),
-            "the restored core holds the redacted draft"
+            "the restored core holds the redacted entry"
         );
     }
 
@@ -593,20 +591,10 @@ mod tests {
 
     #[test]
     fn a_kept_blob_and_a_patch_are_redacted_as_text_and_binary_content_is_kept() {
-        use crate::payload::{ClientRequest, JobResult, Patch};
-        use crate::{CallId, JobId};
+        use crate::JobId;
+        use crate::payload::{JobResult, Patch};
 
         let redactor = Swap::default();
-        let keep = |bytes: &[u8]| {
-            Recorded::Input(Box::new(Input::ClientCall {
-                call: CallId(3),
-                request: ClientRequest::KeepBlob {
-                    agent_id: vec![5; 16],
-                    hash: vec![9; 32],
-                    bytes: bytes.to_vec(),
-                },
-            }))
-        };
         let compared = |bytes: &[u8]| {
             Recorded::Input(Box::new(Input::JobDone {
                 job: JobId(4),
@@ -619,25 +607,22 @@ mod tests {
                 },
             }))
         };
-        for (planted, removed) in [
-            (keep(b"the key is PLANTED"), keep(b"the key is REMOVED")),
-            (
-                compared(b"+token = PLANTED\n"),
-                compared(b"+token = REMOVED\n"),
-            ),
-        ] {
-            let in_hex = hex(PLANTED);
-            let carries = |line: &Recorded| serde_json::to_string(line).unwrap().contains(&in_hex);
-            assert!(carries(&planted), "the line carries the content in hex");
-            let redacted = planted.redacted(&redactor);
-            assert!(!carries(&redacted), "the planted word is gone");
-            assert_eq!(redacted, removed, "only the content's text changed");
-        }
+        let planted = compared(b"+token = PLANTED\n");
+        let in_hex = hex(PLANTED);
+        let carries = |line: &Recorded| serde_json::to_string(line).unwrap().contains(&in_hex);
+        assert!(carries(&planted), "the line carries the content in hex");
+        let redacted = planted.redacted(&redactor);
+        assert!(!carries(&redacted), "the planted word is gone");
+        assert_eq!(
+            redacted,
+            compared(b"+token = REMOVED\n"),
+            "only the content's text changed"
+        );
 
         let binary = [0xff, 0xfe, b'P', b'L', b'A', b'N', b'T', b'E', b'D'];
         assert_eq!(
-            keep(&binary).redacted(&redactor),
-            keep(&binary),
+            compared(&binary).redacted(&redactor),
+            compared(&binary),
             "content that is not text is kept as it is"
         );
     }

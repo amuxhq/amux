@@ -1,5 +1,5 @@
 //! The agent process as the daemon runs it: the real amux binary's
-//! `amux agent <dir>` in its own process group, hosting a fake provider,
+//! `amux internal agent <dir>` in its own process group, hosting a fake provider,
 //! with the binary itself at the install path for hooks and tools. The test
 //! stands in for the daemon on ctl.sock and for terminal clients on
 //! pty.sock, and reads what the agent journaled from its directory.
@@ -122,13 +122,13 @@ impl Fixture {
         std::fs::write(self.dir.join(format!("spec.{n}")), spec.encode_to_vec()).unwrap();
     }
 
-    /// Starts `amux agent <dir>` as the daemon does: in a process group of
+    /// Starts `amux internal agent <dir>` as the daemon does: in a process group of
     /// its own, detached from the test's terminal.
     fn spawn(&self, n: u32) -> Child {
         use std::os::unix::process::CommandExt as _;
         let log = std::fs::File::create(self.root.path().join(format!("agent.{n}.log"))).unwrap();
         Command::new(env!("CARGO_BIN_EXE_amux"))
-            .arg("agent")
+            .args(["internal", "agent"])
             .arg(&self.dir)
             .stdin(Stdio::null())
             .stdout(log.try_clone().unwrap())

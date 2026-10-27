@@ -1,6 +1,7 @@
-//! The installation's front door, called in process as the phone calls it:
-//! how long a pairing window stays open, what a pairing call must name, and
-//! that a profile changes only from the revision its caller last read.
+//! The installation's front door and a profile's administration, called in
+//! process as their sockets serve them: how long a pairing window stays
+//! open, what a pairing call must name, and what a rename and a delete
+//! change.
 
 mod support;
 
@@ -9,10 +10,11 @@ use std::sync::Arc;
 use support::synthetic::*;
 use support::*;
 use tonic::Request;
-use wire::profile_service_server::ProfileService as _;
+use wire::installation_service_server::InstallationService as _;
+use wire::profile_admin_service_server::ProfileAdminService as _;
 use wire::{
-    CreateProfileRequest, DeleteProfileRequest, Empty, PendingPairRequest, ProfileRequest,
-    RenameProfileRequest, StartPairingRequest, start_pairing_request,
+    CreateProfileRequest, DeleteProfileRequest, Empty, RenameProfileRequest, StartPairingRequest,
+    start_pairing_request,
 };
 
 /// The five minutes a window lasts when the request names no length.
@@ -39,43 +41,37 @@ fn methods() -> [(&'static str, start_pairing_request::Method); 3] {
 async fn ttl_applies_to_each_method() {
     let install = Install::new();
     let daemon = install.start("boot-1", quiet_launch()).await;
-    let door = daemon.front_door();
-    let profile = install.profile.as_bytes().to_vec();
+    let admin = daemon.profile_admin(install.profile);
     let start = |method: start_pairing_request::Method, ttl_seconds: Option<u64>| {
-        let door = door.clone();
-        let profile = profile.clone();
+        let admin = admin.clone();
         async move {
-            door.start_pairing(Request::new(StartPairingRequest {
-                profile_id: profile,
-                method: Some(method),
-                ttl_seconds,
-            }))
-            .await
-            .map(tonic::Response::into_inner)
+            admin
+                .start_pairing(Request::new(StartPairingRequest {
+                    method: Some(method),
+                    ttl_seconds,
+                }))
+                .await
+                .map(tonic::Response::into_inner)
         }
     };
     let status = || {
-        let door = door.clone();
-        let profile = profile.clone();
+        let admin = admin.clone();
         async move {
-            door.get_pairing_status(Request::new(ProfileRequest {
-                profile_id: profile,
-            }))
-            .await
-            .unwrap()
-            .into_inner()
-            .active
+            admin
+                .get_pairing_status(Request::new(wire::GetPairingStatusRequest {}))
+                .await
+                .unwrap()
+                .into_inner()
+                .active
         }
     };
     let cancel = || {
-        let door = door.clone();
-        let profile = profile.clone();
+        let admin = admin.clone();
         async move {
-            door.cancel_pairing(Request::new(ProfileRequest {
-                profile_id: profile,
-            }))
-            .await
-            .unwrap();
+            admin
+                .cancel_pairing(Request::new(wire::CancelPairingRequest {}))
+                .await
+                .unwrap();
         }
     };
 
@@ -123,9 +119,8 @@ async fn ttl_applies_to_each_method() {
         );
     }
 
-    let missing = door
+    let missing = admin
         .start_pairing(Request::new(StartPairingRequest {
-            profile_id: profile.clone(),
             method: None,
             ttl_seconds: Some(60),
         }))
@@ -133,7 +128,7 @@ async fn ttl_applies_to_each_method() {
         .expect_err("a window with no method");
     assert_eq!(missing.code(), tonic::Code::InvalidArgument);
 
-    drop(door);
+    drop(admin);
     daemon.shutdown().await.unwrap();
 }
 
@@ -143,28 +138,21 @@ async fn ttl_applies_to_each_method() {
 async fn an_empty_pairing_token_is_invalid() {
     let install = Install::new();
     let daemon = install.start("boot-1", quiet_launch()).await;
-    let door = daemon.front_door();
-    let request = || {
-        Request::new(PendingPairRequest {
-            profile_id: install.profile.as_bytes().to_vec(),
-            token: Vec::new(),
-        })
-    };
-    let confirmed = door
-        .confirm_pair(request())
+    let admin = daemon.profile_admin(install.profile);
+    let confirmed = admin
+        .confirm_pair(Request::new(wire::ConfirmPairRequest { token: Vec::new() }))
         .await
         .expect_err("a confirm naming no pairing");
     assert_eq!(confirmed.code(), tonic::Code::InvalidArgument);
-    let abandoned = door
-        .abandon_pair(request())
+    let abandoned = admin
+        .abandon_pair(Request::new(wire::AbandonPairRequest { token: Vec::new() }))
         .await
         .expect_err("an abandon naming no pairing");
     assert_eq!(abandoned.code(), tonic::Code::InvalidArgument);
     // A token that names no pending pairing reads as a wrong secret, as it
     // always has, so a guesser learns nothing.
-    let unknown = door
-        .confirm_pair(Request::new(PendingPairRequest {
-            profile_id: install.profile.as_bytes().to_vec(),
+    let unknown = admin
+        .confirm_pair(Request::new(wire::ConfirmPairRequest {
             token: vec![7; 16],
         }))
         .await
@@ -172,24 +160,23 @@ async fn an_empty_pairing_token_is_invalid() {
     assert_eq!(unknown.code(), tonic::Code::PermissionDenied);
 
     // A profile id is its sixteen bytes; text is the CLI's to parse.
-    let named_as_text = door
-        .get_pairing_status(Request::new(ProfileRequest {
+    let named_as_text = daemon
+        .front_door()
+        .delete_profile(Request::new(DeleteProfileRequest {
             profile_id: install.profile.to_string().into_bytes(),
         }))
         .await
         .expect_err("a profile id in its text form");
     assert_eq!(named_as_text.code(), tonic::Code::InvalidArgument);
 
-    drop(door);
+    drop(admin);
     daemon.shutdown().await.unwrap();
 }
 
-/// A rename or a delete names the revision its caller read, and one that
-/// has moved on since is refused and changes nothing: that is what keeps a
-/// re-run of a half-applied change from acting on a profile it no longer
-/// describes.
+/// A rename changes the label the profile is listed under, and a delete
+/// takes it out of the list.
 #[tokio::test(flavor = "multi_thread")]
-async fn rename_and_delete_refuse_a_stale_revision() {
+async fn rename_and_delete_change_the_listed_profile() {
     let install = Install::new();
     let daemon = install.start("boot-1", quiet_launch()).await;
     let door = daemon.front_door();
@@ -200,12 +187,11 @@ async fn rename_and_delete_refuse_a_stale_revision() {
         .await
         .unwrap()
         .into_inner();
-    let read = created.revision;
     let listed = || {
         let door = door.clone();
         let id = created.id.clone();
         async move {
-            door.list_profiles(Request::new(Empty {}))
+            door.list_profiles(Request::new(wire::ListProfilesRequest {}))
                 .await
                 .unwrap()
                 .into_inner()
@@ -214,44 +200,24 @@ async fn rename_and_delete_refuse_a_stale_revision() {
                 .find(|profile| profile.id == id)
         }
     };
-    let rename = |expected_revision: u64, name: &str| {
-        door.rename_profile(Request::new(RenameProfileRequest {
-            profile_id: created.id.clone(),
-            expected_revision,
-            override_name: Some(name.to_owned()),
-        }))
-    };
 
-    let renamed = rename(read, "kept").await.unwrap().into_inner();
+    let renamed = door
+        .rename_profile(Request::new(RenameProfileRequest {
+            profile_id: created.id.clone(),
+            override_name: Some("kept".to_owned()),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
     assert_eq!(renamed.label, "kept");
-    assert!(renamed.revision > read, "a rename moves the revision on");
-
-    let stale = rename(read, "lost")
-        .await
-        .expect_err("a rename from the revision before the last one");
-    assert_eq!(stale.code(), tonic::Code::Aborted, "{stale:?}");
     let after = listed().await.expect("the profile is still listed");
-    assert_eq!(after.label, "kept", "a refused rename changes nothing");
-    assert_eq!(after.revision, renamed.revision);
+    assert_eq!(after.label, "kept", "the list shows the new label");
 
-    let delete = |confirm_revision: u64| {
-        door.delete_profile(Request::new(DeleteProfileRequest {
-            profile_id: created.id.clone(),
-            confirm_revision,
-        }))
-    };
-    let stale = delete(read)
-        .await
-        .expect_err("a delete confirming the revision before the last one");
-    assert_eq!(stale.code(), tonic::Code::Aborted, "{stale:?}");
-    assert!(
-        listed().await.is_some(),
-        "a refused delete leaves the profile"
-    );
-
-    // The same delete at the current revision goes through, so the stale
-    // revision was the only reason for the refusal.
-    delete(renamed.revision).await.unwrap();
+    door.delete_profile(Request::new(DeleteProfileRequest {
+        profile_id: created.id.clone(),
+    }))
+    .await
+    .unwrap();
     assert!(listed().await.is_none(), "the profile is gone");
 
     drop(door);
@@ -314,10 +280,7 @@ async fn removing_a_profile_ends_a_dump_still_in_flight() {
     let profile_id = created.id.clone();
     let removal = tokio::spawn(async move {
         removing
-            .delete_profile(Request::new(DeleteProfileRequest {
-                profile_id,
-                confirm_revision: created.revision,
-            }))
+            .delete_profile(Request::new(DeleteProfileRequest { profile_id }))
             .await
     });
     // The removal holds nothing of the runtime, and no dump does: this

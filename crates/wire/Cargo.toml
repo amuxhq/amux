@@ -14,10 +14,10 @@ grpc = ["dep:tonic", "dep:tonic-prost"]
 
 [dependencies]
 prost = { workspace = true }
+# Any, which an error status packs its details in.
+prost-types = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 tonic = { workspace = true, optional = true }
 tonic-prost = { workspace = true, optional = true }
 
-[dev-dependencies]
-prost-types = { workspace = true }

@@ -12,9 +12,8 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, bail};
 use node::{Launch, NoopSender, StartOptions};
-use settings::{InstallationConfig, Switch};
+use settings::InstallationConfig;
 use tracing_subscriber::EnvFilter;
-use wire::Empty;
 
 use crate::connect;
 use crate::supervise::SUPERVISOR_LOG;
@@ -35,16 +34,13 @@ pub(crate) fn daemon_log(config: &InstallationConfig) -> PathBuf {
         .unwrap_or_else(|| config.root.join(DAEMON_LOG))
 }
 
+/// Logs to `path`, capped as every amux log is, with the process's standard
+/// error moved onto it so a panic lands there too.
 pub(crate) fn log_to(path: &Path) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
-    }
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .with_context(|| format!("opening the daemon log {}", path.display()))?;
+    let file = log_file::LogFile::open(path, log_file::PROCESS_CAP)
+        .with_context(|| format!("opening the log {}", path.display()))?;
+    file.claim_stderr()
+        .with_context(|| format!("moving standard error onto {}", path.display()))?;
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
@@ -55,16 +51,25 @@ pub(crate) fn log_to(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// What agents start with: this binary as the canonical install path and
-/// the installation's agent and retention settings.
+/// Logs to standard error, for a process whose service manager keeps and
+/// rotates what it writes there.
+pub(crate) fn log_to_stderr() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
+        .with_ansi(false)
+        .with_writer(std::io::stderr)
+        .init();
+}
+
+/// What agents start with: this binary as the canonical install path, the
+/// installation's agent settings and where it looks for repositories.
 fn launch(config: &InstallationConfig) -> Result<Launch> {
     let install_path = std::env::current_exe().context("finding the amux binary")?;
     Ok(Launch {
         install_path,
         agent: config.agent,
-        own_budget_bytes: config.retention.own_budget_mib << 20,
-        replica_budget_bytes: config.retention.replica_rows_mib << 20,
-        replica_blob_budget_bytes: config.retention.replica_blobs_mib << 20,
         repository_roots: config.repository_roots.clone(),
         ..Launch::default()
     })
@@ -76,6 +81,9 @@ fn launch(config: &InstallationConfig) -> Result<Launch> {
 pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>) -> Result<()> {
     let log = daemon_log(config);
     log_to(&log)?;
+    for key in &config.ignored {
+        tracing::warn!(key, "ignoring an unknown config key");
+    }
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
@@ -89,6 +97,8 @@ pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>
             // not connect to yet.
             push: Arc::new(NoopSender),
             daemon_log: Some(log),
+            // A supervised daemon is handed its supervisor's pipe.
+            supervisor_log: pipe.is_some().then(|| config.root.join(SUPERVISOR_LOG)),
             front_door: Some(config.front_door_socket.clone()),
             edge: edge_options(config),
             analytics: telemetry(config),
@@ -127,7 +137,7 @@ pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>
 /// build or one `AMUX_ANALYTICS_URL` points somewhere sends, only while the
 /// installation's `telemetry` setting is on, and never under `DO_NOT_TRACK`.
 fn telemetry(config: &InstallationConfig) -> node::Telemetry {
-    if config.telemetry == Switch::Off {
+    if !config.telemetry {
         return node::Telemetry::Off;
     }
     let Some(endpoint) = analytics::Endpoint::resolve(node::release::is_published()) else {
@@ -140,7 +150,7 @@ fn telemetry(config: &InstallationConfig) -> node::Telemetry {
         .clone()
         .unwrap_or_else(InstallationConfig::default_path);
     let gate = Arc::new(move || match InstallationConfig::from_file(&path) {
-        Ok(config) => config.telemetry == Switch::On,
+        Ok(config) => config.telemetry,
         Err(settings::ConfigError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
             true
         }
@@ -161,7 +171,7 @@ fn telemetry(config: &InstallationConfig) -> node::Telemetry {
 /// relays use.
 fn edge_options(config: &InstallationConfig) -> node::EdgeOptions {
     node::EdgeOptions {
-        host_name: config.host_name.clone(),
+        host_name: config.host_name(),
         kinds: node::local_kinds(),
         lan: Some(node::LanOptions::default()),
         discovery: Some(node::mdns_discovery()),
@@ -170,6 +180,7 @@ fn edge_options(config: &InstallationConfig) -> node::EdgeOptions {
         link_socket: true,
         cloud: node::CloudOptions::default(),
         interfaces: node::test_interfaces(),
+        liveness: Default::default(),
     }
 }
 
@@ -209,7 +220,7 @@ pub async fn start(config: &InstallationConfig, config_path: Option<&Path>) -> R
         println!("The amux daemon is already running.");
         return Ok(());
     }
-    let (mut child, said) = if config.supervisor == Switch::On {
+    let (mut child, said) = if config.supervisor {
         if running_supervisor(&config.root)?.is_some() {
             println!("amux supervise is running; waiting for its daemon.");
             (None, config.root.join(SUPERVISOR_LOG))
@@ -243,7 +254,10 @@ pub async fn start(config: &InstallationConfig, config_path: Option<&Path>) -> R
     let deadline = Instant::now() + PATIENCE;
     loop {
         if let Some(door) = connect::front_door_now(config).await
-            && connect::installation(door).get_info(Empty {}).await.is_ok()
+            && connect::installation(door)
+                .get_installation(wire::GetInstallationRequest {})
+                .await
+                .is_ok()
         {
             println!("Started amux.");
             return Ok(());
@@ -344,7 +358,7 @@ pub async fn stop(config: &InstallationConfig) -> Result<()> {
         return Ok(());
     };
     connect::installation(door)
-        .shutdown(Empty {})
+        .shutdown(wire::ShutdownRequest {})
         .await
         .map_err(crate::plain)?;
     // The front door closes first; the daemon has stopped once it has

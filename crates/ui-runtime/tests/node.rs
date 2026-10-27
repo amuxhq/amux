@@ -47,7 +47,7 @@ async fn grpc(net: &Net) -> GrpcClient {
         .front_door("desk")
         .await
         .unwrap()
-        .list_profiles(wire::Empty {})
+        .list_profiles(wire::ListProfilesRequest {})
         .await
         .unwrap()
         .into_inner()

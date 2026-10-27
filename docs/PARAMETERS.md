@@ -11,20 +11,16 @@ is set and the basis here.
 Only a few values are in the configuration file; the rest are build constants
 or fields of `node::Launch`, the struct the daemon starts agents and runs its
 background work with. The installation configuration is
-`$XDG_CONFIG_HOME/amux/config.yaml` (by default `~/.config/amux/config.yaml`),
+`$XDG_CONFIG_HOME/amux/config.toml` (by default `~/.config/amux/config.toml`),
 parsed as `settings::InstallationConfig` in
 [`crates/settings/src/lib.rs`](../crates/settings/src/lib.rs). The keys this
 page names are:
 
-```yaml
-retention:
-  own_budget_mib: 2048      # own agents' rows, per profile
-  replica_rows_mib: 256     # rows replicated from paired hosts, per runtime
-  replica_blobs_mib: 512    # blob files fetched from paired hosts, per runtime
-agent:
-  grace_secs: 300           # how long an agent outlives its daemon
-  drain_secs: 300           # how long an orphaned ask is held while draining
-  facts_ring_mib: 4         # the interpreter's facts ring, both segments together
+```toml
+[agent]
+grace_secs = 300        # how long an agent outlives its daemon
+drain_secs = 300        # how long an orphaned ask is held while draining
+facts_ring_mib = 4      # the interpreter's facts ring, both segments together
 ```
 
 Agent settings are copied into each agent's `spec.<n>` at spawn and resume, so
@@ -37,15 +33,16 @@ embedded runtime reads no configuration file and runs with the defaults.
 | --- | --- | --- | --- | --- |
 | Journal segment size | agent | 1 MiB | Reasoned. Large enough that rotation is rare; small enough that reclaiming, at the checkpoint after a segment is ingested, frees disk promptly. The flood workload's backlog ceiling assumes twenty agents each filling a segment a second. Not measured. | `DEFAULT_SEGMENT_BYTES` in [`crates/agent/src/host.rs`](../crates/agent/src/host.rs), used when the spec's `EffectiveConfig.journal_segment_bytes` is zero; the daemon sets that from `Launch.journal_segment_bytes` (zero by default, not a configuration key) |
 | Terminal log segments kept | agent | 4 segments of 256 KiB | Reasoned: enough bytes to rebuild one full screen for a terminal that attaches late. Not measured. Only terminal Claude keeps a terminal log. | `PTY_SEGMENT_BYTES` and `PTY_SEGMENTS_KEPT` in [`crates/agent/src/host.rs`](../crates/agent/src/host.rs) |
+| Log file cap | every process | 8 MiB for the daemon's, the supervisor's and the phone's log; 1 MiB each for an agent's and its provider's; one previous file (`.1`) kept beside each | Reasoned: a dump takes the last 4 MiB of the installation's logs, so a log and its `.1` always hold that much; an agent's logs are mostly quiet. Not measured. | `PROCESS_CAP` and `AGENT_CAP` in [`crates/log-file/src/lib.rs`](../crates/log-file/src/lib.rs); the agent checks its two every `LOG_TRIM_EVERY` (30 s) in [`crates/agent/src/lib.rs`](../crates/agent/src/lib.rs) |
 | Grace after control-socket end of stream | agent, from spec | 5 minutes | Reasoned: minutes, enough to ride out a daemon update or crash restart, whose supervisor limits are 60 s to start and 30 s of backoff. | `agent.grace_secs` (`AgentSettings`), copied to `EffectiveConfig.grace_ms`; `DEFAULT_GRACE_MS` in [`crates/agent-core/src/lib.rs`](../crates/agent-core/src/lib.rs) when the spec leaves it zero |
 | Drain deadline for an orphaned ask | agent, from spec | 5 minutes | Reasoned: the same order as the grace. | `agent.drain_secs`, copied to `EffectiveConfig.drain_ms`; the agent falls back to `DEFAULT_DRAIN_MS`, the same 5 minutes, only when the spec leaves it zero |
 | Facts ring size and segments kept | agent, from spec | 4 MiB across 2 segments | Reasoned: enough recent provider history to replay into a dump without keeping a second transcript. Not measured. | `agent.facts_ring_mib`, copied to `EffectiveConfig.facts_ring_bytes`; `DEFAULT_RING_BYTES` in [`crates/agent/src/host.rs`](../crates/agent/src/host.rs); the segment count is `KEEP = 2` in [`crates/core-ring/src/lib.rs`](../crates/core-ring/src/lib.rs) (see note 1) |
 | Fan-out queue capacity | daemon | 1,024 live events per stream on an agent (four ingest batches); 1,024 per inventory stream | Reasoned from the batch: a batch's records are answered in one burst by the step that commits it, so a reader's slack is counted in batches. Four batches absorb a reader whose task woke late by design; a stalled one is closed with `Lagged` and re-tails. The flood workload's ingest-lag budget (p99 under 250 ms) is stated as one queue's worth of work; that metric has no recorded baseline yet. | `FANOUT_CAPACITY` (`Launch.fanout_capacity`) and `Launch.inventory_capacity` in [`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs); not a configuration key |
 | Push notification delay | daemon | 30 s | Reasoned: tens of seconds, long enough that an answer from the desktop removes the notification before it is sent. | `Launch.notify_delay_ms` in [`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs) (see note 2) |
 | Own retention trim chunk | daemon | 4 MiB | Reasoned: a few MiB from the largest live agent per round, so a small overrun costs a small trim. | `Launch.retention_chunk_bytes` in [`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs) |
-| Own retention budget per profile | daemon config | 2,048 MiB | A generous multiple of the largest transcripts seen so far. Not measured against typical transcript sizes. Counts row bytes (`store::item_bytes`), not blob files, which go with their agent's directory. | `retention.own_budget_mib` (`RetentionSettings`) → `Launch.own_budget_bytes` |
-| Replica budget per runtime (rows) | runtime config | 256 MiB | A round starting bound. Not measured. | `retention.replica_rows_mib` → `Launch.replica_budget_bytes` |
-| Replica blob budget per runtime (files) | runtime config | 512 MiB, least recently read first | Reasoned: twice the row budget, since images dominate what is fetched. Not measured. | `retention.replica_blobs_mib` → `Launch.replica_blob_budget_bytes`; eviction in `store::BlobLru` ([`crates/store/src/blobs.rs`](../crates/store/src/blobs.rs)) |
+| Own retention budget per profile | daemon | 2,048 MiB | A generous multiple of the largest transcripts seen so far. Not measured against typical transcript sizes. Counts row bytes (`store::item_bytes`), not blob files, which go with their agent's directory. | `OWN_BUDGET_BYTES` → `Launch.own_budget_bytes`, in [`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs) |
+| Replica budget per runtime (rows) | daemon | 256 MiB | A round starting bound. Not measured. | `REPLICA_BUDGET_BYTES` → `Launch.replica_budget_bytes` |
+| Replica blob budget per runtime (files) | daemon | 512 MiB, least recently read first | Reasoned: twice the row budget, since images dominate what is fetched. Not measured. | `REPLICA_BLOB_BUDGET_BYTES` → `Launch.replica_blob_budget_bytes`; eviction in `store::BlobLru` ([`crates/store/src/blobs.rs`](../crates/store/src/blobs.rs)) |
 | Latency budget, input to its reflection on screen | whole design | A few ms locally | By construction: one control-socket hop for the verdict, one commit, one fan-out. No workload measures it end to end yet (see note 3). | No single constant; the path is `ProfileRuntime::relay` in [`crates/node/src/relay.rs`](../crates/node/src/relay.rs) and `ProfileRuntime::ingest` in [`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs) |
 | Update check interval | supervisor | 1 hour | Reasoned: a corrective release reaches every host within the hour. | `Params.check_interval` in [`crates/node/src/supervisor/mod.rs`](../crates/node/src/supervisor/mod.rs); build constant |
 | Rollback threshold K | supervisor | 3 starts that never activate | A guess to be revised when failed starts in the field say otherwise. | `Params.rollback_after` |
@@ -64,7 +61,7 @@ embedded runtime reads no configuration file and runs with the defaults.
 | Replica tail and catch-up cap (K) | runtime | 200 rows | Reasoned: about an hour of a busy agent and several screens of scroll-back. An origin answers a delta of at most K rows and a Reset beyond it. Not yet tied to a measured size per row. | `TAIL_ROWS` in [`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs) → `Launch.tail_rows`; also the floor own retention never trims below |
 | Source reconnect backoff | runtime | 1 s doubling to 30 s while the host is reachable | Reasoned. | `Launch.source_backoff_ms` and `Launch.source_backoff_max_ms` |
 | Lookahead above the screen before paging | client | Terminal: 40 rows. Phone: none; it pages when the top of the list comes into view. | Terminal: one page of held rows. | `LOOKAHEAD` in [`crates/tui/src/chat/layout.rs`](../crates/tui/src/chat/layout.rs); `ChatModel.reachedTop` in [`ChatModel.swift`](../apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift) |
-| Page size at an open collapsed run, and its cap | client | The run's length, at least one page, capped at 1,000 rows | Reasoned: a long run arrives in a few pages. | `RUN_PAGE_CAP` in [`crates/tui/src/chat/layout.rs`](../crates/tui/src/chat/layout.rs); `ChatModel.largestPage` and `pageSize` in [`ChatModel.swift`](../apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift); the runtime returns at most 500 items per `Fetch` (see note 4) |
+| Page size at an open collapsed run, and its cap | client | The run's length, at least one page, capped at 1,000 rows | Reasoned: a long run arrives in a few pages. | `RUN_PAGE_CAP` in [`crates/tui/src/chat/layout.rs`](../crates/tui/src/chat/layout.rs); `ChatModel.largestPage` and `pageSize` in [`ChatModel.swift`](../apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift); the runtime returns at most 500 items per `ListItems` (see note 4) |
 | Loading hint delay | client | 300 ms | Reasoned: a chat that fills at once never flashes the hint. | `LOADING_HINT_MS` in [`crates/tui/src/chat/mod.rs`](../crates/tui/src/chat/mod.rs); `ChatModel.loadingHintDelay` in [`ChatModel.swift`](../apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift) |
 | Session retention after last view | client | Phone: 5 minutes. Terminal: none; a chat's session closes when the terminal returns to the fleet. | Reasoned: long enough that going back to a chat is instant, short enough that the sessions a phone holds follow what the person looks at. | `StoreBundle.sessionRetention` in [`StoreBundle.swift`](../apps/apple/Packages/AmuxCore/Sources/AmuxCore/StoreBundle.swift) |
 | WAL checkpoint interval | daemon | Off: SQLite's automatic checkpoint is disabled (`wal_autocheckpoint=0`) | Every write is the profile's core's, so the main file moves only when the core says: the WAL is moved into it by a passive checkpoint, a job on a connection of its own that begins each core checkpoint while the core holds its writes, so the main file pairs with that checkpoint. Not measured. | `Sqlite::leave_checkpoints_to_owner` and `Sqlite::checkpoint_wal`; a full checkpoint with a drive flush is taken by `Sqlite::flush_to_drive` at clean shutdown, all in [`crates/store/src/sqlite.rs`](../crates/store/src/sqlite.rs) |
@@ -109,7 +106,7 @@ embedded runtime reads no configuration file and runs with the defaults.
    is the median cost per committed frame, about 23 µs. See
    [performance](PERFORMANCE.md).
 
-4. **Page caps.** `Fetch` returns at most `MAX_PAGE` (500) items whatever the
+4. **Page caps.** `ListItems` returns at most `MAX_PAGE` (500) items whatever the
    limit, and a peer's catch-up may ask for at most 10,000 rows (`MAX_CAP`),
    both in [`crates/node/src/serve.rs`](../crates/node/src/serve.rs). A client
    asking for a 1,000-row page at a collapsed run gets 500 and asks again.
@@ -137,6 +134,9 @@ and are tuned the same way:
 | Wait on an origin for a page | 10 s | `PAGE_PATIENCE` in [`crates/node/src/driver/mod.rs`](../crates/node/src/driver/mod.rs) |
 | Largest journal or control-socket frame | 64 MiB | `journal::MAX_FRAME_BYTES`; `agent_dir::MAX_FRAME_BYTES` |
 | Fixed per-row allowance in retention's byte count | 48 bytes | `ITEM_OVERHEAD_BYTES` in [`crates/store/src/lib.rs`](../crates/store/src/lib.rs) |
+| Reports kept in `reports/` | The newest 20, dumps and core reports alike | `REPORTS_KEPT` in [`crates/node/src/install.rs`](../crates/node/src/install.rs) |
+| Recent directories kept per profile | 200 | `RECENT_DIRECTORIES` in [`crates/store/src/lib.rs`](../crates/store/src/lib.rs) |
+| Chats in the terminal client's layout file | The 200 changed most recently | `CHATS_KEPT` in [`crates/tui/src/app.rs`](../crates/tui/src/app.rs) |
 | Analytics batch: wait, size and queue | Sent every 60 s, or at once at 50 events; at most 1,000 waiting, beyond which new events are dropped; at most 100 events in one request, the server's limit | `Params` in [`crates/analytics/src/upload.rs`](../crates/analytics/src/upload.rs) |
 | Analytics retries | Two more tries, 5 s then 10 s apart, then the batch is dropped; 10 s per request; a shutdown waits at most 2 s and the phone 3 s as it leaves the screen | `Params` in [`crates/analytics/src/upload.rs`](../crates/analytics/src/upload.rs); `SHUTDOWN_FLUSH` in [`crates/node/src/telemetry.rs`](../crates/node/src/telemetry.rs); `BACKGROUND_FLUSH` in [`crates/app-embedded/src/lib.rs`](../crates/app-embedded/src/lib.rs) |
 | Analytics check-in | Once a day per profile, never sooner than a minute after a start | `CHECK_IN_EVERY_MS` and `CHECK_IN_SETTLE_MS` in [`crates/node/src/telemetry.rs`](../crates/node/src/telemetry.rs) |

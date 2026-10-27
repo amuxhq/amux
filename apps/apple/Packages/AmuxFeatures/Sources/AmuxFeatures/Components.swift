@@ -59,9 +59,11 @@ private struct HidesNeedsYouDotKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-    /// Whether the needs-you dot is drawn clear. Only a driving build sets
-    /// it, to show that a whole-screen golden notices one small mark gone;
-    /// the dot is too small to be an element the geometry names.
+    /// Whether the needs-you dots are drawn clear: the one beside a row's
+    /// age and the mark in front of a row whose agent waits on you. Only a
+    /// driving build sets it, to show that a whole-screen golden notices one
+    /// small mark gone; the dots are too small to be elements the geometry
+    /// names.
     public var hidesNeedsYouDot: Bool {
         get { self[HidesNeedsYouDotKey.self] }
         set { self[HidesNeedsYouDotKey.self] = newValue }

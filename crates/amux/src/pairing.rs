@@ -1,6 +1,7 @@
-//! Pairing, peers and sign-in: the selected profile's calls on the front
-//! door, and the two hidden commands SSH runs on the far host of an SSH
-//! pairing (`amux pair-recv`) and of every SSH link after it (`amux relay`).
+//! Pairing, hosts and sign-in: the selected profile's calls on its own
+//! socket, a sign-in on the front door, and the two hidden commands SSH
+//! runs on the far host of an SSH pairing (`amux internal ssh-pair`) and of
+//! every SSH link after it (`amux internal ssh-link`).
 
 use std::io::{IsTerminal as _, Write as _};
 use std::net::SocketAddr;
@@ -10,16 +11,17 @@ use std::time::Duration;
 use anyhow::{Context as _, Result, anyhow, bail};
 use tonic::transport::Channel;
 use uuid::Uuid;
-use wire::client_service_client::ClientServiceClient;
-use wire::profile_service_client::ProfileServiceClient;
+use wire::installation_service_client::InstallationServiceClient;
+use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
-    BeginPairRequest, BindProfileRequest, Empty, GetPeerRequest, HostEntry, HostRef,
-    PairingIdentity, PairingWindow, PeerEntry, PendingPair, PendingPairRequest, ProfileInfo,
-    ProfileRequest, RouteKind, StartPairingRequest, Trust, TrustSshPeerRequest, UnpairRequest,
+    BeginPairRequest, BindProfileRequest, Empty, HostEntry, HostRef, PairingIdentity,
+    PairingWindow, PendingPair, RouteKind, StartPairingRequest, TrustSshPeerRequest, UnpairRequest,
     begin_pair_request, host_ref, pairing_window, peer_reachability, start_pairing_request,
 };
 
-type Door = ProfileServiceClient<Channel>;
+type Door = InstallationServiceClient<Channel>;
+/// The selected profile's administration, on its own socket.
+pub type Admin = ProfileAdminServiceClient<Channel>;
 
 /// How often a waiting pairing mode asks whether it is still open.
 const PAIRING_POLL: Duration = Duration::from_secs(1);
@@ -35,7 +37,7 @@ pub enum Target {
     Found(String),
     /// A host's direct address.
     Addr(SocketAddr),
-    /// An ssh destination: pairing runs `amux pair-recv` there.
+    /// An ssh destination: pairing runs `amux internal ssh-pair` there.
     Ssh(String),
 }
 
@@ -58,7 +60,7 @@ impl Target {
 /// Opens pairing mode on this host and waits until another host pairs, it
 /// expires, or the command is ended (Ctrl+C, its terminal closing, a kill),
 /// which closes it.
-pub async fn wait(mut door: Door, profile: &ProfileInfo, qr: bool, link: bool) -> Result<()> {
+pub async fn wait(mut admin: Admin, qr: bool, link: bool) -> Result<()> {
     let method = if qr {
         start_pairing_request::Method::Qr(Empty {})
     } else {
@@ -69,9 +71,8 @@ pub async fn wait(mut door: Door, profile: &ProfileInfo, qr: bool, link: bool) -
     // One that arrives while it opens is kept and closes it at once.
     let ended = ended()?;
     tokio::pin!(ended);
-    let started = door
+    let started = admin
         .start_pairing(StartPairingRequest {
-            profile_id: profile.id.clone(),
             method: Some(method),
             ttl_seconds: None,
         })
@@ -81,7 +82,7 @@ pub async fn wait(mut door: Door, profile: &ProfileInfo, qr: bool, link: bool) -
     match invitation(&started, link) {
         Ok(lines) => lines.iter().for_each(|line| println!("{line}")),
         Err(error) => {
-            cancel(door, profile).await?;
+            cancel(admin).await?;
             return Err(error);
         }
     }
@@ -93,12 +94,10 @@ pub async fn wait(mut door: Door, profile: &ProfileInfo, qr: bool, link: bool) -
     let deadline = tokio::time::Instant::now() + ttl;
     loop {
         tokio::select! {
-            () = &mut ended => return cancel(door, profile).await,
+            () = &mut ended => return cancel(admin).await,
             () = tokio::time::sleep(PAIRING_POLL) => {
-                let status = door
-                    .get_pairing_status(ProfileRequest {
-                        profile_id: profile.id.clone(),
-                    })
+                let status = admin
+                    .get_pairing_status(wire::GetPairingStatusRequest {})
                     .await
                     .map_err(plain)?
                     .into_inner();
@@ -122,19 +121,19 @@ pub async fn wait(mut door: Door, profile: &ProfileInfo, qr: bool, link: bool) -
 /// through, until it expires, `amux pair --cancel` closes it, or the daemon
 /// restarts. For an unattended demo, such as an app reviewer pairing a
 /// phone with a machine nobody watches.
-pub async fn demo(mut door: Door, profile: &ProfileInfo, pin: String, ttl: Duration) -> Result<()> {
-    let started = door
+pub async fn demo(mut admin: Admin, pin: String, ttl: Duration) -> Result<()> {
+    let started = admin
         .start_pairing(StartPairingRequest {
-            profile_id: profile.id.clone(),
             method: Some(start_pairing_request::Method::DemoPin(pin)),
             ttl_seconds: Some(ttl.as_secs()),
         })
         .await
         .map_err(already_open)?
         .into_inner();
-    invitation(&started, false)?
-        .iter()
-        .for_each(|line| println!("{line}"));
+    // The PIN alone: the next steps are for a window someone watches.
+    if let Some(pin) = invitation(&started, false)?.first() {
+        println!("{pin}");
+    }
     println!(
         "Demo pairing is open for {}: this PIN pairs any device that presents it, again and \
          again, until it expires, `amux pair --cancel` closes it, or amux restarts.",
@@ -224,17 +223,37 @@ fn invitation(started: &PairingWindow, link: bool) -> Result<Vec<String>> {
     let mut lines = Vec::new();
     match &started.secret {
         Some(pairing_window::Secret::Pin(pin)) => {
+            // What to do next on each kind of device, so the PIN is never
+            // left to the docs to explain.
+            let name = started
+                .identity
+                .as_ref()
+                .map(|identity| identity.name.as_str())
+                .unwrap_or_default();
             lines.push(format!("Pairing PIN: {}", spaced(pin)));
-            if !started.addrs.is_empty() {
-                lines.push(format!(
-                    "This host listens at {}.",
-                    started.addrs.join(", ")
-                ));
-            }
+            lines.push(String::new());
+            lines.push(format!(
+                "On the phone: choose {} and enter the PIN, or run `amux pair --qr` here to scan \
+                 instead.",
+                if name.is_empty() { "this host" } else { name }
+            ));
+            let computer = match (name, started.addrs.first()) {
+                ("", Some(addr)) => format!("`amux pair {addr}`"),
+                ("", None) => "`amux pair <this host>`".to_owned(),
+                (name, Some(addr)) => format!(
+                    "`{}` (or `amux pair {addr}` if it is not found nearby)",
+                    pair_command(name)
+                ),
+                (name, None) => format!("`{}`", pair_command(name)),
+            };
+            lines.push(format!(
+                "On another computer: run {computer} and enter the PIN."
+            ));
         }
         Some(pairing_window::Secret::QrSecret(secret)) => {
             let payload = pair_link(started, secret)?;
             lines.push(terminal_qr(&payload)?);
+            lines.push("Scan it with the phone's camera.".to_owned());
             if link {
                 lines.push(format!("Pairing link: {payload}"));
             }
@@ -292,12 +311,11 @@ fn terminal_qr(payload: &str) -> Result<String> {
 }
 
 /// Closes this host's pairing mode.
-pub async fn cancel(mut door: Door, profile: &ProfileInfo) -> Result<()> {
-    door.cancel_pairing(ProfileRequest {
-        profile_id: profile.id.clone(),
-    })
-    .await
-    .map_err(plain)?;
+pub async fn cancel(mut admin: Admin) -> Result<()> {
+    admin
+        .cancel_pairing(wire::CancelPairingRequest {})
+        .await
+        .map_err(plain)?;
     // The terminal may be gone (SIGHUP): saying so must not fail the close.
     let _ = writeln!(std::io::stdout(), "Pairing mode closed.");
     Ok(())
@@ -305,28 +323,27 @@ pub async fn cancel(mut door: Door, profile: &ProfileInfo) -> Result<()> {
 
 /// Pairs with a host found nearby or at an address with the PIN its person
 /// reads out, or with a host over SSH.
-pub async fn pair(
-    door: Door,
-    client: &mut ClientServiceClient<Channel>,
-    profile: &ProfileInfo,
-    target: Target,
-) -> Result<()> {
+pub async fn pair(admin: Admin, client: &mut wire::ClientStubs, target: Target) -> Result<()> {
     let (host_id, addrs) = match target {
-        Target::Ssh(target) => return pair_over_ssh(door, profile, target).await,
+        Target::Ssh(target) => return pair_over_ssh(admin, target).await,
         Target::Addr(addr) => (Vec::new(), vec![addr.to_string()]),
         Target::Found(name) => {
             let (hosts, _) = crate::verbs::inventory(client).await?;
             let host = candidate(&hosts, &name)?;
-            (host.host_id.clone(), host.addrs.clone())
+            (
+                host.host_id().to_vec(),
+                host.candidate()
+                    .map(|candidate| candidate.addrs.clone())
+                    .unwrap_or_default(),
+            )
         }
     };
     let pin = ask("Pairing PIN shown on the other host: ")?;
     let secret =
         begin_pair_request::Secret::Pin(pin.chars().filter(char::is_ascii_digit).collect());
     confirm(
-        door,
+        admin,
         BeginPairRequest {
-            profile_id: profile.id.clone(),
             host_id,
             secret: Some(secret),
             addrs,
@@ -336,12 +353,11 @@ pub async fn pair(
 }
 
 /// Pairs with the host whose QR code's link this is.
-pub async fn pair_with_link(door: Door, profile: &ProfileInfo, link: &str) -> Result<()> {
+pub async fn pair_with_link(admin: Admin, link: &str) -> Result<()> {
     let invitation = node::parse_pair_link(link).context("the pairing link")?;
     confirm(
-        door,
+        admin,
         BeginPairRequest {
-            profile_id: profile.id.clone(),
             host_id: invitation.host_id.as_bytes().to_vec(),
             secret: Some(begin_pair_request::Secret::QrSecret(invitation.secret)),
             addrs: invitation.addrs.iter().map(ToString::to_string).collect(),
@@ -353,37 +369,35 @@ pub async fn pair_with_link(door: Door, profile: &ProfileInfo, link: &str) -> Re
 fn candidate<'a>(hosts: &'a [HostEntry], name: &str) -> Result<&'a HostEntry> {
     let found = hosts
         .iter()
-        .filter(|host| host.trust() == Trust::Candidate)
+        .filter(|host| host.candidate().is_some())
         .filter(|host| {
-            host.name == name
-                || Uuid::from_slice(&host.host_id).is_ok_and(|id| id.to_string() == name)
+            host.name() == name
+                || Uuid::from_slice(host.host_id()).is_ok_and(|id| id.to_string() == name)
         })
         .collect::<Vec<_>>();
     match found.as_slice() {
         [host] => Ok(host),
         [] => Err(anyhow!(
-            "no host named {name} is waiting nearby; `amux peers` lists the hosts found"
+            "no host named {name} is waiting nearby; `amux hosts` lists the hosts found"
         )),
         _ => Err(anyhow!(
-            "more than one host nearby is named {name}; pair by the id `amux peers` shows"
+            "more than one host nearby is named {name}; pair by the id `amux hosts` shows"
         )),
     }
 }
 
-async fn confirm(mut door: Door, pairing: BeginPairRequest) -> Result<()> {
+async fn confirm(mut admin: Admin, pairing: BeginPairRequest) -> Result<()> {
     let secret = match pairing.secret {
         Some(begin_pair_request::Secret::QrSecret(_)) => "pairing link",
         _ => "PIN",
     };
-    let profile_id = pairing.profile_id.clone();
-    let pending = door
+    let pending = admin
         .begin_pair(pairing)
         .await
         .map_err(|status| refused(status, secret))?
         .into_inner();
-    let peer = door
-        .confirm_pair(PendingPairRequest {
-            profile_id,
+    let peer = admin
+        .confirm_pair(wire::ConfirmPairRequest {
             token: pending.token.clone(),
         })
         .await
@@ -412,7 +426,7 @@ fn refused(status: tonic::Status, secret: &str) -> anyhow::Error {
     plain(status)
 }
 
-fn paired(peer: &PeerEntry, pending: &PendingPair) -> String {
+fn paired(peer: &wire::Peer, pending: &PendingPair) -> String {
     let route = match pending.via() {
         RouteKind::Relay => "through the relay",
         _ => "on this network",
@@ -440,7 +454,7 @@ fn ask(prompt: &str) -> Result<String> {
 
 /// The profile's directory: where its client socket, identity and link
 /// socket live, on this machine.
-fn profile_dir(profile: &ProfileInfo) -> Result<PathBuf> {
+fn profile_dir(profile: &wire::Profile) -> Result<PathBuf> {
     Path::new(&profile.socket_path)
         .parent()
         .map(Path::to_owned)
@@ -452,99 +466,84 @@ fn profile_dir(profile: &ProfileInfo) -> Result<PathBuf> {
         })
 }
 
-/// The trust an SSH pairing establishes, stored through the front door.
-struct DoorAdmin {
-    door: Door,
-    profile: Uuid,
-}
-
-#[async_trait::async_trait]
-impl node::PairingAdmin for DoorAdmin {
-    fn profile_id(&self) -> node::ProfileId {
-        self.profile
-    }
-
-    async fn pair_ssh_peer(
-        &self,
-        peer: node::SshPairingPeer,
-        target: Option<node::SshTarget>,
-    ) -> Result<(), String> {
-        self.door
-            .clone()
-            .trust_ssh_peer(TrustSshPeerRequest {
-                profile_id: self.profile.as_bytes().to_vec(),
-                peer: Some(PairingIdentity {
-                    host_id: peer.host_id.as_bytes().to_vec(),
-                    pubkey: peer.pubkey,
-                    name: peer.name,
-                    expires_at_ms: 0,
-                }),
-                ssh_target: target.map(|target| wire::SshTarget {
-                    target: target.target,
-                    profile_id: target.profile.as_bytes().to_vec(),
-                }),
-            })
-            .await
-            .map(drop)
-            .map_err(|status| status.message().to_owned())
-    }
-}
-
-async fn admin(door: &Door, profile: &ProfileInfo) -> Result<(DoorAdmin, String)> {
-    let name = door
+/// This profile's identity as its daemon holds it, for the far end of an
+/// SSH pairing.
+async fn own_identity(admin: &Admin) -> Result<PairingIdentity> {
+    let own = admin
         .clone()
-        .get_device_identity(ProfileRequest {
-            profile_id: profile.id.clone(),
-        })
+        .get_device_identity(wire::GetDeviceIdentityRequest {})
         .await
         .map_err(plain)?
-        .into_inner()
-        .name;
-    let admin = DoorAdmin {
-        door: door.clone(),
-        profile: Uuid::from_slice(&profile.id).context("the profile id")?,
-    };
-    Ok((admin, name))
+        .into_inner();
+    Ok(PairingIdentity {
+        host_id: own.host_id,
+        pubkey: own.pubkey,
+        name: own.name,
+        expires_at_ms: 0,
+    })
 }
 
-async fn pair_over_ssh(door: Door, profile: &ProfileInfo, target: String) -> Result<()> {
-    let (admin, name) = admin(&door, profile).await?;
-    let peer = node::pair_via_ssh_target(profile_dir(profile)?, name, target, &admin).await?;
+/// Trusts `peer`, whose identity SSH carried; `target` is where this host
+/// reaches it, when this host ran the SSH.
+async fn trust_ssh_peer(
+    admin: &Admin,
+    peer: PairingIdentity,
+    target: Option<String>,
+) -> Result<()> {
+    admin
+        .clone()
+        .trust_ssh_peer(TrustSshPeerRequest {
+            peer: Some(peer),
+            ssh_target: target.map(|target| wire::SshTarget { target }),
+        })
+        .await
+        .map_err(plain)?;
+    Ok(())
+}
+
+async fn pair_over_ssh(admin: Admin, target: String) -> Result<()> {
+    let own = own_identity(&admin).await?;
+    let peer = node::exchange_over_ssh(&target, &own).await?;
+    trust_ssh_peer(&admin, peer.clone(), Some(target)).await?;
     println!(
         "Paired with {} ({}) over SSH.",
-        peer.identity.name, peer.identity.host_id
+        peer.name,
+        host(&peer.host_id)
     );
     Ok(())
 }
 
-/// `amux pair-recv`, run by SSH on this host: the identity exchange's far
-/// end, over stdin and stdout.
+/// `amux internal ssh-pair`, run by SSH on this host: the identity exchange's far
+/// end, over stdin and stdout. It trusts the near end before answering, so
+/// the near end trusts only a host that has trusted it.
 #[cfg(unix)]
-pub async fn pair_recv(door: Door, profile: &ProfileInfo) -> Result<()> {
-    let (admin, name) = admin(&door, profile).await?;
-    node::pair_via_ssh_responder_stdio(profile_dir(profile)?, name, &admin).await?;
+pub async fn pair_recv(admin: Admin) -> Result<()> {
+    let own = own_identity(&admin).await?;
+    let mut stdio = node::ssh_stdio();
+    let peer = node::read_ssh_identity(&mut stdio).await?;
+    if peer.host_id == own.host_id || peer.pubkey == own.pubkey {
+        // The near end learns it reached itself only from the answer.
+        node::write_ssh_identity(&mut stdio, &own).await?;
+        bail!("SSH pairing peer is this device");
+    }
+    trust_ssh_peer(&admin, peer, None).await?;
+    node::write_ssh_identity(&mut stdio, &own).await?;
     Ok(())
 }
 
-/// `amux relay`, run by SSH on this host: stdin and stdout joined to the
+/// `amux internal ssh-link`, run by SSH on this host: stdin and stdout joined to the
 /// profile's link socket, carrying a peer's link.
 #[cfg(unix)]
-pub async fn relay(profile: &ProfileInfo) -> Result<()> {
+pub async fn relay(profile: &wire::Profile) -> Result<()> {
     let socket = profile_dir(profile)?.join(node::LINK_SOCKET);
     node::relay_stdio_to_unix_socket(socket).await?;
     Ok(())
 }
 
 /// The trusted hosts and the hosts found nearby that could be paired.
-pub async fn peers(
-    mut door: Door,
-    client: &mut ClientServiceClient<Channel>,
-    profile: &ProfileInfo,
-) -> Result<()> {
-    let trusted = door
-        .list_peers(ProfileRequest {
-            profile_id: profile.id.clone(),
-        })
+pub async fn hosts(mut admin: Admin, client: &mut wire::ClientStubs) -> Result<()> {
+    let trusted = admin
+        .list_peers(wire::ListPeersRequest {})
         .await
         .map_err(plain)?
         .into_inner()
@@ -554,7 +553,21 @@ pub async fn peers(
     Ok(())
 }
 
-fn peer_table(trusted: &[PeerEntry], hosts: &[HostEntry]) -> String {
+/// The PAIRED column of a host this machine cannot use until it pairs.
+fn pair_again(name: &str) -> String {
+    format!("no: {}", pair_command(name))
+}
+
+/// The command that pairs with the host of this name, quoted for a shell.
+fn pair_command(name: &str) -> String {
+    if name.contains(char::is_whitespace) {
+        format!("amux pair '{name}'")
+    } else {
+        format!("amux pair {name}")
+    }
+}
+
+fn peer_table(trusted: &[wire::Peer], hosts: &[HostEntry]) -> String {
     let mut rows = vec![[
         "HOST".to_owned(),
         "ID".into(),
@@ -564,18 +577,23 @@ fn peer_table(trusted: &[PeerEntry], hosts: &[HostEntry]) -> String {
     let mut paired = trusted.to_vec();
     paired.sort_by(|a, b| a.name.cmp(&b.name));
     for peer in &paired {
-        let reached = match hosts.iter().find(|host| host.host_id == peer.host_id) {
-            Some(host) if host.presence() == wire::Presence::Online => match host.via() {
-                wire::RouteKind::Relay => "online, through the relay",
-                wire::RouteKind::Ssh => "online, over SSH",
-                _ => "online, on this network",
+        let listed = hosts.iter().find(|host| host.host_id() == peer.host_id);
+        // Trust is each side's own: this machine still trusts a host that
+        // no longer trusts it, which only pairing again undoes.
+        let revoked = listed.is_some_and(|host| {
+            matches!(host.reach(), Some(wire::trusted::Reach::Offline(offline)) if offline.revoked)
+        });
+        let reached = match listed {
+            Some(_) if revoked => "no longer trusts this machine",
+            Some(host) => match host.online() {
+                Some(wire::RouteKind::Relay) => "online, through the relay",
+                Some(wire::RouteKind::Ssh) => "online, over SSH",
+                Some(_) => "online, on this network",
+                // The daemon lists a host away only when the relay alone
+                // sees it and the account is on the free plan.
+                None if host.away() => "away: the free plan does not relay between hosts",
+                None => "away",
             },
-            // The daemon lists a host away only when the relay alone sees it
-            // and the account is on the free plan.
-            Some(host) if host.presence() == wire::Presence::Away => {
-                "away: the free plan does not relay between hosts"
-            }
-            Some(_) => "away",
             None => "not listed",
         };
         let ssh = peer.reachabilities.iter().find_map(|way| match &way.kind {
@@ -589,25 +607,24 @@ fn peer_table(trusted: &[PeerEntry], hosts: &[HostEntry]) -> String {
                 Some(target) => format!("{reached} (ssh {target})"),
                 None => reached.to_owned(),
             },
-            "yes".to_owned(),
+            if revoked {
+                pair_again(&peer.name)
+            } else {
+                "yes".to_owned()
+            },
         ]);
     }
     let mut found = hosts
         .iter()
-        .filter(|host| host.trust() == Trust::Candidate)
+        .filter(|host| host.candidate().is_some())
         .collect::<Vec<_>>();
-    found.sort_by(|a, b| a.name.cmp(&b.name));
+    found.sort_by(|a, b| a.name().cmp(b.name()));
     for candidate in found {
-        let name = if candidate.name.contains(char::is_whitespace) {
-            format!("'{}'", candidate.name)
-        } else {
-            candidate.name.clone()
-        };
         rows.push([
-            candidate.name.clone(),
-            host(&candidate.host_id),
+            candidate.name().to_owned(),
+            host(candidate.host_id()),
             "found nearby".to_owned(),
-            format!("no: amux pair {name}"),
+            pair_again(candidate.name()),
         ]);
     }
     if rows.len() == 1 {
@@ -637,16 +654,15 @@ fn peer_table(trusted: &[PeerEntry], hosts: &[HostEntry]) -> String {
 }
 
 /// Stops trusting a paired host, asking first unless forced.
-pub async fn unpair(mut door: Door, profile: &ProfileInfo, peer: &str, force: bool) -> Result<()> {
+pub async fn unpair(mut admin: Admin, peer: &str, force: bool) -> Result<()> {
     let reference = HostRef {
         of: Some(match Uuid::parse_str(peer) {
             Ok(id) => host_ref::Of::HostId(id.as_bytes().to_vec()),
             Err(_) => host_ref::Of::Name(peer.to_owned()),
         }),
     };
-    let entry = door
-        .get_peer(GetPeerRequest {
-            profile_id: profile.id.clone(),
+    let entry = admin
+        .get_peer(wire::GetPeerRequest {
             peer: Some(reference.clone()),
         })
         .await
@@ -666,9 +682,8 @@ pub async fn unpair(mut door: Door, profile: &ProfileInfo, peer: &str, force: bo
             return Ok(());
         }
     }
-    let removed = door
+    let removed = admin
         .unpair(UnpairRequest {
-            profile_id: profile.id.clone(),
             peer: Some(reference),
             reason: "user".to_owned(),
         })
@@ -683,7 +698,7 @@ pub async fn unpair(mut door: Door, profile: &ProfileInfo, peer: &str, force: bo
 /// browser, then the daemon binds the profile with the refresh token it
 /// gave. A profile that already has agents or paired hosts is adopted only
 /// when the person says so.
-pub async fn login(mut door: Door, profile: Option<&ProfileInfo>, cloud_url: &str) -> Result<()> {
+pub async fn login(mut door: Door, profile: Option<&wire::Profile>, cloud_url: &str) -> Result<()> {
     let refresh = node::run_device_flow(cloud_url)
         .await
         .context("signing in")?;
@@ -724,12 +739,11 @@ pub async fn login(mut door: Door, profile: Option<&ProfileInfo>, cloud_url: &st
 }
 
 /// Signs a profile out; its agents and paired hosts stay.
-pub async fn logout(mut door: Door, profile: &ProfileInfo) -> Result<()> {
-    door.logout_profile(ProfileRequest {
-        profile_id: profile.id.clone(),
-    })
-    .await
-    .map_err(plain)?;
+pub async fn logout(mut admin: Admin, profile: &wire::Profile) -> Result<()> {
+    admin
+        .sign_out(wire::SignOutRequest {})
+        .await
+        .map_err(plain)?;
     println!(
         "Signed {} out; its agents and paired hosts stay.",
         profile.label
@@ -805,8 +819,12 @@ mod tests {
     }
 
     #[test]
-    fn a_pin_reads_in_two_groups() {
+    fn a_pin_reads_in_two_groups_with_what_each_device_does_next() {
         let started = PairingWindow {
+            identity: Some(PairingIdentity {
+                name: "den mac".into(),
+                ..PairingIdentity::default()
+            }),
             ttl_seconds: 300,
             addrs: vec!["10.0.0.2:7420".into()],
             secret: Some(pairing_window::Secret::Pin("482913".into())),
@@ -816,7 +834,13 @@ mod tests {
             invitation(&started, false).unwrap(),
             vec![
                 "Pairing PIN: 482 913".to_owned(),
-                "This host listens at 10.0.0.2:7420.".to_owned(),
+                String::new(),
+                "On the phone: choose den mac and enter the PIN, or run `amux pair --qr` here \
+                 to scan instead."
+                    .to_owned(),
+                "On another computer: run `amux pair 'den mac'` (or `amux pair 10.0.0.2:7420` \
+                 if it is not found nearby) and enter the PIN."
+                    .to_owned(),
             ]
         );
     }
@@ -841,26 +865,17 @@ mod tests {
     }
 
     #[test]
-    fn peers_list_trusted_hosts_then_hosts_found_nearby() {
-        let online = HostEntry {
+    fn hosts_lists_trusted_hosts_then_hosts_found_nearby() {
+        let online = HostEntry::trusted_host(
+            vec![1; 16],
+            "studio",
+            wire::trusted::Reach::Online(wire::RouteKind::Relay as i32),
+        );
+        let nearby = HostEntry::candidate_host(vec![2; 16], "den mac", Vec::new());
+        let trusted = [wire::Peer {
             host_id: vec![1; 16],
             name: "studio".into(),
-            trust: Trust::Trusted as i32,
-            presence: wire::Presence::Online as i32,
-            via: wire::RouteKind::Relay as i32,
-            ..HostEntry::default()
-        };
-        let nearby = HostEntry {
-            host_id: vec![2; 16],
-            name: "den mac".into(),
-            trust: Trust::Candidate as i32,
-            presence: wire::Presence::Online as i32,
-            ..HostEntry::default()
-        };
-        let trusted = [PeerEntry {
-            host_id: vec![1; 16],
-            name: "studio".into(),
-            ..PeerEntry::default()
+            ..wire::Peer::default()
         }];
         let table = peer_table(&trusted, &[online, nearby]);
         let lines: Vec<&str> = table.lines().collect();
@@ -875,23 +890,44 @@ mod tests {
     /// account's free plan: the table says so, not a bare "away".
     #[test]
     fn a_peer_away_on_the_free_plan_names_the_plan() {
-        let away = HostEntry {
+        let away = HostEntry::trusted_host(
+            vec![1; 16],
+            "plap",
+            wire::trusted::Reach::Away(wire::Empty {}),
+        );
+        let trusted = [wire::Peer {
             host_id: vec![1; 16],
             name: "plap".into(),
-            trust: Trust::Trusted as i32,
-            presence: wire::Presence::Away as i32,
-            via: wire::RouteKind::Relay as i32,
-            ..HostEntry::default()
-        };
-        let trusted = [PeerEntry {
-            host_id: vec![1; 16],
-            name: "plap".into(),
-            ..PeerEntry::default()
+            ..wire::Peer::default()
         }];
         let table = peer_table(&trusted, &[away]);
         assert!(
             table.contains("away: the free plan does not relay between hosts"),
             "{table}"
         );
+    }
+
+    /// A host that unpaired this machine is still trusted here, but the
+    /// table says it no longer trusts this machine and how to pair again,
+    /// not a bare "away" beside "yes".
+    #[test]
+    fn a_peer_that_no_longer_trusts_this_machine_says_to_pair_again() {
+        let revoked = HostEntry::trusted_host(
+            vec![1; 16],
+            "desk",
+            wire::trusted::Reach::Offline(wire::Offline {
+                revoked: true,
+                ..Default::default()
+            }),
+        );
+        let trusted = [wire::Peer {
+            host_id: vec![1; 16],
+            name: "desk".into(),
+            ..wire::Peer::default()
+        }];
+        let table = peer_table(&trusted, &[revoked]);
+        let row = table.lines().nth(1).unwrap();
+        assert!(row.contains("no longer trusts this machine"), "{table}");
+        assert!(row.ends_with("no: amux pair desk"), "{table}");
     }
 }

@@ -38,6 +38,11 @@ under `target/ios/` that the bridge recipes build (see
 `AmuxFeatures` to three rules: no UIKit outside a registered leaf, no
 platform conditionals, and no spinners. A screen waits by showing what it
 already has, marked as not yet confirmed, rather than covering it.
+`apps/apple/Tools/test-waits-lint.sh`, run beside it, refuses a Swift test
+that yields a fixed number of times and hopes a task has finished: an
+action that waits on a host returns its task (`ChatModel.send()`,
+`attach`, `reachedTop()`, an answer), and a test awaits that, or yields
+until a condition holds.
 
 ## From the runtime to a screen
 
@@ -59,10 +64,11 @@ Swift owns the loop. The library's cores step on one serial queue,
 `CoreLoop`'s in `Runtime.swift`; links, channels and gRPC run on one confined
 Rust thread, which never calls into Swift. Whenever something waits for a
 step, the library makes a descriptor readable, and a dispatch source watching
-it from the core queue steps there. A step hands back what to do: the fleets
-and chats that moved, which go to the main actor by fleet and chat number;
-the answers to acts, each to whoever awaits its ticket; and whether to read
-the profile list again. The cores' timers sleep on the confined Rust thread
+it from the core queue steps there. A step hands back what to do: what moved
+in each open fleet and chat, as deltas decoded on the core queue and applied
+on the main actor; the answers to acts, each to whoever awaits its ticket,
+after the deltas of what the act moved; and the profile list when it moved.
+The cores' timers sleep on the confined Rust thread
 and come back as ordinary inputs that make the descriptor readable, so Swift
 arms none. Reads return at once on the main thread. Every call that blocks
 until the cores have done something (starting and stopping, opening a profile
@@ -70,15 +76,18 @@ or a chat, the profile list, a moment of the app's life) steps them on the
 thread that makes it, so it is made on the core queue, never on the main
 thread, even when the main thread waits for it.
 
-A redraw names the fleet or the chat that moved. The bundle takes that one's
-changes and reads again only what changed. A chat is a `ChatModel` over an
-open `Chat`:
+The fleet and each chat open whole, and after that the runtime hands over only
+what moved in them, each field of a delta only when it changed: home's
+sections and the hosts for the fleet; for a chat its keys, the rows that
+changed, the frame, the head ask, the overview and the settings. Rust keeps
+what it last handed over, so nothing is read back or compared on the main
+thread. A chat is a `ChatModel` over an open `Chat`:
 
-- It holds the chat's row keys, oldest first: the session's window. Keys
-  never move, and the list changes only at its two edges: newer keys above
-  the newest it holds, older ones below its oldest when the reader scrolls
-  up, and while the reader follows, the oldest keys the window drops as it
-  trims to its cap of 200 rows.
+- It holds the chat's row keys, oldest first, as the deltas move them: the
+  session's window. Keys never move, and the list changes only at its two
+  edges: newer keys above the newest it holds, older ones below its oldest
+  when the reader scrolls up, and while the reader follows, the oldest keys
+  the window drops as it trims to its cap of 200 rows.
 - `following` is told to the session whenever it changes: leaving the newest
   row, and returning to it by reaching the bottom, New activity, or a send.
   In history the session holds arrivals apart from the window, and New
@@ -92,27 +101,29 @@ open `Chat`:
   A page is asked for only when fewer than a page of held rows are left
   above the run, one per arrival at the top. New activity, a send and a
   Reset draw the newest run again.
-- Each row is a `RowCell` read by key when it is first drawn. An update names
-  the keys it changed, and only cells already drawn are read again, so one
-  changed item redraws one cell.
-- The whole list is read again only when a change batch says it was reloaded,
-  which is what a Reset's swap and the reload of a head that moved on do: the
-  rows on screen stay until the rebuilt transcript replaces them.
+- Each row is a `RowCell`, read by key when it is first drawn. A delta hands
+  over the row of every key it held that changed, so one changed item
+  redraws one cell; a new row is read as it is drawn.
+  Opening or closing a run is handed over the same way, by the next delta.
+- The whole list is handed over again only when a delta reloads it, which is
+  what a Reset's swap and the reload of a head that moved on do: the rows on
+  screen stay until the rebuilt transcript replaces them, and the cells kept
+  are read again in place.
 - It keeps the head ask's unsent answers and a review in progress for as
   long as the chat is open, so leaving the page loses none of them. The
-  draft and its attachments last longer: `DraftShelf` keeps each one on the
-  phone, per account and agent, as it changes, so a draft outlives its
-  chat's session and the app being closed. A prompt held for a host that
-  cannot be reached is kept in the draft too, ahead of what is typed, from
-  the moment it is held until it is released and sent, so a phone that
-  closes first finds its words back in the composer. A chat holding one
-  stays open past its retention until it goes, as only the open chat takes
-  it back out of the kept draft. Drafts never leave the device,
-  and removing an account from the phone forgets its drafts. Deleting an
-  agent from the phone forgets its draft, and nothing typed into its chat
-  while the page leaves is kept. An agent deleted elsewhere leaves its draft
-  on the phone: the phone reads the fleet as it stands and is not told of
-  removals.
+  draft and its attachments last longer: the chat hands each one, as it
+  changes, to the profile's own daemon on the phone, as the terminal hands
+  its drafts to its machine's (docs/CLIENT.md), so a draft outlives its
+  chat's session and the app being closed, and the chat opens with it again.
+  A prompt held for a host that cannot be reached is kept in the draft too,
+  ahead of what is typed, from the moment it is held until it is released
+  and sent, so a phone that closes first finds its words back in the
+  composer. A chat holding one stays open past its retention until it goes,
+  as only the open chat takes it back out of the kept draft. Drafts never
+  leave the device, and removing an account deletes its profile and its
+  drafts with it. The daemon forgets a deleted agent's draft, wherever it
+  was deleted, and nothing typed into its chat while the page leaves is
+  kept.
 - An attachment is checked against the stated limit, 64 MB of content
   (`wire::ATTACHMENT_SIZE_LIMIT`, copied as `ChatModel.attachmentLimit`),
   before anything is read or uploaded, and one over it is refused in words
@@ -147,7 +158,7 @@ five minutes, plus a chat a push is bringing current.
 
 App startup does not require an account. The phone is one installation of
 the daemon with one profile per account, as a desktop is; the daemon's
-profile registry creates, binds, signs out, pauses and deletes them.
+profile registry creates, binds, signs out and deletes them.
 
 - With nobody signed in, the installation holds one unbound profile and the
   app shows its fleet. The first sign-in binds that profile, keeping its key,
@@ -157,9 +168,8 @@ profile registry creates, binds, signs out, pauses and deletes them.
   network, and signing back in binds the same profile.
 - Only the profile on screen has its fleet open. Switching account opens the
   other profile's fleet without stopping the installation.
-- Only the profile on screen keeps its relay link: every other bound profile
-  is paused, which holds its relay link down and keeps its direct links and
-  store.
+- Every bound profile keeps its relay link, on screen or not, so a push or
+  a switch of account finds it already linked.
 - The profile on screen keeps a source open for every agent it lists while
   the app is in front of somebody. Every other profile, and the one on screen
   while the app is in the background, opens sources only for the chats that
@@ -186,7 +196,7 @@ The account disc at the top left of the Agents list opens a menu of the
 accounts, Add Account and Settings, a sheet with its own navigation stack.
 The disc shows the account's profile picture: amux.sh names it in the
 `picture` claim of its userinfo answer, the daemon keeps it with the account
-when it binds the profile, and `ProfileInfo.account_picture` carries it to
+when it binds the profile, and `Profile.account_picture` carries it to
 the app. Initials stand in until it loads, and where there is none.
 
 What the account buys changes away from the phone: bought on amux.sh,
@@ -280,8 +290,7 @@ on every change. Only the App Store build sends.
 A "needs you" notification's payload names a host and an agent under its
 `amux` key (`PushPayload`). When one wakes the app in the background,
 `RuntimeCoordinator.warm` brings the account whose profile trusts that host
-on screen (pausing the previous one's relay link before resuming its own),
-opens that one chat, waits for it to be current, and returns. A tap on the
+on screen, opens that one chat, waits for it to be current, and returns. A tap on the
 notification opens the chat. A push for a host no profile trusts is left
 alone. In front of somebody the account on screen never changes under them;
 a tap on a notification for another account's host brings that account
@@ -326,9 +335,9 @@ top, a sheet included: the app hands them down as `ReportLayers`, every
 surface that can be on top carries `surface()`, and the last of those to
 appear draws them. A report is a bundle (`ReportAssembly`): `report.json` at
 `schema_version` 2 declares each part present or absent with a reason,
-beside the frozen `frame.png`, the view-state `trace.jsonl`, the tail of the
-installation's `runtime.log` as `log.txt`, and the profile's dump under
-`dump/`. Only a build with the driving tools records the trace, so a
+beside the frozen `frame.png`, the view-state `trace.jsonl` and the
+profile's dump under `dump/`, which carries the tail of the installation's
+`runtime.log` redacted; the `log` part is declared absent for that reason. Only a build with the driving tools records the trace, so a
 Release report declares it absent. The build stamps its checkout revision
 into the app, and each report carries it as `git_sha`.
 
@@ -365,7 +374,7 @@ excluded platform; there is no Mac, Catalyst or iPad target.
 Recipes name a kind of device, never a device. `golden` is an iPhone 17 Pro
 on iOS 26.5 at 3×, the device every budget and baseline is pinned to;
 `small` is the iPhone SE (3rd generation) on the same runtime, for the
-narrowest supported width. `scripts/ios_simulators.py` decides which device a
+narrowest supported width. `apps/apple/Tools/ios_simulators.py` decides which device a
 kind means: inside a `wt` worktree it is the one leased for the command
 (`scripts/with iphone -- ...`), so two checkouts never drive one device;
 elsewhere, including CI, it is `amux-iphone-1` or `amux-small-1`. The
@@ -380,7 +389,10 @@ loopback, one request per line, defined in `AmuxTestSupport/Door.swift`. The
 door drives the running app itself. It never opens a screen with invented
 state behind it; every picture it takes is of the app. `query` returns what
 is drawn, with accessibility identifiers, labels, values, frames and enabled
-states; `tap`, `type`, `paste` and `scroll` act the way a finger does;
+states; `tap`, `type`, `paste` and `scroll` act the way a finger does, and
+`tap` with `after` finds its element and holds the screen still first, then
+presses that many seconds later, so a measurement begun meanwhile sees only
+the app's answer;
 `search` makes the system search field on show hold some text, since that
 field takes no name from the screen; `choose` picks an item by its title
 from a dialog or a menu the system drew, whose items carry no names;
@@ -396,12 +408,12 @@ signs the app into a served relay, and `cloud` and `store` script what the
 account service and the App Store answer, for journeys about accounts and
 purchases.
 
-`xtask door` launches the installed app on a pinned simulator, speaks the
+`ios-tools door` launches the installed app on a pinned simulator, speaks the
 requests it is given and prints the answers:
 
 ```sh
 just ios build && just ios tools
-timeout 120 target/debug/xtask door --simulator golden \
+timeout 120 target/debug/ios-tools door --simulator golden \
   --install target/ios/DerivedData/Build/Products/Debug-iphonesimulator/Amux.app \
   '{"kind":"open","screen":"home"}' \
   '{"kind":"appearance","appearance":"dark"}' \
@@ -506,7 +518,7 @@ once hid a misplaced mask, and neither is a percentage, which would grow
 with the picture.
 
 The numbers live in two places that must agree: `golden::ALLOWANCE` in
-`crates/xtask/src/golden.rs` for the screens, and `RoundingImageDiff.swift`
+`crates/ios-tools/src/golden.rs` for the screens, and `RoundingImageDiff.swift`
 for the component snapshots. A match that spent some of the allowance says
 so in the run's output (`AMUX_SNAPSHOT_STRAYS`, `AMUX_PICTURE_STRAYS`), so
 the numbers can be judged from what runs actually see.
@@ -581,13 +593,14 @@ of an ask the phone cannot answer, the screens read most at accessibility3
 question), and a chat through its host's power loss before and after the
 swap.
 
-`scripts/ios-goldens.py` reaches every screen the way a person does. It
+`testnet journey goldens` reaches every screen the way a person does, on the
+journeys' phone driver. It
 serves `journeys/topologies/phone-goldens.json`, installs the debug app
 fresh with the reduce-transparency flag on, pairs with the desk by the code
 it printed, and taps through to each screen while the served network makes
 the desk's agents act. Each screen is compared in light and dark twice over:
 
-- The display's pixels outside the masks, with `xtask golden diff`, under
+- The display's pixels outside the masks, with `ios-tools golden diff`, under
   the allowance every compared phone picture shares (see
   [What a compared picture may differ by](#what-a-compared-picture-may-differ-by)).
 - The door's element geometry, as `<screen>.elements.txt`, compared word for
@@ -624,7 +637,7 @@ just ios journey reach-host manage-agent
 just ios journey -- --native
 ```
 
-`scripts/ios-journey.py` starts the story's topology with `testnet serve`,
+`testnet journey phone` starts the story's topology with `testnet serve`,
 installs the debug app fresh on the leased simulator with the
 reduce-transparency flag on, and acts only as a person would, through the
 door: tap, type, paste, pair by the code or link a machine printed. It judges
@@ -740,9 +753,10 @@ iPhone running a Release build before a release:
   the system pickers, on supported phones.
 - Timing on the oldest supported phone: cold start, reaching a paired host's
   fleet, scrolling a long chat while it streams on ProMotion and standard
-  displays, thermal state and battery. The simulator's numbers for the same
-  workloads come from `just ios perf` ([performance](PERFORMANCE.md)) and
-  stand in for a phone's until somebody measures one.
+  displays, thermal state and battery. `just ios perf --device`
+  ([performance](PERFORMANCE.md)) measures the launch, reaching the fleet,
+  streaming and idle on an enrolled phone plugged in over USB; battery and a
+  standard display stay by hand.
 
 ## Registered UIKit leaves
 
@@ -751,7 +765,7 @@ package may contain UIKit. A leaf is one file under `Leaves/`, wrapped in one
 representable, named there and justified by a written measurement or
 argument; `feature-lint.sh` refuses UIKit anywhere else. A name with no file
 behind it is a candidate: the question was asked and answered without a
-leaf. There are four names and two leaves.
+leaf. There are five names and three leaves.
 
 | Name | Status | Why |
 | --- | --- | --- |
@@ -759,6 +773,7 @@ leaf. There are four names and two leaves.
 | `tokenTextField` | Candidate | Attachments are chips beside the field, so the field is SwiftUI's own |
 | `diffSelection` | Candidate | Line frames and a point lookup select a range without a second layout system |
 | `menuButton` | Leaf, `Leaves/MenuButton.swift` | SwiftUI's `Menu` does not pass its name or identifier to the button VoiceOver reaches |
+| `workingMotion` | Leaf, `Leaves/WorkingMotion.swift` | The activity line's rule and the working marks, animated by SwiftUI, kept a phone's main thread about 16% busy with nothing arriving and froze while it was busy |
 
 A leaf costs a file outside the platform-neutral package, a representable to
 wrap it, a second layout system to keep in step with the design tokens, and a
@@ -905,3 +920,28 @@ screen still describes its menu from its state.
 
 What would reopen it: a SwiftUI `Menu` whose accessibility modifiers reach the
 button it presents through.
+
+### Working motion is run by Core Animation
+
+Two things move while nothing else changes: the rule under a working chat's
+activity line, and the mark beside each working agent. Drawn by SwiftUI on a
+timeline, every frame of either was an update of the view graph on the main
+thread. On an iPhone 14 Pro (`just ios perf --device`), a working chat with
+nothing arriving held the main thread at about 31%, while the moving rule
+also re-laid out the composer around it, and about 16% once the rule was a
+fixed one-point canvas capped at 60 Hz; home with a working fleet the same.
+A time profile put most of what was left in SwiftUI's own per-frame update
+rather than in the drawing. And the motion stopped whenever the main thread
+was busy, as it is for the moment a chat opens.
+
+The leaf runs the same curves as layer animations, which the render server
+plays without the app: `ActivityLine.segment(at:)` and `MarkMotion`'s
+functions are sampled at 120 a second over one period into keyframes, and
+each animation begins as far into its period as the wall clock is, so the
+motion is the one SwiftUI drew and every mark on a screen keeps the same
+phase. A still picture, for a camera or a reader who asked for less motion,
+is still drawn by SwiftUI from the same functions. With it, the main thread idles at about 2% in a working
+chat and 4% on home, and the motion keeps its pace while a chat opens.
+
+What would reopen it: a SwiftUI animation that runs without updating the view
+graph on every frame.

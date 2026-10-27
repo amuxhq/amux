@@ -1251,19 +1251,24 @@ async fn a_changed_tier_reaches_a_process_host_and_the_plan_read_at_once() {
         net.front_door("box")
             .await
             .unwrap()
-            .list_profiles(wire::Empty {})
+            .list_profiles(wire::ListProfilesRequest {})
             .await
             .unwrap()
             .into_inner()
             .profiles[0]
-            .tier()
+            .relay_connected()
+            .map(wire::RelayConnected::tier)
     };
-    assert_eq!(tier(&net).await, wire::Tier::Pro);
+    assert_eq!(tier(&net).await, Some(wire::Tier::Pro));
     assert_eq!(plan(&net, "ada")["pro"], true);
 
     let said = net.set_tier("ada", testnet::TierDecl::Free).await.unwrap();
     assert!(said.installed.contains("box learned it"), "{said:?}");
-    assert_eq!(tier(&net).await, wire::Tier::Free, "box knows at once");
+    assert_eq!(
+        tier(&net).await,
+        Some(wire::Tier::Free),
+        "box knows at once"
+    );
     let lapsed = plan(&net, "ada");
     assert_eq!(lapsed["pro"], false, "{lapsed}");
     assert!(lapsed["until"].is_string(), "the access ended: {lapsed}");
@@ -1274,7 +1279,7 @@ async fn a_changed_tier_reaches_a_process_host_and_the_plan_read_at_once() {
     );
 
     net.set_tier("ada", testnet::TierDecl::Pro).await.unwrap();
-    assert_eq!(tier(&net).await, wire::Tier::Pro);
+    assert_eq!(tier(&net).await, Some(wire::Tier::Pro));
     assert_eq!(plan(&net, "ada")["until"], Value::Null);
     net.shutdown().await.unwrap();
 }
@@ -1321,7 +1326,6 @@ async fn the_ssh_stand_in_carries_a_link_into_the_far_hosts_link_socket() {
     net.edge("laptop")
         .unwrap()
         .trust_ssh_peer(wire::TrustSshPeerRequest {
-            profile_id: Vec::new(),
             peer: Some(wire::PairingIdentity {
                 host_id: desk.host_id.as_bytes().to_vec(),
                 pubkey: desk_edge.public_key().to_vec(),
@@ -1330,7 +1334,6 @@ async fn the_ssh_stand_in_carries_a_link_into_the_far_hosts_link_socket() {
             }),
             ssh_target: Some(wire::SshTarget {
                 target: target.clone(),
-                profile_id: desk.profile.as_bytes().to_vec(),
             }),
         })
         .await
@@ -1388,7 +1391,8 @@ async fn a_link_behind_a_router_survives_its_host_changing_network() {
         .await
         .expect("a channel to the desk after the move");
     let mut inventory = peer
-        .subscribe_inventory(wire::Empty {})
+        .agents
+        .subscribe_inventory(wire::SubscribeInventoryRequest {})
         .await
         .expect("the desk answers across the moved link")
         .into_inner();

@@ -33,8 +33,8 @@ use daemon_core::payload::{
     PeerFailure, PeerReply, PeerRequest, Response, Status,
 };
 use daemon_core::{
-    AgentId, CallId, Create, Daemon, Ended, Fingerprint, HostId, Input, Job, LinkId, Output, Route,
-    Settings, SourcePolicy, StartOptions, StepBudget, TimerId, Tried,
+    AgentId, CallId, Create, Daemon, Ended, Fingerprint, HostId, Input, Job, LinkId, Output,
+    Settings, SourcePolicy, StartOptions, StepBudget, TimerId,
 };
 use prost::Message as _;
 use store::{AgentKey, Sqlite};
@@ -669,6 +669,7 @@ fn create(agent: AgentId, name: &str, parent: Option<(HostId, AgentId)>) -> Crea
         given: Some(name.into()),
         branches: BTreeSet::new(),
         new_worktree: false,
+        recent: None,
         spec: wire::AgentSpec {
             agent_id: agent.0.to_vec(),
             kind: wire::Kind::Codex as i32,
@@ -893,22 +894,6 @@ impl<'a> Transition<'a> {
                         let (call, _) = self.next.at_parent.remove(at);
                         self.next.replies.push((call, reply_of(&status)));
                     }
-                }
-                Output::Attempt { host: to, route } => {
-                    // The driver tries the route: the link carries a channel
-                    // while it is up.
-                    let tried = match (self.next.link, route) {
-                        (Some(link), Route::Direct(on)) if link == on => Tried::Opened,
-                        _ => Tried::Failed(daemon_core::payload::ChannelError::LinkClosed),
-                    };
-                    self.feed(
-                        host,
-                        Input::AttemptConcluded {
-                            host: to,
-                            route,
-                            tried,
-                        },
-                    );
                 }
                 _ => {}
             }
@@ -1203,9 +1188,9 @@ impl<'a> Transition<'a> {
                 self.next.used.unpaired = true;
                 self.feed(
                     CHILDS,
-                    Input::TrustRead {
-                        store: daemon_core::trust::TrustStore::of_hosts(Vec::new()),
-                    },
+                    Input::ChangeTrust(daemon_core::trust::TrustChange::Remove {
+                        host: uuid::Uuid::from_bytes(HOSTS[PARENTS].0),
+                    }),
                 );
             }
             Action::Fault(Fault::Crash(Host(host))) => {
@@ -1313,7 +1298,14 @@ impl<'a> Transition<'a> {
         state.run += 1;
         state.timers.clear();
         let mut print = None;
-        self.scratch.slots[host].start(&mut state.held, |store| {
+        let first = state.run == 1;
+        self.scratch.slots[host].start(&mut state.held, |mut store| {
+            // The child's host has paired with the parent's before it
+            // first starts; from then on the store holds what it trusts.
+            if first && host == CHILDS {
+                daemon_core::trust::TrustStore::of_hosts([HOSTS[PARENTS]])
+                    .write_for_test(&mut store);
+            }
             let daemon = Daemon::new(store, options(host));
             print = Some(daemon.fingerprint());
             daemon
@@ -1322,18 +1314,8 @@ impl<'a> Transition<'a> {
         self.feed(host, Input::Configure(Settings::default()));
         if host == CHILDS {
             self.feed(host, Input::Policy(SourcePolicy::OnDemand));
-            let hosts = if self.next.used.unpaired {
-                Vec::new()
-            } else {
-                vec![HOSTS[PARENTS]]
-            };
-            self.feed(
-                host,
-                Input::TrustRead {
-                    store: daemon_core::trust::TrustStore::of_hosts(hosts),
-                },
-            );
         }
+        self.feed(host, Input::Started);
         let (agent, process) = if host == PARENTS {
             (PARENT, &self.next.parent)
         } else {

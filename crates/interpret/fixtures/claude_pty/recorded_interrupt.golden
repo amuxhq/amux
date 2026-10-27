@@ -19,9 +19,9 @@ snapshot WORKING queue=[] working_on=- at=1788071347418 asks=[] session=dda06765
 item f08bc37e-03c3-4f7b-af02-f331434a1f69 thinking final at=1788071347372 text=""
 snapshot WORKING queue=[] working_on=- at=1788071347578 asks=[] session=dda06765-9e59-4a3c-ac40-310f97ba0499 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=34248 tasks=? background=? running=toolu_011sqpyfi3W1ULow63dEXrhs Bash since=1788071347418
 ## 25 recorded 23: fact Transcript type=assistant uuid=76f964e3-7c06-4aee-9f48-e7ccfc507f04
-item toolu_011sqpyfi3W1ULow63dEXrhs tool final at=1788071347544 text="" Bash TOOL_STATE_RUNNING input="{\"command\":\"python3 -c 'import select; select.select([], [],…"
+item toolu_011sqpyfi3W1ULow63dEXrhs tool final at=1788071347544 text="" Bash TOOL_STATE_RUNNING input=shell:"python3 -c 'import select; select.select([], [], [], 30)'; p…"
 ## 27 recorded 25: fact Transcript type=user uuid=6b0c800f-b309-48a7-b0b6-d6699fbc72db
-item toolu_011sqpyfi3W1ULow63dEXrhs tool final at=1788071347544 text="" Bash TOOL_STATE_CANCELLED ended=1788071348075 input="{\"command\":\"python3 -c 'import select; select.select([], [],…" out="The user doesn't want to proceed with this tool use. The too…"
+item toolu_011sqpyfi3W1ULow63dEXrhs tool final at=1788071347544 text="" Bash TOOL_STATE_CANCELLED ended=1788071348075 input=shell:"python3 -c 'import select; select.select([], [], [], 30)'; p…" out="The user doesn't want to proceed with this tool use. The too…"
 snapshot WORKING queue=[] working_on=- at=1788071347991 asks=[] session=dda06765-9e59-4a3c-ac40-310f97ba0499 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=34248 tasks=? background=?
 ## 28 recorded 26: fact Transcript type=user uuid=a24093e0-38fb-480c-9893-768a023c63b7
 item a24093e0-38fb-480c-9893-768a023c63b7 interruption final at=1788071348076 text=""

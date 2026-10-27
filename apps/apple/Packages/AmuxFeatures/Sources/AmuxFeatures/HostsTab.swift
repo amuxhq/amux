@@ -179,12 +179,10 @@ public struct HostsTab: View {
     /// glyph is the first thing read and a wrong one is a wrong answer.
     private func glyph(_ host: HostView) -> String {
         switch host.platform {
-        case "Mac Studio": "desktopcomputer"
-        case "Mac mini": "macmini"
-        case "MacBook Air": "laptopcomputer"
-        case "Linux": "server.rack"
-        case "Windows": "pc"
-        default: "desktopcomputer"
+        case .linux: "server.rack"
+        case .windows: "pc"
+        case .ios: "iphone"
+        case .macos, .unspecified, nil: "desktopcomputer"
         }
     }
 
@@ -194,7 +192,7 @@ public struct HostsTab: View {
     /// how long it has been gone where this phone watched it go.
     func status(_ host: HostView) -> String {
         var parts: [String] = []
-        if let platform = host.platform { parts.append(platform) }
+        if let platform = host.platform?.name { parts.append(platform) }
         switch host.group {
         case .onThisNetwork: parts.append(String(localized: "direct"))
         case .throughTheRelay: parts.append(String(localized: "via relay"))
@@ -230,7 +228,7 @@ public struct HostsTab: View {
     /// says it: which machine, what it is, and how it stands.
     private func spoken(_ host: HostView) -> String {
         var parts = [host.name]
-        if let platform = host.platform { parts.append(platform) }
+        if let platform = host.platform?.name { parts.append(platform) }
         switch host.group {
         case .onThisNetwork: parts.append(String(localized: "reachable on this network"))
         case .throughTheRelay: parts.append(String(localized: "reachable through the relay"))

@@ -13,10 +13,10 @@ use support::synthetic::*;
 use support::*;
 use tonic::Code;
 use wire::{
-    DeleteAgentRequest, DiffRequest, Empty, FetchRequest, GetBlobRequest, GetRequest,
-    InventoryEvent, PeerSubscribeRequest, Phase, PutBlobRequest, RenameAgentRequest,
+    DeleteAgentRequest, GetBlobRequest, GetDiffRequest, GetItemRequest, InventoryEvent,
+    ListItemsRequest, PeerSubscribeSessionRequest, Phase, PutBlobRequest, RenameAgentRequest,
     ResumeAgentRequest, SendInputRequest, StopAgentRequest, inventory_event,
-    peer_subscribe_request, session_event,
+    peer_subscribe_session_request, session_event,
 };
 
 const SEGMENTS: u64 = 1 << 20;
@@ -84,7 +84,7 @@ impl Pair {
         // replica now holds its rows, which a forwarding peer service would
         // have answered from.
         let mut session = laptop_runtime
-            .subscribe(coder.id.as_bytes(), 10)
+            .subscribe_session(coder.id.as_bytes(), 10)
             .await
             .unwrap();
         let mut seen = Vec::new();
@@ -147,16 +147,16 @@ async fn replica_agent_is_refused_on_every_read_and_input() {
     let coder = pair.coder.id.as_bytes().to_vec();
     let notes = pair.notes.id.as_bytes().to_vec();
 
-    let subscribe = |agent: &[u8]| PeerSubscribeRequest {
+    let subscribe = |agent: &[u8]| PeerSubscribeSessionRequest {
         agent_id: agent.to_vec(),
-        from: Some(peer_subscribe_request::From::Tail(10)),
+        from: Some(peer_subscribe_session_request::From::Tail(10)),
     };
-    let fetch = |agent: &[u8]| FetchRequest {
+    let fetch = |agent: &[u8]| ListItemsRequest {
         agent_id: agent.to_vec(),
         before_order: None,
-        limit: 10,
+        page_size: 10,
     };
-    let get = |agent: &[u8], key: &str| GetRequest {
+    let get = |agent: &[u8], key: &str| GetItemRequest {
         agent_id: agent.to_vec(),
         key: key.to_owned(),
     };
@@ -189,11 +189,20 @@ async fn replica_agent_is_refused_on_every_read_and_input() {
         .expect("the laptop holds the replica's copy");
 
     // The laptop's own agent is answered.
-    peer.subscribe(subscribe(&notes)).await.unwrap();
-    let page = peer.fetch(fetch(&notes)).await.unwrap().into_inner();
+    peer.sessions
+        .subscribe_session(subscribe(&notes))
+        .await
+        .unwrap();
+    let page = peer
+        .sessions
+        .list_items(fetch(&notes))
+        .await
+        .unwrap()
+        .into_inner();
     assert!(page.items.iter().any(|item| item.key == "n1"), "{page:?}");
-    peer.get(get(&notes, "n1")).await.unwrap();
+    peer.sessions.get_item(get(&notes, "n1")).await.unwrap();
     let read = peer
+        .agents
         .get_blob(blob(&notes, &own_blob.hash))
         .await
         .unwrap()
@@ -202,58 +211,81 @@ async fn replica_agent_is_refused_on_every_read_and_input() {
 
     // The desk's agent, which the laptop holds rows for, is not.
     let refusals = [
-        ("Subscribe", peer.subscribe(subscribe(&coder)).await.err()),
-        ("Fetch", peer.fetch(fetch(&coder)).await.err()),
-        ("Get", peer.get(get(&coder, "c1")).await.err()),
-        ("SendInput", peer.send_input(input(&coder)).await.err()),
+        (
+            "SubscribeSession",
+            peer.sessions
+                .subscribe_session(subscribe(&coder))
+                .await
+                .err(),
+        ),
+        (
+            "ListItems",
+            peer.sessions.list_items(fetch(&coder)).await.err(),
+        ),
+        (
+            "GetItem",
+            peer.sessions.get_item(get(&coder, "c1")).await.err(),
+        ),
+        (
+            "SendInput",
+            peer.sessions.send_input(input(&coder)).await.err(),
+        ),
         (
             "GetBlob",
-            peer.get_blob(blob(&coder, &desk_blob.hash)).await.err(),
+            peer.agents
+                .get_blob(blob(&coder, &desk_blob.hash))
+                .await
+                .err(),
         ),
-        ("PutBlob", peer.put_blob(put(&coder)).await.err()),
+        ("PutBlob", peer.agents.put_blob(put(&coder)).await.err()),
         (
-            "Diff",
-            peer.diff(DiffRequest {
-                agent_id: coder.clone(),
-                base: None,
-                with_patch: false,
-            })
-            .await
-            .err(),
+            "GetDiff",
+            peer.agents
+                .get_diff(GetDiffRequest {
+                    agent_id: coder.clone(),
+                    base: None,
+                    with_patch: false,
+                })
+                .await
+                .err(),
         ),
         (
             "RenameAgent",
-            peer.rename_agent(RenameAgentRequest {
-                agent_id: coder.clone(),
-                name: "taken".to_owned(),
-            })
-            .await
-            .err(),
+            peer.agents
+                .rename_agent(RenameAgentRequest {
+                    agent_id: coder.clone(),
+                    name: "taken".to_owned(),
+                })
+                .await
+                .err(),
         ),
         (
             "StopAgent",
-            peer.stop_agent(StopAgentRequest {
-                agent_id: coder.clone(),
-            })
-            .await
-            .err(),
+            peer.agents
+                .stop_agent(StopAgentRequest {
+                    agent_id: coder.clone(),
+                })
+                .await
+                .err(),
         ),
         (
             "ResumeAgent",
-            peer.resume_agent(ResumeAgentRequest {
-                agent_id: coder.clone(),
-                initial_prompt: None,
-            })
-            .await
-            .err(),
+            peer.agents
+                .resume_agent(ResumeAgentRequest {
+                    agent_id: coder.clone(),
+                    initial_prompt: None,
+                })
+                .await
+                .err(),
         ),
         (
             "DeleteAgent",
-            peer.delete_agent(DeleteAgentRequest {
-                agent_id: coder.clone(),
-            })
-            .await
-            .err(),
+            peer.agents
+                .delete_agent(DeleteAgentRequest {
+                    agent_id: coder.clone(),
+                })
+                .await
+                .err(),
         ),
     ];
     for (call, refused) in refusals {
@@ -273,7 +305,7 @@ fn listed(events: &[InventoryEvent]) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
     let mut agents = Vec::new();
     for event in events {
         match &event.of {
-            Some(inventory_event::Of::Host(host)) => hosts.push(host.host_id.clone()),
+            Some(inventory_event::Of::Host(host)) => hosts.push(host.host_id().to_vec()),
             Some(inventory_event::Of::HostRemoved(removed)) => hosts.push(removed.host_id.clone()),
             Some(inventory_event::Of::Agent(agent)) => agents.push(agent.agent_id.clone()),
             Some(inventory_event::Of::AgentRemoved(removed)) => {
@@ -293,7 +325,8 @@ async fn inventory_is_origin_only() {
     let mut stream = pair
         .laptop_peer()
         .await
-        .subscribe_inventory(Empty {})
+        .agents
+        .subscribe_inventory(wire::SubscribeInventoryRequest {})
         .await
         .unwrap()
         .into_inner();

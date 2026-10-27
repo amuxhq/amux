@@ -144,8 +144,8 @@ impl<const FORGET: bool> TestKind<FORGET> {
             "tool" => {
                 let name = text_of(&value, "name");
                 let server = text_of(&value, "server");
-                let arguments = value.get("input").cloned().unwrap_or(Value::Null);
-                let arguments = serde_json::to_vec(&arguments).expect("json");
+                let input = value.get("input").cloned().unwrap_or(Value::Null);
+                let arguments = serde_json::to_vec(&input).expect("json");
                 if is_status_tool(&server, &name)
                     && let Some(working_on) = status_working_on(&arguments)
                 {
@@ -157,9 +157,11 @@ impl<const FORGET: bool> TestKind<FORGET> {
                     ItemDraft {
                         key: id,
                         body: body(claude_sdk_item::Kind::Tool(ToolCall {
+                            input: Some(crate::claude_common::tool_input(
+                                &name, &server, &input, "",
+                            )),
                             name,
                             server,
-                            input_json: arguments,
                             state: ToolState::Running as i32,
                             ..Default::default()
                         })),

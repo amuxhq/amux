@@ -13,8 +13,6 @@ import tempfile
 import threading
 
 from linkage_smoke import compile_swift, device_name, run, simulator
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
 import ios_bridge as bridge
 
 
@@ -100,6 +98,7 @@ def round_trip(executable: Path, device: str) -> str:
         environment = {key: value for key, value in os.environ.items()
                        if key not in ("AMUX_LOG", "AMUX_CONFIG")}
         environment |= {key: str(root) for key in ("TMPDIR", "TMP", "TEMP")}
+        environment["TESTNET_BINARIES"] = str(bridge.TESTNET_BINARIES.resolve())
         runner = subprocess.Popen(
             [*bridge.TESTNET_SERVE, TOPOLOGY],
             env=environment, stdout=subprocess.PIPE, text=True)

@@ -116,6 +116,7 @@ final class DoorHost {
             return .runtimeLog(composition?.runtime.logTail(bytes: bytes) ?? "")
         case .conversation(let agent): return reading(agent)
         case .signposts: return .signposts(Signposts.marks)
+        case .condition: return .condition(DeviceCondition.now())
         case .measure(let seconds): return await measure(seconds)
         case .appearance(let appearance):
             await wear(appearance)
@@ -176,10 +177,10 @@ final class DoorHost {
         // page at its final place before it has slid there: acted on
         // mid-slide, a point aimed at a row in a rising sheet lands on what
         // the sheet is about to cover. So every action waits for stillness.
-        case .tap(let identifier):
+        case .tap(let identifier, let after):
             await still()
             await reveal(identifier)
-            return tap(identifier)
+            return await tap(identifier, after: after)
         case .choose(let label): await still(); return choose(label)
         case .perform(let identifier, let action): await still(); return perform(action, on: identifier)
         case .type(let identifier, let text): await still(); return type(text, into: identifier)
@@ -436,11 +437,14 @@ final class DoorHost {
                 rows: model.ids.compactMap { model.cell(for: $0).row }, ask: model.ask))
         }
         do {
-            let chat = try stores.openChat(row.id) {}
+            let chat = try stores.openChat(row.id) { _ in }
             defer { stores.closeChat(chat) }
+            let opening = chat.opening()
+            // An opening always hands the window over whole.
+            let keys = if case .reload(let keys)? = opening.keys { keys } else { [String]() }
             return .conversation(ConversationReading(
-                agent: agent, frame: chat.frame(), rows: chat.rows(for: chat.keys(), options: nil),
-                ask: chat.askCard()))
+                agent: agent, frame: opening.frame, rows: chat.rows(for: keys),
+                ask: opening.ask?.card))
         } catch {
             return .error(error.description)
         }
@@ -715,11 +719,12 @@ final class DoorHost {
         for _ in 0..<3 { await DoorFrames.next() }
     }
 
-    private func tap(_ identifier: String) -> DoorReply {
+    private func tap(_ identifier: String, after: Double? = nil) async -> DoorReply {
         guard let window = DoorWindow.current else { return .error("no window on screen") }
         guard let element = element(named: identifier, in: window) else {
             return .error("no element named \(identifier)")
         }
+        if let after { try? await Task.sleep(for: .seconds(after)) }
         // What VoiceOver does to a control, which is the one way to act on a
         // SwiftUI element from inside the process.
         if element.accessibilityActivate() { return .ack }

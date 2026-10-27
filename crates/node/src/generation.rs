@@ -28,7 +28,6 @@ pub struct Generation {
     pub counter: u64,
     /// The version of the build that wrote the file, so the next start can
     /// tell an update, a rollback or a crash of which build.
-    #[serde(default)]
     pub version: String,
 }
 

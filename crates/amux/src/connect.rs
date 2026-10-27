@@ -5,12 +5,9 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, anyhow, bail};
-use settings::{InstallationConfig, Switch};
+use settings::InstallationConfig;
 use tonic::transport::{Channel, Endpoint};
-use wire::client_service_client::ClientServiceClient;
 use wire::installation_service_client::InstallationServiceClient;
-use wire::profile_service_client::ProfileServiceClient;
-use wire::{Empty, ProfileInfo};
 
 /// How long a client waits for a daemon it did not find.
 const WAIT_FOR_DAEMON: Duration = Duration::from_secs(30);
@@ -29,7 +26,12 @@ pub fn load_config(path: Option<&Path>) -> Result<InstallationConfig> {
             default
         }
     };
-    InstallationConfig::from_file(&path).with_context(|| format!("reading {}", path.display()))
+    let config = InstallationConfig::from_file(&path)
+        .with_context(|| format!("reading {}", path.display()))?;
+    for key in &config.ignored {
+        eprintln!("amux: {}: ignoring unknown key `{key}`", path.display());
+    }
+    Ok(config)
 }
 
 /// A gRPC channel over the local socket named by `path`.
@@ -62,7 +64,7 @@ pub async fn front_door(config: &InstallationConfig) -> Result<Channel> {
     }
     let path = config.front_door_socket.display();
     match config.supervisor {
-        Switch::Off => eprintln!(
+        false => eprintln!(
             "No amux daemon is answering on {path}. This install has no supervisor, so the \
              daemon belongs to the service manager that runs it; waiting for it to start \
              (`amux server start` starts one by hand)."
@@ -70,7 +72,7 @@ pub async fn front_door(config: &InstallationConfig) -> Result<Channel> {
         // The install has a supervisor: start it when none runs, and it
         // starts the daemon. Never the daemon itself, which would run
         // beside the supervisor.
-        Switch::On => {
+        true => {
             if crate::server::running_supervisor(&config.root)?.is_none() {
                 crate::server::spawn_supervisor(config, None)?;
                 eprintln!("Starting amux supervise; waiting for its daemon on {path}.");
@@ -96,8 +98,8 @@ pub async fn front_door(config: &InstallationConfig) -> Result<Channel> {
     }
 }
 
-pub fn profiles(channel: Channel) -> ProfileServiceClient<Channel> {
-    ProfileServiceClient::new(channel)
+pub fn profiles(channel: Channel) -> InstallationServiceClient<Channel> {
+    InstallationServiceClient::new(channel)
 }
 
 pub fn installation(channel: Channel) -> InstallationServiceClient<Channel> {
@@ -107,11 +109,11 @@ pub fn installation(channel: Channel) -> InstallationServiceClient<Channel> {
 /// The profile a reference names — its id or its label — or, with none
 /// given, the installation's first profile.
 pub async fn select(
-    profiles: &mut ProfileServiceClient<Channel>,
+    profiles: &mut InstallationServiceClient<Channel>,
     wanted: Option<&str>,
-) -> Result<ProfileInfo> {
+) -> Result<wire::Profile> {
     let listed = profiles
-        .list_profiles(Empty {})
+        .list_profiles(wire::ListProfilesRequest {})
         .await
         .map_err(crate::plain)?
         .into_inner()
@@ -139,29 +141,39 @@ pub async fn select(
 }
 
 /// A profile's id as a person reads and types it.
-pub fn profile_id(profile: &ProfileInfo) -> String {
+pub fn profile_id(profile: &wire::Profile) -> String {
     uuid::Uuid::from_slice(&profile.id).map_or_else(|_| "unknown".to_owned(), |id| id.to_string())
 }
 
 /// The selected profile, as the front door describes it.
-pub async fn profile(config: &InstallationConfig, profile: Option<&str>) -> Result<ProfileInfo> {
+pub async fn profile(config: &InstallationConfig, profile: Option<&str>) -> Result<wire::Profile> {
     let door = front_door(config).await?;
     select(&mut profiles(door), profile).await
 }
 
-/// The client service of a profile the front door described.
-pub async fn client_of(profile: &ProfileInfo) -> Result<ClientServiceClient<Channel>> {
+/// The socket of a profile the front door described.
+async fn profile_channel(profile: &wire::Profile) -> Result<Channel> {
     let socket = Path::new(&profile.socket_path);
-    let channel = channel(socket)
+    channel(socket)
         .await
-        .with_context(|| format!("connecting to {}", socket.display()))?;
-    Ok(wire::client_service_client(channel))
+        .with_context(|| format!("connecting to {}", socket.display()))
 }
 
-/// The client service of the selected profile.
+/// The client services of a profile the front door described.
+pub async fn client_of(profile: &wire::Profile) -> Result<wire::ClientStubs> {
+    Ok(wire::client_stubs(profile_channel(profile).await?))
+}
+
+/// The administration of a profile the front door described: its pairing,
+/// peers and sign-out.
+pub async fn admin_of(profile: &wire::Profile) -> Result<crate::pairing::Admin> {
+    Ok(crate::pairing::Admin::new(profile_channel(profile).await?))
+}
+
+/// The client services of the selected profile.
 pub async fn client(
     config: &InstallationConfig,
     profile: Option<&str>,
-) -> Result<ClientServiceClient<Channel>> {
+) -> Result<wire::ClientStubs> {
     client_of(&self::profile(config, profile).await?).await
 }

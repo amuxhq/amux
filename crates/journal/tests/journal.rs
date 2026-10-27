@@ -186,6 +186,61 @@ fn a_torn_tail_with_the_writer_dead_is_cut_off_when_a_writer_reopens() {
 }
 
 #[test]
+fn a_cursor_past_a_cut_journal_reads_nothing_and_sees_the_journal_end_below_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut writer = Writer::open(dir.path(), 1 << 20).unwrap();
+    writer.append(&step("a", "one")).unwrap();
+    let last_whole = writer.append(&step("b", "two")).unwrap();
+    let stored = writer.append(&step("c", "three")).unwrap();
+    drop(writer);
+    // A consumer stored `stored` durably; the journal then lost c's tail.
+    cut(dir.path(), last_whole + 5).unwrap();
+
+    let mut reader = Reader::new(dir.path(), stored);
+    let batch = reader.read_to_end().unwrap();
+    assert_eq!(
+        batch,
+        Batch {
+            seen: last_whole + 5,
+            ..Batch::default()
+        },
+        "no frames, no torn bytes at the cursor, the end below the cursor"
+    );
+    assert_eq!(reader.cursor(), stored);
+    assert_eq!(journal::end(dir.path()).unwrap(), last_whole);
+}
+
+#[test]
+fn a_cursor_inside_a_zero_filled_tail_reads_torn_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut writer = Writer::open(dir.path(), 1 << 20).unwrap();
+    let last_whole = writer.append(&step("a", "one")).unwrap();
+    let stored = writer.append(&step("b", "two")).unwrap();
+    drop(writer);
+    // A power cut left the file its length but zero-filled after a.
+    let path = dir.path().join(segment_name(0));
+    let len = std::fs::metadata(&path).unwrap().len();
+    let mut bytes = std::fs::read(&path).unwrap();
+    bytes[last_whole as usize..].fill(0);
+    bytes.resize(len as usize + 16, 0);
+    std::fs::write(&path, &bytes).unwrap();
+
+    let mut reader = Reader::new(dir.path(), stored);
+    let batch = reader.read_to_end().unwrap();
+    assert!(batch.frames.is_empty());
+    assert_eq!(
+        batch.torn,
+        Some(Torn {
+            last_whole: stored,
+            skipped: false
+        }),
+        "zero bytes at the cursor are torn, the sign to look for the last whole frame"
+    );
+    assert_eq!(batch.seen, len + 16);
+    assert_eq!(journal::end(dir.path()).unwrap(), last_whole);
+}
+
+#[test]
 fn a_reader_never_returns_a_partial_frame_wherever_the_journal_is_cut() {
     let source = tempfile::tempdir().unwrap();
     let mut writer = Writer::open(source.path(), 80).unwrap();

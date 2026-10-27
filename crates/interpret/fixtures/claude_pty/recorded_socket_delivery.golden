@@ -51,9 +51,9 @@ snapshot WORKING queue=[] working_on=- at=1787443887329 asks=[] session=7567be7d
 item babb0fd4-46ee-43c0-a44c-b5d929f8a9ad thinking final at=1787443888784 text=""
 snapshot WORKING queue=[] working_on=- at=1787443888784 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=37429 tasks=? background=[]
 ## 54 recorded 50: fact Transcript type=assistant uuid=024bb248-7211-4c68-b7c3-7af04d70a3a0
-item toolu_013jKhDLNrgrMEgFPXnugyHG tool final at=1787443888859 text="" Bash TOOL_STATE_RUNNING input="{\"command\":\"sleep 3\",\"description\":\"Sleep for 3 seconds\"}"
+item toolu_013jKhDLNrgrMEgFPXnugyHG tool final at=1787443888859 text="" Bash TOOL_STATE_RUNNING input=shell:"sleep 3"
 ## 56 recorded 52: fact Transcript type=user uuid=d98ca0de-ef5b-48c7-8e78-d97d98b672bb
-item toolu_013jKhDLNrgrMEgFPXnugyHG tool final at=1787443888859 text="" Bash TOOL_STATE_SUCCEEDED ended=1787443892370 input="{\"command\":\"sleep 3\",\"description\":\"Sleep for 3 seconds\"}" out="(Bash completed with no output)"
+item toolu_013jKhDLNrgrMEgFPXnugyHG tool final at=1787443888859 text="" Bash TOOL_STATE_SUCCEEDED ended=1787443892370 input=shell:"sleep 3" out="(Bash completed with no output)"
 ## 64 recorded 60: fact Transcript type=assistant uuid=d2d590ca-ada1-4446-9283-9a90e27caa78
 item d2d590ca-ada1-4446-9283-9a90e27caa78 thinking final at=1787443893858 text=""
 snapshot WORKING queue=[] working_on=- at=1787443893858 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=37630 tasks=? background=[]

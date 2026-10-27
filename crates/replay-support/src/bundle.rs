@@ -27,10 +27,8 @@ use interpret::codex::Codex;
 use interpret::ring::Entry;
 use ui_state::{Msg, SessionState};
 use ui_view::{ChatOptions, Row};
-use wire::{
-    Agent, CaughtUp, ClientSession, ClientSessionEvents, ClientTraced, Item, Kind, SessionEvent,
-    Step, session_event,
-};
+use wire::dump::{ClientSession, ClientSessionEvents, ClientTraced};
+use wire::{Agent, CaughtUp, Item, Kind, SessionEvent, Step, session_event};
 
 /// The core's part of a bundle, and its files.
 pub const CORE: &str = "core";
@@ -322,22 +320,19 @@ impl AgentDump {
                 what: "checkpoint",
                 error: error.to_string(),
             })?;
-        let mut steps = Vec::new();
-        let mut line = 0;
-        for segment in &self.facts {
-            for entry in &segment.entries {
-                line += 1;
-                let event = entry.clone().event().ok_or(BundleError::Unreadable {
-                    agent: self.id.clone(),
-                    line,
-                })?;
-                let stepped = I::step(&mut state, event);
-                if stepped.step != Step::default() {
-                    steps.push(stepped.step);
-                }
-            }
+        let rerun = interpret::ring::rerun::<I>(
+            &mut state,
+            self.facts
+                .iter()
+                .flat_map(|segment| segment.entries.iter().cloned()),
+        );
+        match rerun.unreadable.first() {
+            Some(&line) => Err(BundleError::Unreadable {
+                agent: self.id.clone(),
+                line,
+            }),
+            None => Ok(rerun.steps),
         }
-        Ok(steps)
     }
 
     /// Stage two: the store slice through the session model, delivered as

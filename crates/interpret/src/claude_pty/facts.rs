@@ -23,9 +23,9 @@ use super::{
 use crate::claude_common::{
     AnsweredResult, BackgroundInput, BangInput, JobInput, PLAN_TOOL, QUESTION_TOOL, TASK_TOOLS,
     Verdict, apply_task_tool, blocks_text, claude_grant, compact_json, job_kind, message_text,
-    permission_scopes, plan_ask, plan_mode_write, question_ask, question_ask_text, same_json,
-    shown_input, split_tool_name, timestamp_ms, tool_class, tool_result_images, tool_result_text,
-    without_image_bytes, without_terminal_codes,
+    old_source, permission_scopes, plan_ask, plan_mode_write, question_ask, question_ask_text,
+    same_json, split_tool_name, timestamp_ms, tool_class, tool_input, tool_result_images,
+    tool_result_text, without_image_bytes, without_terminal_codes,
 };
 use crate::{
     Channel, Emit, Fact, ItemDraft, ask_item, is_attach_tool, is_status_tool, status_working_on,
@@ -542,7 +542,8 @@ impl State {
             _ => permission_ask(
                 &server,
                 &tool,
-                &shown_input(input, &request.extensions),
+                input,
+                old_source(&request.extensions),
                 request
                     .permission_suggestions
                     .as_deref()
@@ -1676,6 +1677,7 @@ fn permission_ask(
     server: &str,
     tool: &str,
     input: &Value,
+    old_source: &str,
     suggestions: &[PermissionUpdate],
     menus: &PermissionMenus,
     menu_offers_auto: bool,
@@ -1713,7 +1715,7 @@ fn permission_ask(
     (
         wire::ask::Body::Permission(PermissionAsk {
             tool_name: tool.to_owned(),
-            input_json: input.to_string().into_bytes(),
+            input: Some(tool_input(tool, server, input, old_source)),
             scopes,
             reason: String::new(),
             description: String::new(),

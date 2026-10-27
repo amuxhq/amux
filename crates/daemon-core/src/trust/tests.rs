@@ -21,10 +21,8 @@ fn addr(text: &str) -> SocketAddr {
 #[test]
 fn trust_store_pairing_upsert_inserts_and_deduplicates_reachability() {
     let mut store = TrustStore::default();
-    let ssh = Reachability::Ssh {
-        target: "workstation".to_string(),
-        profile: Uuid::from_u128(42),
-    };
+    let target = "workstation".to_string();
+    let ssh = Reachability::Ssh(target.clone());
 
     let upsert = |store: &mut TrustStore, name: &str, reachability: Reachability, when| {
         store
@@ -47,7 +45,8 @@ fn trust_store_pairing_upsert_inserts_and_deduplicates_reachability() {
     let entry = store.entry(PEER).unwrap();
     assert_eq!(entry.name, "renamed");
     assert_eq!(entry.pubkey, vec![9; 32]);
-    assert_eq!(entry.reachabilities, vec![Reachability::Cloud, ssh]);
+    assert!(entry.on_account);
+    assert_eq!(entry.ssh, Some(target));
 }
 
 #[test]
@@ -101,7 +100,8 @@ fn trust_store_pairing_upsert_requires_teardown_before_pubkey_replacement() {
     let entry = store.entry(PEER).unwrap();
     assert_eq!(entry.name, "old");
     assert_eq!(entry.pubkey, vec![7; 32]);
-    assert_eq!(entry.reachabilities, vec![Reachability::Cloud]);
+    assert!(entry.on_account);
+    assert!(entry.direct.is_empty());
     assert!(store.pubkey_for_host(PEER).is_none());
     assert!(store.host_id_for_pubkey(&[7; 32]).is_none());
 
@@ -120,34 +120,49 @@ fn trust_store_pairing_upsert_requires_teardown_before_pubkey_replacement() {
     let entry = store.entry(PEER).unwrap();
     assert_eq!(entry.name, "new");
     assert_eq!(entry.pubkey, vec![8; 32]);
-    assert_eq!(entry.reachabilities, vec![direct]);
+    assert!(
+        !entry.on_account,
+        "a replaced key starts from what its pairing reached"
+    );
+    assert_eq!(entry.direct, vec![addr("127.0.0.1:9000")]);
+}
+
+fn a_full_entry() -> TrustEntry {
+    TrustEntry {
+        pubkey: vec![9; 32],
+        name: "peer".to_string(),
+        paired_at: at(200),
+        on_account: true,
+        direct: vec![addr("192.0.2.7:7001"), addr("[::1]:4000")],
+        ssh: Some("workstation".to_string()),
+        signed_in: Some(false),
+        platform: wire::Platform::Linux,
+        listed: vec![crate::payload::PeerAddress {
+            addr: "192.0.2.7:7000".parse().unwrap(),
+            source: crate::payload::Source::Listed,
+        }],
+    }
 }
 
 #[test]
-fn the_trust_file_round_trips_and_names_its_reachabilities() {
-    let mut store = TrustStore::default();
-    store.insert_for_test(
-        PEER,
-        TrustEntry {
-            pubkey: vec![9; 32],
-            name: "peer".to_string(),
-            paired_at: at(200),
-            reachabilities: vec![Reachability::Ssh {
-                target: "workstation".to_string(),
-                profile: Uuid::from_u128(42),
-            }],
-            signed_in: Some(false),
-            platform: Some("Linux".into()),
-            listed: vec![crate::payload::PeerAddress {
-                addr: "192.0.2.7:7000".parse().unwrap(),
-                source: crate::payload::Source::Listed,
-            }],
-        },
-    );
+fn a_paired_host_round_trips_through_the_store() {
+    let mut trust = TrustStore::default();
+    trust.insert_for_test(PEER, a_full_entry());
+    let mut store = Sqlite::open_in_memory(vec![1; 16]).unwrap();
+    trust.write_for_test(&mut store);
+    assert_eq!(TrustStore::load(&store), trust);
+}
 
-    let bytes = store.to_file().unwrap();
-    assert!(String::from_utf8_lossy(&bytes).contains("workstation"));
-    assert_eq!(TrustStore::from_file(&bytes).unwrap(), store);
+#[test]
+fn a_row_with_a_bad_key_is_left_out_and_the_rest_read() {
+    let mut store = Sqlite::open_in_memory(vec![1; 16]).unwrap();
+    let mut trust = TrustStore::default();
+    trust.insert_for_test(PEER, a_full_entry());
+    trust.write_for_test(&mut store);
+    let mut bad = a_full_entry().to_row(OTHER);
+    bad.pubkey = vec![1, 2, 3];
+    store.put_trusted_host(&bad, Durability::Normal).unwrap();
+    assert_eq!(TrustStore::load(&store), trust);
 }
 
 #[test]
@@ -168,46 +183,13 @@ fn trust_store_remembers_a_peers_signed_in_fact_and_platform() {
     assert!(!store.remember_signed_in(OTHER, Some(true)));
     // An offline peer still says what kind of machine it is: the last
     // platform it announced is kept, and one announcing none keeps it.
-    assert!(store.remember_platform(PEER, Some("Linux")));
-    assert!(!store.remember_platform(PEER, Some("Linux")));
-    assert!(!store.remember_platform(PEER, None));
-    assert!(!store.remember_platform(OTHER, Some("macOS")));
+    assert!(store.remember_platform(PEER, wire::Platform::Linux));
+    assert!(!store.remember_platform(PEER, wire::Platform::Linux));
+    assert!(!store.remember_platform(PEER, wire::Platform::Unspecified));
+    assert!(!store.remember_platform(OTHER, wire::Platform::Macos));
     let entry = store.entry(PEER).unwrap();
     assert_eq!(entry.signed_in, Some(false));
-    assert_eq!(entry.platform.as_deref(), Some("Linux"));
-}
-
-#[test]
-fn trust_store_rejects_wrong_length_pubkey_on_load_and_save() {
-    let mut store = TrustStore::default();
-    store.insert_for_test(
-        PEER,
-        TrustEntry {
-            pubkey: vec![1, 2, 3],
-            name: "peer".to_string(),
-            paired_at: at(200),
-            reachabilities: vec![Reachability::Cloud],
-            signed_in: None,
-            platform: None,
-            listed: Vec::new(),
-        },
-    );
-    assert_eq!(store.to_file(), Err(TrustError::BadPubkey { actual: 3 }));
-
-    let json = format!(
-        r#"{{
-  "{PEER}": {{
-    "pubkey": [1, 2, 3],
-    "name": "peer",
-    "paired_at": "1970-01-01T00:00:00Z",
-    "reachabilities": [{{ "type": "cloud" }}]
-  }}
-}}"#
-    );
-    assert_eq!(
-        TrustStore::from_file(json.as_bytes()),
-        Err(TrustError::BadPubkey { actual: 3 })
-    );
+    assert_eq!(entry.platform, wire::Platform::Linux);
 }
 
 fn daemon() -> Daemon {
@@ -215,17 +197,11 @@ fn daemon() -> Daemon {
     let mut daemon = Daemon::new(
         store,
         StartOptions {
-            trust: "/profile/trust.json".into(),
             budget: StepBudget::UNLIMITED,
             ..StartOptions::default()
         },
     );
-    step(
-        &mut daemon,
-        Input::TrustRead {
-            store: TrustStore::default(),
-        },
-    );
+    step(&mut daemon, Input::Started);
     daemon
 }
 
@@ -261,20 +237,6 @@ fn job(out: &[Output]) -> Option<(JobId, Job)> {
     })
 }
 
-fn written(out: &[Output]) -> (JobId, TrustStore) {
-    match job(out) {
-        Some((id, Job::Fsync { path, bytes })) => {
-            assert_eq!(path, std::path::Path::new("/profile/trust.json"));
-            (id, TrustStore::from_file(&bytes).unwrap())
-        }
-        other => panic!("expected the trust file written, got {other:?}"),
-    }
-}
-
-fn done(daemon: &mut Daemon, job: JobId, result: JobResult) -> Vec<Output> {
-    step(daemon, Input::JobDone { job, result })
-}
-
 fn ended(out: &[Output], call: u64) -> Option<Status> {
     out.iter().find_map(|output| match output {
         Output::EndCall {
@@ -292,72 +254,70 @@ fn published(out: &[Output]) -> Option<&TrustStore> {
     })
 }
 
-/// A change is served, and answered, only once the drive holds it.
+/// What the profile store holds of the paired hosts now.
+fn held(daemon: &Daemon) -> TrustStore {
+    TrustStore::load(daemon.store())
+}
+
+/// Makes every write of a paired host fail, as a full drive would.
+fn refuse_writes(daemon: &Daemon) {
+    daemon
+        .store()
+        .connection()
+        .execute_batch(
+            "CREATE TRIGGER refuse_insert BEFORE INSERT ON trusted_hosts \
+             BEGIN SELECT RAISE(ABORT, 'disk full'); END; \
+             CREATE TRIGGER refuse_update BEFORE UPDATE ON trusted_hosts \
+             BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+        )
+        .unwrap();
+}
+
+/// A change is committed, served and answered in the step that asks for
+/// it.
 #[test]
-fn a_change_takes_effect_once_its_write_is_done() {
+fn a_change_is_committed_served_and_answered_in_its_step() {
     let mut daemon = daemon();
     let out = change(&mut daemon, 1, pair(7));
-    let (write, staged) = written(&out);
-    assert!(staged.entry(PEER).is_some());
-    assert!(
-        daemon.trust().entry(PEER).is_none(),
-        "not served before the write"
-    );
-    assert_eq!(ended(&out, 1), None);
-
-    let out = done(&mut daemon, write, JobResult::Done);
-    assert_eq!(daemon.trust().entry(PEER).unwrap().pubkey, vec![7; 32]);
+    assert_eq!(job(&out), None, "nothing is left for a job to write");
+    assert_eq!(held(&daemon).entry(PEER).unwrap().pubkey, vec![7; 32]);
+    assert_eq!(daemon.trust(), &held(&daemon));
     assert_eq!(published(&out).unwrap(), daemon.trust());
     assert!(out.contains(&Output::Answer {
         call: CallId(1),
         response: Response::Trust(TrustChanged::Paired(PairingUpdate::Inserted)),
     }));
     assert_eq!(ended(&out, 1), Some(Status::Ok));
-}
 
-/// A later change waits for the earlier one's write, so it is never
-/// written under it.
-#[test]
-fn changes_are_written_one_at_a_time_in_order() {
-    let mut daemon = daemon();
-    let (first, _) = written(&change(&mut daemon, 1, pair(7)));
     let out = change(&mut daemon, 2, TrustChange::Remove { host: PEER });
-    assert_eq!(job(&out), None, "the second waits for the first");
-
-    let out = done(&mut daemon, first, JobResult::Done);
-    let (second, staged) = written(&out);
-    assert!(staged.entry(PEER).is_none());
-    let out = done(&mut daemon, second, JobResult::Done);
-    assert!(daemon.trust().is_empty());
-    assert!(matches!(
-        out.iter()
-            .find(|output| matches!(output, Output::Answer { .. })),
-        Some(Output::Answer {
+    assert!(held(&daemon).is_empty() && daemon.trust().is_empty());
+    assert!(out.iter().any(|output| matches!(
+        output,
+        Output::Answer {
             response: Response::Trust(TrustChanged::Removed(_)),
             ..
-        })
-    ));
+        }
+    )));
 }
 
 #[test]
-fn a_change_the_drive_refused_never_shows() {
+fn a_change_the_store_refused_never_shows() {
     let mut daemon = daemon();
-    let (write, _) = written(&change(&mut daemon, 1, pair(7)));
-    let out = done(&mut daemon, write, JobResult::Failed("disk full".into()));
-    assert!(daemon.trust().is_empty());
-    assert_eq!(
+    refuse_writes(&daemon);
+    let out = change(&mut daemon, 1, pair(7));
+    assert!(daemon.trust().is_empty() && held(&daemon).is_empty());
+    assert!(matches!(
         ended(&out, 1),
-        Some(Status::Failed(CallError::Trust(TrustError::Write(
-            "disk full".into()
-        ))))
-    );
+        Some(Status::Failed(CallError::Trust(TrustError::Write(error)))) if error.contains("disk full")
+    ));
 }
 
 #[test]
 fn forgetting_a_host_that_is_not_paired_is_refused_without_a_write() {
     let mut daemon = daemon();
+    let before = daemon.store().changes();
     let out = change(&mut daemon, 1, TrustChange::Remove { host: PEER });
-    assert_eq!(job(&out), None);
+    assert_eq!(daemon.store().changes(), before);
     assert_eq!(
         ended(&out, 1),
         Some(Status::Failed(CallError::Trust(TrustError::NotTrusted(
@@ -367,24 +327,29 @@ fn forgetting_a_host_that_is_not_paired_is_refused_without_a_write() {
 }
 
 #[test]
-fn a_remembered_fact_that_did_not_move_writes_nothing() {
+fn a_remembered_fact_is_kept_and_one_that_did_not_move_writes_nothing() {
     let mut daemon = daemon();
-    let (write, _) = written(&change(&mut daemon, 1, pair(7)));
-    done(&mut daemon, write, JobResult::Done);
+    change(&mut daemon, 1, pair(7));
+    let before = daemon.store().changes();
     let remember = TrustChange::Remember {
         host: PEER,
         signed_in: None,
-        platform: None,
+        platform: wire::Platform::Unspecified,
     };
-    let out = step(&mut daemon, Input::ChangeTrust(remember));
-    assert_eq!(job(&out), None);
+    step(&mut daemon, Input::ChangeTrust(remember));
+    assert_eq!(daemon.store().changes(), before);
     let addrs = TrustChange::DirectAddrs {
         host: PEER,
         addrs: vec![addr("10.0.0.2:4000")],
     };
-    let (write, _) = written(&step(&mut daemon, Input::ChangeTrust(addrs.clone())));
-    done(&mut daemon, write, JobResult::Done);
-    assert_eq!(job(&step(&mut daemon, Input::ChangeTrust(addrs))), None);
+    step(&mut daemon, Input::ChangeTrust(addrs.clone()));
+    assert_eq!(
+        held(&daemon).entry(PEER).unwrap().direct,
+        vec![addr("10.0.0.2:4000")]
+    );
+    let before = daemon.store().changes();
+    step(&mut daemon, Input::ChangeTrust(addrs));
+    assert_eq!(daemon.store().changes(), before);
 }
 
 /// A host paired under another key stops being trusted under the old key
@@ -392,8 +357,7 @@ fn a_remembered_fact_that_did_not_move_writes_nothing() {
 #[test]
 fn replacing_a_key_tears_the_host_down_before_the_write() {
     let mut daemon = daemon();
-    let (write, _) = written(&change(&mut daemon, 1, pair(7)));
-    done(&mut daemon, write, JobResult::Done);
+    change(&mut daemon, 1, pair(7));
 
     let out = change(&mut daemon, 2, pair(8));
     let Some((teardown, Job::TeardownHost { host })) = job(&out) else {
@@ -405,30 +369,49 @@ fn replacing_a_key_tears_the_host_down_before_the_write() {
         "the old key is out"
     );
     assert!(published(&out).unwrap().pubkey_for_host(PEER).is_none());
-
-    let (write, staged) = written(&done(&mut daemon, teardown, JobResult::Done));
-    assert_eq!(staged.pubkey_for_host(PEER), Some([8; 32].as_slice()));
-    let out = done(&mut daemon, write, JobResult::Done);
     assert_eq!(
-        daemon.trust().pubkey_for_host(PEER),
-        Some([8; 32].as_slice())
+        held(&daemon).pubkey_for_host(PEER),
+        Some([7; 32].as_slice()),
+        "the new key waits for the teardown"
+    );
+    // A change asked for meanwhile waits behind the replacement.
+    let waiting = change(&mut daemon, 3, TrustChange::Remove { host: PEER });
+    assert_eq!(ended(&waiting, 3), None);
+
+    let out = step(
+        &mut daemon,
+        Input::JobDone {
+            job: teardown,
+            result: crate::payload::JobResult::Done,
+        },
     );
     assert!(out.contains(&Output::Answer {
         call: CallId(2),
         response: Response::Trust(TrustChanged::Paired(PairingUpdate::ReplacedPubkey)),
     }));
+    assert_eq!(
+        ended(&out, 3),
+        Some(Status::Ok),
+        "then the removal: {out:?}"
+    );
+    assert!(held(&daemon).is_empty());
 }
 
 #[test]
-fn a_replacement_the_drive_refused_trusts_the_old_key_again() {
+fn a_replacement_the_store_refused_trusts_the_old_key_again() {
     let mut daemon = daemon();
-    let (write, _) = written(&change(&mut daemon, 1, pair(7)));
-    done(&mut daemon, write, JobResult::Done);
+    change(&mut daemon, 1, pair(7));
     let Some((teardown, _)) = job(&change(&mut daemon, 2, pair(8))) else {
         panic!("expected a teardown");
     };
-    let (write, _) = written(&done(&mut daemon, teardown, JobResult::Done));
-    let out = done(&mut daemon, write, JobResult::Failed("disk full".into()));
+    refuse_writes(&daemon);
+    let out = step(
+        &mut daemon,
+        Input::JobDone {
+            job: teardown,
+            result: crate::payload::JobResult::Done,
+        },
+    );
     assert_eq!(
         daemon.trust().pubkey_for_host(PEER),
         Some([7; 32].as_slice())
@@ -438,26 +421,66 @@ fn a_replacement_the_drive_refused_trusts_the_old_key_again() {
     })));
 }
 
-/// A change under way, with every reachability shape, survives the
-/// checkpoint the core is restored from.
+/// A change asked for while the WAL moves into the main file waits until
+/// the checkpoint has landed, so the main file and the core it is
+/// serialized beside agree on the paired hosts.
 #[test]
-fn a_change_under_way_survives_a_checkpoint() {
-    let mut daemon = daemon();
-    let (write, _) = written(&change(&mut daemon, 1, pair(7)));
-    done(&mut daemon, write, JobResult::Done);
-    change(
-        &mut daemon,
-        2,
-        TrustChange::Pair {
-            host: OTHER,
-            pubkey: vec![9; 32],
-            name: "other".into(),
-            reachability: Some(Reachability::Ssh {
-                target: "desk".into(),
-                profile: Uuid::from_u128(4),
-            }),
+fn a_change_waits_out_a_checkpoint() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("store.sqlite");
+    let store = Sqlite::open(&path, vec![1; 16]).unwrap();
+    store.leave_checkpoints_to_owner().unwrap();
+    let mut daemon = Daemon::new(
+        store,
+        StartOptions {
+            budget: StepBudget::UNLIMITED,
+            ..StartOptions::default()
         },
     );
+    step(&mut daemon, Input::Started);
+    change(&mut daemon, 1, pair(7));
+    let started = step(
+        &mut daemon,
+        Input::Timer {
+            id: crate::TimerId::Checkpoint,
+        },
+    );
+    let Some((wal, Job::CheckpointWal)) = job(&started) else {
+        panic!("the timer starts the WAL job: {started:?}");
+    };
+    let addrs = TrustChange::DirectAddrs {
+        host: PEER,
+        addrs: vec![addr("10.0.0.2:4000")],
+    };
+    step(&mut daemon, Input::ChangeTrust(addrs));
+    assert!(held(&daemon).entry(PEER).unwrap().direct.is_empty());
+    Sqlite::checkpoint_wal(&path).unwrap();
+    step(
+        &mut daemon,
+        Input::JobDone {
+            job: wal,
+            result: crate::payload::JobResult::Done,
+        },
+    );
+    assert!(
+        held(&daemon).entry(PEER).unwrap().direct.is_empty(),
+        "not in the step that serialized the core"
+    );
+    step(&mut daemon, Input::Checkpointed);
+    assert_eq!(
+        held(&daemon).entry(PEER).unwrap().direct,
+        vec![addr("10.0.0.2:4000")]
+    );
+}
+
+/// A replacement under way and a change behind it survive the checkpoint
+/// the core is restored from, and the paired hosts come back from the
+/// store.
+#[test]
+fn a_replacement_under_way_survives_a_checkpoint() {
+    let mut daemon = daemon();
+    change(&mut daemon, 1, pair(7));
+    change(&mut daemon, 2, pair(8));
     step(
         &mut daemon,
         Input::ChangeTrust(TrustChange::DirectAddrs {
@@ -466,11 +489,10 @@ fn a_change_under_way_survives_a_checkpoint() {
         }),
     );
     let checkpoint = daemon.checkpoint();
-    let restored = Daemon::restore(
-        checkpoint.clone(),
-        Sqlite::open_in_memory(vec![1; 16]).unwrap(),
-    )
-    .expect("it restores");
+    let store = Sqlite::restore(&daemon.store().dump().unwrap()).unwrap();
+    let restored = Daemon::restore(checkpoint.clone(), store).expect("it restores");
     assert_eq!(restored.checkpoint(), checkpoint);
     assert_eq!(restored.trust, daemon.trust);
+    assert!(restored.trust().pubkey_for_host(PEER).is_none());
+    assert!(restored.trust().entry(PEER).is_some());
 }

@@ -1,20 +1,23 @@
 //! Checkpoints: when the core takes one, and the journal it lets go of once
 //! one is on the drive.
 //!
-//! A checkpoint is the core's state serialized at one step, written beside
-//! the store's main file by a job. Taking one begins with a passive WAL
-//! checkpoint, a job on a connection of its own, since moving the WAL into
-//! the main file can take tens of milliseconds and nothing slow runs inside
-//! a step. From the step that starts it until its end, every input that
-//! may write the store waits in the core, in the order it came, so the
-//! main file then holds exactly what was committed before the hold; reads,
+//! A checkpoint is the core's state serialized at one step, paired with
+//! the store's main file. Taking one begins with a passive WAL checkpoint,
+//! a job on a connection of its own, since moving the WAL into the main
+//! file can take tens of milliseconds and nothing slow runs inside a step.
+//! From the step that starts it until its end, every input that may write
+//! the store waits in the core, in the order it came, so the main file
+//! then holds exactly what was committed before the hold; reads,
 //! subscriptions, presence, routing and peers' reads step on. The core is
 //! serialized at the step that hears the copy is done, with what waits
-//! still waiting, and the next step lets it through. With SQLite's own
+//! still waiting, and handed to the driver, whose input ring starts a
+//! segment at it; the driver then feeds one input back, and that step
+//! lets what waited through, so the segment records it. With SQLite's own
 //! checkpoints off, every commit after that stays in the WAL until the next
 //! checkpoint, so the main file and the state are the daemon as of one
-//! step. Store commits are not synced one by one, so a journal segment may
-//! go only once a checkpoint has put a cursor past it on the drive.
+//! step. Store commits are not synced one by one, but the WAL move syncs
+//! the main file, so a journal segment may go once a checkpoint has put a
+//! cursor past it.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -42,26 +45,20 @@ pub struct Checkpoints {
     /// Agents committed since their cursors were last taken into a
     /// checkpoint.
     committed: BTreeSet<AgentId>,
+    /// The cursors the checkpoint just serialized put on the drive, taken
+    /// as durable at the driver's [`Input::Checkpointed`].
+    landing: Option<BTreeMap<AgentId, u64>>,
     /// Inputs that may write the store, stepped while the WAL was being
     /// moved into the main file, in the order they came.
     held: VecDeque<Input>,
 }
 
-/// A checkpoint in flight: the job under way and the cursors the
-/// checkpoint puts on the drive.
+/// A checkpoint in flight: the WAL job under way, during which store
+/// writes wait, and the cursors the checkpoint puts on the drive.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct Taking {
     job: JobId,
-    stage: Stage,
     cursors: BTreeMap<AgentId, u64>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-enum Stage {
-    /// The WAL is being moved into the main file; store writes wait.
-    Copying,
-    /// The core's state is being written beside the main file.
-    Writing,
 }
 
 impl Checkpoints {
@@ -95,17 +92,16 @@ impl Checkpoints {
         self.durable.get(&agent).copied()
     }
 
-    /// Whether a checkpoint is being taken.
+    /// Whether a checkpoint is being taken: its WAL job runs, or its
+    /// serialized state waits for the driver's word.
     pub fn taking(&self) -> bool {
-        self.taking.is_some()
+        self.taking.is_some() || self.landing.is_some()
     }
 
     /// Whether store writes wait: the WAL is being moved into the main
     /// file.
     pub fn holding(&self) -> bool {
-        self.taking
-            .as_ref()
-            .is_some_and(|taking| taking.stage == Stage::Copying)
+        self.taking.is_some()
     }
 
     /// Inputs waiting for the WAL checkpoint to end.
@@ -119,11 +115,7 @@ impl Checkpoints {
     /// of one journal) and waits as that one.
     pub(crate) fn hold(&mut self, input: Input) -> Option<Input> {
         match &self.taking {
-            Some(Taking {
-                job,
-                stage: Stage::Copying,
-                ..
-            }) if writes(&input, *job) => {
+            Some(Taking { job, .. }) if writes(&input, *job) => {
                 if !self.held.contains(&input) {
                     self.held.push_back(input);
                 }
@@ -144,19 +136,19 @@ fn writes(input: &Input, copying: JobId) -> bool {
     match input {
         Input::JobDone { job, .. } => *job != copying,
         Input::ClientCall { request, .. } => match request {
-            ClientRequest::Subscribe { .. }
-            | ClientRequest::Fetch(_)
-            | ClientRequest::Get(_)
+            ClientRequest::SubscribeSession { .. }
+            | ClientRequest::ListItems(_)
+            | ClientRequest::GetItem(_)
             | ClientRequest::SubscribeInventory
             | ClientRequest::GetBlob(_)
-            | ClientRequest::Diff(_) => false,
+            | ClientRequest::GetDiff(_) => false,
             ClientRequest::Forward { request, .. } => peer_writes(request),
             _ => true,
         },
         Input::PeerCall { request, .. } => peer_writes(request),
         Input::Tick { .. }
         | Input::Timer {
-            id: TimerId::Checkpoint | TimerId::Refresh(_) | TimerId::Retry(_),
+            id: TimerId::Checkpoint | TimerId::Refresh(_),
         }
         | Input::AnswerLagged { .. }
         | Input::LinkUp { .. }
@@ -168,15 +160,13 @@ fn writes(input: &Input, copying: JobId) -> bool {
         | Input::ChannelOpened { .. }
         | Input::ChannelClosed { .. }
         | Input::ChannelAnswered { .. }
-        | Input::AttemptConcluded { .. }
         | Input::PlanChanged
-        | Input::CallsFailed { .. }
-        | Input::RouteFailed { .. }
         | Input::TryAgain { .. }
         | Input::Candidates { .. }
         | Input::DialError { .. }
         | Input::Entropy(_)
-        | Input::Configure(_) => false,
+        | Input::Configure(_)
+        | Input::Checkpointed => false,
         _ => true,
     }
 }
@@ -184,12 +174,12 @@ fn writes(input: &Input, copying: JobId) -> bool {
 fn peer_writes(request: &PeerRequest) -> bool {
     !matches!(
         request,
-        PeerRequest::Subscribe(_)
+        PeerRequest::SubscribeSession(_)
             | PeerRequest::SubscribeInventory
-            | PeerRequest::Fetch(_)
-            | PeerRequest::Get(_)
+            | PeerRequest::ListItems(_)
+            | PeerRequest::GetItem(_)
             | PeerRequest::GetBlob(_)
-            | PeerRequest::Diff(_)
+            | PeerRequest::GetDiff(_)
             | PeerRequest::GetCatalogue(_)
             | PeerRequest::ListRepositories(_)
             | PeerRequest::Dump(_)
@@ -206,7 +196,7 @@ impl Daemon {
                 id: TimerId::Checkpoint,
             });
         }
-        if self.checkpoints.taking.is_some() {
+        if self.checkpoints.taking() {
             self.arm_checkpoint(out);
             return;
         }
@@ -227,11 +217,7 @@ impl Daemon {
             }
         }
         let job = self.pending.mint();
-        self.checkpoints.taking = Some(Taking {
-            job,
-            stage: Stage::Copying,
-            cursors,
-        });
+        self.checkpoints.taking = Some(Taking { job, cursors });
         self.touched.hold_began = true;
         out.push(Output::Job {
             id: job,
@@ -247,62 +233,59 @@ impl Daemon {
             .is_some_and(|taking| taking.job == job)
     }
 
-    /// A checkpoint's job ended. The WAL in the main file, the core is
-    /// serialized as of this step and written beside it; its state
-    /// written, its cursors are on the drive and the journal below them
-    /// goes; either failed, the next is tried an interval on.
+    /// The checkpoint's WAL job ended. The WAL in the main file, the core
+    /// is serialized as of this step and handed to the driver; failed, the
+    /// next is tried an interval on.
     pub(crate) fn checkpoint_done(&mut self, result: JobResult, out: &mut Vec<Output>) {
-        let Some(Taking { stage, cursors, .. }) = self.checkpoints.taking.take() else {
+        let Some(Taking { cursors, .. }) = self.checkpoints.taking.take() else {
             return;
         };
-        match (stage, result) {
-            (Stage::Copying, JobResult::Done) => {
+        match result {
+            JobResult::Done => {
                 // Every commit so far is in the main file now.
                 self.changes = self.store.changes();
                 // Serialized once the step has decided everything it will,
                 // so the checkpoint is the core after this step, what
-                // waits still waiting: the inputs after it, its own job's
-                // end among them, replay onto it.
-                let job = self.pending.mint();
-                self.checkpoints.taking = Some(Taking {
-                    job,
-                    stage: Stage::Writing,
-                    cursors,
-                });
+                // waits still waiting and these cursors still landing: the
+                // inputs after it, the driver's Checkpointed first, replay
+                // onto it.
+                self.checkpoints.landing = Some(cursors);
                 self.touched.serialized = true;
                 let state = self.checkpoint().to_bytes();
-                out.push(Output::Job {
-                    id: job,
-                    op: Job::Checkpoint { state },
-                });
+                out.push(Output::Checkpoint { state });
             }
-            (Stage::Writing, JobResult::Done) => {
-                for (agent, cursor) in cursors {
-                    self.checkpoints.durable.insert(agent, cursor);
-                    self.reclaim(agent, cursor);
-                }
-            }
-            (stage, result) => {
-                tracing::warn!(
-                    ?stage,
-                    ?result,
-                    "a checkpoint failed; the next is an interval on"
-                );
+            result => {
+                tracing::warn!(?result, "a checkpoint failed; the next is an interval on");
                 self.checkpoints.committed.extend(cursors.into_keys());
                 self.arm_checkpoint(out);
             }
         }
     }
 
+    /// The driver's ring starts again at the checkpoint just serialized:
+    /// the WAL job synced the main file, so the cursors it took are on the
+    /// drive and the journal below them goes.
+    pub(crate) fn checkpointed(&mut self) {
+        let Some(cursors) = self.checkpoints.landing.take() else {
+            return;
+        };
+        for (agent, cursor) in cursors {
+            self.checkpoints.durable.insert(agent, cursor);
+            self.reclaim(agent, cursor);
+        }
+    }
+
     /// Steps the inputs that waited for a WAL checkpoint, in the order they
-    /// came, unless one is under way; one of them may start the next.
+    /// came, unless one is under way; one of them may start the next. Then
+    /// starts the trust changes queued behind it: an input it does not hold,
+    /// such as a link's control frame, may have queued one.
     pub(crate) fn release_held(&mut self, out: &mut Vec<Output>) {
-        while !self.checkpoints.holding() {
-            let Some(input) = self.checkpoints.held.pop_front() else {
-                return;
-            };
+        while !self.checkpoints.holding()
+            && let Some(input) = self.checkpoints.held.pop_front()
+        {
             self.dispatch(input, out);
         }
+        self.next_trust_change(out);
     }
 
     /// Notes a commit of the agent's journal, whose cursor the next
@@ -388,6 +371,7 @@ mod tests {
                 given: None,
                 branches: BTreeSet::new(),
                 new_worktree: false,
+                recent: None,
                 spec: wire::AgentSpec {
                     agent_id: agent.0.to_vec(),
                     kind: wire::Kind::Codex as i32,
@@ -437,12 +421,21 @@ mod tests {
         assert!(!armed(&quiet), "a step that wrote nothing arms nothing");
     }
 
-    /// The job a step asked for, if it asked for one of this kind.
-    fn job(out: &[Output], wal: bool) -> Option<(JobId, Job)> {
+    /// The WAL job a step asked for, if it asked for one.
+    fn wal_job(out: &[Output]) -> Option<JobId> {
         out.iter().find_map(|output| match output {
-            Output::Job { id, op } if matches!(op, Job::CheckpointWal) == wal => {
-                matches!(op, Job::CheckpointWal | Job::Checkpoint { .. }).then(|| (*id, op.clone()))
-            }
+            Output::Job {
+                id,
+                op: Job::CheckpointWal,
+            } => Some(*id),
+            _ => None,
+        })
+    }
+
+    /// The state a step handed the driver, if it serialized the core.
+    fn serialized(out: &[Output]) -> Option<&[u8]> {
+        out.iter().find_map(|output| match output {
+            Output::Checkpoint { state } => Some(state.as_slice()),
             _ => None,
         })
     }
@@ -480,7 +473,7 @@ mod tests {
                 id: TimerId::Checkpoint,
             },
         );
-        let (wal, _) = job(&started, true).expect("the timer starts the WAL job");
+        let wal = wal_job(&started).expect("the timer starts the WAL job");
         assert!(daemon.checkpoints().holding());
 
         let held = step(&mut daemon, create(during));
@@ -493,7 +486,7 @@ mod tests {
             &mut daemon,
             Input::ClientCall {
                 call: CallId(9),
-                request: ClientRequest::Subscribe {
+                request: ClientRequest::SubscribeSession {
                     agent_id: before.0.to_vec(),
                     tail: 8,
                 },
@@ -519,10 +512,15 @@ mod tests {
                 result: JobResult::Done,
             },
         );
-        let Some((write, Job::Checkpoint { state })) = job(&done, false) else {
+        let Some(state) = serialized(&done) else {
             panic!("the WAL in the main file, the core is serialized: {done:?}");
         };
+        let state = state.to_vec();
         assert!(!daemon.checkpoints().holding());
+        assert!(
+            daemon.checkpoints().taking(),
+            "its cursors are still landing"
+        );
         assert!(!spawned(&done), "what waited waits for the next step");
 
         // The main file alone, as the checkpoint is paired with it.
@@ -541,19 +539,16 @@ mod tests {
 
         // The checkpoint restored over that main file is the core as of
         // the step that serialized it, and the inputs after it replay onto
-        // it: the next lets what waited through.
+        // it: the driver's Checkpointed comes first and lets what waited
+        // through.
         let mut restored = Daemon::restore(
             crate::Checkpoint::from_bytes(&state).expect("it reads"),
             main,
         )
         .expect("it restores");
         assert_eq!(restored.checkpoint(), daemon.checkpoint());
-        let written = Input::JobDone {
-            job: write,
-            result: JobResult::Done,
-        };
-        assert!(spawned(&step(&mut daemon, written.clone())), "it lands");
-        assert!(spawned(&step(&mut restored, written)));
+        assert!(spawned(&step(&mut daemon, Input::Checkpointed)), "it lands");
+        assert!(spawned(&step(&mut restored, Input::Checkpointed)));
         assert!(held(daemon.store(), during));
         assert!(held(restored.store(), during));
         assert_eq!(restored.checkpoint(), daemon.checkpoint());
@@ -579,7 +574,7 @@ mod tests {
                 id: TimerId::Checkpoint,
             },
         );
-        let (wal, _) = job(&started, true).expect("the timer starts the WAL job");
+        let wal = wal_job(&started).expect("the timer starts the WAL job");
         assert!(!spawned(&step(&mut daemon, create(AgentId([1; 16])))));
         let busy = step(
             &mut daemon,
@@ -590,7 +585,7 @@ mod tests {
         );
         assert!(spawned(&busy), "what waited lands at once: {busy:?}");
         assert!(armed(&busy), "the next is an interval on: {busy:?}");
-        assert_eq!(job(&busy, false), None, "nothing is serialized");
+        assert_eq!(serialized(&busy), None, "nothing is serialized");
         assert!(!daemon.checkpoints().taking());
         assert_eq!(daemon.checkpoints().held(), 0);
     }

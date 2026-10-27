@@ -24,21 +24,13 @@ and [interpreters](INTERPRETERS.md). How the daemon is laid out as a whole is in
 
 ## On disk
 
-```
-<data_dir>/
-  generation                         boot id, clean flag and counter (see Durability)
-  profiles/<profile-id>/
-    store.sqlite                     the profile's store (WAL mode)
-    agents/<agent-id>/               one directory per own agent
-      journal/0000000000             journal segments, named by global byte offset
-      journal/0001048576
-      pty/                           raw terminal bytes, same naming (terminal Claude only)
-      blobs/<sha256-hex>             attachment bytes this agent references
-      private/facts/                 the interpreter's facts ring and checkpoints
-      spec.<n>, lock, ctl.sock, ...
-    replicas/<host-id>/agents/<agent-id>/blobs/<sha256-hex>
-                                     bytes fetched for a paired host's agent
-```
+A profile's store is `profiles/<profile-id>/store.sqlite` under the
+installation root, in WAL mode, and each own agent's journal, raw terminal
+bytes and blobs are under `profiles/<profile-id>/agents/<agent-id>/`; bytes
+fetched for a paired host's agent are under
+`profiles/<profile-id>/replicas/<host-id>/agents/<agent-id>/blobs/`. The
+generation file is `<root>/generation`. Everything else is in
+[the one on-disk listing](ARCHITECTURE.md#everything-else-on-disk).
 
 The names are constants: `GENERATION`, `STORE`, `AGENTS` and `REPLICAS` in
 [`crates/node/src/install.rs`](../crates/node/src/install.rs), and `JOURNAL`,
@@ -88,7 +80,7 @@ produced:
 The snapshot rides in the same frame because it costs nothing, but nothing
 depends on it being there: after a restart the interpreter re-derives and
 re-emits it. The fields are in
-[`records.proto`](../crates/wire/proto/amux/v1/records.proto); their meaning on
+[`records.proto`](../proto/amux/v1/records.proto); their meaning on
 the wire is in [the wire](WIRE.md).
 
 `journal::decode_frame` answers one of three things about the front of a
@@ -188,7 +180,7 @@ processes the frames in journal order, inside one transaction:
 | --- | --- |
 | Item | Assigns the agent's next revision. A key the agent already holds keeps its order; a key not held yet takes the next order above the highest committed. Upserts by key. |
 | Append | Appends the text to the held item and assigns it the next revision. The broadcast `Append` carries the item's previous revision as `base_revision`. An append naming a key the store does not hold is skipped and counted. |
-| Snapshot | Assigns the next revision, stores the snapshot on the agent row and copies `phase`, `working_on`, `phase_since_ms`, `git`, `background_jobs` and `at_ms` (as `last_activity_ms`) from its envelope onto the row. |
+| Snapshot | Assigns the next revision, stores the snapshot on the agent row and copies `phase`, `working_on`, `phase_since_ms`, `git` and `background_jobs` from its envelope onto the row. |
 | Snapshot turning the phase to `PHASE_NEEDS_YOU` | Inserts a `notifications` row due after the push delay. Leaving `PHASE_NEEDS_YOU` deletes the agent's pending rows. |
 | `turn_end` on an agent with a parent | Inserts a `deliveries` row carrying a copy of the turn's last message, the turn's outcome and whether it is the incarnation's `last`; a turn end marked last clears `owes_report`. |
 | `incarnation_end` | Copies the cause and its words onto the row as `exit_cause` and `exit_detail`. The row stays live until the daemon marks the agent exited, which keeps this cause, so a daemon that stops in between leaves it for the next one. |
@@ -234,7 +226,7 @@ once per incarnation.
 
 The profile's core checkpoints an interval (`Launch.checkpoint_interval_ms`,
 a minute) after any commit to the store, and when its input ring fills
-first. A checkpoint is two jobs. The step that takes it reads the cursor of
+first. A checkpoint is one job. The step that takes it reads the cursor of
 every agent committed since the last checkpoint and asks for a WAL job: a
 passive WAL checkpoint on a connection to the store of the job's own
 (`Sqlite::checkpoint_wal`), which SQLite syncs, run off the core's thread
@@ -243,9 +235,10 @@ every input that may write (ingest, the registry, deliveries, trust,
 drafts, blobs, replica absorbs) waits in the core in the order it came;
 reads, subscriptions, presence, routing and peers' reads step on. The step
 that hears the WAL job is done serializes the core, with what waits still
-waiting, and asks for a checkpoint job that writes the state durably to
-`core.checkpoint` beside the store; the next step lets what waited through.
-A WAL job that cannot move the whole WAL (a reader held it) lets go of what
+waiting, and hands the state to the driver, which starts a ring segment at
+it and feeds one input back; that step lets what waited through, so the
+new segment records it, and marks the checkpoint's cursors durable. A WAL
+job that cannot move the whole WAL (a reader held it) lets go of what
 waited at once, and the next checkpoint is tried an interval on.
 
 Every write to the store is the core's, and SQLite's own automatic
@@ -322,10 +315,16 @@ history any client on the machine reads.
 The profile runtime is the store's only writer and only reader: the daemon on
 a desktop, and the embedded runtime in the phone app. No client opens the file,
 not even the terminal client on the same machine. Every client reads through
-`Subscribe`, `Fetch` and `Get` against its local runtime; on the phone that is
-an in-process call. The runtime holds the store behind one async mutex, and
-every read the runtime serves runs in one read transaction, so each read sees
-one commit point.
+`SubscribeSession`, `ListItems` and `GetItem` against its local runtime; on the phone that is
+an in-process call. The profile's core thread owns the open store: every
+write is made in the core step that decides it, and every read the runtime
+serves runs on that thread in one read transaction, so each read sees one
+commit point and no lock is needed. The one other connection is the passive
+WAL checkpoint, which the driver runs as a job off the core thread (see
+Durability). A write is an ordinary commit, left to the WAL and the next
+checkpoint, unless it is `Durability::Synced`: that transaction runs with
+`synchronous=FULL` and `fullfsync`, and only pairing, unpairing, a key
+replacement and a pairing's rollback ask for it.
 
 The runtime's interface is `store::Sqlite`, in
 [`crates/store/src/sqlite.rs`](../crates/store/src/sqlite.rs):
@@ -340,8 +339,16 @@ The runtime's interface is `store::Sqlite`, in
 | `after(agent, revision, cap)` | What a peer holding everything through `revision` is missing, or `None` when that is more than `cap` rows |
 | `commit` | Journal frames into an own row |
 | `absorb` | Records from a peer into a replica row |
-| `rewind_cursor`, `record_host_generation` | Power-loss recovery on this host; the generation a peer last reported |
-| `sweep_own`, `sweep_replicas` | Retention |
+| `item_by_input`, `last_n`, `cursor`, `live_descendants` | The item carrying an input (for an agent message, proof its recipient took it), the newest rows of the block, a row's cursor (ingest for an own row, source for a replica), and the live agents below a parent across hosts |
+| `put_agent`, `set_descendants`, `delete_agent`, `set_marker` | A row whole, or the columns its role owns; an own row's count of live descendants; an agent removed whole, with its items, deliveries and notifications; the in-memory CaughtUp and Detached markers |
+| `rewind_cursor`, `record_host_generation`, `host_generation` | Power-loss recovery on this host; the generation a peer last reported |
+| `trusted_hosts`, `put_trusted_host`, `remove_trusted_host` | Paired hosts; a removal forgets the host's generation too |
+| `draft`, `put_draft`, `delete_draft` | The unsent draft for an agent, as the client encoded it |
+| `record_recent_directory`, `recent_directories` | The folders agents were started in, newest first, the 200 most recent kept |
+| `put_delivery`, `deliveries`, `remove_delivery` | Completion reports a child owes its parent on another host |
+| `notifications`, `remove_notifications`, `remove_notification` | Pushes owed for an agent's attention |
+| `pool_bytes`, `sweep_own`, `sweep_replicas` | Retention |
+| `flush_to_drive`, `checkpoint_wal` | Clean shutdown's synced checkpoint; the passive checkpoint on a connection of its own |
 
 Each call is one transaction, and SQL does the work: an item is one upsert
 that keeps a held key's order, a replica's item is written only over an older
@@ -374,7 +381,7 @@ The schema is the migration in
 | `name`, `cwd` | As the registry holds them; every agent has a name, given or chosen by the daemon |
 | `parent_host`, `parent_id` | A child records its parent as host and id, because families cross hosts |
 | `lifecycle`, `exit_cause`, `exit_detail` | Live or exited, and why: the `ExitCause` as its wire integer, so a cause from a newer host is kept and served as it came, and the cause's own words. Owned by the daemon: commit copies the agent's own cause from its journal's `incarnation_end`, and marking the agent exited records the daemon's own cause only where the row has none. A resume clears both. |
-| `phase`, `working_on`, `phase_since_ms`, `git`, `background_jobs`, `last_activity_ms` | Copied from the newest snapshot's envelope at commit, and on a replica row when absorb takes a snapshot from the origin; `last_activity_ms` is the snapshot's `at_ms`, never commit time, and orders own rows' retention. A replica row also takes `phase`, `working_on`, `phase_since_ms`, `git` and `background_jobs` from the origin's inventory row, which carries no last activity, so replica retention orders by `phase_since_ms`, which every replica row has |
+| `phase`, `working_on`, `phase_since_ms`, `git`, `background_jobs` | Copied from the newest snapshot's envelope at commit, and on a replica row when absorb takes a snapshot from the origin. The snapshot's own `at_ms`, never commit time, orders own rows' retention. A replica row also takes `phase`, `working_on`, `phase_since_ms`, `git` and `background_jobs` from the origin's inventory row, which carries no last activity, so replica retention orders by `phase_since_ms`, which every replica row has |
 | `descendants` | Live agents below this one. An own row's is counted by its daemon whenever a row below it is written or removed, walking into its own agents and taking each replica's count for what lies below it; a replica row takes its origin's count from the inventory row. A registry write leaves it alone |
 | `snapshot` | The newest snapshot, body opaque; it carries its own revision |
 | `ingest_cursor` | Own rows: the journal offset committed through |
@@ -412,9 +419,12 @@ The rest:
 
 | Table | Rows |
 | --- | --- |
-| `deliveries` | The daemon's outbox to parents: a child's report that a turn ended (`text` is its last message, `outcome` how the turn ended, `last` whether it was the incarnation's last) or, with `exited` set, that the incarnation ended without a last report (`exit_cause` and `exit_detail` say how, as the row's do; always the incarnation's last), so each child incarnation sends exactly one last report. Keyed by child, incarnation, `exited` and turn id. Holds a copy of the message, because retention may remove the child's transcript while a parent is offline. |
+| `deliveries` | The daemon's outbox to parents: a child's report that a turn ended (`text` is its last message, `outcome` how the turn ended, `last` whether it was the incarnation's last) or, with `exited` set, that the incarnation ended without a last report (`exit_cause` and `exit_detail` say how, as the row's do; always the incarnation's last), so each child incarnation sends exactly one last report. Keyed by child, incarnation, `exited` and turn id; the parent is the one the child's row names. Holds a copy of the message, because retention may remove the child's transcript while a parent is offline. |
 | `notifications` | The push outbox: one row per turn into `needs_you`, keyed by agent and snapshot revision, with a due time (`due_at_ms`) and the push's `name`, `working_on` and `text`, built from envelope fields only. Deleted unsent if the phase leaves `needs_you` first, and with the agent. |
 | `hosts` | One row per peer host: the generation its inventory last reported, for the host entry this machine publishes. |
+| `trusted_hosts` | One row per paired host: its pinned key, name, when it was paired, whether it is on the account, what it last said of itself (signed in, platform), its SSH target, the addresses it last answered at and the addresses it listed with their sources (both JSON). Pairing, unpairing, a key replacement and a rollback commit synced; the rest are ordinary commits. |
+| `drafts` | This machine's clients' unsent draft per agent, an encoded `amux.v1.Draft`. Deleted when it is emptied and when the agent goes. |
+| `recent_directories` | The directories agents were started in, with when each was last used: the 200 newest are kept, and a directory stays after the agents that ran there are deleted. |
 | `schema_migrations` | Each applied migration's number and SHA-256 |
 
 The schema's own text comments every column.
@@ -432,9 +442,13 @@ push being sent.
 
 The first migration is the schema the first release ships. From that release
 on, migrations are forward only, append only and additive: a column with a
-default, a table, an index. Each runs in its own transaction. Shipped text is
-never edited: the store records each migration's hash in `schema_migrations`
-and refuses to open a file whose history disagrees (`OpenError::EditedMigration`).
+default, a table, an index. Every table is `STRICT`, so a value of the wrong
+type is refused rather than stored. Opening a store takes the write lock, checks
+its history and applies the migrations it lacks in one transaction, so the
+history it checked is the one it migrates. Shipped
+text is never edited: the store records each migration's hash in
+`schema_migrations` and refuses to open a file whose history disagrees
+(`OpenError::OtherHistory`).
 
 That refusal is also what happens to a store written before the release
 schema: its history is a different first migration, so it is never carried
@@ -447,8 +461,14 @@ migrations a binary must know to read the file. A binary opens any store whose
 stamp is at most the migrations it ships, so an older binary opens a store a
 later one migrated; one that is too old fails with `OpenError::TooNew`. The
 history is checked before the stamp, so a store from before the release reads
-as that, not as one from a newer build. A drop, rename or rewrite ships only
-after the stamp has been raised past every binary that read the earlier shape.
+as that, not as one from a newer build. Because an older binary keeps writing
+a store a later one migrated, every write names its columns and updates a held
+row in place (`ON CONFLICT ... DO UPDATE`), never `INSERT OR REPLACE`: a
+replace rewrites the whole row and would reset a column the older binary does
+not know. `crates/store/tests/fixtures/store-v1.sqlite` is a store the first
+release's schema wrote; every later build must open it and read its rows. A
+drop, rename or rewrite ships only after the stamp has been raised past every
+binary that read the earlier shape.
 The file's `application_id` marks it as an amux store; any other SQLite file is
 refused as foreign.
 
@@ -463,7 +483,7 @@ only by delete and by retention.
 Replica rows are a cache of a paired host's agent. Only `absorb` writes their
 records, copying the origin's revisions and orders as received. Each replica
 agent has one source in [`crates/daemon-core/src/sources.rs`](../crates/daemon-core/src/sources.rs):
-one `Subscribe` to the origin. With no block it asks for a tail of K rows; with
+one `SubscribeSession` to the origin. With no block it asks for a tail of K rows; with
 one it asks for what came after its `source_cursor`, capped at K, under its
 `source_generation`, and the origin answers either that delta or `Reset` and a
 fresh tail. The source holds
@@ -482,7 +502,7 @@ it is fetched from the origin and extends the block.
 | `Absorb` | Effect |
 | --- | --- |
 | `Delta { events, live }` | Joins the block above its newest row. Items are upserted unless a newer revision is held; an append applies only when its base matches; a snapshot only when newer. Live records advance `source_cursor`; a catch-up does not. |
-| `Reset { tail, snapshot, generation }` | Starts the block again from the tail under the origin's `generation`: `complete_from_order` moves to the tail's oldest order. Rows below stay stored and are served by `Get`, but do not count as contiguous. Under a generation other than the block's, every held row is forgotten first: the origin numbers orders and revisions afresh after an unclean reboot, so nothing held compares with the tail. |
+| `Reset { tail, snapshot, generation }` | Starts the block again from the tail under the origin's `generation`: `complete_from_order` moves to the tail's oldest order. Rows below stay stored and are served by `GetItem`, but do not count as contiguous. Under a generation other than the block's, every held row is forgotten first: the origin numbers orders and revisions afresh after an unclean reboot, so nothing held compares with the tail. |
 | `Page { before_order, items, exhausted }` | Extends the block downward, only when `before_order` is the block's boundary. A page that does not join is served to its requester and not stored, because only a source starts a block. |
 | `CaughtUp(revision)` | Sets `source_cursor` to the revision the origin's replay is complete through |
 
@@ -519,7 +539,7 @@ the profile's own budget:
 3. When every live agent is at K and the pool is still over, the sweep stops;
    from there the budget is soft.
 
-A trim sets the agent's `complete_from_order` and `exhausted`, so `Fetch`
+A trim sets the agent's `complete_from_order` and `exhausted`, so `ListItems`
 truthfully reports no older history. Trimmed own history is gone for good,
 since the journal below the cursor was already deleted.
 

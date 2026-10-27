@@ -437,7 +437,8 @@ impl SessionState {
         };
         match phase {
             wire::Phase::Starting => PhaseView::Starting,
-            wire::Phase::Idle => PhaseView::Idle,
+            // A phase from a newer build reads as the quietest one.
+            wire::Phase::Idle | wire::Phase::Unspecified => PhaseView::Idle,
             wire::Phase::Working => PhaseView::Working,
             wire::Phase::NeedsYou => PhaseView::NeedsYou,
         }
@@ -999,7 +1000,7 @@ impl SessionState {
     fn host_online(&self) -> bool {
         self.host
             .as_ref()
-            .is_some_and(|host| host.presence() == wire::Presence::Online)
+            .is_some_and(|host| host.online().is_some())
     }
 
     /// The held inputs that left before the newest word that the host can

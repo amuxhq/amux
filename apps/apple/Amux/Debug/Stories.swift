@@ -94,11 +94,11 @@ enum StoryFleet {
 
     static let now = CatalogFixtures.now
 
-    static let desk = host(1, "desk", platform: "macOS")
-    static let studio = host(2, "studio", platform: "macOS")
-    static let pi = host(3, "garage-pi", platform: "Linux")
-    static let laptop = host(4, "laptop", platform: "macOS", trusted: false, candidate: true)
-    static let studioFound = host(5, "studio", platform: "macOS", trusted: false, candidate: true)
+    static let desk = host(1, "desk", platform: .macos)
+    static let studio = host(2, "studio", platform: .macos)
+    static let pi = host(3, "garage-pi", platform: .linux)
+    static let laptop = host(4, "laptop", platform: .macos, trusted: false, candidate: true)
+    static let studioFound = host(5, "studio", platform: .macos, trusted: false, candidate: true)
 
     /// - Parameter nearby: whether a machine this phone has not paired is
     ///   on its network, offering itself above the list.
@@ -187,7 +187,7 @@ enum StoryFleet {
     static let avatar = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAFVklEQVR42u3a91NaWRTA8fMnbrKptti7xhqjKGLvBWuqUbErFhBUEFHE3iu29N3N1uz+CXsu7OwvGW/eA+6D97wz37/gM8zw7jkH/ukI+bs95Gt76Ne20L/awv7EWsP/aI3Afm959BumjfxVG/lFG/WlOfoXUszPTTE/NcVinxvjPjXGf2qI/9iQgH2oT3xPSnpXl/yWlHJVi6Ve1qRe1KRd1KSfV6efVT/GXFUZ2GlV5kllFnZckX1Eyjksx3IPyp/sl2F5e2V5u6VPsZ2S/O2SAmxLo8I2NYUbxVjRerF6Xa1eUxevFmGalSKNs7DEWVi6jKnKHKqyJVX5UkH5YkGFPb8SW8ivsj3FquexvBprXq0Fe1I3h+XWz+bWz+Q2zOQ0mnMaTTlNpuym6exm4DoUnelsLXAdio4xC4G4zvU6hqwW4DoUHUNmC3Adis5UZitwHYrOJAJxHYrOZEYbcB2KzkRGO3Adig4B4joUnfHHHcB1KDp6BOI6FB19eidwHYrOGAHiOtfrjKY/A65D0RlNew5ch6IzgkBch6IzkvYCuA5FZzjVDcR1rtMZSn0JXIeiQ4C4DkVnMOUVBFznw+zs+xlsDntnxiye3potV2brlckaQJ2BlNcQQB2k+a4OdmmaxwKiM5DsBpJex0MjXOfSZLuYJkms05/cBTLScbcgpQ4BklLn4+yMjzrnnox2aXT6kt6AjH47/+ucIZAkOjoEkqMO5jLaJdDRJXWDTHVcxkWXYZG1Tm9iDwThP7pAnVPDImudHgSSr86pYQljqtOT2AvB8K3stc4JAWKo053QC7LWOTE4TqYc7HS6E3TA+hXKWud4apmdzpt4AsT2jc5a53hymZ1OV3wfsJ5gsNbB2Ol0xfcD6/kOa50jBGKm8zrODcR0+sVa52jSyU7nVdwAsJ4NstbxADHS+Q+I6eSUtQ7GTudl7CCwniuz1jmcWGGnQ4BYT91Z6xwgEDOdF7FDwHonwVoHY6fzPGYYJNjYyFeHAEmwz2KngzHVeRY9AtJs+2Sq04lA0uxCWejsT6yy1umMHgXJNsVy1OmIGgUp9+iy0+mIGgMprwz8pbM/viqNTnuUHqS/wZDLbwd12iL1EJALFbnotEWOQwDvd4LtH/1bnVYPUGCvmwL+rUzRaXk0AfK9/ZJAhwBxHYqONmISuA5FRxsxBVyHotPsAeI61+k0hRuA61B0CFAAdSgvCXdre6R1bFe/HhCdxnAjSK/z3XfWtzq7+g1sx52UOg1hRpBSR8grlK6zPbbpSRqdhrBpkEZH4BtdoM7W6JYn1jr1YSYI+EvCa51N0vbmyDY7nfpQE8hdZ4O0w0inLtQMjHRETb981MHWR3Yxv+vUhphBMTrrwyT/6tSGzICSdNaG91aH9/yoU+MGUpQOaWjfXzrVD2dBeTor7vyiU/1wDhSp4+7Ad50qBFKqjhMbPPBRp+qBBeT1vSNKxzl46KNOJQFSrs4y6cgXnYoHVlC2DuYYOPJap+K+FYLzFepHHcfAsdc65ffnQfE6S1j/sXc6ZfdsECTzHaY6mHc6BOgm6Cz2n2Be6JTeW4BATU4l1sG80Cm9uwA3RMfef2rvOxWrU3LXDt7tJOSog4nV0SDQzdFZILlE6WjuLALrfVZQ6WCidIrvLIEXu1D56th0LlE6agS6UTo23RkmXEf9owPE7tHlrmPTnQvXKUIgsVcGcteZ150L1ym8vQxibzDkrmNFIME6bqAbpmPtxS4E6qhuO0HU/Y4ydCxuICE6qlsrIOq6SRk6mECdAgIk5vZLGTqW3kuBOvm3VkHUZZwydCw9lwJ18n9Y/RebN+p3f+R8FAAAAABJRU5ErkJggg=="
 
     static func host(
-        _ index: UInt8, _ name: String, platform: String, trusted: Bool = true, candidate: Bool = false
+        _ index: UInt8, _ name: String, platform: Platform, trusted: Bool = true, candidate: Bool = false
     ) -> HostView {
         HostView(
             hostId: Array(repeating: index, count: 16), name: name, local: false, trusted: trusted,

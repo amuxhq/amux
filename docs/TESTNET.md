@@ -32,7 +32,11 @@ belong to the process tests in `crates/amux/tests`.
 On first use in a process, the harness builds `amux` and the fake providers with the same Cargo and profile that
 built the test, so agents always run the binary under test. With `TESTNET_BINARIES` naming a directory that
 already holds `amux`, the fakes and the probes, it builds nothing and uses those: a driver that built them once,
-with the features it chose, keeps every net it starts on that one build.
+with the features it chose, keeps every net it starts on that one build. The terminal and phone journey drivers
+always hand `testnet serve` that directory, the one they run from unless `TESTNET_BINARIES` names another, and stop
+at once if a binary is missing there: their recipes build `amux` and the fakes in the cargo invocation that builds
+`testnet`, since a build of its own would unify features otherwise and rebuild much of the workspace before the net
+is ready.
 
 ## Two modes
 
@@ -157,7 +161,7 @@ load.
 
 ## Real providers
 
-A host's `provider` decides what agents created on it run, whoever creates them: `ctl spawn`, `amux create`, the
+A host's `provider` decides what agents created on it run, whoever creates them: `ctl spawn`, `amux new`, the
 terminal client, the phone, or another agent's `spawn` tool. With `real`, they are the real Claude and Codex
 under the operator's own logins; an agent's own `provider` overrides its host's for that one agent.
 
@@ -190,7 +194,7 @@ host, refreshing what each provider offers (models, commands) runs the real prov
 ## Process and supervised hosts
 
 A process host is a real `amux` daemon in its own process, with its own installation config under the net's
-root (`keep_awake: off`, `telemetry: off`, `updates: manual`, the net's discovery scope and release feed). The
+root (`keep_awake = false`, `telemetry = false`, `updates = "manual"`, the net's discovery scope and release feed). The
 net starts it with `amux server start` and stops it with `amux server stop`, as a person's CLI would, and kills
 it with SIGKILL on the process that holds its installation lock. Its agents keep running through a kill, in their
 grace, and the next daemon adopts them. The net reaches it as a client does, over its front door and profile
@@ -325,13 +329,16 @@ path carried a link the way a person reading the log would:
 
 ### SSH
 
-A host reaches a peer over SSH by running `ssh <target> amux relay --profile <id>` and carrying the link over that
+A host reaches a peer over SSH by running `amux internal ssh-link --profile <id>` on it through `ssh <target>`, where the id is the peer's host id
+(a profile's id is its host's), and carrying the link over that
 process's stdio into the far daemon's link socket (`link.sock` in its profile directory), where the pinned QUIC
 handshake admits only a paired key. Every in-process host serves its link socket. The net puts a stand-in `ssh`
 (`crates/testnet/stand-in/ssh`) first on its process's PATH, which process hosts inherit; no real SSH runs. A target
-is a host's directory, which `ssh_target(host)` answers: the stand-in runs the far host's own `amux` against its own
-installation there, so `amux relay` joins the far daemon's link socket. Give the target to a peer as an SSH pairing
-does, with the far host's profile id.
+is a host's directory, which `ssh_target(host)` answers: the stand-in runs amux's command through a shell, as sshd
+would, with the far host's own `amux` against its own installation first on that shell's PATH, so `amux internal ssh-link` joins
+the far daemon's link socket, and `amux internal ssh-pair` answers an SSH pairing.
+Give the target to a peer as an SSH pairing does; `amux pair` reads a target as SSH in `user@host` form, and the
+stand-in drops the user.
 
 ## Growing a net while it runs
 
@@ -470,7 +477,7 @@ empty net. With `RUST_LOG` set, the daemons' tracing goes to standard error.
   "hosts": [
     {"name": "desk", "host_id": "…", "profile": "…",
      "front_door": "/tmp/testnetAbc123/desk/door.sock",
-     "config": "/tmp/testnetAbc123/desk/installation.yaml",
+     "config": "/tmp/testnetAbc123/desk/config.toml",
      "dir": "/tmp/testnetAbc123/desk", "process": false, "supervised": false,
      "provider": "fake", "up": true, "lan_port": 53990}
   ],
@@ -481,7 +488,7 @@ empty net. With `RUST_LOG` set, the daemons' tracing goes to standard error.
 ```
 
 Each host lives under `<root>/<name>/`: its installation in `data/`, its agents' working directory in `work/`,
-and `door.sock` and `installation.yaml` beside them. A host's `config` is that installation config, so the real terminal client runs against it
+and `door.sock` and `config.toml` beside them. A host's `config` is that installation config, so the real terminal client runs against it
 with `amux --config <config>`. `cloud_url` and `relay_tcp` appear only when the topology declares a relay:
 `cloud_url` is the account-service stand-in, where `refresh-<account>` is the login for a declared account, and
 `relay_tcp` is the relay's plain TCP carrier for a client outside the net. `lan_port` appears for a host with a LAN
@@ -624,10 +631,12 @@ program paints by clearing to the end of a line is not kept, and the font has no
 opens `amux attach` for an agent in a second pane: Claude's own interface for terminal Claude, Codex's own for Codex.
 `tui watch` attaches this terminal to a pane, to watch and use the client in it by hand; tmux's C-b d leaves it
 open.
-`tui clip` attaches as a person does in the terminal client: it puts a file's path (or, with `--image`, a PNG as
-picture data) on the Mac's clipboard and presses Ctrl+V in the pane. The clipboard is the machine's own, so `clip`
-holds a lock across every session for the moment the client reads it and then puts back the text the clipboard held;
-an image or file copied on the Mac is replaced.
+`tui clip` attaches as a person does in the terminal client: it puts a file (or, with `--image`, a PNG as picture
+data) on the machine's clipboard and presses Ctrl+V in the pane. On macOS the file goes as its path; on Linux it
+goes through `xclip` as a file manager copies one (`text/uri-list`), on the X display named by `DISPLAY`, so a
+headless Linux host needs an X server such as Xvfb and `DISPLAY` set before `ctl up`. The clipboard is the
+machine's own, so `clip` holds a lock across every session for the moment the client reads it and then puts back
+the text the clipboard held; an image or file copied on the machine is replaced.
 `phone attach` hands the open chat's draft a file or photo as the system's photo library or file browser would; those
 pickers are the system's own screens, which nothing outside them drives.
 

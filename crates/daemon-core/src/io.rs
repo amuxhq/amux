@@ -16,7 +16,7 @@ use crate::payload::{
     ClientRequest, ControlFrame, Hello, JobResult, LinkCloseReason, LinkFrame, PairMessage,
     PeerRequest, PublicKey, Push, Response, Status,
 };
-use crate::presence::{Route, Tried};
+use crate::presence::Route;
 use crate::{DumpReason, codec};
 
 /// Everything that can happen to the daemon, decoded by the driver.
@@ -84,28 +84,8 @@ pub enum Input {
         channel: ChannelId,
         reason: ChannelError,
     },
-    /// The shell's try at an [`Output::Attempt`] concluded.
-    AttemptConcluded {
-        host: HostId,
-        route: Route,
-        tried: Tried,
-    },
     /// The account's plan changed: what the relay carries changed with it.
     PlanChanged,
-    /// A call to the host found no channel within its patience, or the
-    /// channel it opened failed: `error` says why, as the driver saw it.
-    CallsFailed {
-        host: HostId,
-        error: ChannelError,
-    },
-    /// A channel a call opened on `route` failed before it carried
-    /// anything; the core answers with [`Output::NextRoute`], the route the
-    /// call tries next.
-    RouteFailed {
-        host: HostId,
-        route: Route,
-        error: ChannelError,
-    },
     /// Try the host now: what kept channels to it from opening is gone.
     TryAgain {
         host: HostId,
@@ -114,11 +94,9 @@ pub enum Input {
     HostForgotten {
         host: HostId,
     },
-    /// The trust file as the driver read it at start: the hosts this
-    /// profile trusts and the keys it pins for them.
-    TrustRead {
-        store: crate::trust::TrustStore,
-    },
+    /// The driver started the core: the first input it steps, which
+    /// publishes the paired hosts the store holds.
+    Started,
     /// A change of the trust store nobody waits on: what a peer said of
     /// itself, or the address it answered at.
     ChangeTrust(crate::trust::TrustChange),
@@ -216,6 +194,10 @@ pub enum Input {
     },
     /// The start's sweep has reported every agent it found.
     Swept,
+    /// The driver started a ring segment at the state the core handed it
+    /// with [`Output::Checkpoint`]: the cursors that checkpoint took are
+    /// on the drive, and what waited for the WAL move lands from this step.
+    Checkpointed,
     /// Keep the store under its budgets now: the retention sweeps.
     Retain(crate::retention::Retain),
     /// A call by a client of this profile: its socket, an agent's tools
@@ -240,11 +222,6 @@ pub enum Input {
     Entropy([u8; 32]),
     /// The settings the profile runs under now.
     Configure(Settings),
-    /// The drafts file as the driver read it at start.
-    Drafts {
-        #[serde(with = "codec::drafts::list")]
-        drafts: Vec<(Vec<u8>, Vec<u8>)>,
-    },
     /// What the profile's shell changed outside a step, for the core's
     /// subscribers. Each kind goes as the write behind it moves into the
     /// core.
@@ -271,13 +248,10 @@ impl Input {
             Input::WantChannel { .. } => "WantChannel",
             Input::ChannelOpened { .. } => "ChannelOpened",
             Input::ChannelClosed { .. } => "ChannelClosed",
-            Input::AttemptConcluded { .. } => "AttemptConcluded",
             Input::PlanChanged => "PlanChanged",
-            Input::CallsFailed { .. } => "CallsFailed",
-            Input::RouteFailed { .. } => "RouteFailed",
             Input::TryAgain { .. } => "TryAgain",
             Input::HostForgotten { .. } => "HostForgotten",
-            Input::TrustRead { .. } => "TrustRead",
+            Input::Started => "Started",
             Input::ChangeTrust(_) => "ChangeTrust",
             Input::Policy(_) => "Policy",
             Input::PeerCall { .. } => "PeerCall",
@@ -298,6 +272,7 @@ impl Input {
             Input::Exiting { .. } => "Exiting",
             Input::Verdict { .. } => "Verdict",
             Input::Swept => "Swept",
+            Input::Checkpointed => "Checkpointed",
             Input::Retain(_) => "Retain",
             Input::ClientCall { .. } => "ClientCall",
             Input::CallCancelled { .. } => "CallCancelled",
@@ -305,7 +280,6 @@ impl Input {
             Input::JobDone { .. } => "JobDone",
             Input::Entropy(_) => "Entropy",
             Input::Configure(_) => "Configure",
-            Input::Drafts { .. } => "Drafts",
             Input::FromShell(_) => "FromShell",
             Input::LinkCarried { .. } => "LinkCarried",
         }
@@ -416,6 +390,14 @@ pub enum Output {
     CancelTimer {
         id: TimerId,
     },
+    /// The core serialized at the end of this step, paired with the store's
+    /// main file, which holds every commit before the WAL move this
+    /// checkpoint began and nothing since. The driver starts a ring
+    /// segment here and then feeds [`Input::Checkpointed`], so what waited
+    /// for the move lands in a step the new segment records.
+    Checkpoint {
+        state: Vec<u8>,
+    },
     /// Open a channel to `peer` over `link`, handshaking against `pin`,
     /// and report it as [`Input::ChannelOpened`] or
     /// [`Input::ChannelClosed`] under `channel`.
@@ -436,12 +418,6 @@ pub enum Output {
     CloseChannel {
         channel: ChannelId,
     },
-    /// Try a calls channel to `host` on `route`, and report how it went as
-    /// [`Input::AttemptConcluded`].
-    Attempt {
-        host: HostId,
-        route: Route,
-    },
     /// `route` no longer carries `host`'s traffic: forget the channels
     /// opened on it, so the next call opens a fresh one.
     DropRoute {
@@ -452,15 +428,10 @@ pub enum Output {
     Dial {
         host: HostId,
     },
-    /// The route the call that reported [`Input::RouteFailed`] tries
-    /// next, if any.
-    NextRoute {
-        host: HostId,
-        route: Option<Route>,
-    },
-    /// Close `host`'s own links, as their idle timeout would, only sooner:
-    /// calls over them find no channel. Redialling brings them back.
-    CloseLinks {
+    /// Dial `host` through a host that claims to reach it, again and
+    /// again with a pause between tries, until a link of its own is up or
+    /// no host claims it.
+    DialThrough {
         host: HostId,
     },
     /// Make `request` of `host` on a channel to it, and report what came
@@ -525,6 +496,13 @@ pub enum Output {
     WriteControl {
         agent: AgentId,
         frame: ControlFrame,
+    },
+    /// The core gave up waiting for the verdict on the message it wrote
+    /// under `input_id` and concluded it lost: stop waiting for that
+    /// write's verdict and report nothing more of it.
+    ForgetVerdict {
+        agent: AgentId,
+        input_id: Vec<u8>,
     },
     /// Write `spec` into the agent's directory `dir` and start its process
     /// from it; a process that cannot be started is gone, reported as
@@ -709,10 +687,6 @@ pub enum Job {
     /// of the job's own, so the store's main file holds every commit; one
     /// that cannot move the whole WAL fails.
     CheckpointWal,
-    /// Write the serialized core beside the store's passive WAL checkpoint.
-    Checkpoint {
-        state: Vec<u8>,
-    },
     /// Write `bytes` into `dir` under their hash, `hash`, unless a file of
     /// that name is there; answered as [`JobResult::Refused`] when the
     /// drive is full.
@@ -810,7 +784,7 @@ mod tests {
                 channel: ChannelId(4),
                 link: LinkId(1),
                 peer: HostId([1; 16]),
-                class: ChannelClass::Bulk,
+                class: ChannelClass::Session,
             },
             Input::ChannelClosed {
                 channel: ChannelId(4),
@@ -820,14 +794,6 @@ mod tests {
                 link: LinkId(1),
                 reason: LinkCloseReason::UserShutdown,
             },
-            Input::AttemptConcluded {
-                host: HostId([1; 16]),
-                route: Route::Via(HostId([2; 16])),
-                tried: Tried::Failed(ChannelError::Refused(ForwardRefusal::PaymentRequired)),
-            },
-            Input::Timer {
-                id: TimerId::Retry(HostId([1; 16])),
-            },
             Input::Credential {
                 link: LinkId(1),
                 expires_at_ms: 900_000,
@@ -835,18 +801,9 @@ mod tests {
                 free_every_ms: Some(60_000),
             },
             Input::PlanChanged,
-            Input::CallsFailed {
-                host: HostId([1; 16]),
-                error: ChannelError::Handshake("no channel opened in time".to_owned()),
-            },
-            Input::RouteFailed {
-                host: HostId([1; 16]),
-                route: Route::Direct(LinkId(2)),
-                error: ChannelError::LinkClosed,
-            },
             Input::ClientCall {
                 call: CallId(2),
-                request: ClientRequest::Subscribe {
+                request: ClientRequest::SubscribeSession {
                     agent_id: vec![1, 2],
                     tail: 6,
                 },
@@ -854,13 +811,15 @@ mod tests {
             Input::PeerCall {
                 from: HostId([1; 16]),
                 call: CallId(7),
-                request: PeerRequest::Subscribe(wire::PeerSubscribeRequest {
+                request: PeerRequest::SubscribeSession(wire::PeerSubscribeSessionRequest {
                     agent_id: vec![1, 2],
-                    from: Some(wire::peer_subscribe_request::From::After(wire::After {
-                        revision: 3,
-                        cap: 4,
-                        generation: 5,
-                    })),
+                    from: Some(wire::peer_subscribe_session_request::From::After(
+                        wire::After {
+                            revision: 3,
+                            cap: 4,
+                            generation: 5,
+                        },
+                    )),
                 }),
             },
             Input::ClientCall {
@@ -892,9 +851,9 @@ mod tests {
             },
             Input::ClientCall {
                 call: CallId(3),
-                request: ClientRequest::Fetch(wire::FetchRequest {
+                request: ClientRequest::ListItems(wire::ListItemsRequest {
                     agent_id: vec![9],
-                    limit: 3,
+                    page_size: 3,
                     ..Default::default()
                 }),
             },
@@ -909,9 +868,12 @@ mod tests {
                 channel: ChannelId(4),
             },
             Input::OwnHost(Box::new(wire::HostEntry {
-                host_id: vec![1],
-                name: "desk".into(),
-                account_signed_in: Some(true),
+                host: Some(wire::Host {
+                    host_id: vec![1],
+                    name: "desk".into(),
+                    account_signed_in: Some(true),
+                    ..Default::default()
+                }),
                 ..Default::default()
             })),
             Input::Candidates {
@@ -952,9 +914,7 @@ mod tests {
             Input::Timer {
                 id: TimerId::Source(HostId([1; 16]), AgentId([2; 16])),
             },
-            Input::TrustRead {
-                store: crate::trust::TrustStore::of_hosts([HostId([1; 16])]),
-            },
+            Input::Started,
             Input::Policy(SourcePolicy::OnDemand),
             Input::FromShell(FromShell::Session {
                 agent: agent.clone(),
@@ -975,6 +935,7 @@ mod tests {
                     given: None,
                     branches: ["main".to_owned()].into(),
                     new_worktree: true,
+                    recent: None,
                     spec: wire::AgentSpec {
                         name: "lead".into(),
                         ..Default::default()
@@ -1010,9 +971,11 @@ mod tests {
                         agent_id: vec![5; 16],
                         name: "notes.txt".into(),
                         mime: "text/plain".into(),
-                        bytes: b"notes".to_vec(),
+                        bytes: Vec::new(),
                     },
                     hash: vec![9; 32],
+                    // Recorded as a length: zero bytes read back as written.
+                    bytes: vec![0; 5],
                 },
             },
             Input::ClientCall {
@@ -1020,7 +983,7 @@ mod tests {
                 request: ClientRequest::KeepBlob {
                     agent_id: vec![5; 16],
                     hash: vec![9; 32],
-                    bytes: b"notes".to_vec(),
+                    bytes: vec![0; 5],
                 },
             },
             Input::ClientCall {
@@ -1055,6 +1018,51 @@ mod tests {
             let line = serde_json::to_string(&input).expect("an input writes");
             let read: Input = serde_json::from_str(&line).expect("an input reads back");
             assert_eq!(read, input, "{line}");
+        }
+    }
+
+    #[test]
+    fn an_upload_is_recorded_as_its_length_not_its_bytes() {
+        let bytes = vec![0x5a; 3 << 20];
+        let upload = Input::ClientCall {
+            call: CallId(15),
+            request: ClientRequest::PutBlob {
+                request: wire::PutBlobRequest {
+                    agent_id: vec![5; 16],
+                    name: "big.bin".into(),
+                    mime: "application/octet-stream".into(),
+                    bytes: Vec::new(),
+                },
+                hash: vec![9; 32],
+                bytes: bytes.clone(),
+            },
+        };
+        let kept = Input::ClientCall {
+            call: CallId(16),
+            request: ClientRequest::KeepBlob {
+                agent_id: vec![5; 16],
+                hash: vec![9; 32],
+                bytes,
+            },
+        };
+        for input in [upload, kept] {
+            let line = serde_json::to_string(&input).unwrap();
+            assert!(
+                line.len() < 512,
+                "{} bytes recorded for a 3 MiB blob",
+                line.len()
+            );
+            let read: Input = serde_json::from_str(&line).unwrap();
+            let Input::ClientCall { request, .. } = read else {
+                panic!("a call reads back as one");
+            };
+            let len = match request {
+                ClientRequest::PutBlob { bytes, .. } | ClientRequest::KeepBlob { bytes, .. } => {
+                    bytes.len()
+                }
+                other => panic!("{other:?}"),
+            };
+            assert_eq!(len, 3 << 20, "the length is what the step needs");
         }
     }
 }

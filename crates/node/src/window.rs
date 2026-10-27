@@ -90,6 +90,9 @@ pub(crate) fn write(dir: &Path, stem: &str, text: &str) -> io::Result<PathBuf> {
     let id = uuid::Uuid::new_v4().simple().to_string();
     let path = dir.join(format!("{stem}-{now_ms}-{}.txt", &id[..8]));
     std::fs::write(&path, text)?;
+    if let Err(error) = crate::install::prune_reports(dir) {
+        tracing::warn!(%error, "cannot prune the reports");
+    }
     Ok(path)
 }
 

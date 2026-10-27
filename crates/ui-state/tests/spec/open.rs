@@ -65,6 +65,7 @@ fn an_empty_snapshot_body_is_starting_with_nothing_known() {
             decoded,
             &ui_state::AgentState {
                 kind,
+                phase: Phase::Starting,
                 ..Default::default()
             }
         );

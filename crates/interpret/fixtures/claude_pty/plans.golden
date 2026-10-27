@@ -55,4 +55,4 @@ snapshot WORKING queue=[] working_on="never mind, just fix the typo" at=18000000
 ## 22 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","permission_mode":"acceptEdits","session_id":"s1","tool_input":{"file_path":"/w/README.md","new_string":"the","old_string":"teh"},"tool_name":"Edit","tool_use_id":"e1"}}
 snapshot WORKING queue=[] working_on="never mind, just fix the typo" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=acceptEdits context=? tasks=? background=? running=e1 Edit since=1800000000000
 ## 23 fact {"channel":"transcript","json":{"message":{"content":[{"id":"e1","input":{"file_path":"/w/README.md","new_string":"the","old_string":"teh"},"name":"Edit","type":"tool_use"}],"id":"m4","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.034Z","type":"assistant","uuid":"a4"}}
-item e1 tool final at=1800000000034 text="" Edit TOOL_STATE_RUNNING input="{\"file_path\":\"/w/README.md\",\"new_string\":\"the\",\"old_string\":…"
+item e1 tool final at=1800000000034 text="" Edit TOOL_STATE_RUNNING input=edit:"/w/README.md"x1

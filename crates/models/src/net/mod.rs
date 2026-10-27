@@ -32,9 +32,7 @@ use store::AgentKey;
 use wire::Lifecycle;
 
 use crate::lifecycle::{EXIT_CAUSE_LAST_STEP, EXITS_AT_TURN_END};
-use crate::presence::{
-    AWAY_ONLY_ON_PAYMENT_REFUSAL, CHANGES_ON_A_CONCLUDED_ATTEMPT, ONE_ATTEMPT_IN_FLIGHT,
-};
+use crate::presence::PRESENCE_FROM_LINKS;
 use crate::replication::{
     BLOCK_AGREES, BLOCK_CONTIGUOUS, CURSOR_COMPLETE, NO_OTHER_GENERATION, block_agrees,
     block_contiguous, cursor_complete, no_other_generation,
@@ -112,6 +110,7 @@ pub fn create(name: &str, spec: wire::AgentSpec) -> ClientRequest {
         given: Some(name.to_owned()),
         branches: Default::default(),
         new_worktree: false,
+        recent: None,
         spec,
     }))
 }
@@ -674,14 +673,8 @@ impl Machine for ComposedNet {
             Property::always(EXIT_CAUSE_LAST_STEP, |_, s: &State| {
                 !s.net.broke(EXIT_CAUSE_LAST_STEP)
             }),
-            Property::always(CHANGES_ON_A_CONCLUDED_ATTEMPT, |_, s: &State| {
-                !s.net.broke(CHANGES_ON_A_CONCLUDED_ATTEMPT)
-            }),
-            Property::always(AWAY_ONLY_ON_PAYMENT_REFUSAL, |_, s: &State| {
-                !s.net.broke(AWAY_ONLY_ON_PAYMENT_REFUSAL)
-            }),
-            Property::always(ONE_ATTEMPT_IN_FLIGHT, |_, s: &State| {
-                !s.net.broke(ONE_ATTEMPT_IN_FLIGHT)
+            Property::always(PRESENCE_FROM_LINKS, |_, s: &State| {
+                !s.net.broke(PRESENCE_FROM_LINKS)
             }),
             Property::always(
                 "a replica reads an agent exited only once the agent's own host does: the order \

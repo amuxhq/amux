@@ -586,6 +586,57 @@ fn the_job_list_empties_when_headless_claude_exits() {
     );
 }
 
+/// Claude names the path a command would write as `blocked_path` even
+/// inside the agent's folder, as QA recorded for `touch decided.txt`: that
+/// ask has no reason. A path beyond the folder, including a sibling whose
+/// name merely starts the same, is outside the allowed directories.
+#[test]
+fn only_a_blocked_path_beyond_the_agents_folder_is_outside_the_allowed_directories() {
+    use prost::Message as _;
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        incarnation: 1,
+        cwd: "/net/desk/work".to_owned(),
+        ..Default::default()
+    };
+    let (mut state, _) = ClaudeSdk::initial(&spec, "test");
+    ClaudeSdk::step(
+        &mut state,
+        stream(json!({"type": "system", "subtype": "init", "uuid": "i", "session_id": "s"})),
+    );
+    let reason = |state: &mut State, id: &str, path: &str| {
+        let stepped = ClaudeSdk::step(
+            state,
+            stream(
+                json!({"type": "control_request", "request_id": id, "request": {
+                "subtype": "can_use_tool", "tool_name": "Bash", "tool_use_id": id,
+                "input": {"command": format!("touch {path}")},
+                "permission_suggestions": [], "blocked_path": path}}),
+            ),
+        );
+        let snapshot = stepped.step.snapshot.expect("the ask changes the snapshot");
+        let body = wire::ClaudeSdkSnapshot::decode(&snapshot.body[..]).unwrap();
+        let ask = body
+            .asks
+            .iter()
+            .find(|ask| ask.key == id)
+            .expect("the ask is listed");
+        match &ask.body {
+            Some(wire::ask::Body::Permission(permission)) => permission.reason.clone(),
+            other => panic!("not a permission ask: {other:?}"),
+        }
+    };
+    assert_eq!(reason(&mut state, "in", "/net/desk/work/decided.txt"), "");
+    assert_eq!(
+        reason(&mut state, "out", "/net/desk/other/decided.txt"),
+        "outside the allowed directories: /net/desk/other/decided.txt"
+    );
+    assert_eq!(
+        reason(&mut state, "sibling", "/net/desk/workshop/decided.txt"),
+        "outside the allowed directories: /net/desk/workshop/decided.txt"
+    );
+}
+
 fn initialized(commands: &[&str]) -> Value {
     json!({
         "type": "control_response",

@@ -269,6 +269,32 @@ endpoint it is given, but no amux.sh endpoint is wired to it, and the app
 does not register for remote notifications. The `push-wake` journey hands a
 payload to the app directly.
 
+## Running the relay
+
+The relay is `amux relay`, a hidden command run by a service
+manager. It reads one TOML file, named by `--config` or `AMUX_CONFIG`. A key
+it does not know is logged and ignored, so the same file serves the relay
+versions either side of a deploy or a rollback:
+
+```toml
+host_name = "s1.amux.sh"    # the name credentials are minted for
+tcp_port = 9001             # the TLS listener; credentials name this port
+udp_port = 9001             # the QUIC listener; the TCP port when absent
+cloud_url = "https://amux.sh"
+tls_cert = "/etc/amux-relay/tls/fullchain.pem"
+tls_key = "/etc/amux-relay/tls/privkey.pem"
+state_dir = "/var/lib/amux-relay"
+```
+
+Relative paths are resolved beside the file. `state_dir` holds the session
+tickets the relay issues (`tickets/`), so a restarted relay still resumes the
+hosts that held them, and the dumps its core asks for (`reports/`). It
+defaults to the directory systemd names in `STATE_DIRECTORY` (a unit with
+`StateDirectory=`), else the file's own directory. The relay logs to
+standard error for its service manager to keep and rotate (`journalctl -u`
+under systemd); `AMUX_LOG` names a file instead, and `RUST_LOG` sets the
+level. It keeps no host id between runs.
+
 ## Where each value lives
 
 **In this repository, committed and public.** None of it is a secret, and all
@@ -298,7 +324,7 @@ operator's untracked file.
 These are evidence a person runs on a Mac. They are not tests, they never run
 in CI, and nothing gates on them: they reach the production account service
 with a real account, and a red one is a conversation rather than a build
-failure. `crates/xtask/src/ios_verify.rs` leaves them out of every
+failure. `crates/ios-tools/src/ios_verify.rs` leaves them out of every
 verification list on purpose.
 
 - **`just ios qa-cloud-signin`** signs a QA account into `https://amux.sh`

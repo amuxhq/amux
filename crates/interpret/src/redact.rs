@@ -10,10 +10,9 @@
 //! is decoded as the kind's state and written again with every protobuf
 //! value inside it walked the same way.
 //!
-//! On top of the shared capture rules (secret-named keys, known token
-//! markers, machine paths, emails and account identifiers), the redactor
-//! blanks the values of environment maps, secret-named environment
-//! assignments in text and tokens with well-known prefixes, and replaces
+//! On top of the shared capture rules (secret-named keys and assignments,
+//! known token prefixes, machine paths, emails, this machine's own names),
+//! the redactor blanks the values of environment maps and replaces
 //! provider session and thread ids, wherever they appear in the target,
 //! with a placeholder derived from the id so one session stays recognisable
 //! across a dump.
@@ -39,40 +38,12 @@ use crate::{
 /// hash of the id, and `>`.
 pub const SESSION_PLACEHOLDER_PREFIX: &str = "<SESSION-";
 
-/// Tokens whose prefix names them as credentials wherever they appear.
-const TOKEN_PREFIXES: &[&str] = &[
-    "sk-proj-",
-    "sk-svcacct-",
-    "sk-admin-",
-    "ghp_",
-    "gho_",
-    "ghu_",
-    "ghs_",
-    "ghr_",
-    "github_pat_",
-    "glpat-",
-    "xoxb-",
-    "xoxp-",
-    "xoxa-",
-    "xoxs-",
-    "AKIA",
-    "ASIA",
-    "AIza",
-];
-
-/// Parts of an environment variable name that mark its value as secret.
-const SECRET_NAME_PARTS: &[&str] = &[
-    "KEY",
-    "APIKEY",
-    "TOKEN",
-    "SECRET",
-    "PASSWORD",
-    "PASSWD",
-    "CREDENTIAL",
-    "CREDENTIALS",
-    "AUTH",
-    "PAT",
-];
+/// The rules every target is redacted under: this machine's home, user
+/// and host names on top of the shared ones, read once.
+fn rules() -> &'static Redaction {
+    static RULES: OnceLock<Redaction> = OnceLock::new();
+    RULES.get_or_init(Redaction::for_this_machine)
+}
 
 /// Redacts one target of one kind. An unknown kind cannot be decoded, so
 /// its target comes back empty.
@@ -100,7 +71,7 @@ pub fn redact(kind: Kind, target: RedactTarget) -> RedactTarget {
             // Walked with every body, which no kind is there to decode,
             // emptied.
             RedactTarget::ClientSession(history) => RedactTarget::ClientSession(redact_message(
-                &wire::ClientSessionHistory::full_name(),
+                &wire::dump::ClientSessionHistory::full_name(),
                 &history,
             )),
         },
@@ -171,7 +142,7 @@ pub(crate) fn redact_kind<ItemBody: Name, SnapshotBody: Name, InputBody: Name, S
             RedactTarget::Agent(scrubber.twice(|s| s.message(&name, &agent)))
         }
         RedactTarget::ClientSession(history) => {
-            let name = type_name::<wire::ClientSessionHistory>();
+            let name = type_name::<wire::dump::ClientSessionHistory>();
             RedactTarget::ClientSession(scrubber.twice(|s| s.message(&name, &history)))
         }
     }
@@ -345,7 +316,7 @@ impl Scrubber {
     pub(crate) fn json(&mut self, value: &mut Value) {
         self.json_keys(value);
         let mut summary = RedactionSummary::default();
-        redaction::redact_value(value, &Redaction::default(), &mut summary);
+        redaction::redact_value(value, rules(), &mut summary);
     }
 
     /// The rules the shared capture redactor does not know: environment
@@ -398,8 +369,7 @@ impl Scrubber {
             }
         }
         let mut summary = RedactionSummary::default();
-        let out = redaction::redact_text(&out, &Redaction::default(), &mut summary);
-        secret_assignments(&prefixed_tokens(&out))
+        redaction::redact_text(&out, rules(), &mut summary)
     }
 
     fn session(&mut self, id: &str) -> String {
@@ -477,133 +447,6 @@ fn blank_env(value: &mut Value) {
         Value::Null => {}
         other => *other = Value::String(SECRET_PLACEHOLDER.to_owned()),
     }
-}
-
-fn is_word_byte(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || byte == b'_'
-}
-
-fn is_token_byte(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
-}
-
-/// Tokens with a credential prefix, at the start of a word, to the end of
-/// the token.
-fn prefixed_tokens(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = String::with_capacity(text.len());
-    let mut kept = 0;
-    let mut index = 0;
-    while index < bytes.len() {
-        let at_word_start = index == 0 || !is_word_byte(bytes[index - 1]);
-        let prefix = at_word_start
-            .then(|| {
-                TOKEN_PREFIXES
-                    .iter()
-                    .find(|prefix| bytes[index..].starts_with(prefix.as_bytes()))
-            })
-            .flatten();
-        let Some(prefix) = prefix else {
-            index += 1;
-            continue;
-        };
-        let mut end = index + prefix.len();
-        while end < bytes.len() && is_token_byte(bytes[end]) {
-            end += 1;
-        }
-        // A bare prefix is a word, not a token.
-        if end - index < prefix.len() + 8 {
-            index = end;
-            continue;
-        }
-        out.push_str(&text[kept..index]);
-        out.push_str(SECRET_PLACEHOLDER);
-        kept = end;
-        index = end;
-    }
-    out.push_str(&text[kept..]);
-    out
-}
-
-/// `NAME=value`, `name: value` and `"name": "value"` where the name says
-/// secret: the value is blanked, keeping its quotes.
-fn secret_assignments(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = String::with_capacity(text.len());
-    let mut kept = 0;
-    let mut index = 0;
-    while index < bytes.len() {
-        if !matches!(bytes[index], b'=' | b':') || bytes.get(index + 1) == Some(&b'=') {
-            index += 1;
-            continue;
-        }
-        let mut name_end = index;
-        while name_end > kept && bytes[name_end - 1] == b' ' {
-            name_end -= 1;
-        }
-        let quoted_name = name_end > kept && matches!(bytes[name_end - 1], b'"' | b'\'');
-        if quoted_name {
-            name_end -= 1;
-        }
-        let mut start = name_end;
-        while start > kept && (is_word_byte(bytes[start - 1]) || bytes[start - 1] == b'-') {
-            start -= 1;
-        }
-        if !is_secret_name(&text[start..name_end]) {
-            index += 1;
-            continue;
-        }
-        let mut value_start = index + 1;
-        while bytes.get(value_start) == Some(&b' ') {
-            value_start += 1;
-        }
-        let (value_start, value_end, resume) = match bytes.get(value_start) {
-            Some(quote @ (b'"' | b'\'')) => {
-                let inner = value_start + 1;
-                let close = text[inner..]
-                    .find(*quote as char)
-                    .map(|at| inner + at)
-                    .unwrap_or(bytes.len());
-                (inner, close, (close + 1).min(bytes.len()))
-            }
-            _ => {
-                let end = text[value_start..]
-                    .find(|c: char| {
-                        c.is_whitespace() || matches!(c, ';' | '&' | '|' | '"' | '\'' | ',' | '}')
-                    })
-                    .map(|at| value_start + at)
-                    .unwrap_or(bytes.len());
-                (value_start, end, end)
-            }
-        };
-        let value = &text[value_start..value_end];
-        if !value.is_empty() && value != SECRET_PLACEHOLDER {
-            out.push_str(&text[kept..value_start]);
-            out.push_str(SECRET_PLACEHOLDER);
-            kept = value_end;
-        }
-        index = resume.max(index + 1);
-    }
-    out.push_str(&text[kept..]);
-    out
-}
-
-fn is_secret_name(name: &str) -> bool {
-    let whole = normalized(name);
-    !whole.is_empty()
-        && (name
-            .split(['_', '-', '.'])
-            .any(|part| SECRET_NAME_PARTS.contains(&part.to_ascii_uppercase().as_str()))
-            || [
-                "apikey",
-                "token",
-                "secret",
-                "password",
-                "passwd",
-                "credential",
-            ]
-            .iter()
-            .any(|suffix| whole.ends_with(suffix)))
 }
 
 fn read_varint(bytes: &mut &[u8]) -> Option<u64> {
@@ -688,39 +531,6 @@ fn add_message(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn secret_assignments_blank_secret_names_only() {
-        assert_eq!(
-            secret_assignments("GITHUB_TOKEN=abc123 PATH=/bin make"),
-            "GITHUB_TOKEN=<REDACTED> PATH=/bin make"
-        );
-        assert_eq!(
-            secret_assignments("export OPENAI_API_KEY=\"sk x\"; echo"),
-            "export OPENAI_API_KEY=\"<REDACTED>\"; echo"
-        );
-        assert_eq!(
-            secret_assignments("{\"api_key\": \"abc\", \"rows\": 3} apiKey: xyz"),
-            "{\"api_key\": \"<REDACTED>\", \"rows\": 3} apiKey: <REDACTED>"
-        );
-        assert_eq!(
-            secret_assignments("a == b; MONKEY=1 https://x max_tokens=5"),
-            "a == b; MONKEY=1 https://x max_tokens=5"
-        );
-    }
-
-    #[test]
-    fn prefixed_tokens_need_a_word_start_and_a_body() {
-        assert_eq!(
-            prefixed_tokens("use ghp_0123456789abcdef now"),
-            "use <REDACTED> now"
-        );
-        assert_eq!(prefixed_tokens("ghp_ alone"), "ghp_ alone");
-        assert_eq!(
-            prefixed_tokens("xAKIA0123456789ABCDEF"),
-            "xAKIA0123456789ABCDEF"
-        );
-    }
 
     #[test]
     fn session_placeholders_are_stable_and_idempotent() {

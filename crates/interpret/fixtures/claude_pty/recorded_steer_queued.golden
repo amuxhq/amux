@@ -19,11 +19,11 @@ snapshot WORKING queue=[] working_on=- at=1790395580424 asks=[] session=960aaea8
 item bbbc587c-90a4-4508-8da4-31ec6bbe9e97 thinking final at=1790395580223 text=""
 snapshot WORKING queue=[] working_on=- at=1790395580826 asks=[] session=960aaea8-761a-4fe3-83fc-220c3858187e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=36278 tasks=? background=? running=toolu_0177QLZtD7mJgYG5i1jpCyFq Bash since=1790395580424
 ## 44 recorded 42: fact Transcript type=assistant uuid=ff73dca0-8c7f-4fbf-b9ad-1cf9d156708c
-item toolu_0177QLZtD7mJgYG5i1jpCyFq tool final at=1790395580800 text="" Bash TOOL_STATE_RUNNING input="{\"command\":\"python3 -c 'import time; time.sleep(15)'; echo S…"
+item toolu_0177QLZtD7mJgYG5i1jpCyFq tool final at=1790395580800 text="" Bash TOOL_STATE_RUNNING input=shell:"python3 -c 'import time; time.sleep(15)'; echo S1"
 ## 48 recorded 46: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_0177QLZtD7mJgYG5i1jpCyFq
 snapshot WORKING queue=[] working_on=- at=1790395595584 asks=[] session=960aaea8-761a-4fe3-83fc-220c3858187e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=36278 tasks=? background=?
 ## 50 recorded 48: fact Transcript type=user uuid=6209f922-e7dd-4e0f-af0d-abe36418c426
-item toolu_0177QLZtD7mJgYG5i1jpCyFq tool final at=1790395580800 text="" Bash TOOL_STATE_SUCCEEDED started=1790395580800 ended=1790395595992 input="{\"command\":\"python3 -c 'import time; time.sleep(15)'; echo S…" out="S1"
+item toolu_0177QLZtD7mJgYG5i1jpCyFq tool final at=1790395580800 text="" Bash TOOL_STATE_SUCCEEDED started=1790395580800 ended=1790395595992 input=shell:"python3 -c 'import time; time.sleep(15)'; echo S1" out="S1"
 ## 55 recorded 53: fact Transcript type=attachment uuid=721326aa-2cce-4201-a92f-3fc9c6deb9fe
 item 721326aa-2cce-4201-a92f-3fc9c6deb9fe steer final at=1790395581233 text="Also append the word BANANA."
 ## 64 recorded 62: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01ADAvuLV3aTwhoCMVMFAcQB
@@ -32,11 +32,11 @@ snapshot WORKING queue=[] working_on=- at=1790395597532 asks=[] session=960aaea8
 item a53e936d-116e-4a20-9011-4d6630e006ea thinking final at=1790395597388 text=""
 snapshot WORKING queue=[] working_on=- at=1790395597654 asks=[] session=960aaea8-761a-4fe3-83fc-220c3858187e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=36635 tasks=? background=? running=toolu_01ADAvuLV3aTwhoCMVMFAcQB Bash since=1790395597532
 ## 68 recorded 66: fact Transcript type=assistant uuid=e6fc9615-8ba2-461b-a646-ba44c442aff5
-item toolu_01ADAvuLV3aTwhoCMVMFAcQB tool final at=1790395597916 text="" Bash TOOL_STATE_RUNNING input="{\"command\":\"python3 -c 'import time; time.sleep(5)'; echo S2…"
+item toolu_01ADAvuLV3aTwhoCMVMFAcQB tool final at=1790395597916 text="" Bash TOOL_STATE_RUNNING input=shell:"python3 -c 'import time; time.sleep(5)'; echo S2"
 ## 70 recorded 68: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01ADAvuLV3aTwhoCMVMFAcQB
 snapshot WORKING queue=[] working_on=- at=1790395602617 asks=[] session=960aaea8-761a-4fe3-83fc-220c3858187e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=36635 tasks=? background=?
 ## 72 recorded 70: fact Transcript type=user uuid=67869676-4793-4f26-a4da-bd76b3456553
-item toolu_01ADAvuLV3aTwhoCMVMFAcQB tool final at=1790395597916 text="" Bash TOOL_STATE_SUCCEEDED started=1790395597916 ended=1790395603025 input="{\"command\":\"python3 -c 'import time; time.sleep(5)'; echo S2…" out="S2"
+item toolu_01ADAvuLV3aTwhoCMVMFAcQB tool final at=1790395597916 text="" Bash TOOL_STATE_SUCCEEDED started=1790395597916 ended=1790395603025 input=shell:"python3 -c 'import time; time.sleep(5)'; echo S2" out="S2"
 ## 74 recorded 72: fact Hook hook_event_name=Stop
 snapshot WORKING queue=[] working_on=- at=1790395603887 asks=[] session=960aaea8-761a-4fe3-83fc-220c3858187e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=36635 tasks=? background=[]
 ## 78 recorded 76: fact Transcript type=assistant uuid=76c75e76-b967-41b4-8db0-fa7016e64164

@@ -52,10 +52,8 @@ pub enum Stop {
 /// Whether a lifecycle call's error says it never reached the agent's
 /// host: the daemon could not reach it and wrote nothing.
 fn never_left(error: &RpcError) -> bool {
-    matches!(
-        error.code(),
-        Some(ErrorCode::Unavailable | ErrorCode::Unreachable)
-    )
+    error.code() == Some(ErrorCode::Unavailable)
+        || error.reason() == Some(wire::ErrorReason::HostUnreachable)
 }
 
 #[derive(Debug, thiserror::Error)]

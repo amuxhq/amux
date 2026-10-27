@@ -22,7 +22,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Check workspace
         run: just check
       - name: Run Clippy
@@ -39,7 +39,7 @@ jobs:
           toolchain: nightly-2026-08-30
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Check formatting
         run: just fmt-check
 
@@ -54,7 +54,7 @@ jobs:
           toolchain: nightly-2026-08-30
           components: miri, rust-src
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Run the C ABI tests under the checking interpreter
         run: just miri
 
@@ -64,11 +64,16 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The compatibility check reads the latest release tag's schema.
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@1.98.0
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Check committed protobuf code
         run: just codegen-check
+      - name: Check the protocol still reads what the latest release wrote
+        run: just proto-compat
       - name: Enforce dependency boundaries
         run: just dependency-policy
       - name: Check the state-machine cores carry no runtime, lock or await
@@ -77,10 +82,10 @@ jobs:
         run: just typed-provider-check
       - name: Check the test suite catalogue
         run: just tests-check
+      - name: Run the scripts' own unit tests
+        run: just script-tests
       - name: Check the documentation's links, figures and map
         run: just docs-check
-      - name: Check nothing names a removed mechanism
-        run: just deletion-ledger-check
 
   test:
     name: Test (${{ matrix.os }})
@@ -96,11 +101,11 @@ jobs:
         shell: bash
         run: scripts/no-update-flags.sh
       - uses: dtolnay/rust-toolchain@1.98.0
-      # Named, because the weekly offline tests restore the macOS one.
+      # Named, because the weekly offline tests restore the Linux one.
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: test
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       # testnet's ctl test drives the terminal client in tmux; Linux runners
       # have it already.
       - name: Install tmux on macOS
@@ -128,7 +133,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: test
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Walk the simulated stories by seed
         # The same stories under TESTNET_MODE=simulated, a few seeds each;
         # a failure prints the seed and the `just sim --seed` that reruns
@@ -163,7 +168,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: models
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Check the model at its CI bounds
         run: just test-crate models -- --test ${{ matrix.target }}
 
@@ -178,7 +183,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.98.0
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Build product release
         run: just release-check
 
@@ -194,7 +199,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.98.0
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Install tmux on Linux
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y tmux
@@ -266,7 +271,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.98.0
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Check provider-free client graph
         run: just embedded-check
       - name: Test embedded ownership boundary
@@ -282,87 +287,6 @@ jobs:
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Check iOS device and simulator graphs
         run: just mobile-check
-
-  # A change reaches the phone only through these paths. Whatever else the
-  # bridge reads crosses to Swift as the generated mirrors in apps/apple,
-  # which a workspace test holds to the Rust definitions, so a shape change
-  # upstream cannot land without touching the app. Behaviour upstream is the
-  # workspace tests' to judge; the iOS target check above compiles the
-  # bridge's graph on every push.
-  ios-changes:
-    name: iOS changes
-    runs-on: ubuntu-latest
-    outputs:
-      phone: ${{ steps.filter.outputs.phone }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            phone:
-              - 'apps/apple/**'
-              - 'crates/app-ffi/**'
-              - 'crates/app-embedded/**'
-              - 'crates/app-runtime/**'
-              - 'crates/xtask/**'
-              - 'scripts/**'
-              - 'justfile'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-              - 'rust-toolchain.toml'
-              - '.github/workflows/ci.yml'
-
-  ios-gate:
-    name: iOS gate
-    needs: ios-changes
-    if: needs.ios-changes.outputs.phone == 'true'
-    runs-on: macos-26
-    # The gate builds the app and runs the suites one simulator can answer.
-    # The capture suites are not here: see `just ios captures`.
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v4
-      - name: Refuse fixture update flags
-        shell: bash
-        run: scripts/no-update-flags.sh
-      - name: Select Xcode 26.6
-        run: |
-          sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
-          xcodebuild -version | grep -Fx 'Xcode 26.6'
-      - name: Assert simulator runtime and device type
-        run: |
-          xcrun simctl list runtimes --json | jq -e '.runtimes[] | select(.identifier == "com.apple.CoreSimulator.SimRuntime.iOS-26-5" and .isAvailable == true)'
-          xcrun simctl list devicetypes --json | jq -e '.devicetypes[] | select(.identifier == "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro")'
-      - uses: dtolnay/rust-toolchain@1.98.0
-        with:
-          components: clippy
-          targets: aarch64-apple-ios,aarch64-apple-ios-sim
-      # Named, because the nightly iOS captures job restores it.
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ios-gate
-      - uses: extractions/setup-just@v2
-      - name: Install build tools
-        run: brew install xcodegen
-      - name: Run the iOS gate
-        run: just ios gate
-      - name: Upload component snapshot comparisons and timings
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-component-snapshots
-          path: target/ios/component-snapshots
-          if-no-files-found: warn
-          retention-days: 7
-      - name: Upload the shipped-scope audit
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-scope-audit
-          path: target/ios/scope-audit
-          if-no-files-found: warn
-          retention-days: 7

@@ -16,8 +16,7 @@ use tokio::time::Instant;
 use super::Edge;
 use crate::HostId;
 use crate::link::link_log::{EarlyData, LinkEvent, LinkTransition};
-use crate::link::{EarlyCall, EarlyReply, LinkCarrier};
-use crate::trust::Reachability;
+use crate::link::{EarlyCall, EarlyReply, QuicCarrier};
 
 /// How long an answer the core has not asked for is kept: past it, the
 /// core asked differently, or not at all, and the stream is let go.
@@ -51,7 +50,7 @@ pub(crate) struct CatchUp {
     own: HostId,
     peer: HostId,
     sent: Instant,
-    carrier: Arc<dyn LinkCarrier>,
+    carrier: Arc<QuicCarrier>,
     early_data: EarlyData,
 }
 
@@ -116,7 +115,7 @@ impl FirstFlights {
 fn early_call(request: &PeerRequest) -> Option<EarlyCall> {
     match request {
         PeerRequest::SubscribeInventory => Some(EarlyCall::SubscribeInventory),
-        PeerRequest::Subscribe(request) => Some(EarlyCall::Subscribe {
+        PeerRequest::SubscribeSession(request) => Some(EarlyCall::SubscribeSession {
             session: request.agent_id.clone(),
             from: request.from?,
         }),
@@ -133,14 +132,7 @@ fn remembered(edge: &Edge) -> Vec<HostId> {
         .map(|store| {
             store
                 .entries()
-                .filter(|(_, entry)| {
-                    entry.reachabilities.iter().any(|reachability| {
-                        matches!(
-                            reachability,
-                            Reachability::Cloud | Reachability::Direct { .. }
-                        )
-                    })
-                })
+                .filter(|(_, entry)| entry.on_account || !entry.direct.is_empty())
                 .map(|(host, _)| host)
                 .collect()
         })

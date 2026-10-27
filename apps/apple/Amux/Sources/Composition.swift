@@ -35,8 +35,15 @@ final class Composition {
     /// Keeps what the account on screen buys as amux.sh says it is now.
     private let subscription: EntitlementWatch
     /// What the app is wearing. Nothing means whatever the phone is set to,
-    /// which is what most people want and what the app starts as.
-    var appearance: Appearance?
+    /// which is what most people want and what the app starts as. Kept
+    /// across launches, like the person's other choices here.
+    var appearance = UserDefaults.standard.string(forKey: Composition.appearanceKey)
+        .flatMap(Appearance.init(rawValue:)) {
+        didSet {
+            UserDefaults.standard.set(appearance?.rawValue, forKey: Self.appearanceKey)
+        }
+    }
+    private static let appearanceKey = "appearance"
     /// Whether this phone sends amux.sh usage events. On until somebody
     /// turns it off, and kept across launches: an off that a relaunch
     /// forgot would send what the person said not to.

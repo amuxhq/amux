@@ -30,14 +30,14 @@ pub(crate) mod pairing;
 mod stepped;
 mod streams;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 pub(crate) use calls::{Answers, Delivered};
 use calls::{CallTable, Carried};
-use core_ring::{DumpKind, DumpLimit, Ring};
+use core_ring::{DumpLimit, Ring};
 use daemon_core::payload::{
     Answer, BlobRefusal, CallError, ChannelClass, ChannelError, ClientRequest, JobResult,
     PeerFailure, PeerReply, PeerRequest, PublicKey, Response, Status,
@@ -54,10 +54,10 @@ pub use streams::{InventorySubscription, Subscription};
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
-use wire::{FetchRequest, GetRequest};
+use wire::{GetItemRequest, ListItemsRequest};
 
 use crate::connection::ConnectionManager;
-use crate::install::{CORE_CHECKPOINT, CORE_RING, STORE, write_durably};
+use crate::install::{CORE_RING, STORE, write_durably};
 use crate::runtime::ProfileRuntime;
 
 /// How the reason of a dump the core asked for begins.
@@ -134,12 +134,6 @@ pub(crate) enum Fed {
         want: Input,
         reply: oneshot::Sender<Result<Opened, ChannelError>>,
     },
-    /// A channel a call opened failed, and the call waits for the core to
-    /// name the route it tries next.
-    Route {
-        failed: Input,
-        reply: oneshot::Sender<Option<daemon_core::Route>>,
-    },
     /// A link resuming with a ticket came up, and holds what its peer sent
     /// early until the core says whether it takes the identity the ticket
     /// names: true when it does.
@@ -156,49 +150,26 @@ pub(crate) enum Fed {
         store: PathBuf,
         done: oneshot::Sender<Result<Captured, String>>,
     },
-    /// A timer the core armed fired.
-    Fired(Fired),
-    /// Reports are queued.
+    /// Reports are queued, or a timer is due.
     Wake,
     /// The profile is gone.
     Stop,
 }
 
-/// A timer's firing, with the arm it fired for. One whose arm the core
-/// cancelled or replaced while it waited to be stepped is dropped, so the
-/// core only hears of the arm it last asked for.
-#[derive(Debug)]
-pub(crate) struct Fired {
-    id: TimerId,
-    arm: u64,
-}
-
-/// What a link, channel or timer reported, stepped ahead of the shell's
-/// inputs.
-#[expect(
-    clippy::large_enum_variant,
-    reason = "nearly every report is an input, which boxing would allocate for"
-)]
+/// What a link or channel reported, stepped ahead of the shell's inputs.
 pub(crate) enum Report {
     Input(Input),
-    Fired(Fired),
-}
-
-/// A timer under way, by the arm it carries out.
-struct Armed {
-    arm: u64,
-    task: AbortHandle,
 }
 
 /// A client call as it arrives. What the request also carries from the
 /// shell is read on the core thread, at the point the core answers.
 pub(crate) enum Ask {
-    Subscribe {
+    SubscribeSession {
         agent_id: Vec<u8>,
         tail: u32,
     },
-    Fetch(FetchRequest),
-    Get(GetRequest),
+    ListItems(ListItemsRequest),
+    GetItem(GetItemRequest),
     SubscribeInventory,
     /// A request the shell already completed.
     Ready(ClientRequest),
@@ -221,11 +192,12 @@ pub(crate) struct Driver {
     connections: Arc<Mutex<Weak<ConnectionManager>>>,
     /// The calls the core made of peers that are still out.
     outgoing: Outgoing,
-    /// The core thread, once started: the store closes when it ends.
-    thread: std::sync::OnceLock<std::thread::JoinHandle<()>>,
-    /// Where the caller steps the core instead, when it has no thread.
-    cores: Option<Cores>,
-    /// The core as held for its caller to step, once started.
+    /// Where the core is held for stepping: the caller's cores, or this
+    /// profile's own with a thread that steps them.
+    cores: Cores,
+    /// The thread stepping `cores` when the caller has none of its own.
+    stepper: Option<stepped::Stepper>,
+    /// The core as held for stepping, once started.
     slot: std::sync::OnceLock<Arc<stepped::Slot>>,
     /// The trust store as the core last published it.
     trust: crate::trust::SharedTrustStore,
@@ -253,20 +225,22 @@ impl Driver {
         cores: Option<Cores>,
     ) -> (Self, CoreThread) {
         let (inputs, fed) = mpsc::channel(INPUT_ROOM);
-        let inputs = Feed::new(inputs, cores.as_ref().map(Cores::bell));
+        let (cores, stepper) = match cores {
+            Some(cores) => (cores, None),
+            None => {
+                let (cores, stepper) = stepped::Stepper::start();
+                (cores, Some(stepper))
+            }
+        };
+        let inputs = Feed::new(inputs, Some(cores.bell()));
         let calls = Arc::new(CallTable::default());
         let reports = Arc::new(Mutex::new(VecDeque::new()));
         let connections = Arc::new(Mutex::new(Weak::new()));
         let outgoing = Outgoing::default();
         let window = Arc::new(pairing::PairWindow::default());
         let pairings = Arc::new(pairing::Carriers::default());
-        // A trust file that does not read is never written over: the core
-        // is not told of it, and the edge refuses to start.
-        let read = crate::trust::load_or_create_in(&dir)
-            .inspect_err(|error| tracing::warn!(%error, "the trust file does not read"))
-            .ok();
-        let trust = Arc::new(std::sync::RwLock::new(read.clone().unwrap_or_default()));
         let daemon = Daemon::new(store, options);
+        let trust = Arc::new(std::sync::RwLock::new(daemon.trust().clone()));
         // The ring's first checkpoint is the core as it starts, beside a
         // main file holding every commit so far.
         let store_at_checkpoint = Sqlite::checkpoint_wal(&dir.join(STORE))
@@ -292,26 +266,19 @@ impl Driver {
             fed,
             reports: reports.clone(),
             channel_reply: None,
-            route_reply: None,
             resumed_reply: None,
-            // The drafts and the trust the profile's files hold, and fresh
-            // randomness, are the first things the core is told.
-            again: [
-                Input::Drafts {
-                    drafts: crate::drafts::load(&dir),
-                },
-                Input::Entropy(entropy()),
-            ]
-            .into_iter()
-            .chain(read.map(|store| Input::TrustRead { store }))
-            .collect(),
+            // Fresh randomness, then that it has started, are the first
+            // things the core is told.
+            again: [Input::Entropy(entropy()), Input::Started]
+                .into_iter()
+                .collect(),
             inputs: inputs.downgrade(),
             runtime,
             calls: calls.clone(),
             connections: connections.clone(),
             outgoing: outgoing.clone(),
-            timers: HashMap::new(),
-            arms: 0,
+            timers: BTreeMap::new(),
+            alarm: None,
             waiting: HashMap::new(),
             ticked: None,
             dumps: DumpLimit::new(dump_interval_ms),
@@ -327,8 +294,8 @@ impl Driver {
             calls,
             connections,
             outgoing,
-            thread: std::sync::OnceLock::new(),
             cores,
+            stepper,
             slot: std::sync::OnceLock::new(),
             trust,
             window,
@@ -514,20 +481,6 @@ impl Driver {
         value.await.ok()
     }
 
-    /// A channel a call opened to `host` on `route` failed with `error`:
-    /// the route the core names for the call to try next, if any.
-    pub(crate) async fn route_failed(
-        &self,
-        host: HostId,
-        route: daemon_core::Route,
-        error: ChannelError,
-    ) -> Option<daemon_core::Route> {
-        let (reply, word) = oneshot::channel();
-        let failed = Input::RouteFailed { host, route, error };
-        self.inputs.send(Fed::Route { failed, reply }).await.ok()?;
-        word.await.ok().flatten()
-    }
-
     /// Tells the core a link resuming with a ticket came up and waits for
     /// its word: whether it takes the identity the ticket names. Anything
     /// reported before is stepped first.
@@ -587,12 +540,10 @@ impl Drop for Driver {
         let _ = self.inputs.try_send(Fed::Stop);
         // The profile is gone only once its store is closed: a store closed
         // later would checkpoint its WAL into a file someone may already
-        // be replacing. The thread itself, letting go of the profile in a
-        // read, ends on its own.
-        if let Some(thread) = self.thread.take()
-            && thread.thread().id() != std::thread::current().id()
-        {
-            let _ = thread.join();
+        // be replacing. The stepper, letting go of the profile in a read,
+        // ends on its own.
+        if let Some(stepper) = self.stepper.take() {
+            stepper.stop();
         }
         if let Some(slot) = self.slot.get() {
             slot.end();
@@ -645,8 +596,6 @@ pub(crate) struct CoreThread {
     /// Whoever waits for the core's word on the channel the step under way
     /// was asked for.
     channel_reply: Option<oneshot::Sender<Result<Opened, ChannelError>>>,
-    /// Whoever waits for the core to name the route a call tries next.
-    route_reply: Option<oneshot::Sender<Option<daemon_core::Route>>>,
     /// Whoever holds a resumed link's early streams until the core decides
     /// the step under way: told false if it refuses the link.
     resumed_reply: Option<oneshot::Sender<bool>>,
@@ -658,9 +607,12 @@ pub(crate) struct CoreThread {
     calls: Arc<CallTable>,
     connections: Arc<Mutex<Weak<ConnectionManager>>>,
     outgoing: Outgoing,
-    timers: HashMap<TimerId, Armed>,
-    /// The arms given out so far.
-    arms: u64,
+    /// The timers the core armed, by their deadline on the profile's clock.
+    /// The map is the truth: a timer the core cancelled or re-armed is not
+    /// in it, or is in it at its new deadline, when a turn looks.
+    timers: BTreeMap<TimerId, u64>,
+    /// The one alarm, set to the soonest deadline, which wakes the loop.
+    alarm: Option<(u64, AbortHandle)>,
     waiting: HashMap<daemon_core::AgentId, Vec<Waiting>>,
     /// The clock as last told to the core.
     ticked: Option<u64>,
@@ -683,17 +635,7 @@ fn limited_dump_reason(
     reason: &daemon_core::DumpReason,
     now_ms: u64,
 ) -> Option<String> {
-    let (kind, why) = match reason {
-        daemon_core::DumpReason::Violation(violation) => (
-            DumpKind::Violation(violation.invariant.into()),
-            format!("{CORE_VIOLATION_DUMP}{violation}"),
-        ),
-        daemon_core::DumpReason::OverBudget { .. } => {
-            (DumpKind::OverBudget, format!("{CORE_DUMP}{reason}"))
-        }
-    };
-    let suppressed = limit.admit(kind, now_ms)?;
-    Some(core_ring::with_suppressed(why, suppressed))
+    limit.reason(CORE_DUMP, reason, now_ms)
 }
 
 /// Fresh randomness for the core to draw from.
@@ -720,42 +662,13 @@ fn opens_pairing(input: &Input) -> bool {
 }
 
 impl CoreThread {
-    /// Starts the thread for `driver`, on the runtime it is called from,
-    /// or holds the core for its caller to step when the driver has no
-    /// thread for it.
+    /// Holds the core in `driver`'s cores, on the runtime it is called
+    /// from, for whoever steps them.
     pub(crate) fn start(self, driver: &Driver) {
-        if let Some(cores) = &driver.cores {
-            let _ = driver.slot.set(cores.hold(self));
-            return;
-        }
-        let handle = Handle::current();
-        let thread = std::thread::Builder::new()
-            .name("amux-core".to_owned())
-            .spawn(move || {
-                let _entered = handle.enter();
-                self.run();
-            })
-            .expect("the core thread starts");
-        let _ = driver.thread.set(thread);
+        let _ = driver.slot.set(driver.cores.hold(self));
     }
 
-    fn run(mut self) {
-        loop {
-            let fed = match self.again.pop_front() {
-                Some(input) => Fed::Input(input),
-                None => match self.fed.blocking_recv() {
-                    Some(fed) => fed,
-                    None => return,
-                },
-            };
-            if !self.turn(fed) {
-                return;
-            }
-        }
-    }
-
-    /// Steps at most `most` of the inputs waiting, on the calling thread,
-    /// for a caller that steps the core instead of a thread of its own.
+    /// Steps at most `most` of the inputs waiting, on the calling thread.
     fn step_waiting(&mut self, most: usize) -> stepped::Turn {
         let mut turn = stepped::Turn {
             stepped: 0,
@@ -817,25 +730,14 @@ impl CoreThread {
         self.tick(&runtime, &mut out);
         let reports = std::mem::take(&mut *self.reports.lock().unwrap());
         for report in reports {
-            let input = match report {
-                Report::Input(input) => Some(input),
-                Report::Fired(fired) => self.fired(fired),
-            };
-            if let Some(input) = input {
-                self.step(&runtime, input, &mut out);
-            }
+            let Report::Input(input) = report;
+            self.step(&runtime, input, &mut out);
         }
         let fed = match fed {
             Fed::Channel { want, reply } => {
                 self.channel_reply = Some(reply);
                 self.step(&runtime, want, &mut out);
                 self.channel_reply = None;
-                return true;
-            }
-            Fed::Route { failed, reply } => {
-                self.route_reply = Some(reply);
-                self.step(&runtime, failed, &mut out);
-                self.route_reply = None;
                 return true;
             }
             Fed::Resumed { up, reply } => {
@@ -859,17 +761,15 @@ impl CoreThread {
                 self.step(&runtime, Input::ClientCall { call, request }, &mut out);
                 return true;
             }
-            Fed::Wake => return true,
+            Fed::Wake => {
+                self.fire_due(&runtime, &mut out);
+                return true;
+            }
             fed => fed,
         };
         let mut call = None;
-        let mut fired = None;
         let input = match fed {
             Fed::Input(input) => Some(input),
-            Fed::Fired(firing) => {
-                fired = Some(firing);
-                None
-            }
             Fed::Call { call: id, ask } => {
                 call = Some(Arriving::Client(id, ask));
                 None
@@ -918,7 +818,6 @@ impl CoreThread {
             Fed::Wake
             | Fed::Stop
             | Fed::Channel { .. }
-            | Fed::Route { .. }
             | Fed::Resumed { .. }
             | Fed::Forward { .. }
             | Fed::Look(_)
@@ -952,7 +851,7 @@ impl CoreThread {
                 let request = runtime.peer_request(*request);
                 let stream = match &request {
                     PeerRequest::SubscribeInventory => Some("inventory"),
-                    PeerRequest::Subscribe(_) => Some("session"),
+                    PeerRequest::SubscribeSession(_) => Some("session"),
                     _ => None,
                 };
                 if let Some(stream) = stream {
@@ -969,9 +868,7 @@ impl CoreThread {
                     request,
                 })
             }
-            // Judged as it is stepped: a step before it may have cancelled
-            // or replaced its arm.
-            None => input.or_else(|| fired.and_then(|fired| self.fired(fired))),
+            None => input,
         };
         if let Some(input) = input {
             self.step(&runtime, input, &mut out);
@@ -980,15 +877,45 @@ impl CoreThread {
         true
     }
 
-    /// The input a timer's firing is stepped as, or `None` when the core
-    /// cancelled or replaced its arm since.
-    fn fired(&mut self, fired: Fired) -> Option<Input> {
-        let armed = self.timers.get(&fired.id)?;
-        if armed.arm != fired.arm {
-            return None;
+    /// The alarm rang: steps the soonest timer due, judged against the map
+    /// as it stands, and sets the alarm again for the next. One firing a
+    /// wake, so a core re-arming the same timer at once (ingest's next
+    /// batch) takes its turns in the channel's order with every other
+    /// input.
+    fn fire_due(&mut self, runtime: &Arc<ProfileRuntime>, out: &mut Vec<Output>) {
+        let now = runtime.clock_now().max(0) as u64;
+        let due = self
+            .timers
+            .iter()
+            .filter(|(_, at)| **at <= now)
+            .map(|(id, at)| (*at, *id))
+            .min();
+        if let Some((_, id)) = due {
+            self.timers.remove(&id);
+            self.step(runtime, Input::Timer { id }, out);
         }
-        self.timers.remove(&fired.id);
-        Some(Input::Timer { id: fired.id })
+        self.set_alarm(runtime);
+    }
+
+    /// Sets the one alarm to the soonest deadline, on the profile's clock;
+    /// it wakes the loop, which steps the soonest timer due by then. A
+    /// deadline already passed rings at once, and the wake queues behind
+    /// the inputs already waiting.
+    fn set_alarm(&mut self, runtime: &Arc<ProfileRuntime>) {
+        let now = runtime.clock_now().max(0) as u64;
+        let next = self.timers.values().copied().min();
+        let inputs = &self.inputs;
+        rearm(&mut self.alarm, now, next, |at| {
+            let due = runtime.clock().sleep_until(at.min(i64::MAX as u64) as i64);
+            let inputs = inputs.clone();
+            tokio::spawn(async move {
+                due.await;
+                if let Some(inputs) = inputs.upgrade() {
+                    let _ = inputs.send(Fed::Wake).await;
+                }
+            })
+            .abort_handle()
+        });
     }
 
     /// Tells the core the time, when it moved.
@@ -1008,15 +935,20 @@ impl CoreThread {
             Input::ClientCall { call, .. } | Input::AnswerLagged { call } => Some(*call),
             _ => None,
         };
-        // A checkpoint's WAL job done starts its write job; either job's
-        // end with no job after it ends the checkpoint.
+        // A checkpoint's WAL job done has the core hand over its state,
+        // and the Checkpointed fed back for it ends the checkpoint; the
+        // job failing ends it at once.
         let checkpointed = match &input {
-            Input::JobDone { job, result } if Some(*job) == self.checkpointing => {
+            Input::JobDone { job, result } if Some(*job) == self.checkpointing => match result {
+                JobResult::Done => None,
+                other => {
+                    self.checkpointing = None;
+                    Some(Err(format!("{other:?}")))
+                }
+            },
+            Input::Checkpointed => {
                 self.checkpointing = None;
-                Some(match result {
-                    JobResult::Done => Ok(()),
-                    other => Err(format!("{other:?}")),
-                })
+                Some(Ok(()))
             }
             _ => None,
         };
@@ -1154,83 +1086,27 @@ impl CoreThread {
                 }
             }
             Output::ArmTimer { id, at_ms } => {
+                // Every timer keeps to the profile's clock, the one the
+                // core reckons on. A follower or source due now is stepped
+                // next, with the store; anything else due now rings the
+                // alarm and queues behind the inputs already waiting.
                 let now = runtime.clock_now().max(0) as u64;
-                // A follower or source keeps to the profile's clock, the
-                // one its backoff is reckoned on; one due now is stepped
-                // next, with the store.
                 let sourcing = matches!(id, TimerId::Follow(_) | TimerId::Source(..));
-                // An agent's start and stop deadlines keep to it too, and
-                // so do notifications, whose due times it stamped, the
-                // outbox's retries, and the pairing window and its
-                // conversations, whose expiries the peers read.
-                let registry = matches!(
-                    id,
-                    TimerId::Start(_)
-                        | TimerId::Exit(_)
-                        | TimerId::Notifications
-                        | TimerId::Deliveries
-                        | TimerId::PairWindow
-                        | TimerId::Pairing(_)
-                );
                 if sourcing && at_ms <= now {
-                    if let Some(armed) = self.timers.remove(&id) {
-                        armed.task.abort();
-                    }
+                    self.timers.remove(&id);
                     self.again.push_back(Input::Timer { id });
-                    return;
-                }
-                let wait = at_ms.saturating_sub(now);
-                let inputs = self.inputs.clone();
-                // A host's retry and a link's refresh read no store, so
-                // they fire as links report, ahead of the shell's writes.
-                let reports = matches!(id, TimerId::Retry(_) | TimerId::Refresh(_))
-                    .then(|| self.reports.clone());
-                // A credential's refresh keeps to the profile's clock, the
-                // one the relay judges the credential's expiry by.
-                let refresh =
-                    (sourcing || registry || matches!(id, TimerId::Refresh(_))).then(|| {
-                        runtime
-                            .clock()
-                            .sleep_until(at_ms.min(i64::MAX as u64) as i64)
-                    });
-                self.arms += 1;
-                let arm = self.arms;
-                let task = tokio::spawn(async move {
-                    match refresh {
-                        Some(due) => due.await,
-                        None => tokio::time::sleep(Duration::from_millis(wait)).await,
-                    }
-                    let fired = Fired { id, arm };
-                    match reports {
-                        Some(reports) => {
-                            reports.lock().unwrap().push_back(Report::Fired(fired));
-                            if let Some(inputs) = inputs.upgrade() {
-                                let _ = inputs.try_send(Fed::Wake);
-                            }
-                        }
-                        None => {
-                            if let Some(inputs) = inputs.upgrade() {
-                                let _ = inputs.send(Fed::Fired(fired)).await;
-                            }
-                        }
-                    }
-                });
-                let task = task.abort_handle();
-                if let Some(armed) = self.timers.insert(id, Armed { arm, task }) {
-                    armed.task.abort();
+                } else {
+                    self.timers.insert(id, at_ms);
+                    self.set_alarm(runtime);
                 }
             }
             Output::CancelTimer { id } => {
-                if let Some(armed) = self.timers.remove(&id) {
-                    armed.task.abort();
-                }
+                self.timers.remove(&id);
+                self.set_alarm(runtime);
             }
-            Output::Job {
-                id,
-                op: Job::Checkpoint { state },
-            } => {
+            Output::Checkpoint { state } => {
                 // The inputs after this step are the ones this checkpoint
-                // does not hold.
+                // does not hold; the first of them tells the core so.
                 if let Some(ring) = self.ring.as_mut()
                     && let Err(error) = ring.rotate(&state)
                 {
@@ -1238,13 +1114,7 @@ impl CoreThread {
                 }
                 // Its WAL job moved every commit into the main file.
                 self.store_at_checkpoint = true;
-                self.checkpointing = Some(id);
-                tokio::spawn(run_job(
-                    Arc::downgrade(runtime),
-                    id,
-                    Job::Checkpoint { state },
-                    self.inputs.clone(),
-                ));
+                self.again.push_back(Input::Checkpointed);
             }
             Output::Job {
                 id,
@@ -1297,24 +1167,11 @@ impl CoreThread {
                     let _ = reply.send(Err(reason));
                 }
             }
-            Output::NextRoute { route, .. } => {
-                if let Some(reply) = self.route_reply.take() {
-                    let _ = reply.send(route);
-                }
-            }
-            Output::CloseLinks { host } => {
+            Output::DialThrough { host } => {
                 if let Some(connections) = self.connections() {
-                    connections.close_links(host);
+                    connections.dial_through(host);
                 }
             }
-            Output::Attempt { host, route } => match self.connections() {
-                Some(connections) => connections.attempt(host, route),
-                None => self.again.push_back(Input::AttemptConcluded {
-                    host,
-                    route,
-                    tried: daemon_core::Tried::Failed(daemon_core::payload::ChannelError::NoLink),
-                }),
-            },
             Output::DropRoute { host, route } => {
                 if let Some(connections) = self.connections() {
                     connections.drop_route(host, route);
@@ -1330,11 +1187,12 @@ impl CoreThread {
                 let reports = self.reports.clone();
                 let inputs = self.inputs.clone();
                 let task = match request {
-                    request @ (PeerRequest::Subscribe(_) | PeerRequest::SubscribeInventory) => {
+                    request @ (PeerRequest::SubscribeSession(_)
+                    | PeerRequest::SubscribeInventory) => {
                         tokio::spawn(origin::stream(runtime, host, call, request, inputs))
                     }
                     request => tokio::spawn(async move {
-                        let answer = if matches!(request, PeerRequest::Fetch(_)) {
+                        let answer = if matches!(request, PeerRequest::ListItems(_)) {
                             tokio::time::timeout(PAGE_PATIENCE, call_peer(runtime, host, request))
                                 .await
                                 .unwrap_or(Some(Answer::Failed(PeerFailure::Uncertain)))
@@ -1381,6 +1239,9 @@ impl CoreThread {
                     }
                     _ => runtime.write_control(id, frame),
                 }
+            }
+            Output::ForgetVerdict { agent, input_id } => {
+                runtime.forget_verdict(uuid::Uuid::from_bytes(agent.0), &input_id)
             }
             Output::ForgetAgent { agent } => runtime.forget_agent(uuid::Uuid::from_bytes(agent.0)),
             Output::SendFile { call, path, range } => {
@@ -1442,7 +1303,7 @@ impl CoreThread {
             ShellWork::Trust { store, changed } => {
                 *self.trust.write().unwrap() = *store;
                 if let Some((host, changed)) = changed {
-                    self.trust_changed(uuid::Uuid::from_bytes(host.0), changed);
+                    self.trust_changed(runtime.dir(), uuid::Uuid::from_bytes(host.0), changed);
                 }
             }
             ShellWork::ReplacementEnded { host } => {
@@ -1453,14 +1314,35 @@ impl CoreThread {
         }
     }
 
-    /// What follows a trust change on the drive, on the connections.
-    fn trust_changed(&self, host: uuid::Uuid, changed: daemon_core::trust::TrustChanged) {
+    /// What follows a trust change on the drive: on the connections, and
+    /// for a host forgotten, the tickets and tokens it gave this profile's
+    /// dials, which nothing would dial it with again.
+    fn trust_changed(
+        &self,
+        profile: &Path,
+        host: uuid::Uuid,
+        changed: daemon_core::trust::TrustChanged,
+    ) {
         use daemon_core::trust::{PairingUpdate, TrustChanged};
 
-        let TrustChanged::Paired(update) = changed else {
-            return;
+        let update = match changed {
+            TrustChanged::Paired(update) => update,
+            TrustChanged::Removed(_) => {
+                for kept in [crate::CLIENT_TICKETS_DIR, crate::CLIENT_TOKENS_DIR] {
+                    let path = profile.join(kept).join(host.to_string());
+                    let removed = match std::fs::metadata(&path) {
+                        Ok(meta) if meta.is_dir() => std::fs::remove_dir_all(&path),
+                        Ok(_) => std::fs::remove_file(&path),
+                        Err(_) => Ok(()),
+                    };
+                    if let Err(error) = removed {
+                        tracing::warn!(%error, path = %path.display(), "cannot remove a forgotten host's file");
+                    }
+                }
+                return;
+            }
+            _ => return,
         };
-        crate::audit::trust_pairing_update(host, &update);
         let Some(connections) = self.connections() else {
             return;
         };
@@ -1529,12 +1411,6 @@ async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: Wea
             })
             .await
         }
-        Job::Checkpoint { state } => {
-            let Some(dir) = runtime.upgrade().map(|runtime| runtime.dir().to_path_buf()) else {
-                return;
-            };
-            blocking(move || checkpoint(&dir, &state)).await
-        }
         Job::RefreshToken { link } => {
             let Some(edge) = runtime.upgrade().and_then(|runtime| runtime.edge()) else {
                 return;
@@ -1571,9 +1447,12 @@ async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: Wea
             }
         }
         Job::RemoveDir { path } => {
-            blocking(move || match std::fs::remove_dir_all(&path) {
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                removed => removed,
+            blocking(move || {
+                agent_dir::local_socket::forget_short_addresses(&path);
+                match std::fs::remove_dir_all(&path) {
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                    removed => removed,
+                }
             })
             .await
         }
@@ -1712,14 +1591,6 @@ pub(crate) async fn fsync(path: PathBuf, bytes: Vec<u8>) -> JobResult {
     blocking(move || write_durably(&path, &bytes)).await
 }
 
-/// The checkpoint job: the core's state as of the step that heard its WAL
-/// job was done, beside the store's main file, which that job brought up to
-/// it. A crash before the write leaves the previous checkpoint, which the
-/// main file is past.
-fn checkpoint(dir: &Path, state: &[u8]) -> std::io::Result<()> {
-    write_durably(&dir.join(CORE_CHECKPOINT), state)
-}
-
 async fn blocking(work: impl FnOnce() -> std::io::Result<()> + Send + 'static) -> JobResult {
     match tokio::task::spawn_blocking(work).await {
         Ok(Ok(())) => JobResult::Done,
@@ -1733,16 +1604,16 @@ impl ProfileRuntime {
     /// point the core answers it.
     fn client_request(&self, store: &Sqlite, ask: Ask) -> ClientRequest {
         match ask {
-            Ask::Subscribe { agent_id, tail } => {
+            Ask::SubscribeSession { agent_id, tail } => {
                 self.used(store, &agent_id);
                 self.run_join_hook();
-                ClientRequest::Subscribe { agent_id, tail }
+                ClientRequest::SubscribeSession { agent_id, tail }
             }
-            Ask::Fetch(request) => {
+            Ask::ListItems(request) => {
                 self.used(store, &request.agent_id);
-                ClientRequest::Fetch(request)
+                ClientRequest::ListItems(request)
             }
-            Ask::Get(request) => ClientRequest::Get(request),
+            Ask::GetItem(request) => ClientRequest::GetItem(request),
             Ask::SubscribeInventory => ClientRequest::SubscribeInventory,
             Ask::Ready(request) => request,
         }
@@ -1752,9 +1623,9 @@ impl ProfileRuntime {
     /// [`ProfileRuntime::client_request`] does a client's.
     fn peer_request(&self, request: PeerRequest) -> PeerRequest {
         match request {
-            PeerRequest::Subscribe(request) => {
+            PeerRequest::SubscribeSession(request) => {
                 self.run_join_hook();
-                PeerRequest::Subscribe(request)
+                PeerRequest::SubscribeSession(request)
             }
             request => request,
         }
@@ -1768,9 +1639,62 @@ impl ProfileRuntime {
     }
 }
 
+/// Keeps `alarm` when it is still to ring at `next`, and otherwise stops
+/// it and has `ring_at` set one for `next`, if any. An alarm at or past
+/// `now` may have rung already, so it is set afresh. One replaced is
+/// stopped: wakes come from reports too, and an alarm left sleeping would
+/// ring again and set one more of its own.
+fn rearm(
+    alarm: &mut Option<(u64, AbortHandle)>,
+    now: u64,
+    next: Option<u64>,
+    ring_at: impl FnOnce(u64) -> AbortHandle,
+) {
+    if let Some((at, _)) = alarm
+        && *at > now
+        && Some(*at) == next
+    {
+        return;
+    }
+    if let Some((_, task)) = alarm.take() {
+        task.abort();
+    }
+    *alarm = next.map(|at| (at, ring_at(at)));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn an_alarm_is_kept_while_its_deadline_holds_and_stopped_when_replaced() {
+        let mut alarm = None;
+        let mut set = Vec::new();
+        let mut ring_at = |at: u64| {
+            let task = tokio::spawn(std::future::pending::<()>());
+            set.push((at, task.abort_handle()));
+            task.abort_handle()
+        };
+        rearm(&mut alarm, 0, Some(100), &mut ring_at);
+        // Wakes that are not the alarm's leave it be.
+        for now in [10, 50, 99] {
+            rearm(&mut alarm, now, Some(100), &mut ring_at);
+        }
+        // A sooner deadline replaces it; one at hand is set afresh.
+        rearm(&mut alarm, 99, Some(60), &mut ring_at);
+        rearm(&mut alarm, 100, Some(60), &mut ring_at);
+        rearm(&mut alarm, 100, None, &mut ring_at);
+        tokio::task::yield_now().await;
+        assert_eq!(
+            set.iter().map(|(at, _)| *at).collect::<Vec<_>>(),
+            [100, 60, 60]
+        );
+        assert!(
+            set.iter().all(|(_, task)| task.is_finished()),
+            "every replaced alarm is stopped"
+        );
+        assert!(alarm.is_none());
+    }
 
     #[test]
     fn a_violation_the_daemon_core_repeats_is_one_bundle_per_interval() {

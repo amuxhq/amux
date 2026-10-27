@@ -4,6 +4,9 @@
 //!
 //! `testnet ctl …`: drives a served net from a shell, one command at a time,
 //! for a person or an agent exploring by hand.
+//!
+//! `testnet journey …`: runs the shared journey stories on the real clients
+//! against served topologies.
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -43,6 +46,11 @@ enum Command {
         /// Where real providers' traffic is recorded.
         #[arg(long, value_name = "DIR")]
         recordings: Option<PathBuf>,
+        /// Where what a client outside this Mac dials listens: the gates in
+        /// front of the hosts and the relay, and the account service. A
+        /// phone over USB names the Mac's address on its link.
+        #[arg(long, value_name = "IP")]
+        client_ip: Option<std::net::IpAddr>,
     },
     /// Drive a served net from the shell (`testnet ctl --help`).
     #[command(disable_help_flag = true)]
@@ -50,14 +58,24 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         arguments: Vec<String>,
     },
+    /// Run the journey stories on the real clients (`testnet journey --help`).
+    #[command(disable_help_flag = true)]
+    Journey {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        arguments: Vec<String>,
+    },
 }
 
 fn main() -> ExitCode {
-    // ctl parses its own arguments and never needs a runtime of its own; it
-    // is dispatched before clap sees the rest so its help reads as its own.
+    // ctl and journey parse their own arguments and never need a runtime of
+    // their own; they are dispatched before clap sees the rest so their help
+    // reads as their own.
     let arguments: Vec<String> = std::env::args().skip(1).collect();
-    if arguments.first().map(String::as_str) == Some("ctl") {
-        return testnet::ctl::main(arguments[1..].to_vec());
+    match arguments.first().map(String::as_str) {
+        Some("ctl") => return testnet::ctl::main(arguments[1..].to_vec()),
+        #[cfg(unix)]
+        Some("journey") => return testnet::journey::main(arguments[1..].to_vec()),
+        _ => {}
     }
     match serve() {
         Ok(()) => ExitCode::SUCCESS,
@@ -93,9 +111,10 @@ async fn serve() -> Result<()> {
         gated_lan,
         facts_ring_mib,
         recordings,
+        client_ip,
     } = Cli::parse().command
     else {
-        unreachable!("ctl is dispatched before parsing");
+        unreachable!("ctl and journey are dispatched before parsing");
     };
     let topology = Topology::load(&topology)?;
     let options = testnet::NetOptions {
@@ -104,6 +123,7 @@ async fn serve() -> Result<()> {
         gated_lan,
         facts_ring_mib,
         recordings,
+        client_ip,
         ..testnet::NetOptions::default()
     };
     let mut served = testnet::door::serve_with(topology, control, options)

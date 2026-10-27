@@ -1826,9 +1826,11 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use daemon_core::trust::PairingUpdate;
+
     use super::*;
     use crate::identity::DeviceIdentity;
-    use crate::trust::{SharedTrustStore, TrustStore, TrustStorePairingUpdate};
+    use crate::trust::{SharedTrustStore, TrustStore};
 
     /// An in-memory substrate: what was sent, and what to receive next.
     #[derive(Default)]
@@ -2231,7 +2233,10 @@ mod tests {
 
     #[test]
     fn socket_transport_keeps_every_datagram_at_the_one_size() {
-        let config = format!("{:?}", crate::identity::quic_transport_config());
+        let config = format!(
+            "{:?}",
+            crate::identity::quic_transport_config(Default::default())
+        );
         for field in [
             "initial_mtu: 1200",
             "min_mtu: 1200",
@@ -2857,20 +2862,21 @@ mod tests {
         }
     }
 
+    /// Taking the remembered port again is best effort: anything on the
+    /// machine may have it by now. Only the fallback is certain here, the
+    /// port held by this test's own socket.
     #[tokio::test]
-    async fn socket_bind_reuses_the_remembered_port() {
-        let first = LinkSocket::bind_dual_stack("0.0.0.0:0".parse().unwrap(), None).unwrap();
-        let port = first.local_addr().unwrap().port();
-        drop(first);
-        let again = LinkSocket::bind_dual_stack("0.0.0.0:0".parse().unwrap(), Some(port)).unwrap();
-        assert_eq!(again.local_addr().unwrap().port(), port);
+    async fn socket_bind_takes_another_port_when_the_remembered_one_is_held() {
+        let holder = LinkSocket::bind_dual_stack("0.0.0.0:0".parse().unwrap(), None).unwrap();
+        let port = holder.local_addr().unwrap().port();
         // Taken: any port rather than none.
         let other = LinkSocket::bind_dual_stack("0.0.0.0:0".parse().unwrap(), Some(port)).unwrap();
         assert_ne!(other.local_addr().unwrap().port(), port);
-        // An explicit port is bound as given.
+        // An explicit address is bound as given.
         let loopback =
             LinkSocket::bind_dual_stack("127.0.0.1:0".parse().unwrap(), Some(port)).unwrap();
         assert_eq!(loopback.local_addr().unwrap().ip(), Ipv4Addr::LOCALHOST);
+        drop(holder);
     }
 
     async fn recv(substrate: &dyn Datagrams) -> (usize, SocketAddr) {
@@ -2896,7 +2902,7 @@ mod tests {
                     chrono::Utc::now(),
                 )
                 .unwrap(),
-            TrustStorePairingUpdate::Inserted
+            PairingUpdate::Inserted
         );
         Arc::new(std::sync::RwLock::new(trust))
     }
@@ -3163,7 +3169,7 @@ mod tests {
     /// there carries it at the new address under either stand-in.
     #[tokio::test]
     async fn socket_accepting_side_keeps_a_peer_that_rebinds() {
-        let link = loopback(crate::identity::quic_transport_config()).await;
+        let link = loopback(crate::identity::quic_transport_config(Default::default())).await;
         let dialler = link.client_socket.own();
         let first = link.server.remote_address();
         assert!(link.server_socket.name(first, dialler));
@@ -3191,7 +3197,7 @@ mod tests {
     /// A receive error is skipped: the endpoint goes on driving its links.
     #[tokio::test]
     async fn socket_receive_error_leaves_the_endpoint_running() {
-        let link = loopback(crate::identity::quic_transport_config()).await;
+        let link = loopback(crate::identity::quic_transport_config(Default::default())).await;
         link.server_net.recv_errors.store(5, Ordering::SeqCst);
         assert_eq!(round_trip(&link, b"after errors").await, b"after errors");
         assert_eq!(link.server_socket.drops().receive_errors, 5);

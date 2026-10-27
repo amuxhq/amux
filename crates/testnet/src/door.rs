@@ -606,7 +606,7 @@ fn readiness(net: &Net, control: SocketAddr) -> Result<Readiness, NetError> {
                 provider: agent.provider,
             })
             .collect(),
-        cloud_url: net.relay().ok().map(|relay| relay.url().to_owned()),
+        cloud_url: net.relay().ok().map(|relay| relay.client_url().to_owned()),
         relay_tcp: net.relay().ok().map(|relay| relay.tcp()),
         relay_quic: net.relay().ok().map(|relay| relay.quic()),
         relay_root: net.relay().ok().map(|relay| {
@@ -976,10 +976,14 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
                 .iter()
                 .map(|host| {
                     json!({
-                        "name": host.name,
-                        "id": Uuid::from_slice(&host.host_id).unwrap_or_default(),
-                        "trust": host.trust().as_str_name().trim_start_matches("TRUST_"),
-                        "presence": host.presence().as_str_name().trim_start_matches("PRESENCE_"),
+                        "name": host.name(),
+                        "id": Uuid::from_slice(host.host_id()).unwrap_or_default(),
+                        "trust": if host.trusted().is_some() { "TRUSTED" } else { "CANDIDATE" },
+                        "presence": match host.reach() {
+                            Some(wire::trusted::Reach::Online(_)) | None => "ONLINE",
+                            Some(wire::trusted::Reach::Away(_)) => "AWAY",
+                            Some(wire::trusted::Reach::Offline(_)) => "OFFLINE",
+                        },
                     })
                 })
                 .collect();

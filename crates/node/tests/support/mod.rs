@@ -128,6 +128,7 @@ impl Install {
             clock: Arc::new(agent_dir::SystemClock),
             push: Arc::new(node::NoopSender),
             daemon_log: None,
+            supervisor_log: None,
             front_door: None,
             edge: node::EdgeOptions::default(),
             analytics: node::Telemetry::Off,
@@ -146,6 +147,35 @@ impl Install {
 
     pub fn agent_dir(&self, id: uuid::Uuid) -> PathBuf {
         self.profile_dir().join(node::AGENTS).join(id.to_string())
+    }
+
+    /// The profile store, opened beside the daemon's own connection.
+    fn store(&self) -> store::Sqlite {
+        store::Sqlite::open(&self.profile_dir().join(node::STORE), [0; 16])
+            .expect("the profile store opens")
+    }
+
+    /// The row this profile keeps for the paired `peer`, when it has one.
+    pub fn trusted_host(&self, peer: node::HostId) -> Option<store::TrustedHost> {
+        self.store()
+            .trusted_hosts()
+            .expect("the trusted hosts read")
+            .into_iter()
+            .find(|row| row.host_id == peer.as_bytes())
+    }
+
+    /// Rewrites the row this profile keeps for `peer`, with no daemon
+    /// running on it.
+    pub fn edit_trusted_host(
+        &self,
+        peer: node::HostId,
+        edit: impl FnOnce(&mut store::TrustedHost),
+    ) {
+        let mut row = self.trusted_host(peer).expect("the peer is trusted");
+        edit(&mut row);
+        self.store()
+            .put_trusted_host(&row, store::Durability::Normal)
+            .expect("the row writes");
     }
 }
 
@@ -268,6 +298,22 @@ pub fn parent_of(agent: &wire::Agent) -> Option<AgentRef> {
 /// exists at its path.
 pub async fn listens(path: &Path) -> bool {
     agent_dir::local_socket::connect(path).await.is_ok()
+}
+
+/// A gRPC channel to a local socket.
+pub async fn local_channel(path: &Path) -> tonic::transport::Channel {
+    let path = path.to_owned();
+    tonic::transport::Endpoint::from_static("http://amux.test")
+        .connect_with_connector(tower::service_fn(move |_| {
+            let path = path.clone();
+            async move {
+                agent_dir::local_socket::connect(&path)
+                    .await
+                    .map(hyper_util::rt::TokioIo::new)
+            }
+        }))
+        .await
+        .expect("the socket answers")
 }
 
 /// Kills every agent the runtime is running, so none outlives its test.

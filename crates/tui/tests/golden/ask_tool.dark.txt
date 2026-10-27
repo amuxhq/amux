@@ -1,7 +1,7 @@
 ● Wants to use
 github create_issue
 {
-  "repo": "jlw/amux",
+  "repo": "ada/amux",
   "title": "Flicker"
 }
 

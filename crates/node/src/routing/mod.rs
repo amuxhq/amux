@@ -24,7 +24,7 @@ pub(crate) use link::{
 pub(crate) use link_registry::{
     LinkAdmission, LinkCloseRequest, LinkOutputTx, LinkProperties, Registration, direct_order,
 };
-pub use link_registry::{LinkCarrier, LinkRegistry, LinkRole};
+pub use link_registry::{LinkRegistry, LinkRole};
 pub use types::{Capabilities, Host, LinkId, LiveRoute, Route, host_to_wire};
 pub(crate) use types::{core_host, host_from_core, host_from_wire};
 pub(crate) use wire::{inbound_host_from_wire, neighbor_down_from_wire, neighbor_up_from_wire};

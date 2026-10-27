@@ -20,8 +20,10 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use wire::{HostEntry, HostRemoved, Presence as WirePresence, RouteKind, Trust, inventory_event};
+use wire::host_entry::Standing;
+use wire::{HostEntry, HostRemoved, RouteKind, inventory_event, trusted};
 
+use crate::catalogue::Said;
 use crate::ids::HostId;
 use crate::io::{Output, ShellWork};
 use crate::payload::CarrierKind;
@@ -88,8 +90,7 @@ impl Daemon {
         }
     }
 
-    /// Why the last dial to `host` failed, until a route to it comes up or
-    /// a channel to it opens.
+    /// Why the last dial to `host` failed, until a route to it comes up.
     pub fn last_dial_error(&self, host: HostId) -> Option<&str> {
         self.host_set.dial_errors.get(&host).map(String::as_str)
     }
@@ -114,11 +115,11 @@ impl Daemon {
             .host_set
             .published
             .iter()
-            .map(|entry| (entry.host_id.as_slice(), entry))
+            .map(|entry| (entry.host_id(), entry))
             .collect();
         let mut changed = false;
         for entry in fresh.values() {
-            if held.get(entry.host_id.as_slice()) != Some(&entry) {
+            if held.get(entry.host_id()) != Some(&entry) {
                 changed = true;
                 self.publish_inventory(
                     Arc::new(inventory(inventory_event::Of::Host(entry.clone()))),
@@ -151,41 +152,34 @@ impl Daemon {
             if host.0.as_slice() == own_host {
                 continue;
             }
-            let revoked = self.routing.catalogue.revoked(host);
-            let (presence, via) = if revoked {
-                (WirePresence::Offline, RouteKind::Unspecified)
-            } else {
-                self.reads(host)
-            };
             let said = self.routing.catalogue.said(host);
             fresh.insert(
                 host.0.to_vec(),
                 HostEntry {
-                    host_id: host.0.to_vec(),
-                    name: trusted.name.clone(),
-                    version: said.map(|said| said.version.clone()),
-                    capabilities: said.map(|said| said.capabilities()),
-                    last_dial_error: self.host_set.dial_errors.get(&host).cloned(),
-                    via: via as i32,
-                    account_signed_in: trusted.signed_in,
-                    platform: trusted.platform.clone(),
-                    revoked: revoked.then_some(true),
-                    trust: Trust::Trusted as i32,
-                    presence: presence as i32,
-                    current: Some(self.sources.ready(host)),
-                    providers: self
-                        .host_set
-                        .providers
-                        .get(&host)
-                        .map(|providers| providers.0.clone())
-                        .unwrap_or_default(),
+                    host: Some(wire::Host {
+                        host_id: host.0.to_vec(),
+                        name: trusted.name.clone(),
+                        version: said.map(|said| said.version.clone()).unwrap_or_default(),
+                        capabilities: said.map(Said::capabilities),
+                        platform: trusted.platform as i32,
+                        account_signed_in: trusted.signed_in,
+                    }),
                     generation: self
                         .store
                         .host_generation(&host.0)
                         .ok()
                         .flatten()
                         .unwrap_or_default(),
-                    ..HostEntry::default()
+                    providers: self
+                        .host_set
+                        .providers
+                        .get(&host)
+                        .map(|providers| providers.0.clone())
+                        .unwrap_or_default(),
+                    standing: Some(Standing::Trusted(wire::Trusted {
+                        reach: Some(self.reads(host)),
+                        current: self.sources.ready(host),
+                    })),
                 },
             );
         }
@@ -204,24 +198,26 @@ impl Daemon {
             fresh.insert(
                 id.clone(),
                 HostEntry {
-                    host_id: id,
-                    name: candidate.name.clone(),
-                    trust: Trust::Candidate as i32,
-                    presence: WirePresence::Online as i32,
-                    addrs: candidate.addrs.clone(),
+                    host: Some(wire::Host {
+                        host_id: id,
+                        name: candidate.name.clone(),
+                        ..wire::Host::default()
+                    }),
+                    standing: Some(Standing::Candidate(wire::Candidate {
+                        addrs: candidate.addrs.clone(),
+                    })),
                     ..HostEntry::default()
                 },
             );
         }
         // This host is always trusted, online and current to itself.
-        let own = HostEntry {
-            host_id: own_host.clone(),
-            generation: self.options.generation,
-            trust: Trust::Trusted as i32,
-            presence: WirePresence::Online as i32,
-            current: Some(true),
-            ..self.host_set.own.clone().unwrap_or_default()
-        };
+        let mut own = self.host_set.own.clone().unwrap_or_default();
+        own.host.get_or_insert_with(wire::Host::default).host_id = own_host.clone();
+        own.generation = self.options.generation;
+        own.standing = Some(Standing::Trusted(wire::Trusted {
+            reach: Some(trusted::Reach::Online(RouteKind::Unspecified as i32)),
+            current: true,
+        }));
         fresh.insert(own_host, own);
         fresh
     }
@@ -241,16 +237,26 @@ impl Daemon {
         }
     }
 
-    /// How `host` reads, and the kind of route its calls take while it is
-    /// not offline: what every client is told of it.
-    pub fn reads(&self, host: HostId) -> (WirePresence, RouteKind) {
+    /// How `host` reads, as every client is told: online over the kind of
+    /// route its calls take while a link of its own is up, away while the
+    /// relay refuses to forward to it for the account's plan, and offline
+    /// otherwise, with why the last dial failed.
+    /// A host that said it no longer trusts this one reads offline as
+    /// revoked, whatever route still reaches it.
+    pub fn reads(&self, host: HostId) -> trusted::Reach {
+        let revoked = self.routing.catalogue.revoked(host);
         let via = self.route_kind(host);
-        match (via, self.presence.view(host).presence) {
-            (RouteKind::Unspecified, _) | (_, Presence::Offline) => {
-                (WirePresence::Offline, RouteKind::Unspecified)
+        match self.presence.view(host).presence {
+            Presence::Online if !revoked && via != RouteKind::Unspecified => {
+                trusted::Reach::Online(via as i32)
             }
-            (via, Presence::Online) => (WirePresence::Online, via),
-            (via, Presence::Away) => (WirePresence::Away, via),
+            Presence::Away if !revoked && via != RouteKind::Unspecified => {
+                trusted::Reach::Away(wire::Empty {})
+            }
+            _ => trusted::Reach::Offline(wire::Offline {
+                last_dial_error: self.host_set.dial_errors.get(&host).cloned(),
+                revoked,
+            }),
         }
     }
 }

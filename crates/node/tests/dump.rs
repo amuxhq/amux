@@ -78,8 +78,15 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
         format!("INFO started\nWARN a relay call failed: Authorization: Bearer {KEY}\n"),
     )
     .unwrap();
+    let supervisor_log = install.path("supervisor.log");
+    std::fs::write(
+        &supervisor_log,
+        format!("INFO restarting the daemon with GITHUB_TOKEN={TOKEN}\n"),
+    )
+    .unwrap();
     let options = node::StartOptions {
         daemon_log: Some(log),
+        supervisor_log: Some(supervisor_log),
         ..install.options("boot-1", launch)
     };
     let daemon = node::start(options, None).await.unwrap();
@@ -158,50 +165,50 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
         })
         .await
         .unwrap();
-    let client_msg = |of| wire::ClientTraced {
+    let client_msg = |of| wire::dump::ClientTraced {
         seq: 0,
         at_ms: 0,
-        event: Some(wire::client_traced::Event::Msg(wire::ClientSessionMsg {
-            of: Some(of),
-        })),
+        event: Some(wire::dump::client_traced::Event::Msg(
+            wire::dump::ClientSessionMsg { of: Some(of) },
+        )),
     };
-    let session = wire::ClientSessionHistory {
+    let session = wire::dump::ClientSessionHistory {
         agent_id: live.as_bytes().to_vec(),
-        start: Some(wire::ClientSession {
+        start: Some(wire::dump::ClientSession {
             agent: Some(runtime.agent(live).await.unwrap()),
             snapshot: held.snapshot.clone(),
-            transcript: Some(wire::ClientTranscript {
+            transcript: Some(wire::dump::ClientTranscript {
                 items: held.held.clone(),
                 exhausted: true,
             }),
-            ..wire::ClientSession::default()
+            ..wire::dump::ClientSession::default()
         }),
-        events: Some(wire::ClientSessionEvents {
+        events: Some(wire::dump::ClientSessionEvents {
             traced: vec![
-                client_msg(wire::client_session_msg::Of::Send(sdk_prompt(
+                client_msg(wire::dump::client_session_msg::Of::Send(sdk_prompt(
                     b"from-the-client",
                     &format!("again with {TOKEN}; cc {EMAIL}"),
                 ))),
-                wire::ClientTraced {
+                wire::dump::ClientTraced {
                     seq: 1,
                     at_ms: 0,
-                    event: Some(wire::client_traced::Event::Driver(format!(
+                    event: Some(wire::dump::client_traced::Event::Driver(format!(
                         "GetFailed {{ error: \"Authorization: Bearer {KEY}\" }}"
                     ))),
                 },
             ],
         }),
     };
-    let elsewhere = wire::ClientSessionHistory {
+    let elsewhere = wire::dump::ClientSessionHistory {
         agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-        ..wire::ClientSessionHistory::default()
+        ..wire::dump::ClientSessionHistory::default()
     };
     let bundle = runtime
         .dump(DumpRequest {
             agent_ids: Vec::new(),
             reason: format!("the chat froze; my key is {KEY}"),
             automatic: false,
-            sessions: vec![session, elsewhere.clone()],
+            sessions: vec![session.encode_to_vec(), elsewhere.encode_to_vec()],
         })
         .await
         .unwrap();
@@ -226,6 +233,11 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
     };
     has(MANIFEST.to_owned());
     has(DAEMON_LOG.to_owned());
+    has(node::SUPERVISOR_LOG.to_owned());
+    // The live agent's process sends the tails of its own log and its
+    // provider's.
+    has(format!("agents/{live}/part/agent.log"));
+    has(format!("agents/{live}/part/provider.log"));
     for id in [live, stopped] {
         has(format!("agents/{id}/row.pb"));
         has(format!("agents/{id}/store.pb"));
@@ -316,7 +328,7 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
             .starts_with(&format!("{elsewhere} client session"))),
         "{errors:?}"
     );
-    let start = wire::ClientSession::decode(
+    let start = wire::dump::ClientSession::decode(
         std::fs::read(bundle.join(&client).join(node::CLIENT_CHECKPOINT))
             .unwrap()
             .as_slice(),
@@ -338,7 +350,7 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
         window.iter().any(|item| item.text.contains("<REDACTED>")),
         "the client's rows are kept, redacted"
     );
-    let events = wire::ClientSessionEvents::decode(
+    let events = wire::dump::ClientSessionEvents::decode(
         std::fs::read(bundle.join(&client).join(node::CLIENT_EVENTS))
             .unwrap()
             .as_slice(),
@@ -381,7 +393,7 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
     assert!(ring_holds, "the live ring holds {KEY}");
     transcript.push(format!(
         "planted {} secrets in the prompt, a later input, the model's reply, the provider's \
-         environment, the dump reason, the daemon log and the client's session; none is in any \
+         environment, the dump reason, the daemon and supervisor logs and the client's session; none is in any \
          file of the bundle, as text or hex",
         PLANTED.len()
     ));
@@ -435,9 +447,7 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_dump_of_named_agents_covers_only_them_and_an_unknown_one_is_an_error() {
     let install = Install::new();
-    let daemon = install
-        .start("boot-1", support::synthetic::quiet_launch())
-        .await;
+    let daemon = install.start("boot-1", unbudgeted()).await;
     let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
     let mut one = support::synthetic::SyntheticAgent::new(&install, "one", 1 << 20);
     let two = support::synthetic::SyntheticAgent::new(&install, "two", 1 << 20);
@@ -489,6 +499,7 @@ async fn a_peers_dump_answer_carries_no_daemon_log() {
     std::fs::write(&log, format!("INFO {OTHER}\n")).unwrap();
     let options = node::StartOptions {
         daemon_log: Some(log),
+        supervisor_log: None,
         ..install.options("boot-1", support::synthetic::quiet_launch())
     };
     let daemon = node::start(options, None).await.unwrap();
@@ -522,6 +533,18 @@ async fn a_peers_dump_answer_carries_no_daemon_log() {
     }
     drop(runtime);
     daemon.shutdown().await.unwrap();
+}
+
+/// A synthetic installation's launch whose cores never dump for a slow
+/// step, for a test that lists every bundle under reports/: a loaded run
+/// can stretch a step past even the test budget, and its dump would land
+/// beside the bundles the test made.
+fn unbudgeted() -> node::Launch {
+    node::Launch {
+        step_budget: daemon_core::StepBudget::UNLIMITED,
+        agent_step_budget_micros: daemon_core::StepBudget::UNLIMITED.micros,
+        ..support::synthetic::quiet_launch()
+    }
 }
 
 /// Waits for the installation to hold `count` bundles the daemon core asked
@@ -713,23 +736,20 @@ async fn a_dump_cannot_compute_the_pin_of_a_window_opened_after_it() {
     use daemon_core::payload::{ClientRequest, Response};
     use daemon_core::{CallId, Checkpoint, Daemon, Input, Output, Recorded, StepBudget};
     use tonic::Request;
-    use wire::profile_service_server::ProfileService as _;
-    use wire::{Empty, ProfileRequest, StartPairingRequest, start_pairing_request};
+    use wire::profile_admin_service_server::ProfileAdminService as _;
+    use wire::{Empty, StartPairingRequest, start_pairing_request};
 
     let install = Install::new();
     let daemon = install
         .start("boot-1", support::synthetic::quiet_launch())
         .await;
     let runtime = runtime(&daemon, &install);
-    let door = daemon.front_door();
-    let profile = install.profile.as_bytes().to_vec();
+    let admin = daemon.profile_admin(install.profile);
     let open = || {
-        let door = door.clone();
-        let profile = profile.clone();
+        let admin = admin.clone();
         async move {
-            let window = door
+            let window = admin
                 .start_pairing(Request::new(StartPairingRequest {
-                    profile_id: profile,
                     method: Some(start_pairing_request::Method::Pin(Empty {})),
                     ttl_seconds: None,
                 }))
@@ -754,11 +774,10 @@ async fn a_dump_cannot_compute_the_pin_of_a_window_opened_after_it() {
         })
         .await
         .unwrap();
-    door.cancel_pairing(Request::new(ProfileRequest {
-        profile_id: profile.clone(),
-    }))
-    .await
-    .unwrap();
+    admin
+        .cancel_pairing(Request::new(wire::CancelPairingRequest {}))
+        .await
+        .unwrap();
     let second = open().await;
 
     // What the bundle can compute: its checkpoint, every randomness its
@@ -828,9 +847,9 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
     asking.register_offline(&install);
     other.register_offline(&install);
     asking.go_live();
-    let daemon = install
-        .start("boot-1", support::synthetic::quiet_launch())
-        .await;
+    // The bundles here are the agent's alone: the daemon's core never
+    // dumps for a slow step of its own.
+    let daemon = install.start("boot-1", unbudgeted()).await;
     let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
 
     let violation = format!("the agent core: {INVARIANT}: two asks open");
@@ -838,7 +857,7 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
     asking.ask_for_dump(&violation, INVARIANT).await;
     asking
         .ask_for_dump(
-            "the agent core: a step took 12 µs against its budget of 0 µs",
+            "the agent core: a step took 12 µs, over its budget of 0 µs",
             "",
         )
         .await;
@@ -895,9 +914,14 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
             .unwrap()["reason"]
         );
     }
-    // The repeat stays held back.
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-    assert_eq!(install.core_dumps().len(), 2);
+    // A window: a dump held back leaves no mark to wait on.
+    holds_for(
+        "the repeat to stay held back",
+        std::time::Duration::from_millis(300),
+        || async { install.core_dumps().len() == 2 },
+    )
+    .await
+    .unwrap();
     drop(other);
     drop(runtime);
     daemon.shutdown().await.unwrap();
@@ -912,7 +936,10 @@ async fn an_agents_step_over_its_budget_leaves_a_bundle_of_that_agent() {
     // Not told to expect dumps: a step over its budget is tolerated at
     // teardown, only a broken invariant fails it.
     let install = Install::new();
+    // The one bundle is the agent's: the daemon's core never dumps for a
+    // slow step of its own.
     let launch = node::Launch {
+        step_budget: daemon_core::StepBudget::UNLIMITED,
         agent_step_budget_micros: 1,
         ..install.launch(
             "slow",
@@ -935,7 +962,7 @@ async fn an_agents_step_over_its_budget_leaves_a_bundle_of_that_agent() {
             .any(|reason| reason.starts_with(node::AGENT_DUMP)
                 && !reason.starts_with(node::AGENT_VIOLATION_DUMP)
                 && reason.contains(&id_text)
-                && reason.contains("against its budget of 1 µs")),
+                && reason.contains("over its budget of 1 µs")),
         "{reasons:#?}"
     );
     let bundles: Vec<PathBuf> = std::fs::read_dir(install.data_dir.join(node::REPORTS))

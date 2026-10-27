@@ -93,11 +93,10 @@ public final class FleetStore {
     public private(set) var working = 0
     /// Trusted hosts by id, this phone included.
     public private(set) var hosts: [HostId: HostView] = [:]
-    /// The family heads whose members are listed under them.
-    public private(set) var expanded: Set<[UInt8]> = []
     /// The sections opened or folded against their default.
     public private(set) var flipped: Set<SectionKind> = []
-    /// What the list is narrowed to; the owner reads the rows again with it.
+    /// What the list is narrowed to, as the search field shows it; the
+    /// owner hands it to the runtime.
     public var filter = FleetFilter(words: "", only: nil)
     /// The clock ages are read against: moved on by the screen while the
     /// list is on it, so ages count, and never behind the newest row it
@@ -173,16 +172,6 @@ public final class FleetStore {
     public func opened(_ agent: AgentKey, at time: Date = Date()) {
         seen[agent] = time
         rebuild()
-    }
-
-    /// Lists or folds away a family's members; the owner reads the rows
-    /// again with the new set.
-    public func toggle(_ head: AgentKey) {
-        if expanded.contains(head.agent) {
-            expanded.remove(head.agent)
-        } else {
-            expanded.insert(head.agent)
-        }
     }
 
     public func host(_ id: HostId?) -> HostView? {

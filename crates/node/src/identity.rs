@@ -22,14 +22,12 @@ use rustls::{
     DistinguishedName as TlsDistinguishedName, Error as TlsError, ServerConfig, SignatureScheme,
 };
 
+use crate::HostId;
 use crate::link::resumption::SessionTickets;
 use crate::trust::{SharedTrustStore, TrustStore};
-use crate::{HostId, audit};
 
 const DEVICE_KEY_FILE: &str = "device.key";
-const HOST_ID_FILE: &str = "host_id";
 /// The host id file holds the id's hyphenated text form.
-const HOST_ID_LEN: usize = 36;
 const ED25519_SEED_LEN: usize = 32;
 pub(crate) const ED25519_PUBKEY_LEN: usize = 32;
 const ED25519_PKCS8_V1_PREFIX: [u8; 16] = [
@@ -44,20 +42,6 @@ pub const QUIC_ALPN: &[u8] = b"amux/2";
 pub enum IdentityError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("JSON error: {0}")]
-    Json(#[from] serde_json::Error),
-    #[error("failed to parse {path}: {source}")]
-    JsonFile {
-        path: PathBuf,
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("{field} must be {expected} bytes, got {actual}")]
-    InvalidLength {
-        field: &'static str,
-        expected: usize,
-        actual: usize,
-    },
     #[error("failed to generate Ed25519 device key")]
     KeyGeneration,
     #[error("invalid Ed25519 PKCS#8 v1 device key")]
@@ -66,10 +50,6 @@ pub enum IdentityError {
     InvalidDeviceCertificate,
     #[error("TLS config error: {0}")]
     TlsConfig(String),
-    #[error("failed to parse {path}: {reason}")]
-    TrustFile { path: PathBuf, reason: String },
-    #[error("{0}")]
-    Trust(daemon_core::trust::TrustError),
     #[error("trust store lock is poisoned")]
     TrustStorePoisoned,
 }
@@ -79,10 +59,54 @@ pub struct DeviceIdentity {
     pub host_id: HostId,
     private_key_pkcs8: Vec<u8>,
     pubkey: Vec<u8>,
+    /// How the links this identity makes and accepts notice a silent peer.
+    pub(crate) liveness: LinkLiveness,
+}
+
+/// How a QUIC link notices its peer went silent: it sends a keepalive
+/// every `keep_alive` and closes after `idle_timeout` with nothing heard.
+/// QUIC restarts the idle timer at the first keepalive after the last
+/// packet received, so a dead link closes at most `keep_alive` plus
+/// `idle_timeout` after the cut, and the shorter timeout of a link's two
+/// ends wins.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LinkLiveness {
+    pub keep_alive: std::time::Duration,
+    pub idle_timeout: std::time::Duration,
+}
+
+#[cfg(test)]
+mod liveness_tests {
+    /// A desktop notices a silently dead link within forty seconds: its
+    /// keepalive and idle timeout sum to that bound.
+    #[cfg(not(target_os = "ios"))]
+    #[test]
+    fn a_desktop_notices_a_dead_link_within_forty_seconds() {
+        let liveness = super::LinkLiveness::default();
+        assert!(liveness.keep_alive + liveness.idle_timeout <= std::time::Duration::from_secs(40));
+    }
+}
+
+impl Default for LinkLiveness {
+    /// A link that died silently (a cut cable, a sleeping laptop, a
+    /// firewall eating datagrams) is noticed only at the idle timeout, and
+    /// until then its host's agents read live and current. Ten seconds of
+    /// keepalive under a thirty-second timeout notices within forty seconds
+    /// and costs a few packets a minute. A phone keeps a longer pair for
+    /// its battery.
+    fn default() -> Self {
+        #[cfg(target_os = "ios")]
+        let (keep_alive, idle_timeout) = (20, 60);
+        #[cfg(not(target_os = "ios"))]
+        let (keep_alive, idle_timeout) = (10, 30);
+        Self {
+            keep_alive: std::time::Duration::from_secs(keep_alive),
+            idle_timeout: std::time::Duration::from_secs(idle_timeout),
+        }
+    }
 }
 
 impl DeviceIdentity {
-    #[allow(dead_code)]
     pub fn public_key(&self) -> &[u8] {
         &self.pubkey
     }
@@ -111,6 +135,7 @@ impl DeviceIdentity {
             host_id,
             private_key_pkcs8,
             pubkey: key_pair.public_key().as_ref().to_vec(),
+            liveness: LinkLiveness::default(),
         })
     }
 
@@ -181,7 +206,7 @@ impl DeviceIdentity {
         tickets: &std::sync::Arc<SessionTickets>,
     ) -> Result<quinn::ServerConfig, IdentityError> {
         let tls = self.server_tls_config(trust_store)?;
-        quic_server_config_issuing(tls, tickets).map_err(IdentityError::TlsConfig)
+        quic_server_config_issuing(tls, tickets, self.liveness).map_err(IdentityError::TlsConfig)
     }
 
     pub(crate) fn quic_client_config_for_peer(
@@ -217,7 +242,7 @@ impl DeviceIdentity {
         let crypto = quinn::crypto::rustls::QuicClientConfig::try_from(tls)
             .map_err(|error| IdentityError::TlsConfig(error.to_string()))?;
         let mut config = quinn::ClientConfig::new(std::sync::Arc::new(crypto));
-        config.transport_config(quic_transport_config());
+        config.transport_config(quic_transport_config(self.liveness));
         Ok(config)
     }
 }
@@ -230,6 +255,7 @@ impl DeviceIdentity {
 pub(crate) fn quic_server_config_issuing(
     mut tls: ServerConfig,
     tickets: &std::sync::Arc<SessionTickets>,
+    liveness: LinkLiveness,
 ) -> Result<quinn::ServerConfig, String> {
     tls.alpn_protocols = vec![QUIC_ALPN.to_vec()];
     tls.session_storage = tickets.clone();
@@ -242,30 +268,15 @@ pub(crate) fn quic_server_config_issuing(
     let crypto = quinn::crypto::rustls::QuicServerConfig::try_from(tls)
         .map_err(|error| error.to_string())?;
     let mut config = quinn::ServerConfig::new(std::sync::Arc::new(crypto), tickets.token_key());
-    config.transport_config(quic_transport_config());
+    config.transport_config(quic_transport_config(liveness));
     config.migration(true);
     crate::link::validation::issue_tokens(&mut config);
     Ok(config)
 }
 
-pub(crate) fn quic_transport_config() -> std::sync::Arc<quinn::TransportConfig> {
-    #[cfg(target_os = "ios")]
-    let (keep_alive, idle_timeout) = (
-        std::time::Duration::from_secs(20),
-        std::time::Duration::from_secs(60),
-    );
-    // A link that died silently (a cut cable, a sleeping laptop, a
-    // firewall eating datagrams) is noticed only at the idle timeout, and
-    // until then its host's agents read live and current. Ten seconds of
-    // keepalive under a thirty-second timeout notices within forty seconds
-    // and costs a few packets a minute. A phone keeps its longer pair for
-    // its battery; the shorter timeout of the two ends wins on a link.
-    #[cfg(not(target_os = "ios"))]
-    let (keep_alive, idle_timeout) = (
-        std::time::Duration::from_secs(10),
-        std::time::Duration::from_secs(30),
-    );
-
+pub(crate) fn quic_transport_config(
+    liveness: LinkLiveness,
+) -> std::sync::Arc<quinn::TransportConfig> {
     // A launch's first flight is every host's inventory and the fleet's
     // session openings at once; through a relay they all ride one fresh
     // connection. The ten-packet initial window of RFC 9002 holds about a
@@ -275,9 +286,10 @@ pub(crate) fn quic_transport_config() -> std::sync::Arc<quinn::TransportConfig> 
     congestion.initial_window(32 * 1200);
     let mut transport = quic_transport_base();
     transport
-        .keep_alive_interval(Some(keep_alive))
+        .keep_alive_interval(Some(liveness.keep_alive))
         .max_idle_timeout(Some(
-            idle_timeout
+            liveness
+                .idle_timeout
                 .try_into()
                 .expect("QUIC idle timeout fits in a QUIC variable integer"),
         ))
@@ -330,12 +342,12 @@ pub(crate) fn host_id_for_certificate(
     Ok(trust_store.host_id_for_pubkey(&pubkey))
 }
 
-fn emit_mtls_audit(reason: impl fmt::Display) {
-    audit::auth_mtls_handshake_failure(reason);
+fn refuse_certificate(reason: impl fmt::Display) {
+    tracing::warn!(reason = %reason, "a peer's certificate was refused");
 }
 
-fn emit_mtls_audit_for_host(host_id: HostId, reason: impl fmt::Display) {
-    audit::auth_mtls_handshake_failure_for_host(host_id, reason);
+fn refuse_certificate_of(host_id: HostId, reason: impl fmt::Display) {
+    tracing::warn!(host_id = %host_id, reason = %reason, "a peer's certificate was refused");
 }
 
 #[derive(Clone)]
@@ -381,7 +393,7 @@ impl ClientCertVerifier for PinnedClientCertVerifier {
         _now: UnixTime,
     ) -> Result<ClientCertVerified, TlsError> {
         let pubkey = ed25519_public_key_from_certificate(end_entity).map_err(|_| {
-            emit_mtls_audit("client certificate pubkey decode failed");
+            refuse_certificate("client certificate pubkey decode failed");
             TlsError::InvalidCertificate(CertificateError::BadEncoding)
         })?;
         let trust_store = self
@@ -397,7 +409,7 @@ impl ClientCertVerifier for PinnedClientCertVerifier {
             // certificate_revoked alert closing its handshake as that, on
             // any route, which is how a host revoked while its link was
             // down learns it.
-            emit_mtls_audit("client certificate pubkey is not trusted");
+            refuse_certificate("client certificate pubkey is not trusted");
             Err(TlsError::InvalidCertificate(CertificateError::Revoked))
         }
     }
@@ -462,7 +474,7 @@ impl ServerCertVerifier for PinnedServerCertVerifier {
         _now: UnixTime,
     ) -> Result<ServerCertVerified, TlsError> {
         let pubkey = ed25519_public_key_from_certificate(end_entity).map_err(|_| {
-            emit_mtls_audit_for_host(
+            refuse_certificate_of(
                 self.expected_host_id,
                 "server certificate pubkey decode failed",
             );
@@ -477,14 +489,14 @@ impl ServerCertVerifier for PinnedServerCertVerifier {
         match expected {
             Some(expected) if expected == pubkey.as_slice() => Ok(ServerCertVerified::assertion()),
             Some(_) => {
-                emit_mtls_audit_for_host(
+                refuse_certificate_of(
                     self.expected_host_id,
                     "server certificate pubkey does not match trust store",
                 );
                 Err(TlsError::InvalidCertificate(CertificateError::BadSignature))
             }
             None => {
-                emit_mtls_audit_for_host(
+                refuse_certificate_of(
                     self.expected_host_id,
                     "server certificate host is not trusted",
                 );
@@ -518,10 +530,21 @@ impl ServerCertVerifier for PinnedServerCertVerifier {
     }
 }
 
+/// The identity of a profile whose directory is `data_dir`, under an id
+/// derived from the directory: the same on every load, another for every
+/// other directory.
+#[cfg(test)]
+fn identity_in(data_dir: &Path) -> Result<DeviceIdentity, IdentityError> {
+    let host = HostId::new_v5(
+        &uuid::Uuid::NAMESPACE_OID,
+        data_dir.to_string_lossy().as_bytes(),
+    );
+    load_or_create_device_identity_in(data_dir, host)
+}
+
 #[cfg(all(test, unix))]
 fn ensure_device_files_in(data_dir: &Path) -> Result<DeviceIdentity, IdentityError> {
-    crate::trust::load_or_create_in(data_dir)?;
-    load_or_create_device_identity_in(data_dir)
+    identity_in(data_dir)
 }
 
 #[cfg(all(test, unix))]
@@ -539,41 +562,16 @@ fn data_dir_mode_ready(path: &Path) -> bool {
     }
 }
 
-pub fn load_or_create_device_identity_in(data_dir: &Path) -> Result<DeviceIdentity, IdentityError> {
+/// The profile's identity: its host id, which is the profile's own id and
+/// public, and the device key kept in its directory, the identity's
+/// secret, made on first use.
+pub fn load_or_create_device_identity_in(
+    data_dir: &Path,
+    host_id: HostId,
+) -> Result<DeviceIdentity, IdentityError> {
     ensure_data_dir(data_dir)?;
-    let host_id = load_or_create_host_id(&host_id_path(data_dir))?;
     let private_key_pkcs8 = load_or_create_device_key(&device_key_path(data_dir))?;
     DeviceIdentity::from_parts(host_id, private_key_pkcs8)
-}
-
-/// The profile's host id: the text file the profile was created with. The
-/// device key is the identity's secret; the host id is public.
-fn load_or_create_host_id(path: &Path) -> Result<HostId, IdentityError> {
-    match load_host_id(path) {
-        Ok(host_id) => Ok(host_id),
-        Err(IdentityError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
-            let host_id = HostId::new_v4();
-            match create_private_file(path, host_id.to_string().as_bytes()) {
-                Ok(()) => Ok(host_id),
-                Err(IdentityError::Io(error))
-                    if error.kind() == std::io::ErrorKind::AlreadyExists =>
-                {
-                    load_host_id(path)
-                }
-                Err(error) => Err(error),
-            }
-        }
-        Err(error) => Err(error),
-    }
-}
-
-fn load_host_id(path: &Path) -> Result<HostId, IdentityError> {
-    let text = fs::read_to_string(path)?;
-    HostId::parse_str(text.trim()).map_err(|_| IdentityError::InvalidLength {
-        field: HOST_ID_FILE,
-        expected: HOST_ID_LEN,
-        actual: text.trim().len(),
-    })
 }
 
 fn load_or_create_device_key(path: &Path) -> Result<Vec<u8>, IdentityError> {
@@ -753,10 +751,6 @@ pub fn device_key_path(data_dir: &Path) -> PathBuf {
     data_dir.join(DEVICE_KEY_FILE)
 }
 
-pub fn host_id_path(data_dir: &Path) -> PathBuf {
-    data_dir.join(HOST_ID_FILE)
-}
-
 #[cfg(test)]
 mod tests {
     #[cfg(unix)]
@@ -765,11 +759,12 @@ mod tests {
     use std::time::Duration;
 
     use chrono::{DateTime, Utc};
+    use daemon_core::trust::PairingUpdate;
     use rustls::pki_types::{CertificateDer, UnixTime};
     use tempfile::TempDir;
 
     use super::*;
-    use crate::trust::{Reachability, TrustEntry, TrustStorePairingUpdate};
+    use crate::trust::{Reachability, TrustEntry};
 
     fn temp_data_dir() -> TempDir {
         tempfile::tempdir().unwrap()
@@ -783,9 +778,11 @@ mod tests {
                 pubkey: pubkey.to_vec(),
                 name: "peer".to_string(),
                 paired_at: DateTime::<Utc>::from_timestamp(200, 0).unwrap(),
-                reachabilities: vec![Reachability::Cloud],
+                on_account: true,
+                direct: Vec::new(),
+                ssh: None,
                 signed_in: None,
-                platform: None,
+                platform: wire::Platform::Unspecified,
                 listed: Vec::new(),
             },
         );
@@ -796,8 +793,8 @@ mod tests {
     fn device_identity_is_created_and_reused() {
         let dir = temp_data_dir();
 
-        let first = load_or_create_device_identity_in(dir.path()).unwrap();
-        let second = load_or_create_device_identity_in(dir.path()).unwrap();
+        let first = identity_in(dir.path()).unwrap();
+        let second = identity_in(dir.path()).unwrap();
 
         assert_eq!(first.host_id, second.host_id);
         assert_eq!(first.public_key(), second.public_key());
@@ -807,24 +804,12 @@ mod tests {
                 .private_key_pkcs8()
                 .starts_with(&ED25519_PKCS8_V1_PREFIX)
         );
-        assert_eq!(
-            fs::read(host_id_path(dir.path())).unwrap().len(),
-            HOST_ID_LEN
-        );
 
         #[cfg(unix)]
         {
             assert_eq!(
                 fs::metadata(dir.path()).unwrap().permissions().mode() & 0o777,
                 0o700
-            );
-            assert_eq!(
-                fs::metadata(host_id_path(dir.path()))
-                    .unwrap()
-                    .permissions()
-                    .mode()
-                    & 0o777,
-                0o600
             );
             assert_eq!(
                 fs::metadata(device_key_path(dir.path()))
@@ -841,8 +826,8 @@ mod tests {
     fn pinned_client_cert_verifier_accepts_only_trusted_device_pubkeys() {
         let trusted_dir = temp_data_dir();
         let untrusted_dir = temp_data_dir();
-        let trusted = load_or_create_device_identity_in(trusted_dir.path()).unwrap();
-        let untrusted = load_or_create_device_identity_in(untrusted_dir.path()).unwrap();
+        let trusted = identity_in(trusted_dir.path()).unwrap();
+        let untrusted = identity_in(untrusted_dir.path()).unwrap();
         let trust_store = trust_store_with_pubkey(trusted.host_id, trusted.public_key());
         let verifier = PinnedClientCertVerifier::new(Arc::new(std::sync::RwLock::new(trust_store)));
         let now = UnixTime::since_unix_epoch(Duration::from_secs(1_700_000_000));
@@ -863,7 +848,7 @@ mod tests {
     #[test]
     fn pinned_client_cert_verifier_reads_live_trust_store_updates() {
         let peer_dir = temp_data_dir();
-        let peer = load_or_create_device_identity_in(peer_dir.path()).unwrap();
+        let peer = identity_in(peer_dir.path()).unwrap();
         let trust_store = Arc::new(std::sync::RwLock::new(TrustStore::default()));
         let verifier = PinnedClientCertVerifier::new(trust_store.clone());
         let now = UnixTime::since_unix_epoch(Duration::from_secs(1_700_000_000));
@@ -903,7 +888,7 @@ mod tests {
     #[test]
     fn pinned_server_cert_verifier_reads_live_trust_store_updates_and_replacements() {
         let peer_dir = temp_data_dir();
-        let peer = load_or_create_device_identity_in(peer_dir.path()).unwrap();
+        let peer = identity_in(peer_dir.path()).unwrap();
         let rotated_peer = DeviceIdentity::for_test(peer.host_id);
         let trust_store = Arc::new(std::sync::RwLock::new(TrustStore::default()));
         let verifier = PinnedServerCertVerifier::new(peer.host_id, trust_store.clone());
@@ -945,7 +930,7 @@ mod tests {
                     DateTime::<Utc>::from_timestamp(300, 0).unwrap(),
                 )
                 .unwrap(),
-            TrustStorePairingUpdate::PubkeyReplacementRequired
+            PairingUpdate::PubkeyReplacementRequired
         );
         assert!(
             verifier
@@ -990,7 +975,7 @@ mod tests {
                 let barrier = barrier.clone();
                 std::thread::spawn(move || {
                     barrier.wait();
-                    load_or_create_device_identity_in(&data_dir).unwrap()
+                    identity_in(&data_dir).unwrap()
                 })
             })
             .collect::<Vec<_>>();
@@ -1007,26 +992,9 @@ mod tests {
                     && identity.public_key() == first.public_key())
         );
 
-        let reloaded = load_or_create_device_identity_in(&data_dir).unwrap();
+        let reloaded = identity_in(&data_dir).unwrap();
         assert_eq!(reloaded.host_id, first.host_id);
         assert_eq!(reloaded.public_key(), first.public_key());
-    }
-
-    #[test]
-    fn invalid_host_id_length_is_rejected() {
-        let dir = temp_data_dir();
-        fs::create_dir_all(dir.path()).unwrap();
-        create_private_file(&host_id_path(dir.path()), b"short").unwrap();
-
-        let error = load_or_create_device_identity_in(dir.path()).unwrap_err();
-        assert!(matches!(
-            error,
-            IdentityError::InvalidLength {
-                field: HOST_ID_FILE,
-                expected: HOST_ID_LEN,
-                actual: 5
-            }
-        ));
     }
 
     #[cfg(unix)]

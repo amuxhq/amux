@@ -1,6 +1,6 @@
 [package]
 name = "amux"
-version = "0.8.0"
+version = "0.8.2"
 edition.workspace = true
 license.workspace = true
 description = "Agent multiplexer - CLI binary"
@@ -15,6 +15,7 @@ name = "amux"
 path = "src/main.rs"
 
 [dependencies]
+log-file = { workspace = true }
 agent = { workspace = true }
 agent-dir = { workspace = true }
 analytics = { workspace = true }
@@ -29,8 +30,11 @@ hyper-util = { workspace = true }
 node = { workspace = true }
 qrcode = { workspace = true }
 quinn = { workspace = true }
+semver = { workspace = true }
 serde = { workspace = true }
-serde_yaml = { workspace = true }
+serde_ignored = { workspace = true }
+toml = { workspace = true }
+toml_edit = { workspace = true }
 settings = { workspace = true }
 store = { workspace = true }
 tokio = { workspace = true }

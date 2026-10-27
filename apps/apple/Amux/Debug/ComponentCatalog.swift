@@ -166,9 +166,9 @@ enum ComponentCatalog {
                 durationMs: nil, exitCode: nil), attention: true)),
             row("explore", r("e1", 17, .explore(verb: .read, subject: "crates/wire/src/codes.rs", state: .succeeded, result: ""))),
             row("run", r("e2", 18, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded, result: ""),
-                run: Run(first: "e0", last: "e2", steps: 6, live: false, openBelow: false, unresolvedFailure: false, counts: RunCounts(commands: 0, edits: 0, reads: 4, searches: 2, subagents: 0, other: 0), recent: nil))),
+                run: Run(first: "e0", last: "e2", steps: 6, live: false, openBelow: false, unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 4, searches: 2, subagents: 0, other: 0), recent: nil))),
             row("run-open-below", r("e3", 19, .explore(verb: .read, subject: "src/lib.rs", state: .succeeded, result: ""),
-                run: Run(first: "e0", last: "e3", steps: 40, live: false, openBelow: true, unresolvedFailure: false, counts: RunCounts(commands: 0, edits: 0, reads: 40, searches: 0, subagents: 0, other: 0), recent: nil))),
+                run: Run(first: "e0", last: "e3", steps: 40, live: false, openBelow: true, unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 40, searches: 0, subagents: 0, other: 0), recent: nil))),
             row("subagent-running", r("a1", 20, .subagent(
                 description: "Find every INVALID_PIN reader", running: true, toolCount: 12,
                 lastTool: "Read wire/src/codes.rs", answer: "", durationMs: 48_000))),
@@ -580,8 +580,9 @@ enum ComponentCatalog {
             }),
             chat("run-open", chat: {
                 ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(phase: .idle), strip: ScriptedChat.strip(model: "opus 4.6"))
-            }) { model, _ in
+            }) { model, source in
                 if let run = model.cell(for: "c14").row?.run { model.toggleRun(run) }
+                source.deliver(to: model)
             },
             // The header pill stops growing past the largest ordinary size;
             // the step rows stack their verb, file and counts.
@@ -607,7 +608,7 @@ enum ComponentCatalog {
             }) { model, source in
                 model.reading(atNewest: false)
                 source.append([ScriptedChat.row("n1", 100, .prose(text: [.text("Done. The three arms are one now.")], streaming: false, workingNote: false))])
-                model.woke()
+                source.deliver(to: model)
             },
             chat("paging-unreachable", readiness: ("chat.paging", "unreachable"), chat: {
                 let source = ScriptedChat(rows: Array(F.conversation.prefix(3)), frame: ScriptedChat.frame(hasOlder: true))
@@ -937,7 +938,7 @@ enum CatalogFixtures {
     /// The catalogue's clock, where a view reads ages and resets against it.
     static let now = Date(timeIntervalSince1970: 1_790_000_000)
 
-    static let git = GitView(
+    static let git = Git(
         baseBranch: "main", branch: "refactor-auth",
         onBranch: ChangeTotals(files: 6, added: 120, removed: 30),
         uncommitted: ChangeTotals(files: 5, added: 56, removed: 20))
@@ -1408,11 +1409,11 @@ extension CatalogFixtures {
                 ProviderSignIn(provider: .claude, signedIn: signedIn),
                 ProviderSignIn(provider: .codex, signedIn: true),
             ],
-            lastDialError: nil, platform: "macOS", signedIn: nil, version: nil),
+            lastDialError: nil, platform: .macos, signedIn: nil, version: nil),
         HostView(
             hostId: Array(repeating: 8, count: 16), name: "laptop", local: false, trusted: true,
             candidate: false, reach: .away, addrs: [], current: false, providers: [],
-            lastDialError: nil, platform: "macOS", signedIn: nil, version: nil)])
+            lastDialError: nil, platform: .macos, signedIn: nil, version: nil)])
         let store = NewAgentStore()
         store.open(on: desk)
         store.listed(.success(Directories(
@@ -1778,8 +1779,8 @@ extension CatalogFixtures {
 }
 
 extension CatalogFixtures {
-    static let nearbyLaptop = machine(5, "laptop", platform: "MacBook Air", reach: .online(.direct), trusted: false, candidate: true, version: nil, providers: [])
-    static let relayLaptop = machine(5, "laptop", platform: "MacBook Air", reach: .online(.relay), trusted: false, candidate: true, version: nil, providers: [])
+    static let nearbyLaptop = machine(5, "laptop", platform: .macos, reach: .online(.direct), trusted: false, candidate: true, version: nil, providers: [])
+    static let relayLaptop = machine(5, "laptop", platform: .macos, reach: .online(.relay), trusted: false, candidate: true, version: nil, providers: [])
     static let pendingLaptop = PendingPair(
         token: [1, 2, 3], hostId: nearbyLaptop.hostId, name: "laptop", fingerprint: fingerprint(5),
         expiresAtMs: Int64((now.timeIntervalSince1970 + 4 * 60 + 12) * 1000), via: .direct)
@@ -1793,7 +1794,7 @@ extension CatalogFixtures {
 
 extension CatalogFixtures {
     static func machine(
-        _ index: UInt8, _ name: String, platform: String?, reach: Reach, trusted: Bool = true,
+        _ index: UInt8, _ name: String, platform: Platform?, reach: Reach, trusted: Bool = true,
         candidate: Bool = false, addrs: [String] = [], version: String? = "0.8.0",
         providers: [ProviderSignIn] = [
             ProviderSignIn(provider: .claude, signedIn: true), ProviderSignIn(provider: .codex, signedIn: false),
@@ -1805,15 +1806,15 @@ extension CatalogFixtures {
             lastDialError: nil, platform: platform, signedIn: nil, version: version)
     }
 
-    static let deskHost = machine(1, "desk", platform: "Mac Studio", reach: .online(.direct), addrs: ["192.168.1.20:4433", "[fe80::1c2b:9aff:fe31:7d10]:4433"])
-    static let oldLaptop = machine(6, "old-laptop", platform: "MacBook Air", reach: .offline(.revoked))
+    static let deskHost = machine(1, "desk", platform: .macos, reach: .online(.direct), addrs: ["192.168.1.20:4433", "[fe80::1c2b:9aff:fe31:7d10]:4433"])
+    static let oldLaptop = machine(6, "old-laptop", platform: .macos, reach: .offline(.revoked))
     static let machines: [HostView] = [
         deskHost,
-        machine(2, "build-box", platform: "Linux", reach: .online(.relay)),
-        machine(3, "mini", platform: "Mac mini", reach: .away),
-        machine(4, "garage-pi", platform: "Linux", reach: .offline(.plain)),
+        machine(2, "build-box", platform: .linux, reach: .online(.relay)),
+        machine(3, "mini", platform: .macos, reach: .away),
+        machine(4, "garage-pi", platform: .linux, reach: .offline(.plain)),
         oldLaptop,
-        machine(5, "laptop", platform: "MacBook Air", reach: .online(.direct), trusted: false, candidate: true, version: nil, providers: []),
+        machine(5, "laptop", platform: .macos, reach: .online(.direct), trusted: false, candidate: true, version: nil, providers: []),
     ]
 
     static func hostsStore(_ hosts: [HostView]) -> HostsStore {

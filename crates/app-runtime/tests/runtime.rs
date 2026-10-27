@@ -1,6 +1,6 @@
 //! The app runtime against a real node in process, running an agent on a
-//! fake provider: the host is woken once per turn, takes the changed keys,
-//! reads rows by key and acts on the chat.
+//! fake provider: the host is woken once per turn, hears what moved as a
+//! delta, reads rows by key and acts on the chat.
 
 #![cfg(unix)]
 
@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use app_runtime::values::{
-    ActOutcome, AgentAct, ChatChanges, Draft, NewAgent, PageOutcome, RowOptions,
+    ActOutcome, AgentAct, ChatDelta, Draft, KeysMoved, NewAgent, PageOutcome,
 };
 use app_runtime::{AppRuntime, Chat, Wake};
 use client::{Client, InProcess, SystemClock};
@@ -80,7 +80,17 @@ struct Host {
 }
 
 async fn open(net: &Net) -> (AppRuntime, Host) {
-    let client: Arc<dyn Client> = Arc::new(InProcess::new(net.client("desk").unwrap()));
+    let (runtime, host) = connect(net).await;
+    runtime.fleet_opening();
+    (runtime, host)
+}
+
+/// The runtime, with home not yet opened.
+async fn connect(net: &Net) -> (AppRuntime, Host) {
+    let client: Arc<dyn Client> = Arc::new(
+        InProcess::new(net.client("desk").unwrap())
+            .with_admin(Arc::new(net.profile_admin("desk").unwrap())),
+    );
     let (sender, wakes) = mpsc::unbounded_channel();
     let wake = Arc::new(move |wake: Wake| {
         let _ = sender.send(wake);
@@ -117,10 +127,10 @@ impl Host {
     }
 
     /// One of the host's turns: the next wake naming `chat`, and what it
-    /// brought. The wake was owed something, and nothing else was queued
-    /// for the chat before this take: however many updates land between
-    /// turns, the host is woken once and takes them all together.
-    async fn turn(&mut self, chat: &Chat) -> ChatChanges {
+    /// brought, if anything drawn moved. Nothing else was queued for the
+    /// chat before this take: however many updates land between turns, the
+    /// host is woken once and hears them all together.
+    async fn turn(&mut self, chat: &Chat) -> Option<ChatDelta> {
         let wanted = Wake::Chat(chat.id());
         self.next(wanted).await;
         let mut queued = Vec::new();
@@ -135,13 +145,26 @@ impl Host {
             // Another wake's turn is still owed; keep it for its taker.
             self.held.push(wake);
         }
-        let changes = chat.take_changes();
-        assert!(
-            changes.session || changes.reloaded || !changes.keys.is_empty(),
-            "a wake that brought nothing"
-        );
-        changes
+        chat.delta()
     }
+
+    /// Takes what is pending for `chat` on the wakes already queued for it,
+    /// so no wake is left behind for a batch taken without one.
+    fn settle(&mut self, chat: &Chat) {
+        let wanted = Wake::Chat(chat.id());
+        while let Ok(wake) = self.wakes.try_recv() {
+            self.held.push(wake);
+        }
+        self.held.retain(|wake| *wake != wanted);
+        chat.delta();
+    }
+}
+
+/// Opens a chat as the host's model does: the opening hands it over whole.
+async fn opened(runtime: &AppRuntime, agent: &AgentKey, tail: u32) -> Arc<Chat> {
+    let chat = runtime.open_chat(agent, tail).await.unwrap();
+    chat.opening();
+    chat
 }
 
 fn worker(net: &Net) -> AgentKey {
@@ -161,14 +184,14 @@ async fn until(host: &mut Host, chat: &Chat, what: &str, check: impl Fn(&Chat) -
                 return;
             }
             host.next(wake).await;
-            chat.take_changes();
+            chat.delta();
         }
     })
     .await;
     if found.is_err() {
         let keys = chat.keys();
         let rows: Vec<String> = chat
-            .rows_for(&keys, &RowOptions::default())
+            .rows_for(&keys)
             .iter()
             .map(|row| format!("{:?}", row.kind))
             .collect();
@@ -181,7 +204,7 @@ async fn until(host: &mut Host, chat: &Chat, what: &str, check: impl Fn(&Chat) -
 
 fn says(chat: &Chat, wanted: &str) -> bool {
     let keys = chat.keys();
-    chat.rows_for(&keys, &RowOptions::default())
+    chat.rows_for(&keys)
         .iter()
         .any(|row| format!("{:?}", row.kind).contains(wanted))
 }
@@ -190,7 +213,7 @@ fn says(chat: &Chat, wanted: &str) -> bool {
 async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
     let net = Net::start(topology()).await.unwrap();
     let (runtime, mut host) = open(&net).await;
-    let fleet = runtime.fleet_view(&[], &ui_view::FleetFilter::default());
+    let fleet = runtime.fleet_view();
     assert_eq!(fleet.sections.len(), 1, "{fleet:?}");
     let rows = &fleet.sections[0].rows;
     assert_eq!(rows.len(), 1, "{fleet:?}");
@@ -201,7 +224,7 @@ async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
         "{hosts:?}"
     );
 
-    let chat = runtime.open_chat(&worker(&net), 50).await.unwrap();
+    let chat = opened(&runtime, &worker(&net), 50).await;
     // The whole first turn, its end and the idle that follows it: a prompt
     // sent before the turn ends queues behind it instead of being sent.
     until(&mut host, &chat, "the first turn to end", |chat| {
@@ -212,10 +235,9 @@ async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
             && says(chat, "TurnEnd")
     })
     .await;
+    // What the turn left is handed over before the next one starts.
+    host.settle(&chat);
     let before = chat.keys();
-    let newest = before.last().unwrap().clone();
-    assert_eq!(chat.keys_above(&newest), Some(Vec::new()));
-    assert_eq!(chat.keys_above("no such key"), None);
 
     let sent = chat.send(&Draft::words("please run it")).await;
     assert!(
@@ -224,10 +246,31 @@ async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
     );
     // Many updates land between the host's turns; each turn is one wake,
     // and no wake is owed until the host takes what the last one brought.
-    let mut session_moved = false;
+    // The ids only grow above the newest the host holds, and a delta's rows
+    // are only of keys the host already held: a new one is read when drawn.
+    let mut ask_moved = false;
+    let mut above: Vec<String> = Vec::new();
     let card = tokio::time::timeout(PATIENCE, async {
         loop {
-            session_moved |= host.turn(&chat).await.session;
+            if let Some(delta) = host.turn(&chat).await {
+                ask_moved |= delta.ask.is_some();
+                for row in &delta.rows {
+                    assert!(
+                        before.contains(&row.id) || above.contains(&row.id),
+                        "a row for {} the host did not hold",
+                        row.id
+                    );
+                }
+                match delta.keys {
+                    Some(KeysMoved::Edges {
+                        above: new,
+                        below,
+                        dropped: 0,
+                    }) if below.is_empty() => above.extend(new),
+                    None => {}
+                    other => panic!("the window moved other than above: {other:?}"),
+                }
+            }
             if let Some(card) = chat.ask_card() {
                 return card;
             }
@@ -235,13 +278,10 @@ async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
     })
     .await
     .expect("the permission ask");
-    assert!(session_moved, "the ask moved the frame");
-
-    // The ids only grew above the newest the host held.
-    let above = chat.keys_above(&newest).unwrap();
+    assert!(ask_moved, "the ask moved");
     assert!(!above.is_empty());
     assert_eq!(chat.keys(), [before.clone(), above.clone()].concat());
-    let rows = chat.rows_for(&above, &RowOptions::default());
+    let rows = chat.rows_for(&above);
     assert_eq!(
         rows.iter().map(|row| row.id.clone()).collect::<Vec<_>>(),
         above
@@ -271,7 +311,7 @@ async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
     })
     .await;
     let decided = chat
-        .rows_for(&chat.keys(), &RowOptions::default())
+        .rows_for(&chat.keys())
         .into_iter()
         .find(|row| row.decision.is_some())
         .expect("the decision lands as a row");
@@ -285,7 +325,7 @@ async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
                 return card;
             }
             host.next(Wake::Chat(chat.id())).await;
-            chat.take_changes();
+            chat.delta();
         }
     })
     .await
@@ -307,7 +347,7 @@ async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
         chat.ask_card().is_none() && says(chat, "answered")
     })
     .await;
-    let rows = chat.rows_for(&chat.keys(), &RowOptions::default());
+    let rows = chat.rows_for(&chat.keys());
     let answered = format!("{rows:?}");
     assert!(answered.contains("full"), "{answered}");
     assert!(answered.contains("windows"), "{answered}");
@@ -320,7 +360,7 @@ async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
 async fn older_rows_arrive_below_the_oldest_the_host_holds() {
     let net = Net::start(topology()).await.unwrap();
     let (runtime, mut host) = open(&net).await;
-    let chat = runtime.open_chat(&worker(&net), 50).await.unwrap();
+    let chat = opened(&runtime, &worker(&net), 50).await;
     // The whole first turn, its end included: a row landing after the list
     // is taken would be paged in below but missing from it.
     until(&mut host, &chat, "the first turn to end", |chat| {
@@ -333,7 +373,7 @@ async fn older_rows_arrive_below_the_oldest_the_host_holds() {
 
     // A live agent's session stays with the fleet, holding its newest
     // rows: a chat opened again starts from them.
-    let chat = runtime.open_chat(&worker(&net), 1).await.unwrap();
+    let chat = opened(&runtime, &worker(&net), 1).await;
     assert_eq!(chat.keys(), everything);
     drop(chat);
 
@@ -360,23 +400,37 @@ async fn older_rows_arrive_below_the_oldest_the_host_holds() {
     .await
     .expect("the worker exits");
     assert!(runtime.fleet().session(&worker(&net)).is_none());
-    let chat = runtime.open_chat(&worker(&net), 50).await.unwrap();
+    let chat = opened(&runtime, &worker(&net), 50).await;
     until(&mut host, &chat, "the exit", |chat| chat.frame().caught_up).await;
     let everything = chat.keys();
     drop(chat);
 
     let chat = runtime.open_chat(&worker(&net), 1).await.unwrap();
-    let held = chat.keys();
+    let Some(KeysMoved::Reload(held)) = chat.opening().keys else {
+        panic!("an opening hands the window over whole");
+    };
+    assert_eq!(held, chat.keys());
     assert_eq!(held.len(), 1);
     assert!(chat.frame().has_older);
-    assert_eq!(chat.keys_below(&held[0]), Some(Vec::new()));
     let mut pages = 0;
     while chat.frame().has_older {
         assert!(matches!(chat.page_older(1).await, PageOutcome::Arrived(_)));
         pages += 1;
         assert!(pages < 20, "paging never reached the first row");
     }
-    let below = chat.keys_below(&held[0]).unwrap();
+    // Older rows arrive below the oldest the host holds, their rows read
+    // when drawn.
+    let delta = chat.delta().expect("the pages moved the window");
+    let Some(KeysMoved::Edges {
+        above,
+        below,
+        dropped: 0,
+    }) = delta.keys
+    else {
+        panic!("{:?}", delta.keys);
+    };
+    assert!(above.is_empty());
+    assert!(delta.rows.iter().all(|row| !below.contains(&row.id)));
     assert_eq!([below, held].concat(), everything);
     net.shutdown().await.unwrap();
 }
@@ -409,7 +463,7 @@ async fn a_reopened_chat_of_an_exited_agent_holds_its_rows_at_once() {
     );
     let net = Net::start(topology).await.unwrap();
     let (runtime, mut host) = open(&net).await;
-    let chat = runtime.open_chat(&worker(&net), 200).await.unwrap();
+    let chat = opened(&runtime, &worker(&net), 200).await;
     until(&mut host, &chat, "the turn to end", |chat| {
         chat.frame().caught_up && says(chat, "row 59") && says(chat, "TurnEnd")
     })
@@ -435,7 +489,7 @@ async fn a_reopened_chat_of_an_exited_agent_holds_its_rows_at_once() {
     })
     .await
     .expect("the worker exits");
-    let chat = runtime.open_chat(&worker(&net), 200).await.unwrap();
+    let chat = opened(&runtime, &worker(&net), 200).await;
     until(&mut host, &chat, "the exit", |chat| chat.frame().caught_up).await;
     let everything = chat.keys();
     assert!(everything.len() > 100, "{}", everything.len());
@@ -443,10 +497,53 @@ async fn a_reopened_chat_of_an_exited_agent_holds_its_rows_at_once() {
 
     for opening in 0..100 {
         assert!(runtime.fleet().session(&worker(&net)).is_none());
-        let chat = runtime.open_chat(&worker(&net), 200).await.unwrap();
+        let chat = opened(&runtime, &worker(&net), 200).await;
         assert_eq!(chat.keys(), everything, "opening {opening}");
         drop(chat);
     }
+    net.shutdown().await.unwrap();
+}
+
+/// What this device's daemon keeps for an agent, once it holds `wanted`.
+async fn kept_with_the_daemon(runtime: &AppRuntime, agent: &AgentKey, wanted: &str) {
+    let request = wire::GetDraftRequest {
+        agent_id: agent.agent.clone(),
+    };
+    tokio::time::timeout(PATIENCE, async {
+        while runtime
+            .client()
+            .get_draft(request.clone())
+            .await
+            .unwrap()
+            .text
+            != wanted
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("the daemon never kept {wanted:?}"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_draft_outlives_its_chat_with_this_devices_daemon() {
+    let net = Net::start(topology()).await.unwrap();
+    let (runtime, _host) = open(&net).await;
+    let agent = worker(&net);
+    let chat = opened(&runtime, &agent, 50).await;
+    assert_eq!(chat.kept_draft(), None, "nothing was kept yet");
+    chat.keep_draft(&Draft::words("first"));
+    chat.keep_draft(&Draft::words("half typed"));
+    drop(chat);
+    kept_with_the_daemon(&runtime, &agent, "half typed").await;
+
+    let chat = opened(&runtime, &agent, 50).await;
+    assert_eq!(chat.kept_draft(), Some(Draft::words("half typed")));
+    chat.keep_draft(&Draft::default());
+    drop(chat);
+    kept_with_the_daemon(&runtime, &agent, "").await;
+    let chat = opened(&runtime, &agent, 50).await;
+    assert_eq!(chat.kept_draft(), None, "an emptied draft is forgotten");
     net.shutdown().await.unwrap();
 }
 
@@ -454,7 +551,7 @@ async fn a_reopened_chat_of_an_exited_agent_holds_its_rows_at_once() {
 async fn a_dump_carries_the_fleet_and_every_open_chat() {
     let net = Net::start(topology()).await.unwrap();
     let (runtime, mut host) = open(&net).await;
-    let chat = runtime.open_chat(&worker(&net), 50).await.unwrap();
+    let chat = opened(&runtime, &worker(&net), 50).await;
     until(&mut host, &chat, "the first turn", |chat| {
         says(chat, "turn one")
     })
@@ -469,21 +566,44 @@ async fn a_dump_carries_the_fleet_and_every_open_chat() {
     net.shutdown().await.unwrap();
 }
 
+/// The host's queue can answer a fleet wake while home is still being
+/// built on the main thread, before it has opened: that answer is
+/// nothing, but it still takes the changes that woke the host, or no
+/// change after them would wake it again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_fleet_wake_answered_before_home_opens_leaves_later_ones_coming() {
+    let net = Net::start(topology()).await.unwrap();
+    let (runtime, mut host) = connect(&net).await;
+    host.next(Wake::Fleet).await;
+    assert!(runtime.fleet_delta().is_none(), "home has not opened");
+    let chat = opened(&runtime, &worker(&net), 50).await;
+    chat.send(&Draft::words("please run it")).await;
+    host.next(Wake::Fleet).await;
+    assert!(runtime.fleet_delta().is_none(), "home has still not opened");
+    runtime.fleet_opening();
+    net.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn the_fleet_wakes_the_host_when_an_agent_moves() {
     let net = Net::start(topology()).await.unwrap();
     let (runtime, mut host) = open(&net).await;
-    runtime.take_fleet_changes();
-    let chat = runtime.open_chat(&worker(&net), 50).await.unwrap();
+    let chat = opened(&runtime, &worker(&net), 50).await;
     chat.send(&Draft::words("please run it")).await;
     tokio::time::timeout(PATIENCE, async {
         loop {
             host.next(Wake::Fleet).await;
-            let changes = runtime.take_fleet_changes();
-            if changes.agents.contains(&worker(&net))
-                && runtime.fleet_card(&worker(&net)).unwrap().attention
-                    == model::Attention::NeedsYou
-            {
+            let moved = runtime.fleet_delta().and_then(|delta| delta.view);
+            let needs_you = moved.is_some_and(|view| {
+                view.sections
+                    .iter()
+                    .flat_map(|section| &section.rows)
+                    .any(|row| {
+                        row.card.agent == worker(&net)
+                            && row.card.attention == model::Attention::NeedsYou
+                    })
+            });
+            if needs_you {
                 return;
             }
         }
@@ -497,7 +617,7 @@ async fn the_fleet_wakes_the_host_when_an_agent_moves() {
 async fn a_settings_pick_reaches_the_agent_and_the_frame_shows_it() {
     let net = Net::start(topology()).await.unwrap();
     let (runtime, mut host) = open(&net).await;
-    let chat = runtime.open_chat(&worker(&net), 50).await.unwrap();
+    let chat = opened(&runtime, &worker(&net), 50).await;
     // The host's catalogue is fetched once the snapshot names it, and can
     // land after the first turn does.
     until(
@@ -572,7 +692,7 @@ async fn opening_the_overview_lists_the_changed_files_by_folder() {
     std::fs::write(folder.join("notes/plan.md"), "one\ntwo\n").unwrap();
     std::fs::write(folder.join("README.md"), "hello\n").unwrap();
     let (runtime, mut host) = open(&net).await;
-    let chat = runtime.open_chat(&worker(&net), 50).await.unwrap();
+    let chat = opened(&runtime, &worker(&net), 50).await;
     until(&mut host, &chat, "the first turn", |chat| {
         chat.frame().caught_up && says(chat, "turn one")
     })
@@ -613,7 +733,7 @@ async fn opening_the_overview_lists_the_changed_files_by_folder() {
 async fn a_chat_catches_up_after_the_app_returns_to_the_foreground() {
     let net = Net::start(topology()).await.unwrap();
     let (runtime, mut host) = open(&net).await;
-    let chat = runtime.open_chat(&worker(&net), 50).await.unwrap();
+    let chat = opened(&runtime, &worker(&net), 50).await;
     until(&mut host, &chat, "the first turn", |chat| {
         chat.frame().caught_up && says(chat, "turn one")
     })
@@ -664,7 +784,7 @@ async fn a_new_agent_starts_from_the_hosts_catalogue_in_a_worktree_of_its_own() 
                 return;
             }
             host.next(Wake::Fleet).await;
-            runtime.take_fleet_changes();
+            runtime.fleet_delta();
         }
     })
     .await
@@ -698,7 +818,7 @@ async fn a_new_agent_starts_from_the_hosts_catalogue_in_a_worktree_of_its_own() 
                 return card;
             }
             host.next(Wake::Fleet).await;
-            runtime.take_fleet_changes();
+            runtime.fleet_delta();
         }
     })
     .await

@@ -29,9 +29,6 @@ private let dumped: Result<[ReportPart], PartAbsent> = .success([
     ReportPart(name: "dump/manifest.json", data: Data("{}".utf8)),
 ])
 
-private let noLog = Result<String, PartAbsent>.failure(
-    PartAbsent("this app logs through the system, which keeps no file it can read back"))
-
 /// `report.json` as a reader sees it: parsed back out of the bytes that would
 /// have been sent, rather than read off the value that produced them.
 private func header(_ bundle: ReportBundle) throws -> [String: Any] {
@@ -50,7 +47,7 @@ final class ReportBundleTests: XCTestCase {
         capture.dump = nil
         capture.runtimeFailure = "installation profile path disagrees with its namespace"
         let bundle = ReportAssembly.bundle(
-            from: capture, draft: ReportDraft(), build: "amux-ios/test", log: noLog,
+            from: capture, draft: ReportDraft(), build: "amux-ios/test",
             dump: .failure(PartAbsent("nothing was running, so there was nothing to dump")))
         XCTAssertEqual(try header(bundle)["detail"] as? String,
                        "run\ninstallation profile path disagrees with its namespace")
@@ -64,17 +61,20 @@ final class ReportBundleTests: XCTestCase {
         let bundle = ReportAssembly.bundle(
             from: wholeCapture(),
             draft: ReportDraft(note: "the queued message stays on screen"),
-            build: "amux-ios/0.1.0", log: .success("two lines\nof log\n"), dump: dumped)
+            build: "amux-ios/0.1.0", dump: dumped)
 
         let declared = try parts(bundle)
-        for part in ["frame", "trace", "dump", "log"] {
+        for part in ["frame", "trace", "dump"] {
             XCTAssertEqual(
                 declared[part] as? String, "present",
                 "\(part) should be declared present")
         }
+        // The runtime's log rides in the dump, redacted; no raw copy beside it.
+        let log = try XCTUnwrap((declared["log"] as? [String: Any])?["absent"] as? [String: Any])
+        XCTAssertEqual(log["reason"] as? String, "the runtime's log is in the dump, redacted")
         for file in [
             ReportAssembly.reportFile, ReportAssembly.frameFile, ReportAssembly.traceFile,
-            ReportAssembly.logFile, "dump/manifest.json", "dump/client/fleet/state.txt",
+            "dump/manifest.json", "dump/client/fleet/state.txt",
         ] {
             XCTAssertEqual(
                 bundle.part(file)?.present, true, "\(file) should be carried")
@@ -82,7 +82,7 @@ final class ReportBundleTests: XCTestCase {
         XCTAssertEqual(bundle.parts.first?.name, ReportAssembly.reportFile)
     }
 
-    /// A part that is missing says why. A reader who finds no log has to be
+    /// A part that is missing says why. A reader who finds no trace has to be
     /// able to tell "withheld" from "lost" from "never existed".
     func testAMissingPartCarriesTheReasonItIsMissing() throws {
         var capture = wholeCapture()
@@ -90,14 +90,14 @@ final class ReportBundleTests: XCTestCase {
         capture.traceAbsent = "the view-state recording could not be written"
 
         let bundle = ReportAssembly.bundle(
-            from: capture, draft: ReportDraft(), build: "amux-ios/0.1.0", log: noLog,
+            from: capture, draft: ReportDraft(), build: "amux-ios/0.1.0",
             dump: .failure(PartAbsent("nothing was connected")))
 
         let declared = try parts(bundle)
         for (part, reason) in [
             ("trace", "the view-state recording could not be written"),
             ("dump", "nothing was connected"),
-            ("log", "this app logs through the system, which keeps no file it can read back"),
+            ("log", "the runtime's log is in the dump, redacted"),
         ] {
             let absence = try XCTUnwrap(
                 (declared[part] as? [String: Any])?["absent"] as? [String: Any],
@@ -106,11 +106,9 @@ final class ReportBundleTests: XCTestCase {
         }
         // Declared absent means not carried. A bundle that declared a part
         // absent and shipped it anyway is refused by the account service.
-        for file in [
-            ReportAssembly.traceFile, ReportAssembly.logFile,
-        ] {
-            XCTAssertEqual(bundle.part(file)?.present, false, "\(file) should not be carried")
-        }
+        XCTAssertEqual(
+            bundle.part(ReportAssembly.traceFile)?.present, false, "the trace should not be carried")
+        XCTAssertNil(bundle.part("log.txt"), "no log file is carried")
         XCTAssertNil(declared["trace_kind"], "a bundle with no trace names no recorder")
     }
 
@@ -119,7 +117,7 @@ final class ReportBundleTests: XCTestCase {
     /// a native view, which a terminal cannot put back.
     func testATraceNamesTheRecorderThatMadeIt() throws {
         let bundle = ReportAssembly.bundle(
-            from: wholeCapture(), draft: ReportDraft(), build: "amux-ios/0.1.0", log: noLog, dump: dumped)
+            from: wholeCapture(), draft: ReportDraft(), build: "amux-ios/0.1.0", dump: dumped)
 
         XCTAssertEqual(try parts(bundle)["trace_kind"] as? String, "native_view")
     }
@@ -132,7 +130,7 @@ final class ReportBundleTests: XCTestCase {
             draft: ReportDraft(marks: [
                 ReportMark(x: 24, y: 236.5, width: 354, height: 30, note: "this row"),
             ]),
-            build: "amux-ios/0.1.0", log: noLog, dump: dumped)
+            build: "amux-ios/0.1.0", dump: dumped)
 
         let read = try header(bundle)
         let geometry = try XCTUnwrap(read["image_frame"] as? [String: Any])
@@ -154,7 +152,7 @@ final class ReportBundleTests: XCTestCase {
         let bundle = ReportAssembly.bundle(
             from: wholeCapture(), draft: ReportDraft(note: "it stays on screen"),
             build: "amux-ios/0.1.0", gitSHA: String(repeating: "a", count: 40),
-            createdAt: Date(timeIntervalSince1970: 1_788_395_144.348), log: noLog, dump: dumped)
+            createdAt: Date(timeIntervalSince1970: 1_788_395_144.348), dump: dumped)
 
         let read = try header(bundle)
         XCTAssertEqual(read["schema_version"] as? Int, 2)
@@ -193,7 +191,7 @@ final class ReportBundleTests: XCTestCase {
             open: true)
         let cloud = OneUpload(.failure(.network("offline")))
 
-        await reports.send(with: cloud, as: AccountId("ada"), build: "amux-ios/0.1.0", log: noLog,
+        await reports.send(with: cloud, as: AccountId("ada"), build: "amux-ios/0.1.0",
                            now: Date(timeIntervalSince1970: 1000))
 
         XCTAssertEqual(reports.sending, .failed("offline"))
@@ -206,7 +204,7 @@ final class ReportBundleTests: XCTestCase {
         XCTAssertEqual(refusedHeader["created_at"] as? String, "1970-01-01T00:16:40.000Z")
 
         cloud.answer = .success(ReportReceipt(id: "report-7", receivedAt: Date()))
-        await reports.send(with: cloud, as: AccountId("ada"), build: "amux-ios/0.1.0", log: .success("a later log"),
+        await reports.send(with: cloud, as: AccountId("ada"), build: "amux-ios/0.1.0",
                            now: Date(timeIntervalSince1970: 2000))
 
         XCTAssertEqual(reports.sending, .sent(ReportReceipt(id: "report-7", receivedAt: cloud.at)))
@@ -214,14 +212,14 @@ final class ReportBundleTests: XCTestCase {
         // it: a retry is not a second, emptier report.
         XCTAssertEqual(cloud.sent.count, 2)
         XCTAssertEqual(cloud.sent.last, refused, "retry preserves every byte, including stamp")
-        let again = await reports.assembled(build: "later", log: noLog)
+        let again = await reports.assembled(build: "later")
         XCTAssertEqual(again?.parts, refused)
-        await reports.send(with: cloud, as: AccountId("ada"), build: "later", log: noLog)
+        await reports.send(with: cloud, as: AccountId("ada"), build: "later")
         XCTAssertEqual(cloud.sent.count, 2, "sent is terminal")
         XCTAssertEqual(reports.sending, .sent(ReportReceipt(id: "report-7", receivedAt: cloud.at)))
         XCTAssertEqual(cloud.sent.last?.map(\.name), [
             ReportAssembly.reportFile, ReportAssembly.frameFile, ReportAssembly.traceFile,
-            ReportAssembly.logFile, "dump/client/fleet/state.txt", "dump/manifest.json",
+            "dump/client/fleet/state.txt", "dump/manifest.json",
         ])
     }
 
@@ -230,7 +228,7 @@ final class ReportBundleTests: XCTestCase {
         let receipt = ReportReceipt(id: "already-sent", receivedAt: Date())
         let reports = ReportStore(capture: wholeCapture(), sending: .sent(receipt), open: true)
         let cloud = OneUpload(.failure(.network("offline")))
-        await reports.send(with: cloud, as: nil, build: "test", log: noLog)
+        await reports.send(with: cloud, as: nil, build: "test")
         XCTAssertEqual(reports.sending, .sent(receipt))
         XCTAssertTrue(cloud.sent.isEmpty)
     }
@@ -239,13 +237,13 @@ final class ReportBundleTests: XCTestCase {
     func testDismissingAReportLetsTheNextCaptureSendItsOwnBundle() async throws {
         let reports = ReportStore(capture: wholeCapture(), open: true)
         let cloud = OneUpload(.success(ReportReceipt(id: "sent", receivedAt: Date())))
-        await reports.send(with: cloud, as: AccountId("ada"), build: "test", log: noLog,
+        await reports.send(with: cloud, as: AccountId("ada"), build: "test",
                            now: Date(timeIntervalSince1970: 1000))
         reports.dismiss()
         XCTAssertNil(reports.uploadBundle)
         XCTAssertTrue(reports.begin(BundleFreeze()))
         reports.draft.note = "a different problem"
-        await reports.send(with: cloud, as: AccountId("ada"), build: "test", log: noLog,
+        await reports.send(with: cloud, as: AccountId("ada"), build: "test",
                            now: Date(timeIntervalSince1970: 2000))
         XCTAssertEqual(cloud.sent.count, 2)
         let first = try header(ReportBundle(parts: cloud.sent[0]))
@@ -266,7 +264,7 @@ final class ReportBundleTests: XCTestCase {
             open: true)
         let cloud = OneUpload(.success(ReportReceipt(id: "report-7", receivedAt: Date())))
 
-        await reports.send(with: cloud, as: nil, build: "amux-ios/0.1.0", log: noLog)
+        await reports.send(with: cloud, as: nil, build: "amux-ios/0.1.0")
 
         guard case .failed(let why) = reports.sending else {
             return XCTFail("the report was left at \(reports.sending)")

@@ -13,6 +13,6 @@ snapshot WORKING queue=[] working_on=- at=1789588948282 asks=[] session=3dcce16f
 ## 9 recorded 7: fact Transcript type=user uuid=b032d070-6ea5-4b1a-b1bd-1f055088d610
 snapshot WORKING queue=[] working_on=- at=1789588948294 asks=[] session=3dcce16f-d19b-43a8-bf2e-14a05759022a model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=10830 tasks=[1:TASK_LIST_STATUS_IN_PROGRESS:"Resume from the live checklist"] background=?
 ## 11 recorded 9: fact Transcript type=assistant uuid=2fe54192-94de-47c9-8952-81cd5f90a77b
-item toolu_0111yBonGHJL4YvNmE5Zm5iK tool final at=1789588948831 text="" Write TOOL_STATE_RUNNING input="{\"content\":\"LIVE_PERMISSION_REQUEST\",\"file_path\":\"/tmp/plann…"
+item toolu_0111yBonGHJL4YvNmE5Zm5iK tool final at=1789588948831 text="" Write TOOL_STATE_RUNNING input=write:"/tmp/planner-probe/permission-request-target.txt"
 ## 13 recorded 11: fact Transcript type=user uuid=28e06a2a-da3b-4238-a2e3-24ee0625ca69
-item toolu_0111yBonGHJL4YvNmE5Zm5iK tool final at=1789588948831 text="" Write TOOL_STATE_FAILED ended=1789588948848 input="{\"content\":\"LIVE_PERMISSION_REQUEST\",\"file_path\":\"/tmp/plann…" out="Permission for this tool use was denied. It requires approva…"
+item toolu_0111yBonGHJL4YvNmE5Zm5iK tool final at=1789588948831 text="" Write TOOL_STATE_FAILED ended=1789588948848 input=write:"/tmp/planner-probe/permission-request-target.txt" out="Permission for this tool use was denied. It requires approva…"

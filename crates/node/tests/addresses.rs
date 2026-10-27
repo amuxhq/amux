@@ -29,15 +29,17 @@ fn listing(interfaces: &[&str]) -> node::EdgeOptions {
     }
 }
 
-/// The addresses `peer`'s entry in `install`'s trust file lists, as
-/// `address source` pairs, and the address it last answered at.
+/// The addresses `install` keeps for `peer`, as `address source` pairs,
+/// and the address it last answered at.
 fn remembered(install: &Install, peer: node::HostId) -> (Vec<String>, Vec<String>) {
-    let trust: serde_json::Value = std::fs::read(install.profile_dir().join("trust.json"))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default();
-    let entry = &trust[peer.to_string()];
-    let listed = entry["listed"]
+    let row = install.trusted_host(peer);
+    let column = |column: fn(&store::TrustedHost) -> &str| -> serde_json::Value {
+        row.as_ref()
+            .and_then(|row| serde_json::from_str(column(row)).ok())
+            .unwrap_or_default()
+    };
+    let (listed, direct) = (column(|row| &row.listed), column(|row| &row.direct));
+    let listed = listed
         .as_array()
         .map(|listed| {
             listed
@@ -47,17 +49,10 @@ fn remembered(install: &Install, peer: node::HostId) -> (Vec<String>, Vec<String
                 .collect()
         })
         .unwrap_or_default();
-    let answered = entry["reachabilities"]
+    let answered = direct
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|reachability| reachability["type"] == "direct")
-        .flat_map(|reachability| {
-            reachability["addrs"]
-                .as_array()
-                .cloned()
-                .unwrap_or_default()
-        })
         .filter_map(|addr| addr.as_str().map(str::to_owned))
         .collect();
     (listed, answered)

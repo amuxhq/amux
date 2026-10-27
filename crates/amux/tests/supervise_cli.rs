@@ -43,7 +43,7 @@ fn the_login_units_match_their_goldens() {
     let item = LoginItem {
         binary: Path::new("/Users/someone/.amux/bin/amux"),
         config: Some(Path::new(
-            "/Users/someone/Library/Application Support/amux/config & more.yaml",
+            "/Users/someone/Library/Application Support/amux/config & more.toml",
         )),
         path: "/opt/homebrew/bin:/usr/bin:/bin",
         log: Path::new("/Users/someone/.amux/supervisor.log"),
@@ -83,20 +83,19 @@ impl Install {
         let root = tempfile::tempdir().unwrap();
         let data = root.path().join("data");
         let socket = root.path().join("amux.sock");
-        let config = root.path().join("installation.yaml");
-        let supervisor = if supervisor { "on" } else { "off" };
+        let config = root.path().join("config.toml");
         // Tests do not keep the machine awake unless they say so.
         let keep_awake = if extra.contains("keep_awake") {
             ""
         } else {
-            "keep_awake: off\n"
+            "keep_awake = false\n"
         };
         std::fs::write(
             &config,
             format!(
-                "root: {}\nfront_door_socket: {}\nsupervisor: {supervisor}\nupdates: manual\n{keep_awake}{extra}",
-                data.display(),
-                socket.display(),
+                "root = {:?}\nfront_door_socket = {:?}\nsupervisor = {supervisor}\nupdates = \"manual\"\n{keep_awake}{extra}",
+                data.display().to_string(),
+                socket.display().to_string(),
             ),
         )
         .unwrap();
@@ -306,7 +305,7 @@ async fn the_supervisor_holds_the_sleep_assertion_under_keep_awake() {
             .collect()
     }
 
-    let awake = Install::new(true, "keep_awake: on\n");
+    let awake = Install::new(true, "keep_awake = true\n");
     awake.amux(&["server", "start"]);
     let pid = awake.supervisor_pid().unwrap();
     let held = assertions_of(pid);
@@ -325,7 +324,7 @@ async fn the_supervisor_holds_the_sleep_assertion_under_keep_awake() {
         "released with the supervisor"
     );
 
-    let asleep = Install::new(true, "keep_awake: off\n");
+    let asleep = Install::new(true, "keep_awake = false\n");
     asleep.amux(&["server", "start"]);
     let pid = asleep.supervisor_pid().unwrap();
     assert!(assertions_of(pid).is_empty());
@@ -376,21 +375,34 @@ fn init_writes_a_login_item_that_runs_amux_supervise() {
 }
 
 #[test]
-fn config_channel_sets_the_channel_and_keeps_the_rest() {
-    let install = Install::new(true, "host_name: desk\n");
-    let output = install.amux(&["config", "channel", "preview"]);
-    assert!(stdout(&output).contains("Channel: preview."));
+fn config_set_changes_the_channel_and_keeps_the_rest() {
+    let install = Install::new(
+        true,
+        "# the desk in the study\nhost_name = \"desk\"\n\n[ui]\ncolor = \"ansi\" # for tmux\n",
+    );
+    let output = install.amux(&["config", "set", "channel", "preview"]);
+    assert!(stdout(&output).contains("channel = \"preview\""));
+    assert_eq!(
+        stdout(&install.amux(&["config", "get", "channel"])).trim(),
+        "preview"
+    );
     let config = settings::InstallationConfig::from_file(&install.config).unwrap();
     assert_eq!(config.channel, settings::Channel::Preview);
-    assert_eq!(config.host_name, "desk");
+    assert_eq!(config.host_name(), "desk");
+    assert_eq!(config.ui.color, settings::ColorSetting::Ansi);
     assert!(config.manifest_url().ends_with("/preview.json"));
+    let text = std::fs::read_to_string(&install.config).unwrap();
+    assert!(
+        text.contains("# the desk in the study") && text.contains("# for tmux"),
+        "{text}"
+    );
 
-    install.amux(&["config", "channel", "stable"]);
+    install.amux(&["config", "set", "channel", "stable"]);
     let config = settings::InstallationConfig::from_file(&install.config).unwrap();
     assert_eq!(config.channel, settings::Channel::Stable);
 
     let refused = install
-        .command(&["config", "channel", "nightly"])
+        .command(&["config", "set", "channel", "nightly"])
         .output()
         .unwrap();
     assert!(!refused.status.success());
@@ -408,7 +420,7 @@ async fn update_says_updates_are_deploys_without_a_supervisor() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn update_installs_the_channel_build_now_even_one_rolled_back_here() {
+async fn update_retry_installs_the_channel_build_now_even_one_rolled_back_here() {
     let builds = tempfile::tempdir().unwrap();
     let bin = builds.path().join("bin");
     std::fs::create_dir_all(&bin).unwrap();
@@ -423,16 +435,16 @@ async fn update_installs_the_channel_build_now_even_one_rolled_back_here() {
 
     let install = Install::with_binary(
         true,
-        &format!("releases_url: {}\n", channel.url()),
+        &format!("releases_url = \"{}\"\n", channel.url()),
         installed.clone(),
     );
     install.amux(&["server", "start"]);
     let supervisor = install.supervisor_pid().unwrap();
 
-    let output = install.amux(&["update"]);
+    let output = install.amux(&["update", "--retry"]);
     let said = stdout(&output);
     println!(
-        "$ amux update   (1.0.0 installed; the channel names 2.0.0, rolled back here before)\n{said}"
+        "$ amux update --retry   (1.0.0 installed; the channel names 2.0.0, rolled back here before)\n{said}"
     );
     assert!(said.contains("Installing amux 2.0.0."), "{said}");
     assert!(said.contains("amux 2.0.0 is running."), "{said}");
@@ -448,6 +460,58 @@ async fn update_installs_the_channel_build_now_even_one_rolled_back_here() {
     println!("$ amux update\n{}", stdout(&again));
     assert!(
         stdout(&again).contains("Up to date: 2.0.0 is running and the channel names 2.0.0."),
+        "{}",
+        stdout(&again)
+    );
+}
+
+/// A build that never starts is rolled back by the supervisor; `amux
+/// update` says so and fails, rather than leaving the person to read the
+/// log, and a later `amux update` leaves that build alone unless retried.
+#[tokio::test(flavor = "multi_thread")]
+async fn update_reports_a_build_that_never_started_and_then_leaves_it_alone() {
+    let builds = tempfile::tempdir().unwrap();
+    let bin = builds.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let installed = bin.join("amux");
+    release::restamp(amux_binary(), &installed, "1.0.0").unwrap();
+    let channel = Channel::serve().await;
+    channel.publish("2.0.0", b"#!/bin/sh\nexit 3\n".to_vec());
+
+    let install = Install::with_binary(
+        true,
+        &format!("releases_url = \"{}\"\n", channel.url()),
+        installed.clone(),
+    );
+    install.amux(&["server", "start"]);
+
+    let output = install.command(&["update"]).output().unwrap();
+    let said = format!(
+        "{}{}",
+        stdout(&output),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    println!(
+        "$ amux update   (1.0.0 installed; the channel names 2.0.0, which exits at once)\n{said}"
+    );
+    assert!(!output.status.success(), "{said}");
+    assert!(said.contains("Installing amux 2.0.0."), "{said}");
+    assert!(
+        said.contains("amux 2.0.0 did not start, so the supervisor put amux 1.0.0 back."),
+        "{said}"
+    );
+    assert!(
+        said.contains("`amux update --retry` tries 2.0.0 again"),
+        "{said}"
+    );
+    let version = Command::new(&installed).arg("--version").output().unwrap();
+    assert_eq!(stdout(&version).trim(), "amux 1.0.0");
+
+    let again = install.amux(&["update"]);
+    println!("$ amux update\n{}", stdout(&again));
+    assert!(
+        stdout(&again)
+            .contains("2.0.0 was rolled back here; `amux update --retry` tries it again."),
         "{}",
         stdout(&again)
     );

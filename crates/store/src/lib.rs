@@ -28,7 +28,27 @@ pub use blobs::BlobLru;
 pub use explore::{BlockOrders, Dump};
 pub use migrations::{MIGRATIONS, SCHEMA_STAMP, migration_hash};
 pub use retention::{Sweep, SweepStep};
-pub use sqlite::{OpenError, Sqlite};
+pub use sqlite::{Durability, OpenError, Sqlite};
+
+/// A paired host as the store keeps it. The two address lists are JSON the
+/// daemon core writes and reads; the store does not interpret them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TrustedHost {
+    pub host_id: Vec<u8>,
+    pub pubkey: Vec<u8>,
+    pub name: String,
+    pub paired_at_ms: i64,
+    pub on_account: bool,
+    pub signed_in: Option<bool>,
+    /// The wire integer of `amux.v1.Platform`.
+    pub platform: i32,
+    pub ssh: Option<String>,
+    pub direct: String,
+    pub listed: String,
+}
+
+/// The most directories [`Sqlite::record_recent_directory`] keeps.
+pub const RECENT_DIRECTORIES: usize = 200;
 
 /// An agent by the host that owns it and its id.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -64,10 +84,6 @@ pub struct AgentRow {
     /// Copied from the snapshot envelope at commit.
     pub phase: i32,
     pub working_on: Option<String>,
-    /// The newest snapshot's at_ms, never commit time. Written by commit
-    /// and, for a replica, by absorbing a snapshot; an inventory put does
-    /// not carry it, so a replica nobody opened has none.
-    pub last_activity_ms: Option<i64>,
     /// Copied from the snapshot envelope at commit: when the phase began.
     pub phase_since_ms: Option<i64>,
     /// Copied from the snapshot envelope at commit.
@@ -109,6 +125,13 @@ pub struct AgentRow {
 }
 
 impl AgentRow {
+    /// The newest snapshot's at_ms, never commit time. A replica's
+    /// inventory row carries no snapshot, so a replica nobody opened has
+    /// none.
+    pub fn last_activity_ms(&self) -> Option<i64> {
+        self.snapshot.as_ref().map(|snapshot| snapshot.at_ms)
+    }
+
     /// A new live row in phase starting, with nothing committed yet. Its
     /// name is empty until the caller gives it one.
     pub fn new(agent: AgentKey, kind: impl Into<i32>, cwd: impl Into<String>) -> Self {
@@ -123,7 +146,6 @@ impl AgentRow {
             exit_detail: None,
             phase: wire::Phase::Starting as i32,
             working_on: None,
-            last_activity_ms: None,
             phase_since_ms: None,
             git: None,
             snapshot: None,
@@ -275,6 +297,7 @@ pub struct Delivery {
     pub incarnation: u32,
     /// The turn that ended; zero for an exit report.
     pub turn_id: u64,
+    /// The parent the child's row names; read from it, never written.
     pub parent: AgentKey,
     /// The parent's incarnation when the row was written; the receiving
     /// daemon drops a row for any other. Zero when the parent's row was not
@@ -301,7 +324,7 @@ pub struct Notification {
     /// The revision of the snapshot that turned to needs_you.
     pub revision: u64,
     pub due_at_ms: i64,
-    pub name: Option<String>,
+    pub name: String,
     pub working_on: Option<String>,
     /// The newest item's text when it turned: usually the question.
     pub text: String,

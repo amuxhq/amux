@@ -10,7 +10,7 @@ use prost::Message as _;
 use support::*;
 use ui_runtime::{DriverEvent, Fleet, HELD_ROWS, TraceEvent, Window};
 use ui_state::{AgentKey, Connection};
-use wire::{FetchResponse, Kind, SessionEvent};
+use wire::{Kind, ListItemsResponse, SessionEvent};
 
 fn named(id: &[u8]) -> wire::Agent {
     wire::Agent {
@@ -153,11 +153,12 @@ async fn the_fleet_dump_part_writes_no_names_paths_or_status_text() {
     let feed = calls.inventory().await;
     feed.send(wire::InventoryEvent {
         of: Some(wire::inventory_event::Of::Host(wire::HostEntry {
-            host_id: b"host-a".to_vec(),
-            name: HOST.into(),
-            last_dial_error: Some(HOST.into()),
-            addrs: vec![HOST.into()],
-            ..wire::HostEntry::default()
+            host: Some(wire::Host {
+                host_id: b"host-a".to_vec(),
+                name: HOST.into(),
+                ..Default::default()
+            }),
+            ..Default::default()
         })),
     });
     feed.send(inventory_agent(wire::Agent {
@@ -197,7 +198,7 @@ impl Streams {
     /// Answers the next call, a Subscribe, and checks the agent had no
     /// other stream open. Returns the agent and the tail it asked for.
     async fn answer(&mut self, calls: &mut Calls) -> (Vec<u8>, u32) {
-        let (request, feed) = calls.subscribe().await;
+        let (request, feed) = calls.subscribe_session().await;
         let tail = request.tail;
         let agent = request.agent_id;
         assert_eq!(
@@ -298,15 +299,15 @@ async fn home_and_the_chat_share_one_session_per_live_agent_and_never_subscribe_
         let opened = fleet.clone();
         async move { (opened.open(&key(b"a"), CHAT).await, fleet) }
     });
-    let (request, reply) = calls.fetch().await;
+    let (request, reply) = calls.list_items().await;
     assert_eq!(request.before_order, Some(15));
-    assert_eq!(request.limit, CHAT.tail - HELD_ROWS);
+    assert_eq!(request.page_size, CHAT.tail - HELD_ROWS);
     let items = (1..=14)
         .rev()
         .map(|order| text_item(Kind::Codex, order, order, "older"))
         .collect();
     reply
-        .send(Ok(FetchResponse {
+        .send(Ok(ListItemsResponse {
             items,
             exhausted: true,
         }))
@@ -585,14 +586,11 @@ async fn a_chat_on_screen_fetches_its_catalogue_once_per_hash_and_home_never_doe
     calls.none().await;
 }
 
-fn inventory_host(presence: wire::Presence) -> wire::InventoryEvent {
+fn inventory_host(reach: wire::trusted::Reach) -> wire::InventoryEvent {
     wire::InventoryEvent {
-        of: Some(wire::inventory_event::Of::Host(wire::HostEntry {
-            host_id: b"host-a".to_vec(),
-            name: "desk".into(),
-            presence: presence as i32,
-            ..Default::default()
-        })),
+        of: Some(wire::inventory_event::Of::Host(
+            wire::HostEntry::trusted_host(b"host-a".to_vec(), "desk", reach),
+        )),
     }
 }
 
@@ -605,7 +603,9 @@ async fn a_stop_its_host_could_not_take_is_held_and_sent_when_the_host_is_back()
     let (client, mut calls) = runtime();
     let open = tokio::spawn(Fleet::connect(client, clock.clone()));
     let feed = calls.inventory().await;
-    feed.send(inventory_host(wire::Presence::Online));
+    feed.send(inventory_host(wire::trusted::Reach::Online(
+        wire::RouteKind::Direct as i32,
+    )));
     feed.send(inventory_agent(named(b"a")));
     feed.send(inventory_caught_up());
     let fleet = Arc::new(open.await.unwrap().expect("the fleet opens"));
@@ -633,8 +633,10 @@ async fn a_stop_its_host_could_not_take_is_held_and_sent_when_the_host_is_back()
     assert!(fleet.state().stop_held(&key), "the row shows the stop held");
 
     // The host goes and comes back: the stop goes again.
-    feed.send(inventory_host(wire::Presence::Away));
-    feed.send(inventory_host(wire::Presence::Online));
+    feed.send(inventory_host(wire::trusted::Reach::Away(wire::Empty {})));
+    feed.send(inventory_host(wire::trusted::Reach::Online(
+        wire::RouteKind::Direct as i32,
+    )));
     let (request, reply) = calls.stop().await;
     assert_eq!(request.agent_id, b"a");
     reply.send(Ok(())).ok();
@@ -659,8 +661,10 @@ async fn a_stop_its_host_could_not_take_is_held_and_sent_when_the_host_is_back()
         .ok();
     assert_eq!(stopping.await.unwrap().unwrap(), ui_runtime::Stop::Held);
     fleet.cancel_stop(&key);
-    feed.send(inventory_host(wire::Presence::Away));
-    feed.send(inventory_host(wire::Presence::Online));
+    feed.send(inventory_host(wire::trusted::Reach::Away(wire::Empty {})));
+    feed.send(inventory_host(wire::trusted::Reach::Online(
+        wire::RouteKind::Direct as i32,
+    )));
     calls.none().await;
     assert!(!fleet.state().stop_held(&key));
 }

@@ -15,6 +15,45 @@ pub const EMAIL_PLACEHOLDER: &str = "<REDACTED_EMAIL>";
 pub const IDENTIFIER_PLACEHOLDER: &str = "<REDACTED_IDENTIFIER>";
 pub const PATH_PLACEHOLDER: &str = "<MACHINE_PATH>";
 
+/// Tokens whose prefix names them as credentials wherever they appear.
+const TOKEN_PREFIXES: &[&str] = &[
+    "sk-proj-",
+    "sk-svcacct-",
+    "sk-admin-",
+    "ghp_",
+    "gho_",
+    "ghu_",
+    "ghs_",
+    "ghr_",
+    "github_pat_",
+    "glpat-",
+    "xoxb-",
+    "xoxp-",
+    "xoxa-",
+    "xoxs-",
+    "AKIA",
+    "ASIA",
+    "AIza",
+];
+
+/// Parts of a variable or field name that mark its value as secret.
+const SECRET_NAME_PARTS: &[&str] = &[
+    "KEY",
+    "APIKEY",
+    "TOKEN",
+    "SECRET",
+    "PASSWORD",
+    "PASSWD",
+    "CREDENTIAL",
+    "CREDENTIALS",
+    "AUTH",
+    "PAT",
+];
+
+/// A local name shorter than this is not redacted as a literal: "al" or
+/// "mac" would be cut out of every word that contains it.
+const SHORTEST_LITERAL: usize = 4;
+
 /// Capture-specific values that supplement the sanitizer's structural rules.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Redaction {
@@ -29,6 +68,34 @@ pub struct Redaction {
     pub extra_personal_identifiers: Vec<String>,
     /// Exact JSON field names whose values this capture treats as personal identifiers.
     pub personal_identifier_keys: Vec<String>,
+}
+
+impl Redaction {
+    /// The rules for a report leaving this machine: its home directory, the
+    /// local user's name and the host's name, long and short.
+    pub fn for_this_machine() -> Redaction {
+        let long_enough = |name: String| (name.len() >= SHORTEST_LITERAL).then_some(name);
+        let hostname = gethostname::gethostname().to_string_lossy().into_owned();
+        let short = hostname.split('.').next().unwrap_or_default().to_owned();
+        let home = std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .map(PathBuf::from)
+            .unwrap_or_default();
+        Redaction {
+            home,
+            hostname: long_enough(hostname.clone()),
+            user: std::env::var("USER")
+                .or_else(|_| std::env::var("USERNAME"))
+                .ok()
+                .and_then(long_enough),
+            extra_personal_identifiers: (short != hostname)
+                .then_some(short)
+                .and_then(long_enough)
+                .into_iter()
+                .collect(),
+            ..Redaction::default()
+        }
+    }
 }
 
 /// Counts the sensitive values replaced while producing a diagnostic report.
@@ -180,6 +247,8 @@ pub fn redact_text(input: &str, rules: &Redaction, summary: &mut RedactionSummar
     ] {
         value = redact_spans(&value, marker, SECRET_PLACEHOLDER, &mut summary.secrets);
     }
+    value = prefixed_tokens(&value, &mut summary.secrets);
+    value = secret_assignments(&value, &mut summary.secrets);
     value = redact_email_addresses(&value, summary);
 
     let mut paths = Vec::with_capacity(rules.extra_paths.len() + 1);
@@ -213,19 +282,20 @@ pub fn redact_text(input: &str, rules: &Redaction, summary: &mut RedactionSummar
         value = redact_spans(&value, marker, PATH_PLACEHOLDER, &mut summary.machine_paths);
     }
     value = redact_windows_user_paths(&value, summary);
-    for identifier in &rules.extra_personal_identifiers {
-        if !identifier.is_empty() && identifier != IDENTIFIER_PLACEHOLDER {
-            value = redact_width_matched_identifier(&value, identifier, summary);
-        }
-    }
+    // The host's full name before its short one, which it contains.
     for identifier in [&rules.hostname, &rules.user].into_iter().flatten() {
         if !identifier.is_empty() && identifier != IDENTIFIER_PLACEHOLDER {
-            value = redact_literal(
+            value = redact_word(
                 &value,
                 identifier,
                 IDENTIFIER_PLACEHOLDER,
                 &mut summary.personal_identifiers,
             );
+        }
+    }
+    for identifier in &rules.extra_personal_identifiers {
+        if !identifier.is_empty() && identifier != IDENTIFIER_PLACEHOLDER {
+            value = redact_width_matched_identifier(&value, identifier, summary);
         }
     }
     value
@@ -248,12 +318,141 @@ fn redact_width_matched_identifier(
     if replacement == identifier {
         return input.to_string();
     }
-    redact_literal(
+    redact_word(
         input,
         identifier,
         &replacement,
         &mut summary.personal_identifiers,
     )
+}
+
+fn is_word_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
+}
+
+fn is_token_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
+}
+
+/// Tokens with a credential prefix, at the start of a word, to the end of
+/// the token.
+fn prefixed_tokens(text: &str, count: &mut u64) -> String {
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut kept = 0;
+    let mut index = 0;
+    while index < bytes.len() {
+        let at_word_start = index == 0 || !is_word_byte(bytes[index - 1]);
+        let prefix = at_word_start
+            .then(|| {
+                TOKEN_PREFIXES
+                    .iter()
+                    .find(|prefix| bytes[index..].starts_with(prefix.as_bytes()))
+            })
+            .flatten();
+        let Some(prefix) = prefix else {
+            index += 1;
+            continue;
+        };
+        let mut end = index + prefix.len();
+        while end < bytes.len() && is_token_byte(bytes[end]) {
+            end += 1;
+        }
+        // A bare prefix is a word, not a token.
+        if end - index < prefix.len() + 8 {
+            index = end;
+            continue;
+        }
+        out.push_str(&text[kept..index]);
+        out.push_str(SECRET_PLACEHOLDER);
+        *count += 1;
+        kept = end;
+        index = end;
+    }
+    out.push_str(&text[kept..]);
+    out
+}
+
+/// `NAME=value`, `name: value` and `"name": "value"` where the name says
+/// secret: the value is blanked, keeping its quotes.
+fn secret_assignments(text: &str, count: &mut u64) -> String {
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut kept = 0;
+    let mut index = 0;
+    while index < bytes.len() {
+        if !matches!(bytes[index], b'=' | b':') || bytes.get(index + 1) == Some(&b'=') {
+            index += 1;
+            continue;
+        }
+        let mut name_end = index;
+        while name_end > kept && bytes[name_end - 1] == b' ' {
+            name_end -= 1;
+        }
+        let quoted_name = name_end > kept && matches!(bytes[name_end - 1], b'"' | b'\'');
+        if quoted_name {
+            name_end -= 1;
+        }
+        let mut start = name_end;
+        while start > kept && (is_word_byte(bytes[start - 1]) || bytes[start - 1] == b'-') {
+            start -= 1;
+        }
+        if !is_secret_name(&text[start..name_end]) {
+            index += 1;
+            continue;
+        }
+        let mut value_start = index + 1;
+        while bytes.get(value_start) == Some(&b' ') {
+            value_start += 1;
+        }
+        let (value_start, value_end, resume) = match bytes.get(value_start) {
+            Some(quote @ (b'"' | b'\'')) => {
+                let inner = value_start + 1;
+                let close = text[inner..]
+                    .find(*quote as char)
+                    .map(|at| inner + at)
+                    .unwrap_or(bytes.len());
+                (inner, close, (close + 1).min(bytes.len()))
+            }
+            _ => {
+                let end = text[value_start..]
+                    .find(|c: char| {
+                        c.is_whitespace() || matches!(c, ';' | '&' | '|' | '"' | '\'' | ',' | '}')
+                    })
+                    .map(|at| value_start + at)
+                    .unwrap_or(bytes.len());
+                (value_start, end, end)
+            }
+        };
+        let value = &text[value_start..value_end];
+        if !value.is_empty() && value != SECRET_PLACEHOLDER {
+            out.push_str(&text[kept..value_start]);
+            out.push_str(SECRET_PLACEHOLDER);
+            *count += 1;
+            kept = value_end;
+        }
+        index = resume.max(index + 1);
+    }
+    out.push_str(&text[kept..]);
+    out
+}
+
+fn is_secret_name(name: &str) -> bool {
+    let whole = normalized_key(name);
+    !whole.is_empty()
+        && (name
+            .split(['_', '-', '.'])
+            .any(|part| SECRET_NAME_PARTS.contains(&part.to_ascii_uppercase().as_str()))
+            || [
+                "apikey",
+                "token",
+                "secret",
+                "password",
+                "passwd",
+                "credential",
+            ]
+            .iter()
+            .any(|suffix| whole.ends_with(suffix)))
 }
 
 fn redact_literal(input: &str, needle: &str, replacement: &str, count: &mut u64) -> String {
@@ -263,6 +462,34 @@ fn redact_literal(input: &str, needle: &str, replacement: &str, count: &mut u64)
     }
     *count += matches;
     input.replace(needle, replacement)
+}
+
+/// Replaces `needle` where it stands as a word of its own: a name inside a
+/// longer word ("nova" in "innovation") is someone else's word, and
+/// replacing it there would change text a replay then compares.
+fn redact_word(input: &str, needle: &str, replacement: &str, count: &mut u64) -> String {
+    let bytes = input.as_bytes();
+    let bounded = |at: usize| {
+        let before = at.checked_sub(1).map(|i| bytes[i]);
+        let after = bytes.get(at + needle.len()).copied();
+        !before.is_some_and(is_word_byte) && !after.is_some_and(is_word_byte)
+    };
+    let mut output = String::with_capacity(input.len());
+    let mut copied = 0;
+    for (at, _) in input.match_indices(needle) {
+        if at < copied || !bounded(at) {
+            continue;
+        }
+        output.push_str(&input[copied..at]);
+        output.push_str(replacement);
+        copied = at + needle.len();
+        *count += 1;
+    }
+    if copied == 0 {
+        return input.to_string();
+    }
+    output.push_str(&input[copied..]);
+    output
 }
 
 fn redact_spans(input: &str, marker: &str, replacement: &str, count: &mut u64) -> String {
@@ -430,5 +657,104 @@ mod tests {
         assert!(text.contains(SECRET_PLACEHOLDER));
         assert!(text.contains(EMAIL_PLACEHOLDER));
         assert!(summary.secrets >= 2 && summary.personal_identifiers >= 1);
+    }
+
+    #[test]
+    fn secret_assignments_blank_secret_names_only() {
+        assert_eq!(
+            secret_assignments("GITHUB_TOKEN=abc123 PATH=/bin make", &mut 0),
+            "GITHUB_TOKEN=<REDACTED> PATH=/bin make"
+        );
+        assert_eq!(
+            secret_assignments("export OPENAI_API_KEY=\"sk x\"; echo", &mut 0),
+            "export OPENAI_API_KEY=\"<REDACTED>\"; echo"
+        );
+        assert_eq!(
+            secret_assignments("{\"api_key\": \"abc\", \"rows\": 3} apiKey: xyz", &mut 0),
+            "{\"api_key\": \"<REDACTED>\", \"rows\": 3} apiKey: <REDACTED>"
+        );
+        assert_eq!(
+            secret_assignments("a == b; MONKEY=1 https://x max_tokens=5", &mut 0),
+            "a == b; MONKEY=1 https://x max_tokens=5"
+        );
+    }
+
+    #[test]
+    fn prefixed_tokens_need_a_word_start_and_a_body() {
+        assert_eq!(
+            prefixed_tokens("use ghp_0123456789abcdef now", &mut 0),
+            "use <REDACTED> now"
+        );
+        assert_eq!(prefixed_tokens("ghp_ alone", &mut 0), "ghp_ alone");
+        assert_eq!(
+            prefixed_tokens("xAKIA0123456789ABCDEF", &mut 0),
+            "xAKIA0123456789ABCDEF"
+        );
+    }
+
+    #[test]
+    fn text_loses_prefixed_tokens_and_secret_assignments() {
+        let mut summary = RedactionSummary::default();
+        let text = redact_text(
+            "pushed with ghp_PLANTEDgithub0002abcdef; GITHUB_TOKEN=plantedvalue and \
+             \"api_key\": \"planted-key\" but ghp_ alone and PORT=8080 stay",
+            &Redaction::default(),
+            &mut summary,
+        );
+        for gone in ["ghp_PLANTEDgithub0002abcdef", "plantedvalue", "planted-key"] {
+            assert!(!text.contains(gone), "{gone} survived in {text}");
+        }
+        assert!(
+            text.contains("ghp_ alone") && text.contains("PORT=8080"),
+            "{text}"
+        );
+        assert_eq!(summary.secrets, 3);
+    }
+
+    #[test]
+    fn a_name_is_redacted_as_a_word_and_left_inside_other_words() {
+        let rules = Redaction {
+            hostname: Some("nova.lan".to_owned()),
+            user: Some("ada-l".to_owned()),
+            extra_personal_identifiers: vec!["nova".to_owned()],
+            ..Redaction::default()
+        };
+        let mut summary = RedactionSummary::default();
+        let text = redact_text(
+            "ada-l on nova.lan, then nova: innovation, novas, ada-love",
+            &rules,
+            &mut summary,
+        );
+        assert_eq!(
+            text,
+            "<REDACTED_IDENTIFIER> on <REDACTED_IDENTIFIER>, then ####: innovation, novas, ada-love"
+        );
+        assert_eq!(summary.personal_identifiers, 3);
+    }
+
+    #[test]
+    fn the_rules_for_this_machine_name_its_host_user_and_home() {
+        let rules = Redaction::for_this_machine();
+        let host = gethostname::gethostname().to_string_lossy().into_owned();
+        let user = std::env::var("USER")
+            .or_else(|_| std::env::var("USERNAME"))
+            .unwrap_or_default();
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap_or_default();
+        let mut summary = RedactionSummary::default();
+        let text = redact_text(
+            &format!("{user} on {host} in {home}/src"),
+            &rules,
+            &mut summary,
+        );
+        for (name, value) in [("host", &host), ("user", &user), ("home", &home)] {
+            if value.len() >= SHORTEST_LITERAL {
+                assert!(
+                    !text.contains(value.as_str()),
+                    "the {name} survived in {text}"
+                );
+            }
+        }
     }
 }

@@ -14,6 +14,7 @@ path = "src/bin/testnet.rs"
 agent-core = { workspace = true }
 agent-dir = { workspace = true }
 anyhow = { workspace = true }
+base64 = "0.22"
 bytes = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
@@ -32,9 +33,11 @@ provider-fakes = { workspace = true }
 quinn = { workspace = true }
 release = { workspace = true, features = ["test-key"] }
 rcgen = { workspace = true }
+regex = "1"
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 shot = { path = "../shot" }
 store = { workspace = true }
 tempfile = { workspace = true }
@@ -44,6 +47,7 @@ tonic = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+toml = { workspace = true }
 tui = { workspace = true }
 unicode-width = "0.2"
 uuid = { workspace = true }
@@ -51,5 +55,4 @@ wire = { workspace = true, features = ["grpc"] }
 
 [dev-dependencies]
 analytics = { workspace = true }
-toml = { workspace = true }
 ui-state = { workspace = true }

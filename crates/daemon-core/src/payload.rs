@@ -56,7 +56,7 @@ pub struct Push {
     pub agent_id: Vec<u8>,
     /// The revision of the snapshot that turned the agent to needs_you.
     pub revision: u64,
-    pub name: Option<String>,
+    pub name: String,
     pub working_on: Option<String>,
     /// The agent's newest item's text when it turned.
     pub text: String,
@@ -90,8 +90,6 @@ pub enum ChannelClass {
     /// Session subscriptions, apart from the calls so that neither waits
     /// behind the other.
     Session,
-    /// One bulk transfer.
-    Bulk,
 }
 
 /// Where a candidate address for a peer came from, which decides whether a
@@ -166,15 +164,15 @@ pub(crate) enum Opening {
 pub enum ClientRequest {
     /// Opens a stream of an agent's session events: the opening cut, then
     /// every change.
-    Subscribe {
+    SubscribeSession {
         agent_id: Vec<u8>,
         /// How many of the newest rows it opens with.
         tail: u32,
     },
     /// A page of older items.
-    Fetch(#[serde(with = "codec::message")] wire::FetchRequest),
+    ListItems(#[serde(with = "codec::message")] wire::ListItemsRequest),
     /// One item in full.
-    Get(#[serde(with = "codec::message")] wire::GetRequest),
+    GetItem(#[serde(with = "codec::message")] wire::GetItemRequest),
     /// Opens a stream of the fleet: hosts and agent rows, CaughtUp, then
     /// every change.
     SubscribeInventory,
@@ -208,27 +206,30 @@ pub enum ClientRequest {
         name: String,
     },
     /// A client's upload into one of this host's agents, with the hash of
-    /// its bytes.
+    /// its bytes. The bytes travel apart from the request, which carries
+    /// none, so the record keeps their length and not a copy.
     PutBlob {
         #[serde(with = "codec::message")]
         request: wire::PutBlobRequest,
         hash: Vec<u8>,
+        #[serde(with = "codec::sized")]
+        bytes: Vec<u8>,
     },
     /// A replica's blob its origin sent, kept for the next reader.
     KeepBlob {
         agent_id: Vec<u8>,
         hash: Vec<u8>,
-        #[serde(with = "codec::content")]
+        #[serde(with = "codec::sized")]
         bytes: Vec<u8>,
     },
     GetBlob(#[serde(with = "codec::message")] wire::GetBlobRequest),
     /// How one of this host's agents' working tree differs from a base.
-    Diff(#[serde(with = "codec::message")] wire::DiffRequest),
+    GetDiff(#[serde(with = "codec::message")] wire::GetDiffRequest),
     /// Keep this machine's client's unsent draft of the agent.
-    SaveDraft {
+    UpdateDraft {
         agent_id: Vec<u8>,
         #[serde(with = "codec::message")]
-        draft: wire::ComposerDraft,
+        draft: wire::Draft,
     },
     GetDraft {
         agent_id: Vec<u8>,
@@ -303,17 +304,17 @@ pub enum MessageRefusal {
     Store(String),
 }
 
-/// A request on a peer's PeerService, decoded: one a paired host makes of
+/// A request on a peer's services, decoded: one a paired host makes of
 /// this one, or one this host makes of a paired host.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PeerRequest {
     /// A stream of one of this host's agents' session events: from what
     /// came after the revision the peer's replica holds, or a tail.
-    Subscribe(#[serde(with = "codec::message")] wire::PeerSubscribeRequest),
+    SubscribeSession(#[serde(with = "codec::message")] wire::PeerSubscribeSessionRequest),
     /// A stream of this host's entry and its own agents.
     SubscribeInventory,
-    Fetch(#[serde(with = "codec::message")] wire::FetchRequest),
-    Get(#[serde(with = "codec::message")] wire::GetRequest),
+    ListItems(#[serde(with = "codec::message")] wire::ListItemsRequest),
+    GetItem(#[serde(with = "codec::message")] wire::GetItemRequest),
     SendInput(#[serde(with = "codec::message")] wire::SendInputRequest),
     CreateAgent(#[serde(with = "codec::message")] wire::CreateAgentRequest),
     RenameAgent(#[serde(with = "codec::message")] wire::RenameAgentRequest),
@@ -323,7 +324,7 @@ pub enum PeerRequest {
     SendMessage(#[serde(with = "codec::message")] wire::Envelope),
     PutBlob(#[serde(with = "codec::message")] wire::PutBlobRequest),
     GetBlob(#[serde(with = "codec::message")] wire::GetBlobRequest),
-    Diff(#[serde(with = "codec::message")] wire::DiffRequest),
+    GetDiff(#[serde(with = "codec::message")] wire::GetDiffRequest),
     GetCatalogue(#[serde(with = "codec::message")] wire::GetCatalogueRequest),
     ListRepositories(#[serde(with = "codec::message")] wire::ListRepositoriesRequest),
     Dump(#[serde(with = "codec::message")] wire::DumpRequest),
@@ -332,7 +333,7 @@ pub enum PeerRequest {
 /// A peer's whole reply to one of its unary calls.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PeerReply {
-    Fetched(#[serde(with = "codec::message")] wire::FetchResponse),
+    Fetched(#[serde(with = "codec::message")] wire::ListItemsResponse),
     Item(#[serde(with = "codec::message")] wire::Item),
     SendInput(#[serde(with = "codec::message")] wire::SendInputResponse),
     /// CreateAgent, RenameAgent and ResumeAgent answer with the agent.
@@ -343,7 +344,7 @@ pub enum PeerReply {
     Blob(#[serde(with = "codec::message")] wire::BlobRef),
     GetBlob(#[serde(with = "codec::message")] wire::GetBlobResponse),
     Diff(#[serde(with = "codec::message")] wire::Diff),
-    Catalogue(#[serde(with = "codec::message")] wire::CatalogueBlob),
+    Catalogue(#[serde(with = "codec::message")] wire::GetCatalogueResponse),
     Repositories(#[serde(with = "codec::message")] wire::ListRepositoriesResponse),
     Dump(#[serde(with = "codec::message")] wire::DumpPart),
 }
@@ -400,13 +401,13 @@ pub struct Patch {
 pub enum Response {
     Session(Arc<wire::SessionEvent>),
     Inventory(Arc<wire::InventoryEvent>),
-    Fetched(wire::FetchResponse),
+    Fetched(wire::ListItemsResponse),
     Item(wire::Item),
     /// A forwarded call's reply, from the host it went to.
     Peer(Box<PeerReply>),
     /// One of this host's agents' rows, as a registry call left it.
     Agent(Box<wire::Agent>),
-    Draft(wire::ComposerDraft),
+    Draft(wire::Draft),
     /// What a trust change did, once it is on the drive.
     Trust(crate::trust::TrustChanged),
     /// The pairing window is open, with this secret.

@@ -270,6 +270,9 @@ async fn stdio(scenario: &Scenario) -> Result<(), String> {
     let mut child = tokio::process::Command::new(binary(scenario.kind))
         .args(&process.argv)
         .env(SCRIPT_ENV, &path)
+        // Keeps a fake Claude's transcript out of the person's own
+        // `~/.claude`, where it would otherwise write it as Claude does.
+        .env("CLAUDE_CONFIG_DIR", dir.path().join("claude"))
         .current_dir(dir.path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

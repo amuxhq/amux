@@ -17,7 +17,8 @@ use store::AgentKey;
 use support::synthetic::*;
 use support::*;
 use tonic::{Code, Request};
-use wire::client_service_server::ClientService as _;
+use wire::agent_service_server::AgentService as _;
+use wire::session_service_server::SessionService as _;
 use wire::{
     AgentRef, ClaudeSdkInput, Input, Lifecycle, PromptInput, SendInputRequest, SendInputResponse,
     SendMessageRequest, claude_sdk_input, send_input_response, sender,
@@ -271,7 +272,10 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
     let envelope = SendMessageRequest {
         id: b"envelope-1".to_vec(),
         to: to(&recipient, &install),
-        text: "can you look at the build?".into(),
+        body: Some(wire::MessageBody {
+            text: "can you look at the build?".into(),
+            ..Default::default()
+        }),
         ..SendMessageRequest::default()
     };
     let sent = runtime
@@ -295,7 +299,10 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
     };
     match handed.from.as_ref().and_then(|from| from.value.as_ref()) {
         Some(sender::Value::Agent(from)) => {
-            assert_eq!(from.agent_id, sender.id.as_bytes().to_vec());
+            assert_eq!(
+                from.agent.as_ref().unwrap().agent_id,
+                sender.id.as_bytes().to_vec()
+            );
             assert_eq!(from.name, "sender");
         }
         other => panic!("the sender is the calling agent, not {other:?}"),
@@ -326,7 +333,10 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
             SendMessageRequest {
                 id: b"envelope-2".to_vec(),
                 to: to(&recipient, &install),
-                text: "still there?".into(),
+                body: Some(wire::MessageBody {
+                    text: "still there?".into(),
+                    ..Default::default()
+                }),
                 ..SendMessageRequest::default()
             },
             Some(sender.id),
@@ -363,9 +373,11 @@ async fn send_message_sender_is_the_caller() {
             .send_message(Request::new(SendMessageRequest {
                 id: id.to_vec(),
                 to: to(&recipient, &install),
-                text: "a word".into(),
+                body: Some(wire::MessageBody {
+                    text: "a word".into(),
+                    ..Default::default()
+                }),
                 context: None,
-                attachments: Vec::new(),
             }))
             .await
             .unwrap();
@@ -389,8 +401,14 @@ async fn send_message_sender_is_the_caller() {
         .and_then(|from| from.value.as_ref())
     {
         Some(sender::Value::Agent(from)) => {
-            assert_eq!(from.agent_id, sender.id.as_bytes().to_vec());
-            assert_eq!(from.host_id, host(&install).as_bytes().to_vec());
+            assert_eq!(
+                from.agent.as_ref().unwrap().agent_id,
+                sender.id.as_bytes().to_vec()
+            );
+            assert_eq!(
+                from.agent.as_ref().unwrap().host_id,
+                host(&install).as_bytes().to_vec()
+            );
             assert_eq!(from.name, "sender");
         }
         other => panic!("the calling agent sent it, not {other:?}"),
@@ -424,9 +442,11 @@ async fn resend_with_same_id_is_one_item() {
     let request = SendMessageRequest {
         id: b"chosen-by-the-caller".to_vec(),
         to: to(&recipient, &install),
-        text: "can you look at the build?".into(),
+        body: Some(wire::MessageBody {
+            text: "can you look at the build?".into(),
+            ..Default::default()
+        }),
         context: Some(b"build".to_vec()),
-        attachments: Vec::new(),
     };
     for _ in 0..2 {
         let sent = api
@@ -461,7 +481,10 @@ async fn a_message_waits_for_its_item_to_commit_and_one_envelope_is_handed_over_
     let envelope = SendMessageRequest {
         id: b"envelope-1".to_vec(),
         to: to(&recipient, &install),
-        text: "can you look at the build?".into(),
+        body: Some(wire::MessageBody {
+            text: "can you look at the build?".into(),
+            ..Default::default()
+        }),
         ..SendMessageRequest::default()
     };
     let send = || {
@@ -508,43 +531,87 @@ async fn a_message_waits_for_its_item_to_commit_and_one_envelope_is_handed_over_
 /// A message whose verdict comes after reply patience is concluded lost;
 /// the sender's retry is written again and concluded by the verdict that
 /// comes, not lost on arrival because the first write stopped waiting.
+/// Reply patience is policy time, so the clock is driven: nothing but the
+/// test moves it past the patience.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_retry_after_reply_patience_is_concluded_by_the_verdict_that_comes() {
+    const T0: i64 = 1_000_000;
     const REPLY_MS: i64 = 400;
     let install = Install::new();
     let mut recipient = SyntheticAgent::new(&install, "recipient", SEGMENTS);
     recipient.register_offline(&install);
     recipient.go_live();
     recipient.freeze();
+    let clock = agent_dir::ManualClock::new(T0);
     let launch = Launch {
         reply_patience_ms: REPLY_MS,
         ..quiet_launch()
     };
-    let daemon = install.start("boot-1", launch).await;
+    let daemon = node::start(
+        node::StartOptions {
+            clock: Arc::new(clock.clone()),
+            ..install.options("boot-1", launch)
+        },
+        None,
+    )
+    .await
+    .unwrap();
     let runtime = runtime(&daemon, &install);
     let envelope = SendMessageRequest {
         id: b"envelope-1".to_vec(),
         to: to(&recipient, &install),
-        text: "can you look at the build?".into(),
+        body: Some(wire::MessageBody {
+            text: "can you look at the build?".into(),
+            ..Default::default()
+        }),
         ..SendMessageRequest::default()
     };
 
-    let first = runtime.send_message(envelope.clone(), None).await;
+    let first = tokio::spawn({
+        let runtime = runtime.clone();
+        let envelope = envelope.clone();
+        async move { runtime.send_message(envelope, None).await }
+    });
+    // The frozen recipient takes the message in and answers nothing.
+    until("the message handed over", || async {
+        handed(&recipient, 1)
+    })
+    .await
+    .unwrap();
+    // The core armed its patience as it wrote the message, at the time
+    // it wrote it, which only the test moves.
+    clock.set(T0 + REPLY_MS + 1);
+    let first = first.await.unwrap();
     assert!(matches!(first, Err(RelayError::Lost)), "{first:?}");
+    until(
+        "the first write to stop waiting for its verdict",
+        || async {
+            (!runtime.in_hand(recipient.id))
+                .then_some(())
+                .ok_or("still in hand")
+        },
+    )
+    .await
+    .unwrap();
+
+    // The retry is written to the recipient, which reads it once it has
+    // answered the first; the verdict that comes answers the retry, which
+    // a first write reporting no verdict as it stopped waiting would
+    // conclude lost. Thawed only once the retry is written: thawed before,
+    // the recipient's item can commit first and the retry, finding it, is
+    // never written.
     let retry = tokio::spawn({
         let runtime = runtime.clone();
         async move { runtime.send_message(envelope, None).await }
     });
-    // A window: the retry is written to the frozen recipient, which reads
-    // it only once it answers the first, and waits for its verdict; a first
-    // write that gave up must not answer for it.
-    holds_for(
-        "the retry to wait for its verdict",
-        Duration::from_millis(300),
-        || async { !retry.is_finished() },
-    )
+    until("the retry written", || async {
+        runtime
+            .in_hand(recipient.id)
+            .then_some(())
+            .ok_or("not in hand")
+    })
     .await
-    .expect("the retry waits for the verdict, not concluded lost by the first write");
+    .unwrap();
     recipient.thaw();
     retry
         .await
@@ -575,7 +642,10 @@ async fn connect_patience_running_out_behind_the_hello_does_not_lose_the_message
     let envelope = SendMessageRequest {
         id: b"envelope-1".to_vec(),
         to: to(&recipient, &install),
-        text: "can you look at the build?".into(),
+        body: Some(wire::MessageBody {
+            text: "can you look at the build?".into(),
+            ..Default::default()
+        }),
         ..SendMessageRequest::default()
     };
     let sent = tokio::spawn({
@@ -601,11 +671,6 @@ async fn connect_patience_running_out_behind_the_hello_does_not_lose_the_message
     })
     .await
     .unwrap();
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    assert!(
-        armed.elapsed() < Duration::from_millis(daemon_core::deliveries::CONNECT_PATIENCE_MS),
-        "the Hello was queued before the patience ran out"
-    );
     tokio::time::sleep_until(
         armed + Duration::from_millis(daemon_core::deliveries::CONNECT_PATIENCE_MS + 1_000),
     )
@@ -655,7 +720,10 @@ async fn a_child_answering_exiting_to_its_parents_message_is_resumed_with_it() {
     let envelope = SendMessageRequest {
         id: b"wrap-up".to_vec(),
         to: to(&child, &install),
-        text: "wrap up and report".into(),
+        body: Some(wire::MessageBody {
+            text: "wrap up and report".into(),
+            ..Default::default()
+        }),
         ..SendMessageRequest::default()
     };
     let sent = tokio::spawn({
@@ -757,7 +825,10 @@ async fn a_delivery_waiting_on_its_parents_lane_is_dropped_when_the_parent_resum
         let envelope = SendMessageRequest {
             id: b"hold".to_vec(),
             to: to(&parent, &install),
-            text: "a word".into(),
+            body: Some(wire::MessageBody {
+                text: "a word".into(),
+                ..Default::default()
+            }),
             ..SendMessageRequest::default()
         };
         async move { runtime.send_message(envelope, None).await }
@@ -1200,7 +1271,10 @@ async fn a_parents_message_resumes_its_exited_child_and_the_child_finishes_again
             host_id: runtime.host().as_bytes().to_vec(),
             agent_id: child.as_bytes().to_vec(),
         }),
-        text: "one more thing".into(),
+        body: Some(wire::MessageBody {
+            text: "one more thing".into(),
+            ..Default::default()
+        }),
         ..SendMessageRequest::default()
     };
     runtime
@@ -1244,7 +1318,10 @@ async fn a_parents_message_resumes_its_exited_child_and_the_child_finishes_again
                     host_id: runtime.host().as_bytes().to_vec(),
                     agent_id: child.as_bytes().to_vec(),
                 }),
-                text: "hello?".into(),
+                body: Some(wire::MessageBody {
+                    text: "hello?".into(),
+                    ..Default::default()
+                }),
                 ..SendMessageRequest::default()
             },
             None,

@@ -1,0 +1,20 @@
+[package]
+name = "ios-tools"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "The phone's developer tools: `cargo run -p ios-tools -- verify` runs the iOS verification stages"
+publish = false
+
+[dependencies]
+app-runtime = { workspace = true }
+model = { workspace = true }
+schemars = { workspace = true }
+ui-view = { workspace = true }
+wire = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+png = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

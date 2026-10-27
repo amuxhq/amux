@@ -64,14 +64,15 @@ async fn codex_app_attaches_to_a_fresh_agent_and_codrives_it_with_amux() {
     desk.run(&["server", "start"]).await;
     let work = desk.work.to_string_lossy().into_owned();
     let created = desk
-        .run(&["create", "codex", "--name", "coder", "--cwd", &work])
+        .run(&["new", "codex", "--name", "coder", "--cwd", &work])
         .await;
     let coder = support::created_id(&created);
     let mut chats = client(&desk.socket).await;
-    let phase = |chats: &mut wire::client_service_client::ClientServiceClient<_>| {
+    let phase = |chats: &mut wire::ClientStubs| {
         let mut chats = chats.clone();
         async move {
             chats
+                .agents
                 .resolve_agent(ResolveAgentRequest {
                     name: "coder".into(),
                 })
@@ -124,6 +125,7 @@ async fn codex_app_attaches_to_a_fresh_agent_and_codrives_it_with_amux() {
     .await
     .unwrap();
     let answered = chats
+        .sessions
         .send_input(SendInputRequest {
             agent_id: coder.clone(),
             input: Some(Input::new(

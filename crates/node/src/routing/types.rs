@@ -24,10 +24,9 @@ pub struct Host {
     pub capabilities: Capabilities,
     /// Whether this host's profile is bound to an account.
     pub signed_in: Option<bool>,
-    /// What kind of machine this is, in its own words. A host that says
-    /// nothing is not the same as one that claims to be nothing in
-    /// particular.
-    pub platform: Option<String>,
+    /// The operating system this machine runs, or unspecified when it
+    /// does not say.
+    pub platform: pb::Platform,
 }
 
 /// Local identity of one link: the authenticated peer plus a connection
@@ -39,13 +38,20 @@ pub struct LinkId {
     pub(crate) instance: u64,
 }
 
+static INSTANCES: AtomicU64 = AtomicU64::new(1);
+
 impl LinkId {
     pub(crate) fn new(peer: HostId) -> Self {
-        static INSTANCES: AtomicU64 = AtomicU64::new(1);
         Self {
             peer,
             instance: INSTANCES.fetch_add(1, Ordering::Relaxed),
         }
+    }
+
+    /// The instance the next link made will have: every link made before
+    /// now has a lower one.
+    pub(crate) fn next_instance() -> u64 {
+        INSTANCES.load(Ordering::Relaxed)
     }
 
     pub(crate) fn peer(&self) -> HostId {
@@ -101,14 +107,6 @@ impl Route {
             daemon_core::Route::Via(relay) => Route::Via(host_from_core(relay)),
         }
     }
-
-    /// The route as the profile's core names it.
-    pub(crate) fn core(self) -> daemon_core::Route {
-        match self {
-            Route::Direct(link) => daemon_core::Route::Direct(link.core()),
-            Route::Via(relay) => daemon_core::Route::Via(core_host(relay)),
-        }
-    }
 }
 
 impl LiveRoute {
@@ -160,18 +158,19 @@ pub fn host_to_wire(host: &Host) -> pb::Host {
         version: host.version.clone(),
         capabilities: Some(host.capabilities.clone()),
         account_signed_in: host.signed_in,
-        platform: host.platform.clone(),
+        platform: host.platform as i32,
     }
 }
 
 pub(crate) fn host_from_wire(host: pb::Host) -> Result<Host, String> {
+    let platform = host.platform();
     Ok(Host {
         id: uuid_from_bytes("host_id", host.host_id)?,
         name: host.name,
         version: host.version,
         capabilities: host.capabilities.unwrap_or_default(),
         signed_in: host.account_signed_in,
-        platform: host.platform,
+        platform,
     })
 }
 

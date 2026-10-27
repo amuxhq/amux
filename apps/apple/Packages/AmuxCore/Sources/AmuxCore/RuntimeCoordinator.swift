@@ -7,10 +7,9 @@ import Observation
 ///
 /// One installation per process, with one profile per account, as a
 /// desktop has. The profile on screen is the only one whose fleet is open,
-/// the only one whose every listed agent keeps a source while the app is in
-/// front of somebody, and the only bound one whose relay link runs: every
-/// other bound profile is paused. Switching account never stops the
-/// installation. Starting reads this phone's own store before any network is
+/// and the only one whose every listed agent keeps a source while the app
+/// is in front of somebody; every bound profile keeps its relay link.
+/// Switching account never stops the installation. Starting reads this phone's own store before any network is
 /// dialled, so the first frame after a launch is what the phone last held.
 ///
 /// While the runtime runs, the coordinator watches the phone's network and
@@ -48,16 +47,17 @@ public final class RuntimeCoordinator {
         }
     }
 
-    /// Starts an installation, telling the closure it is handed on the main
-    /// actor whenever the profile list moves.
-    public typealias Starter = @Sendable (StartConfig, @escaping @MainActor @Sendable () -> Void)
-        throws(RuntimeFailure) -> Runtime
+    /// Starts an installation, handing the closure it is given the profile
+    /// list on the main actor whenever it moves.
+    public typealias Starter = @Sendable (
+        StartConfig, @escaping @MainActor @Sendable ([ProfileView]) -> Void
+    ) throws(RuntimeFailure) -> Runtime
 
     /// The installation, once started.
     public private(set) var runtime: Runtime?
     /// The fleet of the profile on screen.
     public private(set) var profile: Profile?
-    /// The installation's profiles as last read.
+    /// The installation's profiles as the runtime last handed them over.
     public private(set) var profiles: [ProfileView] = []
     /// Why the runtime is not running, when it failed to start.
     public private(set) var failure: String?
@@ -117,13 +117,6 @@ public final class RuntimeCoordinator {
     @ObservationIgnored private var starting: Task<Void, Never>?
     /// Which start a started runtime answers; one a stop overtook is stopped.
     @ObservationIgnored private var launch = 0
-    /// The pauses and resumes under way, one run at a time.
-    @ObservationIgnored private var steering: Task<Void, Never>?
-    /// Counts steering tasks, so one that outlives its launch, awaiting a
-    /// pause the library finishes regardless, clears only its own handle.
-    @ObservationIgnored private var steerings = 0
-    /// Whether what is on screen changed while a run was under way.
-    @ObservationIgnored private var steerAgain = false
 
     public init(
         registry: AccountRegistry, support: URL, deviceName: String,
@@ -164,10 +157,6 @@ public final class RuntimeCoordinator {
     /// Starts the installation, if it is not running or starting.
     public func start() {
         guard runtime == nil, starting == nil else { return }
-        // Before one installation held every account, each had a directory
-        // of its own here; nothing reads them now.
-        try? FileManager.default.removeItem(
-            at: support.appendingPathComponent("installations", isDirectory: true))
         let directory = directory
         let config = StartConfig(
             dataDir: directory.path, deviceName: deviceName,
@@ -184,7 +173,9 @@ public final class RuntimeCoordinator {
                 try FileManager.default.createDirectory(
                     at: directory, withIntermediateDirectories: true)
                 Signposts.emit(.storeReadBegan)
-                started = .success(try starter(config) { [weak self] in self?.profilesMoved() })
+                started = .success(try starter(config) { [weak self] listed in
+                    self?.profilesMoved(listed, launch: expected)
+                })
                 Signposts.emit(.nodeStarted)
             } catch let failure as RuntimeFailure {
                 started = .failure(failure)
@@ -213,7 +204,10 @@ public final class RuntimeCoordinator {
                 Task { @MainActor in self?.networkChanged() }
             }
             if !found.isEmpty { runtime.discovered(found.map(\.found)) }
-            profilesMoved()
+            if !profiles.isEmpty {
+                registry.show(profiles)
+                place()
+            }
             answer(runtime)
         case .failure(let reason):
             failure = reason.description
@@ -253,12 +247,14 @@ public final class RuntimeCoordinator {
         return await withCheckedContinuation { waiting.append($0) }
     }
 
-    /// Reads the profile list again, and puts the one on screen in front.
-    public func profilesMoved() {
-        guard let runtime else { return }
-        let listed = runtime.profiles()
+    /// Takes the profile list as this launch's runtime hands it over, and
+    /// puts the one on screen in front. A list that comes before the runtime
+    /// is in place waits for it there.
+    private func profilesMoved(_ listed: [ProfileView], launch expected: Int) {
+        guard expected == launch else { return }
         let added = Set(listed.map(\.id)).subtracting(profiles.map(\.id))
         profiles = listed
+        guard let runtime else { return }
         // A profile made since the browser last reported has not been told
         // what is on the network.
         if !added.isEmpty, !found.isEmpty { runtime.discovered(found.map(\.found)) }
@@ -267,7 +263,7 @@ public final class RuntimeCoordinator {
     }
 
     /// Opens the fleet of the profile on screen when it is not the one open,
-    /// then leaves every other profile on demand and paused.
+    /// then leaves every other profile on demand.
     private func place() {
         guard let runtime, let id = registry.profile else { return }
         let stores = stores
@@ -277,9 +273,9 @@ public final class RuntimeCoordinator {
             let expected = opening
             if !markedStoreRead { Signposts.emit(.fleetOpenBegan) }
             do {
-                let opened = try runtime.open(id) { [weak self] chat in
+                let opened = try runtime.open(id) { [weak self] moved in
                     guard self?.opening == expected else { return }
-                    stores.woke(chat)
+                    stores.moved(moved)
                 }
                 profile = opened
                 fed = stores
@@ -293,64 +289,16 @@ public final class RuntimeCoordinator {
                 failure = error.description
             }
         }
-        steer()
+        listSources()
     }
 
     /// Only the profile on screen lists every agent's source, and only in
-    /// front of somebody; only it, of the bound profiles, keeps its relay
-    /// link, so one link is live. Every other bound profile is paused before
-    /// the one on screen is resumed. Out of the foreground the open
-    /// profile's chat sessions drop their streams, except a chat that opens.
-    private func steer() {
+    /// front of somebody. Out of the foreground the open profile's chat
+    /// sessions drop their streams, except a chat that opens.
+    private func listSources() {
         guard let runtime else { return }
-        let onScreen = registry.profile
-        for view in profiles {
-            runtime.setSourcePolicy(view.id, listed: view.id == onScreen && active)
-        }
+        runtime.listSources(of: active ? registry.profile : nil)
         profile?.setForeground(active)
-        guard steering == nil else {
-            steerAgain = true
-            return
-        }
-        steerings += 1
-        let mine = steerings
-        steering = Task { [weak self] in
-            // Every pass that moved a link counts, not only the last: the
-            // catch-up pass a late steer asks for often has nothing left
-            // to do, and the account is refreshed for what came before.
-            var moved = false
-            repeat {
-                self?.steerAgain = false
-                if await self?.relink(runtime) == true { moved = true }
-            } while self?.steerAgain == true
-            if self?.steerings == mine { self?.steering = nil }
-            if moved { await self?.stores.refreshAccount() }
-        }
-    }
-
-    /// Pauses every bound profile off screen, then resumes the one on it,
-    /// and says whether anything changed.
-    private func relink(_ runtime: Runtime) async -> Bool {
-        let onScreen = registry.profile
-        var moved = false
-        for view in profiles where view.id != onScreen && view.account.binding == .signedIn {
-            _ = await runtime.pause(view.id)
-            moved = true
-        }
-        if let view = profiles.first(where: { $0.id == onScreen }), view.account.binding == .paused {
-            _ = await runtime.resume(view.id)
-            moved = true
-        }
-        if moved, self.runtime === runtime {
-            profiles = runtime.profiles()
-            registry.show(profiles)
-        }
-        return moved
-    }
-
-    /// Waits until the pauses and resumes under way are done.
-    public func settled() async {
-        while let run = steering { await run.value }
     }
 
     /// Makes sure an account whose profile trusts `host` is on screen, as a
@@ -366,10 +314,8 @@ public final class RuntimeCoordinator {
             guard let account = accounts.first(where: \.signedIn) ?? accounts.first
             else { return false }
             registry.select(account.id)
-            await settled()
             return profile?.id == account.profile
         }
-        await settled()
         return profile?.id == onScreen
     }
 
@@ -408,7 +354,6 @@ public final class RuntimeCoordinator {
         guard case .success(let view) = bound else {
             return bound.map { _ in Nothing() }
         }
-        profilesMoved()
         registry.select(AccountId(view.subject))
         await stores.refreshAccount()
         return .success(Nothing())
@@ -419,11 +364,7 @@ public final class RuntimeCoordinator {
     public func signOut(_ account: AccountId) async {
         guard let runtime = await started(),
               let entry = registry.accounts.first(where: { $0.id == account }) else { return }
-        let paused = profiles.first { $0.id == entry.profile }?.account.binding == .paused
         _ = await runtime.signOut(entry.profile)
-        // A paused profile reads as paused whether or not it is signed in.
-        if paused { _ = await runtime.resume(entry.profile) }
-        profilesMoved()
         await stores.refreshAccount()
     }
 
@@ -436,12 +377,9 @@ public final class RuntimeCoordinator {
               let entry = registry.accounts.first(where: { $0.id == account }) else { return }
         if profiles.count == 1 {
             _ = await runtime.createProfile()
-            profilesMoved()
         }
         registry.leave(account)
-        DraftShelf(account: account).forgetAll()
         _ = await runtime.deleteProfile(entry.profile)
-        profilesMoved()
     }
 
     /// Stops the installation, closing the fleet and every chat on it first.
@@ -450,8 +388,6 @@ public final class RuntimeCoordinator {
         launch += 1
         starting = nil
         answer(nil)
-        steering?.cancel()
-        steering = nil
         networkWatch.stop()
         runtime?.stop()
         runtime = nil
@@ -471,7 +407,7 @@ public final class RuntimeCoordinator {
     public func setActive(_ active: Bool) {
         guard self.active != active else { return }
         self.active = active
-        steer()
+        listSources()
         if active {
             discovery?.start()
             if let runtime { feed(runtime, .foreground) }
@@ -499,8 +435,7 @@ public final class RuntimeCoordinator {
     /// Brings one agent's chat current for a push, under an account whose
     /// profile trusts the agent's host. In the background that account goes
     /// on screen first when the one there does not trust the host (see
-    /// `bringForward`), its relay link resumed after the previous one is
-    /// paused, and the profile is put under the on-demand policy, so the
+    /// `bringForward`), and the profile is put under the on-demand policy, so the
     /// chat's own open is the only source that runs; coming to the
     /// foreground lists every agent again. In front of somebody the account
     /// on screen never changes under them: only its own hosts' chats are
@@ -520,7 +455,6 @@ public final class RuntimeCoordinator {
             guard let onScreen = registry.profile, trusting.contains(onScreen) else {
                 return .offScreen
             }
-            await settled()
         }
         return await stores.warm(agent, within: limit) ? .current : .behind
     }

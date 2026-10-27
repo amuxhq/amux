@@ -209,10 +209,9 @@ fn is_empty_turn(write: &Value) -> bool {
     write["method"] == "turn/start" && write["params"]["input"] == json!([])
 }
 
-/// The probe (notes/rearchitect/probes/codex-inject-drain.md, codex-cli
-/// 0.157.0) found that a running turn drains injected items: the message
-/// is consumed at the inject's acknowledgement and no empty turn is kicked
-/// at turn end.
+/// A probe of codex-cli 0.157.0 found that a running turn drains injected
+/// items: the message is consumed at the inject's acknowledgement and no
+/// empty turn is kicked at turn end.
 #[test]
 fn probe_decided_codex_consumption() {
     assert_eq!(CODEX_INJECT_CONSUMPTION, InjectConsumption::DrainedMidTurn);
@@ -1158,6 +1157,39 @@ fn codexs_goal_updates_and_config_warnings_are_not_unreadable_rows() {
         texts.contains("Project-local config"),
         "the config warning's words reach the record: {texts:?}"
     );
+}
+
+/// Codex 0.164 sends each turn's moderation verdict
+/// (`turn/moderationMetadata`) and which turn its own app last showed
+/// (`thread/readState/changed`), as QA recorded on Linux. Neither is
+/// something a chat draws, nor a row saying amux could not read it.
+#[test]
+fn codexs_moderation_and_read_state_notices_are_not_unreadable_rows() {
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        ..Default::default()
+    };
+    let (mut state, _) = Codex::initial(&spec, "test");
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"id": 2, "result": {"thread": {"id": "t1", "cliVersion": "0.164.0", "turns": []}, "model": "m"}}),
+        ),
+    );
+    let mut rows = Vec::new();
+    for notification in [
+        json!({"method": "turn/moderationMetadata", "params": {"threadId": "t1", "turnId": "turn-1",
+            "metadata": {"prompt": {"omnimod": {"protection_type": "omnimod",
+                "outputs": [{"results": [{"category_flags": {"A1": false, "REFUSED": false}}]}]}}}}}),
+        json!({"method": "thread/readState/changed", "params": {"threadId": "t1",
+            "readState": {"firstUnread": {"type": "turn", "turnId": "turn-1"}, "revision": "r1"}},
+            "emittedAtMs": 1792972625564_u64}),
+    ] {
+        for item in Codex::step(&mut state, rpc(notification)).step.items {
+            rows.push(item.text);
+        }
+    }
+    assert!(rows.is_empty(), "rows drawn for Codex's notices: {rows:?}");
 }
 
 /// Codex runs a model's command through the user's shell and asks about the

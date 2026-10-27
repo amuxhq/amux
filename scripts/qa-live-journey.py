@@ -27,7 +27,6 @@ and dropped.
 """
 
 from pathlib import Path
-import importlib
 import json
 import os
 import pty
@@ -41,13 +40,14 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(1, str(Path(__file__).resolve().parents[1] / "apps/apple/Tools"))
+import ios_simulators
 import qa_cloud
 from qa_cloud import BASE, fail, masked
 
-# The simulator side of a journey — installing the build, forgetting what a
-# previous run left on the phone — is the same here as in every other journey,
-# so it is borrowed rather than written again.
-journeys = importlib.import_module("ios-journey")
+SIMULATOR = "golden"
+BUNDLE_ID = "sh.amux.app"
+APPLICATION = Path("target/ios/DerivedData/Build/Products/Debug-iphonesimulator/Amux.app")
 
 qa_cloud.PROGRAM = "qa-live-journey"
 
@@ -331,7 +331,7 @@ def start_the_agent(journal: Journal, profile: str) -> str:
     has never ended a session.
 
     The agent is created without a name, which is what makes its identifier
-    readable off `amux list` — the phone opens a conversation by identifier,
+    readable off `amux ls` — the phone opens a conversation by identifier,
     and there is nowhere else on this Mac to read one."""
     before = agent_ids(profile)
     terminal, side = pty.openpty()
@@ -383,9 +383,9 @@ def speak(journal: Journal, udid: str, requests: list[dict], seconds: int) -> li
         plan.write_text(json.dumps(requests))
         plan.chmod(0o600)
         spoken = subprocess.run([
-            str(Path("target/debug/xtask").resolve()), "door",
-            "--simulator", journeys.SIMULATOR,
-            "--bundle-id", journeys.BUNDLE_ID,
+            str(Path("target/debug/ios-tools").resolve()), "door",
+            "--simulator", SIMULATOR,
+            "--bundle-id", BUNDLE_ID,
             "--timeout", str(seconds),
             "--requests", str(plan),
             "--allow-errors",
@@ -393,6 +393,19 @@ def speak(journal: Journal, udid: str, requests: list[dict], seconds: int) -> li
     if spoken.returncode != 0:
         journal.stop(f"the app could not be driven: {journal.scrub(spoken.stderr.strip())}")
     return json.loads(spoken.stdout)
+
+
+def container(udid: str) -> Path:
+    return Path(ios_simulators.run(
+        "xcrun", "simctl", "get_app_container", udid, BUNDLE_ID, "data"))
+
+
+def install_fresh(udid: str) -> None:
+    """The build under test on the simulator with nothing remembered and
+    nobody trusted: uninstalling takes the app's container, and with it every
+    account, cache and pairing an earlier run left."""
+    subprocess.run(["xcrun", "simctl", "uninstall", udid, BUNDLE_ID], capture_output=True, timeout=120)
+    ios_simulators.run("xcrun", "simctl", "install", udid, str(APPLICATION), timeout=300)
 
 
 def logs(journal: Journal, udid: str, account: str) -> str:
@@ -404,7 +417,7 @@ def logs(journal: Journal, udid: str, account: str) -> str:
     came back from the relay, and the daemon's holds the other side of the same
     minute, so both are read rather than guessed at."""
     written = []
-    phone = (journeys.container(udid) / "Library/Application Support/amux/runtime.log")
+    phone = container(udid) / "Library/Application Support/amux/installation/runtime.log"
     if phone.is_file():
         written.append("what the phone's runtime logged:\n"
                        + tail(phone))
@@ -534,7 +547,7 @@ def main() -> None:
                 "relay to be sent to")
 
     daemon_is_up(journal)
-    udid = journeys.ios_simulators.ready(journeys.SIMULATOR)
+    udid = ios_simulators.ready(SIMULATOR)
 
     named = f"qa-live-{uuid.uuid4().hex[:8]}"
     profile = make_profile(journal, named)
@@ -545,9 +558,7 @@ def main() -> None:
         agent = start_the_agent(journal, profile)
         machine = machine_identity(profile)
 
-        journeys.install(udid)
-        journeys.forget_cache(udid)
-        journeys.forget_pairings(udid)
+        install_fresh(udid)
         journal.say("the app is installed on the pinned simulator with nothing "
                     "remembered and nobody trusted")
 

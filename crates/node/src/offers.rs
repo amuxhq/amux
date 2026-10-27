@@ -21,7 +21,7 @@ use prost::Message as _;
 use sha2::{Digest as _, Sha256};
 use store::StoreError;
 pub use wire::Provider;
-use wire::{Catalogue, CatalogueBlob, ErrorCode, ProviderOffer, ProviderOnHost};
+use wire::{Catalogue, ErrorCode, GetCatalogueResponse, ProviderOffer, ProviderOnHost};
 
 use crate::runtime::{Launch, ProfileRuntime};
 
@@ -87,7 +87,7 @@ fn provider_command(provider: Provider, launch: &Launch) -> &str {
 pub struct HostCatalogue {
     /// The catalogue encoded once, and the SHA-256 of exactly those bytes:
     /// what GetCatalogue answers and the host's entry names.
-    pub blob: CatalogueBlob,
+    pub blob: GetCatalogueResponse,
     /// The same catalogue decoded, for an agent whose kind cannot ask its
     /// provider itself.
     pub catalogue: Catalogue,
@@ -171,7 +171,7 @@ fn host_catalogue(offer: ProviderOffer) -> HostCatalogue {
     let catalogue = offer.catalogue.unwrap_or_default();
     let bytes = catalogue.encode_to_vec();
     HostCatalogue {
-        blob: CatalogueBlob {
+        blob: GetCatalogueResponse {
             hash: Sha256::digest(&bytes).to_vec(),
             bytes,
         },
@@ -239,7 +239,7 @@ impl ProfileRuntime {
         };
         let path = copy_path(self.dir(), provider);
         let bytes = offer.encode_to_vec();
-        tokio::task::spawn_blocking(move || write_copy(&path, &bytes))
+        tokio::task::spawn_blocking(move || crate::install::write_cache(&path, &bytes))
             .await
             .map_err(|error| CatalogueError::Write(io::Error::other(error)))?
             .map_err(CatalogueError::Write)?;
@@ -328,7 +328,7 @@ impl ProfileRuntime {
         let _ = std::fs::remove_file(&out);
         let mut helper = tokio::process::Command::new(&launch.install_path);
         helper
-            .arg("catalogue")
+            .args(["internal", "catalogue"])
             .arg(provider_word(provider))
             .arg("--command")
             .arg(command)
@@ -391,11 +391,4 @@ async fn provider_version(command: &str, launch: &Launch) -> Option<String> {
         .status
         .success()
         .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
-}
-
-/// Through a temporary file, so a reader never sees half a copy.
-fn write_copy(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let temporary = path.with_extension("tmp");
-    std::fs::write(&temporary, bytes)?;
-    std::fs::rename(&temporary, path)
 }

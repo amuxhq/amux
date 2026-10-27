@@ -37,14 +37,15 @@ public enum Lifecycle: String, Sendable {
 /// The app owns the loop: the library's cores step on one serial queue,
 /// `CoreLoop`'s, and nothing in the library ever calls into Swift. Reads
 /// return at once, on any thread. The calls that block until the cores have
-/// done something (starting, stopping, opening a profile or a chat, the
-/// profile list, a moment of the app's life) step the cores on the thread
+/// done something (starting, stopping, opening a profile or a chat, a
+/// moment of the app's life) step the cores on the thread
 /// that makes them, so they are made on that queue, never on the main
 /// thread. Acts are `async`: each starts on the queue and is answered by a
 /// later step.
 ///
-/// The profile list moving is told on the main actor; the owner reads it
-/// again. A profile's fleet and chats are a `Profile` opened from here.
+/// The profile list is handed to the main actor whenever it moved, before
+/// the answer of the act that moved it. A profile's fleet and chats are a
+/// `Profile` opened from here.
 public final class Runtime: @unchecked Sendable {
     private let handle: OpaquePointer
     private let loop: CoreLoop
@@ -59,10 +60,10 @@ public final class Runtime: @unchecked Sendable {
     }
 
     /// Starts the runtime; blocks, on the core queue, until every profile's
-    /// store is open. `profilesMoved` is told on the main actor whenever the
-    /// profile list moved.
+    /// store is open. `profilesMoved` is handed the profile list on the main
+    /// actor whenever it moved, the first time once the registry is read.
     public static func start(
-        _ config: StartConfig, profilesMoved: @escaping @MainActor @Sendable () -> Void
+        _ config: StartConfig, profilesMoved: @escaping @MainActor @Sendable ([ProfileView]) -> Void
     ) throws(RuntimeFailure) -> Runtime {
         let loop = CoreLoop(profilesMoved: profilesMoved)
         let config = Bridge.json(config)
@@ -99,13 +100,6 @@ public final class Runtime: @unchecked Sendable {
     deinit { stop() }
 
     // MARK: - The profile registry
-
-    /// Every profile, oldest first.
-    public func profiles() -> [ProfileView] {
-        loop.blocking { [loop] in
-            loop.live.flatMap { Bridge.read([ProfileView].self, amux_runtime_profiles($0)) } ?? []
-        }
-    }
 
     /// A new profile nobody has signed in on.
     public func createProfile() async -> Result<ProfileView, RuntimeFailure> {
@@ -149,20 +143,6 @@ public final class Runtime: @unchecked Sendable {
         }
     }
 
-    /// Holds a bound profile's relay link down; its direct links and store
-    /// stay.
-    public func pause(_ profile: String) async -> Result<ProfileView, RuntimeFailure> {
-        await act(ProfileView.self) { live in
-            profile.withCString { amux_runtime_pause(live, $0) }
-        }
-    }
-
-    public func resume(_ profile: String) async -> Result<ProfileView, RuntimeFailure> {
-        await act(ProfileView.self) { live in
-            profile.withCString { amux_runtime_resume(live, $0) }
-        }
-    }
-
     /// Every profile whose trust store holds a machine, oldest first.
     public func trusting(_ host: HostId) async -> Result<[String], RuntimeFailure> {
         let host = Bridge.json(host.bytes)
@@ -179,13 +159,11 @@ public final class Runtime: @unchecked Sendable {
         }
     }
 
-    /// Listed for the profile in front of somebody: every listed agent keeps
-    /// a source open. Not listed for every other profile, and in the
-    /// background: only the chats that open keep one.
-    public func setSourcePolicy(_ profile: String, listed: Bool) {
-        call(()) { live in
-            profile.withCString { amux_runtime_set_source_policy(live, $0, listed) }
-        }
+    /// Every listed agent of the profile in front of somebody keeps a source
+    /// open; every other profile, and every profile when nil (the app in the
+    /// background), keeps one only for the chats that open.
+    public func listSources(of profile: String?) {
+        call(()) { live in Bridge.optional(profile) { amux_runtime_list_sources(live, $0) } }
     }
 
     /// Whether every listed agent of a profile keeps a source open now.
@@ -254,11 +232,11 @@ public final class Runtime: @unchecked Sendable {
     // MARK: - Profiles
 
     /// Opens a profile's fleet; blocks, on the core queue, until it has
-    /// caught up with the profile's store, so the first read draws what this
-    /// phone holds. The wake is told on the main actor a chat's id when it
-    /// moved, or 0 when the fleet did.
+    /// caught up with the profile's store, so its opening draws what this
+    /// phone holds. `moved` is told on the main actor what moved in the
+    /// fleet or one of its chats, once each has opened.
     public func open(
-        _ profile: String, wake: @escaping @MainActor @Sendable (UInt64) -> Void
+        _ profile: String, moved: @escaping @MainActor @Sendable (Moved) -> Void
     ) throws(RuntimeFailure) -> Profile {
         let opened = loop.blocking { [self, loop] () -> Result<Profile, RuntimeFailure> in
             guard let live = loop.live else {
@@ -269,9 +247,9 @@ public final class Runtime: @unchecked Sendable {
                 return .failure(Bridge.failure(error, otherwise: "the profile did not open"))
             }
             let open = Profile(id: profile, handle: opened, runtime: self, loop: loop)
-            // Registered on the queue before the next step, so no redraw of
-            // the new fleet goes unheard.
-            loop.watch(open, wake: wake)
+            // Registered on the queue before the next step, so nothing that
+            // moved in the new fleet goes unheard.
+            loop.watch(open, moved: moved)
             return .success(open)
         }
         return try opened.get()
@@ -288,12 +266,18 @@ public final class Runtime: @unchecked Sendable {
     }
 }
 
+/// What moved in an open profile, as a step hands it over.
+public enum Moved: Sendable {
+    case fleet(FleetDelta)
+    case chat(ChatDelta)
+}
+
 /// One profile's fleet and chats, open while it is on screen.
 public final class Profile: @unchecked Sendable {
     /// The profile's id in the installation's registry.
     public let id: String
     private let handle: OpaquePointer
-    /// The number the library's redraws name this fleet by.
+    /// The number the library's deltas name this fleet by.
     let fleet: UInt64
     /// The runtime it was opened from, which outlives it.
     public let runtime: Runtime
@@ -333,17 +317,28 @@ public final class Profile: @unchecked Sendable {
 
     // MARK: - The fleet
 
-    /// Home's sections, each family placed by its loudest member, with the
-    /// members of the families whose root agent ids `expanding` names
-    /// under their heads, listing the agents `filter` keeps.
-    public func fleetView(expanding: [[UInt8]] = [], filter: FleetFilter? = nil) -> FleetView {
-        call(FleetView(sections: [], needYou: 0, working: 0)) { live in
-            Bridge.json(expanding).withCString { expand in
-                Bridge.json(filter).withCString {
-                    Bridge.read(FleetView.self, amux_fleet_view(live, expand, $0))
-                }
-            } ?? FleetView(sections: [], needYou: 0, working: 0)
+    /// The fleet whole: home's sections, each family placed by its loudest
+    /// member, with the members of the families `toggleFamily` listed under
+    /// their heads, narrowed by the last `filter`; and every host, this
+    /// phone first. Every delta after it says what moved since.
+    public func fleetOpening() -> FleetDelta {
+        call(FleetDelta(hosts: nil, view: nil)) { live in
+            Bridge.read(FleetDelta.self, amux_fleet_opening(live)) ?? FleetDelta(hosts: nil, view: nil)
         }
+    }
+
+    /// Lists a family's members under its head, or folds them away again;
+    /// the next delta lists them so.
+    public func toggleFamily(_ head: AgentKey) {
+        call(()) { live in
+            Bridge.json(head.agent).withCString { amux_fleet_toggle_family(live, $0) }
+        }
+    }
+
+    /// Narrows home's list to what `filter` keeps, as the next delta lists
+    /// it.
+    public func filter(_ filter: FleetFilter) {
+        call(()) { live in Bridge.json(filter).withCString { amux_fleet_filter(live, $0) } }
     }
 
     /// The app leaving (false) or returning to (true) the foreground: every
@@ -371,30 +366,7 @@ public final class Profile: @unchecked Sendable {
         }
     }
 
-    /// Every host in the fleet, this phone first.
-    public func hosts() -> [HostView] {
-        call([]) { live in
-            Bridge.read([HostView].self, amux_fleet_hosts(live)) ?? []
-        }
-    }
-
-    /// What moved in the fleet since the last take; the next change wakes
-    /// the owner again.
-    public func takeFleetChanges() -> FleetChanges {
-        call(FleetChanges(agents: [], hosts: false)) { live in
-            Bridge.read(FleetChanges.self, amux_fleet_take_changes(live))
-                ?? FleetChanges(agents: [], hosts: false)
-        }
-    }
-
     // MARK: - The profile
-
-    /// Listed in the foreground: every listed agent keeps a source open.
-    /// Not listed when a push woke the app in the background: only the chats
-    /// that open keep one.
-    public func setSourcePolicy(listed: Bool) {
-        runtime.setSourcePolicy(id, listed: listed)
-    }
 
     /// Whether every listed agent keeps a source open now.
     public var listsSources: Bool { runtime.listsSources(id) }
@@ -562,14 +534,15 @@ struct Live: @unchecked Sendable {
 /// it makes a descriptor readable; a dispatch source watching that
 /// descriptor from this queue steps, and what the step hands back is
 /// carried out from here: each act's answer goes to whoever awaits its
-/// ticket, and the fleets and chats to redraw, and whether the profile list
-/// moved, go to the main actor. The cores' timers sleep on the library's own
+/// ticket, and what moved in the fleets and chats, and the profile list
+/// when it moved, go to the main actor ahead of the answers, so whoever
+/// awaits an act finds what it moved in place. The cores' timers sleep on the library's own
 /// thread and come back as ordinary inputs that make the descriptor
 /// readable, so nothing here arms one.
 final class CoreLoop: @unchecked Sendable {
     private let queue = DispatchQueue(label: "amux.core", qos: .userInitiated)
     private let onQueue = DispatchSpecificKey<Bool>()
-    private let profilesMoved: @MainActor @Sendable () -> Void
+    private let profilesMoved: @MainActor @Sendable ([ProfileView]) -> Void
 
     // On the queue only.
     /// The runtime, from its start until its stop.
@@ -581,12 +554,12 @@ final class CoreLoop: @unchecked Sendable {
     // Under the lock: written on the queue and by a close, read on the main
     // actor.
     private let lock = NSLock()
-    /// Each open fleet's wake, by the number redraws name it by.
-    private var wakes: [UInt64: @MainActor @Sendable (UInt64) -> Void] = [:]
+    /// Where each open fleet's deltas go, by the number they name it by.
+    private var moves: [UInt64: @MainActor @Sendable (Moved) -> Void] = [:]
     /// The profiles opened, closed before the runtime stops.
     private let opened = NSHashTable<Profile>.weakObjects()
 
-    init(profilesMoved: @escaping @MainActor @Sendable () -> Void) {
+    init(profilesMoved: @escaping @MainActor @Sendable ([ProfileView]) -> Void) {
         self.profilesMoved = profilesMoved
         queue.setSpecific(key: onQueue, value: true)
     }
@@ -629,7 +602,9 @@ final class CoreLoop: @unchecked Sendable {
         }
     }
 
-    /// Watches a started runtime's descriptor. On the queue.
+    /// Watches a started runtime's descriptor. On the queue. Steps once at
+    /// once, so what the start left, the profile list, reaches the main
+    /// actor ahead of whoever learns there that the runtime started.
     func run(_ runtime: OpaquePointer) {
         dispatchPrecondition(condition: .onQueue(queue))
         live = runtime
@@ -638,6 +613,7 @@ final class CoreLoop: @unchecked Sendable {
         source.setEventHandler { [weak self] in self?.step() }
         source.resume()
         self.source = source
+        step()
     }
 
     /// Closes every profile still open, stops the runtime, and answers every
@@ -654,17 +630,17 @@ final class CoreLoop: @unchecked Sendable {
         for continuation in unanswered.values { continuation.resume(returning: Bridge.stoppedAnswer) }
     }
 
-    func watch(_ profile: Profile, wake: @escaping @MainActor @Sendable (UInt64) -> Void) {
+    func watch(_ profile: Profile, moved: @escaping @MainActor @Sendable (Moved) -> Void) {
         lock.withLock {
             opened.add(profile)
-            wakes[profile.fleet] = wake
+            moves[profile.fleet] = moved
         }
     }
 
     func forget(_ profile: Profile) {
         lock.withLock {
             opened.remove(profile)
-            wakes[profile.fleet] = nil
+            moves[profile.fleet] = nil
         }
     }
 
@@ -673,27 +649,38 @@ final class CoreLoop: @unchecked Sendable {
         guard let live, let stepped = Bridge.read(Stepped.self, amux_runtime_step(live)) else {
             return
         }
+        // Queued on the main actor before any answer resumes its waiter
+        // there, so an act is answered after what it moved is in place.
+        if stepped.profiles != nil || !stepped.fleets.isEmpty || !stepped.chats.isEmpty {
+            DispatchQueue.main.async { [self] in
+                MainActor.assumeIsolated {
+                    // Read here, not on the queue: a fleet closed since the
+                    // step hears nothing.
+                    for moved in stepped.fleets {
+                        lock.withLock { moves[moved.fleet] }?(.fleet(moved.delta))
+                    }
+                    for moved in stepped.chats {
+                        lock.withLock { moves[moved.fleet] }?(.chat(moved.delta))
+                    }
+                    if let profiles = stepped.profiles { profilesMoved(profiles) }
+                }
+            }
+        }
         for answer in stepped.answers {
             waiting.removeValue(forKey: answer.ticket)?.resume(returning: answer.json)
-        }
-        guard stepped.profiles || !stepped.redraws.isEmpty else { return }
-        DispatchQueue.main.async { [self] in
-            MainActor.assumeIsolated {
-                // Read here, not on the queue: a fleet closed since the step
-                // is not woken.
-                for redraw in stepped.redraws {
-                    lock.withLock { wakes[redraw.fleet] }?(redraw.chat)
-                }
-                if stepped.profiles { profilesMoved() }
-            }
         }
     }
 
     /// What a step hands back.
     private struct Stepped: Decodable, Sendable {
-        struct Redraw: Decodable, Sendable {
+        struct FleetMoved: Decodable, Sendable {
             let fleet: UInt64
-            let chat: UInt64
+            let delta: FleetDelta
+        }
+
+        struct ChatMoved: Decodable, Sendable {
+            let fleet: UInt64
+            let delta: ChatDelta
         }
 
         struct Answer: Decodable, Sendable {
@@ -701,8 +688,9 @@ final class CoreLoop: @unchecked Sendable {
             let json: String
         }
 
-        let profiles: Bool
-        let redraws: [Redraw]
+        let profiles: [ProfileView]?
+        let fleets: [FleetMoved]
+        let chats: [ChatMoved]
         let answers: [Answer]
     }
 

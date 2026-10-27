@@ -67,7 +67,6 @@ impl Daemon {
         self.families.jobs(&mut jobs);
         self.notifications.jobs(&mut jobs);
         self.blobs.jobs(&mut jobs);
-        self.drafts.jobs(&mut jobs);
         self.checkpoints.jobs(&mut jobs);
         self.trust.jobs(&mut jobs);
         let mut sessions = Vec::new();
@@ -88,7 +87,7 @@ impl Daemon {
         };
         let core = (
             &self.routing,
-            &self.presence.canonical(),
+            &self.presence,
             &self.sources.canonical(&ids),
             &self.families.canonical(&ids),
             (&self.pairing, &self.trust.canonical(&ids)),
@@ -97,7 +96,6 @@ impl Daemon {
             &self.checkpoints.canonical(&ids),
             &self.notifications.canonical(&ids),
             &self.blobs.canonical(&ids),
-            &self.drafts.canonical(&ids),
             &self.deliveries.canonical(),
             &self.timers,
             &pending,
@@ -131,12 +129,8 @@ mod tests {
             },
         );
         let mut out = Vec::new();
-        daemon.step(
-            Input::TrustRead {
-                store: crate::trust::TrustStore::of_hosts(vec![PEER]),
-            },
-            &mut out,
-        );
+        daemon.trust_for_test(crate::trust::TrustStore::of_hosts(vec![PEER]));
+        daemon.step(Input::Started, &mut out);
         daemon.step(
             Input::LinkUp {
                 link: LinkId(1),

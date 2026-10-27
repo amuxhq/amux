@@ -31,7 +31,8 @@ pub fn attention(agent: &Agent) -> Attention {
     }
     match agent.phase() {
         wire::Phase::Starting => Attention::Starting,
-        wire::Phase::Idle => Attention::Idle,
+        // A phase from a newer build reads as the quietest one.
+        wire::Phase::Idle | wire::Phase::Unspecified => Attention::Idle,
         wire::Phase::Working => Attention::Working,
         wire::Phase::NeedsYou => Attention::NeedsYou,
     }
@@ -178,7 +179,7 @@ impl FleetState {
     fn host_online(&self, host: &[u8]) -> bool {
         self.hosts
             .get(host)
-            .is_some_and(|host| host.presence() == wire::Presence::Online)
+            .is_some_and(|host| host.online().is_some())
     }
 
     /// The held stops whose host is back since this was last asked: each is
@@ -275,18 +276,18 @@ impl FleetState {
                 match event {
                     inventory_event::Of::Host(host) => {
                         if let Some((hosts, _)) = &mut self.relisted {
-                            hosts.insert(host.host_id.clone());
+                            hosts.insert(host.host_id().to_vec());
                         }
                         for agent in self
                             .agents
                             .keys()
-                            .filter(|agent| agent.host == host.host_id)
+                            .filter(|agent| agent.host == host.host_id())
                         {
                             changed.insert(agent.clone());
                         }
-                        let online = host.presence() == wire::Presence::Online;
-                        let host_id = host.host_id.clone();
-                        self.hosts.insert(host.host_id.clone(), host);
+                        let online = host.online().is_some();
+                        let host_id = host.host_id().to_vec();
+                        self.hosts.insert(host.host_id().to_vec(), host);
                         if online {
                             self.release_stops(|agent| agent.host == host_id, &mut changed);
                         }

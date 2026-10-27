@@ -5,10 +5,11 @@
 
 use std::collections::BTreeMap;
 
-use wire::{
+use wire::Rejected;
+use wire::dump::{
     ClientBlob, ClientBlobState, ClientCatalogue, ClientConnection, ClientInput, ClientInputState,
-    ClientPage, ClientSent, ClientSession, ClientSessionMsg, ClientTranscript, Rejected,
-    client_sent, client_session_msg,
+    ClientPage, ClientSent, ClientSession, ClientSessionMsg, ClientTranscript, client_sent,
+    client_session_msg,
 };
 
 use super::{Arrivals, Msg, SessionState};
@@ -150,8 +151,8 @@ impl Msg {
                 input_id: id.clone(),
                 outcome: Some(match outcome {
                     InputOutcome::Reply(reply) => client_sent::Outcome::Reply(reply.clone()),
-                    InputOutcome::Lost => client_sent::Outcome::Lost(wire::ClientLost {}),
-                    InputOutcome::Held => client_sent::Outcome::Held(wire::ClientHeld {}),
+                    InputOutcome::Lost => client_sent::Outcome::Lost(wire::dump::ClientLost {}),
+                    InputOutcome::Held => client_sent::Outcome::Held(wire::dump::ClientHeld {}),
                 }),
             }),
             Msg::Discard(id) => Of::DiscardInputId(id.clone()),
@@ -159,7 +160,7 @@ impl Msg {
             Msg::Host(host) => Of::Host(host.clone()),
             Msg::Blob { hash, status } => Of::Blob(blob(hash, status)),
             Msg::Following(following) => Of::Following(*following),
-            Msg::Reloading => Of::Reloading(wire::ClientReloading {}),
+            Msg::Reloading => Of::Reloading(wire::dump::ClientReloading {}),
             Msg::Window(cap) => Of::Window(*cap as u64),
             Msg::Catalogue { hash, catalogue } => Of::Catalogue(ClientCatalogue {
                 hash: hash.clone(),

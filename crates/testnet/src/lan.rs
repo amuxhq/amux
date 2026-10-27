@@ -76,12 +76,16 @@ impl Lan {
         &self,
         host: &str,
         upstream: Option<SocketAddr>,
+        on: Option<std::net::IpAddr>,
     ) -> std::io::Result<SocketAddr> {
         let mut state = self.0.lock().unwrap();
         let gate = match state.fronts.get(host) {
             Some(gate) => gate.clone(),
             None => {
-                let gate = Arc::new(UdpGate::bind(upstream)?);
+                let gate = Arc::new(match on {
+                    Some(on) => UdpGate::bind_on(on, upstream)?,
+                    None => UdpGate::bind(upstream)?,
+                });
                 gate.set_faults(state.faults(host));
                 state.fronts.insert(host.to_owned(), gate.clone());
                 gate
@@ -273,14 +277,23 @@ pub(crate) struct FrontAdvert {
     inner: Arc<dyn Discovery>,
     me: String,
     lan: Arc<Lan>,
+    /// Where the gate listens for a client outside this Mac; loopback when
+    /// none is named.
+    on: Option<std::net::IpAddr>,
 }
 
 impl FrontAdvert {
-    pub(crate) fn new(inner: Arc<dyn Discovery>, me: &str, lan: Arc<Lan>) -> Self {
+    pub(crate) fn new(
+        inner: Arc<dyn Discovery>,
+        me: &str,
+        lan: Arc<Lan>,
+        on: Option<std::net::IpAddr>,
+    ) -> Self {
         Self {
             inner,
             me: me.to_owned(),
             lan,
+            on,
         }
     }
 }
@@ -290,7 +303,7 @@ impl Discovery for FrontAdvert {
         if let Some(listener) = advert.addrs.first().copied() {
             let front = self
                 .lan
-                .front(&self.me, Some(listener))
+                .front(&self.me, Some(listener), self.on)
                 .map_err(|error| DiscoveryError::Register(error.to_string()))?;
             advert.addrs = vec![front];
         }

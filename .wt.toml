@@ -5,18 +5,20 @@ bin = ["target/debug"]
 commands = ["amux"]
 
 [env]
-AMUX_CONFIG = "{{root()}}/.wt/amux/installation.yaml"
+AMUX_CONFIG = "{{root()}}/.wt/amux/config.toml"
 AMUX_LOG = "{{root()}}/.wt/amux/amux.log"
 
-[files.".wt/amux/installation.yaml"]
+[files.".wt/amux/config.toml"]
 marker = "#"
 content = """
-host_name: {{name_short()}}
-root: {{root()}}/.wt/amux
-front_door_socket: {{root()}}/.wt/amux/amux.sock
-keep_awake: off
-discovery:
-  scope: {{name()}}
+host_name = "{{name_short()}}"
+root = "{{root()}}/.wt/amux"
+front_door_socket = "{{root()}}/.wt/amux/amux.sock"
+supervisor = false
+keep_awake = false
+
+[discovery]
+scope = "{{name()}}"
 """
 
 [hooks]
@@ -27,7 +29,7 @@ warm = "just warm"
 [resource.daemon]
 tied_to = "tree"
 name = "{{name_short()}}"
-exists = 'test -S "{{root()}}/.wt/amux/amux.sock" && amux profiles >/dev/null 2>&1'
+exists = 'test -S "{{root()}}/.wt/amux/amux.sock" && amux status >/dev/null 2>&1'
 create = "amux server start"
 destroy = "amux server stop"
 
@@ -35,7 +37,7 @@ destroy = "amux server stop"
 # and gets it clean; the tree keeps it for two minutes so the next recipe in
 # a series takes it without queueing; one nobody has leased for half an hour
 # is deleted, and the next use pays the fifty-second create again. The
-# recipes name a kind, golden or small, and scripts/ios_simulators.py maps
+# recipes name a kind, golden or small, and apps/apple/Tools/ios_simulators.py maps
 # the kind to the leased device. Count, keep, idle and wait are machine
 # facts: override under [resources.iphone] in ~/.wt/config.toml. The hooks go
 # through scripts/python for the same reason the recipes do: a hook inherits
@@ -45,10 +47,10 @@ destroy = "amux server stop"
 tied_to = "machine"
 count = 2
 name = "amux-iphone-{{index()}}"
-exists = 'scripts/py scripts/ios_simulators.py exists "$WT_SELF"'
-create = 'scripts/py scripts/ios_simulators.py create "$WT_SELF" golden'
+exists = 'scripts/py apps/apple/Tools/ios_simulators.py exists "$WT_SELF"'
+create = 'scripts/py apps/apple/Tools/ios_simulators.py create "$WT_SELF" golden'
 destroy = 'xcrun simctl delete "$WT_SELF"'
-acquire = 'scripts/py scripts/ios_simulators.py acquire "$WT_SELF"'
+acquire = 'scripts/py apps/apple/Tools/ios_simulators.py acquire "$WT_SELF"'
 keep = "2m"
 idle = "30m"
 wait = "45m"
@@ -57,10 +59,10 @@ wait = "45m"
 tied_to = "machine"
 count = 1
 name = "amux-small-{{index()}}"
-exists = 'scripts/py scripts/ios_simulators.py exists "$WT_SELF"'
-create = 'scripts/py scripts/ios_simulators.py create "$WT_SELF" small'
+exists = 'scripts/py apps/apple/Tools/ios_simulators.py exists "$WT_SELF"'
+create = 'scripts/py apps/apple/Tools/ios_simulators.py create "$WT_SELF" small'
 destroy = 'xcrun simctl delete "$WT_SELF"'
-acquire = 'scripts/py scripts/ios_simulators.py acquire "$WT_SELF"'
+acquire = 'scripts/py apps/apple/Tools/ios_simulators.py acquire "$WT_SELF"'
 keep = "2m"
 idle = "30m"
 wait = "45m"

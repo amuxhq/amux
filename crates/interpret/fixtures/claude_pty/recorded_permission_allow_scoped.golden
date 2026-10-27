@@ -19,8 +19,8 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1788069677326 asks=[ask:1->- permiss
 item 5add42fe-53cd-41b5-b1cb-6673595143b7 thinking final at=1788069676915 text=""
 snapshot NEEDS_YOU queue=[] working_on=- at=1788069677895 asks=[ask:1->- permission:Bash/session <MACHINE_PATH> deny-stops] session=d3f37e29-9e3b-487e-9366-99f0dca3b4c3 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=34322 tasks=? background=?
 ## 23 recorded 21: fact Transcript type=assistant uuid=72eafc06-9389-449d-8818-c1ae42056c79
-item toolu_01QMearN6kQdqbAdp2iEYZpc tool final at=1788069677355 text="" Bash TOOL_STATE_RUNNING input="{\"command\":\"printf allow-scoped > allow-scoped.txt; printf a…"
+item toolu_01QMearN6kQdqbAdp2iEYZpc tool final at=1788069677355 text="" Bash TOOL_STATE_RUNNING input=shell:"printf allow-scoped > allow-scoped.txt; printf allow-scoped"
 snapshot NEEDS_YOU queue=[] working_on=- at=1788069677895 asks=[ask:1->toolu_01QMearN6kQdqbAdp2iEYZpc permission:Bash/session <MACHINE_PATH> deny-stops] session=d3f37e29-9e3b-487e-9366-99f0dca3b4c3 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=34322 tasks=? background=?
 ## 24 recorded 22: fact Transcript type=user uuid=dd979c0a-c2a5-49cb-bcb5-57784a4d8a50
-item toolu_01QMearN6kQdqbAdp2iEYZpc tool final at=1788069677355 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED elsewhere ended=1788069677867 input="{\"command\":\"printf allow-scoped > allow-scoped.txt; printf a…" out="allow-scoped"
+item toolu_01QMearN6kQdqbAdp2iEYZpc tool final at=1788069677355 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED elsewhere ended=1788069677867 input=shell:"printf allow-scoped > allow-scoped.txt; printf allow-scoped" out="allow-scoped"
 snapshot WORKING queue=[] working_on=- at=1788069677895 asks=[] session=d3f37e29-9e3b-487e-9366-99f0dca3b4c3 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=34322 tasks=? background=?

@@ -14,6 +14,10 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
     /// Prompts on their way, as the frame lists them, and their drafts.
     var underway: [SentPrompt] = []
     var drafts: [[UInt8]: Draft] = [:]
+    /// What the profile's daemon kept for the agent as the chat opened, and
+    /// where the chat keeps its draft from then on.
+    var kept: Draft?
+    var keeps: (@MainActor (Draft) -> Void)?
 
     init(id: UInt64, agent: AgentKey) {
         self.id = id
@@ -21,31 +25,32 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
     }
 
     func close() { closed = true }
-    func keys() -> [String] { ["a"] }
-    func keys(above newest: String) -> [String]? { [] }
-    func keys(below oldest: String) -> [String]? { [] }
-    func oldestKey() -> String? { "a" }
+    func opening() -> ChatDelta {
+        ChatDelta(
+            chat: id, rows: [], ask: AskMoved(card: nil), frame: frame(), keys: .reload(["a"]),
+            overview: nil, settings: nil)
+    }
+
+    /// The frame as it now stands, as the delta that hands it over.
+    func moved() -> ChatDelta {
+        ChatDelta(
+            chat: id, rows: [], ask: nil, frame: frame(), keys: nil, overview: nil, settings: nil)
+    }
+
     func follow(_ following: Bool) {}
-    func rows(for keys: [String], options: RowOptions?) -> [Row] { [] }
-    func askCard() -> AskCard? { nil }
-    func overview() -> Overview? { nil }
-    func settings() -> SettingsView? { nil }
-    func frame() -> ChatFrame? {
+    func rows(for keys: [String]) -> [Row] { [] }
+    private func frame() -> ChatFrame {
         ChatFrame(
             agent: agent, name: "a", kind: .claudeSdk, phase: .needsYou,
             composer: ComposerView(mode: .send, switchedAway: false, activity: nil), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live, caughtUp: current,
             hasOlder: false, arrivalsHeld: false, queue: [], underway: underway, refused: [], askInput: nil, context: nil, ended: nil, git: nil,
             signIn: nil, waiting: nil)
     }
-    func takeChanges() -> ChatChanges { ChatChanges(keys: [], reloaded: false, session: true) }
     func send(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> { .failure(RuntimeFailure("no")) }
     func answer(_ ask: String, choice: Int, note: String?) async -> ActOutcome? { nil }
     func answer(_ ask: String, responses: [QuestionResponse]) async -> ActOutcome? { nil }
     func replyInstead(_ ask: String, text: String, soFar: [QuestionResponse]) async -> ActOutcome? { nil }
-    func toggleRun(_ member: String, open: [String]) -> [String] {
-        open.contains(member) ? open.filter { $0 != member } : open + [member]
-    }
-    func keepOpenRuns(_ open: [String]) -> [String] { open }
+    func toggleRun(_ member: String) {}
     func answerForm(_ ask: String, values: [FormValue]) async -> ActOutcome? { nil }
     func withdraw(_ input: [UInt8]) async -> ActOutcome? { nil }
     func sendNow(_ input: [UInt8]) async -> ActOutcome? { nil }
@@ -62,6 +67,8 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
     func blob(_ hash: [UInt8]) -> Data? { nil }
     func review(_ comparison: Comparison) async -> Result<FrozenReview, RuntimeFailure> { .failure(RuntimeFailure("no")) }
     func openOverview(_ comparison: Comparison) async -> Result<Overview, RuntimeFailure> { .failure(RuntimeFailure("no")) }
+    func keptDraft() -> Draft? { kept }
+    func keep(_ draft: Draft) { MainActor.assumeIsolated { keeps?(draft) } }
 }
 
 @MainActor
@@ -69,6 +76,9 @@ final class StoreBundleSessionTests: XCTestCase {
     private var clock = Cards.now
     private var opened: [CaughtUpSession] = []
     private var current = true
+    /// The drafts the phone's daemon keeps, by agent, across every bundle a
+    /// test opens, as a relaunch finds them; an empty draft is forgotten.
+    private var daemon: [AgentKey: Draft] = [:]
 
     private func bundle(
         account: String = "a",
@@ -80,6 +90,10 @@ final class StoreBundleSessionTests: XCTestCase {
             opener: { [unowned self] agent in
                 let session = CaughtUpSession(id: UInt64(opened.count + 1), agent: agent)
                 session.current = current
+                session.kept = daemon[agent]
+                session.keeps = { [unowned self] draft in
+                    daemon[agent] = draft.parts.isEmpty ? nil : draft
+                }
                 opened.append(session)
                 return session
             },
@@ -87,6 +101,22 @@ final class StoreBundleSessionTests: XCTestCase {
     }
 
     private func sessions(for agent: AgentKey) -> [CaughtUpSession] { opened.filter { $0.agent == agent } }
+
+    /// The fleet moving again just after the launch's first frame went up,
+    /// before the delta held for that frame is applied, is not undone by it.
+    func testAFleetMoveAfterTheFirstFrameIsNotOverwrittenByTheOneHeldForIt() async {
+        let stores = bundle()
+        let fleet = { (name: String) in
+            Moved.fleet(FleetDelta(hosts: [Cards.host()], view: Cards.view([Cards.row(1, name)])))
+        }
+        stores.moved(fleet("first"))
+        XCTAssertTrue(stores.fleet.presenting, "the first frame is going up")
+        stores.moved(fleet("held"))
+        stores.fleet.finishPresenting()
+        stores.moved(fleet("newer"))
+        await stores.applyingHeld?.value
+        XCTAssertEqual(stores.fleet.rows.map(\.name), ["newer"])
+    }
 
     func testAnAgentThatNeedsThePersonOpensNothingUntilItsChatIsShown() throws {
         let stores = bundle()
@@ -158,7 +188,7 @@ final class StoreBundleSessionTests: XCTestCase {
         XCTAssertFalse(opened[0].closed, "the chat a push is bringing current keeps its session")
 
         opened[0].current = true
-        stores.woke(opened[0].id)
+        stores.moved(.chat(opened[0].moved()))
         let warmed = await warming.value
         XCTAssertTrue(warmed)
         XCTAssertTrue(opened[0].closed, "once current it is kept or closed like any other chat")
@@ -179,7 +209,7 @@ final class StoreBundleSessionTests: XCTestCase {
         session.underway = [
             SentPrompt(inputId: [1], text: [.text("Run the tests.")], lands: .feed, underway: .held)
         ]
-        model.woke()
+        model.apply(session.moved())
         stores.leave(agent)
 
         clock = Cards.now.addingTimeInterval(301)
@@ -187,10 +217,10 @@ final class StoreBundleSessionTests: XCTestCase {
         XCTAssertTrue(stores.holds(agent), "a chat holding a prompt stays open")
 
         session.underway[0].underway = .sending(waiting: false)
-        model.woke()
+        model.apply(session.moved())
         stores.keepSessions()
         XCTAssertFalse(stores.holds(agent), "once the prompt is sent the chat closes as usual")
-        XCTAssertNil(stores.drafts.draft(for: agent), "and the kept draft no longer holds it")
+        XCTAssertNil(daemon[agent], "and the kept draft no longer holds it")
     }
 
     /// A half-typed message outlives its chat's session: the phone keeps
@@ -226,19 +256,22 @@ final class StoreBundleSessionTests: XCTestCase {
             "the draft was lost when the app was reopened")
     }
 
-    /// A deleted agent's draft goes with it: the phone kept it on its
-    /// shelf for good, and the chat still on screen until its page left
-    /// went on keeping what was typed into it.
+    /// A deleted agent's draft goes with it: the daemon forgets it, and the
+    /// chat still on screen until its page leaves keeps nothing typed into
+    /// it from then on.
     func testADeletedAgentsDraftIsForgotten() async throws {
         let account = "deleted-\(UUID().uuidString)"
         let agent = Cards.key(2)
-        let stores = bundle(account: account, acting: { _, _ in .success(Nothing()) })
+        let stores = bundle(account: account, acting: { [unowned self] _, deleted in
+            daemon[deleted] = nil
+            return .success(Nothing())
+        })
         stores.fleet.show(Cards.view([Cards.row(2, "idle")]), hosts: [Cards.host()])
         try stores.chat(agent).draft = "for an agent about to go"
 
         guard case .success = await stores.delete(agent) else { return XCTFail("the delete failed") }
         try stores.chat(agent).draft = "typed as the page left"
-        XCTAssertNil(stores.drafts.draft(for: agent), "the deleted agent's draft is still kept")
+        XCTAssertNil(daemon[agent], "the deleted agent's draft is still kept")
         stores.closeChats()
 
         let after = bundle(account: account)
@@ -256,6 +289,6 @@ final class StoreBundleSessionTests: XCTestCase {
         try stores.chat(agent).draft = "still wanted"
 
         guard case .failure = await stores.delete(agent) else { return XCTFail("the delete went through") }
-        XCTAssertNotNil(stores.drafts.draft(for: agent), "a failed delete dropped the draft")
+        XCTAssertNotNil(daemon[agent], "a failed delete dropped the draft")
     }
 }

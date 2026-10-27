@@ -22,7 +22,7 @@ use anyhow::{Context as _, Result, anyhow};
 use settings::LeaderKey;
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
-use wire::{Agent, Kind, Lifecycle, ProfileInfo};
+use wire::{Agent, Kind, Lifecycle};
 
 /// How a stretch of raw attach ended.
 #[derive(Debug, PartialEq)]
@@ -44,15 +44,16 @@ pub struct Attacher {
 }
 
 impl Attacher {
-    pub fn new(profile: &ProfileInfo, leader: LeaderKey) -> Result<Attacher> {
+    pub fn new(profile: &wire::Profile, leader: LeaderKey) -> Result<Attacher> {
         let socket = Path::new(&profile.socket_path);
         let dir = socket
             .parent()
             .ok_or_else(|| anyhow!("the profile socket {} has no directory", socket.display()))?;
-        Uuid::from_slice(&profile.host_id).context("the profile's host id")?;
+        // A profile's host id is its id.
+        Uuid::from_slice(&profile.id).context("the profile's id")?;
         Ok(Attacher {
             agents: dir.join("agents"),
-            local_host: profile.host_id.clone(),
+            local_host: profile.id.clone(),
             leader,
             held: HashMap::new(),
         })
@@ -69,8 +70,8 @@ impl Attacher {
         let name = agent.name.clone();
         if agent.host_id != self.local_host {
             Some(format!(
-                "{name} runs on another host, and raw attach is only for agents on this \
-                 machine; open its chat instead: run `amux` and press enter on it"
+                "{name} runs on another host, and its own interface opens only on its own \
+                 machine; `amux attach {name} --in amux` opens its chat"
             ))
         } else if agent.lifecycle() == Lifecycle::Exited {
             Some(format!(
@@ -79,13 +80,13 @@ impl Attacher {
             ))
         } else if agent.kind() == Kind::ClaudeSdk {
             Some(format!(
-                "{name} is headless Claude and has no terminal; open its chat instead: run \
-                 `amux` and press enter on it"
+                "{name} was started for amux's chat and has no Claude Code interface; \
+                 `amux attach {name} --in amux` opens its chat"
             ))
         } else if agent.kind() == Kind::Codex && cfg!(windows) {
             Some(format!(
-                "attach is not available for Codex on Windows, where {name}'s Codex has room \
-                 for amux alone; open its chat instead: run `amux` and press enter on it"
+                "Codex's own interface does not open on Windows, where {name}'s Codex has room \
+                 for amux alone; `amux attach {name} --in amux` opens its chat"
             ))
         } else {
             None
@@ -531,11 +532,11 @@ mod tests {
         );
     }
 
-    fn profile() -> ProfileInfo {
-        ProfileInfo {
+    fn profile() -> wire::Profile {
+        wire::Profile {
             socket_path: "/data/profiles/p/client.sock".into(),
-            host_id: vec![7; 16],
-            ..ProfileInfo::default()
+            id: vec![7; 16],
+            ..wire::Profile::default()
         }
     }
 
@@ -554,19 +555,25 @@ mod tests {
         let codex = attacher.refusal(&agent([7; 16], Kind::Codex));
         if cfg!(windows) {
             let codex = codex.unwrap();
+            assert!(codex.contains("does not open on Windows"), "{codex}");
             assert!(
-                codex.contains("not available for Codex on Windows"),
+                codex.contains("`amux attach scout --in amux` opens its chat"),
                 "{codex}"
             );
-            assert!(codex.contains("open its chat"), "{codex}");
         } else {
             assert_eq!(codex, None);
         }
         let remote = attacher.refusal(&agent([8; 16], Kind::ClaudePty)).unwrap();
         assert!(remote.contains("another host"), "{remote}");
-        assert!(remote.contains("open its chat"), "{remote}");
+        assert!(
+            remote.contains("`amux attach scout --in amux` opens its chat"),
+            "{remote}"
+        );
         let headless = attacher.refusal(&agent([7; 16], Kind::ClaudeSdk)).unwrap();
-        assert!(headless.contains("open its chat"), "{headless}");
+        assert!(
+            headless.contains("`amux attach scout --in amux` opens its chat"),
+            "{headless}"
+        );
     }
 
     /// An exited agent has no terminal to attach to: the refusal says it

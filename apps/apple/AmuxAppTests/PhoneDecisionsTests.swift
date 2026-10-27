@@ -349,7 +349,7 @@ final class PhoneDecisionsTests: XCTestCase {
             hostId: desk.bytes, name: "desk", local: false, trusted: true, candidate: false,
             reach: .offline(.revoked), addrs: ["127.0.0.1:55186"], current: false, providers: [],
             lastDialError: "127.0.0.1:55186: code: 'The service is currently unavailable', message: \"connection lost\"",
-            platform: "macOS", signedIn: nil, version: nil)])
+            platform: .macos, signedIn: nil, version: nil)])
         var asked: [HostPageAction] = []
         try host(HostPage(model: hosts, host: desk) { asked.append($0) })
         await spin()
@@ -414,7 +414,7 @@ final class PhoneDecisionsTests: XCTestCase {
         func view(_ reach: Reach) -> HostView {
             HostView(
                 hostId: desk.bytes, name: "desk", local: false, trusted: true, candidate: false, reach: reach,
-                addrs: [], current: true, providers: [], lastDialError: nil, platform: "macOS",
+                addrs: [], current: true, providers: [], lastDialError: nil, platform: .macos,
                 signedIn: nil, version: nil)
         }
         let hosts = HostsStore()

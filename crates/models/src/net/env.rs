@@ -35,12 +35,12 @@ use std::sync::Arc;
 
 use agent_core::{Agent, AgentValue, ConnId, Resumed};
 use daemon_core::payload::{
-    Answer, CallError, CarrierKind, ChannelError, ClientRequest, GitRefusal, JobResult,
-    MessageFrom, MessageRefusal, PeerFailure, PeerReply, PeerRequest, Response, Status,
+    Answer, CallError, CarrierKind, ClientRequest, GitRefusal, JobResult, MessageFrom,
+    MessageRefusal, PeerFailure, PeerReply, PeerRequest, Response, Status,
 };
 use daemon_core::{
     AgentId, CallId, Daemon, Ended, Fingerprint, HostId, Input, Job, JobId, LinkId, Output,
-    Presence, Route, Settings, StartOptions, StepBudget, TimerId, Tried,
+    Presence, Settings, StartOptions, StepBudget, TimerId,
 };
 use interpret::testkind::TestKind;
 use prost::Message as _;
@@ -53,10 +53,7 @@ use crate::held::{Held, Slot};
 use crate::lifecycle::{
     EXIT_CAUSE_LAST_STEP, EXITS_AT_TURN_END, cause_on_last_step, decided_in_its_time,
 };
-use crate::presence::{
-    AWAY_ONLY_ON_PAYMENT_REFUSAL, CHANGES_ON_A_CONCLUDED_ATTEMPT, ONE_ATTEMPT_IN_FLIGHT,
-    attempt_not_doubled, away_explained, change_prompted,
-};
+use crate::presence::{PRESENCE_FROM_LINKS, reads_by_links};
 use crate::single_daemon::{
     COMMIT_BEFORE_BROADCAST, GENERATION_BUMPS_AFTER_UNCLEAN, GENERATION_BUMPS_ONLY_AFTER_UNCLEAN,
     answered_unheld, bumps_after_unclean, bumps_only_after_unclean,
@@ -134,41 +131,27 @@ fn append(journal: &mut Journal, step: &wire::Step) {
 
 /// What a host's step broke of the promises judged as it steps, if it
 /// broke one: what it answered that its store does not hold, and how it
-/// moved another host's presence, each host having read as `views` before
-/// the step and `concluded` the attempt the step concluded.
+/// reads another host against the links up to it.
 fn judge_step(
     daemon: &Daemon,
     out: &[Output],
     kind: &str,
     name: &str,
     others: &[(HostId, &str)],
-    views: Vec<daemon_core::HostView>,
-    concluded: Option<(HostId, Route)>,
 ) -> Option<(&'static str, String)> {
     if let Some(row) = answered_unheld(daemon, out) {
         let what = format!("{name} answered {row} on {kind} before its store held it");
         return Some((COMMIT_BEFORE_BROADCAST, what));
     }
-    for (&(other, other_name), was) in others.iter().zip(views) {
+    for &(other, other_name) in others {
         let now = daemon.presence().view(other);
-        if now.presence == was.presence {
-            continue;
-        }
-        let change = format!(
-            "{name} read {other_name} {:?} -> {:?} on {kind}",
-            was.presence, now.presence
-        );
-        let on = concluded
-            .filter(|(host, _)| *host == other)
-            .map(|(_, route)| route);
-        // No call in the net waits for a channel: calls are carried
-        // whenever their link is up.
-        if !change_prompted(&now, on, false) {
-            return Some((CHANGES_ON_A_CONCLUDED_ATTEMPT, change));
-        }
-        // Nor does any relay refuse one for the account's plan.
-        if !away_explained(&now, false) {
-            return Some((AWAY_ONLY_ON_PAYMENT_REFUSAL, change));
+        // No relay in the net refuses a host for the account's plan.
+        if !reads_by_links(&now, false) {
+            let what = format!(
+                "{name} read {other_name} {:?} over {:?} after {kind}",
+                now.presence, now.routes
+            );
+            return Some((PRESENCE_FROM_LINKS, what));
         }
     }
     None
@@ -1375,20 +1358,6 @@ impl Transition<'_> {
             for input in inputs {
                 let before = daemon.store().changes();
                 let kind = input.kind();
-                let views: Vec<_> = others
-                    .iter()
-                    .map(|&(other, _)| daemon.presence().view(other))
-                    .collect();
-                // An attempt whose link closed under it concludes on no
-                // route: the route went before it did.
-                let concluded = match &input {
-                    Input::AttemptConcluded { host, route, tried }
-                        if !matches!(tried, Tried::Failed(ChannelError::LinkClosed)) =>
-                    {
-                        Some((*host, *route))
-                    }
-                    _ => None,
-                };
                 let from = out.len();
                 daemon.step(input, &mut out);
                 if daemon.store().changes() != before
@@ -1399,7 +1368,7 @@ impl Transition<'_> {
                     ));
                 }
                 if broke.is_none() {
-                    broke = judge_step(daemon, &out[from..], kind, name, &others, views, concluded);
+                    broke = judge_step(daemon, &out[from..], kind, name, &others);
                 }
             }
             out
@@ -1496,18 +1465,15 @@ impl Transition<'_> {
             generation,
             agents: agents.clone(),
             replicas: home.join("replicas"),
-            drafts: home.join("drafts"),
-            trust: home.join("trust.json"),
             budget: StepBudget::UNLIMITED,
         };
         let entry = wire::HostEntry {
-            host_id: id.0.to_vec(),
-            name: plan.name.clone(),
             generation,
-            trust: wire::Trust::Trusted as i32,
-            presence: wire::Presence::Online as i32,
-            current: Some(true),
-            ..wire::HostEntry::default()
+            ..wire::HostEntry::trusted_host(
+                id.0,
+                plan.name.clone(),
+                wire::trusted::Reach::Online(wire::RouteKind::Unspecified as i32),
+            )
         };
         let trusted = plan.trusted.clone();
         let settings = plan.settings;
@@ -1537,12 +1503,8 @@ impl Transition<'_> {
                 step(daemon, Input::Tick { now_ms: now });
                 step(daemon, Input::Configure(settings));
                 step(daemon, Input::Entropy(entropy));
-                step(
-                    daemon,
-                    Input::TrustRead {
-                        store: daemon_core::trust::TrustStore::of_hosts(trusted),
-                    },
-                );
+                daemon.trust_for_test(daemon_core::trust::TrustStore::of_hosts(trusted));
+                step(daemon, Input::Started);
                 step(daemon, Input::OwnHost(Box::new(entry)));
                 let live: Vec<AgentId> = daemon
                     .store()
@@ -1773,7 +1735,7 @@ impl Transition<'_> {
         let served = CallId(server.next_call);
         let stream = matches!(
             request,
-            PeerRequest::Subscribe(_) | PeerRequest::SubscribeInventory
+            PeerRequest::SubscribeSession(_) | PeerRequest::SubscribeInventory
         );
         let silent = match request {
             PeerRequest::StopAgent(_) | PeerRequest::DeleteAgent(_) => Some(PeerReply::Done),
@@ -1963,48 +1925,6 @@ impl Transition<'_> {
                 Output::HangUp { call } => self.hang_up(h, call),
                 Output::Answer { call, response } => self.answered(h, call, response),
                 Output::EndCall { call, status } => self.ended(h, call, status),
-                Output::Attempt { host: to, route } => {
-                    let far = self.host_index(to);
-                    let lanes = [far.map(|far| Lane::Link(h, far)), Some(Lane::Local(h))];
-                    let in_flight: BTreeSet<Route> = lanes
-                        .iter()
-                        .flatten()
-                        .filter_map(|lane| self.w.lanes.get(lane))
-                        .flatten()
-                        .filter_map(|delivery| match delivery {
-                            Delivery::Host(_, Dbg(Input::AttemptConcluded { host, route, .. }))
-                                if *host == to =>
-                            {
-                                Some(*route)
-                            }
-                            _ => None,
-                        })
-                        .collect();
-                    if !attempt_not_doubled(&in_flight, route) {
-                        let what = format!(
-                            "{} asked for a second attempt at {} on {route:?}",
-                            self.name(h),
-                            far.map_or("a host it does not know", |far| self.name(far)),
-                        );
-                        self.fail(Failure::Broke(ONE_ATTEMPT_IN_FLIGHT, what));
-                    }
-                    let tried = match (route, far.and_then(|far| self.live_link(h, far))) {
-                        (Route::Direct(link), Some(live)) if link == live => Tried::Opened,
-                        _ => Tried::Failed(ChannelError::LinkClosed),
-                    };
-                    let lane = far.map_or(Lane::Local(h), |far| Lane::Link(h, far));
-                    self.push(
-                        lane,
-                        host(
-                            h,
-                            Input::AttemptConcluded {
-                                host: to,
-                                route,
-                                tried,
-                            },
-                        ),
-                    );
-                }
                 Output::DialAgent { agent } => match self.process_of(agent) {
                     Some(p) => self.push(Lane::Dial(p), Delivery::Dial(p)),
                     None => {
@@ -2016,9 +1936,21 @@ impl Transition<'_> {
                     }
                 },
                 Output::WriteControl { agent, frame } => self.write_control(h, agent, frame),
+                // The driver stops waiting: neither a verdict that comes
+                // later nor the connection's end reports the write.
+                Output::ForgetVerdict { agent, input_id } => {
+                    if let Some(p) = self.process_of(agent) {
+                        self.w.processes[p].written.remove(&input_id);
+                    }
+                }
                 Output::SpawnAgent { spec, .. } => self.spawn_process(h, *spec),
                 Output::Job { id, op } => {
                     self.push(Lane::Job(h, id), Delivery::Job(h, id, Dbg(op)));
+                }
+                // The driver's ring starts at the state; its word follows
+                // at once, as the driver feeds it to its own core.
+                Output::Checkpoint { .. } => {
+                    self.push(Lane::Local(h), host(h, Input::Checkpointed));
                 }
                 Output::Dump { reason } => {
                     let name = self.name(h).to_owned();
@@ -2034,8 +1966,7 @@ impl Transition<'_> {
                 | Output::CloseChannel { .. }
                 | Output::DropRoute { .. }
                 | Output::Dial { .. }
-                | Output::NextRoute { .. }
-                | Output::CloseLinks { .. }
+                | Output::DialThrough { .. }
                 | Output::LinkControl { .. }
                 | Output::SendFile { .. }
                 | Output::ForgetAgent { .. }
@@ -2128,11 +2059,10 @@ impl Transition<'_> {
             Job::Compare { .. } => JobResult::CompareFailed(GitRefusal::NotARepository),
             Job::MakeWorktree { .. } => JobResult::Failed("no repository here".to_owned()),
             // Nothing reads back what these write: the trust file, the
-            // store's main file, the core's checkpoint, blobs and drafts.
+            // store's main file, blobs and drafts.
             Job::Fsync { .. }
             | Job::WriteBlob { .. }
             | Job::CheckpointWal
-            | Job::Checkpoint { .. }
             | Job::TeardownHost { .. }
             | Job::RefreshToken { .. }
             | Job::SendPush(_)
@@ -2562,14 +2492,8 @@ fn rehome(output: Output, scratch: &Path, home: &Path) -> Output {
             spec,
         },
         // The core's checkpoint names the directory it was taken in, and
-        // nothing here reads the file back.
-        Output::Job {
-            id,
-            op: Job::Checkpoint { .. },
-        } => Output::Job {
-            id,
-            op: Job::Checkpoint { state: Vec::new() },
-        },
+        // nothing here reads the state back.
+        Output::Checkpoint { .. } => Output::Checkpoint { state: Vec::new() },
         other => other,
     }
 }
@@ -2602,6 +2526,7 @@ fn peer_create(
         given: request.name,
         branches: BTreeSet::new(),
         new_worktree: request.new_worktree,
+        recent: None,
         spec,
     })))
 }
@@ -2681,10 +2606,10 @@ pub fn wire_error(error: &CallError) -> wire::Error {
 
 fn peer_request(request: &PeerRequest) -> &'static str {
     match request {
-        PeerRequest::Subscribe(_) => "Subscribe",
+        PeerRequest::SubscribeSession(_) => "SubscribeSession",
         PeerRequest::SubscribeInventory => "SubscribeInventory",
-        PeerRequest::Fetch(_) => "Fetch",
-        PeerRequest::Get(_) => "Get",
+        PeerRequest::ListItems(_) => "ListItems",
+        PeerRequest::GetItem(_) => "GetItem",
         PeerRequest::SendInput(_) => "SendInput",
         PeerRequest::CreateAgent(_) => "CreateAgent",
         PeerRequest::RenameAgent(_) => "RenameAgent",
@@ -2694,7 +2619,7 @@ fn peer_request(request: &PeerRequest) -> &'static str {
         PeerRequest::SendMessage(_) => "SendMessage",
         PeerRequest::PutBlob(_) => "PutBlob",
         PeerRequest::GetBlob(_) => "GetBlob",
-        PeerRequest::Diff(_) => "Diff",
+        PeerRequest::GetDiff(_) => "GetDiff",
         PeerRequest::GetCatalogue(_) => "GetCatalogue",
         PeerRequest::ListRepositories(_) => "ListRepositories",
         PeerRequest::Dump(_) => "Dump",
@@ -2721,7 +2646,6 @@ fn timer_kind(id: &TimerId) -> &'static str {
         TimerId::Lane(_) => "Lane",
         TimerId::Notifications => "Notifications",
         TimerId::Checkpoint => "Checkpoint",
-        TimerId::Retry(_) => "Retry",
         TimerId::Refresh(_) => "Refresh",
         TimerId::Follow(_) => "Follow",
         TimerId::Source(..) => "Source",
@@ -2758,7 +2682,6 @@ fn job_kind(job: &Job) -> &'static str {
         Job::Fsync { .. } => "Fsync",
         Job::TeardownHost { .. } => "TeardownHost",
         Job::CheckpointWal => "CheckpointWal",
-        Job::Checkpoint { .. } => "Checkpoint",
         Job::WriteBlob { .. } => "WriteBlob",
         Job::RefreshToken { .. } => "RefreshToken",
         Job::SendPush(_) => "SendPush",

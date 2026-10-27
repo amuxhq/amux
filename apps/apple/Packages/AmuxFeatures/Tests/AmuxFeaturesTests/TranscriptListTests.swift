@@ -72,8 +72,7 @@ final class TranscriptListTests: XCTestCase {
         list.view.layoutIfNeeded()
         let alone = list.view.layoutAttributesForItem(at: IndexPath(item: 1, section: 0))!.frame.height
 
-        chat.land(step("s2", 2))
-        model.woke()
+        model.apply(chat.land(step("s2", 2)))
         list.update(
             items: model.ids.map { .row($0) }, notices: [], environment: environment(),
             revision: model.revision, toNewest: model.toNewest, insets: EdgeInsets())
@@ -185,54 +184,43 @@ private func step(_ id: String, _ order: UInt64) -> Row {
 private final class StubChat: ChatSource, @unchecked Sendable {
     private(set) var ordered: [Row]
     let hasOlder: Bool
-    private var landed: [String] = []
 
     init(rows: [Row], hasOlder: Bool) {
         ordered = rows
         self.hasOlder = hasOlder
     }
 
-    /// A row arriving after the newest, as the next wake reports it.
-    func land(_ row: Row) {
+    /// A row arriving after the newest, as the delta that hands it over.
+    func land(_ row: Row) -> ChatDelta {
         ordered.append(row)
-        landed.append(row.id)
+        return ChatDelta(
+            chat: 0, rows: [row], ask: nil, frame: nil, keys: .edges(above: [row.id], below: [], dropped: 0),
+            overview: nil, settings: nil)
     }
 
-    func keys() -> [String] { ordered.map(\.id) }
-    func keys(above newest: String) -> [String]? {
-        ordered.firstIndex { $0.id == newest }.map { ordered[($0 + 1)...].map(\.id) }
+    func opening() -> ChatDelta {
+        ChatDelta(
+            chat: 0, rows: [], ask: AskMoved(card: nil), frame: frame(), keys: .reload(ordered.map(\.id)),
+            overview: nil, settings: nil)
     }
-    func keys(below oldest: String) -> [String]? {
-        ordered.firstIndex { $0.id == oldest }.map { ordered[..<$0].map(\.id) }
-    }
-    func oldestKey() -> String? { ordered.first?.id }
+
     func follow(_ following: Bool) {}
-    func rows(for keys: [String], options: RowOptions?) -> [Row] {
+    func rows(for keys: [String]) -> [Row] {
         let wanted = Set(keys)
         return ordered.filter { wanted.contains($0.id) }
     }
-    func askCard() -> AskCard? { nil }
-    func overview() -> Overview? { nil }
-    func settings() -> SettingsView? { nil }
-    func frame() -> ChatFrame? {
+    private func frame() -> ChatFrame {
         ChatFrame(
             agent: AgentKey(host: [1], agent: [2]), name: "a", kind: .claudeSdk, phase: .idle,
             composer: ComposerView(mode: .send, switchedAway: false, activity: nil), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live, caughtUp: true,
             hasOlder: hasOlder, arrivalsHeld: false, queue: [], underway: [], refused: [], askInput: nil,
             context: nil, ended: nil, git: nil, signIn: nil, waiting: nil)
     }
-    func takeChanges() -> ChatChanges {
-        defer { landed = [] }
-        return ChatChanges(keys: landed, reloaded: false, session: false)
-    }
     func send(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> { .failure(RuntimeFailure("stub")) }
     func answer(_ ask: String, choice: Int, note: String?) async -> ActOutcome? { nil }
     func answer(_ ask: String, responses: [QuestionResponse]) async -> ActOutcome? { nil }
     func replyInstead(_ ask: String, text: String, soFar: [QuestionResponse]) async -> ActOutcome? { nil }
-    func toggleRun(_ member: String, open: [String]) -> [String] {
-        open.contains(member) ? open.filter { $0 != member } : open + [member]
-    }
-    func keepOpenRuns(_ open: [String]) -> [String] { open }
+    func toggleRun(_ member: String) {}
     func answerForm(_ ask: String, values: [FormValue]) async -> ActOutcome? { nil }
     func withdraw(_ input: [UInt8]) async -> ActOutcome? { nil }
     func draft(of input: [UInt8]) -> Draft? { nil }

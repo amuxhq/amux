@@ -1,0 +1,164 @@
+syntax = "proto3";
+
+package amux.v1;
+
+import "amux/v1/dump.proto";
+import "amux/v1/installation_service.proto";
+import "amux/v1/inventory.proto";
+import "amux/v1/pairing_service.proto";
+import "amux/v1/records.proto";
+
+// One profile's administration: its account connection, its pairing
+// windows, pairings it begins, the hosts it trusts, and its diagnostic dump.
+
+// Served on a profile's socket beside AgentService and SessionService, and
+// never on an agent's tools socket or a link. The socket names the profile.
+// Not retried, as the front door.
+service ProfileAdminService {
+  rpc SignOut(SignOutRequest) returns (Profile);
+  rpc PauseProfile(PauseProfileRequest) returns (Profile);
+  rpc ResumeProfile(ResumeProfileRequest) returns (Profile);
+  rpc StartPairing(StartPairingRequest) returns (PairingWindow);
+  rpc GetPairingStatus(GetPairingStatusRequest) returns (PairingStatus);
+  rpc CancelPairing(CancelPairingRequest) returns (CancelPairingResponse);
+  rpc BeginPair(BeginPairRequest) returns (PendingPair);
+  rpc ConfirmPair(ConfirmPairRequest) returns (Peer);
+  rpc AbandonPair(AbandonPairRequest) returns (AbandonPairResponse);
+  rpc GetDeviceIdentity(GetDeviceIdentityRequest) returns (DeviceIdentity);
+  rpc TrustSshPeer(TrustSshPeerRequest) returns (TrustSshPeerResponse);
+  rpc ListPeers(ListPeersRequest) returns (ListPeersResponse);
+  rpc GetPeer(GetPeerRequest) returns (Peer);
+  rpc Unpair(UnpairRequest) returns (Peer);
+  // The one bundle format: this host's state, with the parts paired hosts
+  // hold for the agents they run.
+  rpc Dump(DumpRequest) returns (DumpResponse);
+}
+
+message SignOutRequest {}
+
+message PauseProfileRequest {}
+
+message ResumeProfileRequest {}
+
+message StartPairingRequest {
+  oneof method {
+    // A one-shot PIN the daemon generates.
+    Empty pin = 1;
+    // A one-shot secret for a QR code.
+    Empty qr = 2;
+    // An operator-chosen reusable PIN for unattended demos: the window is
+    // neither consumed by success nor locked out by failures.
+    string demo_pin = 3;
+  }
+  // How long the window stays open; absent is the daemon's default for
+  // the method.
+  optional uint64 ttl_seconds = 4;
+}
+
+message PairingWindow {
+  PairingIdentity identity = 1;
+  uint64 ttl_seconds = 2;
+  repeated string addrs = 3;
+  optional string cloud_url = 4;
+  oneof secret {
+    string pin = 5;
+    bytes qr_secret = 6;
+  }
+}
+
+message GetPairingStatusRequest {}
+
+message PairingStatus {
+  bool active = 1;
+  // Too many wrong secrets closed the last window; a new one is needed.
+  bool locked_out = 2;
+}
+
+message BeginPairRequest {
+  bytes host_id = 1;
+  oneof secret {
+    string pin = 2;
+    bytes qr_secret = 3;
+  }
+  repeated string addrs = 4;
+}
+
+message PendingPair {
+  bytes token = 1;
+  PairingIdentity peer = 2;
+  RouteKind via = 3;
+}
+
+message CancelPairingRequest {}
+
+message CancelPairingResponse {}
+
+message ConfirmPairRequest {
+  // PendingPair.token.
+  bytes token = 1;
+}
+
+message AbandonPairRequest {
+  // PendingPair.token.
+  bytes token = 1;
+}
+
+message AbandonPairResponse {}
+
+// SSH has already authenticated its peer outside the secret-based pairing
+// protocol, so its identity commit is a separate, SSH-only operation.
+message TrustSshPeerRequest {
+  PairingIdentity peer = 1;
+  SshTarget ssh_target = 2;
+}
+
+message TrustSshPeerResponse {}
+
+message GetPeerRequest {
+  HostRef peer = 1;
+}
+
+message UnpairRequest {
+  HostRef peer = 1;
+  string reason = 2;
+}
+
+// An SSH destination; `amux relay` there joins the profile whose id is the
+// peer's host id.
+message SshTarget {
+  string target = 1;
+}
+
+message PeerReachability {
+  oneof kind {
+    Empty cloud = 1;
+    SshTarget ssh_target = 2;
+    DirectReachability direct = 3;
+  }
+}
+
+message DirectReachability {
+  repeated string addrs = 1;
+}
+
+message Peer {
+  bytes host_id = 1;
+  string name = 2;
+  bytes pubkey = 3;
+  int64 paired_at_ms = 4;
+  repeated PeerReachability reachabilities = 5;
+}
+
+message GetDeviceIdentityRequest {}
+
+message DeviceIdentity {
+  bytes host_id = 1;
+  string name = 2;
+  bytes pubkey = 3;
+}
+
+message ListPeersRequest {}
+
+message ListPeersResponse {
+  repeated Peer peers = 1;
+}

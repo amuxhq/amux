@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect::<Vec<_>>()
         .as_slice()
     {
-        ["hooks", "claude"] => {
+        ["internal", "hook", "claude"] => {
             let socket = std::env::var_os(claude::hooks::HOOK_SOCKET_ENV)
                 .map(PathBuf::from)
                 .ok_or("CLAUDE_HOOK_SOCKET is not set")?;
@@ -22,7 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             claude::hooks::forward_from_env(&payload, &socket)?;
             Ok(())
         }
-        ["mcp", dir] => {
+        ["internal", "mcp", dir] => {
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()?;

@@ -128,31 +128,15 @@ impl Daemon {
         let key = AgentKey::new(self.store.own_host(), agent.0);
         let dir = self.journal_dir(agent);
         let cursor = self.store.cursor(&key)?;
-        let mut reader = journal::Reader::new(&dir, cursor);
-        let mut batch = reader.read_up_to(INGEST_BATCH)?;
-        *seen = batch.seen;
-        if batch.frames.is_empty() {
-            // Nothing past the cursor may mean the cursor is past the
-            // journal: the store reached the drive after committing frames
-            // the unsynced journal then lost to a power cut. The agent
-            // re-derives from the last whole frame, so that is where the
-            // cursor goes; revisions keep counting up, so what it writes
-            // again is new to every subscriber.
-            let end = journal::end(&dir)?;
-            if end < cursor {
-                tracing::warn!(
-                    ?agent,
-                    cursor,
-                    end,
-                    "the journal ends below the cursor; rewinding"
-                );
-                self.store.rewind_cursor(&key, end)?;
-                self.rewound(agent, end);
-                reader.seek(end);
-                batch = reader.read_up_to(INGEST_BATCH)?;
-                *seen = (*seen).max(end).max(batch.seen);
-            }
-        }
+        // The row's cursor rules: a commit the store refused left the
+        // reader past it.
+        let held = self.journal_readers.remove(&agent);
+        let opened = held.is_none();
+        let mut reader = held.unwrap_or_else(|| journal::Reader::new(&dir, cursor));
+        reader.seek(cursor);
+        let read = self.read_batch(&mut reader, agent, &key, cursor, opened, seen);
+        self.journal_readers.insert(agent, reader);
+        let batch = read?;
         // A torn frame in the newest segment is a write still under way:
         // the journal has not ended yet, and its Nudge will come.
         let at_end =
@@ -214,6 +198,52 @@ impl Daemon {
         Ok(report)
     }
 
+    /// One batch from the cursor, rewinding the row's cursor first when
+    /// the journal shows it lost its tail. `opened` says the reader is new:
+    /// the first read since the daemon started, or since the agent's last
+    /// incarnation ended.
+    fn read_batch(
+        &mut self,
+        reader: &mut journal::Reader,
+        agent: AgentId,
+        key: &AgentKey,
+        cursor: u64,
+        opened: bool,
+        seen: &mut u64,
+    ) -> Result<journal::Batch, IngestError> {
+        let mut batch = reader.read_up_to(INGEST_BATCH)?;
+        *seen = batch.seen;
+        if batch.frames.is_empty() && (opened || batch.seen < cursor || batch.torn.is_some()) {
+            // The journal ending below the cursor, or torn bytes at it, may
+            // mean the cursor is past the journal's last whole frame: the
+            // store reached the drive after committing frames the unsynced
+            // journal then lost to a power cut, which cuts the file short or
+            // leaves it zero-filled. A zero-filled tail ending exactly at the
+            // cursor shows no sign at all, so a reader's first read checks
+            // too: a power cut is always followed by one. The agent
+            // re-derives from the last whole frame, so that is where the
+            // cursor goes; revisions keep counting up, so what it writes
+            // again is new to every subscriber. Finding that frame decodes
+            // the newest segment, so it is done only then and not on every
+            // empty read.
+            let end = journal::end(&self.journal_dir(agent))?;
+            if end < cursor {
+                tracing::warn!(
+                    ?agent,
+                    cursor,
+                    end,
+                    "the journal ends below the cursor; rewinding"
+                );
+                self.store.rewind_cursor(key, end)?;
+                self.rewound(agent, end);
+                reader.seek(end);
+                batch = reader.read_up_to(INGEST_BATCH)?;
+                *seen = (*seen).max(end).max(batch.seen);
+            }
+        }
+        Ok(batch)
+    }
+
     /// Sets the agent's CaughtUp marker and answers it to the agent's
     /// streams: a stream opened since reads it with its cut.
     pub(crate) fn announce_caught_up(
@@ -230,6 +260,15 @@ impl Daemon {
         });
         self.publish_session(key, Arc::new(event(caught_up)), out);
         Ok(())
+    }
+
+    /// The agent's journal is about to be laid out again under its
+    /// directory, as a replay does before each step: the reader held open
+    /// on the old files is dropped, and the next read opens what is there
+    /// then. A live journal is only ever appended to and reclaimed, which
+    /// the held reader follows on its own.
+    pub fn journal_relaid(&mut self, agent: AgentId) {
+        self.journal_readers.remove(&agent);
     }
 
     /// The agent's journal, where this core reads it.
@@ -344,7 +383,7 @@ mod tests {
                 .append(&item(n))
                 .expect("the journal takes a step");
         }
-        let subscribe = ClientRequest::Subscribe {
+        let subscribe = ClientRequest::SubscribeSession {
             agent_id: AGENT.0.to_vec(),
             tail: 10,
         };
@@ -463,7 +502,7 @@ mod tests {
             &mut rig.daemon,
             Input::ClientCall {
                 call,
-                request: ClientRequest::Subscribe {
+                request: ClientRequest::SubscribeSession {
                     agent_id: AGENT.0.to_vec(),
                     tail: 10,
                 },
@@ -580,15 +619,10 @@ mod tests {
         assert_eq!(dumps_in(&out), Vec::<&crate::DumpReason>::new());
     }
 
-    /// The checkpoint's write job a step asked for.
-    fn checkpoint_job(out: &[Output]) -> Option<crate::JobId> {
-        out.iter().find_map(|output| match output {
-            Output::Job {
-                id,
-                op: crate::Job::Checkpoint { .. },
-            } => Some(*id),
-            _ => None,
-        })
+    /// Whether a step handed the driver the serialized core.
+    fn serialized(out: &[Output]) -> bool {
+        out.iter()
+            .any(|output| matches!(output, Output::Checkpoint { .. }))
     }
 
     /// The checkpoint's WAL job a step asked for.
@@ -607,7 +641,7 @@ mod tests {
             daemon,
             Input::ClientCall {
                 call,
-                request: ClientRequest::Subscribe {
+                request: ClientRequest::SubscribeSession {
                     agent_id: AGENT.0.to_vec(),
                     tail: 10,
                 },
@@ -616,7 +650,7 @@ mod tests {
     }
 
     #[test]
-    fn an_ingest_waits_out_the_wal_job_and_commits_go_ahead_while_the_state_is_written() {
+    fn an_ingest_waits_out_the_wal_job_and_lands_at_the_drivers_word() {
         let mut rig = rig();
         let call = CallId(1);
         subscribed(&mut rig.daemon, call);
@@ -657,17 +691,22 @@ mod tests {
                 result: crate::payload::JobResult::Done,
             },
         );
-        let job = checkpoint_job(&copied).expect("the WAL job's end serializes the core");
+        assert!(serialized(&copied), "the WAL job's end serializes the core");
         assert_eq!(answered(&copied, call), Vec::<String>::new());
+        assert!(
+            rig.daemon.checkpoints().taking(),
+            "until the driver says its ring starts at that state"
+        );
 
-        // It lands at the next step, and commits go ahead while the state
-        // is written, making the next checkpoint due.
-        let landed = step(&mut rig.daemon, Input::Tick { now_ms: 1 });
+        // It lands at the driver's word, the next step, and the commit
+        // makes the next checkpoint due; commits go ahead from there.
+        let landed = step(&mut rig.daemon, Input::Checkpointed);
         assert_eq!(answered(&landed, call), vec!["k001"]);
+        assert!(!rig.daemon.checkpoints().taking());
         assert!(
             landed.contains(&Output::ArmTimer {
                 id: TimerId::Checkpoint,
-                at_ms: 1 + interval,
+                at_ms: interval,
             }),
             "the commit makes the next checkpoint due: {landed:?}"
         );
@@ -676,29 +715,6 @@ mod tests {
             .expect("the journal takes a step");
         let during = step(&mut rig.daemon, Input::Nudge { agent: AGENT });
         assert_eq!(answered(&during, call), vec!["k002"]);
-        let again = step(
-            &mut rig.daemon,
-            Input::Timer {
-                id: TimerId::Checkpoint,
-            },
-        );
-        assert_eq!(wal_job(&again), None, "one checkpoint at a time");
-        assert!(
-            again.contains(&Output::ArmTimer {
-                id: TimerId::Checkpoint,
-                at_ms: 1 + interval,
-            }),
-            "the next waits an interval on: {again:?}"
-        );
-
-        step(
-            &mut rig.daemon,
-            Input::JobDone {
-                job,
-                result: crate::payload::JobResult::Done,
-            },
-        );
-        assert!(!rig.daemon.checkpoints().taking());
         assert_eq!(dumps_in(&during), Vec::<&crate::DumpReason>::new());
     }
 }

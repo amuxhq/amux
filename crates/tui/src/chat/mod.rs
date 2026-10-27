@@ -2020,7 +2020,7 @@ impl ChatView {
         let name = state.agent().name.clone();
         let host = state
             .host()
-            .map(|host| host.name.clone())
+            .map(|host| host.name().to_owned())
             .unwrap_or_else(|| "its host".into());
 
         let overview = self.overview(state);
@@ -2844,7 +2844,7 @@ impl ChatView {
     ) -> (Line<'static>, HeaderSpots) {
         let host = state
             .host()
-            .map(|host| host.name.clone())
+            .map(|host| host.name().to_owned())
             .unwrap_or_default();
         // The right side, built first so the left knows its room.
         let mut right: Vec<Span<'static>> = Vec::new();

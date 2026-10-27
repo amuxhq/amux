@@ -42,7 +42,7 @@ async fn working(runtime: &node::ProfileRuntime, id: uuid::Uuid) -> Result<(), S
 #[tokio::test(flavor = "multi_thread")]
 async fn a_store_from_before_the_release_schema_stops_the_daemon_and_is_kept() {
     let install = Install::new();
-    let host = node::host_id(&install.profile_dir()).unwrap();
+    let host = install.profile;
     let path = install.profile_dir().join(node::STORE);
     {
         // The history a store written before the release recorded: seven
@@ -78,7 +78,7 @@ async fn a_store_from_before_the_release_schema_stops_the_daemon_and_is_kept() {
         matches!(
             error,
             StartError::Store {
-                error: store::OpenError::EditedMigration { id: 1, .. },
+                error: store::OpenError::OtherHistory { id: 1, .. },
                 ..
             }
         ),
@@ -181,7 +181,7 @@ async fn the_generation_bumps_only_after_an_unclean_reboot() {
 #[tokio::test(flavor = "multi_thread")]
 async fn startup_prepares_after_looking_and_writes_only_after_go() {
     let install = Install::new();
-    let host = node::host_id(&install.profile_dir()).unwrap();
+    let host = install.profile;
     let store_path = install.profile_dir().join(node::STORE);
 
     // An agent that ran while no daemon was up: a live row, a directory with
@@ -332,7 +332,7 @@ async fn startup_prepares_after_looking_and_writes_only_after_go() {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_ingested_cause_survives_a_daemon_that_died_before_marking() {
     let install = Install::new();
-    let host = node::host_id(&install.profile_dir()).unwrap();
+    let host = install.profile;
     let id = uuid::Uuid::new_v4();
     let key = AgentKey::new(host.as_bytes().to_vec(), id.as_bytes().to_vec());
     let mut writer =
@@ -424,6 +424,16 @@ async fn spawn_writes_spec_one_and_starts_the_agent_process() {
         listens(&dir.join(agent_dir::TOOLS_SOCK)).await,
         "the daemon listens on the agent's tools socket"
     );
+    // The tools socket is the agent's client surface and never its
+    // profile's administration: an agent cannot pair, unpair or sign its
+    // profile out.
+    let refused = wire::profile_admin_service_client::ProfileAdminServiceClient::new(
+        local_channel(&dir.join(agent_dir::TOOLS_SOCK)).await,
+    )
+    .list_peers(wire::ListPeersRequest {})
+    .await
+    .expect_err("no administration on an agent's tools socket");
+    assert_eq!(refused.code(), tonic::Code::Unimplemented);
 
     let spec = spec(&dir, 1);
     assert_eq!(spec.agent_id, id.as_bytes().to_vec());
@@ -777,9 +787,9 @@ async fn delete_aborts_first_and_its_children_here_follow() {
     }
     for id in [parent, child, bystander] {
         runtime
-            .save_draft(
+            .update_draft(
                 id.as_bytes(),
-                &wire::ComposerDraft {
+                &wire::Draft {
                     text: "unsent".into(),
                     attachments: Vec::new(),
                 },
@@ -1502,7 +1512,7 @@ fn listing(
 /// answer through it; once it no longer trusts that host, nothing.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_host_lists_where_its_agents_ran_and_its_repositories_for_trusted_hosts() {
-    use wire::client_service_server::ClientService as _;
+    use wire::agent_service_server::AgentService as _;
 
     let desk = Install::new();
     let roots = desk.path("code");

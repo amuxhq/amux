@@ -162,6 +162,19 @@ pub struct Launch {
     pub cores: Option<crate::Cores>,
 }
 
+/// The bytes of stored rows a profile keeps for the agents this host runs;
+/// an agent's directory and blobs go with its row. Basis: a generous multiple
+/// of the largest transcripts seen so far, pending measurement against
+/// typical sizes.
+pub const OWN_BUDGET_BYTES: u64 = 2048 << 20;
+/// The bytes of rows replicated from other hosts a runtime keeps. Basis: the
+/// bound the old client cache had.
+pub const REPLICA_BUDGET_BYTES: u64 = 256 << 20;
+/// The bytes of blobs fetched from other hosts a runtime keeps, evicted
+/// least recently read first. Basis: twice the row budget, since images
+/// dominate what is fetched; to be measured.
+pub const REPLICA_BLOB_BUDGET_BYTES: u64 = 512 << 20;
+
 impl Default for Launch {
     fn default() -> Self {
         Self {
@@ -180,14 +193,13 @@ impl Default for Launch {
             inventory_capacity: 1024,
             delivery_retry_ms: 30_000,
             push_retry_ms: 60_000,
-            own_budget_bytes: settings::RetentionSettings::default().own_budget_mib << 20,
+            own_budget_bytes: OWN_BUDGET_BYTES,
             // A few MiB: a small overrun costs a small trim.
             retention_chunk_bytes: 4 << 20,
             tail_rows: TAIL_ROWS,
             retention_interval_ms: 10 * 60_000,
-            replica_budget_bytes: settings::RetentionSettings::default().replica_rows_mib << 20,
-            replica_blob_budget_bytes: settings::RetentionSettings::default().replica_blobs_mib
-                << 20,
+            replica_budget_bytes: REPLICA_BUDGET_BYTES,
+            replica_blob_budget_bytes: REPLICA_BLOB_BUDGET_BYTES,
             source_backoff_ms: 1_000,
             source_backoff_max_ms: 30_000,
             repository_roots: Vec::new(),
@@ -382,7 +394,6 @@ struct Connected {
 
 pub struct ProfileRuntime {
     profile: ProfileId,
-    host: Uuid,
     /// The installation's generation, carried on this host's entry.
     generation: u64,
     dir: PathBuf,
@@ -417,6 +428,7 @@ pub struct ProfileRuntime {
     pub(crate) retention: watch::Sender<Retention>,
     pub(crate) reports: PathBuf,
     pub(crate) daemon_log: Option<PathBuf>,
+    pub(crate) supervisor_log: Option<PathBuf>,
     worktrees: Arc<dyn crate::worktree::MakeWorktree>,
     pub(crate) me: Weak<ProfileRuntime>,
     /// The network edge, once the profile is in service.
@@ -427,8 +439,6 @@ pub struct ProfileRuntime {
     pub(crate) replica_blobs: Mutex<Option<store::BlobLru>>,
     /// The host set as the core last published it on the inventory.
     pub(crate) hosts: Mutex<Vec<wire::HostEntry>>,
-    /// The directories this profile's agents were started in.
-    recent: Arc<Mutex<crate::repositories::Recent>>,
     analytics: analytics::Analytics,
     /// Turns ended since the last check-in.
     turns: crate::telemetry::Turns,
@@ -436,8 +446,9 @@ pub struct ProfileRuntime {
     offers: crate::offers::Offers,
 }
 
-/// A write waiting for its verdict: its number, and where the verdict goes.
-type Waiting = (u64, oneshot::Sender<SendInputResponse>);
+/// A write waiting for its verdict: its number, and where the verdict
+/// goes, or none once no verdict will be reported for the write.
+type Waiting = (u64, oneshot::Sender<Option<SendInputResponse>>);
 
 pub(crate) struct AgentHandle {
     dir: PathBuf,
@@ -521,18 +532,32 @@ impl AgentHandle {
     }
 
     /// Waits for the verdict on `input_id`, in place of any write of it
-    /// still waiting: the number of this write.
+    /// still waiting, which is told it will get none: the number of this
+    /// write.
     pub(crate) fn expect_reply(
         &self,
         input_id: Vec<u8>,
-        reply: oneshot::Sender<SendInputResponse>,
+        reply: oneshot::Sender<Option<SendInputResponse>>,
     ) -> u64 {
         let write = self.next_write.fetch_add(1, Ordering::SeqCst);
-        self.replies
+        let replaced = self
+            .replies
             .lock()
             .unwrap()
             .insert(input_id, (write, reply));
+        if let Some((_, replaced)) = replaced {
+            let _ = replaced.send(None);
+        }
         write
+    }
+
+    /// Tells the write waiting for the verdict on `input_id` that it will
+    /// get none.
+    fn give_up_reply(&self, input_id: &[u8]) {
+        let waiting = self.replies.lock().unwrap().remove(input_id);
+        if let Some((_, waiting)) = waiting {
+            let _ = waiting.send(None);
+        }
     }
 
     /// Stops waiting for the verdict on `write`, unless a later write of
@@ -545,16 +570,6 @@ impl AgentHandle {
         {
             replies.remove(input_id);
         }
-    }
-
-    /// Whether a later write of the input took the place of `write`, rather
-    /// than the connection ending.
-    fn superseded(&self, input_id: &[u8], write: u64) -> bool {
-        self.replies
-            .lock()
-            .unwrap()
-            .get(input_id)
-            .is_some_and(|(waiting, _)| *waiting != write)
     }
 
     pub(crate) fn expect_dump(&self, dump_id: Vec<u8>, part: oneshot::Sender<DumpPart>) {
@@ -620,7 +635,6 @@ impl Drop for ProfileRuntime {
 /// What a profile runtime is made of.
 pub struct Profile {
     pub profile: ProfileId,
-    pub host: Uuid,
     /// The installation's generation as of this run.
     pub generation: u64,
     /// The profile's directory.
@@ -634,6 +648,8 @@ pub struct Profile {
     pub reports: PathBuf,
     /// The daemon's own log, which a dump includes.
     pub daemon_log: Option<PathBuf>,
+    /// Its supervisor's log, which a dump includes too, when it has one.
+    pub supervisor_log: Option<PathBuf>,
     /// Where the profile records product analytics.
     pub analytics: analytics::Analytics,
     /// What makes the worktree an agent asked to start in one starts in.
@@ -646,7 +662,6 @@ impl ProfileRuntime {
     pub fn open(profile: Profile) -> Arc<Self> {
         let Profile {
             profile,
-            host,
             generation,
             dir,
             store,
@@ -655,6 +670,7 @@ impl ProfileRuntime {
             push,
             reports,
             daemon_log,
+            supervisor_log,
             analytics,
             worktrees,
         } = profile;
@@ -662,14 +678,11 @@ impl ProfileRuntime {
             generation,
             agents: dir.join(AGENTS),
             replicas: dir.join(crate::install::REPLICAS),
-            drafts: dir.join(crate::drafts::DRAFTS_FILE),
-            trust: crate::trust::trust_path(&dir),
             budget: launch.step_budget,
         };
         let mut core = None;
         let runtime = Arc::new_cyclic(|me| Self {
             profile,
-            host,
             generation,
             clock,
             driver: {
@@ -696,13 +709,13 @@ impl ProfileRuntime {
             retention: watch::Sender::new(Retention::default()),
             reports,
             daemon_log,
+            supervisor_log,
             worktrees,
             me: me.clone(),
             edge: std::sync::OnceLock::new(),
             replicas: Mutex::new(crate::replicas::Replicas::default()),
             replica_blobs: Mutex::new(None),
             hosts: Mutex::new(Vec::new()),
-            recent: Arc::new(Mutex::new(crate::repositories::Recent::load(&dir))),
             offers: crate::offers::Offers::load(&dir),
             dir,
             analytics,
@@ -724,6 +737,7 @@ impl ProfileRuntime {
         }
         let edge = crate::edge::Edge::start(
             &self.dir,
+            self.profile,
             options,
             self.clock.clone(),
             Arc::downgrade(self),
@@ -761,8 +775,9 @@ impl ProfileRuntime {
         self.turns.take()
     }
 
+    /// The profile's host id, the one its peers know it by: its own id.
     pub fn host(&self) -> Uuid {
-        self.host
+        self.profile
     }
 
     /// The installation's generation as of this run's start.
@@ -868,7 +883,7 @@ impl ProfileRuntime {
     }
 
     pub(crate) fn key(&self, id: AgentId) -> AgentKey {
-        AgentKey::new(self.host.as_bytes().to_vec(), id.as_bytes().to_vec())
+        AgentKey::new(self.host().as_bytes().to_vec(), id.as_bytes().to_vec())
     }
 
     /// The inventory row for an agent.
@@ -956,7 +971,7 @@ impl ProfileRuntime {
             16 => Uuid::from_slice(&request.agent_id).expect("sixteen bytes"),
             n => return Err(RegistryError::BadId(n)),
         };
-        if self.target_host(&request)? != self.host {
+        if self.target_host(&request)? != self.host() {
             return Err(RegistryError::OtherHost);
         }
         let Some(agent) = &request.agent else {
@@ -985,7 +1000,7 @@ impl ProfileRuntime {
         }
         let parent = match caller {
             Some(caller) => Some(AgentRef {
-                host_id: self.host.as_bytes().to_vec(),
+                host_id: self.host().as_bytes().to_vec(),
                 agent_id: caller.as_bytes().to_vec(),
             }),
             None => request.parent.clone(),
@@ -1018,23 +1033,21 @@ impl ProfileRuntime {
                 base_branch: None,
             },
         );
-        let chosen = request.cwd.clone();
+        let recent = Path::new(&request.cwd)
+            .canonicalize()
+            .ok()
+            .and_then(|path| path.to_str().map(str::to_owned));
         let create = daemon_core::Create {
             agent: core_agent(id),
             cwd: request.cwd,
             given,
             branches: branches.into_iter().collect(),
             new_worktree: request.new_worktree,
+            recent,
             spec,
         };
-        let created = self
-            .registry_row(id, ClientRequest::CreateAgent(Box::new(create)))
-            .await?;
-        self.recent
-            .lock()
-            .unwrap()
-            .record(Path::new(&chosen), self.clock.now_ms());
-        Ok(created)
+        self.registry_row(id, ClientRequest::CreateAgent(Box::new(create)))
+            .await
     }
 
     /// Where this host offers to start an agent: see
@@ -1045,9 +1058,18 @@ impl ProfileRuntime {
         limit: u32,
     ) -> wire::ListRepositoriesResponse {
         let roots = self.launch().repository_roots;
-        let recent = self.recent.clone();
+        let recent = self
+            .driver()
+            .read(|store| store.recent_directories())
+            .await
+            .and_then(|read| {
+                read.inspect_err(
+                    |error| tracing::warn!(%error, "cannot read the recent directories"),
+                )
+                .ok()
+            })
+            .unwrap_or_default();
         tokio::task::spawn_blocking(move || {
-            let recent = recent.lock().unwrap();
             crate::repositories::list(&roots, &recent, query.as_deref(), limit)
         })
         .await
@@ -1055,21 +1077,21 @@ impl ProfileRuntime {
     }
 
     /// An agent's unsent draft, as this machine's clients last saved it.
-    pub async fn draft(&self, agent_id: &[u8]) -> wire::ComposerDraft {
+    pub async fn draft(&self, agent_id: &[u8]) -> wire::Draft {
         let request = ClientRequest::GetDraft {
             agent_id: agent_id.to_vec(),
         };
         let mut answers = self.driver().call(Ask::Ready(request), 1).await;
         match answers.next().await {
             Some(Delivered::Answer(Response::Draft(draft))) => draft,
-            _ => wire::ComposerDraft::default(),
+            _ => wire::Draft::default(),
         }
     }
 
     /// Keeps an agent's unsent draft for this machine's clients; an empty
     /// one forgets it.
-    pub async fn save_draft(&self, agent_id: &[u8], draft: &wire::ComposerDraft) {
-        let request = ClientRequest::SaveDraft {
+    pub async fn update_draft(&self, agent_id: &[u8], draft: &wire::Draft) {
+        let request = ClientRequest::UpdateDraft {
             agent_id: agent_id.to_vec(),
             draft: draft.clone(),
         };
@@ -1086,7 +1108,7 @@ impl ProfileRuntime {
                 Uuid::from_slice(host).map_err(|_| RegistryError::BadId(host.len()))
             }
             Some(Of::Name(name)) if !name.is_empty() => Ok(self.resolve_host(name)?),
-            _ => Ok(self.host),
+            _ => Ok(self.host()),
         }
     }
 
@@ -1102,10 +1124,13 @@ impl ProfileRuntime {
         // A host that announced which kinds it runs is not asked to start
         // another: a phone runs none.
         if let Some(entry) = self.host_entry_of(host)
-            && let Some(capabilities) = &entry.capabilities
+            && let Some(capabilities) = entry
+                .host
+                .as_ref()
+                .and_then(|host| host.capabilities.as_ref())
             && let Some(kind) = request.agent.as_ref().map(|agent| agent.kind())
         {
-            self.runs_kind(capabilities, &entry.name, kind)?;
+            self.runs_kind(capabilities, entry.name(), kind)?;
         }
         // No folder there is a default worth guessing: the caller asks the
         // person or names a path it knows on that host.
@@ -1115,7 +1140,7 @@ impl ProfileRuntime {
         let mut request = request;
         if let Some(caller) = caller {
             request.parent = Some(AgentRef {
-                host_id: self.host.as_bytes().to_vec(),
+                host_id: self.host().as_bytes().to_vec(),
                 agent_id: caller.as_bytes().to_vec(),
             });
         }
@@ -1286,8 +1311,8 @@ impl ProfileRuntime {
     /// Writes a message the core handed to the agent, and reports the
     /// interpreter's verdict on it to the core, or that the connection
     /// ended before one came. The message is in hand until then, or until
-    /// reply patience runs out, when the core's own patience has given up
-    /// on it and a write of it again waits afresh.
+    /// the core gives up on its verdict (its reply patience runs on the
+    /// policy clock) or writes it again, when the later write waits afresh.
     pub(crate) fn write_message(
         &self,
         id: AgentId,
@@ -1315,24 +1340,28 @@ impl ProfileRuntime {
             return;
         };
         let (tx, rx) = oneshot::channel();
-        let input_id = input_id_of(&frame);
-        let write = handle.expect_reply(input_id.clone(), tx);
+        handle.expect_reply(input_id_of(&frame), tx);
         let _ = handle.writes.send(frame);
         handle.handed.fetch_add(1, Ordering::SeqCst);
-        let patience = ms(self.launch().reply_patience_ms);
         tokio::spawn(async move {
-            let waited = tokio::time::timeout(patience, rx).await;
+            let waited = rx.await;
             handle.handed.fetch_sub(1, Ordering::SeqCst);
             match waited {
-                Ok(Ok(verdict)) => report(Some(verdict)).await,
-                // A later write of the message waits in this one's place
-                // and is answered on its own.
-                Ok(Err(_)) if handle.superseded(&input_id, write) => {}
-                Ok(Err(_)) => report(None).await,
-                // The core concluded the message on its own patience.
-                Err(_) => handle.forget_reply(&input_id, write),
+                Ok(Some(verdict)) => report(Some(verdict)).await,
+                // The core gave up on this write, or a later write of the
+                // message waits in its place and is answered on its own.
+                Ok(None) => {}
+                Err(_) => report(None).await,
             }
         });
+    }
+
+    /// The core gave up on the verdict for the message it wrote under
+    /// `input_id`: its write stops waiting and reports nothing.
+    pub(crate) fn forget_verdict(&self, id: AgentId, input_id: &[u8]) {
+        if let Some(handle) = self.handle(id) {
+            handle.give_up_reply(input_id);
+        }
     }
 
     /// The core recorded the agent's exit: its handle goes, and with it the
@@ -1342,6 +1371,9 @@ impl ProfileRuntime {
             return;
         };
         handle.abort();
+        // Its connection's watcher is gone with its tasks: writes still
+        // waiting for a verdict learn here that none will come.
+        handle.replies.lock().unwrap().clear();
         let _ = std::fs::remove_file(handle.dir.join(agent_dir::TOOLS_SOCK));
         handle.exited.send_replace(true);
     }
@@ -1392,6 +1424,7 @@ impl ProfileRuntime {
         Ok(crate::grpc::serve_client(
             listener,
             ClientApi::weak(self.me.clone(), Some(id)),
+            None,
         ))
     }
 
@@ -1452,7 +1485,7 @@ impl ProfileRuntime {
             .read_rows(|store| store.agents())
             .await?
             .into_iter()
-            .filter(|row| row.agent.host == self.host.as_bytes())
+            .filter(|row| row.agent.host == self.host().as_bytes())
             .filter_map(|row| Some((Uuid::from_slice(&row.agent.agent).ok()?, row)))
             .collect();
         let mut dirs = HashSet::new();
@@ -1548,6 +1581,7 @@ impl ProfileRuntime {
             }
         }
         for id in looked.orphans {
+            agent_dir::local_socket::forget_short_addresses(&self.agent_dir(id));
             match std::fs::remove_dir_all(self.agent_dir(id)) {
                 Ok(()) => report.removed.push(id),
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -1771,7 +1805,7 @@ impl ProfileRuntime {
                         })) => {
                             let waiting = watched.replies.lock().unwrap().remove(&reply.id);
                             if let (Some((_, waiting)), Some(verdict)) = (waiting, reply.verdict) {
-                                let _ = waiting.send(verdict);
+                                let _ = waiting.send(Some(verdict));
                             }
                         }
                         Ok(Some(CtlFrame {
@@ -1929,7 +1963,7 @@ fn spawn_agent(install_path: &Path, dir: &Path) -> io::Result<tokio::process::Ch
         .open(dir.join(AGENT_LOG))?;
     let mut command = tokio::process::Command::new(install_path);
     command
-        .arg("agent")
+        .args(["internal", "agent"])
         .arg(dir)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -1946,9 +1980,7 @@ fn spawn_agent(install_path: &Path, dir: &Path) -> io::Result<tokio::process::Ch
     command.spawn()
 }
 
-/// What the agent process writes to stderr, beside its directory's other
-/// files: it has no terminal and no daemon pipe to write to.
-pub const AGENT_LOG: &str = "agent.log";
+pub use agent_dir::AGENT_LOG;
 
 /// Waits on a child this daemon started, so it never lingers as a zombie.
 async fn reap(mut child: tokio::process::Child) {

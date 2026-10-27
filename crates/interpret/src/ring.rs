@@ -121,6 +121,36 @@ impl Entry {
     }
 }
 
+/// What stepping the interpreter through recorded entries produced.
+#[derive(Debug, Default)]
+pub struct Rerun {
+    /// Every non-empty step, in order: what the agent journaled.
+    pub steps: Vec<wire::Step>,
+    /// The entries this build could not read and skipped, counted from one.
+    pub unreadable: Vec<usize>,
+}
+
+/// Steps the interpreter through entries an incarnation recorded, as it
+/// first stepped through them. Both an agent resuming and a dump's replay
+/// go through here, so what a dump replays is what a resume does.
+pub fn rerun<I: crate::Interpreter>(
+    state: &mut I::State,
+    entries: impl IntoIterator<Item = Entry>,
+) -> Rerun {
+    let mut rerun = Rerun::default();
+    for (at, entry) in entries.into_iter().enumerate() {
+        let Some(event) = entry.event() else {
+            rerun.unreadable.push(at + 1);
+            continue;
+        };
+        let stepped = I::step(state, event);
+        if stepped.step != wire::Step::default() {
+            rerun.steps.push(stepped.step);
+        }
+    }
+    rerun
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,5 +194,36 @@ mod tests {
             let entry: Entry = serde_json::from_slice(&line).unwrap();
             assert_eq!(entry.event(), Some(event));
         }
+    }
+
+    /// Entries this build cannot read are skipped and named; every other
+    /// is stepped, and each step it made comes back in order.
+    #[test]
+    fn a_rerun_steps_every_readable_entry_and_names_the_rest() {
+        use crate::Interpreter as _;
+        use crate::testkind::TestKind;
+        let text = |id: &str| Entry::Fact {
+            channel: Channel::Stream,
+            text: Some(format!(r#"{{"type":"text","id":"{id}","delta":"hi"}}"#)),
+            hex: None,
+        };
+        let (mut state, _) = TestKind::<false>::initial(&wire::AgentSpec::default(), "test");
+        let rerun = rerun::<TestKind>(
+            &mut state,
+            [
+                text("a"),
+                Entry::Input {
+                    hex: "not hex".into(),
+                },
+                text("b"),
+            ],
+        );
+        assert_eq!(rerun.unreadable, [2]);
+        let keys: Vec<_> = rerun
+            .steps
+            .iter()
+            .flat_map(|step| step.items.iter().map(|item| item.key.as_str()))
+            .collect();
+        assert_eq!(keys, ["a", "b"]);
     }
 }

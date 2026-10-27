@@ -28,8 +28,6 @@ pub enum TimerId {
     Notifications,
     /// Something was committed since the last checkpoint: take the next.
     Checkpoint,
-    /// Try the host again: no channel to it is open while a route lists it.
-    Retry(HostId),
     /// Refresh the credential the relay link presents.
     Refresh(LinkId),
     /// Follow the host's inventory: now, or once a lost stream's backoff

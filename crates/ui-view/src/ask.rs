@@ -438,104 +438,77 @@ fn claude(
 }
 
 fn permission_body(p: &wire::PermissionAsk) -> AskBody {
-    let input: Value = serde_json::from_slice(&p.input_json).unwrap_or(Value::Null);
-    let text = |name: &str| {
-        input
-            .get(name)
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned()
+    use wire::tool_input::Of;
+    let (subject, of) = p.input.as_ref().map_or(("", None), |input| {
+        (input.subject.as_str(), input.of.as_ref())
+    });
+    let tool = |arguments: String| AskBody::Tool {
+        server: p.server.clone(),
+        tool: p.tool_name.clone(),
+        arguments,
     };
-    if !p.server.is_empty() {
-        return AskBody::Tool {
-            server: p.server.clone(),
-            tool: p.tool_name.clone(),
-            arguments: pretty(&input),
-        };
-    }
-    match p.tool_name.as_str() {
-        "Bash" => AskBody::Command {
-            command: text("command"),
+    match of {
+        Some(Of::OtherJson(json)) => {
+            tool(pretty(&serde_json::from_slice(json).unwrap_or(Value::Null)))
+        }
+        Some(Of::Shell(shell)) => AskBody::Command {
+            command: subject.to_owned(),
             cwd: String::new(),
             reason: p.reason.clone(),
             description: if p.description.is_empty() {
-                text("description")
+                shell.description.clone()
             } else {
                 p.description.clone()
             },
         },
-        "WebFetch" | "WebSearch" => {
-            let subject = text(if p.tool_name == "WebFetch" {
-                "url"
-            } else {
-                "query"
-            });
-            AskBody::Tool {
-                server: String::new(),
-                tool: p.tool_name.clone(),
-                arguments: if subject.is_empty() {
-                    pretty(&input)
-                } else {
-                    subject
-                },
-            }
-        }
-        "Edit" | "MultiEdit" | "Write" | "NotebookEdit" => {
-            let path = [text("file_path"), text("notebook_path")]
-                .into_iter()
-                .find(|s| !s.is_empty())
-                .unwrap_or_default();
-            let lines = replaced_lines(&input);
+        Some(Of::Edit(edit)) => {
+            let lines = replaced_lines(edit);
             let (added, removed) = counts(&lines);
             // A notebook edit says which cell and what happens to it, as
             // Claude's own dialog does: the patch alone cannot tell a
             // replaced cell from a new one.
-            let reason = match notebook_change(&input).filter(|_| p.tool_name == "NotebookEdit") {
+            let reason = match edit.cell.as_ref().map(notebook_change) {
                 Some(change) if p.reason.is_empty() => change,
                 Some(change) => format!("{change}: {}", p.reason),
                 None => p.reason.clone(),
             };
             AskBody::Edit {
-                path,
+                path: subject.to_owned(),
                 files: 1,
                 added,
                 removed,
                 line: first_change(&lines),
                 lines,
                 reason,
-                created: (p.tool_name != "Write").then_some(false),
+                created: (!edit.write).then_some(false),
             }
         }
-        _ => AskBody::Tool {
-            server: String::new(),
-            tool: p.tool_name.clone(),
-            arguments: pretty(&input),
-        },
+        // A fetch, a search, a subagent: what it names says what it does.
+        _ => tool(subject.to_owned()),
     }
 }
 
 /// What a notebook edit does to its cell: "Replace cell cell-0", "Delete
 /// cell cell-1", "Insert a new markdown cell after cell-1".
-fn notebook_change(input: &Value) -> Option<String> {
-    let field = |name: &str| input.get(name).and_then(Value::as_str).unwrap_or_default();
-    let cell = field("cell_id");
-    Some(match field("edit_mode") {
-        "insert" => {
-            let kind = match field("cell_type") {
+fn notebook_change(cell: &wire::NotebookCell) -> String {
+    let id = &cell.id;
+    match wire::NotebookEditMode::try_from(cell.mode) {
+        Ok(wire::NotebookEditMode::Insert) => {
+            let kind = match cell.cell_type.as_str() {
                 "" => "code",
                 kind => kind,
             };
-            if cell.is_empty() {
+            if id.is_empty() {
                 format!("Insert a new {kind} cell at the top")
             } else {
-                format!("Insert a new {kind} cell after {cell}")
+                format!("Insert a new {kind} cell after {id}")
             }
         }
-        "delete" if cell.is_empty() => "Delete a cell".to_owned(),
-        "delete" => format!("Delete cell {cell}"),
-        _ if cell.is_empty() => "Replace a cell".to_owned(),
-        _ => format!("Replace cell {cell}"),
-    })
+        Ok(wire::NotebookEditMode::Delete) if id.is_empty() => "Delete a cell".to_owned(),
+        Ok(wire::NotebookEditMode::Delete) => format!("Delete cell {id}"),
+        _ if id.is_empty() => "Replace a cell".to_owned(),
+        _ => format!("Replace cell {id}"),
+    }
 }
 
 /// A tool called with no arguments shows no arguments block: null, `{}`
@@ -1045,9 +1018,16 @@ mod tests {
     }
 
     fn notebook_card(input: serde_json::Value) -> (Vec<(LineKind, String)>, String) {
+        // The host's read of the cell rides beside Claude's input.
+        let old_source = input["old_source"].as_str().unwrap_or_default();
         let body = permission_body(&wire::PermissionAsk {
             tool_name: "NotebookEdit".into(),
-            input_json: serde_json::to_vec(&input).unwrap(),
+            input: Some(interpret::tool_input(
+                "NotebookEdit",
+                "",
+                &input,
+                old_source,
+            )),
             ..Default::default()
         });
         let AskBody::Edit { lines, reason, .. } = body else {

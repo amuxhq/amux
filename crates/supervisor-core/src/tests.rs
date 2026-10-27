@@ -269,11 +269,11 @@ fn backoff_doubles_to_its_cap_and_starts_over_after_a_long_run() {
 }
 
 #[test]
-fn amux_update_waits_for_a_serving_daemon_and_ignores_the_rejected_build() {
+fn amux_update_waits_for_a_serving_daemon_and_skips_the_rejected_build() {
     let mut run = Run::start(PrevFound::None, Some("1.1.0"), false);
     let out = run.on(Input::Asked {
         ask: AskId(1),
-        request: Request::Check,
+        request: Request::Check { retry: false },
     });
     assert_eq!(
         answers(&out),
@@ -282,7 +282,7 @@ fn amux_update_waits_for_a_serving_daemon_and_ignores_the_rejected_build() {
     run.serves();
     let out = run.on(Input::Asked {
         ask: AskId(2),
-        request: Request::Check,
+        request: Request::Check { retry: false },
     });
     assert!(out.contains(&Output::List {
         job: JobId(2),
@@ -293,9 +293,32 @@ fn amux_update_waits_for_a_serving_daemon_and_ignores_the_rejected_build() {
         host: None,
     });
     assert!(
+        !out.iter()
+            .any(|output| matches!(output, Output::Fetch { .. })),
+        "plain amux update leaves the rejected build alone"
+    );
+    assert_eq!(
+        answers(&out),
+        vec!["1.1.0 was rolled back here; `amux update --retry` tries it again"]
+    );
+}
+
+#[test]
+fn amux_update_retry_installs_the_rejected_build_again() {
+    let mut run = Run::start(PrevFound::None, Some("1.1.0"), false);
+    run.serves();
+    run.on(Input::Asked {
+        ask: AskId(1),
+        request: Request::Check { retry: true },
+    });
+    let out = run.listed(Listed::Manifest {
+        manifest: manifest("1.1.0"),
+        host: None,
+    });
+    assert!(
         out.iter()
             .any(|output| matches!(output, Output::Fetch { .. })),
-        "amux update tries the rejected build again"
+        "amux update --retry tries the rejected build again"
     );
     let out = run.fetched();
     assert_eq!(answers(&out), vec!["installing 1.1.0"]);

@@ -28,9 +28,9 @@
 //! the agent as early data, which the driver holds until the core has
 //! decided the identity the link's ticket names; anyone holding those
 //! packets may replay them on a connection of its own; and this host may
-//! remove the peer's pin, which the driver reads from the drive at every
-//! start; the removal is the core's trust change, written by the driver,
-//! after which the driver closes the peer's link. A fresh handshake from a peer
+//! remove the peer's pin, which the store holds: the removal is the core's
+//! trust change, synced to the drive in the step that makes it, after
+//! which the driver closes the peer's link. A fresh handshake from a peer
 //! whose pin was removed fails its pin check before the core hears of it,
 //! so after the removal only a resumed link can reach the core.
 
@@ -44,10 +44,10 @@ use daemon_core::generation::{LastRun, at_start};
 use daemon_core::payload::{
     CarrierKind, ClientRequest, JobResult, PeerRequest, PublicKey, Response,
 };
-use daemon_core::trust::{TrustChange, TrustStore};
+use daemon_core::trust::{TrustChange, TrustChanged, TrustStore};
 use daemon_core::{
     AgentId, CallId, Checkpoint, Daemon, DumpReason, HostId, Input, Job, JobId, LinkId, Output,
-    Route, StartOptions, StepBudget, TimerId,
+    Route, ShellWork, StartOptions, StepBudget, TimerId,
 };
 use store::{AgentKey, AgentRow, Dump, Sqlite};
 use wire::{Item, Step, session_event};
@@ -79,18 +79,9 @@ const REPLAY_LINK: LinkId = LinkId(2);
 const EARLY_CALL: CallId = CallId(1 << 32);
 const REPLAYED_CALL: CallId = CallId((1 << 32) + 1);
 
-/// The trust store as the drive holds it: the peer pinned, or not.
-fn trust(pinned: bool) -> TrustStore {
-    if pinned {
-        TrustStore::of_hosts([PEER])
-    } else {
-        TrustStore::default()
-    }
-}
-
 /// The key the peer's tickets name: the one this host pinned for it.
 fn peer_key() -> PublicKey {
-    let store = trust(true);
+    let store = TrustStore::of_hosts([PEER]);
     let key = store
         .pubkey_for_host(uuid::Uuid::from_bytes(PEER.0))
         .expect("the peer is pinned");
@@ -99,10 +90,10 @@ fn peer_key() -> PublicKey {
 
 /// The peer's early read: a page of the agent's rows.
 fn early_read() -> PeerRequest {
-    PeerRequest::Fetch(wire::FetchRequest {
+    PeerRequest::ListItems(wire::ListItemsRequest {
         agent_id: AGENT.0.to_vec(),
         before_order: None,
-        limit: TAIL,
+        page_size: TAIL,
     })
 }
 
@@ -208,18 +199,6 @@ struct Record {
     counter: u64,
 }
 
-/// The checkpoint's job the driver runs for the core: first the passive
-/// WAL checkpoint, then the write of the core's state.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum CheckpointJob {
-    Copying(JobId),
-    Writing {
-        id: JobId,
-        /// The core's state is on the drive beside the store's main file.
-        written: bool,
-    },
-}
-
 /// A client's Subscribe stream on the agent, as the client reads it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Subscriber {
@@ -249,7 +228,11 @@ struct Run {
     /// The machine restarted under a run that had not shut down cleanly
     /// since the run before this one started.
     owed: bool,
-    job: Option<CheckpointJob>,
+    /// The checkpoint's WAL job the driver runs for the core.
+    job: Option<JobId>,
+    /// The core handed the driver its checkpoint; the driver's word that
+    /// the ring started there is owed.
+    landing: bool,
     /// Inputs the core holds until its WAL checkpoint ends.
     held: usize,
     /// The timer for the agent's next ingest batch is armed.
@@ -258,8 +241,9 @@ struct Run {
     calls: u64,
     /// The peer's resumed link is up and the core took it.
     peer_up: bool,
-    /// The driver is writing the trust store for the core.
-    trust_job: Option<JobId>,
+    /// The core published a store without the peer; the driver has yet
+    /// to close the peer's link.
+    revoking: bool,
 }
 
 /// How much of the bounds a path has used.
@@ -317,7 +301,7 @@ pub struct State {
     dumped: Option<String>,
     /// The ring's replay came out other than the live daemon.
     diverged: Option<String>,
-    /// The drive's trust store pins the peer.
+    /// The store pins the peer.
     pinned: bool,
     /// The core answered an early read of the peer's.
     early_answered: bool,
@@ -425,14 +409,9 @@ pub enum Action {
     /// The WAL job could not move the whole WAL: a reader held it, or the
     /// drive refused.
     WalBusy,
-    /// The driver's checkpoint job puts the core's state on the drive,
-    /// beside the store's main file the WAL job synced.
-    CheckpointWritten,
-    /// The checkpoint job reports it is done, and the core lets go of the
-    /// journal below it.
+    /// The driver started its ring at the checkpoint and says so; the core
+    /// lets go of the journal below it.
     Reclaim,
-    /// The checkpoint job reports it failed before writing anything.
-    CheckpointFails,
     /// A client opens a Subscribe stream on the agent.
     SubscriberOpen,
     /// The subscriber's queue overflows: the driver reports it lagging.
@@ -450,9 +429,9 @@ pub enum Action {
     PeerResumes,
     /// Someone asks this host to remove the peer's pin.
     Unpin,
-    /// The driver's write of the trust store without the peer is on the
-    /// drive; the driver closes the peer's link as revoked.
-    TrustWritten,
+    /// The driver, told the peer is no longer trusted, closes its link as
+    /// revoked.
+    Revoke,
     /// The world's doing: the daemon's process dies at a step; the machine
     /// loses power, taking the store and the journal back to what the drive
     /// has; the drive refuses the commit of the next nudge; or the peer's
@@ -470,6 +449,7 @@ impl Machine for SingleDaemon {
         store
             .put_agent(&AgentRow::new(agent(), wire::Kind::Codex, "/src"))
             .expect("the store takes its agent");
+        TrustStore::of_hosts([PEER]).write_for_test(&mut store);
         let store = store.dump().expect("the store dumps");
         State {
             durable: store.clone(),
@@ -527,17 +507,13 @@ impl Machine for SingleDaemon {
             out.push(Action::IngestAgain);
         }
         match &run.job {
+            None if run.landing => out.push(Action::Reclaim),
             None if s.used.checkpoints < self.checkpoints => out.push(Action::Checkpoint),
             None => {}
-            Some(CheckpointJob::Copying(_)) => {
+            Some(_) => {
                 out.push(Action::WalDone);
                 out.push(Action::WalBusy);
             }
-            Some(CheckpointJob::Writing { written: false, .. }) => {
-                out.push(Action::CheckpointWritten);
-                out.push(Action::CheckpointFails);
-            }
-            Some(CheckpointJob::Writing { written: true, .. }) => out.push(Action::Reclaim),
         }
         match &run.subscriber {
             Some(subscriber) if subscriber.open() => {
@@ -560,8 +536,8 @@ impl Machine for SingleDaemon {
         if self.unpin && s.used.unpins == 0 {
             out.push(Action::Unpin);
         }
-        if run.trust_job.is_some() {
-            out.push(Action::TrustWritten);
+        if run.revoking {
+            out.push(Action::Revoke);
         }
         if s.used.downs < self.downs {
             out.push(Action::Fault(Fault::Crash(DAEMON)));
@@ -608,17 +584,16 @@ impl Machine for SingleDaemon {
                     false,
                 );
             }
-            Action::CheckpointWritten => {
+            Action::Reclaim => {
                 let run = next
                     .run
                     .as_mut()
-                    .expect("a job runs only while the daemon does");
-                let Some(CheckpointJob::Writing { written, .. }) = run.job.as_mut() else {
-                    unreachable!("a checkpoint to write");
-                };
-                *written = true;
+                    .expect("the driver answers only while the daemon runs");
+                assert!(run.landing, "a checkpoint to answer");
+                run.landing = false;
+                self.step(&mut next, Input::Checkpointed, false);
             }
-            Action::WalDone | Action::WalBusy | Action::Reclaim | Action::CheckpointFails => {
+            Action::WalDone | Action::WalBusy => {
                 if *action == Action::WalDone {
                     // The core holds every write while the job runs, so the
                     // store the process has is what was committed before it.
@@ -629,13 +604,10 @@ impl Machine for SingleDaemon {
                     .run
                     .as_mut()
                     .expect("a job runs only while the daemon does");
-                let job = match run.job.take().expect("a job to end") {
-                    CheckpointJob::Copying(id) | CheckpointJob::Writing { id, .. } => id,
-                };
+                let job = run.job.take().expect("a job to end");
                 let result = match action {
-                    Action::WalDone | Action::Reclaim => JobResult::Done,
-                    Action::WalBusy => JobResult::Failed("the WAL was busy".into()),
-                    _ => JobResult::Failed(REFUSAL.into()),
+                    Action::WalDone => JobResult::Done,
+                    _ => JobResult::Failed("the WAL was busy".into()),
                 };
                 self.step(&mut next, Input::JobDone { job, result }, false);
             }
@@ -653,7 +625,7 @@ impl Machine for SingleDaemon {
                     lagged: false,
                     ended: false,
                 });
-                let request = ClientRequest::Subscribe {
+                let request = ClientRequest::SubscribeSession {
                     agent_id: AGENT.0.to_vec(),
                     tail: TAIL,
                 };
@@ -672,9 +644,7 @@ impl Machine for SingleDaemon {
             }
             Action::Start => {
                 start(&mut next);
-                // The driver reads the trust store from the drive.
-                let store = trust(next.pinned);
-                self.step(&mut next, Input::TrustRead { store }, false);
+                self.step(&mut next, Input::Started, false);
             }
             Action::PeerResumes => {
                 next.used.resumes += 1;
@@ -707,13 +677,9 @@ impl Machine for SingleDaemon {
                 let remove = Input::ChangeTrust(TrustChange::Remove { host });
                 self.step(&mut next, remove, false);
             }
-            Action::TrustWritten => {
-                next.pinned = false;
+            Action::Revoke => {
                 let run = next.run.as_mut().expect("a running daemon");
-                let job = run.trust_job.take().expect("a trust write under way");
-                let result = JobResult::Done;
-                self.step(&mut next, Input::JobDone { job, result }, false);
-                let run = next.run.as_mut().expect("a running daemon");
+                run.revoking = false;
                 if std::mem::take(&mut run.peer_up) {
                     let reason = wire::LinkCloseReason::UserRevoked;
                     let down = Input::LinkDown {
@@ -917,7 +883,12 @@ impl SingleDaemon {
             let mut daemon = scratch.daemon(&run.core, &next.store, &next.journal);
             let listed = daemon.links().routes_to(PEER);
             let mut out = Vec::new();
-            stepped(&mut daemon, input.clone(), refuse, &mut out);
+            stepped(
+                &mut daemon,
+                input.clone(),
+                refuse.then_some(REFUSAL),
+                &mut out,
+            );
             run.held = daemon.checkpoints().held();
             // Each row a step answered, and whether the store holds it.
             let uncommitted = answered_uncommitted(&out, daemon.store(), &[agent()]);
@@ -979,19 +950,20 @@ impl SingleDaemon {
                 Output::Job {
                     id,
                     op: Job::CheckpointWal,
-                } => run.job = Some(CheckpointJob::Copying(*id)),
-                Output::Job {
-                    id,
-                    op: Job::Fsync { .. },
-                } => run.trust_job = Some(*id),
-                Output::Job {
-                    id,
-                    op: Job::Checkpoint { state },
-                } => {
-                    run.job = Some(CheckpointJob::Writing {
-                        id: *id,
-                        written: false,
-                    });
+                } => run.job = Some(*id),
+                Output::Shell(ShellWork::Trust {
+                    changed: Some((PEER, TrustChanged::Removed(_))),
+                    ..
+                }) => {
+                    // The removal was synced in the step that made it, and
+                    // every commit before it with it.
+                    next.pinned = false;
+                    next.durable = next.store.clone();
+                    next.durable_cursor = next.cursor;
+                    run.revoking = true;
+                }
+                Output::Checkpoint { state } => {
+                    run.landing = true;
                     // The driver's ring starts again at this checkpoint.
                     next.ring = Ring {
                         base: Some((state.clone(), next.store.clone(), next.journal.clone())),
@@ -1011,21 +983,23 @@ impl SingleDaemon {
     }
 }
 
-/// Steps the core with one input, its store refusing every write when the
-/// drive does.
-fn stepped(daemon: &mut Daemon, input: Input, refuse: bool, out: &mut Vec<Output>) {
-    if refuse {
+/// Steps the core with one input, its store refusing every write with
+/// `refuse` when the drive does. The model and a dump's replay both step
+/// the core through here.
+pub fn stepped(daemon: &mut Daemon, input: Input, refuse: Option<&str>, out: &mut Vec<Output>) {
+    if let Some(why) = refuse {
+        let why = why.replace('\'', "''");
         daemon
             .store()
             .connection()
             .execute_batch(&format!(
                 "CREATE TEMP TRIGGER refuse BEFORE INSERT ON agents \
-                 BEGIN SELECT RAISE(ABORT, '{REFUSAL}'); END;"
+                 BEGIN SELECT RAISE(ABORT, '{why}'); END;"
             ))
             .expect("the refusal installs");
     }
     daemon.step(input, out);
-    if refuse {
+    if refuse.is_some() {
         daemon
             .store()
             .connection()
@@ -1082,12 +1056,13 @@ fn start(next: &mut State) {
         previous: next.last_generation,
         owed: next.owed,
         job: None,
+        landing: false,
         held: 0,
         ingest_armed: false,
         subscriber: None,
         calls: 0,
         peer_up: false,
-        trust_job: None,
+        revoking: false,
     });
     next.unfinished = true;
     next.owed = false;
@@ -1106,7 +1081,12 @@ fn replay(live: &State) -> Option<String> {
         let mut out = Vec::new();
         for (input, journal, refuse) in &live.ring.inputs {
             scratch.lay_out(journal);
-            stepped(&mut daemon, input.clone(), *refuse, &mut out);
+            stepped(
+                &mut daemon,
+                input.clone(),
+                refuse.then_some(REFUSAL),
+                &mut out,
+            );
             out.clear();
             // The step may have reclaimed segments.
             scratch.read_back();

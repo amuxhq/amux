@@ -12,7 +12,14 @@ struct AmuxApp: App {
         // First, before anything this app does: the mark that divides the
         // system's share of a launch from this app's.
         Signposts.emit(.appEntered)
+        // The bundled faces are registered with Core Text off the main
+        // thread while UIKit connects the scene, so the shell's first frame
+        // finds them ready instead of registering them in the middle of it.
+        // Registration happens once; a screen that sets type first waits for
+        // it rather than starting it again.
+        DispatchQueue.global(qos: .userInitiated).async { BundledFonts.register() }
         #if AMUX_DEBUG_TOOLS
+        DoorServer.freshStartIfRequested()
         DoorServer.startIfRequested()
         #endif
     }
@@ -24,20 +31,25 @@ struct AmuxApp: App {
     }
 
     @ViewBuilder private var hostedRoot: some View {
-        #if AMUX_DEBUG_TOOLS
-        // An app-hosted unit test still launches the application's scene, and
-        // so does an Xcode preview. Both supply and render their own roots,
-        // so constructing the real composition here would open stores and
-        // start the runtime only to leave them behind an invisible window.
-        let environment = ProcessInfo.processInfo.environment
-        if environment["AMUX_COMPONENT_SNAPSHOTS"] == "1"
-            || environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" {
-            Color.clear
-        } else {
+        if Self.drawsItsOwnRoot {
             RootView().readingAssistiveSettings()
+        } else {
+            Color.clear
         }
+    }
+
+    /// Whether this launch is the app, rather than a host for something that
+    /// renders roots of its own. An app-hosted unit test still launches the
+    /// application's scene, and so does an Xcode preview; constructing the
+    /// real composition for either would open stores and start the runtime
+    /// only to leave them behind an invisible window.
+    static var drawsItsOwnRoot: Bool {
+        #if AMUX_DEBUG_TOOLS
+        let environment = ProcessInfo.processInfo.environment
+        return environment["AMUX_COMPONENT_SNAPSHOTS"] != "1"
+            && environment["XCODE_RUNNING_FOR_PREVIEWS"] != "1"
         #else
-        RootView().readingAssistiveSettings()
+        return true
         #endif
     }
 }
@@ -49,7 +61,7 @@ struct AmuxApp: App {
 @MainActor
 final class AppDelegate: NSObject, UIApplicationDelegate, ObservableObject,
     UNUserNotificationCenterDelegate {
-    /// Built when first asked for: by the root view, or by a push.
+    /// Built as the app finishes launching, or by whatever asks for it first.
     lazy var composition = Composition()
     /// The background time held while the runtime gets ready for the app
     /// to be suspended.
@@ -60,6 +72,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate, ObservableObject,
         didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        // Built here rather than when the root view first asks, so the
+        // runtime starts reading the store and dialling hosts while the
+        // system is still connecting the scene: a launch that has to reach a
+        // host gets there that much sooner.
+        if AmuxApp.drawsItsOwnRoot { _ = composition }
         NotificationCenter.default.addObserver(
             forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
         ) { [weak self] _ in

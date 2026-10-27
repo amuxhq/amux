@@ -403,7 +403,7 @@ final class FeedCoordinator: NSObject, UICollectionViewDelegate {
         view.hold = { [weak self] in self?.hold() }
         view.restore = { [weak self] in self?.restore($0) }
         view.laidOut = { [weak self] in self?.publishIfStale() }
-        let registration = UICollectionView.CellRegistration<UICollectionViewCell, ListItem> {
+        let registration = UICollectionView.CellRegistration<MeasuredCell, ListItem> {
             [weak self] cell, _, item in
             guard let self else { return }
             cell.contentConfiguration = self.configuration(for: item, in: cell)
@@ -772,4 +772,17 @@ private struct CellContent: View {
 private final class Weak<T: AnyObject> {
     weak var value: T?
     init(_ value: T) { self.value = value }
+}
+
+/// A row's cell, sized by the layout from the measurer's height and never
+/// by itself. With self-sizing invalidation off the collection view still
+/// asks every visible cell for its preferred attributes on each batch
+/// update, which has the hosted view lay itself out again; answering with
+/// the attributes as given skips that.
+private final class MeasuredCell: UICollectionViewCell {
+    override func preferredLayoutAttributesFitting(
+        _ layoutAttributes: UICollectionViewLayoutAttributes
+    ) -> UICollectionViewLayoutAttributes {
+        layoutAttributes
+    }
 }

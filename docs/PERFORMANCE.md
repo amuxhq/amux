@@ -36,6 +36,15 @@ just perf -- --only flood --baseline
 `just perf` builds the `perf` binary in release with the `bundled,perf` features and runs it; the binary refuses to
 run from a debug build. The binary accepts nothing but `--baseline` and `--only flood`.
 
+`just perf-profile 'System Trace' 15s` records the flood under Instruments on this Mac and stops it 15 s in, for
+reading what the daemon's core thread does and waits on; `just perf-profile 'Time Profiler'` samples a whole run.
+The trace and the run's report land in `target/perf-profile/`, and `xctrace export --xpath` turns a trace's
+`context-switch`, `syscall` and `time-profile` tables into XML. Two things about Instruments shape the recipe: a
+System Trace attributes to the process only the threads still alive when the recording stops, so a recording of
+the flood phase must end inside it, and the record of the capacity phase (which ends the run) comes from a whole
+run; and only the process `xctrace` launched itself is symbolicated, so the recipe launches `perf` directly rather
+than through a shell. A run killed by the time limit leaves its agent processes behind; the recipe kills them.
+
 For the whole run a child process keeps one core busy. An otherwise idle Apple Silicon machine lets its cores drop
 into a low-power state between bursts and measures several times slower with wider spread; one busy core is the
 repeatable reference state baselines are recorded in (`one busy core (cluster warmer)` in the report and the
@@ -219,7 +228,7 @@ offload, where each TCP leg is a stream of its own written in 64 KiB batches.
 `just ios perf` measures the iPhone app itself, on this Mac's pinned simulator, against a served network built for
 it: three machines on the phone's local network, signed in to one account at a served relay, forty agents dealt
 across them, and one conversation a thousand rows long that streams on cue (`crates/qualification/src/perf/phone.rs`
-generates the topology; `scripts/ios-perf.py` runs the suite). The app is the `Measured` build: compiled the way
+generates the topology; `testnet journey perf` runs the suite). The app is the `Measured` build: compiled the way
 the shipped build is, with the driving door kept in, because an unoptimised Swift build measures the compiler
 rather than the app. Every packet between the phone and a machine crosses a gate the run can delay (the served
 net's `LanGate` and `LanFaults` verbs), so reaching the fleet is measured over a household network's latency as
@@ -232,8 +241,8 @@ legs. The account service is not gated, since a launch reuses the phone's relay 
 Every number is taken by the app: the launch marks (`Signposts` in `AmuxCore`, emitted in every build) and the
 door's `measure` verb, which watches the display, the main thread and the footprint for a stretch while the run
 streams into the chat on screen. The script only arranges the workload and judges. Five samples per metric, the
-median against the budget; the run stops and says so if a mark it needs never appears or a stream never reached
-the phone, rather than reporting a number about an idle screen.
+median against the budget; the run stops and says so if a mark it needs never appears or any of a stream's rows
+never reach the phone, rather than reporting a number about an idle screen or a lossy one.
 
 | Metric | Group | What is measured | Budget | Worst | Tolerance |
 | --- | --- | --- | --- | --- | --- |
@@ -243,11 +252,15 @@ the phone, rather than reporting a number about an idle screen.
 | `reconciliation at 0 ms` | reconciliation | From that point to the first presented frame after every trusted machine's agents were current with the machine, over loopback | 250 ms | | 15% |
 | `reconciliation at 100 ms` | reconciliation | The same, with every gate holding each packet 100 ms | 336 ms | | 15% |
 | `reconciliation through the relay at 100 ms` | reconciliation | The same, the phone away from home: signed in to the machines' account at the served relay, every direct dial lost, and every way to the relay, the phone's and each machine's, holding each packet 100 ms | 566 ms | | 15% |
+| `opening hitch time` | opening | Missed frame time per second from just before a tap on the working agent's row on home until 2.5 s later: the chat's push, its transcript's first build and its activity line starting. The push is the render server's; what this counts is the main thread's stall building the page, during which nothing it animates moves | 120 ms/s | | ceiling only |
+| `opening main-thread CPU` | opening | The main thread's share of one core over the same 2.5 s | 20 % | | 15% |
 | `streaming hitch time` | streaming | Missed frame time per second while fifty rows a second arrive for twenty seconds into the conversation on screen, resting at its tail | 5 ms/s | | ceiling only |
 | `streaming main-thread CPU` | streaming | The main thread's share of one core over the same stream | 60 % | | 15% |
 | `streaming footprint` | streaming | The process's footprint at the end of the stream | 120 MB | | 10% |
 | `idle transcript commits` | idle | Rows the chat on screen took over five seconds with nothing arriving, after a two-second settle | 0 count | 0 | 0% |
 | `idle display ticks` | idle | Display refreshes the app asked for over the same five seconds | 0 count | 0 | 0% |
+| `idle main-thread CPU` | idle | The main thread's share of one core over the same five seconds, the agent on screen working with nothing arriving: what a never-ending animation costs, which neither count sees | 8 % | | ceiling only |
+| `idle home main-thread CPU` | idle | The same on home, after the launch has reconciled and before the conversation opens, the fleet's agents working | 8 % | | ceiling only |
 
 The cold-start budgets are a simulator's: an empty SwiftUI app linking the frameworks this one links draws its first
 frame at about 414 ms on the pinned simulator, so the gate is the floor plus room for the app's own work, and the
@@ -259,7 +272,7 @@ hear that the node was up, which the two intervals now leave out. The fleet-rend
 work between the store read and the first frame should take: the home built from the store's rows, and the rest of
 the shell's first frame, which waits for the same thread.
 
-Where a cold launch goes, from the marks (`scripts/ios-perf.py` prints them per launch): about 300 ms before
+Where a cold launch goes, from the marks (the run prints them per launch): about 300 ms before
 `main` is reached, loading the images; about 100 ms of UIKit building the scene before the app's composition is
 asked for, which an empty app pays too; the composition itself in 2 ms; then the main thread building the shell's
 first frame, which is where the app's own time is. The shell builds the tab somebody is looking at, and a tab is
@@ -276,7 +289,8 @@ from about 640 ms to between 740 and 785 across runs on the pinned Mac. Taking t
 together brings it back to about 680: roughly 60 ms is the system's chrome, about 30 of it before the fleet opens
 while the main thread builds the tab bar, and 40 is the redrawn list. No one piece is larger than the 40 ms by which
 two runs of the same build differ. The budget is now 850 ms median and 900 worst, and the fleet render's 250: that
-cost, with room for the 40 to 60 ms by which runs of one build move on this Mac. A device's budget is written when a device is enrolled and measured.
+cost, with room for the 40 to 60 ms by which runs of one build move on this Mac. A phone has budgets of its own
+(below).
 
 Where reconciliation goes, over a gate that holds each packet 100 ms (a 200 ms round trip): one round trip. A
 launch resumes each host's link with the TLS ticket and address-validation token its last process kept, so no Retry
@@ -302,8 +316,13 @@ trips into a resumed link, one after the catch-up. The run keeps each launch ope
 seconds apart, as a person looking at their fleet does; quit as soon as the fleet reconciled, every other launch
 found no ticket and paid a full handshake (839 ms through the relay).
 
-`--only cold|reconciliation|streaming|idle` takes one group, for working on it; `--baseline` needs a whole run, and
+`--only cold|reconciliation|opening|streaming|idle` takes one group, for working on it; `--baseline` needs a whole run, and
 judges it on the budgets alone, since the baseline it replaces is no reference for its own successor.
+`--trace <path>.trace` records an Instruments trace through the first sample of one group (`--during`, streaming
+unless named; `--template`, Time Profiler unless named), for finding where the main thread's time goes. On the
+simulator it is a recording of the whole Mac (xctrace cannot attach to a simulator process here), with the app's pid
+in the run's notes to filter by; every table the trace lists is exported beside it as XML, so read the app's process
+alone.
 `--describe` says which enrolled machine this is and whether its baseline exists without building or launching
 anything. Baselines live beside the desktop's:
 
@@ -318,8 +337,8 @@ a metric with no baseline is judged on its budget alone and the report says so. 
 | --- | --- |
 | `pinned-mac` | `Mac14,6` |
 
-A Mac not in the table is refused, not skipped: `scripts/tests/ios_perf_test.py` holds this page's tables to the
-script's, so enrolling a machine or changing a budget is a change here and there in one commit. The report lands in
+A Mac not in the table is refused, not skipped: the suite's own tests hold this page's tables to
+`crates/testnet/src/journey/perf.rs`, so enrolling a machine or changing a budget is a change here and there in one commit. The report lands in
 `target/ios/perf/report.md` with `verdict.json` and `samples.json` beside it; the served net's own record is under
 `target/ios/perf/journey/`. `just ios verify` runs the suite last, as `just ios measured`; the hosted runners are not
 enrolled, so it is not in `just ios captures`.
@@ -327,3 +346,72 @@ enrolled, so it is not in `just ios captures`.
 The flood's viewer (above) still reads the fleet and one chat through the same subscriptions the app reads, from a
 runtime holding nothing, so its budgets say what the phone waits for on the host's side, without a simulator in the
 number; the phone suite says what the app does with it.
+
+### On a plugged-in phone
+
+`just ios perf --device` runs the same suite on an iPhone plugged in over USB: one phone, paired with this Mac, in
+Developer Mode, unlocked, with Auto-Lock off for the run, and the signing file `apps/apple/Signing.local.xcconfig`
+naming the team the build is signed under. The recipe builds the bridge's phone slice and the `Measured` app for it;
+`devicectl` installs, launches and stops the app. The phone and the Mac meet over the phone's USB link, a
+point-to-point IPv6 network CoreDevice brings up for a paired phone: the app's door and its LAN socket bind the
+phone's address there, and the served net takes `--client-ip` for the Mac's, where the hosts' gates, the relay's gate
+and a second listener for the account service listen (a Mac cannot reach its own address on that link, so the
+hosts keep loopback). Nothing listens on Wi-Fi. A run installs over the app already there and launches it with
+`-amux-fresh-start`, which forgets the app's files, caches and settings as an uninstall would but keeps the local
+network permission, so the system never asks for it with nobody there to answer. Before measuring, the door's
+`condition` verb reports the thermal state and Low Power Mode; a phone that is seriously hot or saving power is
+refused, and a fair thermal state is noted in the report.
+
+The numbers are the app's own, as on the simulator, but the display runs at the phone's rate: the suite's frame
+counter asks for 120 Hz, as the app does, so hitch time counts ProMotion frames. The report sets the cold first frame
+against the 400 ms a phone is asked for at launch, as a target rather than a budget. A phone's baseline is kept per
+model and iOS major version, since an update changes the loader and the frameworks under the app:
+
+```text
+perf/baselines/phone/<phone>-ios<major>.json      e.g. phone/iphone-14-pro-ios27.json
+```
+
+`just ios profile GROUP [TEMPLATE]` records one group's first sample on the phone under Instruments (Time Profiler
+unless named; Power Profiler, Hitches, SwiftUI and System Trace are as useful) into `target/ios/traces/`. On a phone
+xctrace attaches to the app, so the recording carries its symbols; a launch is recorded by having Instruments launch
+the app itself, the one way a launch's trace is symbolicated, which moves the launch's own marks by about a second.
+
+| Phone | Model |
+| --- | --- |
+| `iphone-14-pro` | `iPhone15,2` |
+
+Each phone's budgets are its first measurement with the simulator's headroom over it: the cold first frame with the
+simulator's room in milliseconds, since a share of 200 ms is inside one launch's spread; the reconciliations by the
+simulator's rule, the ungated launch plus the gated round trip with 15% over; the rest the simulator's budget over
+its baseline as a share. Units, groups and tolerances are the simulator's.
+
+| Metric | Phone | Budget | Worst |
+| --- | --- | --- | --- |
+| `cold first frame` | `iphone-14-pro` | 260 ms | 310 ms |
+| `cold store read` | `iphone-14-pro` | 50 ms | |
+| `cold fleet render` | `iphone-14-pro` | 60 ms | |
+| `reconciliation at 0 ms` | `iphone-14-pro` | 60 ms | |
+| `reconciliation at 100 ms` | `iphone-14-pro` | 283 ms | |
+| `reconciliation through the relay at 100 ms` | `iphone-14-pro` | 513 ms | |
+| `opening hitch time` | `iphone-14-pro` | 120 ms/s | |
+| `opening main-thread CPU` | `iphone-14-pro` | 25 % | |
+| `streaming hitch time` | `iphone-14-pro` | 5 ms/s | |
+| `streaming main-thread CPU` | `iphone-14-pro` | 60 % | |
+| `streaming footprint` | `iphone-14-pro` | 100 MB | |
+| `idle transcript commits` | `iphone-14-pro` | 0 count | 0 |
+| `idle display ticks` | `iphone-14-pro` | 0 count | 0 |
+| `idle main-thread CPU` | `iphone-14-pro` | 8 % | |
+| `idle home main-thread CPU` | `iphone-14-pro` | 8 % | |
+
+On the iPhone 14 Pro (iOS 27.0) the first frame comes about 200 ms after the process starts, against 790 on the
+pinned Mac's simulator: the device's loader does not re-point a shared cache, and most of what remains is UIKit's
+scene and SwiftUI's first render, with dressing the navigation bars (about 15 ms), registering the bundled fonts
+(about 12) and the shell's and home's bodies (about 22) the largest pieces of ours. The node's start is not on the
+first frame's path; its first flight to every host leaves 2 ms after it listens, and the app's composition (and so
+the node) is built as the app finishes launching rather than when the root view first asks for it. A working agent's
+marks and the chat's activity line were redrawn by SwiftUI on every display frame, at 120 Hz, re-laying out the
+composer around the line: a working chat with nothing arriving held the main thread near 31% busy, and home with a
+working fleet near 32%. Drawn into a canvas on a clock capped at 60 Hz, with the line's elapsed time on a clock of
+its own that ticks once a second, they halved (about 16.5%), the rest being SwiftUI's per-frame update of a view
+hierarchy with one animation in it. Run by Core Animation from the same curves (the `workingMotion` leaf in
+[the iPhone app](IOS.md)), they leave the main thread at about 2% in a working chat and 4% on home.

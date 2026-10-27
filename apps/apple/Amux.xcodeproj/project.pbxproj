@@ -2360,8 +2360,9 @@
 		1C6A74E2A949CE5DA9BC6C59 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				AMUX_DRIVING_SLICE = "ios-arm64-simulator";
+				"AMUX_DRIVING_SLICE[sdk=iphoneos*]" = "ios-arm64";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = Amux/Amux.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 36;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -2371,7 +2372,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0.32;
-				OTHER_LDFLAGS = "-Wl,-force_load,$(SRCROOT)/../../target/ios/AmuxAppDebugTools.xcframework/ios-arm64-simulator/libamux_app.a";
+				OTHER_LDFLAGS = "-Wl,-force_load,$(SRCROOT)/../../target/ios/AmuxAppDebugTools.xcframework/$(AMUX_DRIVING_SLICE)/libamux_app.a";
 				PRODUCT_BUNDLE_IDENTIFIER = sh.amux.app;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -2386,8 +2387,9 @@
 		2244784CDFC88C6A4DEA3688 /* Measured */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				AMUX_DRIVING_SLICE = "ios-arm64-simulator";
+				"AMUX_DRIVING_SLICE[sdk=iphoneos*]" = "ios-arm64";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = Amux/Amux.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 36;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -2397,7 +2399,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0.32;
-				OTHER_LDFLAGS = "-Wl,-force_load,$(SRCROOT)/../../target/ios/AmuxAppDebugTools.xcframework/ios-arm64-simulator/libamux_app.a";
+				OTHER_LDFLAGS = "-Wl,-force_load,$(SRCROOT)/../../target/ios/AmuxAppDebugTools.xcframework/$(AMUX_DRIVING_SLICE)/libamux_app.a";
 				PRODUCT_BUNDLE_IDENTIFIER = sh.amux.app;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -2432,8 +2434,9 @@
 		43EAF82C28C6FB2A3DB797AE /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				AMUX_DRIVING_SLICE = "ios-arm64-simulator";
+				"AMUX_DRIVING_SLICE[sdk=iphoneos*]" = "ios-arm64";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = Amux/Amux.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 36;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;

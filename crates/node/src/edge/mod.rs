@@ -7,7 +7,7 @@
 //! application streams, each opened with a preface naming the host it is
 //! for. Inside each stream the two hosts run a TLS handshake pinned to the
 //! keys they exchanged when they paired; a trusted caller reaches the
-//! profile's PeerService with its host id as the caller, and a caller that
+//! profile's peer services with its host id as the caller, and a caller that
 //! presents no trusted key reaches only PairingService, and only while the
 //! profile is in pairing mode.
 
@@ -30,11 +30,12 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 pub use account::ACCOUNT_FILE;
+use account::Binding;
 pub(crate) use account::{Account, AccountCredentials};
 pub use cloud::{FREE_TIER_REFRESH_INTERVAL, UDP_BLOCKED_MEMORY};
 use futures_util::stream;
 pub use relay_server::{CloudLinkServer, JwtCloudLinkAuthenticator, RelayIdentity, RelayServing};
-pub use status::{Observed, RelayCarrier};
+pub use status::{Cloud, Relay, RelayCarrier};
 pub use token::RELAY_TOKEN_FILE;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::{mpsc, watch};
@@ -53,16 +54,14 @@ use crate::link::paths::PathDriver;
 use crate::link::quic::DEVICE_SERVER_NAME;
 use crate::link::resumption::{HOST_TICKETS, SessionTickets, TICKETS_DIR};
 use crate::link::socket::{Datagrams, LinkSocket};
-use crate::link::{
-    ChannelPool, LinkCarrier, LinkEndpoint, QuicCarrier, run_link, serve_inbound_streams,
-};
+use crate::link::{ChannelPool, LinkEndpoint, QuicCarrier, run_link, serve_inbound_streams};
 use crate::routing::{
     Capabilities, ConnectRole, LinkConnectorCtx, LinkCtx, LinkRegistry, LiveLocalHost, LiveRoute,
     local_host,
 };
 use crate::runtime::ProfileRuntime;
 use crate::services::{LocalPairingIdentity, PairingService, ReachabilityLinkConnector};
-use crate::transport::{BoxedGrpcIo, tonic_server_builder};
+use crate::transport::BoxedGrpcIo;
 use crate::trust::SharedTrustStore;
 use crate::{Clock, HostId};
 
@@ -90,7 +89,7 @@ pub struct EdgeOptions {
     /// Listen for direct links on the LAN.
     pub lan: Option<LanOptions>,
     /// Advertise and browse the local network. Each profile gets its own
-    /// advertisement from this factory.
+    /// advertisement from this factory; the browsing behind them is shared.
     pub discovery: Option<DiscoveryFactory>,
     /// Discovery candidates are listed and dialled only when their scope
     /// equals this one.
@@ -105,15 +104,19 @@ pub struct EdgeOptions {
     /// The machine's interface addresses, when a test stands in for them;
     /// unset, the system's are read.
     pub interfaces: Option<Vec<std::net::IpAddr>>,
+    /// How this host's links notice a silent peer.
+    pub liveness: crate::identity::LinkLiveness,
 }
 
 pub type DiscoveryFactory = Arc<dyn Fn() -> Result<Arc<dyn Discovery>, String> + Send + Sync>;
 
 /// The platform's local-network discovery: mDNS, except where only the
-/// system may browse (the phone hands its results over instead). A debug
-/// build can swap in a scripted stand-in with `AMUX_TEST_DISCOVERY_MODE`.
+/// system may browse (the phone hands its results over instead), with one
+/// browser for every profile the factory serves. A debug build can swap in
+/// a scripted stand-in with `AMUX_TEST_DISCOVERY_MODE`.
 pub fn mdns_discovery() -> DiscoveryFactory {
-    Arc::new(|| {
+    let shared = crate::discovery::MdnsShared::default();
+    Arc::new(move || {
         #[cfg(all(debug_assertions, not(target_os = "ios")))]
         match std::env::var("AMUX_TEST_DISCOVERY_MODE").as_deref() {
             Ok("scripted" | "disabled") => {
@@ -125,7 +128,8 @@ pub fn mdns_discovery() -> DiscoveryFactory {
             Ok(mode) => return Err(format!("unknown test discovery mode {mode:?}")),
             Err(error) => return Err(format!("invalid test discovery mode: {error}")),
         }
-        crate::discovery::MdnsDiscovery::new()
+        shared
+            .handle()
             .map(|discovery| Arc::new(discovery) as Arc<dyn Discovery>)
             .map_err(|error| error.to_string())
     })
@@ -162,6 +166,7 @@ impl Default for EdgeOptions {
             link_socket: false,
             cloud: CloudOptions::default(),
             interfaces: None,
+            liveness: Default::default(),
         }
     }
 }
@@ -220,9 +225,6 @@ pub struct CloudOptions {
     /// How often a free account's link asks the cloud what the account
     /// buys; a purchase reaches the link within one interval.
     pub free_refresh_interval: Option<Duration>,
-    /// A credential the embedder supplies instead of the profile's account
-    /// file, for a host that owns its own sign-in.
-    pub credentials: Option<Arc<dyn CredentialProvider>>,
 }
 
 /// Where a test's relay answers QUIC, and the roots that trust its
@@ -284,7 +286,6 @@ pub struct Edge {
     lan_addr: Option<SocketAddr>,
     quic_endpoint: LinkEndpoint,
     account: Arc<Account>,
-    credentials_override: Option<Arc<dyn CredentialProvider>>,
     cloud_options: CloudOptions,
     cloud: tokio::sync::Mutex<Option<CloudLink>>,
     udp_blocked: Arc<UdpBlockedMemory>,
@@ -314,18 +315,19 @@ impl Edge {
     /// options ask for. `runtime` is what trusted peers reach.
     pub(crate) async fn start(
         dir: &Path,
+        host: HostId,
         options: &EdgeOptions,
         clock: Arc<dyn Clock>,
         runtime: Weak<ProfileRuntime>,
         analytics: analytics::Analytics,
     ) -> Result<Arc<Self>, EdgeError> {
-        let identity = crate::identity::load_or_create_device_identity_in(dir)?;
+        let mut identity = crate::identity::load_or_create_device_identity_in(dir, host)?;
+        identity.liveness = options.liveness;
         // The core holds the trust store; the edge reads it as the core
-        // publishes it. A trust file that does not read stops the edge.
-        let read = crate::trust::load_or_create_in(dir)?;
+        // publishes it.
         let (trust, pair_mode): (SharedTrustStore, _) = match runtime.upgrade() {
             Some(runtime) => (runtime.driver().trust(), runtime.driver().pair_window()),
-            None => (Arc::new(std::sync::RwLock::new(read)), Arc::default()),
+            None => (Arc::default(), Arc::default()),
         };
         let account = Account::open(dir).map_err(EdgeError::Account)?;
         let own = runtime.clone();
@@ -334,7 +336,7 @@ impl Edge {
                 runtime.tell_own_host();
             }
         }));
-        let signed_in = options.cloud.credentials.is_some() || account.wants_cloud();
+        let signed_in = account.wants_cloud();
         let local_host = LiveLocalHost::new(local_host(
             identity.host_id,
             &options.host_name,
@@ -371,7 +373,7 @@ impl Edge {
         let dispatcher = TunnelDispatcher::new(
             trust.clone(),
             pair_mode.clone(),
-            connections.trusted_connections(),
+            connections.replacing(),
             trusted_tx,
             pairing_tx,
             DEVICE_TLS_HANDSHAKE_TIMEOUT,
@@ -408,7 +410,7 @@ impl Edge {
                 .map_err(EdgeError::Lan)?
                 .keeping(dir);
                 let addr = endpoint.local_addr().map_err(EdgeError::Lan)?;
-                let _ = crate::install::write_durably(
+                let _ = crate::install::write_cache(
                     &dir.join(LAN_PORT_FILE),
                     addr.port().to_string().as_bytes(),
                 );
@@ -526,7 +528,6 @@ impl Edge {
             lan_addr,
             quic_endpoint,
             account,
-            credentials_override: options.cloud.credentials.clone(),
             cloud_options: options.cloud.clone(),
             cloud: tokio::sync::Mutex::new(None),
             udp_blocked: Arc::new(UdpBlockedMemory::new(UDP_BLOCKED_MEMORY, clock.clone())),
@@ -545,12 +546,9 @@ impl Edge {
                 .unwrap()
                 .push(tokio::spawn(first_flight::launch(Arc::downgrade(&edge))));
         }
-        edge.tasks
-            .lock()
-            .unwrap()
-            .push(follow_plan(&edge.status, &edge.connections));
-        edge.tasks.lock().unwrap().push(plan_paths(
+        edge.tasks.lock().unwrap().push(follow_plan(
             &edge.status,
+            &edge.connections,
             &edge.paths,
             edge.local_host.clone(),
         ));
@@ -664,7 +662,7 @@ impl Edge {
         .is_ok()
     }
 
-    /// A PeerService client for a trusted host, over whichever route
+    /// Peer service clients for a trusted host, over whichever route
     /// reaches it: a direct link, or the relay.
     pub async fn peer(&self, host: HostId) -> Result<crate::PeerClient, crate::link::ChannelError> {
         Ok(crate::link::peer_client(self.channel(host).await?))
@@ -687,22 +685,15 @@ impl Edge {
         &self.first_flights
     }
 
-    /// A call to `host` found no channel within its patience, or the one it
-    /// opened failed, for `error`: the core decides what that says of the
-    /// host.
-    pub(crate) fn calls_failed(&self, host: HostId, error: daemon_core::payload::ChannelError) {
-        self.connections.calls_failed(host, error);
-    }
-
-    /// How `host` reads now, and the route its calls take while it is not
-    /// offline.
-    pub async fn presence(&self, host: HostId) -> (wire::Presence, LiveRoute) {
-        self.connections.presence_for(host).await
+    /// A call to `host`, begun when the next link would be `since`, found
+    /// no channel within its patience: the links it had close.
+    pub(crate) fn calls_timed_out(&self, host: HostId, since: u64) {
+        self.connections.calls_timed_out(host, since);
     }
 
     /// From now on no channel to `host` opens, or opens again, while the
-    /// link and the streams it already carries stay up: a call to it fails
-    /// before it goes out. For a test network.
+    /// streams its link already carries stay up: a call to it fails before
+    /// it goes out, and closes the link it tried. For a test network.
     #[doc(hidden)]
     pub async fn refuse_calls(&self, host: HostId, refuse: bool) {
         self.connections.refuse_calls(host, refuse);
@@ -717,7 +708,7 @@ impl Edge {
         self.connections.channel_to(host).await
     }
 
-    /// A PeerService client for a host's sessions, on a channel of their
+    /// Peer service clients for a host's sessions, on a channel of their
     /// own so that their subscriptions neither wait behind nor hold up the
     /// host's other calls.
     pub async fn session_peer(
@@ -726,22 +717,6 @@ impl Edge {
     ) -> Result<crate::PeerClient, crate::link::ChannelError> {
         let channel = self.connections.session_channel_to(host).await?;
         Ok(crate::link::peer_client(channel))
-    }
-
-    /// A PeerService client for bulk transfers, blobs, apart from calls.
-    pub async fn bulk_peer(
-        &self,
-        host: HostId,
-    ) -> Result<crate::PeerClient, crate::link::ChannelError> {
-        let channel = self.connections.bulk_channel_to(host).await?;
-        Ok(crate::link::peer_client(channel))
-    }
-
-    /// Holds the next bulk transfer from `host` once its first data has
-    /// arrived, until the returned hold is released or dropped.
-    #[doc(hidden)]
-    pub fn hold_next_bulk_response(&self, host: HostId) -> crate::link::BulkResponseHold {
-        self.channels.hold_next_bulk_response(host)
     }
 
     /// Why the last dial to a host failed, until a route to it comes up.
@@ -804,29 +779,30 @@ impl Edge {
         self.udp_blocked.holds(relay)
     }
 
-    /// What the cloud link is doing.
-    pub fn observed(&self) -> Observed {
+    /// The profile's standing with its cloud account.
+    pub fn cloud(&self) -> Cloud {
+        match self.account.binding() {
+            Binding::Unbound => Cloud::Unbound,
+            Binding::SignedOut => Cloud::SignedOut,
+            Binding::Paused => Cloud::Paused,
+            // Signed in with no link running yet: one is about to start.
+            Binding::SignedIn => {
+                Cloud::SignedIn(self.status.current().unwrap_or(Relay::Connecting))
+            }
+        }
+    }
+
+    /// What the relay link is doing, none while no link runs.
+    pub fn relay(&self) -> Option<Relay> {
         self.status.current()
     }
 
-    pub fn subscribe_observed(&self) -> watch::Receiver<Observed> {
+    pub fn subscribe_relay(&self) -> watch::Receiver<Option<Relay>> {
         self.status.subscribe()
     }
 
     pub(crate) fn account(&self) -> &Arc<Account> {
         &self.account
-    }
-
-    /// Whether this profile is signed in to the account it is bound to:
-    /// None while it was never bound, so a profile that only ever worked
-    /// on its own network never reads as signed out. A paused connection
-    /// is still signed in; the person chose to stay off the relay.
-    pub fn account_signed_in(&self) -> Option<bool> {
-        match self.account.intent() {
-            wire::Intent::Bound | wire::Intent::Paused => Some(true),
-            wire::Intent::LoggedOut => Some(false),
-            wire::Intent::Unbound | wire::Intent::Unspecified => None,
-        }
     }
 
     /// The account service the profile is bound to, signed in or not.
@@ -867,9 +843,6 @@ impl Edge {
     }
 
     fn credentials(&self) -> Option<Arc<dyn CredentialProvider>> {
-        if let Some(credentials) = &self.credentials_override {
-            return Some(credentials.clone());
-        }
         self.account.wants_cloud().then(|| {
             Arc::new(AccountCredentials(self.account.clone())) as Arc<dyn CredentialProvider>
         })
@@ -880,11 +853,10 @@ impl Edge {
         let Some(credentials) = self.credentials() else {
             return;
         };
-        let cloud_url = match self.account.service() {
-            Some(service) => service.as_str().to_owned(),
-            None if self.credentials_override.is_some() => String::new(),
-            None => return,
+        let Some(cloud_url) = self.account.service() else {
+            return;
         };
+        let cloud_url = cloud_url.as_str().to_owned();
         let mut cloud = self.cloud.lock().await;
         if cloud.as_ref().is_some_and(|link| !link.is_finished()) {
             return;
@@ -893,7 +865,7 @@ impl Edge {
             finished.stop().await;
         }
         self.local_host.set_signed_in(true);
-        self.status.report(Observed::Connecting);
+        self.status.report(Relay::Connecting);
         let connector: LinkConnectorCtx =
             LinkConnectorCtx::new_live(self.local_host.clone(), self.channels.link_registry())
                 .with_incoming_streams(self.incoming_streams_tx.clone())
@@ -920,9 +892,8 @@ impl Edge {
         if let Some(link) = self.cloud.lock().await.take() {
             link.stop().await;
         }
-        self.local_host
-            .set_signed_in(self.credentials_override.is_some() || self.account.wants_cloud());
-        self.status.report(Observed::Local);
+        self.local_host.set_signed_in(self.account.wants_cloud());
+        self.status.clear();
     }
 
     /// Asks the cloud what the account buys now, over the live cloud link.
@@ -1178,23 +1149,37 @@ impl Drop for LoopbackLink {
     }
 }
 
-/// Tells the connections whenever the account's plan is seen to change,
-/// from one connected tier to another: what the relay carries changes with
-/// it, and hosts it refused or carried need not wait for a retry's backoff
-/// or a call to read as they now are.
-fn follow_plan(status: &RuntimeStatus, connections: &Arc<ConnectionManager>) -> JoinHandle<()> {
-    let mut observed = status.subscribe();
+/// Follows the account's plan as the relay says it. The path machines are
+/// told whether it pays each time: a free account's links stop telling
+/// peers the address the relay saw, since reaching it is punching. The
+/// connections are told when it changes from one connected tier to
+/// another: what the relay carries changes with it, and hosts it refused
+/// or carried need not wait for a retry's backoff or a call to read as
+/// they now are.
+fn follow_plan(
+    status: &RuntimeStatus,
+    connections: &Arc<ConnectionManager>,
+    paths: &Arc<PathDriver>,
+    local_host: LiveLocalHost,
+) -> JoinHandle<()> {
+    let mut relay = status.subscribe();
     let connections = Arc::downgrade(connections);
+    let paths = Arc::downgrade(paths);
     tokio::spawn(async move {
         let mut plan = None;
-        while observed.changed().await.is_ok() {
-            let Observed::Connected { tier, .. } = *observed.borrow_and_update() else {
+        while relay.changed().await.is_ok() {
+            let Some(Relay::Connected { tier, .. }) = *relay.borrow_and_update() else {
                 continue;
             };
+            let (Some(connections), Some(paths)) = (connections.upgrade(), paths.upgrade()) else {
+                return;
+            };
+            let paid = tier == crate::Tier::Pro;
+            if !paid {
+                local_host.clear_public();
+            }
+            paths.plan(paid);
             if plan.replace(tier).is_some_and(|before| before != tier) {
-                let Some(connections) = connections.upgrade() else {
-                    return;
-                };
                 connections.plan_changed();
             }
         }
@@ -1211,33 +1196,6 @@ pub fn interface_addrs() -> Vec<std::net::IpAddr> {
         .collect();
     addrs.dedup();
     addrs
-}
-
-/// Tells the path machines whether the account pays, whenever the relay
-/// says. A free account's links stop telling peers the address the relay
-/// saw, since reaching it is punching.
-fn plan_paths(
-    status: &RuntimeStatus,
-    paths: &Arc<PathDriver>,
-    local_host: LiveLocalHost,
-) -> JoinHandle<()> {
-    let mut observed = status.subscribe();
-    let paths = Arc::downgrade(paths);
-    tokio::spawn(async move {
-        while observed.changed().await.is_ok() {
-            let Observed::Connected { tier, .. } = *observed.borrow_and_update() else {
-                continue;
-            };
-            let Some(paths) = paths.upgrade() else {
-                return;
-            };
-            let paid = tier == crate::Tier::Pro;
-            if !paid {
-                local_host.clear_public();
-            }
-            paths.plan(paid);
-        }
-    })
 }
 
 /// Gives every trusted host a path machine, with what it listed before
@@ -1292,7 +1250,7 @@ fn serve_pairing(
             .map(|io| (Ok::<_, std::io::Error>(io), incoming))
     });
     tokio::spawn(async move {
-        let served = tonic_server_builder()
+        let served = tonic::transport::Server::builder()
             .add_service(wire::pairing_service_server::PairingServiceServer::new(
                 service,
             ))
@@ -1319,9 +1277,7 @@ fn serve_link_socket(
     let path = dir.join(LINK_SOCKET);
     let mut listener =
         agent_dir::local_socket::LocalListener::bind(&path).map_err(EdgeError::LinkSocket)?;
-    let ctx = ctx
-        .with_carrier(crate::routing::LinkCarrier::Ssh)
-        .with_shutdown(shutdown);
+    let ctx = ctx.with_shutdown(shutdown);
     Ok(tokio::spawn(async move {
         loop {
             match listener.accept().await {

@@ -25,27 +25,28 @@ independent:
 
 | Key | Values | Default | Meaning |
 | --- | --- | --- | --- |
-| `supervisor` | `on`, `off` | `off` | Whether the daemon runs under `amux supervise`. The install decides this, not the person. |
-| `updates` | `auto`, `manual` | `auto` with a supervisor, `manual` without | Whether the supervisor installs releases on its own hourly check. |
-| `channel` | `stable`, `preview` | `stable` | Which release manifest the supervisor follows. |
-| `keep_awake` | `on`, `off` | `on` | Whether the supervisor holds the sleep assertion. |
+| `supervisor` | `true`, `false` | `true` | Whether the daemon runs under `amux supervise`. A host whose service manager runs `amux daemon` directly sets it `false`. |
+| `updates` | `"auto"`, `"manual"` | `auto` with a supervisor, `manual` without | Whether the supervisor installs releases on its own hourly check. |
+| `channel` | `"stable"`, `"preview"` | `stable` | Which release manifest the supervisor follows. |
+| `keep_awake` | `true`, `false` | `true` | Whether the supervisor holds the sleep assertion. |
 | `releases_url` | URL | `https://amux.sh/releases` | Where the channel manifests live. |
 
 The four cells of `supervisor` × `updates`:
 
-| | `updates: auto` | `updates: manual` |
+| | `updates = "auto"` | `updates = "manual"` |
 | --- | --- | --- |
-| `supervisor: on` | The desktop case: crash restarts and automatic updates. | Crash restarts; releases install only when someone runs `amux update`. |
-| `supervisor: off` | Rejected when the config is read: only a supervisor installs releases. | A deployed host whose service manager runs `amux daemon` directly, such as the relay under systemd. Updates are deploys. |
+| `supervisor = true` | The desktop case: crash restarts and automatic updates. | Crash restarts; releases install only when someone runs `amux update`. |
+| `supervisor = false` | Rejected when the config is read: only a supervisor installs releases. | A deployed host whose service manager runs `amux daemon` directly, such as the relay under systemd. Updates are deploys. |
 
 Every behaviour on this page keys off `supervisor`, never off `updates`. The
 daemon itself does not read either value to decide how it was started: it
 knows it is supervised only because a supervisor handed it the activation pipe
 (see [Activation](#activation)).
 
-A desktop install is expected to write `supervisor: on`. This repository ships
-no installer that writes it, so set it by hand in the installation config
-(`~/.config/amux/config.yaml` by default). The settings live in
+A desktop install needs no config file at all: the defaults are a supervisor
+with automatic updates. A host that runs `amux daemon` under its own service
+manager writes `supervisor = false` in the installation config
+(`~/.config/amux/config.toml` by default). The settings live in
 [`crates/settings/src/lib.rs`](../crates/settings/src/lib.rs) as
 `InstallationConfig`.
 
@@ -61,13 +62,17 @@ Nothing ever starts a daemon beside a supervisor.
   supervisor if the install has one and none is running, then waits for the
   daemon. Without a supervisor it starts nothing: the daemon belongs to
   whatever service manager runs it, and the CLI says so while it waits.
-- `amux supervise` refuses to run when the config says `supervisor: off`.
+- `amux supervise` refuses to run when the config says `supervisor = false`.
 - A second supervisor on the same data directory fails at once: the first
   holds `<data_dir>/supervisor.lock`, which also records its pid.
 
 The supervisor logs to `<data_dir>/supervisor.log`; the daemon logs to
 `<data_dir>/daemon.log` unless `AMUX_LOG` names another file. `<data_dir>` is
-the config's `root`, `~/.local/share/amux` by default.
+the config's `root`, `~/.local/share/amux` by default. Each moves its own
+standard error onto its log at start, so a panic lands there, and each log is
+capped at 8 MiB with one previous file beside it (see
+[Debugging](DEBUGGING.md#where-things-are)). A dump carries the tail of
+both.
 
 When the supervisor's core breaks one of its invariants it logs the reason
 and writes `<data_dir>/reports/supervisor-<unix ms>-<id>.txt`: the reason, the
@@ -83,7 +88,7 @@ is what a step test of the supervisor core is written from by hand.
 `amux init --login-item yes` or `--login-item no` answers without asking;
 without a terminal and without the flag it asks nothing and adds nothing. On
 yes it writes a login item that runs `amux supervise` and registers it with
-the platform's service manager. An install with `supervisor: off` gets no
+the platform's service manager. An install with `supervisor = false` gets no
 login item: its service manager already starts the daemon at boot.
 
 Every login item follows the same three rules:
@@ -202,19 +207,19 @@ Each channel is one manifest at `<releases_url>/<channel>.json`:
 describes the manifest's format, how releases are signed, and what is and is
 not set up for publishing them.
 
-**When a check runs.** Under `updates: auto` the supervisor checks every hour.
+**When a check runs.** Under `updates = "auto"` the supervisor checks every hour.
 `amux update` asks for a check now, over the control socket, under either
 `updates` value. A check runs only while the daemon is activated and no update
 is in progress; otherwise `amux update` is told to try again shortly. The
-supervisor re-reads the config before every check, so `amux config channel
-preview` (or `stable`) takes effect at the next check without a restart.
+supervisor re-reads the config before every check, so `amux config set
+channel preview` (or `stable`) takes effect at the next check without a restart.
 
 **What it installs.** The manifest names one build per target triple. The
 supervisor installs it only when all of these hold:
 
 - the version is newer than the running one; updates only move forward;
 - it is not the build this machine rolled back (see below), unless the check
-  came from `amux update`;
+  came from `amux update --retry`;
 - the host is inside the manifest's `rollout` percentage, if it has one. A
   host's place is fixed: SHA-256 of its first profile's host id, mod 100,
   compared with the percentage. A host with no id yet waits for a full
@@ -252,7 +257,11 @@ running · restart to update` on the fleet screen.
 
 **`amux update`** prints `Installing amux <version>.`, then waits up to three
 minutes for the new daemon to report that version and prints `amux <version>
-is running.` Without a supervisor it prints that updates on this install are
+is running.` If the supervisor rolls the build back instead, which `amux
+update` sees as `amux.rejected` beside its own binary changing to name that
+version, it fails saying the build did not start, which version the
+supervisor put back, where the log is, and that `amux update --retry` tries
+it again. Without a supervisor it prints that updates on this install are
 deploys and does nothing. A build that trusts no release key answers every
 check with `this build trusts no release key, so it installs nothing`.
 
@@ -270,7 +279,8 @@ progress.
   the rejected build's version to `amux.rejected`, syncs it, then renames
   `amux.prev` back over the install path and starts it at once.
 - The hourly check skips the version in `amux.rejected` until the channel
-  names a different one. `amux update` ignores it and tries that build again.
+  names a different one, and so does `amux update`, which says the build was
+  rolled back here. `amux update --retry` tries that build again.
 
 The order of the last two writes matters. A crash between them leaves a
 rejected version equal to the installed binary with `amux.prev` present, which
@@ -312,7 +322,7 @@ it never restarts the daemon to update itself.
 
 ## Keep-awake
 
-Under `keep_awake: on`, the default, the supervisor holds a sleep assertion for
+Under `keep_awake = true`, the default, the supervisor holds a sleep assertion for
 its whole lifetime, so a phone can start an agent on the machine while nobody
 is at it, whether or not any agent is working. Neither the daemon nor any agent
 holds one, so the assertion survives daemon restarts and the gap during an
@@ -329,14 +339,14 @@ in with the lid open**. Whether the assertion holds a Mac awake with the lid
 closed on AC power has not been measured. `pmset disablesleep` is the owner's
 setting to make; amux never changes it. A failure to take an assertion is
 logged and leaves the machine free to sleep, which is no worse than
-`keep_awake: off`.
+`keep_awake = false`.
 
 ## Tests
 
 | Where | What it shows |
 | --- | --- |
 | [`crates/node/tests/supervisor.rs`](../crates/node/tests/supervisor.rs) | The real supervisor driving a stand-in binary (`fake-amux`) whose daemon mode is scripted per version, against a local manifest server, with releases signed by the test key. Restart on every exit and stop on request; install a newer signed release and exec it keeping pid, child, pipe and lock; refuse a bad hash or signature; roll back after K starts that never prepare and skip the rejected build; stop a daemon that hangs before `prepared` at the start deadline; restart without rollback after `go`; kill at the stop deadline; the three recovery cases above; the real `amux daemon` exiting when its supervisor dies; rollout and version choice. |
-| [`crates/amux/tests/supervise_cli.rs`](../crates/amux/tests/supervise_cli.rs) | The CLI around it, with the real binary: login units matching their goldens, `amux init` writing and registering one, stop going to the supervisor first or to the daemon when there is none, a client starting the supervisor only where the install has one, the sleep assertion under `keep_awake` (macOS), `amux config channel`, and `amux update` installing a build this machine had rolled back. |
+| [`crates/amux/tests/supervise_cli.rs`](../crates/amux/tests/supervise_cli.rs) | The CLI around it, with the real binary: login units matching their goldens, `amux init` writing and registering one, stop going to the supervisor first or to the daemon when there is none, a client starting the supervisor only where the install has one, the sleep assertion under `keep_awake` (macOS), `amux config set channel`, and `amux update` reporting a build that never started and leaving it alone after, and `amux update --retry` installing a build this machine had rolled back. |
 | [`crates/amux/tests/overlap.rs`](../crates/amux/tests/overlap.rs) | Releases overlapping on one machine. Agents started by the previous build work on after an update; a terminal client of the previous build keeps working and names the newer daemon; the previous build reopens and works in a store the new build migrated before it was killed ahead of `prepared`; restarting the generated LaunchAgent under a running turn leaves the agent running. "The previous build" is a copy of the build under test re-stamped one version lower (`node::release::restamp`). |
 | [`crates/amux/tests/process.rs`](../crates/amux/tests/process.rs) | A daemon killed mid-turn loses nothing: agents finish without it and the next daemon adopts them. |
 

@@ -1,4 +1,4 @@
-//! What a person does to a profile's edge through the front door: pairing
+//! What a person does to a profile's edge through its socket: pairing
 //! in both directions, the paired hosts, and the account the profile signs
 //! in with. The pairing window, the exchange and every trust change are the
 //! profile's core's; what is left here is reading the request, dialling the
@@ -8,7 +8,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::Utc;
 use daemon_core::pairing::{
     Initiate, Method as CoreMethod, PairFailure, WindowMethod, WindowSecret,
 };
@@ -19,21 +18,20 @@ use uuid::Uuid;
 use wire::pairing_window::Secret;
 use wire::start_pairing_request::Method;
 use wire::{
-    BeginPairRequest, DeviceIdentity, HostRef, PairingIdentity, PairingWindow, PeerEntry,
-    RouteKind, StartPairingRequest, TrustSshPeerRequest,
+    BeginPairRequest, DeviceIdentity, HostRef, PairingIdentity, PairingWindow, RouteKind,
+    StartPairingRequest, TrustSshPeerRequest,
 };
 
 use super::Edge;
 use super::account::AccountRecord;
+use crate::HostId;
 use crate::auth::AccessToken;
 use crate::driver::pairing::status as pairing_status;
 use crate::pairing::PAIR_MODE_TTL;
 use crate::runtime::ProfileRuntime;
 use crate::services::LocalPairingIdentity;
 use crate::trust::{Reachability, TrustEntry, TrustStore};
-use crate::{HostId, audit};
 
-const PUBKEY_LEN: usize = 32;
 const MAX_PAIRING_NAME_BYTES: usize = 256;
 const QR_SECRET_LEN: usize = daemon_core::pairing::QR_SECRET_LEN;
 /// How long a pairing dial to one address may take before the next is tried.
@@ -111,31 +109,27 @@ fn opaque(error: Status) -> Status {
     }
 }
 
-pub(crate) fn peer_entry_to_wire(host_id: HostId, entry: &TrustEntry) -> PeerEntry {
-    PeerEntry {
+pub(crate) fn peer_entry_to_wire(host_id: HostId, entry: &TrustEntry) -> wire::Peer {
+    wire::Peer {
         host_id: host_id.as_bytes().to_vec(),
         name: entry.name.clone(),
         pubkey: entry.pubkey.clone(),
         paired_at_ms: entry.paired_at.timestamp_millis(),
         reachabilities: entry
-            .reachabilities
-            .iter()
-            .map(|reachability| wire::PeerReachability {
-                kind: Some(match reachability {
-                    Reachability::Cloud => wire::peer_reachability::Kind::Cloud(wire::Empty {}),
-                    Reachability::Ssh { target, profile } => {
-                        wire::peer_reachability::Kind::SshTarget(wire::SshTarget {
-                            target: target.clone(),
-                            profile_id: profile.as_bytes().to_vec(),
-                        })
-                    }
-                    Reachability::Direct { addrs } => {
-                        wire::peer_reachability::Kind::Direct(wire::DirectReachability {
-                            addrs: addrs.iter().map(ToString::to_string).collect(),
-                        })
-                    }
-                }),
-            })
+            .on_account
+            .then_some(wire::peer_reachability::Kind::Cloud(wire::Empty {}))
+            .into_iter()
+            .chain(entry.ssh.as_ref().map(|ssh| {
+                wire::peer_reachability::Kind::SshTarget(wire::SshTarget {
+                    target: ssh.clone(),
+                })
+            }))
+            .chain((!entry.direct.is_empty()).then(|| {
+                wire::peer_reachability::Kind::Direct(wire::DirectReachability {
+                    addrs: entry.direct.iter().map(ToString::to_string).collect(),
+                })
+            }))
+            .map(|kind| wire::PeerReachability { kind: Some(kind) })
             .collect(),
     }
 }
@@ -224,12 +218,7 @@ impl Edge {
                 method,
                 ttl_ms: u64::try_from(ttl.as_millis()).unwrap_or(u64::MAX),
             })
-            .await
-            .inspect_err(|error| {
-                if label == "demo" {
-                    audit::pairing_failure("demo", error);
-                }
-            })?;
+            .await?;
         let secret = match opened {
             Some(Response::PairingWindow(WindowSecret::Pin(pin))) => Secret::Pin(pin),
             Some(Response::PairingWindow(WindowSecret::Qr(secret))) => Secret::QrSecret(secret),
@@ -241,7 +230,6 @@ impl Edge {
                 "demo pairing active: a reusable fixed PIN pairs any device that presents it"
             );
         }
-        audit::pairing_start(label);
         self.analytics.record(analytics::Event::PairingStarted {
             role: analytics::Role::Offerer,
             method: match label {
@@ -283,9 +271,7 @@ impl Edge {
     pub async fn cancel_pairing(&self) -> Result<(), Status> {
         if let Some(Response::PairingCancelled { was_active: true }) =
             self.ask(ClientRequest::CancelPairing).await?
-        {
-            audit::pairing_cancel("admin");
-        }
+        {}
         Ok(())
     }
 
@@ -448,8 +434,8 @@ impl Edge {
         // The other host not answering is this daemon's answer, not this
         // daemon going away: Unavailable would read as the latter.
         let (pending, via) = selected.ok_or_else(|| {
-            crate::grpc::status(crate::grpc::wire_error(
-                wire::ErrorCode::Unreachable,
+            crate::grpc::status(wire::Error::because(
+                wire::ErrorReason::HostUnreachable,
                 format!(
                     "the other host could not be reached: {}",
                     last_unreachable.unwrap_or_else(|| {
@@ -467,7 +453,7 @@ impl Edge {
 
     /// Finishes a pairing a person confirmed: both sides commit the other's
     /// key, and this side dials the peer at the route pairing found.
-    pub async fn confirm_pair(&self, token: &[u8]) -> Result<PeerEntry, Status> {
+    pub async fn confirm_pair(&self, token: &[u8]) -> Result<wire::Peer, Status> {
         let answer = self
             .ask(ClientRequest::ConfirmPair {
                 token: token.to_vec(),
@@ -479,12 +465,6 @@ impl Edge {
         let host = Uuid::from_bytes(host.0);
         // Secret-based pairing reaches its peer directly or through the
         // relay; SSH pairings commit through `trust_ssh_peer`.
-        let label = match reachability {
-            Some(Reachability::Cloud) => "cloud",
-            _ => "direct_pin",
-        };
-        audit::pairing_start(label);
-        audit::pairing_success(label, host);
         if let Some(reachability) = reachability {
             self.reachability.spawn_pair_time_link(host, reachability);
         }
@@ -508,14 +488,6 @@ impl Edge {
             .peer
             .ok_or_else(|| Status::invalid_argument("TrustSshPeerRequest.peer is required"))?;
         let host = host_from_bytes("PairingIdentity.host_id", &identity.host_id)?;
-        if identity.pubkey.len() != PUBKEY_LEN {
-            return Err(Status::invalid_argument(
-                "PairingIdentity.pubkey must be 32 bytes",
-            ));
-        }
-        if identity.name.len() > MAX_PAIRING_NAME_BYTES {
-            return Err(Status::invalid_argument("PairingIdentity.name is too long"));
-        }
         let reachability = request
             .ssh_target
             .map(|target| {
@@ -524,18 +496,9 @@ impl Edge {
                         "TrustSshPeerRequest.ssh_target is invalid",
                     ));
                 }
-                let profile = Uuid::from_slice(&target.profile_id).map_err(|_| {
-                    Status::invalid_argument(
-                        "TrustSshPeerRequest.ssh_target.profile_id must be 16 bytes",
-                    )
-                })?;
-                Ok(Reachability::Ssh {
-                    target: target.target,
-                    profile,
-                })
+                Ok(Reachability::Ssh(target.target))
             })
             .transpose()?;
-        audit::pairing_start("ssh");
         self.ask(ClientRequest::PairOverSsh {
             local: LocalPairingIdentity::from_device_identity(&self.identity)
                 .named(&self.host_name),
@@ -543,7 +506,6 @@ impl Edge {
             reachability: reachability.clone(),
         })
         .await?;
-        audit::pairing_success("ssh", host);
         if let Some(reachability) = reachability {
             self.reachability.spawn_pair_time_link(host, reachability);
         }
@@ -558,7 +520,6 @@ impl Edge {
         if peer.host_id() == self.host_id() || peer.public_key() == self.public_key() {
             return Err(Status::invalid_argument("SELF_PAIRING"));
         }
-        audit::pairing_start("harness");
         self.ask(ClientRequest::ChangeTrust(TrustChange::Pair {
             host: peer.host_id(),
             pubkey: peer.public_key().to_vec(),
@@ -566,12 +527,11 @@ impl Edge {
             reachability: None,
         }))
         .await?;
-        audit::pairing_success("harness", peer.host_id());
         Ok(())
     }
 
     /// Paired hosts, by name.
-    pub fn list_peers(&self) -> Result<Vec<PeerEntry>, Status> {
+    pub fn list_peers(&self) -> Result<Vec<wire::Peer>, Status> {
         let store = self
             .trust
             .read()
@@ -591,7 +551,7 @@ impl Edge {
             .collect())
     }
 
-    pub fn peer_entry(&self, peer: HostRef) -> Result<PeerEntry, Status> {
+    pub fn peer_entry(&self, peer: HostRef) -> Result<wire::Peer, Status> {
         let store = self
             .trust
             .read()
@@ -602,11 +562,9 @@ impl Edge {
 
     /// Forgets a paired host: its key leaves the trust store, its links
     /// close with USER_REVOKED, and every connection it holds here ends.
-    pub async fn unpair(&self, peer: HostRef, reason: String) -> Result<PeerEntry, Status> {
-        let reason = match reason.trim() {
-            "" => "user".to_owned(),
-            reason => reason.to_owned(),
-        };
+    pub async fn unpair(&self, peer: HostRef, _reason: String) -> Result<wire::Peer, Status> {
+        // The reason the client gave stays on the wire for a client that
+        // may show it; nothing here records it.
         let host = {
             let store = self
                 .trust
@@ -622,7 +580,6 @@ impl Edge {
             other => return Err(Status::internal(format!("the core unpaired {other:?}"))),
         };
         self.connections.close_host_access(host).await;
-        audit::trust_remove(host, &removed.name, removed.paired_at, Utc::now(), &reason);
         Ok(peer_entry_to_wire(host, &removed))
     }
 

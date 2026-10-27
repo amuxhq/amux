@@ -27,7 +27,7 @@ fn lan(socket: Option<Arc<std::net::UdpSocket>>) -> node::EdgeOptions {
 /// desk's LAN listener, so the desk has given it a ticket.
 struct Linked {
     desk: Install,
-    _laptop: Install,
+    laptop: Install,
     desk_daemon: Option<Daemon>,
     /// The port a restarted desk listens on, held for as long as it runs.
     desk_socket: Option<Arc<std::net::UdpSocket>>,
@@ -53,7 +53,7 @@ impl Linked {
         let laptop_edge = laptop_runtime.edge().unwrap();
         let linked = Self {
             desk,
-            _laptop: laptop,
+            laptop,
             desk_daemon: Some(desk_daemon),
             desk_socket: None,
             old_port: None,
@@ -91,6 +91,26 @@ impl Linked {
                     Ok(0) => Err("none yet".to_owned()),
                     Ok(_) => Ok(()),
                     Err(status) => Err(status.to_string()),
+                }
+            }
+        })
+        .await
+        .unwrap();
+        // The desk's ticket follows the link's handshake on its own
+        // schedule; a test that resumes, or refuses a resumption, needs it
+        // on the laptop's disk first.
+        let desk_tickets = linked
+            .laptop
+            .profile_dir()
+            .join(node::CLIENT_TICKETS_DIR)
+            .join(desk_edge.host_id().to_string());
+        until("the laptop to keep a ticket from the desk", || {
+            let kept = tickets_beneath(&desk_tickets);
+            async move {
+                if kept > 0 {
+                    Ok(())
+                } else {
+                    Err("no ticket on disk".to_owned())
                 }
             }
         })
@@ -186,7 +206,6 @@ async fn a_host_resumed_with_a_ticket_for_a_key_no_longer_pinned_is_refused_as_r
     linked
         .desk_edge()
         .trust_ssh_peer(wire::TrustSshPeerRequest {
-            profile_id: Vec::new(),
             peer: Some(wire::PairingIdentity {
                 host_id: laptop.as_bytes().to_vec(),
                 pubkey: vec![7; 32],
@@ -197,6 +216,20 @@ async fn a_host_resumed_with_a_ticket_for_a_key_no_longer_pinned_is_refused_as_r
         })
         .await
         .unwrap();
+    // The link the laptop's old key holds is closed as the desk pins the
+    // new one, but not at once. A resumed link that finds it still up is
+    // refused as a second link before the desk can refuse the ticket.
+    until("the laptop's link under its old key to close", || {
+        let edge = linked.laptop_edge.clone();
+        async move {
+            match edge.via(desk).await {
+                node::harness::LiveRoute::Offline => Ok(()),
+                route => Err(format!("still {route:?}")),
+            }
+        }
+    })
+    .await
+    .unwrap();
 
     let refused = linked
         .laptop_edge
@@ -209,17 +242,58 @@ async fn a_host_resumed_with_a_ticket_for_a_key_no_longer_pinned_is_refused_as_r
         let revoked = linked
             .laptop_runtime
             .host_entry_of(desk)
-            .and_then(|entry| entry.revoked);
+            .is_some_and(|entry| entry.revoked());
         async move {
-            match revoked {
-                Some(true) => Ok(()),
-                other => Err(format!("{other:?}")),
+            if revoked {
+                Ok(())
+            } else {
+                Err("not revoked yet".to_owned())
             }
         }
     })
     .await
     .unwrap();
     linked.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn unpairing_a_host_removes_the_tickets_and_tokens_it_gave() {
+    let linked = Linked::new().await;
+    let desk = linked.desk_edge().host_id();
+    let kept = |dir: &str| linked.laptop.profile_dir().join(dir).join(desk.to_string());
+    assert!(tickets_beneath(&kept(node::CLIENT_TICKETS_DIR)) > 0);
+
+    linked
+        .laptop_edge
+        .unpair(
+            wire::HostRef {
+                of: Some(wire::host_ref::Of::HostId(desk.as_bytes().to_vec())),
+            },
+            String::new(),
+        )
+        .await
+        .unwrap();
+    assert!(!kept(node::CLIENT_TICKETS_DIR).exists());
+    assert!(!kept(node::CLIENT_TOKENS_DIR).exists());
+    linked.stop().await;
+}
+
+/// How many ticket files are anywhere beneath `dir`.
+fn tickets_beneath(dir: &std::path::Path) -> usize {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| {
+            let path = entry.path();
+            if path.is_dir() {
+                tickets_beneath(&path)
+            } else {
+                usize::from(path.extension().is_some_and(|ext| ext == "ticket"))
+            }
+        })
+        .sum()
 }
 
 /// What the process logs of links and of the streams peers open, for a
@@ -322,14 +396,16 @@ async fn first_flight_on_every_path_reaches_the_host_once() {
     })
     .await
     .unwrap();
-    let trust_file = laptop.profile_dir().join("trust.json");
     until("the laptop to remember where the desk answered", || {
-        let trust = std::fs::read_to_string(&trust_file).unwrap_or_default();
+        let direct = laptop
+            .trusted_host(desk_id)
+            .map(|row| row.direct)
+            .unwrap_or_default();
         async move {
-            if trust.contains(&format!("127.0.0.1:{port}")) {
+            if direct.contains(&format!("127.0.0.1:{port}")) {
                 Ok(())
             } else {
-                Err(trust)
+                Err(direct)
             }
         }
     })
@@ -340,17 +416,10 @@ async fn first_flight_on_every_path_reaches_the_host_once() {
 
     // The desk lists both its addresses, as its Hello says them: the
     // laptop's first flight goes to each.
-    let mut trust: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&trust_file).unwrap()).unwrap();
-    let reachabilities = trust[desk_id.to_string()]["reachabilities"]
-        .as_array_mut()
-        .expect("the desk's entry lists its reachabilities");
-    let direct = reachabilities
-        .iter_mut()
-        .find(|reachability| reachability["type"] == "direct")
-        .expect("the desk is remembered at an address");
-    direct["addrs"] = serde_json::json!([format!("127.0.0.1:{port}"), format!("[::1]:{port}")]);
-    std::fs::write(&trust_file, serde_json::to_vec_pretty(&trust).unwrap()).unwrap();
+    laptop.edit_trusted_host(desk_id, |row| {
+        row.direct =
+            serde_json::json!([format!("127.0.0.1:{port}"), format!("[::1]:{port}")]).to_string();
+    });
 
     let mark = captured().lock().unwrap().len();
     let mut options = laptop.options("boot-1", quiet_launch());
@@ -408,14 +477,10 @@ async fn a_first_flight_with_no_ticket_to_an_address_that_never_answers_gives_up
     // answers none, and has never linked to the desk, so holds no ticket
     // for it: its dial there goes through a whole handshake.
     let silent = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-    let trust_file = laptop.profile_dir().join("trust.json");
-    let mut trust: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&trust_file).unwrap()).unwrap();
-    trust[desk_id.to_string()]["reachabilities"] = serde_json::json!([{
-        "type": "direct",
-        "addrs": [silent.local_addr().unwrap().to_string()],
-    }]);
-    std::fs::write(&trust_file, serde_json::to_vec_pretty(&trust).unwrap()).unwrap();
+    laptop.edit_trusted_host(desk_id, |row| {
+        row.direct = serde_json::json!([silent.local_addr().unwrap().to_string()]).to_string();
+        row.on_account = false;
+    });
     let mut options = laptop.options("boot-1", quiet_launch());
     options.edge = lan(None);
     let laptop_daemon = node::start(options, None).await.unwrap();

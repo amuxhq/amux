@@ -1,19 +1,15 @@
 //! Presence and routing explored over the real daemon core at the bounds
 //! `just test` runs, and walked by seed.
 
-use daemon_core::{HostId, Route};
-use models::presence::{Action, Concluded, State, Via};
+use daemon_core::Presence;
+use models::presence::{Action, State, Via};
 use models::{Bounds, Machine, PresenceRouting, check, walk};
 
-/// How long the exhaustive run may take under `just test`, sized to CI's
-/// four-core runner. No runner has timed these bounds, so the budget is the
-/// four-thread Mac time (50.6 s, 900,130 states) times 4.7, the slowest
-/// runner-to-Mac ratio, doubled and rounded up to a whole minute. With two
-/// failures and the plan heard at once the bounds explored 1,184,108 states,
-/// about 330 s projected on the runner, and twice that passed the 600 s
-/// cap, so the second failure moved to the nightly bounds. A run past it
-/// says the bounds have outgrown their place.
-const BUDGET_SECONDS: f64 = 480.0;
+/// How many states the exhaustive run may explore: its count at these
+/// bounds (50,510 on 2026-10-26) with two percent over, since the count can
+/// move with the threads. A run past it says the bounds have outgrown their
+/// place; a run that hangs is the test harness's bound to catch.
+const BUDGET_STATES: u64 = 51_600;
 
 #[test]
 fn every_presence_promise_holds_at_ci_bounds() {
@@ -30,9 +26,9 @@ fn every_presence_promise_holds_at_ci_bounds() {
     );
     verdict.assert_holds();
     assert!(
-        measured.seconds <= BUDGET_SECONDS,
-        "the presence model took {:.1}s, past its {BUDGET_SECONDS}s budget",
-        measured.seconds
+        measured.states <= BUDGET_STATES,
+        "the presence model explored {} states, past its {BUDGET_STATES}",
+        measured.states
     );
 }
 
@@ -79,31 +75,24 @@ fn take(model: &PresenceRouting, state: &State, action: Action) -> State {
     model.next(state, &action).expect("an enabled action steps")
 }
 
-/// The CI bounds keep the relay refusing the host's packets for the plan
-/// both while an attempt through it is in flight and while the route through
-/// it carries the host's traffic, the plan having lapsed before this host
-/// heard.
+/// At the CI bounds the relay refuses a dial through it for the plan,
+/// which reads the host away, and carries one once the plan is bought and
+/// heard of, which reads it online over a link of its own.
 #[test]
-fn the_relay_refuses_packets_at_ci_bounds() {
+fn the_relay_refuses_then_carries_a_dial_at_ci_bounds() {
     let model = PresenceRouting::ci();
-    let relayed = Route::Via(HostId([9; 16]));
-    let refused = Action::ForwardRefused(Via::Relay, true);
-
     let claimed = take(&model, &model.init(), Action::ClaimUp(Via::Relay));
-    let trying = take(&model, &claimed, Action::TimerFired);
-    assert!(trying.attempting(relayed), "{trying:?}");
-    take(&model, &trying, refused.clone());
+    assert!(claimed.dialling(), "{claimed:?}");
+    let refused = take(&model, &claimed, Action::DialTried { fails: false });
+    assert_eq!(refused.presence(), Presence::Away, "{refused:?}");
 
-    let bought = take(&model, &model.init(), Action::PlanChanged);
-    let paid = take(&model, &bought, Action::PlanHeard);
-    let claimed = take(&model, &paid, Action::ClaimUp(Via::Relay));
-    let trying = take(&model, &claimed, Action::TimerFired);
-    let carried = take(
-        &model,
-        &trying,
-        Action::AttemptConcluded(relayed, Concluded::Ok),
+    let bought = take(&model, &refused, Action::PlanChanged);
+    let heard = take(&model, &bought, Action::PlanHeard);
+    let carried = take(&model, &heard, Action::DialTried { fails: false });
+    assert_eq!(carried.presence(), Presence::Online, "{carried:?}");
+    assert!(
+        carried.active().is_some_and(|route| route.is_direct()),
+        "{carried:?}"
     );
-    assert_eq!(carried.active(), Some(relayed), "{carried:?}");
-    let lapsed = take(&model, &carried, Action::PlanChanged);
-    take(&model, &lapsed, refused);
+    assert!(!carried.dialling(), "{carried:?}");
 }

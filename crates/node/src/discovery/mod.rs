@@ -20,9 +20,9 @@ mod mdns_stub;
 mod scripted;
 
 #[cfg(not(target_os = "ios"))]
-pub use mdns::MdnsDiscovery;
+pub use mdns::{MdnsDiscovery, MdnsShared};
 #[cfg(target_os = "ios")]
-pub use mdns_stub::MdnsDiscovery;
+pub use mdns_stub::{MdnsDiscovery, MdnsShared};
 pub use scripted::ScriptedDiscovery;
 
 /// The DNS-SD service type advertised by an amux LAN listener.

@@ -1,4 +1,4 @@
-//! The phone's performance topology, as `scripts/ios-perf.py` serves it.
+//! The phone's performance topology, as `testnet journey perf` serves it.
 
 use qualification::perf::phone;
 

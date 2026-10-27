@@ -4,14 +4,14 @@ import Foundation
 
 /// One open chat on the shared runtime.
 ///
-/// Rows are handed out by item key, which never moves: the owner holds a
-/// sequence of keys that changes only at its two edges, fetches the rows an
-/// update changed, and reads the keys again only when a change batch says
-/// the sequence was reloaded. The sequence is the chat's window: while the
-/// reader follows the newest row it keeps at most its cap and drops the
-/// oldest rows as new ones arrive; while the reader is in history it stays
-/// put, and what arrives is held apart until the reader returns. The owner
-/// says which with `follow`. Close it before the runtime stops.
+/// It opens whole, and then moves by the deltas the profile's steps hand
+/// its owner. Rows are handed out by item key, which never moves, so the
+/// sequence of keys changes only at its two edges until a delta reloads
+/// it. The sequence is the chat's window: while the reader follows the
+/// newest row it keeps at most its cap and drops the oldest rows as new
+/// ones arrive; while the reader is in history it stays put, and what
+/// arrives is held apart until the reader returns. The owner says which
+/// with `follow`. Close it before the runtime stops.
 public final class Chat: ChatSource, @unchecked Sendable {
     private let handle: OpaquePointer
     private let loop: CoreLoop
@@ -45,33 +45,12 @@ public final class Chat: ChatSource, @unchecked Sendable {
         lock.withLock { open ? body(handle) : closed }
     }
 
-    public func keys() -> [String] {
-        call([]) { live in
-            Bridge.read([String].self, amux_session_keys(live)) ?? []
-        }
-    }
-
-    /// Keys newer than `newest`, or nil when it is no longer held.
-    public func keys(above newest: String) -> [String]? {
-        call(nil) { live in
-            newest.withCString {
-                Bridge.read([String]?.self, amux_session_new_keys_above(live, $0))
-            } ?? nil
-        }
-    }
-
-    /// Keys older than `oldest`, or nil when it is no longer held.
-    public func keys(below oldest: String) -> [String]? {
-        call(nil) { live in
-            oldest.withCString {
-                Bridge.read([String]?.self, amux_session_new_keys_below(live, $0))
-            } ?? nil
-        }
-    }
-
-    public func oldestKey() -> String? {
-        call(nil) { live in
-            Bridge.read(String?.self, amux_session_oldest_key(live)) ?? nil
+    public func opening() -> ChatDelta {
+        let closed = ChatDelta(
+            chat: id, rows: [], ask: nil, frame: nil, keys: .reload([]), overview: nil,
+            settings: nil)
+        return call(closed) { live in
+            Bridge.read(ChatDelta.self, amux_session_opening(live)) ?? closed
         }
     }
 
@@ -79,67 +58,26 @@ public final class Chat: ChatSource, @unchecked Sendable {
         call(()) { live in amux_session_follow(live, following) }
     }
 
-    public func rows(for keys: [String], options: RowOptions? = nil) -> [Row] {
+    public func keptDraft() -> Draft? {
+        call(nil) { live in Bridge.read(Draft?.self, amux_session_kept_draft(live)) ?? nil }
+    }
+
+    /// Keeps the draft with this phone's daemon for the profile; saves go in
+    /// order and an empty draft is forgotten.
+    public func keep(_ draft: Draft) {
+        call(()) { live in Bridge.json(draft).withCString { amux_session_keep_draft(live, $0) } }
+    }
+
+    public func rows(for keys: [String]) -> [Row] {
         call([]) { live in
-            Bridge.json(keys).withCString { keys in
-                if let options {
-                    return Bridge.json(options).withCString {
-                        Bridge.read([Row].self, amux_session_rows_for(live, keys, $0))
-                    }
-                }
-                return Bridge.read([Row].self, amux_session_rows_for(live, keys, nil))
+            Bridge.json(keys).withCString {
+                Bridge.read([Row].self, amux_session_rows_for(live, $0))
             } ?? []
         }
     }
 
-    public func toggleRun(_ member: String, open: [String]) -> [String] {
-        call(open) { live in
-            member.withCString { member in
-                Bridge.json(open).withCString {
-                    Bridge.read([String].self, amux_session_toggle_run(live, member, $0))
-                }
-            } ?? open
-        }
-    }
-
-    public func keepOpenRuns(_ open: [String]) -> [String] {
-        call(open) { live in
-            Bridge.json(open).withCString {
-                Bridge.read([String].self, amux_session_keep_open_runs(live, $0))
-            } ?? open
-        }
-    }
-
-    public func askCard() -> AskCard? {
-        call(nil) { live in
-            Bridge.read(AskCard?.self, amux_session_ask_card(live)) ?? nil
-        }
-    }
-
-    public func overview() -> Overview? {
-        call(nil) { live in
-            Bridge.read(Overview.self, amux_session_overview(live))
-        }
-    }
-
-    public func settings() -> SettingsView? {
-        call(nil) { live in
-            Bridge.read(SettingsView.self, amux_session_settings(live))
-        }
-    }
-
-    public func frame() -> ChatFrame? {
-        call(nil) { live in
-            Bridge.read(ChatFrame.self, amux_session_frame(live))
-        }
-    }
-
-    /// What changed since the last take; the next change wakes the owner.
-    public func takeChanges() -> ChatChanges {
-        let none = ChatChanges(keys: [], reloaded: false, session: false)
-        return call(none) { live in
-            Bridge.read(ChatChanges.self, amux_session_take_changes(live)) ?? none
-        }
+    public func toggleRun(_ member: String) {
+        call(()) { live in member.withCString { amux_session_toggle_run(live, $0) } }
     }
 
     // MARK: - Acts

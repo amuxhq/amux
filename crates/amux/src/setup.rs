@@ -1,6 +1,5 @@
 //! The verbs that set an install up rather than talk to its agents:
-//! `amux init` (whether amux starts at login), `amux update` and
-//! `amux config channel`.
+//! `amux init` (whether amux starts at login) and `amux update`.
 
 use std::io::{BufRead as _, IsTerminal as _, Write as _};
 use std::path::{Path, PathBuf};
@@ -9,9 +8,8 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, bail};
 use node::supervisor::login::LoginItem;
-use node::supervisor::{Request, ask};
-use settings::{Channel, InstallationConfig, Switch};
-use wire::Empty;
+use node::supervisor::{Files, Request, ask};
+use settings::InstallationConfig;
 
 use crate::connect;
 use crate::server::running_supervisor;
@@ -30,7 +28,7 @@ pub async fn init(
     login_item: Option<bool>,
     dry_run: bool,
 ) -> Result<()> {
-    if config.supervisor == Switch::Off {
+    if !config.supervisor {
         println!(
             "This install has no supervisor: the service manager that runs `amux daemon` \
              starts it at boot, so there is no login item to add."
@@ -213,10 +211,11 @@ fn words(words: &[&str]) -> Vec<String> {
     words.iter().map(|word| (*word).to_owned()).collect()
 }
 
-/// `amux update`: asks the supervisor to check the channel now, ignoring a
-/// rolled-back build, and waits for a build it installs to answer.
-pub async fn update(config: &InstallationConfig) -> Result<()> {
-    if config.supervisor == Switch::Off {
+/// `amux update`: asks the supervisor to check the channel now (with
+/// `retry`, a build rolled back here too), and waits for a build it
+/// installs to answer, or for the supervisor to roll it back.
+pub async fn update(config: &InstallationConfig, retry: bool) -> Result<()> {
+    if !config.supervisor {
         println!(
             "This install has no supervisor, so updates are deploys: install the new build \
              the way this host's amux was installed."
@@ -226,7 +225,16 @@ pub async fn update(config: &InstallationConfig) -> Result<()> {
     if running_supervisor(&config.root)?.is_none() {
         bail!("amux supervise is not running; `amux server start` starts it");
     }
-    let answer = ask(&config.root, Request::Check, CHECK_PATIENCE)
+    // The supervisor records a rollback beside the binary it runs, which
+    // is this one wherever amux was installed by its installer.
+    let files = Files::beside(&std::env::current_exe().context("finding the amux binary")?);
+    let recorded = rejection(&files);
+    let request = if retry {
+        Request::Retry
+    } else {
+        Request::Check
+    };
+    let answer = ask(&config.root, request, CHECK_PATIENCE)
         .await
         .context("asking amux supervise to check for a release")?;
     let Some(version) = answer.strip_prefix("installing ") else {
@@ -235,15 +243,39 @@ pub async fn update(config: &InstallationConfig) -> Result<()> {
     };
     println!("Installing amux {version}.");
     let deadline = Instant::now() + RESTART_PATIENCE;
+    let mut rolled_back = false;
     while Instant::now() < deadline {
-        if let Some(door) = connect::front_door_now(config).await
-            && let Ok(info) = connect::installation(door).get_info(Empty {}).await
-            && info.get_ref().version == version
-        {
+        let running = match connect::front_door_now(config).await {
+            Some(door) => connect::installation(door)
+                .get_installation(wire::GetInstallationRequest {})
+                .await
+                .ok()
+                .map(|info| info.into_inner().version),
+            None => None,
+        };
+        if running.as_deref() == Some(version) {
             println!("amux {version} is running.");
             return Ok(());
         }
+        rolled_back = rolled_back
+            || rejection(&files)
+                .is_some_and(|now| Some(&now) != recorded.as_ref() && now.0 == version);
+        // The build put back is up once a daemon answers.
+        if rolled_back && let Some(running) = running {
+            bail!(
+                "amux {version} did not start, so the supervisor put amux {running} back. \
+                 Its log is {}; `amux update --retry` tries {version} again.",
+                config.root.join(SUPERVISOR_LOG).display()
+            );
+        }
         tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    if rolled_back {
+        bail!(
+            "amux {version} did not start, so the supervisor is putting the previous build \
+             back. Its log is {}.",
+            config.root.join(SUPERVISOR_LOG).display()
+        );
     }
     println!(
         "amux {version} has not come up yet. If it never does, the supervisor puts the \
@@ -253,6 +285,16 @@ pub async fn update(config: &InstallationConfig) -> Result<()> {
     Ok(())
 }
 
+/// The build the supervisor last rolled back, with when it was recorded,
+/// so a rollback of the same build again still reads as new.
+fn rejection(files: &Files) -> Option<(String, std::time::SystemTime)> {
+    let version = files.rejected()?.to_string();
+    let recorded = std::fs::metadata(&files.rejected)
+        .and_then(|metadata| metadata.modified())
+        .ok()?;
+    Some((version, recorded))
+}
+
 /// The supervisor's answer as a sentence.
 fn sentence(answer: &str) -> String {
     let mut chars = answer.chars();
@@ -260,90 +302,4 @@ fn sentence(answer: &str) -> String {
         Some(first) => format!("{}{}.", first.to_uppercase(), chars.as_str()),
         None => String::new(),
     }
-}
-
-/// `amux config channel`: which releases the supervisor follows. It reads
-/// the config before every check, so the change needs no restart.
-pub fn set_channel(config_path: Option<&Path>, channel: Channel) -> Result<()> {
-    let name = match channel {
-        Channel::Stable => "stable",
-        Channel::Preview => "preview",
-    };
-    set_key(config_path, "channel", name)?;
-    println!(
-        "Channel: {name}. The supervisor follows it from its next check; `amux update` checks now."
-    );
-    Ok(())
-}
-
-/// `amux config telemetry [on|off]`: turns product analytics on or off, or
-/// says whether it is on and where it goes. The daemon reads the setting
-/// before every upload, so off takes effect at once and on resumes a daemon
-/// that started with it on; a daemon that started with it off has no
-/// uploader and starts sending when it next starts.
-pub fn telemetry(config_path: Option<&Path>, state: Option<Switch>) -> Result<()> {
-    if let Some(state) = state {
-        let name = match state {
-            Switch::On => "on",
-            Switch::Off => "off",
-        };
-        set_key(config_path, "telemetry", name)?;
-    }
-    let config = crate::connect::load_config(config_path)?;
-    let destination = analytics::Endpoint::resolve(node::release::is_published())
-        .map(|endpoint| endpoint.describe(settings::DEFAULT_CLOUD_URL));
-    let line = match (config.telemetry, destination) {
-        (Switch::Off, _) => "Telemetry: off. amux sends no product analytics.".to_owned(),
-        (Switch::On, _) if analytics::do_not_track() => {
-            // This command sees its own shell's environment, not the
-            // daemon's: one started at login never sees a variable set in a
-            // shell profile, so only the setting is sure to reach it.
-            "Telemetry: on, but DO_NOT_TRACK is set in this shell, so a daemon started from \
-             it sends nothing. A daemon started at login does not see it; \
-             `amux config telemetry off` turns telemetry off for every daemon."
-                .to_owned()
-        }
-        (Switch::On, None) => {
-            "Telemetry: on, but this is a development build, which sends nothing.".to_owned()
-        }
-        (Switch::On, Some(destination)) => format!(
-            "Telemetry: on. Usage events go to {destination}, then to PostHog in the EU. \
-             `amux config telemetry off` stops them."
-        ),
-    };
-    println!("{line}");
-    if state == Some(Switch::On) {
-        println!("A daemon that started with telemetry off starts sending when it next starts.");
-    }
-    Ok(())
-}
-
-/// Sets one top-level key in the installation's config file, keeping the
-/// rest as it is, and checks that the file still reads.
-fn set_key(config_path: Option<&Path>, key: &str, value: &str) -> Result<()> {
-    let path = config_path
-        .map(Path::to_owned)
-        .unwrap_or_else(InstallationConfig::default_path);
-    let mut yaml = match std::fs::read_to_string(&path) {
-        Ok(text) => serde_yaml::from_str::<serde_yaml::Value>(&text)
-            .with_context(|| format!("reading {}", path.display()))?,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => serde_yaml::Value::Null,
-        Err(error) => return Err(error).with_context(|| format!("reading {}", path.display())),
-    };
-    if yaml.is_null() {
-        yaml = serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
-    }
-    yaml.as_mapping_mut()
-        .with_context(|| format!("{} is not a mapping of settings", path.display()))?
-        .insert(key.into(), value.into());
-    let text = serde_yaml::to_string(&yaml)?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
-    }
-    node::write_durably(&path, text.as_bytes())
-        .with_context(|| format!("writing {}", path.display()))?;
-    InstallationConfig::from_file(&path)
-        .with_context(|| format!("reading back {}", path.display()))?;
-    Ok(())
 }

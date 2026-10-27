@@ -26,9 +26,9 @@ effect terminal permission of 2 AllowScoped { suggestion: 0 }
 effect reply a2 accepted
 snapshot WORKING queue=[] working_on="tidy up" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t1 Bash since=1800000000000
 ## 9 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t1","input":{"command":"rm stamp.txt"},"name":"Bash","type":"tool_use"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.012Z","type":"assistant","uuid":"a1"}}
-item t1 tool final at=1800000000012 text="" Bash TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED grant=claude(destination=session directories=["/private/tmp/work"]) input="{\"command\":\"rm stamp.txt\"}"
+item t1 tool final at=1800000000012 text="" Bash TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED grant=claude(destination=session directories=["/private/tmp/work"]) input=shell:"rm stamp.txt"
 ## 10 fact {"channel":"transcript","json":{"message":{"content":[{"content":"","is_error":false,"tool_use_id":"t1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.014Z","toolUseResult":{"interrupted":false,"stderr":"","stdout":""},"type":"user","uuid":"r1"}}
-item t1 tool final at=1800000000012 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED grant=claude(destination=session directories=["/private/tmp/work"]) ended=1800000000014 input="{\"command\":\"rm stamp.txt\"}"
+item t1 tool final at=1800000000012 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED grant=claude(destination=session directories=["/private/tmp/work"]) ended=1800000000014 input=shell:"rm stamp.txt"
 snapshot WORKING queue=[] working_on="tidy up" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 11 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"command":"touch /private/tmp/work/b.txt"},"tool_name":"Bash","tool_use_id":"t2"}}
 snapshot WORKING queue=[] working_on="tidy up" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t2 Bash since=1800000000000
@@ -41,9 +41,9 @@ effect terminal permission of 3 AllowOnce
 effect reply a4 accepted
 snapshot WORKING queue=[] working_on="tidy up" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t2 Bash since=1800000000000
 ## 15 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t2","input":{"command":"touch /private/tmp/work/b.txt"},"name":"Bash","type":"tool_use"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.019Z","type":"assistant","uuid":"a2"}}
-item t2 tool final at=1800000000019 text="" Bash TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED input="{\"command\":\"touch /private/tmp/work/b.txt\"}"
+item t2 tool final at=1800000000019 text="" Bash TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED input=shell:"touch /private/tmp/work/b.txt"
 ## 16 fact {"channel":"transcript","json":{"message":{"content":[{"content":"","is_error":false,"tool_use_id":"t2","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.020Z","toolUseResult":{"interrupted":false,"stderr":"","stdout":""},"type":"user","uuid":"r2"}}
-item t2 tool final at=1800000000019 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED ended=1800000000020 input="{\"command\":\"touch /private/tmp/work/b.txt\"}"
+item t2 tool final at=1800000000019 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED ended=1800000000020 input=shell:"touch /private/tmp/work/b.txt"
 snapshot WORKING queue=[] working_on="tidy up" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 17 fact {"channel":"transcript","json":{"durationMs":20,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.030Z","type":"system","uuid":"d1"}}
 item turn:1 turn final at=1800000000030 text="" #1 TURN_OUTCOME_COMPLETED started=1800000000010

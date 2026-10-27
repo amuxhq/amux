@@ -109,7 +109,9 @@ pub fn review_doc(diff: &Diff, patch: &str, comments: &[ReviewComment]) -> Revie
             let (old, new) = hunk_starts(header);
             old_line = old;
             new_line = new;
-            let scope = header.split_once("@@").map_or("", |(_, scope)| scope.trim());
+            let scope = header
+                .split_once("@@")
+                .map_or("", |(_, scope)| scope.trim());
             file.hunks.push(Hunk {
                 skips: !file.hunks.is_empty() || old.max(new) > 1,
                 scope: scope.to_owned(),

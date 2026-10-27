@@ -108,25 +108,22 @@ and come back as inputs.
 A call that waits for the cores to do something (starting, stopping, a
 profile or chat opening) runs its work on the transport thread and steps the
 cores on the calling thread meanwhile, so it never waits on a queue the
-calling thread holds. Through the C ABI a step answers JSON naming the
-fleets and chats to redraw, whether the profile list moved, and the results
-of acts, each under the ticket its act returned when it started.
+calling thread holds. Through the C ABI a step answers JSON with what moved
+in each open fleet and chat as a delta, the profile list when it moved, and
+the results of acts, each under the ticket its act returned when it started
+and after the deltas of what it moved.
 
 ## Profiles
 
 `EmbeddedRuntime` is one installation with one profile per account, exactly
-as a desktop daemon is. Its registry calls create, delete, bind, sign out,
-pause and resume profiles by id, and every per-profile call names the profile
-it is for.
+as a desktop daemon is. Its registry calls create, delete, bind and sign
+out profiles by id, and every per-profile call names the profile it is for.
 
 - **Bind** takes a refresh token a sign-in produced, with the account
   service's address and the OAuth client it was issued to. From then on the
   profile holds and spends that token, fetches relay credentials and keeps
   its relay link up. The client never talks to the account service on the
   profile's behalf; it borrows a bearer (`access_token`) for its own calls.
-- **Pause** holds a signed-in profile's relay link down while keeping its
-  direct links and store; **resume** brings it back. The phone keeps exactly
-  one relay link up this way.
 - **Source policy** (`set_source_policy`) says whether a profile keeps a
   source open for every agent it lists or only for the chats that ask.
 - **Discovered** hands the whole set of machines the platform found on the
@@ -168,11 +165,11 @@ Every value the bridge carries has a Swift mirror in
 from the Rust definitions:
 
 ```sh
-cargo run -p xtask -- swift-types          # regenerate
-cargo run -p xtask -- swift-types --check  # fail when the committed file differs
+cargo run -p ios-tools -- swift-types          # regenerate
+cargo run -p ios-tools -- swift-types --check  # fail when the committed file differs
 ```
 
-`crates/xtask/src/swift_types.rs` lists the root types, from `model`,
+`crates/ios-tools/src/swift_types.rs` lists the root types, from `model`,
 `ui-view` and `app-runtime::values`; everything they hold comes along. The
 schemas come from `schemars`. A struct becomes a Swift struct with the Rust
 field names as coding keys; a string-only enum becomes a raw-value enum; any
@@ -232,7 +229,7 @@ Every call, its arguments and its threading are in
 
 The bridge is `app-ffi` built as `libamux_app.a`, with the header
 `amux_app.h`, packaged into an XCFramework whose module is `AmuxApp`.
-`scripts/ios_bridge.py` holds the names and layout both bridge recipes share.
+`apps/apple/Tools/ios_bridge.py` holds the names and layout both bridge recipes share.
 
 ```sh
 just ios rust      # the simulator slice a development build links
@@ -264,6 +261,6 @@ slice sizes to `target/ios/size.txt`.
 
 | Command | What it proves |
 | --- | --- |
-| `cargo test -p app-runtime` | The host is woken once however many updates land and takes every changed key together; older rows arrive below the oldest held; collapsed runs and the chat frame read as the views say; a settings pick reaches the agent |
+| `cargo test -p app-runtime` | The host is woken once however many updates land and hears them as one delta; a host's keys moved only by deltas follow the window through every seeded schedule of the client model, and through a trim to the cap; new rows arrive above the newest held and older ones below the oldest, each read when drawn; collapsed runs and the chat frame read as the views say; a settings pick reaches the agent |
 | `cargo test -p app-embedded` | A phone pairs by PIN and reads a machine's agents from its own rows; relinks when its browser finds the machine again; each account is a profile and only the resumed one holds a relay link; a signed-in phone reaches its hosts over the relay; a dump carries the runtime's log, redacted |
-| `cargo test -p app-ffi` | Through the C functions: pairing by PIN, the fleet, a chat's rows by key, a permission answered by position and a question by picks, paging and a dump; and no wake reaches a closed profile or chat while its acts are in flight |
+| `cargo test -p app-ffi` | Through the C functions, with the phone's state held only from openings and deltas: pairing by PIN, the fleet, a chat's rows by key, a permission answered by position and a question by picks, paging (handed over before its answer) and a dump; and nothing closed is handed over while its acts are in flight |

@@ -21,9 +21,9 @@ snapshot WORKING queue=[] working_on=- at=1788080282291 asks=[] session=eafd66d9
 item c642dc93-7f82-4701-ab64-d977ff7b6593 thinking final at=1788080281489 text=""
 snapshot WORKING queue=[] working_on=- at=1788080282369 asks=[] session=eafd66d9-41c5-4216-8d1a-7a493141d679 model=claude-sonnet-5 model_name="Sonnet 5" mode=plan context=49785 tasks=? background=?
 ## 28 recorded 26: fact Transcript type=assistant uuid=815ec286-7f11-40e6-af31-7f8db532bb64
-item toolu_01MXgmxQYQDSMgBP7xGgnaYC tool final at=1788080281922 text="" Bash TOOL_STATE_RUNNING started=1788080281922 input="{\"command\":\"cat README.md 2>/dev/null || echo \\\"NOT FOUND\\\"\"…"
+item toolu_01MXgmxQYQDSMgBP7xGgnaYC tool final at=1788080281922 text="" Bash TOOL_STATE_RUNNING started=1788080281922 input=shell:"cat README.md 2>/dev/null || echo \"NOT FOUND\""
 ## 29 recorded 27: fact Transcript type=user uuid=aecfa0ae-e06d-4822-8670-aaa38098673e
-item toolu_01MXgmxQYQDSMgBP7xGgnaYC tool final at=1788080281922 text="" Bash TOOL_STATE_SUCCEEDED started=1788080281922 ended=1788080282460 input="{\"command\":\"cat README.md 2>/dev/null || echo \\\"NOT FOUND\\\"\"…" out="CURRENT"
+item toolu_01MXgmxQYQDSMgBP7xGgnaYC tool final at=1788080281922 text="" Bash TOOL_STATE_SUCCEEDED started=1788080281922 ended=1788080282460 input=shell:"cat README.md 2>/dev/null || echo \"NOT FOUND\"" out="CURRENT"
 ## 44 recorded 42: fact Transcript type=assistant uuid=ee05acaa-d3b1-4310-8249-9fe53fdd2cf3
 item ee05acaa-d3b1-4310-8249-9fe53fdd2cf3 thinking final at=1788080284524 text=""
 snapshot WORKING queue=[] working_on=- at=1788080286388 asks=[] session=eafd66d9-41c5-4216-8d1a-7a493141d679 model=claude-sonnet-5 model_name="Sonnet 5" mode=plan context=49988 tasks=? background=?
@@ -60,7 +60,7 @@ snapshot WORKING queue=[] working_on=- at=1788080296194 asks=[] session=eafd66d9
 ## 83 recorded 81: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_012N117fcWKqVrMgjVuuCieR
 snapshot WORKING queue=[] working_on=- at=1788080296215 asks=[] session=eafd66d9-41c5-4216-8d1a-7a493141d679 model=claude-sonnet-5 model_name="Sonnet 5" mode=auto context=52124 tasks=? background=?
 ## 85 recorded 83: fact Transcript type=assistant uuid=59d336c5-a6a8-4a6d-b5d5-7a3ccebea59c
-item toolu_012N117fcWKqVrMgjVuuCieR tool final at=1788080296332 text="" Edit TOOL_STATE_RUNNING started=1788080296332 input="{\"file_path\":\"<MACHINE_PATH>\",\"new_string\":\"UPDATED\",\"old_st…"
+item toolu_012N117fcWKqVrMgjVuuCieR tool final at=1788080296332 text="" Edit TOOL_STATE_RUNNING started=1788080296332 input=edit:"<MACHINE_PATH>"x1
 snapshot WORKING queue=[] working_on=- at=1788080296274 asks=[] session=eafd66d9-41c5-4216-8d1a-7a493141d679 model=claude-sonnet-5 model_name="Sonnet 5" mode=auto context=52254 tasks=? background=?
 ## 87 recorded 85: fact Transcript type=user uuid=5645ba9f-3853-4c3b-93ff-6fb5ada890ee
-item toolu_012N117fcWKqVrMgjVuuCieR tool final at=1788080296332 text="" Edit TOOL_STATE_SUCCEEDED started=1788080296332 ended=1788080296380 line=1 input="{\"file_path\":\"<MACHINE_PATH>\",\"new_string\":\"UPDATED\",\"old_st…" out="The file /private<MACHINE_PATH> has been updated successfull…"
+item toolu_012N117fcWKqVrMgjVuuCieR tool final at=1788080296332 text="" Edit TOOL_STATE_SUCCEEDED started=1788080296332 ended=1788080296380 line=1 input=edit:"<MACHINE_PATH>"x1 patch=1/2 out="The file /private<MACHINE_PATH> has been updated successfull…"

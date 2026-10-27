@@ -541,30 +541,34 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
     );
     // A client's session as a dump carries it: the same rows, held in its
     // window and arriving as messages since.
-    let history = wire::ClientSessionHistory {
+    let history = wire::dump::ClientSessionHistory {
         agent_id: row.agent_id.clone(),
-        start: Some(wire::ClientSession {
+        start: Some(wire::dump::ClientSession {
             agent: Some(row.clone()),
             snapshot: slice.snapshot.clone(),
-            transcript: Some(wire::ClientTranscript {
+            transcript: Some(wire::dump::ClientTranscript {
                 items: slice.items.clone(),
                 exhausted: true,
             }),
-            ..wire::ClientSession::default()
+            ..wire::dump::ClientSession::default()
         }),
-        events: Some(wire::ClientSessionEvents {
+        events: Some(wire::dump::ClientSessionEvents {
             traced: slice
                 .items
                 .iter()
                 .enumerate()
-                .map(|(seq, item)| wire::ClientTraced {
+                .map(|(seq, item)| wire::dump::ClientTraced {
                     seq: seq as u64,
                     at_ms: 0,
-                    event: Some(wire::client_traced::Event::Msg(wire::ClientSessionMsg {
-                        of: Some(wire::client_session_msg::Of::Event(wire::SessionEvent {
-                            of: Some(wire::session_event::Of::Item(item.clone())),
-                        })),
-                    })),
+                    event: Some(wire::dump::client_traced::Event::Msg(
+                        wire::dump::ClientSessionMsg {
+                            of: Some(wire::dump::client_session_msg::Of::Event(
+                                wire::SessionEvent {
+                                    of: Some(wire::session_event::Of::Item(item.clone())),
+                                },
+                            )),
+                        },
+                    )),
                 })
                 .collect(),
         }),
@@ -573,10 +577,10 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
         "client session",
         RedactTarget::ClientSession(history.encode_to_vec()),
         |before, after| {
-            let before = wire::ClientSessionHistory::decode(before).unwrap();
-            let after =
-                wire::ClientSessionHistory::decode(after).map_err(|error| error.to_string())?;
-            let arms = |history: &wire::ClientSessionHistory| {
+            let before = wire::dump::ClientSessionHistory::decode(before).unwrap();
+            let after = wire::dump::ClientSessionHistory::decode(after)
+                .map_err(|error| error.to_string())?;
+            let arms = |history: &wire::dump::ClientSessionHistory| {
                 let held = history
                     .start
                     .iter()
@@ -587,12 +591,16 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
                     .iter()
                     .flat_map(|events| events.traced.iter())
                     .filter_map(|traced| match &traced.event {
-                        Some(wire::client_traced::Event::Msg(wire::ClientSessionMsg {
-                            of:
-                                Some(wire::client_session_msg::Of::Event(wire::SessionEvent {
-                                    of: Some(wire::session_event::Of::Item(item)),
-                                })),
-                        })) => Some(item),
+                        Some(wire::dump::client_traced::Event::Msg(
+                            wire::dump::ClientSessionMsg {
+                                of:
+                                    Some(wire::dump::client_session_msg::Of::Event(
+                                        wire::SessionEvent {
+                                            of: Some(wire::session_event::Of::Item(item)),
+                                        },
+                                    )),
+                            },
+                        )) => Some(item),
                         _ => None,
                     });
                 held.chain(arrived)

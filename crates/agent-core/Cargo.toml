@@ -7,6 +7,7 @@ description = "The agent process around its interpreter as one function of its s
 publish = false
 
 [dependencies]
+core-ring = { workspace = true }
 interpret = { workspace = true }
 wire = { workspace = true }
 

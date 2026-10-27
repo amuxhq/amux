@@ -1,4 +1,4 @@
-//! PeerService: the calls a trusted host makes over a link, answered by the
+//! The peer services: the calls a trusted host makes over a link, answered by the
 //! same runtime as the client service's; the caller is the host whose
 //! pinned key the stream's handshake presented. Reads go to the profile's
 //! core as the peer's calls; the rest are served by the shell until what
@@ -13,23 +13,25 @@ use futures_util::stream;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use tonic::{Request, Response, Status};
-use wire::client_service_server::ClientService;
-use wire::peer_service_server::PeerService;
+use wire::agent_service_server::AgentService;
+use wire::peer_agent_service_server::PeerAgentService;
+use wire::peer_session_service_server::PeerSessionService;
+use wire::session_service_server::SessionService;
 use wire::{
-    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, DiffRequest, DumpPart, DumpRequest,
-    Empty, Envelope, FetchRequest, FetchResponse, GetBlobRequest, GetBlobResponse, GetRequest,
-    InventoryEvent, Item, ListRepositoriesRequest, ListRepositoriesResponse, PeerSubscribeRequest,
-    PutBlobRequest, RenameAgentRequest, ResumeAgentRequest, SendInputRequest, SendInputResponse,
-    SendMessageResponse, SessionEvent, StopAgentRequest,
+    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, DumpPart, DumpRequest, Empty,
+    GetBlobRequest, GetBlobResponse, GetDiffRequest, GetItemRequest, InventoryEvent, Item,
+    ListItemsRequest, ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse,
+    PeerSubscribeSessionRequest, PutBlobRequest, RenameAgentRequest, ResumeAgentRequest,
+    SendInputRequest, SendInputResponse, SendMessageResponse, SessionEvent, StopAgentRequest,
 };
 
 use crate::HostId;
 use crate::grpc::{ClientApi, status};
 use crate::runtime::ProfileRuntime;
 use crate::serve::ServeError;
-use crate::transport::{BoxedGrpcAuth, BoxedGrpcConnectInfo, BoxedGrpcIo, tonic_server_builder};
+use crate::transport::{BoxedGrpcAuth, BoxedGrpcConnectInfo, BoxedGrpcIo};
 
-/// Serves PeerService on the streams whose handshake presented a trusted
+/// Serves the peer services on the streams whose handshake presented a trusted
 /// key, until shutdown.
 pub(super) fn serve(
     runtime: Weak<ProfileRuntime>,
@@ -47,8 +49,9 @@ pub(super) fn serve(
         runtime,
     };
     tokio::spawn(async move {
-        let served = tonic_server_builder()
-            .add_service(wire::peer_service_server(service))
+        let served = tonic::transport::Server::builder()
+            .add_service(wire::peer_agent_service_server(service.clone()))
+            .add_service(wire::peer_session_service_server(service))
             .serve_with_incoming_shutdown(incoming, super::wait_for(shutdown))
             .await;
         if let Err(error) = served {
@@ -95,13 +98,12 @@ fn caller<T>(request: &Request<T>) -> Result<HostId, Status> {
 }
 
 #[tonic::async_trait]
-impl PeerService for PeerApi {
-    type SubscribeInventoryStream = <ClientApi as ClientService>::SubscribeInventoryStream;
-    type SubscribeStream = <ClientApi as ClientService>::SubscribeStream;
+impl PeerAgentService for PeerApi {
+    type SubscribeInventoryStream = <ClientApi as AgentService>::SubscribeInventoryStream;
 
     async fn subscribe_inventory(
         &self,
-        request: Request<Empty>,
+        request: Request<wire::SubscribeInventoryRequest>,
     ) -> Result<Response<Self::SubscribeInventoryStream>, Status> {
         let from = caller(&request)?;
         let subscription = self
@@ -114,63 +116,6 @@ impl PeerService for PeerApi {
             Some((Ok(InventoryEvent::clone(&event)), subscription))
         });
         Ok(Response::new(Box::pin(stream)))
-    }
-
-    /// A peer asks for a tail, like a client, or for what came after the
-    /// revision its replica holds, capped.
-    async fn subscribe(
-        &self,
-        request: Request<PeerSubscribeRequest>,
-    ) -> Result<Response<Self::SubscribeStream>, Status> {
-        let from = caller(&request)?;
-        let request = request.into_inner();
-        let agent_id = request.agent_id.clone();
-        let asked = std::time::Instant::now();
-        let subscription = self
-            .runtime()?
-            .peer_subscribe(from, request)
-            .await
-            .map_err(|error| status(error.to_wire()))?;
-        tracing::debug!(
-            agent = %uuid::Uuid::from_slice(&agent_id).map(|id| id.to_string()).unwrap_or_default(),
-            opened_ms = asked.elapsed().as_millis(),
-            "opened a session subscription"
-        );
-        let stream = futures_util::stream::unfold(subscription, |mut subscription| async move {
-            let event = subscription.next().await?;
-            Some((Ok(SessionEvent::clone(&event)), subscription))
-        });
-        Ok(Response::new(Box::pin(stream)))
-    }
-
-    async fn fetch(
-        &self,
-        request: Request<FetchRequest>,
-    ) -> Result<Response<FetchResponse>, Status> {
-        let from = caller(&request)?;
-        self.runtime()?
-            .peer_fetch(from, request.into_inner())
-            .await
-            .map(Response::new)
-            .map_err(|error| status(error.to_wire()))
-    }
-
-    async fn get(&self, request: Request<GetRequest>) -> Result<Response<Item>, Status> {
-        let from = caller(&request)?;
-        self.runtime()?
-            .peer_get(from, request.into_inner())
-            .await
-            .map(Response::new)
-            .map_err(|error| status(error.to_wire()))
-    }
-
-    async fn send_input(
-        &self,
-        request: Request<SendInputRequest>,
-    ) -> Result<Response<SendInputResponse>, Status> {
-        caller(&request)?;
-        self.own(&request.get_ref().agent_id).await?;
-        self.client.send_input(request).await
     }
 
     /// The calling daemon names the parent, one of its own agents or none
@@ -195,7 +140,7 @@ impl PeerService for PeerApi {
     async fn stop_agent(
         &self,
         request: Request<StopAgentRequest>,
-    ) -> Result<Response<Empty>, Status> {
+    ) -> Result<Response<wire::StopAgentResponse>, Status> {
         caller(&request)?;
         self.own(&request.get_ref().agent_id).await?;
         self.client.stop_agent(request).await
@@ -221,11 +166,11 @@ impl PeerService for PeerApi {
 
     async fn send_message(
         &self,
-        request: Request<Envelope>,
+        request: Request<wire::PeerSendMessageRequest>,
     ) -> Result<Response<SendMessageResponse>, Status> {
         caller(&request)?;
         self.runtime()?
-            .send_peer_message(request.into_inner())
+            .send_peer_message(request.into_inner().envelope.unwrap_or_default())
             .await
             .map(Response::new)
             .map_err(|error| status(error.to_wire()))
@@ -249,16 +194,19 @@ impl PeerService for PeerApi {
         self.client.get_blob(request).await
     }
 
-    async fn diff(&self, request: Request<DiffRequest>) -> Result<Response<wire::Diff>, Status> {
+    async fn get_diff(
+        &self,
+        request: Request<GetDiffRequest>,
+    ) -> Result<Response<wire::Diff>, Status> {
         caller(&request)?;
         self.own(&request.get_ref().agent_id).await?;
-        self.client.diff(request).await
+        self.client.get_diff(request).await
     }
 
     async fn get_catalogue(
         &self,
         request: Request<wire::GetCatalogueRequest>,
-    ) -> Result<Response<wire::CatalogueBlob>, Status> {
+    ) -> Result<Response<wire::GetCatalogueResponse>, Status> {
         caller(&request)?;
         self.client.get_catalogue(request).await
     }
@@ -280,5 +228,67 @@ impl PeerService for PeerApi {
             .await
             .map(Response::new)
             .map_err(|error| status(error.to_wire()))
+    }
+}
+
+#[tonic::async_trait]
+impl PeerSessionService for PeerApi {
+    type SubscribeSessionStream = <ClientApi as SessionService>::SubscribeSessionStream;
+
+    /// A peer asks for a tail, like a client, or for what came after the
+    /// revision its replica holds, capped.
+    async fn subscribe_session(
+        &self,
+        request: Request<PeerSubscribeSessionRequest>,
+    ) -> Result<Response<Self::SubscribeSessionStream>, Status> {
+        let from = caller(&request)?;
+        let request = request.into_inner();
+        let agent_id = request.agent_id.clone();
+        let asked = std::time::Instant::now();
+        let subscription = self
+            .runtime()?
+            .peer_subscribe_session(from, request)
+            .await
+            .map_err(|error| status(error.to_wire()))?;
+        tracing::debug!(
+            agent = %uuid::Uuid::from_slice(&agent_id).map(|id| id.to_string()).unwrap_or_default(),
+            opened_ms = asked.elapsed().as_millis(),
+            "opened a session subscription"
+        );
+        let stream = futures_util::stream::unfold(subscription, |mut subscription| async move {
+            let event = subscription.next().await?;
+            Some((Ok(SessionEvent::clone(&event)), subscription))
+        });
+        Ok(Response::new(Box::pin(stream)))
+    }
+
+    async fn list_items(
+        &self,
+        request: Request<ListItemsRequest>,
+    ) -> Result<Response<ListItemsResponse>, Status> {
+        let from = caller(&request)?;
+        self.runtime()?
+            .peer_list_items(from, request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(|error| status(error.to_wire()))
+    }
+
+    async fn get_item(&self, request: Request<GetItemRequest>) -> Result<Response<Item>, Status> {
+        let from = caller(&request)?;
+        self.runtime()?
+            .peer_get_item(from, request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(|error| status(error.to_wire()))
+    }
+
+    async fn send_input(
+        &self,
+        request: Request<SendInputRequest>,
+    ) -> Result<Response<SendInputResponse>, Status> {
+        caller(&request)?;
+        self.own(&request.get_ref().agent_id).await?;
+        self.client.send_input(request).await
     }
 }

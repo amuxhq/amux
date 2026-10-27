@@ -16,9 +16,8 @@ use node::release::{self, Manifest, Release};
 use provider_fakes::Step;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tonic::transport::{Channel as GrpcChannel, Endpoint};
-use wire::client_service_client::ClientServiceClient;
-use wire::profile_service_client::ProfileServiceClient;
-use wire::{Empty, SubscribeRequest, session_event};
+use wire::installation_service_client::InstallationServiceClient;
+use wire::{Empty, SubscribeSessionRequest, session_event};
 
 /// What every test daemon runs with: a scripted local network instead of
 /// real mDNS, which would have macOS ask for Local Network access once per
@@ -151,10 +150,10 @@ pub async fn grpc_channel(path: &Path) -> std::io::Result<GrpcChannel> {
 }
 
 /// The first profile's client service, through the front door at `socket`.
-pub async fn client(socket: &Path) -> ClientServiceClient<GrpcChannel> {
+pub async fn client(socket: &Path) -> wire::ClientStubs {
     let door = grpc_channel(socket).await.expect("a daemon answers");
-    let profile = ProfileServiceClient::new(door)
-        .list_profiles(Empty {})
+    let profile = InstallationServiceClient::new(door)
+        .list_profiles(wire::ListProfilesRequest {})
         .await
         .unwrap()
         .into_inner()
@@ -162,7 +161,7 @@ pub async fn client(socket: &Path) -> ClientServiceClient<GrpcChannel> {
         .into_iter()
         .next()
         .expect("a profile");
-    wire::client_service_client(grpc_channel(Path::new(&profile.socket_path)).await.unwrap())
+    wire::client_stubs(grpc_channel(Path::new(&profile.socket_path)).await.unwrap())
 }
 
 pub use patience::{Stuck, holds_for, until_within};
@@ -194,12 +193,10 @@ pub fn says(chat: &[(String, String)], text: &str, n: usize) -> Result<(), Strin
 
 /// An agent's chat as a client opening it reads it: every item's key and
 /// text, in order, read to CaughtUp.
-pub async fn chat(
-    client: &mut ClientServiceClient<GrpcChannel>,
-    agent: &[u8],
-) -> Vec<(String, String)> {
+pub async fn chat(client: &mut wire::ClientStubs, agent: &[u8]) -> Vec<(String, String)> {
     let mut stream = client
-        .subscribe(SubscribeRequest {
+        .sessions
+        .subscribe_session(SubscribeSessionRequest {
             agent_id: agent.to_vec(),
             tail: 1000,
         })

@@ -17,10 +17,15 @@ forwarder, tickets and early data), `crates/node/src/routing/`
 the relay server), and `crates/node/src/grpc.rs`,
 `crates/node/src/front_door.rs` and `crates/node/src/edge/peer.rs` (the
 services). The protobuf source is in
-[`crates/wire/proto/amux/v1/`](../crates/wire/proto/amux/v1/): link control in
-[`link.proto`](../crates/wire/proto/amux/v1/link.proto), pairing in
-[`pairing.proto`](../crates/wire/proto/amux/v1/pairing.proto), the front door in
-[`front_door.proto`](../crates/wire/proto/amux/v1/front_door.proto).
+[`proto/amux/v1/`](../proto/amux/v1/): link control in
+[`link.proto`](../proto/amux/v1/link.proto), pairing in
+[`pairing_service.proto`](../proto/amux/v1/pairing_service.proto),
+the front door in
+[`installation_service.proto`](../proto/amux/v1/installation_service.proto),
+each profile's administration in
+[`profile_admin_service.proto`](../proto/amux/v1/profile_admin_service.proto),
+and the peer services in
+[`peer_service.proto`](../proto/amux/v1/peer_service.proto).
 
 ## The promises, as properties
 
@@ -39,7 +44,7 @@ properties` lists every one. The main machines:
 
 | Chapter | Machine | Some of its promises |
 | --- | --- | --- |
-| [Presence](#chapter-3-presence), [routing](#chapter-4-routing-and-failover) | presence and routing | presence changes only on a concluded attempt on the preferred route; Away only on payment refusal; offline after failed calls until a channel opens; no flap while another route carries traffic; a refused route stops carrying; a host with a working route eventually reads online |
+| [Presence](#chapter-3-presence), [routing](#chapter-4-routing-and-failover) | presence and routing | presence from links; a claimed host is dialled; a host with a working route eventually reads online |
 | [Replica rows](JOURNAL_AND_STORE.md#own-rows-and-replica-rows) | replication | the block is contiguous; the block agrees with the origin; no row survives from another generation; the cursor is complete; a replica whose origin and link fall quiet becomes current |
 | [The family rule](#the-family-rule) | family and deliveries | no child is deleted by a stale listing; an outbox row is deleted only on accept; each report reaches its parent exactly once; nothing is owed after unpair; every descendant of a stopped parent eventually stops on every reachable host |
 | [Paths](#the-link-socket-and-its-paths) | the path machine | a path carries the link only after a probe on it was answered; the link never leaves a working path for another within the hold-down; the relay path stays ready while the link is direct; after a lapse no packet goes on a path across networks; if any path works the link eventually uses one |
@@ -97,8 +102,8 @@ their own, so they never see a person's laptop or phone and never see each
 other.
 
 Discovery is **never trust or presence**. An unpaired result is only a pairing
-candidate, listed in the inventory as a host entry with `trust = TRUST_CANDIDATE`
-and the addresses pairing will dial. A result claiming a paired host's id is
+candidate, listed in the inventory as a host entry whose standing is
+`Candidate`, carrying the addresses pairing will dial. A result claiming a paired host's id is
 only a dial hint; the pinned handshake must still present that host's key. A
 paired host is online only after a link succeeds. Discovery is queried again
 at startup, after the machine wakes (a monotonic gap of more than 30 seconds),
@@ -117,12 +122,12 @@ streams immediately. Deleting a profile destroys its whole trust store.
 Profiles never inherit another profile's pairing window, pins, routes or
 account.
 
-Trusted peers call the agent operations of `PeerService`
+Trusted peers call the agent operations of `PeerAgentService` and `PeerSessionService`
 ([chapter 7](#chapter-7-the-front-door-and-the-amuxv1-services)).
-Installation lifecycle, profile lifecycle, trust administration and
-pairing-window administration live on the installation front door, or on an
-in-process owner handle where the daemon is embedded; they are never peer
-calls.
+Installation and profile lifecycle live on the installation front door;
+a profile's trust and pairing-window administration live on that profile's
+own socket; where the daemon is embedded, the app calls the same in
+process. None of them is ever a peer call.
 
 ## Chapter 2: Pairing
 
@@ -155,7 +160,7 @@ attempts do not close it. A window lives in the daemon's memory, so none
 survives a restart, and a start run again afterwards opens a fresh one.
 SSH pairing instead exchanges
 identities over the already-authenticated SSH stream (`amux pair user@host`
-runs `amux pair-recv` on the far side) and records outbound reachability only
+runs `amux internal ssh-pair` on the far side) and records outbound reachability only
 on the side that knows how to dial it.
 
 A client can pause SPAKE2 before granting trust. `BeginPair` (PIN or QR
@@ -163,9 +168,9 @@ secret, optional host id and addresses) returns a `PendingPair`: an
 opaque token, the responder's `PairingIdentity` (host id, public key, name and
 an expiry sealed inside the responder identity) and the route pairing found
 (a `RouteKind`: direct or through the relay). When no address and no relay
-route reaches the other host, `BeginPair` answers `ERROR_CODE_UNREACHABLE`
-naming what it tried, never `UNAVAILABLE`, which means this daemon is not
-answering.
+route reaches the other host, `BeginPair` answers `FAILED_PRECONDITION` with
+reason `HOST_UNREACHABLE`, naming what it tried, never `UNAVAILABLE`, which
+means this daemon is not answering.
 Neither trust store changes during this phase. The profile's pairing
 administration holds the open stream behind the single-use token until that
 expiry, and holds at most 32 at once. The token is a local capability, not a
@@ -177,8 +182,8 @@ names no pending pairing reads as every other secret failure. `AbandonPair` send
 and waits for `PairingAbandoned`, which the responder sends after releasing
 the attempt. Abandoning leaves existing trust unchanged and consumes no guess,
 and a token left to expire grants no trust. These calls, with
-`GetDeviceIdentity`, are served only by `ProfileService` on the front door,
-never by a profile socket or a peer stream.
+`GetDeviceIdentity`, are served only by `ProfileAdminService` on the
+profile's own socket, never on an agent's tools socket or a peer stream.
 
 ## Chapter 3: Presence
 
@@ -194,43 +199,34 @@ can make an untrusted host a pairing candidate, but does not grant authority or
 make a discovery result online. A trusted host stays in the inventory whatever
 its presence, and only untrusting it removes it.
 
-A trusted host's presence is the outcome of opening a channel to it, decided in
-one place, the daemon core's presence state (`crates/daemon-core/src/presence.rs`):
+A trusted host's presence follows from the links up to it, decided in one
+place, the daemon core's presence state (`crates/daemon-core/src/presence.rs`):
 
-- **Online:** a channel to the host opened on a route still listed. The route
-  it opened on is the one the host entry's `via` names.
-- **Away:** the relay refused the channel with `PAYMENT_REQUIRED`, because the
-  account's free plan carries no connection between hosts. Upgrading reaches
-  the host; nothing else reads away.
-- **Offline:** everything else. No route is listed, or the channel failed for
-  any other reason: no route at the relay, rate limited, shutting down,
-  revoked, a TLS, handshake or identity failure, a timeout. A host that said it
-  no longer trusts this one is offline and carries `revoked` on its entry.
+- **Online:** a link of the host's own is up, whether its packets go on the
+  network, over SSH or through a forwarder end to end. The kind of path that
+  link takes is the one the host entry's `online` reach names.
+- **Away:** no such link is up, and the relay last refused to forward to the
+  host with `PAYMENT_REQUIRED`, because the account's free plan carries no
+  connection between hosts. Upgrading reaches the host; nothing else reads
+  away. A link of the host's own coming up, the relay saying it holds no link
+  to the host, or no route listing it any more ends it.
+- **Offline:** everything else. A host that said it no longer trusts this one
+  is offline, with `revoked` set on its entry.
 
-Every route that comes up is tried at once: a direct link's first channel opens
-as the link's event is handled, and a relay's claim for a trusted host is tried
-in the background. Every channel any call opens records its outcome too. A host
-whose route has come up and whose first attempt on it has not concluded keeps
-the presence it had, so a host that connects goes from offline straight to
-online, and one whose link went while the relay still lists it reads online
-until the try on the relay concludes. A failure counts only on the route a
-fresh call would take first by then, and only while no other route carries the
-host's traffic. A channel failing because its link went says nothing: the
-link's end is what decides. A host no channel is open to while a route lists
-it is tried again in the background, one second after the failure and then
-doubling to thirty seconds between tries.
-
-When the account's plan changes, every host the relay carried or refused is
-tried again at once on a fresh channel, so a host away for the plan turns
-online as soon as the account is paid, and one the relay carried stops reading
-online once the plan lapses.
+A host with no link of its own that a relay or a paired daemon claims to reach
+is dialled through it: when the claim comes up, when the host's own last link
+goes while the claim is listed, and, for a host refused for the plan, when the
+account's plan changes. The dialler keeps trying, one second after a failure
+and doubling to thirty seconds between tries, until a link of the host's own
+is up or no host claims it. A host this profile does not trust, or one that
+said it no longer trusts this one, is not dialled.
 
 Each `Host` in a handshake or neighbor message carries the host's name, its
 build version, its capabilities (whether it serves as a cloud relay, and the
 agent kinds its platform runs: terminal Claude only where there is a Unix
 terminal), whether it is signed in to an account, and `platform`, the operating
-system it was built for in its own words. `platform` is optional: a host that
-does not announce it is shown as unknown rather than as a guess. Nothing
+system it was built for: macOS, Linux, Windows or iOS. A host that announces
+none (`PLATFORM_UNSPECIFIED`) is shown as unknown rather than as a guess. Nothing
 routes or authorizes on these fields; they exist so a client can tell one
 device from another and say why a host is out of reach.
 
@@ -272,8 +268,8 @@ and so is the host set the inventory carries
 
 ### Carriers
 
-Every link is a QUIC connection behind the same link interface
-(`crates/node/src/link/carrier.rs`): one control stream, open and accept for
+Every link is one QUIC connection (`QuicCarrier`,
+`crates/node/src/link/quic.rs`): one control stream, open and accept for
 additional streams, finish and typed reset, and link close.
 
 | Link | Paths it may take | Link admission |
@@ -289,19 +285,18 @@ idle timeout are 20 and 60 seconds on iOS, 10 and 30 seconds elsewhere, so a
 desktop notices a link that died silently within about forty seconds (the
 shorter timeout of a link's two ends applies).
 
-Presence says whether a channel to a host opens, so a call that cannot open
-one on a route still listed does not wait for that timeout: the host reads
-offline at once. On the host's own direct or SSH link the call closes the link,
-as the idle timeout would, and redialling and discovery bring it back as they
-do any lost link; the new link's first channel says whether the host is online
-again, so a link that comes back and still carries no call leaves it offline. On
-the relay, or on a link through another host, the channel cached on the route
-is dropped. While a route stays listed and no channel to the host is open, one
-background retry per host tries a fresh channel, one second after the failure
-and doubling to thirty; an away host is retried the same way. A client
-releases what it held for the host when it reads online again.
+Presence says whether a link to a host is up, so a link that cannot carry
+calls must not stay up until that timeout. A call whose stream will not open on
+a link that claims to be up, or that finds no channel within its patience,
+closes the link at once; the host reads as the links that remain say, and
+redialling and discovery bring the link back as they do any lost link. The
+call then tries one other route the core lists, if any. A call refused while
+the link is fine, by the far host or by a forwarder, closes nothing and says
+nothing of the host. A link that comes back and still carries no call reads
+online until its next call fails, and the redial backoff paces any repeat. A
+client releases what it held for the host when it reads online again.
 
-An SSH link reaches the far daemon through `amux relay`, a hidden command the
+An SSH link reaches the far daemon through `amux internal ssh-link`, a hidden command the
 SSH session runs, which joins its stdio to the profile's `link.sock`. The QUIC
 handshake through it pins both hosts' keys as a direct one does; the far
 daemon takes the peer from the key it presented and refuses one it does not
@@ -409,7 +404,7 @@ finished, gives up after two seconds.
 **The early-call rule.** Only reads go in 0-RTT data, because the far end may
 see early data more than once. The channel pool writes early only calls of
 one type (`EarlyCall` in `crates/node/src/link/channels.rs`):
-`SubscribeInventory`, `Subscribe`, `Fetch`, `GetBlob` and `Diff`. A send, a
+`SubscribeInventory`, `SubscribeSession`, `ListItems`, `GetBlob` and `GetDiff`. A send, a
 stop or a pairing call has no constructor there, so it cannot be early data.
 If the far end refuses the early data (it lost the ticket, or the ticket was
 spent), the dialler opens the same streams again in the same order, control
@@ -455,8 +450,8 @@ by `MESSAGE_SIZE_LIMIT` (16 MiB). The complete control vocabulary is:
 
 A host keeps what each trusted peer listed, tagged by where it came from:
 listed over a direct link, over a forwarded one, or the peer's public address,
-which only the relay's observation gave. The profile's trust file keeps the
-list beside the address the peer last answered at.
+which only the relay's observation gave. The profile's store keeps the list
+beside the address the peer last answered at.
 
 A runtime instance id is 16 random bytes a host's runtime draws when it
 starts and keeps until it stops; it is not an agent's incarnation, which
@@ -524,18 +519,15 @@ the host as revoked and offline, and fails the call as `UNAUTHENTICATED`
 The channel pool (`crates/node/src/link/channels.rs`) selects a live link by
 peer and route, dialling one through the forwarder when the route is a
 forwarder's and none is up, opens a stream, and gives it to tonic as one
-HTTP/2 channel. It has three channel classes:
+HTTP/2 channel. It has two channel classes:
 
 - `Calls`: one cached channel per peer and route. The inventory subscription,
-  forwarded calls, `Fetch`, `GetBlob`, `Diff` and every other one-shot call
+  forwarded calls, `ListItems`, `GetBlob`, `GetDiff` and every other one-shot call
   ride it. A cached channel whose connection ended is dropped, and the next
   call opens a fresh stream.
 - `Session`: one cached channel per peer and route for the replica agents'
-  `Subscribe` streams, so they neither wait behind nor hold up the host's
+  `SubscribeSession` streams, so they neither wait behind nor hold up the host's
   calls, and a host with many agents costs one stream, not one per agent.
-- `Bulk`: a fresh channel per transfer, for a caller that wants a large read
-  kept apart from calls. The daemon's own paths do not use it; blob and diff
-  reads ride `Calls`.
 
 Separate streams give separate flow control, so a long subscription does not
 queue behind calls at the amux layer. Channel payloads are bounded by
@@ -550,7 +542,7 @@ route: one streaming zstd compressor each way, between HTTP/2 and the stream,
 inside the link's encryption, so a forwarder carries it without knowing it is
 there (`crates/node/src/transport/compress.rs`). The opener wraps its end in
 `ChannelPool::channel_over`; the acceptor wraps its
-end as `TunnelDispatcher` hands a paired host's stream to `PeerService`.
+end as `TunnelDispatcher` hands a paired host's stream to the peer services.
 Pairing channels, the link's control stream and local sockets are not
 compressed. Nothing on the wire announces it: both ends always compress.
 
@@ -614,7 +606,7 @@ give it in its profile, so a relaunch presents them too. While a host has a link
 of its own to a peer, that link carries the peer's calls ahead of one a
 forwarder carries.
 
-The cloud relay is the same code run as `amux server start --cloud`
+The cloud relay is the same code run as `amux relay`
 (`crates/amux/src/relay.rs` and `crates/node/src/edge/relay_server.rs`). It is
 not an installation: no profiles, no agents, no supervisor. It accepts every
 host of an account over QUIC and a TLS-over-TCP fallback on one socket, checks
@@ -660,11 +652,11 @@ never does, because its directory and journal are its whole interface (see
 
 | Endpoint | Services | Who dials it |
 | --- | --- | --- |
-| The installation front door | `ProfileService`, `InstallationService` | the CLI and the terminal client, to find profiles and manage them |
-| A profile's client socket, `<data_dir>/profiles/<id>/sock` | `ClientService` | the terminal client and the CLI, at the path the front door reports as `ProfileInfo.socket_path` |
-| An agent's `agents/<id>/tools.sock` | `ClientService`, with that agent as the caller | the agent's MCP tool server, and nothing else |
-| A profile's `link.sock` | a link, not a service | `amux relay`, carrying an SSH link |
-| A link stream whose handshake presented a pinned key | `PeerService` | paired daemons, including a phone's embedded daemon |
+| The installation front door | `InstallationService` | the CLI and the terminal client, to find profiles and manage them |
+| A profile's client socket, `<data_dir>/profiles/<id>/sock` | `AgentService`, `SessionService`, `ProfileAdminService` | the terminal client, the CLI and third-party clients, at the path the front door reports as `Profile.socket_path` |
+| An agent's `agents/<id>/tools.sock` | `AgentService` and `SessionService`, with that agent as the caller | the agent's MCP tool server, and nothing else |
+| A profile's `link.sock` | a link, not a service | `amux internal ssh-link`, carrying an SSH link |
+| A link stream whose handshake presented a pinned key | `PeerAgentService`, `PeerSessionService` | paired daemons, including a phone's embedded daemon |
 | A link stream admitted by an open pairing window | `PairingService` | a host pairing with this one |
 
 The front door's path is the installation setting `front_door_socket`. By
@@ -682,54 +674,66 @@ machine dials `pty.sock` directly for the raw screen; neither crosses a link,
 and a remote host has no raw terminal attach.
 
 On a phone the same daemon runs in the app's process (`crates/app-embedded`).
-It serves no sockets: the app calls `FrontDoor` and `ClientApi` in process,
-and it is an ordinary peer to the desktops it pairs with.
+It serves no sockets: the app calls the profile `Registry`, each profile's
+`Edge` for its pairing and peers, and `ClientApi` in process, and it is an
+ordinary peer to the desktops it pairs with.
 
 A client that finds nothing on the front door does not start a daemon itself.
-Under a supervisor (`supervisor: on`) it starts `amux supervise` if none is
+Under a supervisor (`supervisor = true`, the default) it starts `amux supervise` if none is
 running, which starts the daemon; otherwise it says the daemon belongs to the
 service manager and waits for it.
 
 ### The front door
 
-`ProfileService` lists, watches, creates, binds, signs out, pauses, resumes,
-renames and deletes profiles; opens, reports and cancels pairing windows
-(`StartPairing`, `GetPairingStatus`, `CancelPairing`); runs the initiator's
-side of pairing (`BeginPair`, `ConfirmPair`, `AbandonPair`); reports this
-device's identity; records a peer an SSH exchange authenticated
-(`TrustSshPeer`); and lists, describes and unpairs peers. A call about one
-profile names it by id, and profile and host ids travel as their 16 bytes; the
-CLI reads and prints their text form. `WatchProfiles` sends every profile,
-`CaughtUp`, then each change in the order it happened; a watcher that falls
-behind is ended with `ABORTED` and watches again. `InstallationService`
-answers `GetInfo` (the daemon's version) and `Shutdown`. None of this is
-reachable from a link. The implementation is
-`crates/node/src/front_door.rs`.
+`InstallationService` lists, watches, creates, binds, renames and deletes
+profiles. A bind names its profile or lets the installation pick the one
+already bound to that account, else one that holds nothing, else a new one.
+A call about one profile names it by id, and profile and host ids travel as
+their 16 bytes; the CLI reads and prints their text form. `SubscribeProfiles`
+sends every profile, `CaughtUp`, then each change in the order it happened;
+a subscriber that falls behind is ended with `ABORTED` and subscribes again.
+It also answers `GetInstallation` (the daemon's version) and
+`Shutdown`. The rules behind these calls are `node::Registry`'s; the front
+door (`crates/node/src/front_door.rs`) converts.
 
-No client retries a front-door call. A call whose reply is lost, which on a
+`ProfileAdminService`, on each profile's own socket, is that profile's
+administration, so none of its calls names a profile: it signs the profile
+out, pauses and resumes its relay link (`SignOut`, `PauseProfile`,
+`ResumeProfile`); opens, reports and cancels pairing
+windows (`StartPairing`, `GetPairingStatus`, `CancelPairing`); runs the
+initiator's side of pairing (`BeginPair`, `ConfirmPair`, `AbandonPair`);
+reports this device's identity; records a peer an SSH exchange
+authenticated (`TrustSshPeer`); lists, describes and unpairs peers; and
+writes the profile's debug report (`Dump`, [chapter 8](#chapter-8-diagnostics)). The
+implementation is `crates/node/src/profile_admin.rs`.
+
+None of this is reachable from a link or from an agent's tools socket. No
+client retries one of these calls. A call whose reply is lost, which on a
 local socket means the daemon went away, fails, and the person runs the
-command again. Rename and delete carry the revision the caller read and
-refuse a profile that changed since, so a re-run cannot undo a change made
-meanwhile.
+command again.
 
-### ClientService
+### AgentService and SessionService
 
-`ClientService` is the whole client-facing surface of one profile:
+`AgentService` and `SessionService` are the client-facing surface of one profile. `AgentService` is the fleet and its agents:
 
 | Call | What it does |
 | --- | --- |
 | `SubscribeInventory` | The host set and every agent row: current state, `CaughtUp`, then deltas. A listing is this stream read to `CaughtUp`. |
 | `ResolveAgent` | A fleet-wide reference to one row: an id with or without dashes, the eight-character short id (or any longer prefix), a name, or `name@host`. `NOT_FOUND`, or `AmbiguousAgentName` with the candidates when a bare name matches agents on several hosts; the message offers the `name@host` forms that pick each. Every other agent call takes an id. |
-| `Subscribe`, `Fetch`, `Get` | An agent's session stream, older pages, and one item; see [the wire](WIRE.md). |
-| `SendInput` | A person's input to an agent; the answer is the interpreter's verdict. |
 | `CreateAgent` | Creates an agent, on this host or on a trusted host named by id or by name. |
 | `RenameAgent`, `StopAgent`, `ResumeAgent`, `DeleteAgent` | Registry operations. A stop ends the agent now (its turn cancelled the provider's own way); a delete stops it if live and removes it. Both act on the named agent alone; its children follow on their own hosts by [the family rule](#the-family-rule), so the answer says nothing of them. |
 | `SendMessage` | A message to an agent, whose sender the daemon stamps from the caller; see [agent tools](AGENT_TOOLS.md). |
-| `PutBlob`, `GetBlob`, `Diff` | Bytes in an agent's directory; see [attachments](ATTACHMENTS.md). |
+| `PutBlob`, `GetBlob`, `GetDiff` | Bytes in an agent's directory; see [attachments](ATTACHMENTS.md). |
 | `GetCatalogue` | What a provider on a host offers with no agent running, from the host's own copy. What an agent offers is a blob its snapshot names, read with `GetBlob`; see [the wire](WIRE.md). |
 | `ListRepositories` | Where a host offers to start an agent: recent working directories and repositories under its configured roots. |
-| `Dump` | A debug report; see [debugging](DEBUGGING.md). |
-| `SaveDraft`, `GetDraft` | An agent's unsent draft, kept by this machine's daemon for its own clients so it outlives a client closing; never synced, and refused to a paired host. |
+
+`SessionService` is one agent's conversation:
+
+| Call | What it does |
+| --- | --- |
+| `SubscribeSession`, `ListItems`, `GetItem` | An agent's session stream, older pages, and one item; see [the wire](WIRE.md). |
+| `SendInput` | A person's input to an agent; the answer is the interpreter's verdict. |
+| `UpdateDraft`, `GetDraft` | An agent's unsent draft, kept by this machine's daemon for its own clients so it outlives a client closing; never synced, and refused to a paired host. |
 
 The implementation is `ClientApi` in `crates/node/src/grpc.rs`, a thin mapping
 onto the profile runtime. It holds the runtime weakly, so a connection that
@@ -739,31 +743,31 @@ outlives its runtime is answered `UNAVAILABLE` and the client redials.
 
 Only the host that owns an agent can act on it. When a call names an agent
 whose row here is a replica, `ClientApi` makes the same call on the owner's
-daemon through `PeerService`, exactly as a phone would, and answers with what
+daemon through the peer services, exactly as a phone would, and answers with what
 the owner answered (`crates/node/src/forward.rs`). A forwarded call fails in
 one of two ways, and they are kept apart because only the second may have
 reached the owner:
 
 - **Not sent.** The call never left: no link to the owner, the owner is not
   trusted, or no channel opened within 10 seconds. That is
-  `ERROR_CODE_UNREACHABLE` naming the host by the name it was paired under,
+  reason `HOST_UNREACHABLE` naming the host by the name it was paired under,
   except for `SendInput`, which answers with a rejected verdict,
   `REFUSAL_HOST_UNREACHABLE`, so a composer treats it like any other refusal.
   When only the relay reaches the owner and the account is on the free plan
   (its subscription lapsed), the relay carries no calls between hosts, and
-  the call is refused at once as that: `ERROR_CODE_PAYMENT_REQUIRED` with a
+  the call is refused at once as that: reason `PAYMENT_REQUIRED` with a
   sentence naming the lapse, for `SendInput` the same rejected verdict
   with that sentence as its detail, and for `StopAgent`
-  `ERROR_CODE_UNREACHABLE` with that sentence, so a client holds the stop
+  reason `HOST_UNREACHABLE` with that sentence, so a client holds the stop
   as it holds any stop that never left.
 - **Uncertain.** The call went out and its answer did not come back: the
   link failed under it, or 30 seconds passed (enough for a spawn, which waits
   for the child's process to start on the far side). That is
-  `ERROR_CODE_ABORTED` for every call, `SendInput` included: the sender holds
+  `ABORTED` for every call, `SendInput` included: the sender holds
   the input as uncertain and settles it at its next catch-up, and nothing
   sends it again.
 
-Forwarding goes one hop. `PeerService` answers only for this host's own
+Forwarding goes one hop. The peer services answer only for this host's own
 agents and never passes a call on, so no two hosts can bounce a call between
 them, and no host reaches a third host's agent, or speaks for one, through
 another.
@@ -795,30 +799,32 @@ amux never removes a worktree or its branch. The worktree is made behind one
 seam, `MakeWorktree`, so another tool could make it instead; the daemon takes
 the folder, branch and base it gets back as given.
 
-### PeerService
+### PeerAgentService and PeerSessionService
 
-`PeerService` (`crates/node/src/edge/peer.rs`) is the daemon-to-daemon
-service; replication is a daemon being a client of its peer. The caller is the
+`PeerAgentService` and `PeerSessionService` (`crates/node/src/edge/peer.rs`)
+are the daemon-to-daemon services; replication is a daemon being a client of its peer. The caller is the
 host whose pinned key the stream's handshake presented, and a call without one
-is refused as `UNAUTHENTICATED`. Only amux daemons call it, and each stamps
+is refused as `UNAUTHENTICATED`. Only amux daemons call them, and each stamps
 what it says on behalf of its own callers, a message's sender and a create's
-parent, from those callers; the answering daemon takes them as given. It
-differs from `ClientService` in these ways:
+parent, from those callers; the answering daemon takes them as given. They
+differ from the client services in these ways:
 
 - It answers only for this host's own agents. Its inventory stream carries
   this host's entry and this host's agents, never what this host knows of
-  other hosts. Every call that names an agent (`Subscribe`, `Fetch`, `Get`,
+  other hosts. Every call that names an agent (`SubscribeSession`, `ListItems`, `GetItem`,
   `SendInput`, `RenameAgent`, `StopAgent`, `ResumeAgent`, `DeleteAgent`,
-  `PutBlob`, `GetBlob` and `Diff`) is `NOT_FOUND` for an agent this host only
+  `PutBlob`, `GetBlob` and `GetDiff`) is `NOT_FOUND` for an agent this host only
   replicates, even when this host holds that agent's rows or blobs.
-- `Subscribe` takes a `PeerSubscribeRequest`, which may ask for what came
+- `SubscribeSession` takes a `PeerSubscribeSessionRequest`, which may ask for what came
   `after` a revision: that is how a replica catches up from its cursor
   ([the wire](WIRE.md) describes it).
 - `SendMessage` takes the `Envelope` the calling host's daemon stamped, and
   takes its sender as given.
 - `ListRepositories` answers for this host only.
-- `Dump` answers with this host's part of the caller's report, a `DumpPart`,
-  since the caller is on another machine.
+- `PeerAgentService.Dump` answers with this host's part of the caller's
+  report, a `DumpPart`, since the caller is on another machine.
+- There is no `ResolveAgent`, and no drafts: a draft stays on the machine it
+  was typed on.
 
 ### The family rule
 
@@ -872,8 +878,8 @@ children, which may be on hosts that are away.
 
 ### The tools socket
 
-Each agent's `tools.sock` serves the same `ClientService`, with one
-difference: the socket is the caller's identity. The daemon binds it when it
+Each agent's `tools.sock` serves the same `AgentService` and
+`SessionService`, and not `ProfileAdminService`, with one difference: the socket is the caller's identity. The daemon binds it when it
 starts the agent's process, and whatever arrives on it is from that agent, so
 no request carries an agent id or a token claiming one. On that socket:
 
@@ -900,29 +906,34 @@ for any other incarnation.
 
 ### Errors
 
-A refusal is a `wire::Error`: an `ErrorCode`, a message, and typed details
-named by their protobuf message type (`AmbiguousAgentName`,
-`AmbiguousHostName`, `ProtocolVersionMismatch`). On the gRPC status the whole
-error travels in the details, beside a coarse gRPC code for generic clients
-(`crates/node/src/grpc.rs`, `status`). `UNAVAILABLE` means this daemon is not
-answering, which a caller retries; another host being unreachable, and a
-failed precondition, both map to `FAILED_PRECONDITION`, because they are
-answers, not outages. `PAYMENT_REQUIRED` maps to `PERMISSION_DENIED`.
+A refusal is a `google.rpc.Status`, gRPC's richer error model (Rust:
+`wire::Error`): a gRPC code, a message, and details packed as `Any`, among
+them typed details (`AmbiguousAgentName`, `AmbiguousHostName`,
+`ProtocolVersionMismatch`). It travels whole in the gRPC status details, its
+code on the status itself (`crates/node/src/grpc.rs`, `status`), so generic
+gRPC tooling reads it. What the code alone does not say, a
+`google.rpc.ErrorInfo` detail names: domain `amux.sh`, reason an
+`ErrorReason` value's name without its prefix. `UNAVAILABLE` means this
+daemon is not answering, which a caller retries; another host being
+unreachable is `FAILED_PRECONDITION` with reason `HOST_UNREACHABLE`, because
+it is an answer, not an outage. A lapsed plan is `PERMISSION_DENIED` with
+reason `PAYMENT_REQUIRED`. The googleapis files are vendored under
+`proto/google/`.
 
-Until the first release the protobuf files change freely, as the top of
-`service.proto` says: a removed field is deleted outright, leaving no
-reservation, and the remaining fields are renumbered so the numbers stay in
-reading order (see [the wire](WIRE.md#compatibility)). `PROTOCOL_VERSION`
-exists only in the link handshake and stays 1 until then. The local sockets
-carry no version at all.
+The protobuf files change only as
+[their README](../proto/amux/v1/README.md) and
+[the wire](WIRE.md#compatibility) allow: added to, never renumbered, with a
+removed field's number reserved; `just proto-compat` checks it against the
+latest release. `PROTOCOL_VERSION` exists only in the link handshake. The
+local sockets carry no version at all.
 
 ## Chapter 8: Diagnostics
 
-`Dump` on the profile socket writes a debug report on this host (rows, store
+`ProfileAdminService.Dump` on the profile socket writes a debug report on this host (rows, store
 slices, journal tails and each agent process's own redacted part) and answers
 with its path. For an agent another host runs, the report holds only this
 host's row and store slice, and asks that host for its side through
-`PeerService.Dump`; the answer is that host's own bundle as one `DumpPart`,
+`PeerAgentService.Dump`; the answer is that host's own bundle as one `DumpPart`,
 and a host that cannot be reached is named in the
 report's manifest. Diagnostics use the ordinary calls; they create no extra
 link messages or authority path. [Debugging](DEBUGGING.md) covers reading a
@@ -930,7 +941,7 @@ report.
 
 ## Chapter 9: Blob routing
 
-`GetBlob`, `PutBlob` and `Diff` on another host's agent, and `GetCatalogue` for
+`GetBlob`, `PutBlob` and `GetDiff` on another host's agent, and `GetCatalogue` for
 another host's provider, are forwarded calls like any other, on the `Calls`
 channel. The bytes are content-addressed, so a relay never needs to understand
 them and the reader verifies them against the hash it asked for. An agent's

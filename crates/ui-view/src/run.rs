@@ -51,6 +51,9 @@ pub struct Run {
     pub unresolved_failure: bool,
     /// What the run's steps did, on its newest step's row only.
     pub counts: Option<RunCounts>,
+    /// The reader opened it: a folding view's open set holds one of its
+    /// steps. Always false for a view that does not fold.
+    pub open: bool,
 }
 
 impl Run {
@@ -102,6 +105,7 @@ pub(crate) fn run_of(
         recent,
         unresolved_failure: step && (failed || failed_kind(kind)) && unresolved(state, held),
         counts,
+        open: false,
     })
 }
 

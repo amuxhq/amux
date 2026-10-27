@@ -252,13 +252,13 @@ fn client_section(
     let _ = writeln!(out, "-- events ({}) --", history.events.len());
     for traced in &history.events {
         let what = match &traced.event {
-            Some(wire::client_traced::Event::Msg(msg)) => {
+            Some(wire::dump::client_traced::Event::Msg(msg)) => {
                 match ui_state::Msg::from_wire(msg.clone()) {
                     Ok(msg) => crate::replay::message_kind(&msg),
                     Err(why) => format!("unreadable message: {why}"),
                 }
             }
-            Some(wire::client_traced::Event::Driver(driver)) => format!("driver {driver}"),
+            Some(wire::dump::client_traced::Event::Driver(driver)) => format!("driver {driver}"),
             None => "nothing".to_owned(),
         };
         let _ = writeln!(out, "{} @{} {what}", traced.seq, time(traced.at_ms));

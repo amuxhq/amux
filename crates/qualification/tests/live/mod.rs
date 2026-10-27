@@ -42,13 +42,12 @@ use interpret::Replayed;
 use tokio::process::{Child, Command};
 use tonic::transport::{Channel, Endpoint};
 use ui_state::{AgentState, ItemBody, OpenAsk};
-use wire::client_service_client::ClientServiceClient;
-use wire::profile_service_client::ProfileServiceClient;
+use wire::installation_service_client::InstallationServiceClient;
 use wire::{
     ClaudeAnswer, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
-    CreateAgentRequest, Input, Item, Kind, Phase, SendInputRequest, Snapshot, SubscribeRequest,
-    claude_answer, claude_pty_input, claude_sdk_input, codex_input, permission_answer,
-    send_input_response, session_event,
+    CreateAgentRequest, Input, Item, Kind, Phase, SendInputRequest, Snapshot,
+    SubscribeSessionRequest, claude_answer, claude_pty_input, claude_sdk_input, codex_input,
+    permission_answer, send_input_response, session_event,
 };
 
 /// Claude runs on its cheapest model; the lane judges structure, not wit.
@@ -461,7 +460,7 @@ struct Install {
     amux: PathBuf,
     env: Vec<(String, OsString)>,
     daemon: tokio::sync::Mutex<Child>,
-    client: ClientServiceClient<Channel>,
+    client: wire::ClientStubs,
     driver_fixture: Box<dyn Fn(Scenario) -> Option<PathBuf> + Send + Sync>,
     replay: fn(&Path) -> Result<Vec<Replayed>, String>,
     model: Mutex<Option<String>>,
@@ -485,15 +484,16 @@ impl Install {
         if keep {
             eprintln!("keeping the installation at {}", path.display());
         }
-        let config = path.join("installation.yaml");
+        let config = path.join("config.toml");
         let socket = path.join("amux.sock");
         std::fs::create_dir_all(path.join("project")).map_err(|error| error.to_string())?;
         std::fs::write(
             &config,
             format!(
-                "root: {}\nfront_door_socket: {}\nhost_name: live\nagent:\n  grace_secs: 10\n  drain_secs: 5\ndiscovery:\n  scope: amux-live-{}\n",
-                path.join("data").display(),
-                socket.display(),
+                "root = {:?}\nfront_door_socket = {:?}\nhost_name = \"live\"\nsupervisor = false\n\
+                 [agent]\ngrace_secs = 10\ndrain_secs = 5\n[discovery]\nscope = \"amux-live-{}\"\n",
+                path.join("data").display().to_string(),
+                socket.display().to_string(),
                 uuid::Uuid::new_v4().simple(),
             ),
         )
@@ -532,8 +532,8 @@ impl Install {
         })
         .await
         .ok_or("its front door never answered")?;
-        let profile = ProfileServiceClient::new(door)
-            .list_profiles(wire::Empty {})
+        let profile = InstallationServiceClient::new(door)
+            .list_profiles(wire::ListProfilesRequest {})
             .await
             .map_err(|status| status.to_string())?
             .into_inner()
@@ -541,7 +541,7 @@ impl Install {
             .into_iter()
             .next()
             .ok_or("it has no profile")?;
-        let client = wire::client_service_client(
+        let client = wire::client_stubs(
             channel(Path::new(&profile.socket_path))
                 .await
                 .map_err(|error| error.to_string())?,
@@ -756,7 +756,7 @@ impl Install {
             async move {
                 loop {
                     let stream = client
-                        .subscribe(SubscribeRequest {
+                        .subscribe(SubscribeSessionRequest {
                             agent_id: agent.clone(),
                             tail: 1000,
                         })

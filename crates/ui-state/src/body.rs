@@ -185,14 +185,6 @@ pub struct ToolFacts {
     pub hidden: bool,
 }
 
-/// Claude's task-list tools, whose calls the task list stands for.
-pub fn is_task_tool(name: &str) -> bool {
-    matches!(
-        name,
-        "TodoWrite" | "TaskCreate" | "TaskUpdate" | "TaskList" | "TaskGet"
-    )
-}
-
 fn in_flight(state: i32) -> bool {
     matches!(
         wire::ToolState::try_from(state),
@@ -209,7 +201,10 @@ fn claude_tool(tool: &wire::ToolCall) -> ItemClass {
             .is_some_and(|progress| !progress.finished)
             && in_flight(tool.state),
         child: !tool.parent_key.is_empty(),
-        hidden: is_task_tool(&tool.name),
+        hidden: matches!(
+            tool.input.as_ref().and_then(|input| input.of.as_ref()),
+            Some(wire::tool_input::Of::TaskList(_))
+        ),
     })
 }
 

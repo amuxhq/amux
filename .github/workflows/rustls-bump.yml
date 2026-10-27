@@ -20,7 +20,7 @@ permissions:
   actions: write
 
 env:
-  FORK: https://github.com/jordanwebster/rustls
+  FORK: https://github.com/amuxhq/rustls
 
 jobs:
   bump:
@@ -32,7 +32,7 @@ jobs:
       - name: Find the newest patched release
         id: find
         run: |
-          pinned=$(sed -n 's|^rustls = { git = "https://github.com/jordanwebster/rustls", rev = "\([0-9a-f]*\)" }$|\1|p' Cargo.toml)
+          pinned=$(sed -n 's|^rustls = { git = "https://github.com/amuxhq/rustls", rev = "\([0-9a-f]*\)" }$|\1|p' Cargo.toml)
           if [ -z "$pinned" ]; then
             echo "Cargo.toml pins no rustls rev; nothing to bump"
             exit 0
@@ -63,7 +63,7 @@ jobs:
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git checkout -b "$branch"
-            sed -i "s|^\(rustls = { git = \"https://github.com/jordanwebster/rustls\", rev = \"\)[0-9a-f]*\(\" }\)$|\1$REV\2|" Cargo.toml
+            sed -i "s|^\(rustls = { git = \"https://github.com/amuxhq/rustls\", rev = \"\)[0-9a-f]*\(\" }\)$|\1$REV\2|" Cargo.toml
             cargo update -p rustls
             git commit -am "Move rustls to the amux patch on $VERSION"
             git push origin "$branch"

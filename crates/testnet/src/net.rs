@@ -27,8 +27,9 @@ use serde::{Deserialize, Serialize};
 use store::AgentKey;
 use tokio::sync::mpsc;
 use uuid::Uuid;
-use wire::client_service_server::ClientService as _;
-use wire::profile_service_client::ProfileServiceClient;
+use wire::agent_service_server::AgentService as _;
+use wire::installation_service_client::InstallationServiceClient;
+use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
     AgentRef, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
     CreateAgentRequest, DeleteAgentRequest, Input, PromptInput, WithdrawQueued, claude_pty_input,
@@ -112,6 +113,11 @@ pub struct NetOptions {
     /// Hosts then find each other at gate addresses rather than at their
     /// listeners'.
     pub gated_lan: bool,
+    /// Where what a client outside this Mac dials listens: the gates in
+    /// front of the hosts' LAN listeners and the relay, and the account
+    /// service. A phone over its USB link names the Mac's address on that
+    /// link; loopback when none is named.
+    pub client_ip: Option<std::net::IpAddr>,
 }
 
 /// How long a wait on a real provider's agent may take: a real turn on a
@@ -372,6 +378,7 @@ pub struct Net {
     /// Faults set on the relay path as a whole, beside each host's own.
     relay_faults: Faults,
     gated_lan: bool,
+    client_ip: Option<std::net::IpAddr>,
 }
 
 impl Net {
@@ -437,9 +444,10 @@ impl Net {
             feed: None,
             relay_faults: Faults::default(),
             gated_lan: options.gated_lan,
+            client_ip: options.client_ip,
         };
         if let Some(relay) = &topology.relay {
-            net.relay = Some(Relay::start(relay, net.clock.clone()).await?);
+            net.relay = Some(Relay::start(relay, net.clock.clone(), net.client_ip).await?);
             net.write_relay_ca()?;
         }
         for decl in &topology.hosts {
@@ -600,22 +608,18 @@ impl Net {
         Ok(())
     }
 
-    /// Pairs `a` with `b` the way a person does, through their front doors:
+    /// Pairs `a` with `b` the way a person does, through their profiles'
+    /// sockets:
     /// `b` opens a pairing window, `a` dials it with the PIN at the gate the
     /// net keeps for the pair, so the link they make can be cut there.
     async fn pair_for_real(&mut self, a: &str, b: &str) -> Result<(), NetError> {
         let gate = self.pair_gate(a, b)?;
-        let (profile_a, profile_b, id_b) = (
-            self.host(a)?.profile,
-            self.host(b)?.profile,
-            self.host(b)?.host_id,
-        );
+        let id_b = self.host(b)?.host_id;
         let refused = |status: tonic::Status| NetError::Refused(Box::new(status));
         let window = self
-            .front_door(b)
+            .admin(b)
             .await?
             .start_pairing(wire::StartPairingRequest {
-                profile_id: profile_b.as_bytes().to_vec(),
                 method: Some(wire::start_pairing_request::Method::Pin(wire::Empty {})),
                 ..wire::StartPairingRequest::default()
             })
@@ -628,10 +632,9 @@ impl Net {
                 error: "its pairing window has no PIN".to_owned(),
             });
         };
-        let mut door_a = self.front_door(a).await?;
-        let pending = door_a
+        let mut admin_a = self.admin(a).await?;
+        let pending = admin_a
             .begin_pair(wire::BeginPairRequest {
-                profile_id: profile_a.as_bytes().to_vec(),
                 host_id: id_b.as_bytes().to_vec(),
                 secret: Some(wire::begin_pair_request::Secret::Pin(pin)),
                 addrs: vec![gate.to_string()],
@@ -639,9 +642,8 @@ impl Net {
             .await
             .map_err(refused)?
             .into_inner();
-        door_a
-            .confirm_pair(wire::PendingPairRequest {
-                profile_id: profile_a.as_bytes().to_vec(),
+        admin_a
+            .confirm_pair(wire::ConfirmPairRequest {
                 token: pending.token,
             })
             .await
@@ -660,7 +662,7 @@ impl Net {
                 .observe_until(
                     |events| {
                         observe::inventory_hosts(events).iter().any(|host| {
-                            host.host_id == far_id.as_bytes() && observe::host_online(host)
+                            host.host_id() == far_id.as_bytes() && observe::host_online(host)
                         })
                     },
                     PATIENCE,
@@ -696,7 +698,8 @@ impl Net {
     /// way to it until it restarts; declare a relay up front to avoid that.
     pub async fn add_account(&mut self, account: AccountDecl) -> Result<Ack, NetError> {
         if self.relay.is_none() {
-            let relay = Relay::start(&RelayDecl::default(), self.clock.clone()).await?;
+            let relay =
+                Relay::start(&RelayDecl::default(), self.clock.clone(), self.client_ip).await?;
             self.relay = Some(relay);
             self.topology.relay = Some(RelayDecl::default());
             self.write_relay_ca()?;
@@ -889,19 +892,46 @@ impl Net {
             })
     }
 
-    /// The installation's front door on `name`: profiles, pairing, peers
-    /// and accounts, as a person's client calls them.
+    /// The installation's front door on `name`: its profiles, as a
+    /// person's client calls them.
     pub async fn front_door(
         &self,
         name: &str,
-    ) -> Result<ProfileServiceClient<tonic::transport::Channel>, NetError> {
+    ) -> Result<InstallationServiceClient<tonic::transport::Channel>, NetError> {
         let channel = local_channel(&self.host(name)?.front_door)
             .await
             .map_err(|error| NetError::Host {
                 host: name.to_owned(),
                 error: error.to_string(),
             })?;
-        Ok(ProfileServiceClient::new(channel))
+        Ok(InstallationServiceClient::new(channel))
+    }
+
+    /// The administration of `name`'s profile on its own socket: its
+    /// pairing, peers and account connection, as a person's client calls
+    /// them.
+    pub async fn admin(
+        &self,
+        name: &str,
+    ) -> Result<ProfileAdminServiceClient<tonic::transport::Channel>, NetError> {
+        self.admin_of(name, self.host(name)?.profile).await
+    }
+
+    /// The administration of another of `name`'s profiles.
+    pub async fn admin_of(
+        &self,
+        name: &str,
+        profile: node::ProfileId,
+    ) -> Result<ProfileAdminServiceClient<tonic::transport::Channel>, NetError> {
+        let host = self.host(name)?;
+        let socket = node::profile_dir(&host.data_dir, profile).join(node::PROFILE_SOCKET);
+        let channel = local_channel(&socket)
+            .await
+            .map_err(|error| NetError::Host {
+                host: name.to_owned(),
+                error: error.to_string(),
+            })?;
+        Ok(ProfileAdminServiceClient::new(channel))
     }
 
     pub fn agent(&self, name: &str) -> Result<&NetAgent, NetError> {
@@ -1012,6 +1042,7 @@ impl Net {
                     host: decl.host.clone(),
                     why,
                 })?
+                .agents
                 .create_agent(request)
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
@@ -1166,6 +1197,7 @@ impl Net {
                     host: agent.host.clone(),
                     why,
                 })?
+                .agents
                 .resume_agent(wire::ResumeAgentRequest {
                     agent_id: agent.id.as_bytes().to_vec(),
                     initial_prompt: submission,
@@ -1211,6 +1243,7 @@ impl Net {
                     host: agent.host.clone(),
                     why,
                 })?
+                .sessions
                 .send_input(request)
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
@@ -1242,6 +1275,7 @@ impl Net {
                         host: agent.host.clone(),
                         why,
                     })?
+                    .agents
                     .stop_agent(request)
                     .await
             }
@@ -1266,7 +1300,10 @@ impl Net {
     ) -> Result<(Vec<u8>, wire::Catalogue), NetError> {
         use prost::Message as _;
         let id = self.agent(name)?.id;
-        let mut subscription = self.runtime(host)?.subscribe(id.as_bytes(), 1).await?;
+        let mut subscription = self
+            .runtime(host)?
+            .subscribe_session(id.as_bytes(), 1)
+            .await?;
         let mut named = None;
         while let Some(event) = subscription.next().await {
             match &event.of {
@@ -1311,6 +1348,7 @@ impl Net {
                         host: agent.host.clone(),
                         why,
                     })?
+                    .agents
                     .delete_agent(request)
                     .await
             }
@@ -1330,6 +1368,21 @@ impl Net {
     /// agent lives there.
     pub fn client(&self, host: &str) -> Result<ClientApi, NetError> {
         Ok(ClientApi::new(&self.runtime(host)?, None))
+    }
+
+    /// The administration of `host`'s profile, called in process as the
+    /// phone calls it.
+    pub fn profile_admin(&self, host: &str) -> Result<node::ProfileAdmin, NetError> {
+        self.in_process(host, "this")?;
+        let entry = self
+            .hosts
+            .get(host)
+            .ok_or_else(|| NetError::NoHost(host.to_owned()))?;
+        let daemon = entry
+            .daemon
+            .as_ref()
+            .ok_or_else(|| NetError::Down(host.to_owned()))?;
+        Ok(daemon.lock().unwrap().profile_admin(entry.info.profile))
     }
 
     /// The client service as `name`'s tools socket serves it: every call
@@ -1619,12 +1672,12 @@ impl Net {
             }
         }
         let profile = node::create_profile(&data_dir)?;
-        let host_id = node::host_id(&node::profile_dir(&data_dir, profile))?;
+        let host_id = profile;
         let front_door = dir.join("door.sock");
-        let config = dir.join("installation.yaml");
+        let config = dir.join("config.toml");
         std::fs::write(
             &config,
-            self.installation_yaml(decl, &dir, &data_dir, &front_door)?,
+            self.installation_toml(decl, &dir, &data_dir, &front_door)?,
         )?;
         if let Some(script) = &decl.script {
             self.write_script(&format!("{}.host", decl.name), script.clone())?;
@@ -1701,52 +1754,54 @@ impl Net {
 
     /// The host's installation config: what the terminal client and the
     /// CLI read on any host, and what a process host's daemon runs by.
-    fn installation_yaml(
+    fn installation_toml(
         &self,
         decl: &HostDecl,
         dir: &Path,
         data_dir: &Path,
         front_door: &Path,
     ) -> Result<String, NetError> {
-        let mut yaml = format!(
-            "root: {}\nfront_door_socket: {}\nhost_name: {}\n",
-            data_dir.display(),
-            front_door.display(),
+        let quoted = |path: &Path| format!("{:?}", path.display().to_string());
+        // Only a supervised process host runs under a supervisor; a client
+        // of an in-process host must never start one.
+        let supervised = decl.runs_as_process() && decl.supervised;
+        let mut text = format!(
+            "root = {}\nfront_door_socket = {}\nhost_name = {:?}\nsupervisor = {supervised}\n\
+             updates = \"manual\"\nkeep_awake = false\ntelemetry = false\n",
+            quoted(data_dir),
+            quoted(front_door),
             decl.name,
         );
-        if decl.provider == Provider::Real {
-            // A person's own defaults for a new agent, so one made from the
-            // terminal client starts on the small models; any client may
-            // still choose another.
-            yaml.push_str(
-                &format!(
-                    "new_agent:\n  claude: {{model: {SMALL_CLAUDE}, effort: medium, permission: default}}\n  \
-                     codex: {{model: {SMALL_CODEX}, effort: medium, permission: default}}\n",
-                ),
-            );
-        }
         if decl.runs_as_process() {
+            text.push_str(&format!("releases_url = {:?}\n", self.feed_url()));
+            if !decl.repositories.is_empty() {
+                text.push_str(&format!(
+                    "repository_roots = [{}]\n",
+                    quoted(&dir.join(REPOSITORIES))
+                ));
+            }
             let scope = decl
                 .scope
                 .clone()
                 .unwrap_or_else(|| self.topology.scope.clone());
-            yaml.push_str(&format!(
-                "keep_awake: off\ntelemetry: off\nsupervisor: {}\nupdates: manual\n\
-                 releases_url: {}\ndiscovery:\n  scope: {scope:?}\nagent:\n  grace_secs: {AGENT_GRACE_SECS}\n  drain_secs: 5\n",
-                if decl.supervised { "on" } else { "off" },
-                self.feed_url(),
+            text.push_str(&format!(
+                "[discovery]\nscope = {scope:?}\n\
+                 [agent]\ngrace_secs = {AGENT_GRACE_SECS}\ndrain_secs = 5\n"
             ));
             if let Some(mib) = self.facts_ring_mib {
-                yaml.push_str(&format!("  facts_ring_mib: {mib}\n"));
-            }
-            if !decl.repositories.is_empty() {
-                yaml.push_str(&format!(
-                    "repository_roots:\n  - {}\n",
-                    dir.join(REPOSITORIES).display()
-                ));
+                text.push_str(&format!("facts_ring_mib = {mib}\n"));
             }
         }
-        Ok(yaml)
+        if decl.provider == Provider::Real {
+            // A person's own defaults for a new agent, so one made from the
+            // terminal client starts on the small models; any client may
+            // still choose another.
+            text.push_str(&format!(
+                "[new_agent.claude]\nmodel = \"{SMALL_CLAUDE}\"\neffort = \"medium\"\npermission = \"default\"\n\
+                 [new_agent.codex]\nmodel = \"{SMALL_CODEX}\"\neffort = \"medium\"\npermission = \"default\"\n",
+            ));
+        }
+        Ok(text)
     }
 
     async fn start_host(&mut self, name: &str) -> Result<(), NetError> {
@@ -1791,12 +1846,13 @@ impl Net {
             } else if decl.bonjour {
                 // A client outside the net finds the host at its front
                 // gate, so the net can degrade the client's network.
-                let (lan, me) = (self.lan.clone(), decl.name.clone());
+                let (lan, me, on) = (self.lan.clone(), decl.name.clone(), self.client_ip);
                 Some(Arc::new(move || {
                     Ok(Arc::new(FrontAdvert::new(
                         Arc::new(crate::bonjour::SystemBonjour::new()),
                         &me,
                         lan.clone(),
+                        on,
                     ))
                         as Arc<dyn node::discovery::Discovery>)
                 }))
@@ -1826,6 +1882,7 @@ impl Net {
             // never lists, and has no interfaces of its own to list after
             // a network change either.
             interfaces: Some(Vec::new()),
+            liveness: Default::default(),
         };
         if let Some(relay) = &self.relay {
             edge.cloud = relay.cloud_options(&self.udp[name]);
@@ -1849,6 +1906,7 @@ impl Net {
             clock: self.clock.clone(),
             push: Arc::new(node::NoopSender),
             daemon_log: None,
+            supervisor_log: None,
             front_door: Some(host.info.front_door.clone()),
             edge,
             analytics: self.analytics.clone().unwrap_or(node::Telemetry::Off),
@@ -1916,26 +1974,28 @@ impl Net {
                     .front_door(host)
                     .await
                     .map_err(|error| error.to_string())?
-                    .list_profiles(wire::Empty {})
+                    .list_profiles(wire::ListProfilesRequest {})
                     .await
                     .map_err(|status| status.message().to_owned())?
                     .into_inner()
                     .profiles;
-                let observed = profiles.first().map(wire::ProfileInfo::observed);
-                (observed == Some(wire::Observed::Connected))
-                    .then_some(())
-                    .ok_or_else(|| format!("observed {observed:?}"))
+                let cloud = profiles.first().map(|info| &info.cloud);
+                profiles
+                    .first()
+                    .and_then(wire::Profile::relay_connected)
+                    .map(|_| ())
+                    .ok_or_else(|| format!("cloud {cloud:?}"))
             })
             .await?;
             return Ok(self.ack(format!("{host} signed in to {account}")));
         }
         let edge = self.edge(host)?;
         observe::until(&format!("{host}'s relay link"), || {
-            let observed = edge.observed();
+            let relay = edge.relay();
             async move {
-                matches!(observed, node::Observed::Connected { .. })
+                matches!(relay, Some(node::Relay::Connected { .. }))
                     .then_some(())
-                    .ok_or_else(|| format!("observed {observed:?}"))
+                    .ok_or_else(|| format!("relay {relay:?}"))
             }
         })
         .await?;
@@ -1977,7 +2037,7 @@ impl Net {
             let info = self
                 .front_door(&host)
                 .await?
-                .list_profiles(wire::Empty {})
+                .list_profiles(wire::ListProfilesRequest {})
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
                 .into_inner()
@@ -1987,7 +2047,7 @@ impl Net {
             // Only a host whose relay link is up has anything to learn now;
             // any other learns the tier when its link comes up.
             if !info.is_some_and(|info| {
-                info.account_subject == account && info.observed() == wire::Observed::Connected
+                info.account_subject == account && info.relay_connected().is_some()
             }) {
                 continue;
             }
@@ -2000,11 +2060,9 @@ impl Net {
                         error,
                     })?;
             } else {
-                let request = wire::ProfileRequest {
-                    profile_id: profile.as_bytes().to_vec(),
-                };
-                let mut door = self.front_door(&host).await?;
-                door.pause_profile(request.clone())
+                let mut admin = self.admin(&host).await?;
+                admin
+                    .pause_profile(wire::PauseProfileRequest {})
                     .await
                     .map_err(|status| NetError::Refused(Box::new(status)))?;
                 let kept = node::profile_dir(&self.host(&host)?.data_dir, profile)
@@ -2015,7 +2073,8 @@ impl Net {
                     }
                     _ => {}
                 }
-                door.resume_profile(request)
+                admin
+                    .resume_profile(wire::ResumeProfileRequest {})
                     .await
                     .map_err(|status| NetError::Refused(Box::new(status)))?;
             }
@@ -2025,17 +2084,21 @@ impl Net {
                     .front_door(&host)
                     .await
                     .map_err(|error| error.to_string())?
-                    .list_profiles(wire::Empty {})
+                    .list_profiles(wire::ListProfilesRequest {})
                     .await
                     .map_err(|status| status.message().to_owned())?
                     .into_inner()
                     .profiles
                     .into_iter()
                     .find(|info| info.id == profile.as_bytes());
-                let seen = info.as_ref().map(|info| (info.observed(), info.tier()));
-                (seen == Some((wire::Observed::Connected, wanted)))
-                    .then_some(())
-                    .ok_or_else(|| format!("observed {seen:?}"))
+                let seen = info.as_ref().map(|info| &info.cloud);
+                (info
+                    .as_ref()
+                    .and_then(wire::Profile::relay_connected)
+                    .map(wire::RelayConnected::tier)
+                    == Some(wanted))
+                .then_some(())
+                .ok_or_else(|| format!("cloud {seen:?}"))
             })
             .await?;
             told.push(host);
@@ -2064,6 +2127,7 @@ impl Net {
         Ok(self.lan.front(
             host,
             Some(SocketAddr::new(loopback(&self.hosts[host].decl), port)),
+            self.client_ip,
         )?)
     }
 
@@ -2172,7 +2236,10 @@ impl Net {
         if let Some(gate) = &self.relay_gate {
             return Ok(gate.addr());
         }
-        let gate = self.relay()?.gate().await?;
+        let gate = match self.client_ip {
+            Some(ip) => self.relay()?.gate_on(ip)?,
+            None => self.relay()?.gate().await?,
+        };
         let addr = gate.addr();
         self.relay_gate = Some(gate);
         Ok(addr)
@@ -2208,11 +2275,9 @@ impl Net {
     pub async fn untrust(&mut self, a: &str, b: &str) -> Result<Ack, NetError> {
         let peer = self.host(b)?.host_id;
         if self.process(a)?.is_some() {
-            let profile = self.host(a)?.profile;
-            self.front_door(a)
+            self.admin(a)
                 .await?
                 .unpair(wire::UnpairRequest {
-                    profile_id: profile.as_bytes().to_vec(),
                     peer: Some(wire::HostRef {
                         of: Some(wire::host_ref::Of::HostId(peer.as_bytes().to_vec())),
                     }),
@@ -2639,6 +2704,22 @@ impl Net {
 
     /// Starts a host's daemon again from what its installation holds, under
     /// the same boot, and relinks its declared links.
+    /// Gives a stopped host's installation a profile under `id`, another
+    /// machine's, in place of its own: a machine starting under an id its
+    /// peers already know, with a key of its own.
+    pub fn replace_profile(&mut self, host: &str, id: ProfileId) -> Result<(), NetError> {
+        let info = &mut self
+            .hosts
+            .get_mut(host)
+            .ok_or_else(|| NetError::NoHost(host.to_owned()))?
+            .info;
+        std::fs::remove_dir_all(node::profile_dir(&info.data_dir, info.profile))?;
+        node::create_profile_as(&info.data_dir, id)?;
+        info.profile = id;
+        info.host_id = id;
+        Ok(())
+    }
+
     pub async fn restart_daemon(&mut self, host: &str) -> Result<Ack, NetError> {
         if let Some(process) = self.process(host)?.cloned() {
             // A supervised host's daemon may already be back under its
@@ -2761,7 +2842,8 @@ impl Net {
                     host: host.to_owned(),
                     why,
                 })?
-                .subscribe(wire::SubscribeRequest {
+                .sessions
+                .subscribe_session(wire::SubscribeSessionRequest {
                     agent_id: id.as_bytes().to_vec(),
                     tail,
                 })
@@ -2782,7 +2864,10 @@ impl Net {
                 reader,
             ));
         }
-        let mut subscription = self.runtime(host)?.subscribe(id.as_bytes(), tail).await?;
+        let mut subscription = self
+            .runtime(host)?
+            .subscribe_session(id.as_bytes(), tail)
+            .await?;
         let (sender, incoming) = mpsc::unbounded_channel();
         let reader = tokio::spawn(async move {
             while let Some(event) = subscription.next().await {
@@ -2808,7 +2893,8 @@ impl Net {
                     host: host.to_owned(),
                     why,
                 })?
-                .subscribe_inventory(wire::Empty {})
+                .agents
+                .subscribe_inventory(wire::SubscribeInventoryRequest {})
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
                 .into_inner();
@@ -2882,9 +2968,7 @@ impl Net {
             return false;
         };
         observe::inventory_hosts(events).iter().any(|host| {
-            host.host_id == far_id.as_bytes()
-                && observe::host_online(host)
-                && host.via() == wire::RouteKind::Direct
+            host.host_id() == far_id.as_bytes() && host.online() == Some(wire::RouteKind::Direct)
         })
     }
 
@@ -3060,10 +3144,12 @@ impl Net {
             let mut rows: BTreeMap<String, wire::Item> = BTreeMap::new();
             let mut stream = match tokio::time::timeout_at(
                 deadline,
-                client.subscribe(wire::SubscribeRequest {
-                    agent_id: agent.id.as_bytes().to_vec(),
-                    tail: 200,
-                }),
+                client
+                    .sessions
+                    .subscribe_session(wire::SubscribeSessionRequest {
+                        agent_id: agent.id.as_bytes().to_vec(),
+                        tail: 200,
+                    }),
             )
             .await
             {
@@ -3103,10 +3189,11 @@ impl Net {
                         let mut before = rows.values().map(|item| item.order).min();
                         while let Some(order) = before.filter(|order| *order > 1) {
                             let page = client
-                                .fetch(wire::FetchRequest {
+                                .sessions
+                                .list_items(wire::ListItemsRequest {
                                     agent_id: agent.id.as_bytes().to_vec(),
                                     before_order: Some(order),
-                                    limit: 500,
+                                    page_size: 500,
                                 })
                                 .await
                                 .map_err(|status| NetError::Refused(Box::new(status)))?
@@ -3692,6 +3779,30 @@ fn work_dir(work: &Path, cwd: Option<&str>) -> Result<String, NetError> {
 }
 
 /// An input id as a failure message shows it.
+/// A host's installation config `text` with the settings in `added`, both
+/// TOML, laid over it: a table in both is merged key by key, and any other
+/// value in `added` replaces the one in `text`.
+pub(crate) fn with_settings(text: &str, added: &str) -> Result<String, String> {
+    fn lay(over: toml::Table, into: &mut toml::Table) {
+        for (key, value) in over {
+            match (value, into.get_mut(&key)) {
+                (toml::Value::Table(over), Some(toml::Value::Table(into))) => lay(over, into),
+                (value, _) => {
+                    into.insert(key, value);
+                }
+            }
+        }
+    }
+    let mut config: toml::Table = text
+        .parse()
+        .map_err(|error| format!("the config: {error}"))?;
+    let added: toml::Table = added
+        .parse()
+        .map_err(|error| format!("the settings: {error}"))?;
+    lay(added, &mut config);
+    toml::to_string(&config).map_err(|error| error.to_string())
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }

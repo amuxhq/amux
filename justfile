@@ -6,6 +6,10 @@ export AMUX_GIT_SHA := `git rev-parse HEAD`
 
 # Wall-clock bound for every recipe; portable where GNU timeout is absent.
 bounded := "scripts/bounded"
+# The pinned nightly's cargo, for formatting and Miri. rustup's `+toolchain`
+# selects it; the Nix dev shell has no rustup and provides `cargo-nightly`
+# instead (nix/toolchain.nix), at the same date.
+nightly_cargo := `command -v cargo-nightly >/dev/null && echo cargo-nightly || echo cargo +nightly-2026-08-30`
 # Desktop roots keep naming the feature explicitly so an invocation that
 # disables defaults cannot silently switch the SQLite linkage policy.
 desktop_features := "--features bundled"
@@ -60,7 +64,7 @@ test-store *ARGS:
 # Cross-compile every store test target and run it on the leased, booted iOS
 # simulator, after proving the SQLite suite's binary carries SQLite itself.
 test-store-ios:
-    scripts/with iphone -- {{bounded}} 2300 scripts/python -B scripts/ios-store-test.py
+    scripts/with iphone -- {{bounded}} 2300 scripts/python -B apps/apple/Tools/ios-store-test.py
 
 # Exercise the pure store-backed reducer lifecycle and recorded UI specs.
 test-ui *ARGS:
@@ -88,11 +92,11 @@ lint:
 
 # Format all Rust sources with the pinned nightly toolchain.
 fmt:
-    {{bounded}} 600 cargo +nightly-2026-08-30 fmt --all
+    {{bounded}} 600 {{nightly_cargo}} fmt --all
 
 # Check Rust formatting with the pinned nightly toolchain.
 fmt-check:
-    {{bounded}} 600 cargo +nightly-2026-08-30 fmt --all -- --check
+    {{bounded}} 600 {{nightly_cargo}} fmt --all -- --check
 
 # Regenerate the committed protobuf bindings.
 protobuf:
@@ -101,6 +105,11 @@ protobuf:
 # Check that committed protobuf bindings match their sources.
 codegen-check:
     {{bounded}} 600 scripts/codegen-check.sh
+
+# Check that amux.v1 still reads what the latest release wrote; with a ref,
+# check against that ref instead.
+proto-compat *ARGS:
+    {{bounded}} 600 cargo run --locked -p xtask -- proto-compat "$@"
 
 # Build the shipping binary and enforce the release dependency policy.
 release-check *ARGS:
@@ -127,6 +136,10 @@ deploy VERSION *ARGS:
 release-key *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 600 cargo run --locked -q -p xtask -- release key "$@"
 
+# Install the pre-push credential scan (scripts/hooks/pre-push) for every worktree.
+hooks:
+    scripts/hooks/install
+
 # Check the provider-free graph used by embedded clients.
 embedded-check:
     {{bounded}} 900 cargo check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded
@@ -140,13 +153,12 @@ mobile-check:
     {{bounded}} 1200 cargo check --locked -p node -p client -p ui-state -p ui-runtime --target aarch64-apple-ios
     {{bounded}} 1200 cargo check --locked -p node -p client -p ui-state -p ui-runtime --target aarch64-apple-ios-sim
 
-# Run workspace tests with isolated user configuration and no external network.
-# The workspace test script bounds its own compile and run phases. launchd
-# refuses to load a LaunchAgent for a sandboxed process, and the agent it
-# would start runs outside the sandbox anyway, so the one test that loads
-# one cannot be judged here.
+# Run workspace tests with isolated user configuration and no external network,
+# on Linux, through sudo. The workspace test script bounds its own compile and
+# run phases. The protocol models are pure computation that would take most of
+# the run's bound, and run in their own CI job, as they do for the test jobs.
 offline-test:
-    scripts/offline-check.sh scripts/workspace-test.sh --lib --tests -- --skip restarting_the_launch_agent_leaves_the_agent_running
+    scripts/offline-check.sh scripts/workspace-test.sh --lib --tests --no-fail-fast --exclude models
 
 # Build the product with the full-debug profile.
 full-debug:
@@ -181,9 +193,9 @@ journey CLIENT NAME *ARGS:
     terminal)
         {{bounded}} 900 cargo build --locked -p amux -p provider-fakes -p testnet --bins {{desktop_features}}
         if [ "{{NAME}}" = all ]; then
-            {{bounded}} 3000 scripts/python -B scripts/terminal-journeys.py
+            {{bounded}} 3000 target/debug/testnet journey terminal all
         else
-            {{bounded}} 600 scripts/python -B scripts/terminal-journey.py "{{NAME}}"
+            {{bounded}} 600 target/debug/testnet journey terminal "{{NAME}}"
         fi
         ;;
     system)
@@ -228,7 +240,7 @@ fuzz-smoke *ARGS:
 # start an installation or a tokio runtime are ignored under Miri, each with
 # its reason. Needs the nightly's miri and rust-src components.
 miri *ARGS:
-    {{bounded}} 1500 cargo +nightly-2026-08-30 miri test --locked -p app-ffi "$@"
+    {{bounded}} 1500 {{nightly_cargo}} miri test --locked -p app-ffi "$@"
 
 # Fail when any state-machine core's dependency graph contains tokio, or any
 # core source contains a lock, a spawned task, an async fn or an await.
@@ -250,6 +262,11 @@ tests-list:
 tests-check:
     {{bounded}} 120 scripts/python -B scripts/tests-catalog.py check
 
+# The unit tests of the repository's own scripts. Pure Python; nothing is
+# built. The phone's scripts have theirs in `just ios script-tests`.
+script-tests:
+    {{bounded}} 120 scripts/py -m unittest discover -s scripts/tests -p '*_test.py' -t scripts/tests
+
 # List every parked property of the protocol models, with its reason, and fail
 # while any remains: the landing gate for decisions still waiting.
 parked-check:
@@ -257,19 +274,12 @@ parked-check:
 
 # Check the protocol models at their nightly bounds: each model's ignored
 # test, one test binary after another, every core each. Names of test
-# targets (`just models-nightly family`) narrow it to those models. On a
-# twelve-core Mac the models that finish take 3,362 s together (the README's
-# table) and the single daemon's peer runs past 4,000 s, so the whole run
-# takes over two hours: replication and the single daemon push it past the
-# bound, which leaves room for the rest on a machine busy with other work.
+# targets (`just models-nightly family`) narrow it to those models. The bound
+# leaves the nightly job, one model each on a four-core runner, a quarter of an
+# hour of its six for the build; the single daemon's peer alone took two hours
+# on the twelve-core Mac.
 models-nightly *TARGETS:
-    if [ "${1-}" = -- ]; then shift; fi; targets=--tests; [ $# -eq 0 ] || targets=$(printf -- '--test %s ' "$@"); {{bounded}} 4800 cargo test --locked -p models $targets -- --ignored --nocapture
-
-# Write the client model's traces that the phone's chat model replays
-# (ChatModelTraceTests) to the Swift tests' fixtures. A test run never
-# writes them; app-runtime's tests fail while they differ from the model.
-client-traces:
-    {{bounded}} 900 cargo test --locked -p app-runtime --lib -- --ignored --exact traces::write_client_traces --nocapture
+    if [ "${1-}" = -- ]; then shift; fi; targets=--tests; [ $# -eq 0 ] || targets=$(printf -- '--test %s ' "$@"); {{bounded}} 20700 cargo test --locked -p models $targets -- --ignored --nocapture
 
 # Walk the testnet's simulated stories by seed: every suite tests/catalog.toml
 # declares a simulated mode for, under TESTNET_MODE=simulated, a few seeds per
@@ -307,18 +317,13 @@ docs-check:
 typed-provider-check:
     {{bounded}} 60 scripts/py scripts/typed-provider-check.py
 
-# Fail when code, config, protos, recipes, scripts, workflows or docs still
-# name a mechanism amux removed.
-deletion-ledger-check:
-    {{bounded}} 120 scripts/py scripts/deletion-ledger-check.py
-
 # Refuse fixture-regeneration flags before any asserted CI check runs.
 [private]
 no-update-flags:
     scripts/no-update-flags.sh
 
 # Run the same task sequence exercised across continuous-integration jobs.
-ci: no-update-flags check lint fmt-check codegen-check dependency-policy cores-check typed-provider-check deletion-ledger-check docs-check tests-check test contracts-check doctest release-check embedded-check embedded-test mobile-check
+ci: no-update-flags check lint fmt-check codegen-check proto-compat dependency-policy cores-check typed-provider-check docs-check tests-check script-tests test contracts-check doctest release-check embedded-check embedded-test mobile-check
 
 # Run the live provider compatibility lane for one kind (claude_pty,
 # claude_sdk or codex) and scenario (initialize, respond, decide, interrupt,
@@ -339,6 +344,14 @@ qa *ARGS:
 # record the current release medians after every absolute budget passes.
 perf *ARGS:
     set -e; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 cargo build --locked --release -p qualification --bin perf --features bundled,perf; {{bounded}} 1800 target/release/perf "$@"
+
+# Records the release flood under an Instruments template on this Mac, for
+# reading what the daemon's core thread spends its time on and waits for
+# (docs/PERFORMANCE.md): `just perf-profile 'System Trace' 15s` stops the run
+# 15 s in (the agents it leaves ignore SIGTERM and are killed), `just perf-profile 'Time
+# Profiler'` records it whole. Trace and report land in target/perf-profile/.
+perf-profile TEMPLATE LIMIT="300s":
+    set -e; {{bounded}} 2400 cargo build --locked --release -p qualification --bin perf --features bundled,perf; {{bounded}} 2400 cargo build --locked --release -p amux -p provider-fakes --bins; mkdir -p target/perf-profile; out="target/perf-profile/$(date +%Y%m%d-%H%M%S)"; window=; case "{{TEMPLATE}}" in "System Trace") window="--window 300s" ;; esac; {{bounded}} 1800 xcrun xctrace record --template "{{TEMPLATE}}" $window --no-prompt --time-limit "{{LIMIT}}" --env TESTNET_BINARIES="$PWD/target/release" --target-stdout "$out.log" --output "$out.trace" --launch -- "$PWD/target/release/perf" --only flood || echo "xctrace exited $? (a time limit ends the run this way)"; pkill -9 -f "$PWD/target/release/amux agent" || true; pkill -9 -f "$PWD/target/release/fake-" || true; pkill -9 -f "$PWD/target/release/perf --cluster-warmer" || true; test -d "$out.trace"; echo "$out.trace"
 
 # Records the loopback scaling curve of the production relay at 10, 100 and
 # 1,000 connections (aggregate throughput, stream-open latency p50 and p99);

@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package amux.v1;
+
+// amux's errors are google.rpc.Status values: a gRPC code, a message, and
+// details packed as Any. Where the code alone does not say what happened, a
+// google.rpc.ErrorInfo detail names it, with domain "amux.sh" and as reason
+// one of these values' names without its ERROR_REASON_ prefix
+// ("HOST_UNREACHABLE"). Typed details sit beside the types they name:
+// AmbiguousAgentName, AmbiguousHostName, ProtocolVersionMismatch.
+enum ErrorReason {
+  ERROR_REASON_UNSPECIFIED = 0;
+  // Another host could not be reached, on code FAILED_PRECONDITION: an
+  // answer about that host, never UNAVAILABLE, which says this daemon is not
+  // answering.
+  ERROR_REASON_HOST_UNREACHABLE = 1;
+  // The account's plan does not cover it, on code PERMISSION_DENIED.
+  ERROR_REASON_PAYMENT_REQUIRED = 2;
+}

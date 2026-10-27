@@ -1,4 +1,4 @@
-//! The agent process: `amux agent <dir>` hosts one provider for one agent.
+//! The agent process: `amux internal agent <dir>` hosts one provider for one agent.
 //!
 //! It takes `<dir>/lock` for its lifetime, reads the newest `spec.<n>`,
 //! listens on `ctl.sock` (and `pty.sock` and `private/hooks.sock` for the
@@ -75,15 +75,42 @@ pub async fn run(dir: PathBuf, clock: impl Clock) -> Result<ExitCause, AgentErro
         .ok_or_else(|| AgentError::NoSpec(dir.clone()))?;
     dir::private_dir(&dir.join(dir::PRIVATE)).map_err(AgentError::Dir)?;
     let clock: Arc<dyn Clock> = Arc::new(clock);
-    match wire::Kind::try_from(spec.kind) {
+    let trimming = tokio::spawn(trim_logs(dir.clone()));
+    let codex_sock = dir.join(dir::PRIVATE).join(dir::CODEX_SOCK);
+    let ended = match wire::Kind::try_from(spec.kind) {
         Ok(wire::Kind::ClaudeSdk) => host::run::<ClaudeSdk>(dir, spec, clock).await,
         Ok(wire::Kind::ClaudePty) => host::run::<ClaudePty>(dir, spec, clock).await,
         Ok(wire::Kind::Codex) => host::run::<Codex>(dir, spec, clock).await,
         Ok(wire::Kind::Unspecified) | Err(_) => Err(AgentError::UnknownKind(spec.kind)),
+    };
+    trimming.abort();
+    // Codex binds its socket itself and leaves it behind when it exits.
+    let _ = std::fs::remove_file(codex_sock);
+    ended
+}
+
+/// How often the agent's logs are held to their cap.
+const LOG_TRIM_EVERY: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Keeps the agent's own log and its provider's under their cap. Others
+/// write both (this process's standard error, which the daemon opened, and
+/// the provider's), so they are trimmed now and then, not on each write.
+async fn trim_logs(dir: PathBuf) {
+    let logs = [
+        dir.join(agent_dir::AGENT_LOG),
+        dir.join(dir::PRIVATE).join(dir::PROVIDER_LOG),
+    ];
+    loop {
+        for log in &logs {
+            if let Err(error) = log_file::trim(log, log_file::AGENT_CAP) {
+                eprintln!("amux agent: trimming {}: {error}", log.display());
+            }
+        }
+        tokio::time::sleep(LOG_TRIM_EVERY).await;
     }
 }
 
-/// `amux agent <dir>`: runs the agent on the wall clock and returns the
+/// `amux internal agent <dir>`: runs the agent on the wall clock and returns the
 /// process exit code. The runtime is shut down without waiting for its
 /// blocking threads, since a terminal reader can stay blocked for as long
 /// as a straggler the provider left behind holds the terminal.

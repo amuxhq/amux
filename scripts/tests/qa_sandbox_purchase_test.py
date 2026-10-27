@@ -13,6 +13,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
@@ -166,7 +167,9 @@ class TheTransactionFileMode(unittest.TestCase):
     def test_it_asks_for_no_phone_and_no_signing(self):
         # A transaction captured on a phone has already been bought; demanding
         # the phone again would refuse a run that can honestly succeed.
-        with checkout(**{recipe.ADDRESS_VARIABLE: "device@example.test"}):
+        # The keychain is this Mac's, and Linux has none to ask.
+        with checkout(**{recipe.ADDRESS_VARIABLE: "device@example.test"}), \
+                mock.patch.object(recipe.qa_cloud, "keychain_holds", lambda _: False):
             _, phone, settings, checks = recipe.preflight(
                 confirmed=False, for_transaction_file=True)
             self.assertIsNone(phone)

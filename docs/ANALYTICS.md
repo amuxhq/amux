@@ -10,11 +10,11 @@ files stay on your machines.
 
 It is on by default. To turn it off:
 
-- **On a computer:** `amux config telemetry off`. A running daemon stops
+- **On a computer:** `amux config set telemetry false`. A running daemon stops
   sending at once, and nothing it records while off is sent later.
-  `amux config telemetry on` resumes it, or, if the daemon started with
-  telemetry off, takes effect when it next starts. `amux config telemetry`
-  says whether it is on and where it goes.
+  `amux config set telemetry true` resumes it, or, if the daemon started with
+  telemetry off, takes effect when it next starts. `amux status` says
+  whether it is on and where it goes.
 - **`DO_NOT_TRACK`:** a daemon started with `DO_NOT_TRACK` set to anything
   but empty or `0` sends nothing, whatever the setting says. It must be set
   where the daemon starts: a daemon started at login, or by a service
@@ -116,9 +116,9 @@ before that is not counted.
 - Your IP address beyond what is needed to find a country, as described
   above.
 
-amux keeps a separate audit log on each machine for its own security
-records. That log names machines and gives reasons in words; it never
-leaves the machine and has nothing to do with these events.
+The daemon's own log on each machine names machines and gives reasons in
+words; it leaves the machine only inside a report you send, redacted, and
+has nothing to do with these events.
 
 ## For developers
 

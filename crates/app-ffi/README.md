@@ -15,12 +15,12 @@ from the Rust definitions into
 `apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values.swift`:
 
 ```sh
-cargo run -p xtask -- swift-types          # regenerate
-cargo run -p xtask -- swift-types --check  # fail when the committed file differs
+cargo run -p ios-tools -- swift-types          # regenerate
+cargo run -p ios-tools -- swift-types --check  # fail when the committed file differs
 ```
 
 Rows, ask cards, the overview and fleet cards are the `ui-view` values the
-terminal renders; `ChatFrame`, `ChatChanges`, `Draft`, `RowOptions`,
+terminal renders; `ChatFrame`, `ChatChanges`, `Draft`,
 `HostView` and the act outcomes are `app-runtime::values`. Byte strings such
 as agent and input ids are JSON arrays of numbers. Answers never carry a
 provider's answer body: the phone names a choice by its position on the
@@ -33,7 +33,6 @@ gives a form one `FormValue` per field, and the answer is built in Rust.
 AmuxRuntime *rt = amux_runtime_start(config_json, &error);
 int fd = amux_runtime_wake_fd(rt);                   /* watch for readable */
 char *stepped = amux_runtime_step(rt);               /* on every wake */
-char *profiles = amux_runtime_profiles(rt);          /* [ProfileView] */
 AmuxProfile *p = amux_profile_open(rt, profile_id, &error);
 AmuxChat *chat = amux_session_open(p, agent_key_json, 0, &error);
 ...
@@ -47,10 +46,12 @@ calls `amux_runtime_step`; links, channels and gRPC run on one confined Rust
 thread, which posts what it decodes onto the cores' queues and never calls
 into the app. Whenever something waits for a step, the descriptor
 `amux_runtime_wake_fd` answers becomes readable; the app watches it from the
-queue it steps on. A step answers JSON: `profiles` (read
-`amux_runtime_profiles` again), `redraws` (each a profile id and a chat id,
-0 for the fleet, whose changes wait to be taken) and `answers` (each an act's
-ticket and its result as JSON text).
+queue it steps on. A step answers JSON: `profiles` (every profile as
+`[ProfileView]`, oldest first, when the list moved: once the registry is read
+after the start, and before the answer of any act that moved it), `fleets`
+and `chats` (each the fleet's number and a `FleetDelta` or `ChatDelta`: what
+moved in that view, see below) and `answers` (each an act's ticket and its
+result as JSON text, after the deltas of what the act moved).
 
 `amux_runtime_start` takes a `StartConfig` and blocks until every profile's
 store is open. Every call that blocks until the cores have done something
@@ -58,8 +59,8 @@ steps them on the calling thread while it waits, so it may be made from the
 queue that steps. `amux_profile_open` opens one
 profile's fleet and blocks until it has caught up with that profile's store;
 the app keeps only the profile on screen open. `amux_session_open` blocks
-until the chat's snapshot and the rows this device holds are applied, so the
-first read is correct even with the agent's host away. Close every chat
+until the chat's snapshot and the rows this device holds are applied, so its
+opening is whole even with the agent's host away. Close every chat
 before its profile, and every profile before stopping the runtime.
 
 ## The profile registry
@@ -70,8 +71,7 @@ installation keeps at least one), `amux_runtime_bind` (a sign-in's refresh
 token with the OAuth client it was issued to; a named profile is adopted even
 when it paired machines before, null lets the registry pick the account's own
 profile, else one that holds nothing, else a new one), `amux_runtime_sign_out`
-(the profile stays tied to its account), `amux_runtime_pause` and
-`amux_runtime_resume` (the relay link only), `amux_runtime_access_token` (a
+(the profile stays tied to its account), `amux_runtime_access_token` (a
 bearer for the account service; the profile alone spends the refresh token),
 `amux_runtime_refresh_entitlement` (asks what the account buys now, so a
 purchase lifts the relay's tier at once) and `amux_runtime_trusting_profiles`
@@ -81,9 +81,9 @@ pairing link, so tests can pair two profiles. `amux_runtime_discovered` hands
 the whole set the phone's own browser found on the local network, which only
 the system may browse, to every profile.
 
-`amux_runtime_set_source_policy(rt, profile, listed)` keeps a source open for
-every listed agent of the profile on screen in the foreground, and only for
-the chats that open for every other profile and in the background.
+`amux_runtime_list_sources(rt, profile)` keeps a source open for every listed
+agent of the profile on screen, and only for the chats that open for every
+other profile; null, for the app in the background, lists none.
 
 Product analytics ([what is sent](../../docs/ANALYTICS.md)) is the
 runtime's; the app tells it what only the app knows.
@@ -102,30 +102,32 @@ and writes a `rebind` line to the link log saying so. `amux_runtime_record(rt, p
 every profile when `profile` is null. Only a published build sends; every
 other build records nothing unless `AMUX_ANALYTICS_URL` names a server.
 
-## Reads and changes
+## Views and deltas
 
-Reads return at once: `amux_session_keys`, `amux_session_rows_for`,
-`amux_session_ask_card`, `amux_session_overview`, `amux_session_settings`,
-`amux_session_frame`, `amux_session_toggle_run` and
-`amux_session_keep_open_runs` (a folding view's open set, opened or closed on
-one run, and re-held on each open run's newest step before rows are read),
-`amux_fleet_view` (home's sections, narrowed by a `FleetFilter`), `amux_fleet_card`, `amux_fleet_family`, `amux_fleet_hosts`,
-`amux_runtime_profiles`, `amux_runtime_source_policy_listed`. Some reads need
-no handle, because they are the shared rules applied to values the phone
-already holds: `amux_agent_name_problem` (why a name cannot name an agent),
-`amux_new_agent_settings` and `amux_new_agent_pick` (a new agent's pickers
-from a host's catalogue), and `amux_form_problems` (each field's
-`FieldProblem` for a form's `FormField`s and the `FormValue`s entered).
+A fleet and a chat each open with the whole of what they show, and then
+hear what moved. `amux_fleet_opening(profile)` answers a `FleetDelta` with
+home's sections and every host; `amux_session_opening(chat)` a `ChatDelta`
+with every key, the frame, the head ask, the overview and the settings. No
+step hands over a delta for either before its opening. After it, a step
+carries a delta for each that moved, with only the fields that moved, and
+at most one per view: however many updates land in between, the host hears
+them together. Nothing closed is handed over again.
 
-Rows are handed out by item key, which never moves. The host's id sequence
-changes only at its two edges: `amux_session_new_keys_above(chat, newest)` for
-rows that arrived after the newest it holds,
-`amux_session_new_keys_below(chat, oldest)` for a page of older ones, and
-`amux_session_oldest_key(chat)` for where the window now starts: while the
-reader follows the newest row, the window keeps at most its cap and drops its
-oldest rows as new ones arrive. `amux_session_new_keys_above` and
-`amux_session_new_keys_below` return JSON null when the key they name is no
-longer held, and the host reads `amux_session_keys` again.
+A chat's rows are handed out by item key, which never moves, so its
+`sequence` changes only at its two edges until it reloads: `Edges` names the
+keys newer than the newest the host holds, a page of older ones below its
+oldest, and how many of its oldest the window dropped (while the reader
+follows the newest row, the window keeps at most its cap). `Reload` hands
+over every key. A delta's `rows` are the rows that changed among those the
+host held; a row new at either edge, or held through a reload, is read with
+`amux_session_rows_for` when it is drawn.
+
+What a view folds is held in Rust, so a read needs nothing passed in: a chat
+draws each run folded to its newest step until `amux_session_toggle_run`
+opens it, and keeps an open run open as it grows, pages in older steps or
+trims its oldest; a fleet lists a family's members under its root once
+`amux_fleet_toggle_family` opens it, narrowed by the last `amux_fleet_filter`.
+Each change is handed over by the next step.
 
 The host says where its reader is with `amux_session_follow(chat, following)`:
 false when the reader leaves the newest row, true on the return. In history
@@ -133,11 +135,13 @@ the window stays put, arrivals are held apart and the frame's `arrivals_held`
 says so; the return releases them, or reloads the newest rows when more
 arrived than the window holds.
 
-A step names a profile's fleet (chat 0) or a chat in its redraws whenever
-that one moved, and at most once until the host takes its changes with
-`amux_session_take_changes` or `amux_fleet_take_changes`. However many
-updates land in between, the host is told once and takes every changed key
-together.
+Other reads return at once: `amux_fleet_card`, `amux_fleet_family`,
+`amux_runtime_source_policy_listed`. Some reads need
+no handle, because they are the shared rules applied to values the phone
+already holds: `amux_agent_name_problem` (why a name cannot name an agent),
+`amux_new_agent_settings` and `amux_new_agent_pick` (a new agent's pickers
+from a host's catalogue), and `amux_form_problems` (each field's
+`FieldProblem` for a form's `FormField`s and the `FormValue`s entered).
 
 ## Acts
 

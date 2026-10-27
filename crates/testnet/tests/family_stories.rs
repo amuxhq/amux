@@ -638,8 +638,10 @@ mod stories {
             id: b"stale".to_vec(),
             from: Some(wire::Sender {
                 value: Some(wire::sender::Value::Agent(wire::AgentSender {
-                    agent_id: helper.id.as_bytes().to_vec(),
-                    host_id: helper.host_id.as_bytes().to_vec(),
+                    agent: Some(wire::AgentRef {
+                        host_id: helper.host_id.as_bytes().to_vec(),
+                        agent_id: helper.id.as_bytes().to_vec(),
+                    }),
                     name: "helper".into(),
                 })),
             }),

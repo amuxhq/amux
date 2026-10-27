@@ -15,7 +15,7 @@ use std::fmt;
 use std::path::Path;
 
 use daemon_core::{AgentId, Checkpoint, Daemon, Input, Output, Recorded, StepBudget};
-use models::single_daemon::{REPRODUCES, judge_step};
+use models::single_daemon::{REPRODUCES, judge_step, stepped};
 use redaction::{EMAIL_PLACEHOLDER, IDENTIFIER_PLACEHOLDER, PATH_PLACEHOLDER, SECRET_PLACEHOLDER};
 use store::Sqlite;
 use ui_state::{Msg, SessionState};
@@ -198,6 +198,9 @@ impl Bundle {
             let mut refuse = None;
             for read in &reads {
                 let journal = journals.get(&read.agent).map_or(&[][..], Vec::as_slice);
+                // The reader goes first: some systems refuse to remove a
+                // directory holding a file still open.
+                daemon.journal_relaid(read.agent);
                 lay_out(
                     &daemon_core::ingest::journal_dir(&agents, read.agent),
                     journal,
@@ -441,7 +444,7 @@ fn replay_client(agent: &str, history: &ClientHistory) -> Result<Result<usize, F
     }
     let mut step = 0;
     for traced in &history.events {
-        let Some(wire::client_traced::Event::Msg(msg)) = &traced.event else {
+        let Some(wire::dump::client_traced::Event::Msg(msg)) = &traced.event else {
             continue;
         };
         step += 1;
@@ -577,29 +580,6 @@ fn lay_out(dir: &Path, journal: &[(u64, Vec<u8>)], seen: u64) -> Result<(), Bund
         std::fs::write(journal::segment_path(dir, *start), &bytes[..kept]).map_err(io)?;
     }
     Ok(())
-}
-
-/// Steps the core with one input, refusing any commit the step makes when
-/// the live step's failed, as the drive refused it.
-fn stepped(daemon: &mut Daemon, input: Input, refuse: Option<&str>, out: &mut Vec<Output>) {
-    let refusing = refuse.and_then(|why| {
-        let why = why.replace('\'', "''");
-        daemon
-            .store()
-            .connection()
-            .execute_batch(&format!(
-                "CREATE TEMP TRIGGER replay_refuse BEFORE INSERT ON agents \
-                 BEGIN SELECT RAISE(ABORT, '{why}'); END;"
-            ))
-            .ok()
-    });
-    daemon.step(input, out);
-    if refusing.is_some() {
-        let _ = daemon
-            .store()
-            .connection()
-            .execute_batch("DROP TRIGGER replay_refuse;");
-    }
 }
 
 /// Where the steps an interpreter replayed first differ from the journal's

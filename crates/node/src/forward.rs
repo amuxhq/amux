@@ -18,7 +18,7 @@ use daemon_core::payload::{
 use store::{AgentRow, StoreError};
 use tonic::{Code, Response, Status};
 use uuid::Uuid;
-use wire::{AmbiguousHostName, ErrorCode, ErrorDetail, HostEntry, Trust};
+use wire::{AmbiguousHostName, ErrorCode, HostEntry};
 
 use crate::HostId;
 use crate::driver::Delivered;
@@ -77,21 +77,14 @@ impl ForwardError {
     /// the same answer it would have had from the owner directly.
     pub fn to_wire(&self) -> wire::Error {
         match self {
-            Self::NotSent { .. } | Self::Lapsed { .. } | Self::Uncertain { .. } => {
-                wire_error(self.code(), self.to_string())
+            Self::NotSent { .. } => {
+                wire::Error::because(wire::ErrorReason::HostUnreachable, self.to_string())
             }
+            Self::Lapsed { .. } => {
+                wire::Error::because(wire::ErrorReason::PaymentRequired, self.to_string())
+            }
+            Self::Uncertain { .. } => wire_error(ErrorCode::Aborted, self.to_string()),
             Self::Remote(error) => error.clone(),
-        }
-    }
-
-    pub fn code(&self) -> ErrorCode {
-        match self {
-            Self::NotSent { .. } => ErrorCode::Unreachable,
-            Self::Lapsed { .. } => ErrorCode::PaymentRequired,
-            Self::Uncertain { .. } => ErrorCode::Aborted,
-            Self::Remote(error) => {
-                ErrorCode::try_from(error.code).unwrap_or(ErrorCode::Unspecified)
-            }
         }
     }
 }
@@ -116,7 +109,7 @@ impl ForwardError {
     }
 }
 
-/// A PeerService request that can be forwarded, and the reply it gets.
+/// A peer services request that can be forwarded, and the reply it gets.
 pub(crate) trait PeerRpc {
     type Reply;
     fn request(self) -> PeerRequest;
@@ -154,14 +147,14 @@ peer_rpc! {
         => PeerReply::SendMessage(reply) => reply;
     wire::PutBlobRequest => PutBlob, wire::BlobRef => PeerReply::Blob(blob) => blob;
     wire::GetBlobRequest => GetBlob, wire::GetBlobResponse => PeerReply::GetBlob(reply) => reply;
-    wire::DiffRequest => Diff, wire::Diff => PeerReply::Diff(diff) => diff;
-    wire::GetCatalogueRequest => GetCatalogue, wire::CatalogueBlob
+    wire::GetDiffRequest => GetDiff, wire::Diff => PeerReply::Diff(diff) => diff;
+    wire::GetCatalogueRequest => GetCatalogue, wire::GetCatalogueResponse
         => PeerReply::Catalogue(catalogue) => catalogue;
     wire::ListRepositoriesRequest => ListRepositories, wire::ListRepositoriesResponse
         => PeerReply::Repositories(repositories) => repositories;
     wire::DumpRequest => Dump, wire::DumpPart => PeerReply::Dump(part) => part;
-    wire::FetchRequest => Fetch, wire::FetchResponse => PeerReply::Fetched(page) => page;
-    wire::GetRequest => Get, wire::Item => PeerReply::Item(item) => item;
+    wire::ListItemsRequest => ListItems, wire::ListItemsResponse => PeerReply::Fetched(page) => page;
+    wire::GetItemRequest => GetItem, wire::Item => PeerReply::Item(item) => item;
 }
 
 /// A spawn's host name that answers to no trusted host, or to several.
@@ -178,15 +171,8 @@ impl HostNameError {
         match self {
             Self::NotFound { .. } => wire_error(ErrorCode::NotFound, self.to_string()),
             Self::Ambiguous(ambiguous) => {
-                use prost::{Message as _, Name as _};
-                wire::Error {
-                    code: ErrorCode::FailedPrecondition as i32,
-                    message: self.to_string(),
-                    details: vec![ErrorDetail {
-                        r#type: AmbiguousHostName::full_name(),
-                        value: ambiguous.encode_to_vec(),
-                    }],
-                }
+                wire::Error::new(ErrorCode::FailedPrecondition, self.to_string())
+                    .with_detail(ambiguous)
             }
         }
     }
@@ -249,6 +235,7 @@ impl ProfileRuntime {
         if !edge.is_trusted(host) {
             return Err(not_sent());
         }
+        let since = crate::routing::LinkId::next_instance();
         match tokio::time::timeout(REACH_PATIENCE, edge.peer(host)).await {
             Ok(Ok(client)) => Ok(client),
             // On a free account the relay lists the account's hosts and
@@ -259,21 +246,14 @@ impl ProfileRuntime {
                 host,
                 name: self.host_name(host),
             }),
-            // The core decides what a call finding no channel says of the
-            // host: one listed as reachable that takes no call reads
-            // offline until a channel to it opens again, which is what
-            // releases sends held for the host.
-            Ok(Err(error)) => {
-                edge.calls_failed(host, crate::driver::core_error(&error));
-                Err(not_sent())
-            }
+            // A channel that failed on its link closed the link already;
+            // one that found none in time closes the host's links it had
+            // to use, not one that came up while it waited. The
+            // host reads offline once none is up, and a link of its own
+            // coming up again is what releases sends held for it.
+            Ok(Err(_)) => Err(not_sent()),
             Err(_) => {
-                edge.calls_failed(
-                    host,
-                    daemon_core::payload::ChannelError::Handshake(
-                        "no channel opened within a call's patience".to_owned(),
-                    ),
-                );
+                edge.calls_timed_out(host, since);
                 Err(not_sent())
             }
         }
@@ -356,31 +336,33 @@ impl ProfileRuntime {
             hosts.push(
                 published
                     .iter()
-                    .find(|entry| entry.host_id == id)
+                    .find(|entry| entry.host_id() == id)
                     .cloned()
-                    .unwrap_or(HostEntry {
-                        host_id: id,
-                        name,
-                        trust: Trust::Trusted as i32,
-                        ..HostEntry::default()
+                    .unwrap_or_else(|| {
+                        HostEntry::trusted_host(
+                            id,
+                            name,
+                            wire::trusted::Reach::Offline(wire::Offline::default()),
+                        )
                     }),
             );
         }
-        let mut matching: Vec<&HostEntry> = hosts.iter().filter(|host| host.name == name).collect();
+        let mut matching: Vec<&HostEntry> =
+            hosts.iter().filter(|host| host.name() == name).collect();
         if matching.is_empty() {
             matching = hosts
                 .iter()
-                .filter(|host| host.name.eq_ignore_ascii_case(name))
+                .filter(|host| host.name().eq_ignore_ascii_case(name))
                 .collect();
         }
         match matching.as_slice() {
-            [host] => Uuid::from_slice(&host.host_id).map_err(|_| HostNameError::NotFound {
+            [host] => Uuid::from_slice(host.host_id()).map_err(|_| HostNameError::NotFound {
                 name: name.to_owned(),
                 known: Vec::new(),
             }),
             [] => Err(HostNameError::NotFound {
                 name: name.to_owned(),
-                known: hosts.iter().map(|host| host.name.clone()).collect(),
+                known: hosts.iter().map(|host| host.name().to_owned()).collect(),
             }),
             several => Err(HostNameError::Ambiguous(AmbiguousHostName {
                 name: name.to_owned(),
@@ -390,7 +372,7 @@ impl ProfileRuntime {
     }
 }
 
-/// Makes one PeerService call and reads its whole reply.
+/// Makes one peer services call and reads its whole reply.
 async fn dispatch(
     mut client: crate::PeerClient,
     request: PeerRequest,
@@ -402,43 +384,64 @@ async fn dispatch(
         answer.map(|answer| reply(answer.into_inner()))
     }
     match request {
-        PeerRequest::Fetch(request) => unary(client.fetch(request).await, PeerReply::Fetched),
-        PeerRequest::Get(request) => unary(client.get(request).await, PeerReply::Item),
-        PeerRequest::SendInput(request) => {
-            unary(client.send_input(request).await, PeerReply::SendInput)
+        PeerRequest::ListItems(request) => unary(
+            client.sessions.list_items(request).await,
+            PeerReply::Fetched,
+        ),
+        PeerRequest::GetItem(request) => {
+            unary(client.sessions.get_item(request).await, PeerReply::Item)
         }
+        PeerRequest::SendInput(request) => unary(
+            client.sessions.send_input(request).await,
+            PeerReply::SendInput,
+        ),
         PeerRequest::CreateAgent(request) => {
-            unary(client.create_agent(request).await, PeerReply::Agent)
+            unary(client.agents.create_agent(request).await, PeerReply::Agent)
         }
         PeerRequest::RenameAgent(request) => {
-            unary(client.rename_agent(request).await, PeerReply::Agent)
+            unary(client.agents.rename_agent(request).await, PeerReply::Agent)
         }
         PeerRequest::StopAgent(request) => {
-            unary(client.stop_agent(request).await, |_| PeerReply::Done)
+            unary(client.agents.stop_agent(request).await, |_| PeerReply::Done)
         }
         PeerRequest::ResumeAgent(request) => {
-            unary(client.resume_agent(request).await, PeerReply::Agent)
+            unary(client.agents.resume_agent(request).await, PeerReply::Agent)
         }
         PeerRequest::DeleteAgent(request) => {
-            unary(client.delete_agent(request).await, |_| PeerReply::Done)
+            unary(client.agents.delete_agent(request).await, |_| {
+                PeerReply::Done
+            })
         }
         PeerRequest::SendMessage(envelope) => {
-            unary(client.send_message(envelope).await, PeerReply::SendMessage)
+            let request = wire::PeerSendMessageRequest {
+                envelope: Some(envelope),
+            };
+            unary(
+                client.agents.send_message(request).await,
+                PeerReply::SendMessage,
+            )
         }
-        PeerRequest::PutBlob(request) => unary(client.put_blob(request).await, PeerReply::Blob),
-        PeerRequest::GetBlob(request) => unary(client.get_blob(request).await, PeerReply::GetBlob),
-        PeerRequest::Diff(request) => unary(client.diff(request).await, PeerReply::Diff),
-        PeerRequest::GetCatalogue(request) => {
-            unary(client.get_catalogue(request).await, PeerReply::Catalogue)
+        PeerRequest::PutBlob(request) => {
+            unary(client.agents.put_blob(request).await, PeerReply::Blob)
         }
+        PeerRequest::GetBlob(request) => {
+            unary(client.agents.get_blob(request).await, PeerReply::GetBlob)
+        }
+        PeerRequest::GetDiff(request) => {
+            unary(client.agents.get_diff(request).await, PeerReply::Diff)
+        }
+        PeerRequest::GetCatalogue(request) => unary(
+            client.agents.get_catalogue(request).await,
+            PeerReply::Catalogue,
+        ),
         PeerRequest::ListRepositories(request) => unary(
-            client.list_repositories(request).await,
+            client.agents.list_repositories(request).await,
             PeerReply::Repositories,
         ),
-        PeerRequest::Dump(request) => unary(client.dump(request).await, PeerReply::Dump),
+        PeerRequest::Dump(request) => unary(client.agents.dump(request).await, PeerReply::Dump),
         // Streams are opened by the replica's source, not forwarded.
-        PeerRequest::Subscribe(_) | PeerRequest::SubscribeInventory => Err(Status::unimplemented(
-            "a stream is not made as a forwarded call",
-        )),
+        PeerRequest::SubscribeSession(_) | PeerRequest::SubscribeInventory => Err(
+            Status::unimplemented("a stream is not made as a forwarded call"),
+        ),
     }
 }

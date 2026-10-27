@@ -67,78 +67,91 @@ pub struct TuiConfig {
 }
 
 /// How this client lays its screens out, kept between runs: a person's
-/// preference for this terminal, not state any other client shares.
+/// preference, shared by every terminal on the installation and by no other
+/// kind of client.
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Layout {
     /// The chat's overview pane stays open across chats until closed.
     #[serde(default)]
     pub overview: bool,
-    /// Each chat's folded overview sections, by agent id in hex.
-    #[serde(default)]
-    pub folds: std::collections::BTreeMap<String, Vec<String>>,
     /// What a chat's changes are counted against.
     #[serde(default)]
     pub comparison: crate::chat::Comparison,
-    /// How each chat draws its tool steps, by agent id in hex; a chat not
-    /// named collapses them.
+    /// Each chat that differs from the defaults, by agent id in hex. Only
+    /// the [`CHATS_KEPT`] most recently changed are kept: an agent deleted
+    /// elsewhere, or on a host this client cannot see now, is never named
+    /// to it, so the file is bounded by age instead.
     #[serde(default)]
-    pub tools: std::collections::BTreeMap<String, crate::chat::ToolSteps>,
+    pub chats: std::collections::BTreeMap<String, ChatLayout>,
+}
+
+/// How many chats' layouts the file keeps.
+pub const CHATS_KEPT: usize = 200;
+
+/// One chat's layout.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ChatLayout {
+    /// Its folded overview sections.
+    #[serde(default)]
+    pub folds: Vec<String>,
+    /// How it draws its tool steps.
+    #[serde(default)]
+    pub tools: crate::chat::ToolSteps,
+    /// When it last changed, in Unix milliseconds.
+    pub changed_ms: i64,
 }
 
 impl Layout {
+    fn chat(&self, agent_id: &[u8]) -> Option<&ChatLayout> {
+        self.chats.get(&hex(agent_id))
+    }
+
     fn folds_of(&self, agent_id: &[u8]) -> HashSet<crate::chat::pane::Section> {
-        self.folds
-            .get(&hex(agent_id))
+        self.chat(agent_id)
             .into_iter()
-            .flatten()
+            .flat_map(|chat| &chat.folds)
             .filter_map(|key| crate::chat::pane::Section::from_key(key))
             .collect()
+    }
+
+    pub(crate) fn tools_of(&self, agent_id: &[u8]) -> crate::chat::ToolSteps {
+        self.chat(agent_id)
+            .map(|chat| chat.tools)
+            .unwrap_or_default()
+    }
+
+    /// Changes one chat's layout; returns whether it changed. A chat back
+    /// at the defaults is no longer named.
+    fn change(&mut self, agent_id: &[u8], change: impl FnOnce(&mut ChatLayout)) -> bool {
+        let id = hex(agent_id);
+        let before = self.chats.get(&id).cloned().unwrap_or_default();
+        let mut after = before.clone();
+        change(&mut after);
+        if after.folds == before.folds && after.tools == before.tools {
+            return false;
+        }
+        if after.folds.is_empty() && after.tools == crate::chat::ToolSteps::default() {
+            self.chats.remove(&id);
+        } else {
+            after.changed_ms = now_ms();
+            self.chats.insert(id, after);
+        }
+        true
     }
 
     /// Records a chat's folds; returns whether they changed.
     fn set_folds(&mut self, agent_id: &[u8], folds: &HashSet<crate::chat::pane::Section>) -> bool {
         let mut keys: Vec<String> = folds.iter().map(|s| s.key().to_owned()).collect();
         keys.sort();
-        let id = hex(agent_id);
-        let before = self.folds.get(&id).cloned().unwrap_or_default();
-        if before == keys {
-            return false;
-        }
-        if keys.is_empty() {
-            self.folds.remove(&id);
-        } else {
-            self.folds.insert(id, keys);
-        }
-        true
-    }
-}
-
-impl Layout {
-    pub(crate) fn tools_of(&self, agent_id: &[u8]) -> crate::chat::ToolSteps {
-        self.tools.get(&hex(agent_id)).copied().unwrap_or_default()
+        self.change(agent_id, |chat| chat.folds = keys)
     }
 
     /// Records how a chat draws its tool steps; returns whether that
     /// changed.
     pub(crate) fn set_tools(&mut self, agent_id: &[u8], tools: crate::chat::ToolSteps) -> bool {
-        if self.tools_of(agent_id) == tools {
-            return false;
-        }
-        let id = hex(agent_id);
-        if tools == crate::chat::ToolSteps::default() {
-            self.tools.remove(&id);
-        } else {
-            self.tools.insert(id, tools);
-        }
-        true
+        self.change(agent_id, |chat| chat.tools = tools)
     }
-}
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-impl Layout {
     pub(crate) fn load(path: Option<&std::path::Path>) -> Layout {
         path.and_then(|path| std::fs::read(path).ok())
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
@@ -146,17 +159,34 @@ impl Layout {
     }
 
     /// Best effort: a layout that cannot be written is only forgotten.
-    pub(crate) fn save(&self, path: Option<&std::path::Path>) {
+    /// Written whole through a file of this process's own, so two terminals
+    /// saving at once leave one of their layouts, never a mix.
+    pub(crate) fn save(&mut self, path: Option<&std::path::Path>) {
         let Some(path) = path else {
             return;
         };
+        if self.chats.len() > CHATS_KEPT {
+            let mut ages: Vec<i64> = self.chats.values().map(|chat| chat.changed_ms).collect();
+            ages.sort_unstable_by(|a, b| b.cmp(a));
+            let oldest_kept = ages[CHATS_KEPT - 1];
+            self.chats.retain(|_, chat| chat.changed_ms >= oldest_kept);
+        }
         if let Some(dir) = path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        if let Ok(bytes) = serde_json::to_vec_pretty(self) {
-            let _ = std::fs::write(path, bytes);
+        let Ok(bytes) = serde_json::to_vec_pretty(self) else {
+            return;
+        };
+        let mut temp = path.as_os_str().to_owned();
+        temp.push(format!(".{}.tmp", std::process::id()));
+        if std::fs::write(&temp, bytes).is_err() || std::fs::rename(&temp, path).is_err() {
+            let _ = std::fs::remove_file(&temp);
         }
     }
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -172,7 +202,7 @@ pub enum AppEvent {
         result: Result<Arc<Session>, String>,
         /// The draft this machine kept for the agent, from an earlier
         /// client.
-        kept: Option<wire::ComposerDraft>,
+        kept: Option<wire::Draft>,
     },
     Notice(String, Tone),
     /// Put words back in the composer of this agent's chat, saying why
@@ -338,8 +368,8 @@ fn terminal_elsewhere(agent: &Agent, config: &TuiConfig) -> Option<&'static str>
 }
 
 /// A composer's words and attachments, as the daemon keeps them.
-fn composer_draft(editor: &crate::editor::Editor) -> wire::ComposerDraft {
-    wire::ComposerDraft {
+fn composer_draft(editor: &crate::editor::Editor) -> wire::Draft {
+    wire::Draft {
         text: editor.text().to_owned(),
         attachments: editor.attachments().to_vec(),
     }
@@ -377,15 +407,15 @@ fn returning_prompts(
 
 /// Saves drafts with this machine's daemon; a failure loses only what a
 /// client kept in memory anyway.
-async fn save_drafts(client: Arc<dyn Client>, drafts: Vec<(Vec<u8>, wire::ComposerDraft)>) {
+async fn save_drafts(client: Arc<dyn Client>, drafts: Vec<(Vec<u8>, wire::Draft)>) {
     for (agent_id, draft) in drafts {
-        let request = wire::SaveDraftRequest {
+        let request = wire::UpdateDraftRequest {
             agent_id,
             draft: Some(draft),
         };
         // Nowhere to say it as the client closes; the draft was only ever
         // in this client's memory before.
-        let _ = client.save_draft(request).await;
+        let _ = client.update_draft(request).await;
     }
 }
 
@@ -826,7 +856,7 @@ impl App {
     /// closes: the open chat's, those of chats left, and, in each agent's,
     /// the words of prompts held for an unreachable host, which go back to
     /// the draft rather than being lost with the client.
-    fn drafts_to_keep(&mut self) -> Vec<(Vec<u8>, wire::ComposerDraft)> {
+    fn drafts_to_keep(&mut self) -> Vec<(Vec<u8>, wire::Draft)> {
         let mut editors: HashMap<AgentKey, crate::editor::Editor> =
             std::mem::take(&mut self.drafts);
         if let Some(chat) = &self.chat {
@@ -911,14 +941,14 @@ impl App {
             for (_, text, attachments) in held {
                 editor.restore(&text, attachments);
             }
-            let request = wire::SaveDraftRequest {
+            let request = wire::UpdateDraftRequest {
                 agent_id: key.agent.clone(),
                 draft: Some(composer_draft(&editor)),
             };
             self.held_saving.insert(key.clone(), ids.clone());
             let client = self.client.clone();
             self.spawn(async move {
-                let saved = client.save_draft(request).await.is_ok();
+                let saved = client.update_draft(request).await.is_ok();
                 Some(AppEvent::HeldSaved {
                     agent: key,
                     ids,
@@ -1260,7 +1290,7 @@ impl App {
                 attachments,
                 open,
             } => {
-                let attach = setup.chat_in == crate::setup::ChatIn::Terminal;
+                let attach = setup.chat_in == crate::setup::ChatIn::Native;
                 self.spawn(async move {
                     // An agent used in its own terminal gets its first
                     // prompt there.
@@ -1578,10 +1608,10 @@ impl App {
         let state = chat.session.state();
         let linked = fleet
             .host(&chat.agent.host)
-            .is_some_and(|host| host.trust() == wire::Trust::Trusted);
+            .is_some_and(|host| host.trusted().is_some());
         let host = state
             .host()
-            .map(|host| host.name.clone())
+            .map(|host| host.name().to_owned())
             .filter(|name| !name.is_empty())
             .unwrap_or_else(|| "its host".to_owned());
         let not_found = ended
@@ -1677,7 +1707,7 @@ impl App {
         }
         let host_name = fleet
             .host(&host)
-            .map(|entry| entry.name.clone())
+            .map(|entry| entry.name().to_owned())
             .filter(|name| !name.is_empty())
             .unwrap_or_else(|| "this machine".to_owned());
         drop(fleet);
@@ -1837,7 +1867,7 @@ impl App {
         let sessions = self
             .chat
             .iter()
-            .map(|chat| chat.session.history())
+            .map(|chat| chat.session.history().encode_to_vec())
             .collect();
         tokio::spawn(async move {
             let response = client

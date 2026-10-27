@@ -1,0 +1,186 @@
+syntax = "proto3";
+
+package amux.v1;
+
+import "amux/v1/link.proto";
+import "amux/v1/records.proto";
+
+// The inventory: hosts and agent rows, as AgentService.SubscribeInventory
+// streams them.
+
+// Hosts and agent rows: the current set, CaughtUp, then deltas. A listing is
+// this stream read to CaughtUp.
+message InventoryEvent {
+  oneof of {
+    HostEntry host = 1;
+    HostRemoved host_removed = 2;
+    Agent agent = 3;
+    AgentRemoved agent_removed = 4;
+    CaughtUp caught_up = 5;
+    // The stream fell behind and closes after this; the client resubscribes
+    // at once and reconciles against the fresh listing.
+    Lagged lagged = 6;
+  }
+}
+
+// One host set: every trusted host is in every snapshot whatever its
+// presence; candidates come and go with discovery. HostRemoved only on
+// untrust, or when a candidate disappears.
+message HostEntry {
+  // The host as it announced itself in its handshake; a paired host's name
+  // is the one this machine's trust entry keeps for it.
+  Host host = 1;
+  // Bumped only after an unclean reboot of that host.
+  uint64 generation = 2;
+  // What each provider offers on the host, once the host has asked it.
+  repeated ProviderOnHost providers = 3;
+  oneof standing {
+    // Paired with this machine, or this machine itself.
+    Trusted trusted = 4;
+    // Found by discovery, never paired.
+    Candidate candidate = 5;
+  }
+}
+
+message Trusted {
+  // How the host reads from the daemon that lists it, from the outcome of
+  // opening a channel to it. A host whose route comes up keeps the reach it
+  // had until the first channel attempt on that route concludes.
+  oneof reach {
+    // A channel to the host opened on a route still listed, of this kind;
+    // unspecified for this machine itself.
+    RouteKind online = 1;
+    // The relay refused the channel because the account's plan carries no
+    // connection between hosts: upgrading reaches this host.
+    Empty away = 2;
+    // Anything else: no route, or a channel that failed for any reason but
+    // the plan (no route at the relay, rate limited, shutting down, revoked,
+    // TLS or identity failure, timeout, link gone).
+    Offline offline = 3;
+  }
+  // Whether this machine's copy of the host's inventory has caught up on a
+  // live stream from it: its agents are as the host lists them now, not as
+  // they were remembered. Cleared when the host is lost; a client that
+  // reads every trusted host current has reconciled with its fleet.
+  bool current = 4;
+}
+
+message Offline {
+  // The outcome of the daemon's last failed dial attempt at this host,
+  // cleared when a route comes up.
+  optional string last_dial_error = 1;
+  // The host closed its link saying it no longer trusts this machine;
+  // cleared when it links to this machine again.
+  bool revoked = 2;
+}
+
+message Candidate {
+  // Where discovery found it; what pairing dials.
+  repeated string addrs = 1;
+}
+
+message ProviderOnHost {
+  Provider provider = 1;
+  // The hash GetCatalogue answers with for this provider.
+  optional bytes catalogue = 2;
+  bool signed_in = 3;
+}
+
+// A spawn named a host that more than one trusted host answers to.
+message AmbiguousHostName {
+  string name = 1;
+  repeated HostEntry candidates = 2;
+}
+
+// How this machine reaches a host, or how a pairing peer was reached. No
+// value for "no route": the host reads offline.
+enum RouteKind {
+  ROUTE_KIND_UNSPECIFIED = 0;
+  ROUTE_KIND_DIRECT = 1;
+  ROUTE_KIND_RELAY = 2;
+  ROUTE_KIND_SSH = 3;
+}
+
+message HostRemoved {
+  bytes host_id = 1;
+}
+
+// The inventory row: lifecycle from the daemon; phase, working_on,
+// phase_since_ms, git and background_jobs copied from the snapshot
+// envelope, never a snapshot.
+message Agent {
+  bytes agent_id = 1;
+  bytes host_id = 2;
+  Kind kind = 3;
+  // Every agent has one: the one it was given, else one the daemon chose.
+  string name = 4;
+  string cwd = 5;
+  optional AgentRef parent = 6;
+  int64 created_at_ms = 7;
+  Lifecycle lifecycle = 8;
+  ExitCause exit_cause = 9;
+  // The cause's own words, when it has any.
+  optional string exit_detail = 10;
+  Phase phase = 11;
+  optional string working_on = 12;
+  // The snapshot's phase_since_ms: when the agent entered its phase, on the
+  // clock of the host where it runs.
+  int64 phase_since_ms = 13;
+  uint32 incarnation = 14;
+  // The snapshot's git facts; absent outside a repository.
+  optional Git git = 15;
+  // Live agents below this one, on every host the agent's host knows of:
+  // what a stop or delete would cut. Best effort; a host out of reach may
+  // be undercounted.
+  uint32 descendants = 16;
+  // The snapshot's count of jobs the provider runs in the background.
+  uint32 background_jobs = 17;
+}
+
+// ResolveAgent found more than one agent by that name.
+message AmbiguousAgentName {
+  string name = 1;
+  repeated Agent candidates = 2;
+}
+
+enum Lifecycle {
+  LIFECYCLE_UNSPECIFIED = 0;
+  LIFECYCLE_LIVE = 1;
+  LIFECYCLE_EXITED = 2;
+}
+
+// Why the row left this daemon's view, which is not always deletion at
+// the origin: a host that stops listing an agent, or that this machine
+// stops trusting, takes its rows with it.
+enum RemovalReason {
+  REMOVAL_REASON_UNSPECIFIED = 0;
+  REMOVAL_REASON_DELETED = 1;
+  REMOVAL_REASON_RETENTION = 2;
+  REMOVAL_REASON_NO_LONGER_LISTED = 3;
+  REMOVAL_REASON_HOST_UNTRUSTED = 4;
+}
+
+message AgentRemoved {
+  bytes host_id = 1;
+  bytes agent_id = 2;
+  RemovalReason reason = 3;
+}
+
+// A host by id, or as a person names it, resolved against this host and
+// the trusted ones: exact first, then ignoring case. AmbiguousHostName
+// when more than one answers.
+message HostRef {
+  oneof of {
+    bytes host_id = 1;
+    string name = 2;
+  }
+}
+
+// Which provider's program a host runs: the vocabulary amux uses to ask a
+// host what it offers with no agent running. Distinct from Kind, which is
+// the interpreter.
+enum Provider {
+  PROVIDER_UNSPECIFIED = 0;
+  PROVIDER_CLAUDE = 1;
+  PROVIDER_CODEX = 2;
+}

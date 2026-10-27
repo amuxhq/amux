@@ -2,7 +2,7 @@
 //! written against.
 
 use client::{Client, RpcError};
-use wire::{Diff, DiffBase, DiffRequest, GetBlobRequest};
+use wire::{Diff, DiffBase, GetBlobRequest, GetDiffRequest};
 
 /// Asks the agent's host which files changed against `base`, with their
 /// line counts. Builds no patch: only a review page needs one.
@@ -12,7 +12,7 @@ pub async fn changed_files(
     base: DiffBase,
 ) -> Result<Diff, RpcError> {
     client
-        .diff(DiffRequest {
+        .get_diff(GetDiffRequest {
             agent_id: agent_id.to_vec(),
             base: Some(base),
             with_patch: false,
@@ -29,7 +29,7 @@ pub async fn review(
     base: DiffBase,
 ) -> Result<(Diff, String), RpcError> {
     let diff = client
-        .diff(DiffRequest {
+        .get_diff(GetDiffRequest {
             agent_id: agent_id.to_vec(),
             base: Some(base),
             with_patch: true,

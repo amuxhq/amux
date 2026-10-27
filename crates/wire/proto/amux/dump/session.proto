@@ -1,0 +1,164 @@
+syntax = "proto3";
+
+package amux.dump;
+
+import "amux/v1/chat.proto";
+import "amux/v1/records.proto";
+import "amux/v1/inventory.proto";
+import "amux/v1/session_service.proto";
+
+// A client's session as its dump carries it: the session model's state and
+// every message its driver saw. Read back only by the build that wrote it (a
+// replay of the bundle), so it follows the client's model wherever that goes
+// and keeps none of amux.v1's compatibility promises.
+
+// One open chat as a client's dump carries it: the session's state when its
+// trace began, and everything its driver saw since, in the order it saw it.
+message ClientSessionHistory {
+  bytes agent_id = 1;
+  ClientSession start = 2;
+  ClientSessionEvents events = 3;
+}
+
+// A client's session state: the rows and every value the session model
+// keeps. Indexes over the rows are not carried; they are rebuilt from them.
+message ClientSession {
+  amux.v1.Agent agent = 1;
+  amux.v1.HostEntry host = 2;
+  // The newest snapshot, when one arrived.
+  amux.v1.Snapshot snapshot = 3;
+  // The catalogue last fetched for the agent, with the hash it was fetched
+  // by.
+  ClientCatalogue catalogue = 4;
+  ClientTranscript transcript = 5;
+  // A transcript being built apart, swapped in at the next CaughtUp.
+  ClientTranscript pending = 6;
+  bool retail = 7;
+  optional uint64 generation = 8;
+  repeated ClientInput inputs = 9;
+  bool caught_up = 10;
+  bool detached = 11;
+  ClientConnection connection = 12;
+  optional uint32 exited_under = 13;
+  uint64 reach = 14;
+  uint64 epoch = 15;
+  repeated ClientBlob blobs = 16;
+  uint64 cap = 17;
+  bool following = 18;
+  // Rows held above the window while the reader is in history.
+  repeated amux.v1.Item arrivals = 19;
+  bool arrivals_moved_on = 20;
+  uint64 arrivals_changes = 21;
+  bool reload_owed = 22;
+}
+
+message ClientTranscript {
+  repeated amux.v1.Item items = 1;
+  bool exhausted = 2;
+}
+
+message ClientCatalogue {
+  bytes hash = 1;
+  amux.v1.Catalogue catalogue = 2;
+}
+
+enum ClientConnection {
+  CLIENT_CONNECTION_CONNECTING = 0;
+  CLIENT_CONNECTION_LIVE = 1;
+  CLIENT_CONNECTION_RECONNECTING = 2;
+}
+
+// One input this client sent, and what became of it.
+message ClientInput {
+  amux.v1.Input input = 1;
+  ClientInputState state = 2;
+  // Why it was refused, when its state is REJECTED.
+  amux.v1.Rejected rejected = 3;
+  bool seen_queued = 4;
+  uint64 left_at = 5;
+}
+
+enum ClientInputState {
+  CLIENT_INPUT_STATE_SENT = 0;
+  CLIENT_INPUT_STATE_QUEUED = 1;
+  CLIENT_INPUT_STATE_SETTLED = 2;
+  CLIENT_INPUT_STATE_REJECTED = 3;
+  CLIENT_INPUT_STATE_UNCERTAIN = 4;
+  CLIENT_INPUT_STATE_HELD = 5;
+}
+
+// An attachment's bytes in the client's cache.
+message ClientBlob {
+  bytes hash = 1;
+  ClientBlobState state = 2;
+  // Why the fetch failed, when its state is FAILED.
+  string failed = 3;
+}
+
+enum ClientBlobState {
+  CLIENT_BLOB_STATE_MISSING = 0;
+  CLIENT_BLOB_STATE_FETCHING = 1;
+  CLIENT_BLOB_STATE_READY = 2;
+  CLIENT_BLOB_STATE_FAILED = 3;
+}
+
+message ClientSessionEvents {
+  repeated ClientTraced traced = 1;
+}
+
+// One event a session's driver saw.
+message ClientTraced {
+  // Position in everything the driver saw since the chat opened.
+  uint64 seq = 1;
+  // When, on the driver's clock.
+  int64 at_ms = 2;
+  oneof event {
+    // A message the driver applied to the session.
+    ClientSessionMsg msg = 3;
+    // Something the driver did that is not a message, as it describes it.
+    string driver = 4;
+  }
+}
+
+// A message the session model applies.
+message ClientSessionMsg {
+  oneof of {
+    amux.v1.SessionEvent event = 1;
+    ClientPage page = 2;
+    ClientConnection connection = 3;
+    amux.v1.Input send = 4;
+    ClientSent sent = 5;
+    bytes discard_input_id = 6;
+    amux.v1.Agent entry = 7;
+    amux.v1.HostEntry host = 8;
+    ClientBlob blob = 9;
+    bool following = 10;
+    ClientReloading reloading = 11;
+    uint64 window = 12;
+    ClientCatalogue catalogue = 13;
+  }
+}
+
+message ClientPage {
+  repeated amux.v1.Item items = 1;
+  bool exhausted = 2;
+  uint64 epoch = 3;
+}
+
+message ClientReloading {}
+
+// What became of a send.
+message ClientSent {
+  bytes input_id = 1;
+  oneof outcome {
+    amux.v1.SendInputResponse reply = 2;
+    // The transport failed before a reply.
+    ClientLost lost = 3;
+    // It never left: held to send once the host is back.
+    ClientHeld held = 4;
+  }
+}
+
+message ClientLost {}
+
+message ClientHeld {}

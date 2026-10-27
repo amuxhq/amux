@@ -568,8 +568,8 @@ cargo = [
 [[suite]]
 name = "daemon-library-units"
 contract = "Daemon-side libraries preserve their local parsing, state, routing, lifecycle, persistence, agent-directory and wire invariants."
-paths = ["crates/agent-dir/src", "crates/analytics/src", "crates/client/src", "crates/node/src", "crates/release/src", "crates/settings/src", "crates/version-stamp/src", "crates/wire/src"]
-recipe = "just test -- --lib -p agent-dir -p analytics -p client -p node -p release -p settings -p version-stamp -p wire"
+paths = ["crates/agent-dir/src", "crates/analytics/src", "crates/client/src", "crates/log-file/src", "crates/node/src", "crates/release/src", "crates/settings/src", "crates/version-stamp/src", "crates/wire/src"]
+recipe = "just test -- --lib -p agent-dir -p analytics -p client -p log-file -p node -p release -p settings -p version-stamp -p wire"
 boundary = "Single daemon"
 oracle = "Value assertions, explicit state transitions, wire round trips, and owned-resource observations."
 real = ["temporary files and local sockets in integration-shaped unit cases"]
@@ -583,6 +583,7 @@ cargo = [
   { package = "agent-dir", kind = "lib", targets = ["agent_dir"], features = [] },
   { package = "analytics", kind = "lib", targets = ["analytics"], features = [] },
   { package = "client", kind = "lib", targets = ["client"], features = [] },
+  { package = "log-file", kind = "lib", targets = ["log_file"], features = [] },
   { package = "node", kind = "lib", targets = ["node"], features = [] },
   { package = "release", kind = "lib", targets = ["release"], features = [] },
   { package = "settings", kind = "lib", targets = ["settings"], features = [] },
@@ -894,8 +895,8 @@ cargo = [
 
 [[suite]]
 name = "phone-performance-qualification"
-contract = "The optimised iPhone app on the enrolled Mac's simulator, against the served performance network, stays within its budgets for cold launch, store read, reconciliation over none and over 100 ms of latency directly and through the relay with every way to it gated, streaming and idle, and within reviewed drift of the machine's baseline."
-paths = ["scripts/ios-perf.py", "crates/qualification/src/perf/phone.rs", "perf/baselines/phone"]
+contract = "The optimised iPhone app on the enrolled Mac's simulator, or with --device on an enrolled phone plugged into it, against the served performance network, stays within its budgets for cold launch, store read, reconciliation over none and over 100 ms of latency directly and through the relay with every way to it gated, streaming and idle, and within reviewed drift of the machine's baseline."
+paths = ["crates/testnet/src/journey/perf.rs", "crates/qualification/src/perf/phone.rs", "perf/baselines/phone"]
 recipe = "just ios perf"
 boundary = "System composition"
 oracle = "Marks and measurements the app takes itself, read through its door, judged against the budgets in docs/PERFORMANCE.md and the machine's baseline."
@@ -906,8 +907,8 @@ capabilities = ["enrolled Mac14,6", "quiet machine", "iPhone simulator"]
 lane = "qualification"
 evidence = "target/ios/perf"
 update = "just ios perf -- --baseline, once every budget passes"
-baselines = ["perf/baselines/phone/pinned-mac.json"]
-cases = ["scripts/ios-perf.py"]
+baselines = ["perf/baselines/phone/pinned-mac.json", "perf/baselines/phone/iphone-14-pro-ios27.json"]
+cases = ["crates/testnet/src/journey/perf.rs"]
 cargo = []
 
 [[suite]]
@@ -1027,8 +1028,8 @@ cargo = [
 [[suite]]
 name = "ios-verify-boundary"
 contract = "iOS verification runs every stage in order, refuses recipes the justfiles no longer declare, and stops on a failed stage or a skipped journey."
-paths = ["crates/xtask/tests/ios_verify_cli.rs"]
-recipe = "just test-crate xtask"
+paths = ["crates/ios-tools/tests/ios_verify_cli.rs"]
+recipe = "just test-crate ios-tools"
 boundary = "System composition"
 oracle = "Exact command exits, recorded results, and scripted recipe and Xcode process interactions."
 real = ["child processes", "temporary files"]
@@ -1039,31 +1040,50 @@ lane = "tool"
 evidence = ""
 update = ""
 cargo = [
+  { package = "ios-tools", kind = "lib", targets = ["ios_tools"], features = [] },
+  { package = "ios-tools", kind = "bin", targets = ["ios-tools"], features = [] },
+  { package = "ios-tools", targets = ["ios_verify_cli"], features = [] },
+]
+
+[[suite]]
+name = "protocol-and-release-tools"
+contract = "The protocol compatibility check accepts additions and renames but refuses a renumbered, retyped or unreserved field, enum value or method in amux.v1, and a release cut moves only the crates' version lines and reads the workflow's signing key."
+paths = ["crates/xtask/src"]
+recipe = "just test-crate xtask"
+boundary = "System composition"
+oracle = "Exact verdicts over hand-built descriptor sets, and the exact text a cut writes."
+real = []
+substituted = []
+time = "none"
+capabilities = []
+lane = "tool"
+evidence = ""
+update = ""
+cargo = [
   { package = "xtask", kind = "lib", targets = ["xtask"], features = [] },
   { package = "xtask", kind = "bin", targets = ["xtask"], features = [] },
-  { package = "xtask", targets = ["ios_verify_cli"], features = [] },
 ]
 
 [[suite]]
 name = "phone-unit-tests"
-contract = "Swift packages and the app-hosted suite preserve bridge schemas, stores, features, design tokens, shell navigation, and test fixtures; the chat model replays the Rust client model's traces (ChatModelTraceTests) and holds the same keys and rows at every cut."
+contract = "Swift packages and the app-hosted suite preserve bridge schemas, stores, features, design tokens, shell navigation, and test fixtures; the chat model applies the runtime's chat deltas."
 paths = ["apps/apple/Packages/*/Tests", "apps/apple/AmuxAppTests"]
 recipe = "just ios unit"
 boundary = "Store, effects, bridge"
-oracle = "Swift Testing and XCTest assertions over production package and app-hosted behavior; ChatModelTraceTests compares against the client traces app-runtime records and checks are current."
+oracle = "Swift Testing and XCTest assertions over production package and app-hosted behavior."
 real = ["built Swift packages", "Rust bridge", "signed simulator app for app-hosted tests"]
 substituted = ["cloud account", "providers"]
 time = "real"
 capabilities = ["macOS", "Xcode 26.6", "iOS 26.5 golden simulator"]
 lane = "fast"
 evidence = "target/ios/DerivedData"
-update = "just client-traces rewrites the chat model's trace fixtures from the Rust client model; review the diff."
+update = ""
 swift = ["AmuxAppTests", "AmuxCoreTests", "AmuxDesignTests", "AmuxFeaturesTests", "AmuxShellTests", "AmuxTestSupportTests"]
 
 [[suite]]
 name = "phone-journeys"
 contract = "A person can complete every declared phone story through the real app and production amux path against a served topology."
-paths = ["scripts/journeys/phone.py", "scripts/ios-journey.py", "journeys/manifest.json", "journeys/topologies/phone-stories.json", "journeys/topologies/phone-reach.json", "journeys/topologies/phone-authority.json", "journeys/topologies/phone-accounts.json", "journeys/topologies/phone-purchase.json", "journeys/topologies/phone-accessible.json", "journeys/topologies/phone-push.json", "journeys/topologies/phone-resume.json", "journeys/topologies/phone-flows.json", "journeys/fixtures/needs-you.apns", "journeys/goldens/phone"]
+paths = ["crates/testnet/src/journey", "journeys/manifest.json", "journeys/topologies/phone-stories.json", "journeys/topologies/phone-reach.json", "journeys/topologies/phone-authority.json", "journeys/topologies/phone-accounts.json", "journeys/topologies/phone-purchase.json", "journeys/topologies/phone-accessible.json", "journeys/topologies/phone-push.json", "journeys/topologies/phone-resume.json", "journeys/topologies/phone-flows.json", "journeys/fixtures/needs-you.apns", "journeys/goldens/phone"]
 recipe = "just ios journey"
 boundary = "Journeys"
 oracle = "Declared acts, independent door and host observations, screenshots, exits, and teardown evidence."
@@ -1080,14 +1100,14 @@ journeys = ["account-sign-in", "purchase-restore", "report", "accessibility", "l
 [[suite]]
 name = "terminal-journeys"
 contract = "A person completes declared terminal stories through the real TUI and production installation front door against a served topology."
-paths = ["scripts/journeys/terminal.py", "scripts/terminal-journey.py", "scripts/terminal-journeys.py", "journeys/manifest.json", "journeys/topologies/terminal-stories.json", "journeys/topologies/terminal-reach.json", "journeys/topologies/terminal-authority.json", "journeys/topologies/terminal-flows.json", "journeys/topologies/terminal-worktree.json", "journeys/goldens/terminal"]
+paths = ["crates/testnet/src/journey", "journeys/manifest.json", "journeys/topologies/terminal-stories.json", "journeys/topologies/terminal-reach.json", "journeys/topologies/terminal-authority.json", "journeys/topologies/terminal-flows.json", "journeys/topologies/terminal-worktree.json", "journeys/goldens/terminal"]
 recipe = "just journey terminal all"
 boundary = "Journeys"
 oracle = "Door observations, exact terminal text and semantic styles, cache contents, process exits, and teardown."
 real = ["amux TUI", "tmux PTY", "installation front door", "SQLite store", "processes"]
 substituted = ["cloud account", "provider"]
 time = "real"
-capabilities = ["Unix", "tmux", "Python 3"]
+capabilities = ["Unix", "tmux"]
 lane = "journey"
 evidence = "target/journeys; target/journeys/summary.txt after `all`"
 update = "UPDATE_JOURNEY_GOLDENS=1 just journey terminal conversation-decision-claude-pty"
@@ -1097,7 +1117,7 @@ journeys = ["reach-host", "conversation-decision-claude-pty", "conversation-deci
 [[suite]]
 name = "phone-goldens"
 contract = "Every whole phone screen the golden manifest names, reached through the served door, matches its reviewed image and element geometry in light and dark."
-paths = ["apps/apple/Goldens", "scripts/ios-goldens.py", "journeys/topologies/phone-goldens.json"]
+paths = ["apps/apple/Goldens", "crates/testnet/src/journey/goldens.rs", "journeys/topologies/phone-goldens.json"]
 recipe = "just ios goldens"
 boundary = "Native presentation"
 oracle = "Pixel comparison with declared tolerance, system-chrome and volatile-surface masks, and exact element geometry."
@@ -1113,7 +1133,7 @@ golden_manifests = ["apps/apple/Goldens/manifest.json"]
 [[suite]]
 name = "phone-golden-sensitivity"
 contract = "The phone golden comparison rejects a whole screen drawn with one design token moved."
-paths = ["scripts/ios-goldens-perturb.py"]
+paths = ["crates/testnet/src/journey/goldens.rs"]
 recipe = "just ios goldens-perturb"
 boundary = "Native presentation"
 oracle = "An intentional pixel change must produce a failing comparison and difference image."
@@ -1124,12 +1144,12 @@ capabilities = ["macOS", "Xcode 26.6", "golden iOS simulator"]
 lane = "journey"
 evidence = "target/ios/goldens-perturb"
 update = ""
-cases = ["scripts/ios-goldens-perturb.py"]
+cases = ["crates/testnet/src/journey/goldens.rs"]
 
 [[suite]]
 name = "phone-accessibility-audit"
 contract = "Every drawn phone state gives controls readable VoiceOver names and at least forty-four-point hit targets."
-paths = ["apps/apple/AmuxUITests", "scripts/ios-accessibility.py"]
+paths = ["apps/apple/AmuxUITests", "crates/testnet/src/journey/goldens.rs"]
 recipe = "just ios accessibility"
 boundary = "Native presentation"
 oracle = "Accessibility tree names, frames, and hit-target geometry."
@@ -1178,7 +1198,7 @@ cases = ["scripts/tests/*_test.py", "apps/apple/Tools/*test*.py"]
 [[suite]]
 name = "store-on-ios"
 contract = "Every store test cross-compiles and runs against bundled SQLite on the leased iOS simulator."
-paths = ["scripts/ios-store-test.py", "crates/store/tests"]
+paths = ["apps/apple/Tools/ios-store-test.py", "crates/store/tests"]
 recipe = "just test-store-ios"
 boundary = "Single daemon"
 oracle = "The complete Rust store test suite plus linkage and runtime SQLite identity proof."
@@ -1189,7 +1209,7 @@ capabilities = ["macOS", "Xcode 26.6", "golden iOS simulator"]
 lane = "system"
 evidence = "target/ios/store-test"
 update = ""
-cases = ["scripts/ios-store-test.py"]
+cases = ["apps/apple/Tools/ios-store-test.py"]
 
 [[suite]]
 name = "desktop-performance-qualification"
@@ -1247,7 +1267,7 @@ cases = ["apps/apple/Tools/strings_lint_test.py"]
 [[suite]]
 name = "phone-shipping-scope-audit"
 contract = "The packaged phone framework and app exclude provider, host, debug, and unsupported-platform surfaces."
-paths = ["scripts/ios-scope-audit.py"]
+paths = ["apps/apple/Tools/ios-scope-audit.py"]
 recipe = "just ios scope-audit"
 boundary = "System composition"
 oracle = "Binary symbols, linked libraries, bundle contents, architectures, sizes, and deployment metadata."
@@ -1258,7 +1278,7 @@ capabilities = ["macOS", "Xcode 26.6"]
 lane = "tool"
 evidence = "target/ios/scope-audit"
 update = ""
-cases = ["scripts/ios-scope-audit.py"]
+cases = ["apps/apple/Tools/ios-scope-audit.py"]
 
 [[suite]]
 name = "line-coverage"
@@ -1327,7 +1347,7 @@ cases = ["scripts/qa-live-journey.py"]
 [[suite]]
 name = "phone-component-snapshots"
 contract = "Every catalogued phone component renders to its reviewed image in each declared appearance and size."
-paths = ["apps/apple/AmuxComponentSnapshotTests", "apps/apple/Amux/Debug/ComponentCatalog.swift", "scripts/ios-component-snapshots.py"]
+paths = ["apps/apple/AmuxComponentSnapshotTests", "apps/apple/Amux/Debug/ComponentCatalog.swift", "apps/apple/Tools/ios-component-snapshots.py"]
 recipe = "just ios component-snapshots"
 boundary = "Native presentation"
 oracle = "Image comparison against the reviewed snapshot for each component, appearance and size."
@@ -1343,7 +1363,7 @@ swift = ["AmuxComponentSnapshotTests"]
 [[suite]]
 name = "phone-component-snapshot-sensitivity"
 contract = "The component snapshot comparator rejects a deliberate one-token visual perturbation."
-paths = ["scripts/ios-component-snapshots.py"]
+paths = ["apps/apple/Tools/ios-component-snapshots.py"]
 recipe = "just ios component-snapshots-perturb"
 boundary = "Native presentation"
 oracle = "An intentional pixel change must produce a failing comparison."
@@ -1354,4 +1374,4 @@ capabilities = ["macOS", "Xcode 26.6", "pinned iOS simulator"]
 lane = "fast"
 evidence = "target/ios/component-snapshots"
 update = ""
-cases = ["scripts/ios-component-snapshots.py"]
+cases = ["apps/apple/Tools/ios-component-snapshots.py"]

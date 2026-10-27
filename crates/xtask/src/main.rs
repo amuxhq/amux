@@ -1,25 +1,18 @@
 use std::path::Path;
 
-mod door;
-mod golden;
 mod release;
-use xtask::ios_verify;
-mod simulator;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     match std::env::args().nth(1).as_deref() {
         Some("codegen") => codegen(),
-        Some("door") => door::main(),
-        Some("golden") => golden::main(),
-        Some("ios-verify") => ios_verify::run(),
-        Some("swift-types") => {
-            xtask::swift_types::main(&std::env::args().skip(2).collect::<Vec<_>>())
+        Some("proto-compat") => {
+            xtask::proto_compat::main(&std::env::args().skip(2).collect::<Vec<_>>())
         }
         Some("release") => release::main(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("restamp") => restamp(&std::env::args().skip(2).collect::<Vec<_>>()),
         _ => {
             eprintln!(
-                "usage: xtask <codegen|swift-types [--check]|golden diff [ARGS]|restamp FROM TO [VERSION]|release <key generate|key public|cut VERSION|deploy VERSION [--channel C] [--rollout N]>|door [--simulator NAME] [--bundle-id ID] [--install APP] [--timeout SECS] [--requests FILE] [JSON...]|ios-verify>"
+                "usage: xtask <codegen|proto-compat [REF]|restamp FROM TO [VERSION]|release <key generate|key public|cut VERSION|deploy VERSION [--channel C] [--rollout N]>>"
             );
             std::process::exit(2);
         }
@@ -52,17 +45,20 @@ const VIEW_VALUES: &[&str] = &[
     "amux.v1.BlobRef",
     "amux.v1.BoundaryKind",
     "amux.v1.Catalogue",
+    "amux.v1.ChangeTotals",
     "amux.v1.Diff",
     "amux.v1.DiffBase",
     "amux.v1.DiffBase.base",
     "amux.v1.DiffFile",
     "amux.v1.Empty",
     "amux.v1.EnvelopeKind",
+    "amux.v1.Git",
     "amux.v1.Kind",
     "amux.v1.OfferedCommand",
     "amux.v1.OfferedMode",
     "amux.v1.OfferedModel",
     "amux.v1.OfferedPermission",
+    "amux.v1.Platform",
     "amux.v1.Provider",
     "amux.v1.ReviewComment",
     "amux.v1.ReviewStatus",
@@ -72,33 +68,50 @@ const VIEW_VALUES: &[&str] = &[
     "amux.v1.UsageState",
 ];
 
-/// The proto files that make up the wire, relative to the proto root.
+/// The proto files of the public contract, relative to `proto/` at the
+/// repository's root.
 const PROTO_FILES: &[&str] = &[
     "amux/v1/error.proto",
     "amux/v1/link.proto",
-    "amux/v1/pairing.proto",
-    "amux/v1/front_door.proto",
-    "amux/v1/service.proto",
     "amux/v1/records.proto",
     "amux/v1/chat.proto",
-    "amux/v1/agent.proto",
+    "amux/v1/inventory.proto",
+    "amux/v1/dump.proto",
+    "amux/v1/agent_service.proto",
+    "amux/v1/session_service.proto",
+    "amux/v1/peer_service.proto",
+    "amux/v1/installation_service.proto",
+    "amux/v1/profile_admin_service.proto",
+    "amux/v1/pairing_service.proto",
+    "amux/v1/agent_process.proto",
     "amux/v1/claude.proto",
     "amux/v1/codex.proto",
+    "google/rpc/code.proto",
+    "google/rpc/status.proto",
+    "google/rpc/error_details.proto",
 ];
 
+/// The proto files only amux reads, relative to `crates/wire/proto/`: what
+/// a client writes into a dump, outside the contract's promises.
+const INTERNAL_PROTO_FILES: &[&str] = &["amux/dump/session.proto"];
+
 /// Regenerates the committed protobuf code under
-/// `crates/wire/src/generated/` from `crates/wire/proto/`.
+/// `crates/wire/src/generated/` from `proto/` and `crates/wire/proto/`.
 ///
 /// The output is committed rather than built in `OUT_DIR` so that the
 /// generated Rust is an ordinary tracked input — visible to git, review,
 /// rust-analyzer, and every build cache — and so building amux needs no
 /// protoc. CI regenerates and fails if the committed output is stale.
 fn codegen() -> Result<(), Box<dyn std::error::Error>> {
-    let wire_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let crates = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .expect("xtask lives under crates/")
-        .join("wire");
-    let proto_dir = wire_dir.join("proto");
+        .expect("xtask lives under crates/");
+    let wire_dir = crates.join("wire");
+    let contract_dir = crates
+        .parent()
+        .expect("crates/ lives in the repository")
+        .join("proto");
+    let internal_dir = wire_dir.join("proto");
     let out_dir = wire_dir.join("src/generated");
     std::fs::create_dir_all(&out_dir)?;
 
@@ -114,6 +127,9 @@ fn codegen() -> Result<(), Box<dyn std::error::Error>> {
     // such as the dump redactor, find the descriptor of a generated type.
     let mut config = tonic_prost_build::Config::new();
     config.enable_type_names();
+    // A detail packed as Any names its type by URL, gRPC's richer error
+    // model's way.
+    config.type_name_domain(["."], "type.googleapis.com");
     // The wire values the chat views carry to the phone serialize, with
     // schemas, so the Swift mirrors are generated from these definitions.
     for path in VIEW_VALUES {
@@ -141,9 +157,20 @@ fn codegen() -> Result<(), Box<dyn std::error::Error>> {
             config,
             &PROTO_FILES
                 .iter()
-                .map(|file| proto_dir.join(file))
+                .map(|file| contract_dir.join(file))
+                .chain(
+                    INTERNAL_PROTO_FILES
+                        .iter()
+                        .map(|file| internal_dir.join(file)),
+                )
                 .collect::<Vec<_>>(),
-            &[proto_dir],
+            // The vendored protoc's own include directory holds the
+            // well-known types the googleapis files import.
+            &[
+                contract_dir,
+                internal_dir,
+                protoc_bin_vendored::include_path()?,
+            ],
         )?;
     Ok(())
 }

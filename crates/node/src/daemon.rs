@@ -21,12 +21,12 @@ use tokio::task::JoinHandle;
 
 use crate::activation::{ActivationError, ActivationPipe};
 use crate::edge::EdgeOptions;
-use crate::front_door::{self, ProfileEvent};
 use crate::generation::{self, Generation};
 use crate::grpc::{self, ClientApi};
 use crate::install::{InstallationLock, LockError, REPORTS, STORE, private_dir};
 use crate::outbox::PushSender;
-use crate::profiles::{self, PROFILE_SOCKET, ProfileEntry, ProfileId, Registry};
+use crate::profiles::{self, PROFILE_SOCKET, ProfileEntry, ProfileId};
+use crate::registry::{self, ProfileEvent};
 use crate::runtime::{Launch, Looked, Profile, ProfileRuntime, RegistryError, SweepReport};
 use crate::telemetry::{self, Telemetry};
 
@@ -40,6 +40,8 @@ pub struct StartOptions {
     pub push: Arc<dyn PushSender>,
     /// The daemon's own log file, which dumps include.
     pub daemon_log: Option<PathBuf>,
+    /// Its supervisor's log, which dumps include too, when it has one.
+    pub supervisor_log: Option<PathBuf>,
     /// Where the front door listens. None serves nothing on sockets: the
     /// runtimes are reached in process.
     pub front_door: Option<PathBuf>,
@@ -57,8 +59,8 @@ pub enum StartError {
     BootId(io::Error),
     #[error("the generation file: {0}")]
     Generation(io::Error),
-    #[error("the profile registry: {0}")]
-    Registry(io::Error),
+    #[error("the profiles directory: {0}")]
+    Profiles(io::Error),
     #[error("profile {profile}: {error}")]
     Profile {
         profile: ProfileId,
@@ -97,10 +99,11 @@ pub(crate) struct Installation {
     clock: Arc<dyn Clock>,
     push: Arc<dyn PushSender>,
     daemon_log: Option<PathBuf>,
+    supervisor_log: Option<PathBuf>,
     edge: EdgeOptions,
     pub(crate) hosted: Mutex<BTreeMap<ProfileId, Hosted>>,
-    /// One registry change at a time: create, rename, delete.
-    pub(crate) registry_changes: tokio::sync::Mutex<()>,
+    /// One change to the profile set at a time: create, rename, delete.
+    pub(crate) profile_changes: tokio::sync::Mutex<()>,
     /// Profile changes in order.
     pub(crate) events: broadcast::Sender<ProfileEvent>,
     /// Held while a change is published, so a watcher's snapshot and its
@@ -114,9 +117,6 @@ pub(crate) struct Installation {
 pub(crate) struct Hosted {
     pub(crate) runtime: Arc<ProfileRuntime>,
     pub(crate) entry: ProfileEntry,
-    /// Where the profile stands in the registry: the front door lists
-    /// profiles in the order they were created, oldest first.
-    pub(crate) position: usize,
     socket: Option<JoinHandle<()>>,
     /// Republishes the profile when its cloud link's state moves.
     observer: Option<JoinHandle<()>>,
@@ -138,8 +138,8 @@ impl Installation {
     /// store's migrations.
     fn open(&self, profile: ProfileId) -> Result<Arc<ProfileRuntime>, StartError> {
         let dir = profiles::profile_dir(&self.data_dir, profile);
-        let host =
-            profiles::host_id(&dir).map_err(|error| StartError::Profile { profile, error })?;
+        // The profile's id is its host id, the one its peers know it by.
+        let host = profile;
         let store = store::Sqlite::open(&dir.join(STORE), host.as_bytes().to_vec())
             .map_err(|error| StartError::Store { profile, error })?;
         // Every write is the core's, which holds its commits while its
@@ -153,7 +153,6 @@ impl Installation {
             })?;
         Ok(ProfileRuntime::open(Profile {
             profile,
-            host,
             generation: self.generation,
             dir,
             store,
@@ -162,6 +161,7 @@ impl Installation {
             push: self.push.clone(),
             reports: self.data_dir.join(REPORTS),
             daemon_log: self.daemon_log.clone(),
+            supervisor_log: self.supervisor_log.clone(),
             analytics: match self.analytics.get() {
                 Some(sink) => analytics::Analytics::new(host, sink.clone()),
                 None => analytics::Analytics::off(),
@@ -172,8 +172,12 @@ impl Installation {
         }))
     }
 
-    /// Binds a profile's client socket when the daemon serves sockets.
-    fn bind(&self, runtime: &Arc<ProfileRuntime>) -> Result<Option<JoinHandle<()>>, StartError> {
+    /// Binds a profile's client socket, which also serves its
+    /// administration, when the daemon serves sockets.
+    fn bind(
+        self: &Arc<Self>,
+        runtime: &Arc<ProfileRuntime>,
+    ) -> Result<Option<JoinHandle<()>>, StartError> {
         if self.front_door.is_none() {
             return Ok(None);
         }
@@ -185,6 +189,13 @@ impl Installation {
         Ok(Some(grpc::serve_client(
             listener,
             ClientApi::new(runtime, None).opened_as(analytics::Client::Terminal),
+            Some(
+                crate::ProfileAdmin::new(
+                    crate::Registry::new(Arc::downgrade(self)),
+                    runtime.profile(),
+                )
+                .server(),
+            ),
         )))
     }
 
@@ -206,7 +217,7 @@ impl Installation {
         let observer = {
             let installation = Arc::downgrade(self);
             let profile = entry.id;
-            let mut observed = edge.subscribe_observed();
+            let mut observed = edge.subscribe_relay();
             tokio::spawn(async move {
                 while observed.changed().await.is_ok() {
                     let Some(installation) = installation.upgrade() else {
@@ -217,32 +228,26 @@ impl Installation {
             })
         };
         let socket = self.bind(&runtime)?;
-        let info = {
+        let state = {
             let mut all = self.hosted.lock().unwrap();
-            let position = all
-                .values()
-                .map(|hosted| hosted.position + 1)
-                .max()
-                .unwrap_or(0);
             let hosted = Hosted {
                 runtime,
                 entry,
-                position,
                 socket,
                 observer: Some(observer),
             };
-            let info = front_door::info(&hosted);
+            let state = registry::state(&hosted);
             all.insert(hosted.entry.id, hosted);
-            info
+            state
         };
-        self.publish(ProfileEvent::Upserted(Box::new(info)));
+        self.publish(ProfileEvent::Upserted(Box::new(state)));
         Ok(())
     }
 
     /// Creates, opens, sweeps and hosts a new profile.
     pub(crate) async fn create(self: &Arc<Self>, label: &str) -> Result<ProfileId, StartError> {
         let entry =
-            profiles::create_labelled(&self.data_dir, label).map_err(StartError::Registry)?;
+            profiles::create_labelled(&self.data_dir, label).map_err(StartError::Profiles)?;
         let profile = entry.id;
         match self.bring_up(entry).await {
             Ok(()) => Ok(profile),
@@ -258,7 +263,7 @@ impl Installation {
         }
     }
 
-    /// Opens, sweeps and hosts a profile the registry lists.
+    /// Opens, sweeps and hosts a profile the directory holds.
     async fn bring_up(self: &Arc<Self>, entry: ProfileEntry) -> Result<(), StartError> {
         let profile = entry.id;
         let runtime = self.open(profile)?;
@@ -280,14 +285,14 @@ impl Installation {
 
     /// Tells the front door's watchers a profile's description moved.
     pub(crate) fn republish(&self, profile: ProfileId) {
-        let info = self
+        let state = self
             .hosted
             .lock()
             .unwrap()
             .get(&profile)
-            .map(front_door::info);
-        if let Some(info) = info {
-            self.publish(ProfileEvent::Upserted(Box::new(info)));
+            .map(registry::state);
+        if let Some(state) = state {
+            self.publish(ProfileEvent::Upserted(Box::new(state)));
         }
     }
 
@@ -296,13 +301,13 @@ impl Installation {
     }
 
     /// The oldest profile's analytics, which records what happens to the
-    /// installation as a whole.
-    fn first_analytics(&self) -> Option<analytics::Analytics> {
+    /// installation as a whole: every event is filed under a host id.
+    pub(crate) fn first_analytics(&self) -> Option<analytics::Analytics> {
         self.hosted
             .lock()
             .unwrap()
             .values()
-            .min_by_key(|hosted| hosted.position)
+            .min_by_key(|hosted| (hosted.entry.created_ms, hosted.entry.id))
             .map(|hosted| hosted.runtime.analytics().clone())
     }
 
@@ -319,7 +324,7 @@ impl Installation {
                 gate,
             } => {
                 let installation_id = match crate::install::installation_id(&self.data_dir) {
-                    Ok((id, _)) => id,
+                    Ok(id) => id,
                     Err(error) => {
                         tracing::warn!(%error, "no installation id; recording no analytics");
                         return None;
@@ -419,6 +424,7 @@ pub async fn start(
         clock,
         push,
         daemon_log,
+        supervisor_log,
         front_door,
         edge,
         analytics: telemetry,
@@ -442,9 +448,10 @@ pub async fn start(
         clock,
         push,
         daemon_log,
+        supervisor_log,
         edge,
         hosted: Mutex::new(BTreeMap::new()),
-        registry_changes: tokio::sync::Mutex::new(()),
+        profile_changes: tokio::sync::Mutex::new(()),
         events: broadcast::channel(256).0,
         publishing: Mutex::new(()),
         shutdown: watch::Sender::new(false),
@@ -452,9 +459,14 @@ pub async fn start(
     });
     let uploader = installation.start_analytics(telemetry);
 
-    let registry = Registry::read(&installation.data_dir).map_err(StartError::Registry)?;
+    let listed = profiles::list(&installation.data_dir).map_err(StartError::Profiles)?;
+    let profile_dirs: Vec<PathBuf> = listed
+        .iter()
+        .map(|entry| profiles::profile_dir(&installation.data_dir, entry.id))
+        .collect();
+    crate::install::sweep_dump_leftovers(&installation.data_dir, &profile_dirs);
     let mut opened: Vec<(ProfileEntry, Arc<ProfileRuntime>, Looked)> = Vec::new();
-    for entry in registry.profiles {
+    for entry in listed {
         let profile = entry.id;
         let runtime = installation.open(profile)?;
         let look = runtime
@@ -529,7 +541,10 @@ fn bind_front_door(
         private_dir(parent).map_err(bind)?;
     }
     let listener = LocalListener::bind(path).map_err(bind)?;
-    Ok(front_door::serve(listener, Arc::downgrade(installation)))
+    Ok(crate::front_door::serve(
+        listener,
+        crate::Registry::new(Arc::downgrade(installation)),
+    ))
 }
 
 impl Daemon {
@@ -561,10 +576,21 @@ impl Daemon {
             .map(|hosted| hosted.runtime.clone())
     }
 
-    /// The front door's services in process: profiles, pairing, peers and
-    /// accounts, for an embedder that serves no socket.
+    /// The front door's services in process: the installation's profiles,
+    /// as its socket serves them.
     pub fn front_door(&self) -> crate::FrontDoor {
-        crate::FrontDoor::new(Arc::downgrade(&self.installation))
+        crate::FrontDoor::new(self.registry())
+    }
+
+    /// A profile's administration, called in process as its socket serves
+    /// it.
+    pub fn profile_admin(&self, profile: ProfileId) -> crate::ProfileAdmin {
+        crate::ProfileAdmin::new(self.registry(), profile)
+    }
+
+    /// The installation's profiles, called in process.
+    pub fn registry(&self) -> crate::Registry {
+        crate::Registry::new(Arc::downgrade(&self.installation))
     }
 
     /// What the startup sweep found, per profile.

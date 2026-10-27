@@ -34,7 +34,12 @@ fn item(order: u64, it: &It) -> Item {
     let tool = |name: &str, input: String, state: ToolState, reads: bool, exit: Option<i32>| {
         K::Tool(wire::ToolCall {
             name: name.into(),
-            input_json: input.into_bytes(),
+            input: Some(interpret::tool_input(
+                name,
+                "",
+                &serde_json::from_str(&input).unwrap(),
+                "",
+            )),
             state: state as i32,
             class: if reads {
                 ToolClass::Read
@@ -358,6 +363,36 @@ fn an_opened_run_stays_open_as_older_steps_page_in_below_it() {
     toggle_run(&state, &"k40".to_owned(), &mut open);
     assert!(open.is_empty());
     assert_eq!(shown_open(&state, &open), vec![59, 60, 61]);
+}
+
+/// Every row of a run says whether the reader opened it, so a client
+/// draws the run's header open or folded from the row alone.
+#[test]
+fn each_row_of_a_run_says_whether_it_is_open() {
+    let state = session(&[
+        It::Prompt("fix it"),
+        It::Read("a.rs"),
+        It::Read("b.rs"),
+        It::Say("done"),
+        It::Read("c.rs"),
+        It::Turn,
+    ]);
+    let opened = |open: &HashSet<Key>| -> Vec<(u64, bool)> {
+        rows(&state, ToolRows::Collapse { open })
+            .into_iter()
+            .filter_map(|row| Some((row.order, row.run?.open)))
+            .collect()
+    };
+    let mut open = HashSet::new();
+    assert!(opened(&open).iter().all(|(_, open)| !open));
+    toggle_run(&state, &"k2".to_owned(), &mut open);
+    assert_eq!(opened(&open), vec![(2, true), (3, true), (5, false)]);
+    assert!(
+        rows(&state, ToolRows::ShowAll)
+            .iter()
+            .all(|row| row.run.as_ref().is_none_or(|run| !run.open)),
+        "a view that does not fold opens nothing"
+    );
 }
 
 #[test]

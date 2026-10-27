@@ -5,16 +5,14 @@ use thiserror::Error;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
+use crate::HostId;
 use crate::driver::pairing::PairWindow as PairMode;
 use crate::identity::{self, IdentityError};
 use crate::link::link_log::PathKind;
 use crate::link::{InboundStream, LinkCtx, QuicCarrier, accepted_quic_bidi_stream, run_link};
 use crate::resource_limits::HandshakeAdmission;
-use crate::transport::{
-    BoxedGrpcIo, Compressed, PreTrustPairingReachability, TrustedPeerConnections,
-};
+use crate::transport::{BoxedGrpcIo, Compressed, PreTrustPairingReachability, Replacing};
 use crate::trust::SharedTrustStore;
-use crate::{HostId, audit};
 
 #[derive(Debug, Error)]
 pub(crate) enum DispatchError {
@@ -53,7 +51,7 @@ fn link_outcome(error: crate::link::LinkError) -> DispatchError {
 pub(crate) struct TunnelDispatcher {
     trust_store: SharedTrustStore,
     pair_mode: std::sync::Arc<PairMode>,
-    trusted_connections: TrustedPeerConnections,
+    replacing: Replacing,
     trusted_tx: mpsc::Sender<BoxedGrpcIo>,
     pairing_tx: mpsc::Sender<BoxedGrpcIo>,
     handshake_timeout: Duration,
@@ -70,8 +68,8 @@ pub(crate) const NO_PAIRING_WINDOW: &[u8] = b"no pairing window is open";
 /// A connection as far as the dispatcher takes it before serving it.
 enum Arrival {
     /// Resuming a session whose ticket names this key, its handshake
-    /// still finishing.
-    Resumed(quinn::Connection, Vec<u8>),
+    /// still finishing until the watch turns true.
+    Resumed(quinn::Connection, Vec<u8>, watch::Receiver<bool>),
     /// Through a full handshake.
     Full(quinn::Connection),
 }
@@ -114,7 +112,7 @@ impl TunnelDispatcher {
     pub(crate) fn new(
         trust_store: SharedTrustStore,
         pair_mode: std::sync::Arc<PairMode>,
-        trusted_connections: TrustedPeerConnections,
+        replacing: Replacing,
         trusted_tx: mpsc::Sender<BoxedGrpcIo>,
         pairing_tx: mpsc::Sender<BoxedGrpcIo>,
         handshake_timeout: Duration,
@@ -122,7 +120,7 @@ impl TunnelDispatcher {
         Self {
             trust_store,
             pair_mode,
-            trusted_connections,
+            replacing,
             trusted_tx,
             pairing_tx,
             handshake_timeout,
@@ -188,7 +186,6 @@ impl TunnelDispatcher {
                     let connecting = match incoming.accept() {
                         Ok(connecting) => connecting,
                         Err(error) => {
-                            audit::auth_mtls_handshake_failure(&error);
                             tracing::warn!(peer = %addr, error = %error, "QUIC handshake failed");
                             return;
                         }
@@ -230,12 +227,14 @@ impl TunnelDispatcher {
                 "a stream from {adjacent_peer}, which is not paired"
             )));
         }
+        if self.replacing.contains(adjacent_peer) {
+            return Err(DispatchError::Link(format!(
+                "a stream from {adjacent_peer}, whose key is being replaced"
+            )));
+        }
         // Compressed as the opener's end is (`ChannelPool::channel_over`).
         self.trusted_tx
-            .send(
-                BoxedGrpcIo::trusted(Compressed::new(stream), adjacent_peer)
-                    .track_trusted_peer(&self.trusted_connections),
-            )
+            .send(BoxedGrpcIo::trusted(Compressed::new(stream), adjacent_peer))
             .await
             .map_err(|_| DispatchError::ChannelClosed)
     }
@@ -265,15 +264,16 @@ impl TunnelDispatcher {
         if let Some(key) = resumed_key(&connection) {
             let timeout = self.handshake_timeout;
             let handshaking = connection.clone();
+            let (over, handshake) = watch::channel(false);
             tokio::spawn(async move {
                 let _permit = permit;
                 if tokio::time::timeout(timeout, handshaken).await.is_err() {
-                    audit::auth_mtls_handshake_failure("QUIC handshake timed out");
                     tracing::warn!(peer = %addr, "resumed QUIC handshake timed out");
                     handshaking.close(0_u32.into(), b"handshake timed out");
                 }
+                over.send_replace(true);
             });
-            return Some(Arrival::Resumed(connection, key));
+            return Some(Arrival::Resumed(connection, key, handshake));
         }
         let finished = self.finish_handshake(
             async {
@@ -310,12 +310,10 @@ impl TunnelDispatcher {
                 Some(connection)
             }
             Ok(Err(error)) => {
-                audit::auth_mtls_handshake_failure(&error);
                 tracing::warn!(peer = %addr, error = %error, "QUIC handshake failed");
                 None
             }
             Err(_) => {
-                audit::auth_mtls_handshake_failure("QUIC handshake timed out");
                 tracing::warn!(peer = %addr, "QUIC handshake timed out");
                 None
             }
@@ -351,8 +349,8 @@ impl TunnelDispatcher {
         let connection = match arrival {
             // The core decides the identity the ticket names, with the
             // host the Hello names, before anything on the link is served.
-            Arrival::Resumed(connection, key) => {
-                return serve(link_ctx()?.with_resumed(key), connection)
+            Arrival::Resumed(connection, key, handshake) => {
+                return serve(link_ctx()?.with_resumed(key, handshake), connection)
                     .await
                     .map_err(link_outcome);
             }
@@ -431,8 +429,8 @@ impl TunnelDispatcher {
                 match identity::host_id_for_certificate(&trust_store, cert)? {
                     Some(host_id) => DispatchTarget::Trusted(host_id),
                     None => {
-                        audit::auth_mtls_handshake_failure(
-                            "trusted client certificate no longer maps to a trusted host",
+                        tracing::warn!(
+                            "a trusted client certificate no longer maps to a trusted host"
                         );
                         DispatchTarget::Revoked
                     }
@@ -445,8 +443,8 @@ impl TunnelDispatcher {
         if self.pair_mode.is_active() || self.pair_mode.is_locked_out() {
             Ok(DispatchTarget::Pairing)
         } else {
-            audit::auth_mtls_handshake_failure(
-                "missing client certificate and pairing mode inactive",
+            tracing::warn!(
+                "a connection with no client certificate while no pairing window is open"
             );
             Ok(DispatchTarget::NoPairingWindow)
         }

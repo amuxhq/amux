@@ -10,6 +10,7 @@
 
 #![forbid(unsafe_code)]
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -46,7 +47,6 @@ pub mod trust;
 pub use blobs::Blobs;
 pub use checkpoints::Checkpoints;
 pub use deliveries::{Deliveries, DrainReport, delivery_envelope_id};
-pub use drafts::Drafts;
 pub use families::{Create, Ended, FamilyState, Refusal, Resume};
 pub use fingerprint::Fingerprint;
 pub use ids::{AccountId, AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId};
@@ -58,7 +58,7 @@ pub use io::{
 pub use links::LinkRegistry;
 pub use notifications::Notifications;
 pub use pairing::PairingState;
-pub use presence::{HostView, Presence, PresenceState, Route, Tried};
+pub use presence::{HostView, Presence, PresenceState, Route};
 pub use redact::Redactor;
 pub use retention::{Retain, Retained};
 pub use serve::Answers;
@@ -81,10 +81,13 @@ pub struct Daemon {
     trust: trust::Trust,
     answers: Answers,
     journals: Journals,
+    /// One open reader per agent journal this core has read, so a step
+    /// neither lists the directory nor reopens the segment. Not state: a
+    /// restored core opens them again as it reads.
+    journal_readers: BTreeMap<AgentId, journal::Reader>,
     checkpoints: Checkpoints,
     notifications: Notifications,
     blobs: Blobs,
-    drafts: Drafts,
     deliveries: Deliveries,
     timers: Timers,
     pending: Pending,
@@ -110,10 +113,6 @@ pub struct StartOptions {
     /// The directory holding each paired host's replicas' files, by host
     /// and then by agent.
     pub replicas: PathBuf,
-    /// The file this machine's clients' drafts are kept in.
-    pub drafts: PathBuf,
-    /// The profile's trust file.
-    pub trust: PathBuf,
     /// How long one step may take before it is reported with a dump.
     pub budget: StepBudget,
 }
@@ -123,6 +122,7 @@ impl Daemon {
     pub fn new(store: Sqlite, options: StartOptions) -> Self {
         Self {
             changes: store.changes(),
+            trust: trust::Trust::load(&store),
             store,
             options,
             routing: RoutingState::default(),
@@ -131,13 +131,12 @@ impl Daemon {
             sources: Sources::default(),
             families: FamilyState::default(),
             pairing: PairingState::default(),
-            trust: trust::Trust::default(),
             answers: Answers::default(),
             journals: Journals::default(),
+            journal_readers: BTreeMap::new(),
             checkpoints: Checkpoints::default(),
             notifications: Notifications::default(),
             blobs: Blobs::default(),
-            drafts: Drafts::default(),
             deliveries: Deliveries::default(),
             timers: Timers::default(),
             pending: Pending::default(),
@@ -163,7 +162,8 @@ impl Daemon {
         }
         // A failed WAL checkpoint lets go of what waited at once; one that
         // is done serialized the core with it waiting, so it waits for the
-        // next step.
+        // next step, the driver's Checkpointed, which the ring segment
+        // started at that state records.
         if !self.touched.serialized {
             self.release_held(out);
         }
@@ -178,7 +178,9 @@ impl Daemon {
                 reason: DumpReason::Violation(violation),
             });
         }
-        let micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
+        let micros = u64::try_from(started.elapsed().as_micros())
+            .unwrap_or(u64::MAX)
+            .saturating_sub(self.touched.synced_micros);
         if micros > self.options.budget.micros {
             tracing::warn!(
                 micros,
@@ -218,8 +220,7 @@ impl Daemon {
             Input::JobDone { job, result } => {
                 if !self.push_done(job, &result, out)
                     && !self.blob_done(job, &result, out)
-                    && !self.drafts_written(job, &result, out)
-                    && !self.trust_job_done(job, &result, out)
+                    && !self.trust_job_done(job, out)
                 {
                     self.registry_job(job, result, out);
                 }
@@ -239,6 +240,7 @@ impl Daemon {
                 self.deliveries_due();
                 self.drain_notifications(out);
             }
+            Input::Checkpointed => self.checkpointed(),
             Input::Verdict {
                 agent,
                 input_id,
@@ -269,7 +271,6 @@ impl Daemon {
                 id: TimerId::Source(host, agent),
             } => self.source_due(host, agent, out),
             Input::Configure(settings) => self.settings = settings,
-            Input::Drafts { drafts } => self.drafts_read(drafts),
             Input::FromShell(change) => self.shell_changed(change, out),
             Input::LinkUp {
                 link,
@@ -295,29 +296,19 @@ impl Daemon {
                 class,
                 pin,
             } => self.want_channel(link, peer, class, pin, out),
-            Input::ChannelOpened { channel, .. } => self.channel_opened(channel, out),
-            Input::ChannelClosed { channel, reason } => self.channel_closed(channel, &reason, out),
-            Input::Timer {
-                id: TimerId::Retry(host),
-            } => self.retry_fired(host, out),
-            Input::AttemptConcluded { host, route, tried } => {
-                self.attempt_concluded(host, route, tried, out)
-            }
+            Input::ChannelOpened { channel, .. } => self.channel_opened(channel),
+            Input::ChannelClosed { channel, .. } => self.channel_closed(channel),
             Input::PlanChanged => self.plan_changed(out),
-            Input::CallsFailed { host, error } => self.calls_failed(host, &error, out),
-            Input::RouteFailed { host, route, error } => {
-                self.route_failed(host, route, &error, out)
-            }
             Input::TryAgain { host } => {
                 self.try_again(host, out);
                 self.sources_try_again(host, out);
             }
-            Input::TrustRead { store } => self.trust_read(store, out),
+            Input::Started => self.trust_started(out),
             Input::ChangeTrust(change) => self.change_trust(change, None, out),
             Input::Policy(policy) => self.set_policy(policy, out),
             Input::HostForgotten { host } => {
                 self.forget_addresses(host);
-                self.forget_host(host, out)
+                self.forget_host(host)
             }
             Input::Discovered { found } => self.discovered(found, out),
             Input::PairingOpened { session, opened } => self.pairing_opened(session, opened, out),
@@ -344,7 +335,6 @@ impl Daemon {
     /// boundaries the step crossed: each costs constant time per row the
     /// step touched and never scans the block.
     pub fn check_step_invariants(&self) -> Result<(), Violation> {
-        self.check_presence()?;
         for page in &self.touched.paged {
             let PageJoined {
                 agent,
@@ -496,7 +486,6 @@ impl Daemon {
             &self.checkpoints,
             &self.notifications,
             &self.blobs,
-            &self.drafts,
             &self.deliveries,
             &self.timers,
             &self.pending,
@@ -523,13 +512,13 @@ impl Daemon {
             checkpoints,
             notifications,
             blobs,
-            drafts,
             deliveries,
             timers,
             pending,
             settings,
             options,
         ) = checkpoint_parts(&checkpoint)?;
+        let trust = trust.restored(&store);
         Ok(Daemon {
             routing,
             presence,
@@ -543,7 +532,6 @@ impl Daemon {
             checkpoints,
             notifications,
             blobs,
-            drafts,
             deliveries,
             timers,
             pending,
@@ -649,7 +637,7 @@ struct Touched {
     /// The generation an own stream opened under, and the highest one
     /// opened under before it.
     opened_under: Option<(u64, u64)>,
-    /// Each host whose routes, attempts or presence the step moved.
+    /// Each host whose routes or presence the step moved.
     hosts: Vec<HostId>,
     /// Something a host set entry is made of moved.
     host_set: bool,
@@ -674,6 +662,9 @@ struct Touched {
     serialized: bool,
     /// The store committed while the WAL was being moved.
     committed_while_held: bool,
+    /// How long the step waited on the drive for a synced write, which its
+    /// budget leaves out.
+    synced_micros: u64,
 }
 
 impl Touched {
@@ -691,14 +682,11 @@ impl Touched {
     }
 }
 
-/// Links, the routes they make, and the attempts the core asked for in
-/// flight on them.
+/// Links and the routes they make.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutingState {
     links: LinkRegistry,
     catalogue: catalogue::Catalogue,
-    /// Each attempt under way, by host and route, counted.
-    attempts: std::collections::BTreeMap<(HostId, Route), u32>,
     /// The addresses each trusted host last listed for itself, each with
     /// where it came from: the trust file's, until the host says them
     /// again.
@@ -724,71 +712,7 @@ pub struct Pending {
     peers: peers::PeerCalls,
 }
 
-/// How long one step may take before it is reported with a dump.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct StepBudget {
-    pub micros: u64,
-}
-
-impl StepBudget {
-    /// The daemon's: one step delays every other input for its duration,
-    /// and a tenth of a second is a stall a person notices. A full ingest
-    /// batch at the performance budget's ceiling of 100 µs a frame takes
-    /// about 26 ms, so a step past this is doing something no step should.
-    pub const DAEMON: StepBudget = StepBudget { micros: 100_000 };
-    /// Test installations': debug builds on a loaded four-core CI runner
-    /// take 118 to 143 ms for steps the daemon's budget allows 100 ms, and
-    /// a dump written for that overrun lands in `reports/` while a test may
-    /// be reading it. A second is still short enough that a step genuinely
-    /// stuck is reported. Tests of the tripwire set their own budget.
-    pub const TEST: StepBudget = StepBudget { micros: 1_000_000 };
-    /// A budget no step runs over, for a run that must be a function of
-    /// its inputs alone: a checker, a simulator, a replay.
-    pub const UNLIMITED: StepBudget = StepBudget { micros: u64::MAX };
-}
-
-impl Default for StepBudget {
-    fn default() -> Self {
-        Self::DAEMON
-    }
-}
-
-/// A cheap invariant that failed: which one, and what it saw.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Violation {
-    /// The invariant, as the sentence it checks.
-    pub invariant: &'static str,
-    /// The values that broke it.
-    pub detail: String,
-}
-
-impl fmt::Display for Violation {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.invariant, self.detail)
-    }
-}
-
-impl fmt::Display for DumpReason {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DumpReason::Violation(violation) => write!(f, "an invariant failed: {violation}"),
-            DumpReason::OverBudget { micros, budget } => write!(
-                f,
-                "a step took {micros} µs, over its budget of {} µs",
-                budget.micros
-            ),
-        }
-    }
-}
-
-/// Why a core asked for a dump.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum DumpReason {
-    /// A cheap invariant failed at the end of a step.
-    Violation(Violation),
-    /// A step took longer than its budget.
-    OverBudget { micros: u64, budget: StepBudget },
-}
+pub use core_ring::{DumpReason, StepBudget, Violation};
 
 /// The core's state as of one step, serialized, under the layout it was
 /// written with.
@@ -825,7 +749,6 @@ type Parts = (
     Checkpoints,
     Notifications,
     Blobs,
-    Drafts,
     Deliveries,
     Timers,
     Pending,

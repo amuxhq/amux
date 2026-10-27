@@ -1,0 +1,308 @@
+syntax = "proto3";
+
+package amux.v1;
+
+import "amux/v1/chat.proto";
+
+// Codex's per-kind bodies: the item and snapshot messages encoded into
+// Item.body and Snapshot.body for kind codex, the inputs it accepts, and the
+// answers inside them.
+
+message CodexCreateConfig {
+  optional string model = 1;
+  optional string effort = 2;
+  // A permission and a mode the catalogue offers: "read-only", "default",
+  // "auto", "full-access"; "default", "plan".
+  optional string permission = 3;
+  optional string mode = 4;
+}
+
+message CodexItem {
+  oneof kind {
+    Prompt prompt = 1;
+    // The final answer.
+    Text message = 2;
+    Reasoning reasoning = 3;
+    Work work = 4;
+    McpStartup mcp_startup = 5;
+    Turn turn = 6;
+    // A prompt delivered into the running turn; the text is the envelope's.
+    Steer steer = 7;
+    Boundary boundary = 8;
+    AgentMessage agent_message = 9;
+    ApiError error = 10;
+    ModelSwitch reroute = 11;
+    Unrecognized unrecognized = 12;
+    // Working notes, marked apart from the final answer.
+    Text working_note = 13;
+    TurnDiff turn_diff = 14;
+    ReviewerVerdict verdict = 15;
+    // A question, access grant, tool-server form or link: an ask that is
+    // the work.
+    AskItem ask = 16;
+    // The plan Codex proposed in plan mode.
+    Plan plan = 17;
+  }
+}
+
+// The summary is kept beside the full text, which is the envelope text.
+message Reasoning {
+  bool complete = 1;
+  repeated string summary = 2;
+}
+
+// One unit of Codex work. Streamed command output is the envelope text.
+message Work {
+  oneof of {
+    CommandWork command = 1;
+    FileChangeWork file_change = 2;
+    McpToolCall mcp = 3;
+    WebSearch web_search = 4;
+    ImageWork image = 5;
+    CollabWork collab = 6;
+  }
+  ToolState state = 7;
+  ToolClass class = 8;
+  ToolDecision decision = 9;
+  optional int64 ended_at_ms = 10;
+  // When the work began running, after any approval, where Codex gives its
+  // duration. Its time is ended_at_ms minus this, else minus the item's
+  // at_ms.
+  optional int64 started_at_ms = 11;
+}
+
+message CommandWork {
+  string command = 1;
+  string cwd = 2;
+  optional int32 exit_code = 3;
+  bool background = 4;
+  // Output dropped from the front of the item's text: a running command
+  // keeps only its newest output, cut at a line boundary.
+  uint64 output_dropped_bytes = 5;
+}
+
+message FileChangeWork {
+  repeated FileChange changes = 1;
+}
+
+message FileChange {
+  string path = 1;
+  FileChangeKind kind = 2;
+  string move_to = 3;
+  // Unified diff for this file.
+  string patch = 4;
+  // An update that finished: the line its first change landed on. Whether
+  // the change made the file is its kind.
+  optional uint32 line = 5;
+}
+
+enum FileChangeKind {
+  FILE_CHANGE_KIND_UNSPECIFIED = 0;
+  FILE_CHANGE_KIND_ADD = 1;
+  FILE_CHANGE_KIND_DELETE = 2;
+  FILE_CHANGE_KIND_UPDATE = 3;
+}
+
+message McpToolCall {
+  string server = 1;
+  string tool = 2;
+  bytes arguments_json = 3;
+  bytes result_json = 4;
+  string error = 5;
+  // The call's first string argument, the one fact its row shows.
+  string subject = 6;
+}
+
+message WebSearch {
+  string query = 1;
+  WebAction action = 2;
+  // The page opened, or searched within.
+  string url = 3;
+  // The words looked for within the page.
+  string pattern = 4;
+}
+
+enum WebAction {
+  WEB_ACTION_UNSPECIFIED = 0;
+  WEB_ACTION_SEARCH = 1;
+  WEB_ACTION_OPEN_PAGE = 2;
+  WEB_ACTION_FIND_IN_PAGE = 3;
+}
+
+// A generated or viewed image; the image is the envelope's attachment.
+message ImageWork {
+  bool generated = 1;
+  string path = 2;
+}
+
+// A child thread: spawn, message, wait, close.
+message CollabWork {
+  string tool = 1;
+  repeated string thread_ids = 2;
+  string prompt = 3;
+}
+
+message McpStartup {
+  string server = 1;
+  ToolServerStatus status = 2;
+  string error = 3;
+}
+
+// The whole-turn diff Codex reports at turn end.
+message TurnDiff {
+  string patch = 1;
+}
+
+// An automatic reviewer's verdict on an action.
+message ReviewerVerdict {
+  ReviewStatus status = 1;
+  // Codex's own word, always carried.
+  string status_word = 2;
+  string risk = 3;
+  string rationale = 4;
+  string item_key = 5;
+}
+
+enum ReviewStatus {
+  REVIEW_STATUS_UNSPECIFIED = 0;
+  REVIEW_STATUS_IN_PROGRESS = 1;
+  REVIEW_STATUS_APPROVED = 2;
+  REVIEW_STATUS_DENIED = 3;
+  REVIEW_STATUS_TIMEOUT = 4;
+  REVIEW_STATUS_ABORT = 5;
+}
+
+// Phase lives in the Snapshot envelope, once.
+message CodexSnapshot {
+  repeated CodexAsk asks = 1;
+  ContextMeter context = 2;
+  optional string model = 3;
+  // The running model as a person reads it: the catalogue entry whose value
+  // is its id, else its id tidied. Absent while the model is.
+  optional string model_name = 4;
+  // The permission the raw settings below name; absent when they match no
+  // name, which reads as custom.
+  optional string permission = 5;
+  // The mode the collaboration mode names: "default" or "plan"; absent
+  // until Codex says, or when it names neither.
+  optional string mode = 6;
+  // Codex's own settings, absent until Codex says.
+  optional string approval_policy = 7;
+  optional string sandbox = 8;
+  // Who answers approvals: "user", or a reviewer model ("auto_review").
+  optional string approvals_reviewer = 9;
+  optional string collaboration_mode = 10;
+  // Absent while no turn is known to be running.
+  optional string active_turn = 11;
+  ToolServerHealth servers = 12;
+  CodexUsage usage = 13;
+  SignIn sign_in = 14;
+  BackgroundJobs background_jobs = 15;
+  // Plan steps with status.
+  TaskList plan = 16;
+  optional string effort = 17;
+  // Absent until the thread start response names it.
+  optional string thread_id = 18;
+  // What it offers is in the catalogue the Snapshot names.
+}
+
+// Codex's usage limits.
+message CodexUsage {
+  UsageState state = 1;
+  repeated CodexUsageWindow windows = 2;
+  optional string credits = 3;
+}
+
+message CodexUsageWindow {
+  // Named from the window's length.
+  Limit limit = 1;
+  // The only description Codex gives of a window.
+  uint32 window_minutes = 2;
+  UsageMeter meter = 3;
+}
+
+message CodexAsk {
+  // The app-server request id, JSON-encoded as the server sent it.
+  string key = 1;
+  // The unit of work an approval would let run, or, for an ask that is the
+  // work, its own AskItem.
+  string item_key = 2;
+  oneof body {
+    CommandApproval command = 3;
+    FileChangeApproval file_change = 4;
+    FormAsk mcp_form = 5;
+    LinkAsk mcp_link = 6;
+    AccessGrant access = 7;
+    QuestionAsk question = 8;
+    McpToolApproval mcp_tool = 9;
+    // Codex asks nothing about a plan: amux opens this when a turn in plan
+    // mode ends with one. Its key is amux's own.
+    PlanAsk plan = 10;
+  }
+  // The decisions this request offers, in the server's order.
+  repeated Decision decisions = 11;
+}
+
+message CommandApproval {
+  string command = 1;
+  string cwd = 2;
+  string reason = 3;
+  // "Allow similar commands": the exact prefix it would allow.
+  repeated string allow_prefix = 4;
+  // Hosts a network rule would allow.
+  repeated string network_hosts = 5;
+}
+
+message FileChangeApproval {
+  string reason = 1;
+  string grant_root = 2;
+  repeated FileChange changes = 3;
+}
+
+message McpToolApproval {
+  string server = 1;
+  string tool = 2;
+  bytes arguments_json = 3;
+}
+
+message CodexInput {
+  oneof of {
+    PromptInput prompt = 1;
+    CodexAnswer answer = 2;
+    Interrupt interrupt = 3;
+    SetPermission permission = 4;
+    SetMode mode = 5;
+    SetModel model = 6;
+    WithdrawQueued withdraw = 7;
+    SetEffort effort = 8;
+    SendQueuedNow send_now = 9;
+  }
+}
+
+enum Decision {
+  DECISION_UNSPECIFIED = 0;
+  DECISION_APPROVE = 1;
+  DECISION_APPROVE_SESSION = 2;
+  DECISION_DENY = 3;
+  DECISION_ABORT = 4;
+  // Approve and add the ask's allow_prefix rule.
+  DECISION_APPROVE_SIMILAR = 5;
+  // Approve and add the ask's network rule.
+  DECISION_APPROVE_NETWORK = 6;
+}
+
+// Rejected REFUSAL_CLOSED_ASK if ask_key is not open. An approval is rejected
+// REFUSAL_UNSUPPORTED when its decision is not one the ask offered.
+message CodexAnswer {
+  // CodexAsk.key: the app-server request id, or amux's own key for a plan.
+  string ask_key = 1;
+  oneof of {
+    Decision approve = 2;
+    QuestionAnswer question = 3;
+    FormAnswer form = 4;
+    LinkAnswer link = 5;
+    GrantAnswer grant = 6;
+    PlanAnswer plan = 7;
+    ReplyInstead reply = 8;
+  }
+}

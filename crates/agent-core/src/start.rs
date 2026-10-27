@@ -31,9 +31,9 @@ pub(crate) fn starting<I: Interpreter>(
     let ended = inputs
         .last()
         .is_none_or(|entry| matches!(entry, Entry::ProviderExit { .. } | Entry::Exiting { .. }));
-    for event in inputs.into_iter().filter_map(Entry::event) {
-        let _ = I::step(&mut state, event);
-    }
+    // The steps were journaled when first made; an entry this build cannot
+    // read is skipped, as it always was.
+    interpret::ring::rerun::<I>(&mut state, inputs);
     let mut steps = Vec::new();
     if !ended {
         let mut stepped = I::step(

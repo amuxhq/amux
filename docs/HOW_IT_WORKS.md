@@ -15,7 +15,7 @@ to your agents when amux itself restarts.
 | Word | What it is |
 |---|---|
 | **Host** | A machine that runs amux: a desktop, a server, and your phone too. Hosts that run agents also run the amux daemon, a background process. |
-| **Agent** | One coding agent: Claude Code in a terminal (`claude_pty`), headless Claude Code (`claude_sdk`), or Codex (`codex`). Each runs in its own process on one host, in the project directory you chose. |
+| **Agent** | One coding agent: Claude Code or Codex, chatted with in amux's chat or in its own interface. Each runs in its own process on one host, in the project directory you chose. |
 | **Chat** | An agent's conversation, drawn the same way on every device. |
 | **Fleet** | Every agent you can see, on this host and on the hosts you paired with, grouped by host, children beneath their parent. |
 | **Profile** | One identity for amux on a machine: its own key, its own paired hosts, its own agents. An installation holds one profile per account, plus any you create yourself. |
@@ -31,12 +31,13 @@ things; neither is a remote control for the other.
 `amux server start` starts amux in the background and `amux server stop`
 stops it. On a desktop install you rarely need either: `amux init` asks
 once whether amux should start when you log in, and any `amux` command that
-finds amux stopped starts it and waits for it.
+finds amux stopped starts it and waits for it. `amux status` says whether
+it is running, which version, and each profile's account.
 
 There, amux runs under a small supervisor (`amux supervise`) that restarts
 it if it ever crashes and installs releases as they come out. `amux update`
-asks it to check for a release now, and `amux config channel stable` or
-`amux config channel preview` chooses which releases it follows. On a
+asks it to check for a release now, and `amux config set channel stable` or
+`amux config set channel preview` chooses which releases it follows. On a
 server where a service manager runs amux instead, the service manager
 starts and updates it, and commands wait for it rather than starting it.
 
@@ -45,17 +46,22 @@ Common commands, all acting on the selected profile:
 ```sh
 amux                                  # open the terminal client: the fleet and chats
 amux ls                               # list the agents, children beneath their parent
-amux create claude_pty --prompt "…"   # start an agent in the current directory
+amux new claude --prompt "…"          # start an agent in the current directory
 amux send <agent> fix the flaky test  # send it a prompt
-amux attach <agent>                   # hand this terminal to the agent's own interface
+amux attach <agent>                   # open its chat in this terminal
 amux stop <agent>                     # stop its process
-amux resume <agent> [message]         # start an exited agent again
-amux delete <agent>                   # delete it, its history and its children
+amux resume <agent> [message]         # start a stopped agent again
+amux rm <agent>                       # delete it, its history and its children
+amux config set <key> <value>         # change a setting; `amux config get <key>` reads one
 ```
 
-`amux attach` works only for agents on this machine: the agent's own
-terminal never crosses the network. On any other device, every agent is a
-chat.
+Where you chat with your agents is a setting, `ui.chat_in`: in amux's chat
+(`amux`, the default), or in each agent's own interface, Claude Code's or
+Codex's (`native`). It decides what a new agent runs as and how `amux
+attach` opens one; `--in amux` or `--in native` chooses for one command. An
+agent's own interface opens only on its own machine, since its terminal
+never crosses the network: an agent on another host, or one started from
+the phone, opens in amux's chat.
 
 ## Agents outlive amux
 
@@ -86,7 +92,7 @@ again.
 
 An agent never stops on its own because of anything short of that. The Stop
 button in a chat interrupts the current turn and leaves the agent ready for
-the next prompt; only `amux stop`, `amux delete`, or the provider itself
+the next prompt; only `amux stop`, `amux rm`, or the provider itself
 exiting ends the process.
 
 ## Accounts and profiles
@@ -114,8 +120,8 @@ it nothing in Work.
 - `amux logout` signs the profile out. Its key, its paired hosts and its
   agents stay; signing in to the same account later picks up where it left
   off, with no pairing again.
-- `amux profiles` lists the profiles. `amux profile create`,
-  `amux profile rename` and `amux profile delete` manage them. Deleting a
+- `amux profile ls` lists the profiles. `amux profile new`,
+  `amux profile rename` and `amux profile rm` manage them. Deleting a
   profile destroys its key, its trust in other hosts, and its agents.
 - `--profile <label or id>` chooses the profile for any command; without it,
   commands use the first profile.
@@ -146,12 +152,13 @@ amux pair --qr     # shows a QR code for the phone
 Pairing mode stays open for five minutes, or until Ctrl+C. Then, from the
 other side:
 
-- **Another computer:** `amux peers` lists hosts found nearby. Run
+- **Another computer:** `amux hosts` lists hosts found nearby. Run
   `amux pair <name>` (or `amux pair <address:port>`) and type the PIN.
 - **The phone:** scan the QR code with the camera, or choose the host in the
   app and type the PIN.
 - **Over SSH:** `amux pair user@host` pairs with the amux on that machine
-  through your SSH login, with no PIN; the SSH login is the proof.
+  through your SSH login, with no PIN; the SSH login is the proof. The other
+  machine needs a Unix shell, so a Windows host pairs by PIN instead.
 
 The PIN never crosses the network. Both hosts run a password-authenticated
 key exchange (SPAKE2) that proves each is talking to the machine in front of

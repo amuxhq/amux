@@ -23,8 +23,8 @@ use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use support::desk::{Desk, GRACE_SECS};
 use support::{amux_binary, grpc_channel, until};
 use tokio::io::{AsyncBufReadExt as _, BufReader};
-use wire::profile_service_client::ProfileServiceClient;
-use wire::{BindProfileRequest, Empty, Observed, RelayCarrier};
+use wire::installation_service_client::InstallationServiceClient;
+use wire::{BindProfileRequest, RelayCarrier};
 
 /// The key the stand-in cloud signs connection tokens with, and the same
 /// key's public modulus in its key set.
@@ -229,21 +229,22 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
     let udp_port = if quic { port } else { free_port() };
     let cloud = Cloud::serve(port).await;
     // The deployment's configuration and command line, word for word.
-    let config = dir.path().join("config.yaml");
+    let config = dir.path().join("config.toml");
     std::fs::write(
         &config,
         format!(
-            "host_name: {RELAY_HOST}\ntcp_port: {port}\nudp_port: {udp_port}\ncloud_url: {}\n",
+            "host_name = \"{RELAY_HOST}\"\ntcp_port = {port}\nudp_port = {udp_port}\n\
+             cloud_url = \"{}\"\ntls_cert = \"fullchain.pem\"\ntls_key = \"privkey.pem\"\n\
+             state_dir = \"state\"\n",
             cloud.url()
         ),
     )
     .unwrap();
     let mut relay = tokio::process::Command::new(amux_binary())
-        .args(["server", "start", "--cloud", "--foreground"])
+        .arg("relay")
         .env("AMUX_CONFIG", &config)
-        .env("AMUX_TLS_CERT", &cert_path)
-        .env("AMUX_TLS_KEY", &key_path)
         .env("AMUX_LOG", dir.path().join("relay.log"))
+        .env_remove("STATE_DIRECTORY")
         .env("HOME", dir.path())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -277,9 +278,9 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
         "{}",
         String::from_utf8_lossy(&started.stderr)
     );
-    let mut profiles = ProfileServiceClient::new(grpc_channel(&desk.socket).await.unwrap());
+    let mut profiles = InstallationServiceClient::new(grpc_channel(&desk.socket).await.unwrap());
     let profile = profiles
-        .list_profiles(Empty {})
+        .list_profiles(wire::ListProfilesRequest {})
         .await
         .unwrap()
         .into_inner()
@@ -301,24 +302,22 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
         let profile = &profile;
         async move {
             let listed = profiles
-                .list_profiles(Empty {})
+                .list_profiles(wire::ListProfilesRequest {})
                 .await
                 .unwrap()
                 .into_inner()
                 .profiles;
-            let observed = listed
-                .iter()
-                .find(|p| p.id == profile.id)
-                .map(|p| p.observed());
-            (observed == Some(Observed::Connected))
-                .then_some(())
-                .ok_or_else(|| format!("observed {observed:?}"))
+            let listed = listed.iter().find(|p| p.id == profile.id);
+            listed
+                .and_then(wire::Profile::relay_connected)
+                .map(|_| ())
+                .ok_or_else(|| format!("cloud {:?}", listed.map(|p| &p.cloud)))
         }
     })
     .await
     .unwrap();
     let linked = profiles
-        .list_profiles(Empty {})
+        .list_profiles(wire::ListProfilesRequest {})
         .await
         .unwrap()
         .into_inner()
@@ -326,12 +325,7 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
         .into_iter()
         .find(|p| p.id == profile.id)
         .unwrap();
-    println!(
-        "profile {} {:?} over {:?}",
-        linked.label,
-        linked.observed(),
-        linked.relay_carrier()
-    );
+    println!("profile {} {:?}", linked.label, linked.cloud);
     // The relay checked the token against the cloud's keys: it fetched them.
     assert!(
         cloud
@@ -344,5 +338,8 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
     );
     drop(desk);
     relay.kill().await.unwrap();
-    linked.relay_carrier()
+    linked
+        .relay_connected()
+        .expect("the profile's relay link is connected")
+        .carrier()
 }

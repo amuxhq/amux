@@ -28,10 +28,10 @@ What the design holds itself to:
    self-contained items any client can draw without knowing the provider.
 3. **A client opens a chat with "the last N items"** and pages older
    history only if it needs it. There is no replay protocol.
-4. **From the first release, every surface tolerates version skew by field
-   discipline,** because paired machines, pinned agent processes and
-   long-lived clients never update together. Until then the protocols change
-   freely ([the wire](WIRE.md#compatibility)).
+4. **Every surface tolerates version skew by field discipline,** because
+   paired machines, pinned agent processes and long-lived clients never
+   update together; from 0.9.0 `just proto-compat` holds the protocol to it
+   against the latest release ([the wire](WIRE.md#compatibility)).
 5. **Lean on the operating system.** Files, file locks, sockets closing on
    process death and inodes surviving a binary swap do the work before any
    protocol does.
@@ -135,18 +135,18 @@ On a desktop, four kinds of process run, each with one job:
 
 | Process | Started as | Job |
 |---|---|---|
-| **supervisor** | `amux supervise`, by the login item or `amux server start` | Parent of the daemon: restarts it whenever it exits and, under `updates: auto`, installs releases. See [the supervisor](SUPERVISOR.md). |
+| **supervisor** | `amux supervise`, by the login item or `amux server start` | Parent of the daemon: restarts it whenever it exits and, under `updates = "auto"`, installs releases. See [the supervisor](SUPERVISOR.md). |
 | **daemon** | `amux daemon`, by the supervisor (or by a service manager on a host without one) | The installation: every profile runtime, their stores, network edges and client sockets. |
-| **agent process** | `amux agent <dir>`, by the daemon, detached into its own process group | One agent: holds its directory's lock, runs the provider child and the interpreter, writes the journal. See [the agent process](AGENT_PROCESS.md). |
+| **agent process** | `amux internal agent <dir>`, by the daemon, detached into its own process group | One agent: holds its directory's lock, runs the provider child and the interpreter, writes the journal. See [the agent process](AGENT_PROCESS.md). |
 | **provider child** | by the agent process | `claude` on a pseudo-terminal, `claude` speaking stream-JSON on stdio, or `codex app-server` on stdio. |
 
 Two small helpers run on the provider's behalf, from the installed `amux`
-binary: `amux mcp <dir>`, the tool server the provider launches for amux's
-[agent tools](AGENT_TOOLS.md), and `amux hooks claude`, the command terminal
+binary: `amux internal mcp <dir>`, the tool server the provider launches for amux's
+[agent tools](AGENT_TOOLS.md), and `amux internal hook claude`, the command terminal
 Claude runs for each hook event, which forwards the payload to the agent's
 `private/hooks.sock`.
 
-The cloud relay is the same binary run as `amux server start --cloud`. It is
+The cloud relay is the same binary run as `amux relay`. It is
 not an installation: no profiles, no agents, no supervisor.
 
 On the phone, the app hosts the daemon's profile runtime inside its own
@@ -198,10 +198,10 @@ addresses change. See [embedding](EMBEDDED.md).
 
 | Caller | Where | What it speaks |
 |---|---|---|
-| CLI and terminal client | the front door (`amux.sock` in the per-user runtime directory), then the profile's `profiles/<id>/sock` | `ProfileService` and `InstallationService` on the front door; `ClientService` on the profile socket |
-| phone UI | in process, through [`client::InProcess`](../crates/client/src/lib.rs) | the same `ClientService` calls |
-| paired daemon | a link stream, after a pinned mutual-TLS handshake | `PeerService`, the same calls answered only for this host's own agents |
-| an agent's tool server | `agents/<id>/tools.sock`, which the daemon listens on for that agent alone | `ClientService`; the socket it arrived on is the caller's identity |
+| CLI and terminal client | the front door (`amux.sock` in the per-user runtime directory), then the profile's `profiles/<id>/sock` | `InstallationService` on the front door; `AgentService`, `SessionService` and `ProfileAdminService` on the profile socket |
+| phone UI | in process, through [`client::InProcess`](../crates/client/src/lib.rs) | the same `AgentService` and `SessionService` calls |
+| paired daemon | a link stream, after a pinned mutual-TLS handshake | `PeerAgentService` and `PeerSessionService`, the same calls answered only for this host's own agents |
+| an agent's tool server | `agents/<id>/tools.sock`, which the daemon listens on for that agent alone | `AgentService` and `SessionService`; the socket it arrived on is the caller's identity |
 
 The daemon dials in the other direction exactly once per agent: it connects
 to `ctl.sock`, reads a Hello, ingests the journal whenever a Nudge arrives,
@@ -209,16 +209,15 @@ and writes inputs and stops. The agent never dials the daemon.
 
 Every surface is protobuf. The link carries a version integer for a
 deliberate break both sides must take; the control socket and the journal
-carry none. Until the first release nothing depends on an older build, so
-the schemas change freely; [the wire](WIRE.md) has the calls, the records
-and the rule.
+carry none. From 0.9.0 the schemas change only by adding; [the wire](WIRE.md)
+has the calls, the records and the rule.
 
 ## Inside the daemon
 
 ![Inside one daemon. The two handle types are the only per-agent and per-client state the daemon holds; both are rebuilt from disk and from reconnecting clients after a restart.](figures/inside-daemon.svg)
 
 One daemon process is one installation ([`node::start`](../crates/node/src/daemon.rs)).
-It holds the installation lock, the profile registry, the generation file
+It holds the installation lock, the profiles directory, the generation file
 and the front door, and hosts one
 [`ProfileRuntime`](../crates/node/src/runtime.rs) per profile. A profile
 runtime is a complete amux: one daemon core, which owns the profile's store
@@ -272,9 +271,9 @@ a live stream.
 
 After a restart both are rebuilt: agent handles from the directories on
 disk and the store's rows, call queues from clients reconnecting. The core
-starts from the store, the drafts file, the trust store, the settings and
-the generation; its checkpoint (`core.checkpoint` beside the store) is what
-a dump and a replay start from.
+starts from the store (which holds its paired hosts and drafts too), the
+settings and the generation; its newest checkpoint, at the head of its input ring beside
+the store, is what a dump and a replay start from.
 
 ## The agent directory is the contract
 
@@ -290,7 +289,7 @@ agents/<agent_id>/            the agent's UUID; ours, never the provider's
   ctl.sock                    the agent listens; the daemon is its only client
   pty.sock                    the agent listens; local terminal clients connect (terminal Claude and Codex only)
   tools.sock                  the daemon listens; the agent's tool server is its only client
-  agent.log                   the agent process's stderr
+  agent.log, agent.log.1      the agent process's stderr, and the part before its last move (1 MiB each)
   journal/0000000000          length-prefixed protobuf steps; the file name is the global offset of its first byte
   journal/0001048576          the next segment (1 MiB by default)
   pty/0000000000              raw terminal bytes, named the same way (terminal Claude only; the newest four kept)
@@ -298,11 +297,19 @@ agents/<agent_id>/            the agent's UUID; ours, never the provider's
   private/                    the agent's own state; the daemon never reads it
     facts/                    the ring of recent provider facts and interpreter checkpoints
     provider-session          the provider's session or thread id, so a resume continues it
-    provider.log              the provider child's stderr
+    provider.log, .1          the provider child's stderr, capped as agent.log is
     transcript-cursor         how far terminal Claude's transcript has been read
     hooks.sock                terminal Claude's hook command connects here
     messaging.sock            terminal Claude's messaging socket
+    codex.sock                Codex's app server, for Codex agents; removed when the agent exits
 ```
+
+A Unix socket's path must be short, and an agent directory under a deep
+root is often too long. Then a socket is bound through a link to its folder
+(`agents/<agent_id>` or its `private/`) under `$TMPDIR/amux-<uid>/`, named
+by a hash of the folder; terminal Claude's messaging socket, which Claude
+binds itself in a real directory, gets one there named the same with `.d`.
+The daemon removes both with the agent's directory.
 
 | Path | Created by | Written by | Read by | Deleted by |
 |---|---|---|---|---|
@@ -315,25 +322,76 @@ agents/<agent_id>/            the agent's UUID; ours, never the provider's
 | `blobs/*` | agent or daemon | the agent for what the model attaches and for its catalogue, before the step whose snapshot names it; the daemon for what a person attaches and for diff patches; temp file then rename, so two writers are safe | the provider by path; the daemon to serve `GetBlob` | with the directory |
 | `private/*` | agent | agent | agent, and its part of a debug bundle | with the directory |
 
-The rest of the installation:
+### Everything else on disk
+
+This is the one complete listing; other pages link here rather than keep
+their own copies.
 
 ```text
-<data_dir>/                   default ~/.local/share/amux ($XDG_DATA_HOME/amux)
-  installation.lock           one daemon per data directory
-  registry                    which profiles exist
+~/.config/amux/config.toml    the installation config ($XDG_CONFIG_HOME/amux; --config or AMUX_CONFIG name another)
+~/.amux/bin/amux              the installed binary; an update stages amux.staged and keeps amux.prev beside it
+~/Library/LaunchAgents/sh.amux.supervise.plist
+                              the login item `amux init` writes on macOS; ~/.config/systemd/user/amux.service
+                              on Linux, and a scheduled task named amux on Windows
+$TMPDIR/amux/amux.sock        the front door, the config's front_door_socket ($XDG_RUNTIME_DIR/amux on Linux,
+                              /tmp/amux-<uid> without either)
+$TMPDIR/amux-<uid>/<hash>, <hash>.d
+                              short socket addresses for agents whose paths are too long (see above)
+
+<root>/                       the config's `root`; default ~/.local/share/amux ($XDG_DATA_HOME/amux)
+  installation.lock           one daemon per installation
+  installation_id             what usage analytics count an install by; minted at the first start that sends them
   generation                  boot id, clean-shutdown flag and a counter a replica compares
-  reports/                    dumps (debug bundles)
-  profiles/<profile_id>/
-    host_id, device.key       this profile's identity; the key never leaves the machine
-    trust.json                the hosts this profile has paired with
+  supervisor.lock             one supervisor per installation
+  supervisor.sock             how the CLI reaches a running supervisor (`amux update`, and stop on Windows)
+  daemon.log, daemon.log.1    the daemon's log, 8 MiB each; AMUX_LOG names another file
+  daemon-startup.log          what a daemon `amux server start` ran without a supervisor said before its log
+                              opened; made afresh at each such start
+  supervisor.log, .1          the supervisor's log, when amux runs under one, capped the same
+  reports/                    dumps and core reports, the newest 20 kept; .dump-* is one being written
+  worktrees/<repository>/<agent name>/
+                              the git worktrees amux makes for new agents; never removed by amux
+  tui/layout.json             the terminal client's folds, comparison and tool modes, shared by every
+                              terminal on this installation; the 200 most recently changed chats kept
+  profiles/<profile_id>/      one per profile; its id is its host id; built under a dotted name
+    profile                   what it is called and when it was made
+    device.key                this profile's key; it never leaves the machine
     account                   the account binding and its credential, when bound
+    relay-token               the week-long relay token the account service issued, so a launch dials at once
     sock                      the client socket, owner-only
-    link.sock                 where `amux relay` hands in a peer's link over SSH
-    store.sqlite              agents, items, hosts, deliveries, notifications; written only by this profile runtime
+    link.sock                 where `amux internal ssh-link` hands in a peer's link over SSH
+    store.sqlite              agents, items, paired hosts, drafts, recent directories, deliveries,
+                              notifications; written only by this profile's core
+    core-ring/                the core's newest checkpoint and the inputs since, for dumps and replay
+    tickets/                  TLS session tickets this profile's server issued, so a peer resumes
+    client-tickets/           tickets other hosts and the relay gave this profile's dials
+    client-tokens/            address-validation tokens other hosts gave this profile's dials
+    lan_port                  the port this profile last listened on, so peers find it there again
+    checked_in                when this profile last sent its daily usage event
+    providers/<provider>      the newest copy of what each provider offers (models, modes)
     agents/<agent_id>/        as above
     replicas/<host_id>/agents/<agent_id>/blobs/<sha256>
                               bytes fetched for a peer's agent, deleted with its rows
 ```
+
+Unpairing a host removes the tickets and tokens it gave, beside its store
+row. A dump interrupted by a crash leaves a `.dump-*` folder under
+`reports/` and an unredacted `.dump-*` store copy beside `store.sqlite`; the
+daemon removes both at start.
+
+The phone app keeps the same `<root>` layout in its container, under
+`Application Support/installation/`, with no supervisor, worktrees or
+terminal client; its log is `runtime.log`, capped at 8 MiB like the
+daemon's. Beside it, `Application Support/accounts.json` records which
+account is selected and, for each account, the host and attention counts
+it last listed and the entitlement the account service last gave, which the
+app draws from before the cloud answers. The Appearance and
+Share Usage settings are in the app's UserDefaults.
+
+The relay keeps its config in the one TOML file `--config` names (see
+[Cloud](CLOUD.md)). Its `state_dir`, which defaults to systemd's
+`$STATE_DIRECTORY`, holds `tickets/` and `reports/`, the newest 20 kept. It
+logs to standard error, for journald.
 
 The journal, ingest, the store's schema, durability and retention are on
 [the journal and store](JOURNAL_AND_STORE.md) page. What happens inside the
@@ -372,7 +430,7 @@ time:
 2. Read `generation`. If the boot id changed and the last run did not shut
    down cleanly, bump the counter. Rewrite the file with this boot's id and
    the clean flag cleared, durably, before anything is served.
-3. Read the registry. For each profile, open its store and apply pending
+3. List the profiles directory. For each profile, open its store and apply pending
    migrations (forward-only, and additive from the first release on), then
    look at every
    `agents/<id>/` without writing: try the lock, dial the live ones, read
@@ -405,7 +463,7 @@ Each profile holds one link to each host it trusts: one QUIC connection,
 pinned at pairing, carrying a control stream and plain application
 streams. Its handshake is the authority for every call on it, whichever way
 its packets go: direct on the local network or across the internet, through
-the relay over UDP or TLS on TCP, over SSH (`amux relay` joining the SSH
+the relay over UDP or TLS on TCP, over SSH (`amux internal ssh-link` joining the SSH
 session to the profile's `link.sock`), or through another paired daemon.
 Every UDP path leaves from the profile's one dual-stack link socket
 ([`link/socket.rs`](../crates/node/src/link/socket.rs)), which sits under
@@ -452,7 +510,7 @@ chats see as a Reset.
 The reset happens on each replica's own stream, whichever of the two
 catch-ups lands first; the inventory's only records the new generation.
 
-**The relay** is the same binary run as `amux server start --cloud`
+**The relay** is the same binary run as `amux relay`
 ([`crates/amux/src/relay.rs`](../crates/amux/src/relay.rs)). A signed-in
 profile keeps one cloud link to it, over QUIC with a TLS-over-TCP fallback,
 authenticated by a week-long token from the account service that the
@@ -531,11 +589,12 @@ checks.
 
 | Crate | What it is |
 |---|---|
-| [`wire`](../crates/wire/src/lib.rs) | Committed protobuf types for every boundary: the journal's records, the agent spec and control frames, and the client, peer, pairing, profile and installation services. Sources in `crates/wire/proto/`. The services and tonic sit behind its `grpc` feature: a crate that only speaks the messages leaves it off and takes no tokio from `wire`. |
+| [`wire`](../crates/wire/src/lib.rs) | Committed protobuf types for every boundary: the journal's records, the agent spec and control frames, and the client, peer, pairing, profile and installation services. Sources in `proto/` (the public contract) and `crates/wire/proto/` (the dump schema only amux reads). The services and tonic sit behind its `grpc` feature: a crate that only speaks the messages leaves it off and takes no tokio from `wire`. |
 | [`model`](../crates/model/src/lib.rs) | Plain values the views and the phone bridge share; the Swift mirrors are generated from them. |
 | [`attachments`](../crates/attachments/src/lib.rs) | Attachments as positioned text, and the `<amux-attachment>` element the model sees. |
 | [`settings`](../crates/settings/src/lib.rs) | Installation, profile and UI settings, and where their files live. |
 | [`redaction`](../crates/redaction/src/lib.rs) | The structural redactor for free text and JSON in reports, logs and captures. |
+| [`log-file`](../crates/log-file/src/lib.rs) | The capped log file every process writes, rotated to one `.1`, and the tail a dump reads. |
 | [`release`](../crates/release/src/lib.rs) | A release channel's signed manifest: signing, verification and the build a host installs, shared by the daemon and the release tool. |
 | [`version-stamp`](../crates/version-stamp/src/lib.rs) | The version stamp in a built binary, and re-stamping a copy. |
 | [`analytics`](../crates/analytics/src/lib.rs) | The usage events a device may send, typed so nothing but enums, numbers and ids fits; the per-profile handle and the installation's uploader. See [what amux sends](ANALYTICS.md). |
@@ -547,7 +606,7 @@ checks.
 | [`agent-dir`](../crates/agent-dir/src/lib.rs) | The directory contract: names, the lock, local sockets, control-socket framing and the clock both sides' deadlines run on. |
 | [`journal`](../crates/journal/src/lib.rs) | Append-only journal segments: writer, reader and reclaiming. |
 | [`interpret`](../crates/interpret/src/lib.rs) | The per-kind interpreters (`claude_pty`, `claude_sdk`, `codex`), their shared core, the per-kind body redactor and the golden harness. See [interpreters](INTERPRETERS.md). |
-| [`agent`](../crates/agent/src/lib.rs) | The agent process (`amux agent <dir>`) and the tool server (`amux mcp <dir>`). |
+| [`agent`](../crates/agent/src/lib.rs) | The agent process (`amux internal agent <dir>`) and the tool server (`amux internal mcp <dir>`). |
 | [`git-facts`](../crates/git-facts/src/lib.rs) | An agent folder's branch, base branch and change totals, read by running git; shared by the agent process and the daemon. |
 | [`claude-protocol`](../crates/claude-protocol/src/lib.rs) | Claude Code's headless stream, transcript rows and hook payloads as types, with a tolerant decoder. See [provider crates](PROVIDER_CRATES.md). |
 | [`codex-protocol`](../crates/codex-protocol/src/lib.rs) | Codex's app-server messages as types, with a tolerant decoder. |
@@ -606,7 +665,8 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 | [`replay-support`](../crates/replay-support/src/lib.rs) | Replays a debug bundle through its four stages with the protocol's properties judged at every step, and manages provider recordings for the capture tools. |
 | [`fake-amux`](../crates/fake-amux/src/main.rs) | A stand-in `amux` binary running the real supervisor over a scripted daemon. |
 | [`shot`](../crates/shot/README.md) | Deterministic PNG renderings of the terminal client's named states, and its storybook of whole screens. |
-| [`xtask`](../crates/xtask/src/main.rs) | Developer tasks: protobuf codegen, Swift type generation, re-stamping, iOS verification. |
+| [`xtask`](../crates/xtask/src/main.rs) | Developer tasks: protobuf codegen, the protocol compatibility check, re-stamping, releases. |
+| [`ios-tools`](../crates/ios-tools/src/main.rs) | The phone's developer tools: iOS verification, Swift type generation, the screenshot comparator and the door client. |
 
 ## The dependency policy
 
@@ -643,7 +703,7 @@ The allowed sets encode the layering above:
 
 | Crate | May depend on | Why |
 |---|---|---|
-| `wire`, `model`, `settings`, `redaction`, `release`, `version-stamp`, `analytics`, `git-facts`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code |
+| `wire`, `model`, `settings`, `redaction`, `log-file`, `release`, `version-stamp`, `analytics`, `git-facts`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code |
 | `journal`, `store`, `agent-dir`, `attachments` | `wire` | |
 | `core-ring` | `journal` | a core's input ring, in segments named as the journal's are |
 | `interpret` | `attachments`, `claude-protocol`, `codex-protocol`, `redaction`, `wire` | the pure step and its body redactor |
@@ -653,18 +713,19 @@ The allowed sets encode the layering above:
 | `path-core` | at most `daemon-core` | names links and reports dumps as the daemon core does |
 | `agent-core` | at most `core-ring`, `interpret`, `journal`, `wire` | wraps the interpreter |
 | `supervisor-core` | at most `release`, `version-stamp` | reads release manifests and version stamps |
-| `agent` | `agent-core`, `agent-dir`, `attachments`, `claude`, `claude-protocol`, `codex`, `codex-protocol`, `core-ring`, `git-facts`, `interpret`, `journal`, `pty-host`, `wire` | the agent core's driver, and the only production crate that reads a provider |
-| `node` | `agent-dir`, `analytics`, `core-ring`, `daemon-core`, `git-facts`, `interpret`, `journal`, `path-core`, `relay-core`, `release`, `settings`, `store`, `supervisor-core`, `version-stamp`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` crate, so the phone can host a runtime with no provider in its graph; `interpret` only for the dump's per-kind redactor |
+| `agent` | `agent-core`, `agent-dir`, `attachments`, `claude`, `claude-protocol`, `codex`, `codex-protocol`, `core-ring`, `git-facts`, `interpret`, `journal`, `log-file`, `pty-host`, `wire` | the agent core's driver, and the only production crate that reads a provider |
+| `node` | `agent-dir`, `analytics`, `core-ring`, `daemon-core`, `git-facts`, `interpret`, `journal`, `log-file`, `path-core`, `relay-core`, `release`, `settings`, `store`, `supervisor-core`, `version-stamp`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` crate, so the phone can host a runtime with no provider in its graph; `interpret` only for the dump's per-kind redactor |
 | `client` | `agent-dir`, `wire` | the local socket and the clock come from the contract crate |
 | `ui-state` → `model`, `wire`; `ui-view` → `attachments`, `ui-state`, `wire`; `ui-runtime` → `client`, `ui-state`, `ui-view`, `wire` | | the view library |
 | `tui` | `attachments`, `client`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | |
 | `app-runtime` | `client`, `model`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | the phone's chats with no `node` |
-| `app-embedded` | `analytics`, `app-runtime`, `client`, `node`, `wire` | the daemon in the phone's process |
+| `app-embedded` | `analytics`, `app-runtime`, `client`, `log-file`, `node`, `wire` | the daemon in the phone's process |
 | `app-ffi` | `app-embedded`, `app-runtime`, `client`, `model`, `node`, `ui-view` | the C ABI over both |
-| `amux` | `agent`, `agent-dir`, `analytics`, `claude`, `client`, `node`, `settings`, `store`, `tui`, `wire` | the one binary |
+| `amux` | `agent`, `agent-dir`, `analytics`, `claude`, `client`, `log-file`, `node`, `settings`, `store`, `tui`, `wire` | the one binary |
 | `models` | `agent-core`, `daemon-core`, `interpret`, `journal`, `path-core`, `provider-fakes`, `relay-core`, `release`, `store`, `supervisor-core`, `ui-state`, `wire` | the properties, explored over the real cores, store and session state |
 | `replay-support` | `core-ring`, `daemon-core`, `interpret`, `journal`, `models`, `redaction`, `store`, `ui-state`, `ui-view`, `wire` | replays the four stages, judging the models' properties; a debugging tool nothing that ships links |
-| `xtask` | `app-runtime`, `model`, `release`, `ui-view`, `version-stamp`, `wire` | generates the Swift mirrors; signs releases |
+| `xtask` | `release`, `version-stamp` | signs releases |
+| `ios-tools` | `app-runtime`, `model`, `ui-view`, `wire` | generates the Swift mirrors |
 
 The phone bridge (`app-embedded`, `app-ffi`) links `node` on purpose: it
 hosts the runtime in process. `just embedded-check` and `just mobile-check`
@@ -676,7 +737,7 @@ rustls 0.23 cannot save a client's TLS 1.3 session ticket, so a process
 that starts again (the phone above all, which the system ends between
 launches) would begin every link with a full handshake and send nothing
 early. The workspace takes rustls from a fork,
-[`jordanwebster/rustls`](https://github.com/jordanwebster/rustls), through
+[`amuxhq/rustls`](https://github.com/amuxhq/rustls), through
 one `[patch.crates-io]` line in `Cargo.toml`. The maintained diff is the
 branch `amux/<version>`: the rustls release named in its `.amux-base` file
 plus two commits:

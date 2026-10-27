@@ -40,7 +40,7 @@ Each catalogued suite names one boundary.
 | Views | Each view is a pure function of session state; row ids are item keys and never move. | `crates/ui-view/tests` |
 | Native presentation | The terminal and the phone draw a view correctly and interaction sends the right command. The phone's compared pictures are drawn with reduce transparency on, so they hold no glass the render server finishes on its own schedule. | `crates/tui/tests`, `apps/apple` snapshot and golden suites |
 | System composition | Built binaries launch, survive, stop and clean up as promised: agents outlive a killed daemon, the supervisor updates and rolls back. | `crates/amux/tests`, `crates/agent/tests/lifecycle.rs`, `crates/node/tests/supervisor.rs` |
-| Journeys | A person completes a declared task through a real client and the production path. | `journeys/`, `scripts/terminal-journey.py`, `scripts/ios-journey.py`, `crates/amux/tests/system_journeys.rs` |
+| Journeys | A person completes a declared task through a real client and the production path. | `journeys/`, `crates/testnet/src/journey`, `crates/amux/tests/system_journeys.rs` |
 | Model | A protocol promise, written as a sentence, holds in every state a checker reaches by exploring the real code on small instances. | `crates/models` |
 
 Choose cases by distinct transitions, authorities and failure cuts, not by product words: "allow this ask" rightly
@@ -58,16 +58,18 @@ client model, and the composed net of several daemons and their agents; a lamp a
 itself). A machine holds real state, calls the real cores, store and session model on small instances, and lists
 the faults its environment may inject. A checker explores every state the machine reaches within its bounds and judges every
 property in each: an always must hold everywhere, a sometimes must be reached, an eventually must hold on every
-path that ends. A failure prints the shortest path to the state that broke it.
+path that ends. A failure prints a path to the state that broke it; `MODELS_SEARCH=breadth` explores breadth first
+instead, slower and far hungrier, and prints the shortest.
 
 ```sh
-just test-crate models                     # every machine at its CI bounds, within its budget
+just test-crate models                     # every machine at its CI bounds, within its state count
 just test-crate models -- --test family    # one machine
 just models-nightly [machine..]            # the larger nightly bounds, one machine after another
 cargo run -p models --bin properties       # every property's sentence, by machine
 ```
 
-Each machine's CI bounds are sized to finish within a stated budget on a four-core runner, and its nightly bounds
+Each machine's CI bounds are sized to finish within a stated time on a four-core runner, its test asserts the
+state count those bounds explore rather than the time, and its nightly bounds
 explore more keys, faults and steps. The Model boundary owns rules; the other boundaries own what the cores do not
 decide: a driver's sockets and deadlines, a real process, a provider's bytes, what a screen draws. A test that
 restates a rule a property holds is a second copy of the rule, so it goes.
@@ -81,11 +83,9 @@ A fixed seed keeps a run repeatable.
 
 No protocol rule is written twice. The rules live only in the cores' code; there is no abstract model of the
 protocol to keep in step with it and no conformance copy. A property states what must be true and the checker
-runs the real code to find out. The one second implementation is the phone's Swift chat model, which keeps its own
-rows for the platform's list view: it is held equal to the Rust client model by replaying the same traces.
-`just client-traces` writes traces of the client model's seeded schedules (what the runtime hands the phone at
-every wake), app-runtime's tests fail while the committed traces differ from the model, and the Swift
-`ChatModelTraceTests` replay each one and assert the same keys, rows and frame at every cut.
+runs the real code to find out. The phone's Swift chat model writes none of them again: it applies the deltas the
+runtime computes, and app-runtime's tests walk the client model's seeded schedules and hold the keys those deltas
+leave equal to the session's window at every cut.
 
 ## A plant round before deletion
 
@@ -174,7 +174,7 @@ just test-crate interpret -- --test codex  # one crate, then Cargo arguments
 just test-store                            # the store's reader and writer suite, retention and SQLite file
 just test-ui                               # the client model spec
 just test-tui                              # terminal presentation and goldens
-just offline-test                          # workspace tests with isolated config and no network
+just offline-test                          # workspace tests with isolated config and no network (Linux, sudo)
 just journey terminal reach-host           # one terminal journey
 just journey terminal all                  # every terminal story, one line each, keeps going after a failure
 just journey system survive-daemon         # the built binaries' system journey
@@ -221,6 +221,8 @@ testnet's real hosts) run under `StepBudget::TEST`, one second, not the daemon's
 four-core CI runner take 118 to 143 ms for such steps, and a dump for that overrun would land in `reports/` while
 a test may be reading it. Tests see the tripwire only where they set a budget themselves (node's dump tests set 0 µs;
 a testnet `NetOptions.launch` hook may set any), and `just perf` judges the real daemon at its own budget. A test
+that lists every bundle under `reports/` runs the cores it does not mean to dump under `StepBudget::UNLIMITED`: a
+loaded run can stretch a step past even one second. A test
 installation's teardown prints any over-budget dump and fails only on a broken invariant's. The agents those
 installations start get the same one second (`Launch.agent_step_budget_micros`) for the same reason, and the
 supervisor tests' stand-in binary gives its supervisor one too; the models and the simulated net run every core

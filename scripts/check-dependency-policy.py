@@ -22,6 +22,8 @@ ALLOWED_LOCAL = {
     "store": {"wire"},
     "agent-dir": {"wire"},
     "redaction": set(),
+    # The capped log file every process writes and a dump reads the tail of.
+    "log-file": set(),
     # Reads an agent folder's branch and change totals by running git; the
     # agent process and the daemon share it.
     "git-facts": set(),
@@ -31,7 +33,8 @@ ALLOWED_LOCAL = {
     # and the provider hosts.
     "agent": {
         "agent-core", "agent-dir", "attachments", "claude", "claude-protocol", "codex",
-        "codex-protocol", "core-ring", "git-facts", "interpret", "journal", "pty-host", "wire",
+        "codex-protocol", "core-ring", "git-facts", "interpret", "journal", "log-file", "pty-host",
+        "wire",
     },
     "claude": {"claude-protocol", "pty-host"},
     "codex": {"codex-protocol"},
@@ -45,16 +48,17 @@ ALLOWED_LOCAL = {
     # provider in its graph.
     # interpret only for the dump path's per-kind redactor: the one stated
     # exception to "the daemon interprets nothing".
-    "node": {"agent-dir", "analytics", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "path-core", "relay-core", "release", "settings", "store", "supervisor-core", "version-stamp", "wire"},
-    "amux": {"agent", "agent-dir", "analytics", "claude", "client", "node", "settings", "store", "tui", "wire"},
+    "node": {"agent-dir", "analytics", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "log-file", "path-core", "relay-core", "release", "settings", "store", "supervisor-core", "version-stamp", "wire"},
+    "amux": {"agent", "agent-dir", "analytics", "claude", "client", "log-file", "node", "settings", "store", "tui", "wire"},
     # The version stamp a release tool can rewrite in a built binary, and the
     # release manifest the tool signs and the daemon verifies; the xtask
     # shares both without building the daemon.
     "version-stamp": set(),
     "release": set(),
+    "xtask": {"release", "version-stamp"},
     # The Swift mirrors of the view values are generated from their
     # definitions, so the generator reads them.
-    "xtask": {"app-runtime", "model", "release", "ui-view", "version-stamp", "wire"},
+    "ios-tools": {"app-runtime", "model", "ui-view", "wire"},
     # The seam both clients call the local runtime through: the local socket
     # and the shared clock trait come from the agent directory contract.
     "client": {"agent-dir", "wire"},
@@ -64,7 +68,7 @@ ALLOWED_LOCAL = {
     # The phone's chats and fleet over the local runtime, with no node.
     "app-runtime": {"client", "model", "ui-runtime", "ui-state", "ui-view", "wire"},
     # The daemon's profile runtime hosted in the phone's process.
-    "app-embedded": {"analytics", "app-runtime", "client", "node", "wire"},
+    "app-embedded": {"analytics", "app-runtime", "client", "log-file", "node", "wire"},
     # The C ABI over both.
     "app-ffi": {"app-embedded", "app-runtime", "client", "model", "node", "ui-view"},
     # The terminal client composes the views over the drivers' state.
@@ -80,14 +84,15 @@ ALLOWED_LOCAL = {
 # store, reads journals, speaks the message types and records its inputs in
 # the ring; the relay's is built from the daemon's link and routing state;
 # the agent's wraps the interpreter; the supervisor's reads release
-# manifests and version stamps; the path machine names links and reports
+# manifests and version stamps and shares the cores' step budget and dump
+# reasons from the ring's crate; the path machine names links and reports
 # dumps as the daemon's does.
 CORES_ALLOWED_LOCAL = {
     "daemon-core": {"core-ring", "journal", "store", "wire"},
     "relay-core": {"daemon-core"},
     "path-core": {"daemon-core"},
     "agent-core": {"core-ring", "interpret", "journal", "wire"},
-    "supervisor-core": {"release", "version-stamp"},
+    "supervisor-core": {"core-ring", "release", "version-stamp"},
 }
 # The UI library and the clients built on it reach the daemon only through
 # the client seam: none of them may link, directly or through another crate,
@@ -166,7 +171,7 @@ SUPPORT_ALLOWED_LOCAL = {
 # fork carrying the amux patch (docs/ARCHITECTURE.md, "The rustls patch")
 # at whatever commit the lockfile pins.
 CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
-GIT_SOURCES = {"rustls": "git+https://github.com/jordanwebster/rustls?rev="}
+GIT_SOURCES = {"rustls": "git+https://github.com/amuxhq/rustls?rev="}
 
 
 def source_failures() -> list[str]:

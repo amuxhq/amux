@@ -16,7 +16,8 @@
 //! - It restarts the daemon whenever it exits: after `go`, with backoff,
 //!   never rolled back; before `go`, as a failed start.
 //! - It installs the channel's build only if the version is newer than the
-//!   running one, is not the rejected build (unless `amux update` asked),
+//!   running one, is not the rejected build (unless `amux update --retry`
+//!   asked),
 //!   and the host is inside the rollout percentage; it checks only while
 //!   the daemon serves and no update is being activated.
 //! - The swap keeps the current binary as prev and puts the staged one at
@@ -35,7 +36,6 @@
 
 #![forbid(unsafe_code)]
 
-use std::fmt;
 use std::time::Instant;
 
 use release::{Choice, Manifest, Release, Skip};
@@ -74,8 +74,9 @@ pub struct AskId(pub u64);
 /// What the control socket asks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Request {
-    /// `amux update`: check the channel now, ignoring the rejected build.
-    Check,
+    /// `amux update`: check the channel now. The build rolled back here is
+    /// installed again only on `retry` (`amux update --retry`).
+    Check { retry: bool },
     /// Stop the daemon and the supervisor.
     Stop,
 }
@@ -335,6 +336,8 @@ enum Then {
 struct Checking {
     job: JobId,
     manual: bool,
+    /// The rolled-back build may be installed again.
+    retry: bool,
     answers: Vec<AskId>,
     /// The release being fetched.
     fetching: Option<Version>,
@@ -376,8 +379,10 @@ pub struct Supervisor {
     checking: Option<Checking>,
     /// The release staged and on its way to the path.
     fetched: Option<Version>,
-    /// `amux update` callers waiting for the daemon to serve.
+    /// `amux update` callers waiting for the daemon to serve, and whether
+    /// any of them asked to retry the rolled-back build.
     waiting: Vec<AskId>,
+    waiting_retry: bool,
     stopping: bool,
     exited: bool,
     now_ms: u64,
@@ -454,6 +459,7 @@ impl Supervisor {
             checking: None,
             fetched: None,
             waiting: Vec::new(),
+            waiting_retry: false,
             stopping: false,
             exited: false,
             now_ms,
@@ -645,11 +651,12 @@ impl Supervisor {
                 });
                 self.stop_everything(out);
             }
-            Request::Check => {
+            Request::Check { retry } => {
                 let text = if self.installed.prev.is_some() {
                     "an update is being activated; try again once it is"
                 } else if self.serving().is_some() {
                     self.waiting.push(ask);
+                    self.waiting_retry |= retry;
                     return;
                 } else if self.daemons.is_empty() || self.stopping_daemon() {
                     "the daemon is restarting; try again shortly"
@@ -704,7 +711,7 @@ impl Supervisor {
             JobResult::Listed(Listed::Nothing(why)) => why,
             JobResult::Listed(Listed::Failed(why)) => format!("the check failed: {why}"),
             JobResult::Listed(Listed::Manifest { manifest, host }) => {
-                let rejected = (!checking.manual)
+                let rejected = (!checking.retry)
                     .then_some(self.rejected.as_ref())
                     .flatten();
                 let choice = release::choose(
@@ -761,7 +768,8 @@ impl Supervisor {
         if settled && self.checking.is_none() {
             if !self.waiting.is_empty() {
                 let answers = std::mem::take(&mut self.waiting);
-                self.look(true, answers, out);
+                let retry = std::mem::take(&mut self.waiting_retry);
+                self.look(true, retry, answers, out);
             } else if self.check_due {
                 self.check_due = false;
                 let at_ms = self.now_ms.saturating_add(self.params.check_interval_ms);
@@ -769,7 +777,7 @@ impl Supervisor {
                     id: TimerId::Check,
                     at_ms,
                 });
-                self.look(false, Vec::new(), out);
+                self.look(false, false, Vec::new(), out);
             }
         }
         if self.daemons.is_empty() && self.restart_at.is_none() && !self.stopping {
@@ -791,11 +799,12 @@ impl Supervisor {
         }
     }
 
-    fn look(&mut self, manual: bool, answers: Vec<AskId>, out: &mut Vec<Output>) {
+    fn look(&mut self, manual: bool, retry: bool, answers: Vec<AskId>, out: &mut Vec<Output>) {
         let job = JobId(self.id());
         self.checking = Some(Checking {
             job,
             manual,
+            retry,
             answers,
             fetching: None,
         });
@@ -983,7 +992,7 @@ pub fn skipped(skip: Skip, target: &str, running: &Version) -> String {
             format!("up to date: {running} is running and the channel names {version}")
         }
         Skip::Rejected(version) => {
-            format!("{version} was rolled back here; `amux update` tries it again")
+            format!("{version} was rolled back here; `amux update --retry` tries it again")
         }
         Skip::OutsideRollout => {
             "the channel's release is rolling out and has not reached this host yet".into()
@@ -991,43 +1000,7 @@ pub fn skipped(skip: Skip, target: &str, running: &Version) -> String {
     }
 }
 
-/// How long one step may take before it is reported with a dump.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct StepBudget {
-    pub micros: u64,
-}
-
-impl StepBudget {
-    /// The supervisor's: it decides rarely and never under load.
-    pub const SUPERVISOR: StepBudget = StepBudget { micros: 10_000 };
-    /// A budget no step runs over, for a run that must be a function of
-    /// its inputs alone: a model's.
-    pub const UNLIMITED: StepBudget = StepBudget { micros: u64::MAX };
-}
-
-/// A cheap invariant that failed: which one, and what it saw.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Violation {
-    /// The invariant, as the sentence it checks.
-    pub invariant: &'static str,
-    /// The values that broke it.
-    pub detail: String,
-}
-
-impl fmt::Display for Violation {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.invariant, self.detail)
-    }
-}
-
-/// Why the core asked for a dump.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum DumpReason {
-    /// A cheap invariant failed at the end of a step.
-    Violation(Violation),
-    /// A step took longer than its budget.
-    OverBudget { micros: u64, budget: StepBudget },
-}
+pub use core_ring::{DumpReason, StepBudget, Violation};
 
 #[cfg(test)]
 mod tests;

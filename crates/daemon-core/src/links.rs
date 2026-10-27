@@ -68,9 +68,6 @@ pub struct Link {
 pub struct Channel {
     pub link: LinkId,
     pub peer: HostId,
-    /// The route it opens on: the peer's own link, or a link to a host
-    /// that claims to reach the peer.
-    pub route: Route,
     pub class: ChannelClass,
     /// Whether the driver reported its handshake done.
     pub open: bool,
@@ -180,7 +177,7 @@ impl Daemon {
     }
 
     /// A link came up. A resumed one whose ticket names a key not pinned
-    /// for its peer, or a peer whose removal is being written, is refused, and is never taken up: no route lists it,
+    /// for its peer is refused, and is never taken up: no route lists it,
     /// so nothing the peer sent early is served.
     pub(crate) fn link_up(
         &mut self,
@@ -193,9 +190,7 @@ impl Daemon {
         if let Some(key) = resumed {
             let host = Uuid::from_bytes(peer.0);
             let pinned = self.trust().pubkey_for_host(host);
-            // A removal being written is as good as written: its end may be
-            // held behind a checkpoint while the drive already says so.
-            if pinned != Some(key.0.as_slice()) || self.trust_removing(host) {
+            if pinned != Some(key.0.as_slice()) {
                 out.push(Output::RefuseResumed { link });
                 return;
             }
@@ -398,7 +393,7 @@ impl Daemon {
             Body::ObservedAddress(observed) if relay => self.observed(&observed.addr, out),
             Body::ForwardRefused(refused) => {
                 if let Some(dst) = HostId::from_slice(&refused.dst) {
-                    self.forward_refused(link, dst, refused.reason(), out);
+                    self.forward_refused(link, dst, refused.reason());
                 }
             }
             Body::HelloAck(_)
@@ -529,14 +524,12 @@ impl Daemon {
             class,
             reason,
         };
-        let Some(route) = self.routing.links.route_over(link, peer) else {
+        if self.routing.links.route_over(link, peer).is_none() {
             out.push(refused(ChannelError::NoLink));
             return;
-        };
+        }
         let Some(pin) = pin else {
             out.push(refused(ChannelError::Unpinned));
-            // As a handshake that found no key would: the attempt failed.
-            self.concluded(peer, route, Err(&ChannelError::Unpinned), out);
             return;
         };
         let begun = self.routing.catalogue.mark();
@@ -548,7 +541,6 @@ impl Daemon {
             Channel {
                 link,
                 peer,
-                route,
                 class,
                 open: false,
                 begun,
@@ -564,31 +556,17 @@ impl Daemon {
     }
 
     /// The driver's handshake on a channel the core asked for verified its
-    /// pin: an attempt on its route that reached the host. One whose link
-    /// went meanwhile is already forgotten.
-    pub(crate) fn channel_opened(&mut self, channel: ChannelId, out: &mut Vec<Output>) {
-        let Some(opened) = self.routing.links.channels.get_mut(&channel) else {
-            return;
-        };
-        opened.open = true;
-        let (peer, route) = (opened.peer, opened.route);
-        self.concluded(peer, route, Ok(()), out);
+    /// pin. One whose link went meanwhile is already forgotten.
+    pub(crate) fn channel_opened(&mut self, channel: ChannelId) {
+        if let Some(opened) = self.routing.links.channels.get_mut(&channel) {
+            opened.open = true;
+        }
     }
 
-    /// A channel closed: one that never opened is an attempt on its route
-    /// that failed, and one that did says nothing of the host by ending.
-    pub(crate) fn channel_closed(
-        &mut self,
-        channel: ChannelId,
-        reason: &ChannelError,
-        out: &mut Vec<Output>,
-    ) {
-        let Some(closed) = self.routing.links.channels.remove(&channel) else {
-            return;
-        };
-        if !closed.open {
-            self.concluded(closed.peer, closed.route, Err(reason), out);
-        }
+    /// A channel closed. Whatever it closed for says nothing of the host:
+    /// its link going is what does.
+    pub(crate) fn channel_closed(&mut self, channel: ChannelId) {
+        self.routing.links.channels.remove(&channel);
     }
 }
 
@@ -804,7 +782,10 @@ mod tests {
             .pubkey_for_host(Uuid::from_bytes(PEER.0))
             .expect("the peer is pinned")
             .to_vec();
-        step(&mut daemon, Input::TrustRead { store });
+        {
+            daemon.trust_for_test(store);
+            step(&mut daemon, Input::Started)
+        };
         (daemon, PublicKey(key))
     }
 
@@ -847,12 +828,10 @@ mod tests {
 
         // A host whose pin was removed is refused with its old key.
         let (mut daemon, key) = trusting();
-        step(
-            &mut daemon,
-            Input::TrustRead {
-                store: crate::trust::TrustStore::default(),
-            },
-        );
+        {
+            daemon.trust_for_test(crate::trust::TrustStore::default());
+            step(&mut daemon, Input::Started)
+        };
         assert_eq!(
             resumed(&mut daemon, PEER, key),
             vec![Output::RefuseResumed { link: LINK }]
@@ -860,41 +839,41 @@ mod tests {
     }
 
     #[test]
-    fn a_resumed_link_is_refused_while_its_peers_removal_is_written() {
-        let (mut daemon, key) = trusting();
-        let host = Uuid::from_bytes(PEER.0);
-        let out = step(
+    fn an_address_list_heard_while_the_wal_moves_is_kept_once_it_has() {
+        let (mut daemon, _) = trusting();
+        up(&mut daemon);
+        let started = step(
             &mut daemon,
-            Input::ChangeTrust(crate::trust::TrustChange::Remove { host }),
+            Input::Timer {
+                id: crate::TimerId::Checkpoint,
+            },
         );
-        let job = out
+        let wal = started
             .iter()
             .find_map(|output| match output {
                 Output::Job {
                     id,
-                    op: Job::Fsync { .. },
+                    op: crate::io::Job::CheckpointWal,
                 } => Some(*id),
                 _ => None,
             })
-            .expect("the removal is written");
-        assert_eq!(
-            resumed(&mut daemon, PEER, key.clone()),
-            vec![Output::RefuseResumed { link: LINK }]
-        );
-
-        // A removal that could not be written leaves the peer trusted.
+            .expect("a WAL job");
+        // A control frame is not held by the checkpoint, so its trust
+        // change queues behind it.
+        listed(&mut daemon, addresses(&["192.168.1.9:7000"], None));
+        let stored = |daemon: &Daemon| daemon.store().trusted_hosts().unwrap()[0].listed.clone();
+        assert_eq!(stored(&daemon), "[]", "nothing lands while the WAL moves");
         step(
             &mut daemon,
             Input::JobDone {
-                job,
-                result: crate::payload::JobResult::Failed("the drive is full".into()),
+                job: wal,
+                result: crate::payload::JobResult::Done,
             },
         );
-        let out = resumed(&mut daemon, PEER, key);
-        assert!(
-            !out.contains(&Output::RefuseResumed { link: LINK }),
-            "{out:?}"
-        );
+        step(&mut daemon, Input::Checkpointed);
+        let entry = daemon.trust().entry(Uuid::from_bytes(PEER.0)).unwrap();
+        assert!(!entry.listed.is_empty(), "the served trust has the list");
+        assert_ne!(stored(&daemon), "[]", "and so does the store");
     }
 
     fn listed(daemon: &mut Daemon, body: Body) -> Vec<Output> {
@@ -1075,32 +1054,21 @@ mod tests {
                 },
             },
         );
-        let Some((job, bytes)) = out.iter().find_map(|output| match output {
-            Output::Job {
-                id,
-                op: Job::Fsync { bytes, .. },
-            } => Some((*id, bytes.clone())),
-            _ => None,
-        }) else {
-            panic!("the list is written with the trust: {out:?}");
-        };
-        let store = crate::trust::TrustStore::from_file(&bytes).expect("the trust file reads");
         let host = Uuid::from_bytes(PEER.0);
-        assert_eq!(store.entry(host).map(|entry| &entry.listed), Some(&list));
-        step(
-            &mut daemon,
-            Input::JobDone {
-                job,
-                result: crate::payload::JobResult::Done,
-            },
+        let held = crate::trust::TrustStore::load(daemon.store());
+        assert_eq!(
+            held.entry(host).map(|entry| &entry.listed),
+            Some(&list),
+            "{out:?}"
         );
         assert_eq!(
             daemon.trust().entry(host).map(|entry| &entry.listed),
             Some(&list)
         );
 
-        let mut restarted = self::daemon();
-        step(&mut restarted, Input::TrustRead { store });
+        let store = store::Sqlite::restore(&daemon.store().dump().unwrap()).unwrap();
+        let mut restarted = Daemon::new(store, daemon.options.clone());
+        step(&mut restarted, Input::Started);
         assert_eq!(restarted.peer_addresses().get(&PEER), Some(&list));
     }
 

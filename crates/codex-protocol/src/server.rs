@@ -28,11 +28,13 @@ method_enum! {
         "thread/closed" => ThreadClosed(ThreadOnly),
         "thread/goal/updated" => ThreadGoalUpdated(ThreadOnly),
         "thread/goal/cleared" => ThreadGoalCleared(ThreadOnly),
+        "thread/readState/changed" => ThreadReadStateChanged(ThreadOnly),
         "thread/compacted" => ThreadCompacted(TurnScoped),
         "turn/started" => TurnStarted(TurnNotification),
         "turn/completed" => TurnCompleted(TurnNotification),
         "turn/diff/updated" => TurnDiffUpdated(TurnDiffUpdated),
         "turn/plan/updated" => TurnPlanUpdated(TurnPlanUpdated),
+        "turn/moderationMetadata" => TurnModerationMetadata(TurnScoped),
         "item/started" => ItemStarted(ItemNotification),
         "item/completed" => ItemCompleted(ItemNotification),
         "item/agentMessage/delta" => AgentMessageDelta(Delta),
@@ -74,8 +76,9 @@ impl ServerNotification {
             | Self::ThreadUnarchived(n)
             | Self::ThreadClosed(n)
             | Self::ThreadGoalUpdated(n)
-            | Self::ThreadGoalCleared(n) => Some(&n.thread_id),
-            Self::ThreadCompacted(n) => Some(&n.thread_id),
+            | Self::ThreadGoalCleared(n)
+            | Self::ThreadReadStateChanged(n) => Some(&n.thread_id),
+            Self::ThreadCompacted(n) | Self::TurnModerationMetadata(n) => Some(&n.thread_id),
             Self::TurnStarted(n) | Self::TurnCompleted(n) => Some(&n.thread_id),
             Self::TurnDiffUpdated(n) => Some(&n.thread_id),
             Self::TurnPlanUpdated(n) => Some(&n.thread_id),

@@ -21,9 +21,8 @@ use provider_fakes::{SCRIPT_ENV, Script, Step};
 use tokio::io::AsyncBufReadExt as _;
 use tokio::process::{Child, Command};
 use tonic::transport::{Channel, Endpoint};
-use wire::client_service_client::ClientServiceClient;
-use wire::profile_service_client::ProfileServiceClient;
-use wire::{Empty, SubscribeRequest, session_event};
+use wire::installation_service_client::InstallationServiceClient;
+use wire::{SubscribeSessionRequest, session_event};
 /// How long agents outlive their daemon. Long enough to restart a daemon
 /// under them in a test, short enough to wait out when a test wants them
 /// gone.
@@ -79,13 +78,14 @@ impl Install {
         )
         .unwrap();
         let socket = root.path().join("amux.sock");
-        let config = root.path().join("installation.yaml");
+        let config = root.path().join("config.toml");
         std::fs::write(
             &config,
             format!(
-                "root: {}\nfront_door_socket: {}\nagent:\n  grace_secs: {GRACE_SECS}\n  drain_secs: 5\n",
-                root.path().join("data").display(),
-                socket.display(),
+                "root = {:?}\nfront_door_socket = {:?}\nsupervisor = false\n\
+                 [agent]\ngrace_secs = {GRACE_SECS}\ndrain_secs = 5\n",
+                root.path().join("data").display().to_string(),
+                socket.display().to_string(),
             ),
         )
         .unwrap();
@@ -183,10 +183,10 @@ impl Install {
     }
 
     /// The first profile's client service.
-    async fn client(&self) -> ClientServiceClient<Channel> {
+    async fn client(&self) -> wire::ClientStubs {
         let door = self.front_door().await.expect("a daemon answers");
-        let profile = ProfileServiceClient::new(door)
-            .list_profiles(Empty {})
+        let profile = InstallationServiceClient::new(door)
+            .list_profiles(wire::ListProfilesRequest {})
             .await
             .unwrap()
             .into_inner()
@@ -194,7 +194,7 @@ impl Install {
             .into_iter()
             .next()
             .expect("a profile");
-        wire::client_service_client(channel(Path::new(&profile.socket_path)).await.unwrap())
+        wire::client_stubs(channel(Path::new(&profile.socket_path)).await.unwrap())
     }
 
     fn agent_dir(&self, id: &[u8]) -> PathBuf {
@@ -243,9 +243,10 @@ async fn channel(path: &Path) -> std::io::Result<Channel> {
 
 /// An agent's chat as a client opening it reads it: every item's key and
 /// text, in order, read to CaughtUp.
-async fn chat(client: &mut ClientServiceClient<Channel>, agent: &[u8]) -> Vec<(String, String)> {
+async fn chat(client: &mut wire::ClientStubs, agent: &[u8]) -> Vec<(String, String)> {
     let mut stream = client
-        .subscribe(SubscribeRequest {
+        .sessions
+        .subscribe_session(SubscribeSessionRequest {
             agent_id: agent.to_vec(),
             tail: 1000,
         })
@@ -347,8 +348,10 @@ async fn a_daemon_killed_mid_turn_loses_nothing() {
     let sdk = created_id(
         &install
             .ok(&[
-                "create",
-                "claude_sdk",
+                "new",
+                "claude",
+                "--in",
+                "amux",
                 "--name",
                 "sdk",
                 "--cwd",
@@ -361,7 +364,7 @@ async fn a_daemon_killed_mid_turn_loses_nothing() {
     let codex = created_id(
         &install
             .ok(&[
-                "create",
+                "new",
                 "codex",
                 "--name",
                 "codex",
@@ -554,12 +557,14 @@ async fn the_cli_verbs_work_against_a_started_daemon() {
             .contains("already running")
     );
 
-    let profiles = install.ok(&["profiles"]).await;
+    let profiles = install.ok(&["profile", "ls"]).await;
     assert!(profiles.contains("default"), "{profiles}");
 
     let helper = created_id(
         &install
-            .ok(&["create", "claude_sdk", "--name", "helper", "--cwd", &work])
+            .ok(&[
+                "new", "claude", "--in", "amux", "--name", "helper", "--cwd", &work,
+            ])
             .await,
     );
     let client = install.client().await;
@@ -584,10 +589,7 @@ async fn the_cli_verbs_work_against_a_started_daemon() {
 
     install.ok(&["rename", "helper", "aide"]).await;
     let listing = install.ok(&["ls"]).await;
-    assert!(
-        line_of(&listing, "aide").contains("claude_sdk"),
-        "{listing}"
-    );
+    assert!(line_of(&listing, "aide").contains("claude"), "{listing}");
 
     let bundle = install.ok(&["dump", "aide", "--reason", "a test"]).await;
     let bundle = PathBuf::from(bundle.trim());
@@ -605,8 +607,8 @@ async fn the_cli_verbs_work_against_a_started_daemon() {
     // Profiles are made, renamed and removed at the front door; a new one
     // does not take over as the profile verbs act in by default.
     let helper_dir = install.agent_dir(&helper);
-    install.ok(&["profile", "create", "work"]).await;
-    let profiles = install.ok(&["profiles"]).await;
+    install.ok(&["profile", "new", "work"]).await;
+    let profiles = install.ok(&["profile", "ls"]).await;
     assert!(
         profiles.find("default") < profiles.find("work"),
         "{profiles}"
@@ -617,10 +619,10 @@ async fn the_cli_verbs_work_against_a_started_daemon() {
         install.ok(&["--profile", "office", "ls"]).await,
         "No agents.\n"
     );
-    install.ok(&["profile", "delete", "office"]).await;
-    assert!(!install.ok(&["profiles"]).await.contains("office"));
+    install.ok(&["profile", "rm", "office"]).await;
+    assert!(!install.ok(&["profile", "ls"]).await.contains("office"));
 
-    install.ok(&["delete", "aide"]).await;
+    install.ok(&["rm", "aide"]).await;
     assert_eq!(install.ok(&["ls"]).await, "No agents.\n");
     assert!(!helper_dir.exists());
 

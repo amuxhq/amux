@@ -3,8 +3,8 @@
 //! and control frames, and the client, peer, pairing, profile and
 //! installation services.
 
-/// Protocol version for the native-stream link handshake. It stays 1 until
-/// the first release; see the header of `service.proto`.
+/// Protocol version for the native-stream link handshake. It moves only for
+/// a break both ends of a link must take; see `proto/amux/v1/README.md` at the repository root.
 pub const PROTOCOL_VERSION: u32 = 1;
 
 pub mod amux {
@@ -12,12 +12,39 @@ pub mod amux {
         #![allow(dead_code, clippy::enum_variant_names, clippy::large_enum_variant)]
         include!("generated/amux.v1.rs");
     }
+
+    /// What a client writes into a dump, read back only by the build that
+    /// wrote it; outside the protocol's compatibility promises.
+    pub mod dump {
+        #![allow(dead_code, clippy::enum_variant_names, clippy::large_enum_variant)]
+        include!("generated/amux.dump.rs");
+    }
 }
 
+pub use amux::dump;
+
+/// gRPC's richer error model, from the vendored googleapis protos.
+pub mod google {
+    pub mod rpc {
+        #![allow(dead_code, clippy::enum_variant_names, clippy::doc_lazy_continuation)]
+        include!("generated/google.rpc.rs");
+    }
+}
+
+pub use google::rpc;
+
+mod error;
 pub use amux::v1::*;
+pub use error::DOMAIN as ERROR_DOMAIN;
+/// An error's code, gRPC's own.
+pub use rpc::Code as ErrorCode;
+/// amux's error, a `google.rpc.Status`: named apart so it never reads as
+/// tonic's `Status`, the transport's carrier for it.
+pub use rpc::Status as Error;
 
 pub mod pb {
     pub use super::amux::v1::*;
+    pub use super::{Error, ErrorCode};
 }
 
 /// Bound for link-control messages and application-stream prefaces.
@@ -30,42 +57,83 @@ pub const ATTACHMENT_SIZE_LIMIT: usize = 64 * 1024 * 1024;
 /// at the attachment limit still fits in one message.
 pub const CHANNEL_MESSAGE_SIZE_LIMIT: usize = ATTACHMENT_SIZE_LIMIT + 1024 * 1024;
 
+/// A sized client and server constructor for each service that carries
+/// attachments: every message may be as large as the largest attachment.
+macro_rules! sized_service {
+    ($client_fn:ident, $server_fn:ident, $client_mod:ident, $client:ident, $server_mod:ident, $server:ident, $service:ident) => {
+        #[cfg(feature = "grpc")]
+        pub fn $client_fn(
+            channel: tonic::transport::Channel,
+        ) -> $client_mod::$client<tonic::transport::Channel> {
+            $client_mod::$client::new(channel)
+                .max_decoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
+                .max_encoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
+        }
+
+        #[cfg(feature = "grpc")]
+        pub fn $server_fn<T>(service: T) -> $server_mod::$server<T>
+        where
+            T: $server_mod::$service,
+        {
+            $server_mod::$server::new(service)
+                .max_decoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
+                .max_encoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
+        }
+    };
+}
+
+sized_service!(
+    agent_service_client,
+    agent_service_server,
+    agent_service_client,
+    AgentServiceClient,
+    agent_service_server,
+    AgentServiceServer,
+    AgentService
+);
+sized_service!(
+    session_service_client,
+    session_service_server,
+    session_service_client,
+    SessionServiceClient,
+    session_service_server,
+    SessionServiceServer,
+    SessionService
+);
+sized_service!(
+    peer_agent_service_client,
+    peer_agent_service_server,
+    peer_agent_service_client,
+    PeerAgentServiceClient,
+    peer_agent_service_server,
+    PeerAgentServiceServer,
+    PeerAgentService
+);
+sized_service!(
+    peer_session_service_client,
+    peer_session_service_server,
+    peer_session_service_client,
+    PeerSessionServiceClient,
+    peer_session_service_server,
+    PeerSessionServiceServer,
+    PeerSessionService
+);
+
+/// The client services' stubs on one profile or tools socket: what a
+/// caller that speaks gRPC directly holds.
 #[cfg(feature = "grpc")]
-pub fn client_service_client(
-    channel: tonic::transport::Channel,
-) -> client_service_client::ClientServiceClient<tonic::transport::Channel> {
-    client_service_client::ClientServiceClient::new(channel)
-        .max_decoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
-        .max_encoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
+#[derive(Clone, Debug)]
+pub struct ClientStubs {
+    pub agents: agent_service_client::AgentServiceClient<tonic::transport::Channel>,
+    pub sessions: session_service_client::SessionServiceClient<tonic::transport::Channel>,
 }
 
 #[cfg(feature = "grpc")]
-pub fn client_service_server<T>(service: T) -> client_service_server::ClientServiceServer<T>
-where
-    T: client_service_server::ClientService,
-{
-    client_service_server::ClientServiceServer::new(service)
-        .max_decoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
-        .max_encoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
-}
-
-#[cfg(feature = "grpc")]
-pub fn peer_service_client(
-    channel: tonic::transport::Channel,
-) -> peer_service_client::PeerServiceClient<tonic::transport::Channel> {
-    peer_service_client::PeerServiceClient::new(channel)
-        .max_decoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
-        .max_encoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
-}
-
-#[cfg(feature = "grpc")]
-pub fn peer_service_server<T>(service: T) -> peer_service_server::PeerServiceServer<T>
-where
-    T: peer_service_server::PeerService,
-{
-    peer_service_server::PeerServiceServer::new(service)
-        .max_decoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
-        .max_encoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
+pub fn client_stubs(channel: tonic::transport::Channel) -> ClientStubs {
+    ClientStubs {
+        agents: agent_service_client(channel.clone()),
+        sessions: session_service_client(channel),
+    }
 }
 
 /// A person's input as its kind's own message: what a client builds and
@@ -161,6 +229,29 @@ impl create_agent_request::Agent {
     }
 }
 
+impl Profile {
+    /// The profile's standing with its cloud account.
+    pub fn standing(&self) -> Option<&cloud_standing::Standing> {
+        self.cloud.as_ref()?.standing.as_ref()
+    }
+
+    /// What the profile's relay link is doing, while it is signed in.
+    pub fn relay_state(&self) -> Option<&relay_link::State> {
+        match self.standing()? {
+            cloud_standing::Standing::SignedIn(link) => link.state.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// The profile's relay link, while it is signed in and connected.
+    pub fn relay_connected(&self) -> Option<&RelayConnected> {
+        match self.relay_state()? {
+            relay_link::State::Connected(connected) => Some(connected),
+            _ => None,
+        }
+    }
+}
+
 impl HostRef {
     /// A host by its id.
     pub fn id(host_id: impl Into<Vec<u8>>) -> Self {
@@ -174,6 +265,121 @@ impl HostRef {
         Self {
             of: Some(host_ref::Of::Name(name.into())),
         }
+    }
+}
+
+impl HostEntry {
+    /// A trusted host as `reach` says it reads.
+    pub fn trusted_host(
+        host_id: impl Into<Vec<u8>>,
+        name: impl Into<String>,
+        reach: trusted::Reach,
+    ) -> Self {
+        Self {
+            host: Some(Host {
+                host_id: host_id.into(),
+                name: name.into(),
+                ..Host::default()
+            }),
+            standing: Some(host_entry::Standing::Trusted(Trusted {
+                reach: Some(reach),
+                current: false,
+            })),
+            ..Self::default()
+        }
+    }
+
+    /// A host discovery found at `addrs`, never paired.
+    pub fn candidate_host(
+        host_id: impl Into<Vec<u8>>,
+        name: impl Into<String>,
+        addrs: Vec<String>,
+    ) -> Self {
+        Self {
+            host: Some(Host {
+                host_id: host_id.into(),
+                name: name.into(),
+                ..Host::default()
+            }),
+            standing: Some(host_entry::Standing::Candidate(Candidate { addrs })),
+            ..Self::default()
+        }
+    }
+
+    /// The host's id, as its handshake gave it.
+    pub fn host_id(&self) -> &[u8] {
+        self.host.as_ref().map_or(&[], |host| &host.host_id)
+    }
+
+    pub fn name(&self) -> &str {
+        self.host.as_ref().map_or("", |host| &host.name)
+    }
+
+    /// Paired with this machine, or this machine itself.
+    pub fn trusted(&self) -> Option<&Trusted> {
+        match &self.standing {
+            Some(host_entry::Standing::Trusted(trusted)) => Some(trusted),
+            _ => None,
+        }
+    }
+
+    /// Found by discovery, never paired.
+    pub fn candidate(&self) -> Option<&Candidate> {
+        match &self.standing {
+            Some(host_entry::Standing::Candidate(candidate)) => Some(candidate),
+            _ => None,
+        }
+    }
+
+    /// How a trusted host reads; none for a candidate.
+    pub fn reach(&self) -> Option<&trusted::Reach> {
+        self.trusted()?.reach.as_ref()
+    }
+
+    /// The kind of route a trusted host is online over.
+    pub fn online(&self) -> Option<RouteKind> {
+        match self.reach()? {
+            trusted::Reach::Online(kind) => Some(RouteKind::try_from(*kind).unwrap_or_default()),
+            _ => None,
+        }
+    }
+
+    pub fn away(&self) -> bool {
+        matches!(self.reach(), Some(trusted::Reach::Away(_)))
+    }
+
+    /// Why a trusted host reads offline.
+    pub fn offline(&self) -> Option<&Offline> {
+        match self.reach()? {
+            trusted::Reach::Offline(offline) => Some(offline),
+            _ => None,
+        }
+    }
+
+    /// Whether a trusted host said it no longer trusts this machine.
+    pub fn revoked(&self) -> bool {
+        self.offline().is_some_and(|offline| offline.revoked)
+    }
+
+    /// Whether this machine's copy of a trusted host's agents has caught up.
+    pub fn current(&self) -> bool {
+        self.trusted().is_some_and(|trusted| trusted.current)
+    }
+
+    /// The build the host runs, once it has said.
+    pub fn version(&self) -> Option<&str> {
+        Some(self.host.as_ref()?.version.as_str()).filter(|version| !version.is_empty())
+    }
+
+    pub fn platform(&self) -> Platform {
+        self.host
+            .as_ref()
+            .map_or(Platform::Unspecified, Host::platform)
+    }
+
+    /// Whether the host is signed in to its account, as it said.
+    pub fn account_signed_in(&self) -> Option<bool> {
+        self.host.as_ref()?.account_signed_in
     }
 }
 
@@ -252,8 +458,12 @@ mod tests {
             .collect()
     }
 
+    fn set_of(names: &[&str]) -> BTreeSet<String> {
+        names.iter().map(|name| (*name).to_owned()).collect()
+    }
+
     #[test]
-    fn services_are_the_client_peer_pairing_profile_and_installation_surfaces() {
+    fn services_are_the_agent_session_peer_pairing_profile_admin_and_installation_surfaces() {
         let set = descriptor();
         let services = set
             .file
@@ -263,46 +473,47 @@ mod tests {
             .collect::<BTreeSet<_>>();
         assert_eq!(
             services,
-            BTreeSet::from(
-                [
-                    "ClientService",
-                    "InstallationService",
-                    "PairingService",
-                    "PeerService",
-                    "ProfileService"
-                ]
-                .map(str::to_owned)
-            )
+            set_of(&[
+                "AgentService",
+                "InstallationService",
+                "PairingService",
+                "PeerAgentService",
+                "PeerSessionService",
+                "ProfileAdminService",
+                "SessionService",
+            ])
         );
 
-        let client = methods(&set, "ClientService");
+        let agents = methods(&set, "AgentService");
         assert_eq!(
-            client,
-            BTreeSet::from(
-                [
-                    "SubscribeInventory",
-                    "ResolveAgent",
-                    "Subscribe",
-                    "Fetch",
-                    "Get",
-                    "SendInput",
-                    "CreateAgent",
-                    "RenameAgent",
-                    "StopAgent",
-                    "ResumeAgent",
-                    "DeleteAgent",
-                    "SendMessage",
-                    "PutBlob",
-                    "GetBlob",
-                    "Diff",
-                    "ListRepositories",
-                    "Dump",
-                    "GetCatalogue",
-                    "SaveDraft",
-                    "GetDraft",
-                ]
-                .map(str::to_owned)
-            )
+            agents,
+            set_of(&[
+                "SubscribeInventory",
+                "ResolveAgent",
+                "CreateAgent",
+                "RenameAgent",
+                "StopAgent",
+                "ResumeAgent",
+                "DeleteAgent",
+                "SendMessage",
+                "PutBlob",
+                "GetBlob",
+                "GetDiff",
+                "GetCatalogue",
+                "ListRepositories",
+            ])
+        );
+        let sessions = methods(&set, "SessionService");
+        assert_eq!(
+            sessions,
+            set_of(&[
+                "SubscribeSession",
+                "ListItems",
+                "GetItem",
+                "SendInput",
+                "UpdateDraft",
+                "GetDraft",
+            ])
         );
 
         // The peer surface is the client surface minus name resolution and
@@ -310,16 +521,28 @@ mod tests {
         // same request and response messages. A peer's Dump answers for the
         // agents the called host runs, so a dump taken elsewhere holds their
         // host-side parts.
-        let mut peer_expected = client.clone();
-        peer_expected.remove("ResolveAgent");
-        peer_expected.remove("SaveDraft");
-        peer_expected.remove("GetDraft");
-        assert_eq!(methods(&set, "PeerService"), peer_expected);
+        let mut peer_agents = agents.clone();
+        peer_agents.remove("ResolveAgent");
+        peer_agents.insert("Dump".to_owned());
+        assert_eq!(methods(&set, "PeerAgentService"), peer_agents);
+        let mut peer_sessions = sessions.clone();
+        peer_sessions.remove("UpdateDraft");
+        peer_sessions.remove("GetDraft");
+        assert_eq!(methods(&set, "PeerSessionService"), peer_sessions);
 
-        let installation = methods(&set, "InstallationService");
+        assert!(methods(&set, "ProfileAdminService").contains("Dump"));
         assert_eq!(
-            installation,
-            BTreeSet::from(["GetInfo", "Shutdown"].map(str::to_owned))
+            methods(&set, "InstallationService"),
+            set_of(&[
+                "GetInstallation",
+                "Shutdown",
+                "ListProfiles",
+                "SubscribeProfiles",
+                "CreateProfile",
+                "BindProfile",
+                "RenameProfile",
+                "DeleteProfile",
+            ])
         );
     }
 
@@ -340,39 +563,28 @@ mod tests {
             .collect()
     }
 
-    /// The enums whose zero is a meaning, not "unknown": an absent field
-    /// reads as that meaning, so the zero must stay where it is documented.
+    /// Every enum's zero says nothing is known, so an absent field, and a
+    /// value from a newer build, read as that rather than as a meaning.
     #[test]
-    fn zero_defaults_are_the_documented_ones() {
-        let enums = enums(&descriptor());
-        for (enumeration, zero) in [
-            ("Phase", "PHASE_STARTING"),
-            ("PtyMode", "PTY_MODE_FILES"),
-            ("UsageState", "USAGE_STATE_UNKNOWN"),
-            ("HealthState", "HEALTH_STATE_UNKNOWN"),
-            ("SignInState", "SIGN_IN_STATE_UNKNOWN"),
-            ("DecisionOutcome", "DECISION_OUTCOME_NONE"),
-            ("PlanVerdict", "PLAN_VERDICT_UNDECIDED"),
-            ("AskOutcome", "ASK_OUTCOME_UNSPECIFIED"),
-        ] {
-            let values = enums
-                .get(enumeration)
-                .unwrap_or_else(|| panic!("no enum {enumeration}"));
-            let found = values.iter().find(|(_, number)| *number == 0);
-            assert_eq!(
-                found.map(|(name, _)| name.as_str()),
-                Some(zero),
-                "{enumeration}'s zero"
+    fn every_enum_zero_is_unspecified_or_unknown() {
+        for (enumeration, values) in enums(&descriptor()) {
+            let zero = values
+                .iter()
+                .find(|(_, number)| *number == 0)
+                .map(|(name, _)| name.as_str());
+            assert!(
+                zero.is_some_and(
+                    |name| name.ends_with("_UNSPECIFIED") || name.ends_with("_UNKNOWN")
+                ),
+                "{enumeration}'s zero is {zero:?}"
             );
         }
-        assert_eq!(Phase::default(), Phase::Starting);
-        assert_eq!(PtyMode::default(), PtyMode::Files);
     }
 
     /// The types code encodes on its own rather than inside another
     /// message or a call: frames on an agent's sockets, the journal's
     /// steps, the spec an agent starts from, the link's framing, error
-    /// details, the SSH pairing hand-off, and each provider's item, input
+    /// details, and each provider's item, input
     /// and snapshot bodies, which travel as bytes.
     const ENCODED_ON_THEIR_OWN: &[&str] = &[
         "AgentSpec",
@@ -382,9 +594,10 @@ mod tests {
         "Step",
         "Message",
         "ProtocolVersionMismatch",
+        // Named, not encoded: an ErrorInfo's reason is a value's name.
+        "ErrorReason",
         "AmbiguousAgentName",
         "AmbiguousHostName",
-        "SshPairingIdentity",
         "ClaudePtyItem",
         "ClaudePtyInput",
         "ClaudePtySnapshot",
@@ -414,7 +627,12 @@ mod tests {
             messages.insert(name, message.clone());
         }
         let (mut messages, mut enums) = (BTreeMap::new(), BTreeSet::new());
-        for file in &set.file {
+        // The vendored googleapis files are whole, used or not.
+        for file in set
+            .file
+            .iter()
+            .filter(|file| file.package().starts_with("amux."))
+        {
             let package = format!(".{}", file.package());
             for message in &file.message_type {
                 walk(&package, message, &mut messages, &mut enums);
@@ -456,6 +674,8 @@ mod tests {
                     .iter()
                     .map(|name| format!(".amux.v1.{name}")),
             )
+            // A client encodes its session history into DumpRequest.sessions.
+            .chain([".amux.dump.ClientSessionHistory".to_owned()])
             .collect::<Vec<_>>();
         let mut reached = BTreeSet::new();
         while let Some(name) = pending.pop() {

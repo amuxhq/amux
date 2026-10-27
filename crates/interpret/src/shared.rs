@@ -1074,6 +1074,16 @@ pub fn status_working_on(arguments_json: &[u8]) -> Option<Option<String>> {
 }
 
 /// Whether a tool-server call is amux's status tool.
+/// A call's first string argument: the one fact a tool-server call's row
+/// shows.
+pub(crate) fn first_string(arguments: &serde_json::Value) -> String {
+    arguments
+        .as_object()
+        .and_then(|object| object.values().find_map(serde_json::Value::as_str))
+        .unwrap_or_default()
+        .to_owned()
+}
+
 pub fn is_status_tool(server: &str, tool: &str) -> bool {
     server == AMUX_TOOL_SERVER && tool == STATUS_TOOL
 }

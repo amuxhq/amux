@@ -12,7 +12,7 @@ use ui_runtime::{
 };
 use ui_state::{Composer, Connection, InputOutcome, InputState, Refusal, RefusalReason, Waiting};
 use wire::{
-    ErrorCode, FetchResponse, GetBlobResponse, Input, Kind, SendInputRequest, claude_pty_input,
+    ErrorCode, GetBlobResponse, Input, Kind, ListItemsResponse, SendInputRequest, claude_pty_input,
     claude_sdk_input, codex_input,
 };
 
@@ -27,7 +27,7 @@ async fn open_caught_up(
 ) -> (Arc<Session>, Calls, Feed<wire::SessionEvent>) {
     let (client, mut calls) = runtime();
     let open = tokio::spawn(Session::open(client, agent(KIND), 40, CAP, clock.clone()));
-    let (_, feed) = calls.subscribe().await;
+    let (_, feed) = calls.subscribe_session().await;
     feed.send(snapshot(KIND, rows, &[]));
     for order in 1..=rows {
         feed.send(ev(text_item(KIND, order, order, &format!("row {order}"))));
@@ -53,7 +53,7 @@ async fn reconnect(
     clock.armed(now + 250).await;
     assert_eq!(session.state().connection(), Connection::Reconnecting);
     clock.advance(250);
-    let (_, feed) = calls.subscribe().await;
+    let (_, feed) = calls.subscribe_session().await;
     feed
 }
 
@@ -72,7 +72,7 @@ async fn open_paints_the_snapshot_and_held_rows_before_it_returns() {
         CAP,
         ManualClock::new(0),
     ));
-    let (request, feed) = calls.subscribe().await;
+    let (request, feed) = calls.subscribe_session().await;
     assert_eq!(request.tail, 40, "a client asks for a tail");
     feed.send(snapshot(KIND, 7, &[]));
     feed.send(ev(text_item(KIND, 6, 6, "older")));
@@ -103,7 +103,7 @@ async fn an_away_host_paints_its_held_rows_then_detached_with_send_disabled() {
         CAP,
         ManualClock::new(0),
     ));
-    let (_, feed) = calls.subscribe().await;
+    let (_, feed) = calls.subscribe_session().await;
     feed.send(snapshot(KIND, 2, &[]));
     feed.send(ev(text_item(KIND, 1, 1, "cached")));
     feed.send(ev(text_item(KIND, 2, 2, "cached too")));
@@ -120,7 +120,7 @@ async fn lagged_reopens_with_a_tail_at_once_and_dedupes_the_overlap() {
     let clock = ManualClock::new(0);
     let (session, mut calls, feed) = open_caught_up(&clock, 3).await;
     feed.send(lagged());
-    let (request, feed) = calls.subscribe().await;
+    let (request, feed) = calls.subscribe_session().await;
     assert_eq!(request.tail, 40);
     assert!(clock.sleeping().is_empty(), "no backoff after Lagged");
     assert!(!session.state().caught_up());
@@ -163,7 +163,7 @@ async fn the_end_of_the_stream_reconnects_on_the_sessions_clock_with_doubling_ba
     clock.armed(10_750).await;
     calls.none().await;
     clock.advance(500);
-    let (_, feed) = calls.subscribe().await;
+    let (_, feed) = calls.subscribe_session().await;
     until(session.changed(), || {
         (session.state().connection() == Connection::Live).then_some(())
     })
@@ -258,7 +258,7 @@ async fn page_older_asks_below_the_oldest_held_row_and_merges_under_the_window()
         CAP,
         ManualClock::new(0),
     ));
-    let (_, feed) = calls.subscribe().await;
+    let (_, feed) = calls.subscribe_session().await;
     feed.send(snapshot(KIND, 6, &[]));
     feed.send(ev(text_item(KIND, 5, 5, "five")));
     feed.send(ev(text_item(KIND, 6, 6, "six")));
@@ -268,15 +268,15 @@ async fn page_older_asks_below_the_oldest_held_row_and_merges_under_the_window()
         let session = session.clone();
         async move { session.page_older(3).await }
     });
-    let (request, reply) = calls.fetch().await;
+    let (request, reply) = calls.list_items().await;
     assert_eq!(request.before_order, Some(5));
-    assert_eq!(request.limit, 3);
+    assert_eq!(request.page_size, 3);
     let items = (2..=4)
         .rev()
         .map(|order| text_item(KIND, order, order, "older"))
         .collect();
     reply
-        .send(Ok(FetchResponse {
+        .send(Ok(ListItemsResponse {
             items,
             exhausted: false,
         }))
@@ -297,7 +297,7 @@ async fn an_unreachable_origin_is_an_error_never_an_empty_page() {
         let session = session.clone();
         async move { session.page_older(40).await }
     });
-    let (_, reply) = calls.fetch().await;
+    let (_, reply) = calls.list_items().await;
     reply.send(Err(unreachable())).ok();
     assert_eq!(paging.await.unwrap(), Err(PageError::OriginUnreachable));
     assert_eq!(session.state().transcript().len(), 3);
@@ -308,7 +308,7 @@ async fn an_append_whose_base_is_not_held_is_answered_with_get() {
     let clock = ManualClock::new(0);
     let (session, mut calls, feed) = open_caught_up(&clock, 2).await;
     feed.send(append("k2", 5, 6, " more"));
-    let (request, reply) = calls.get().await;
+    let (request, reply) = calls.get_item().await;
     assert_eq!(request.key, "k2");
     reply
         .send(Ok(text_item(KIND, 2, 6, "row 2 as of revision 6")))
@@ -391,7 +391,7 @@ async fn acts_on_the_chat_go_in_the_kinds_own_arm_and_return_the_verdict() {
             CAP,
             ManualClock::new(0),
         ));
-        let (_, feed) = calls.subscribe().await;
+        let (_, feed) = calls.subscribe_session().await;
         feed.send(snapshot(kind, 1, &[b"queued-1"]));
         feed.send(caught_up(1));
         let session = Arc::new(open.await.unwrap().unwrap());
@@ -447,7 +447,7 @@ async fn the_exited_composer_resumes_with_the_draft_as_the_first_prompt() {
         CAP,
         ManualClock::new(0),
     ));
-    let (_, feed) = calls.subscribe().await;
+    let (_, feed) = calls.subscribe_session().await;
     feed.send(snapshot(KIND, 1, &[]));
     feed.send(caught_up(1));
     let session = Arc::new(open.await.unwrap().unwrap());
@@ -535,7 +535,7 @@ async fn attachment_bytes_are_fetched_lazily_once_and_redraw_their_row() {
         CAP,
         ManualClock::new(0),
     ));
-    let (_, feed) = calls.subscribe().await;
+    let (_, feed) = calls.subscribe_session().await;
     feed.send(snapshot(KIND, 1, &[]));
     feed.send(ev(image_item(KIND, 1, 1, b"hash-1")));
     feed.send(caught_up(1));
@@ -606,7 +606,7 @@ async fn a_sessions_history_is_its_trace_in_the_form_a_dump_carries() {
     let driver: Vec<&str> = events
         .iter()
         .filter_map(|traced| match &traced.event {
-            Some(wire::client_traced::Event::Driver(driver)) => Some(driver.as_str()),
+            Some(wire::dump::client_traced::Event::Driver(driver)) => Some(driver.as_str()),
             _ => None,
         })
         .collect();
@@ -616,7 +616,7 @@ async fn a_sessions_history_is_its_trace_in_the_form_a_dump_carries() {
     // stands.
     let mut replayed = ui_state::SessionState::from_wire(start).expect("the start reads back");
     for traced in events {
-        if let Some(wire::client_traced::Event::Msg(msg)) = traced.event {
+        if let Some(wire::dump::client_traced::Event::Msg(msg)) = traced.event {
             replayed.update(ui_state::Msg::from_wire(msg).expect("a message reads back"));
         }
     }
@@ -633,7 +633,7 @@ async fn closing_drops_the_stream_and_a_late_result_changes_nothing() {
         CAP,
         ManualClock::new(0),
     ));
-    let (_, feed) = calls.subscribe().await;
+    let (_, feed) = calls.subscribe_session().await;
     feed.send(snapshot(KIND, 1, &[]));
     feed.send(ev(image_item(KIND, 1, 1, b"hash-1")));
     feed.send(caught_up(1));
@@ -690,7 +690,7 @@ async fn a_following_window_trims_to_its_cap_and_a_return_past_the_held_rows_rel
         3,
         ManualClock::new(0),
     ));
-    let (_, feed) = calls.subscribe().await;
+    let (_, feed) = calls.subscribe_session().await;
     feed.send(snapshot(KIND, 3, &[]));
     for order in 1..=3 {
         feed.send(ev(text_item(KIND, order, order, &format!("row {order}"))));
@@ -733,7 +733,7 @@ async fn a_following_window_trims_to_its_cap_and_a_return_past_the_held_rows_rel
     // The return reopens the stream with a fresh tail, keeping the old
     // window on screen until the fresh one is caught up.
     session.follow(true);
-    let (request, fresh) = calls.subscribe().await;
+    let (request, fresh) = calls.subscribe_session().await;
     assert_eq!(request.tail, 3);
     assert!(feed.is_closed(), "the old stream is dropped");
     fresh.send(snapshot(KIND, 9, &[]));
@@ -775,7 +775,7 @@ async fn a_return_whose_held_rows_fit_releases_them_without_a_fetch() {
         3,
         ManualClock::new(0),
     ));
-    let (_, feed) = calls.subscribe().await;
+    let (_, feed) = calls.subscribe_session().await;
     feed.send(snapshot(KIND, 3, &[]));
     for order in 1..=3 {
         feed.send(ev(text_item(KIND, order, order, &format!("row {order}"))));
@@ -796,9 +796,9 @@ async fn a_return_whose_held_rows_fit_releases_them_without_a_fetch() {
         let paged = session.clone();
         async move { (paged.page_older(40).await, session) }
     });
-    let (request, reply) = calls.fetch().await;
-    assert_eq!(request.limit, 40);
-    reply.send(Ok(wire::FetchResponse::default())).ok();
+    let (request, reply) = calls.list_items().await;
+    assert_eq!(request.page_size, 40);
+    reply.send(Ok(wire::ListItemsResponse::default())).ok();
     let (_, session) = paging.await.unwrap();
     session.follow(true);
     calls.none().await;
@@ -838,11 +838,17 @@ async fn an_input_refused_because_the_host_was_unreachable_is_held_and_sent_agai
             .send(Ok(rejected(wire::Refusal::HostUnreachable)))
             .ok();
         // The verdict lands; the input is held, not rejected.
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        let held = session.state().input_state(&id);
-        assert!(
-            !matches!(held, Some(InputState::Rejected(_))),
-            "{act}: an input that never left was rejected: {held:?}"
+        let held = until(session.changed(), || {
+            session
+                .state()
+                .input_state(&id)
+                .filter(|state| *state != InputState::Sent)
+        })
+        .await;
+        assert_eq!(
+            held,
+            InputState::Held,
+            "{act}: an input that never left is held"
         );
         // The host comes back: the chat reconnects and catches up.
         let feed = reconnect(&clock, &session, &mut calls, feed).await;
@@ -880,7 +886,7 @@ async fn a_transcript_that_fails_its_check_asks_for_a_dump_with_its_trace_cut_th
         CAP,
         ManualClock::new(0),
     ));
-    let (_, feed) = calls.subscribe().await;
+    let (_, feed) = calls.subscribe_session().await;
     feed.send(snapshot(KIND, 3, &[]));
     // An origin skipping an order breaks the block the client holds.
     feed.send(ev(text_item(KIND, 1, 1, "one")));
@@ -902,22 +908,28 @@ async fn a_transcript_that_fails_its_check_asks_for_a_dump_with_its_trace_cut_th
     let [history] = &request.sessions[..] else {
         panic!("{} sessions in the request", request.sessions.len());
     };
+    let history = <wire::dump::ClientSessionHistory as prost::Message>::decode(history.as_slice())
+        .expect("a session");
     assert_eq!(history.agent_id, agent(KIND).agent_id);
     let events = &history.events.as_ref().expect("events").traced;
     let last = events.last().expect("an event");
     assert!(
         matches!(
             &last.event,
-            Some(wire::client_traced::Event::Msg(wire::ClientSessionMsg {
-                of: Some(wire::client_session_msg::Of::Event(wire::SessionEvent {
-                    of: Some(wire::session_event::Of::CaughtUp(_))
-                }))
-            }))
+            Some(wire::dump::client_traced::Event::Msg(
+                wire::dump::ClientSessionMsg {
+                    of: Some(wire::dump::client_session_msg::Of::Event(
+                        wire::SessionEvent {
+                            of: Some(wire::session_event::Of::CaughtUp(_))
+                        }
+                    ))
+                }
+            ))
         ),
         "{last:?}"
     );
     reply
-        .send(Ok(wire::DumpReport {
+        .send(Ok(wire::DumpResponse {
             report_path: "elsewhere".to_owned(),
         }))
         .unwrap();
@@ -926,5 +938,5 @@ async fn a_transcript_that_fails_its_check_asks_for_a_dump_with_its_trace_cut_th
     // enough for the session.
     feed.send(caught_up(3));
     feed.send(lagged());
-    let (_, _feed) = calls.subscribe().await;
+    let (_, _feed) = calls.subscribe_session().await;
 }

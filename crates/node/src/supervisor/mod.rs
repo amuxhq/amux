@@ -48,7 +48,7 @@ use child::Child;
 pub use child::Inherited;
 use control::Asked;
 pub use control::{Request, SUPERVISOR_SOCKET, ask};
-use core_ring::{DumpKind, DumpLimit};
+use core_ring::DumpLimit;
 pub use files::{FileId, Files, SUPERVISOR_LOCK};
 pub use keep_awake::{KeepAwake, REASON as KEEP_AWAKE_REASON};
 use semver::Version;
@@ -62,7 +62,7 @@ use tokio::io::AsyncWriteExt as _;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::install::{private_dir, sync_dir};
-use crate::profiles::{self, Registry};
+use crate::profiles;
 use crate::release::{self, Manifest, Release};
 use crate::window::{self, Window};
 
@@ -333,24 +333,7 @@ impl Dumps {
     /// The reason to report for `reason` asked for at `now_ms`, or `None`
     /// when it is held back.
     fn reason(&mut self, reason: &core::DumpReason, now_ms: u64) -> Option<String> {
-        let (kind, why) = match reason {
-            core::DumpReason::Violation(violation) => (
-                DumpKind::Violation(violation.invariant.into()),
-                format!("an invariant failed: {violation}"),
-            ),
-            core::DumpReason::OverBudget { micros, budget } => (
-                DumpKind::OverBudget,
-                format!(
-                    "a step took {micros} µs, over its budget of {} µs",
-                    budget.micros
-                ),
-            ),
-        };
-        let suppressed = self.limit.admit(kind, now_ms)?;
-        Some(core_ring::with_suppressed(
-            format!("{SUPERVISOR_CORE_DUMP}{why}"),
-            suppressed,
-        ))
+        self.limit.reason(SUPERVISOR_CORE_DUMP, reason, now_ms)
     }
 }
 
@@ -433,7 +416,8 @@ impl Driver {
         core::Input::Asked {
             ask,
             request: match asked.request {
-                Request::Check => core::Request::Check,
+                Request::Check => core::Request::Check { retry: false },
+                Request::Retry => core::Request::Check { retry: true },
                 Request::Stop => core::Request::Stop,
             },
         }
@@ -797,9 +781,8 @@ async fn fetch(release: &Release, staged: &Path) -> Result<(), CheckError> {
 /// The host id that places this installation in a rollout: its first
 /// profile's.
 fn rollout_host(data_dir: &Path) -> Option<uuid::Uuid> {
-    let registry = Registry::read(data_dir).ok()?;
-    let first = registry.profiles.first()?;
-    profiles::host_id(&profiles::profile_dir(data_dir, first.id)).ok()
+    // A profile's host id is its id.
+    Some(profiles::list(data_dir).ok()?.first()?.id)
 }
 
 /// The supervisor's own lock, `<data_dir>/supervisor.lock`, holding its

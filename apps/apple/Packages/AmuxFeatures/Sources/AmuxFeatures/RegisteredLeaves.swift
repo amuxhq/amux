@@ -41,4 +41,12 @@ public enum RegisteredLeaves: String, CaseIterable, Sendable {
     /// reaches VoiceOver without the menu's name or identifier. The leaf owns
     /// that button so it carries both. `docs/IOS.md` has the detail.
     case menuButton
+    /// Built, and measured by the phone's performance suite: the chat's
+    /// activity line and the working marks, animated by SwiftUI, held an
+    /// iPhone 14 Pro's main thread about 16% busy with nothing arriving
+    /// (31% before they stopped re-laying out the composer), and froze
+    /// whenever that thread was busy, as when a chat opens. The leaf runs the
+    /// same curves as layer animations in the render server.
+    /// `docs/IOS.md` has the numbers.
+    case workingMotion
 }

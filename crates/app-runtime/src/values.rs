@@ -2,7 +2,6 @@
 //! what a host asks for and what an act came to. Like the views, they cross
 //! as JSON and their Swift mirrors are generated from these definitions.
 
-use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
@@ -10,10 +9,10 @@ use model::{AgentKey, Connection, InputState, Key, PhaseView, Refusal, Waiting};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ui_view::{
-    ChangeTotals, ComposerView, ContextView, ControlsSummary, PLACEHOLDER, QueuedRow, Reach,
-    RefusedPrompt, SentPrompt, SignInView, ToolRows,
+    AskCard, ComposerView, ContextView, ControlsSummary, FleetView, Overview, PLACEHOLDER,
+    QueuedRow, Reach, RefusedPrompt, Row, SentPrompt, SettingsView, SignInView,
 };
-use wire::{BlobRef, Kind, RouteKind};
+use wire::{BlobRef, Kind, Platform, RouteKind};
 
 /// What an embedded runtime starts from.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -65,15 +64,44 @@ fn default_tail() -> u32 {
     crate::DEFAULT_TAIL
 }
 
-/// What changed in a chat since the host last took its changes.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct ChatChanges {
-    /// Rows to fetch again, each once.
-    pub keys: Vec<Key>,
-    /// Every row id may be new: read the keys again.
-    pub reloaded: bool,
-    /// Something beside the rows moved: the frame, the overview or the ask.
-    pub session: bool,
+/// What moved in an open chat since the host last heard: each field only
+/// when it moved.
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+pub struct ChatDelta {
+    /// The chat's id within its fleet.
+    pub chat: u64,
+    pub keys: Option<KeysMoved>,
+    /// The rows that changed among those the host held, each run folded as
+    /// the reader left it. A row new at either edge, or held through a
+    /// reload, is read when it is drawn.
+    pub rows: Vec<Row>,
+    pub frame: Option<ChatFrame>,
+    pub ask: Option<AskMoved>,
+    pub overview: Option<Overview>,
+    pub settings: Option<SettingsView>,
+}
+
+/// How the window's keys moved. Row ids are item keys and never move, so
+/// the window's sequence changes only at its two edges until a reload.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+pub enum KeysMoved {
+    /// Every key may be new: the whole window, oldest first.
+    Reload(Vec<Key>),
+    Edges {
+        /// Keys newer than the newest held, oldest first.
+        above: Vec<Key>,
+        /// Keys older than the oldest held, oldest first: a page.
+        below: Vec<Key>,
+        /// How many of the oldest held keys the window dropped, as it
+        /// trims to its cap while the reader follows.
+        dropped: u32,
+    },
+}
+
+/// The head ask moved: the card waiting now, if any.
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+pub struct AskMoved {
+    pub card: Option<AskCard>,
 }
 
 /// Everything around a chat's rows that a screen draws at once.
@@ -90,7 +118,7 @@ pub struct ChatFrame {
     pub controls: ControlsSummary,
     /// The agent's branch and change totals as of its last turn end; None
     /// outside a repository.
-    pub git: Option<GitView>,
+    pub git: Option<wire::Git>,
     pub context: Option<ContextView>,
     /// Only a problem; it replaces the composer with a foot card.
     pub sign_in: Option<SignInView>,
@@ -114,70 +142,6 @@ pub struct ChatFrame {
     pub ask_input: Option<Vec<u8>>,
     /// The runtime no longer serves this chat: the agent is gone.
     pub ended: Option<String>,
-}
-
-/// Where an agent works in its repository, and what it has changed there:
-/// the header's totals for either comparison.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
-pub struct GitView {
-    /// None on a detached head.
-    pub branch: Option<String>,
-    /// What the branch is compared against on it; None when not known.
-    pub base_branch: Option<String>,
-    pub uncommitted: Option<ChangeTotals>,
-    pub on_branch: Option<ChangeTotals>,
-}
-
-impl GitView {
-    pub fn of(git: &wire::Git) -> GitView {
-        let totals = |totals: &wire::ChangeTotals| ChangeTotals {
-            files: totals.files,
-            added: totals.added,
-            removed: totals.removed,
-        };
-        GitView {
-            branch: git.branch.clone(),
-            base_branch: git.base_branch.clone(),
-            uncommitted: git.uncommitted.as_ref().map(totals),
-            on_branch: git.on_branch.as_ref().map(totals),
-        }
-    }
-}
-
-/// How rows are asked for.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct RowOptions {
-    pub tools: ToolRowsOption,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub enum ToolRowsOption {
-    #[default]
-    ShowAll,
-    Hide,
-    /// Each run folds to its newest step unless one of its steps is here:
-    /// hold its newest, and re-hold the newest as the run grows.
-    Collapse {
-        open: Vec<Key>,
-    },
-}
-
-impl RowOptions {
-    /// The open runs a folding view borrows, when there are any.
-    pub fn open(&self) -> HashSet<Key> {
-        match &self.tools {
-            ToolRowsOption::Collapse { open } => open.iter().cloned().collect(),
-            ToolRowsOption::ShowAll | ToolRowsOption::Hide => HashSet::new(),
-        }
-    }
-
-    pub fn tool_rows<'a>(&self, open: &'a HashSet<Key>) -> ToolRows<'a> {
-        match &self.tools {
-            ToolRowsOption::ShowAll => ToolRows::ShowAll,
-            ToolRowsOption::Hide => ToolRows::Hide,
-            ToolRowsOption::Collapse { .. } => ToolRows::Collapse { open },
-        }
-    }
 }
 
 /// A prompt as the composer holds it: runs of words and attachments in
@@ -298,6 +262,11 @@ impl Draft {
         Draft { parts }
     }
 
+    /// A draft as this device's daemon kept it.
+    pub fn kept(draft: &wire::Draft) -> Draft {
+        Draft::of(&draft.text, &draft.attachments)
+    }
+
     /// A queued prompt as a draft: its words and every attachment.
     pub fn from_queued(entry: &wire::QueuedInput) -> Draft {
         Draft::of(&entry.text, &entry.attachments)
@@ -401,7 +370,8 @@ pub struct HostView {
     pub candidate: bool,
     /// How this device reaches it now, and over which route.
     pub reach: Reach,
-    pub platform: Option<String>,
+    /// The operating system it runs, when it said.
+    pub platform: Option<Platform>,
     pub version: Option<String>,
     pub last_dial_error: Option<String>,
     /// Where discovery found it; what pairing dials.
@@ -424,13 +394,15 @@ pub struct ProviderSignIn {
     pub signed_in: bool,
 }
 
-/// What changed in the fleet since the host last took its changes.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
-pub struct FleetChanges {
-    /// Agents whose card or family attention may differ.
-    pub agents: Vec<AgentKey>,
-    /// The host list moved.
-    pub hosts: bool,
+/// What moved in a profile's fleet since the host last heard: each field
+/// only when it moved.
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+pub struct FleetDelta {
+    /// Home's sections.
+    pub view: Option<FleetView>,
+    /// Every host, this device first: whenever the host list moved, even
+    /// where no view of a host did.
+    pub hosts: Option<Vec<HostView>>,
 }
 
 /// Pairing with a machine: the PIN its person reads out, or the link its

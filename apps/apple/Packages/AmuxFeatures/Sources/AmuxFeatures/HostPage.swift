@@ -197,7 +197,7 @@ public struct HostPage: View {
 
     private func facts(_ view: HostView) -> [Fact] {
         var facts: [Fact] = []
-        if let platform = view.platform {
+        if let platform = view.platform?.name {
             facts.append(Fact(id: "platform", label: String(localized: "Platform"), value: platform))
         }
         if let version = view.version {

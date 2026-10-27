@@ -7,15 +7,15 @@
 use std::sync::Arc;
 
 use node::harness::LiveRoute;
-use node::{Edge, Observed, RelayCarrier};
+use node::{Edge, Relay, RelayCarrier};
 use testnet::{HostDecl, Net, PATIENCE, until};
 use tonic::transport::Channel;
 use uuid::Uuid;
-use wire::profile_service_client::ProfileServiceClient;
+use wire::installation_service_client::InstallationServiceClient;
+use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
-    BeginPairRequest, Empty, HostRef, InventoryEvent, PairingWindow, PendingPairRequest,
-    ProfileRequest, StartPairingRequest, begin_pair_request, host_ref, inventory_event,
-    pairing_window, start_pairing_request,
+    BeginPairRequest, Empty, HostRef, InventoryEvent, PairingWindow, StartPairingRequest,
+    begin_pair_request, host_ref, inventory_event, pairing_window, start_pairing_request,
 };
 
 /// A host listening for direct links on loopback and on the net's
@@ -46,15 +46,13 @@ pub fn profile(net: &Net, host: &str) -> Vec<u8> {
         .to_vec()
 }
 
-/// A front-door call naming `host`'s profile.
-pub fn profile_request(net: &Net, host: &str) -> ProfileRequest {
-    ProfileRequest {
-        profile_id: profile(net, host),
-    }
+pub async fn door(net: &Net, host: &str) -> InstallationServiceClient<Channel> {
+    net.front_door(host).await.expect("the front door answers")
 }
 
-pub async fn door(net: &Net, host: &str) -> ProfileServiceClient<Channel> {
-    net.front_door(host).await.expect("the front door answers")
+/// `host`'s profile's administration, on its socket.
+pub async fn admin(net: &Net, host: &str) -> ProfileAdminServiceClient<Channel> {
+    net.admin(host).await.expect("the profile's socket answers")
 }
 
 pub fn host_ref(host: Uuid) -> Option<HostRef> {
@@ -99,8 +97,8 @@ pub fn still_relayed(net: &Net, a: &str, b: &str) {
 
 /// The carrier the host's relay link rides, once it is connected.
 pub fn carrier(net: &Net, host: &str) -> Option<RelayCarrier> {
-    match edge(net, host).observed() {
-        Observed::Connected { carrier, .. } => Some(carrier),
+    match edge(net, host).relay() {
+        Some(Relay::Connected { carrier, .. }) => Some(carrier),
         _ => None,
     }
 }
@@ -108,7 +106,11 @@ pub fn carrier(net: &Net, host: &str) -> Option<RelayCarrier> {
 /// Reads a peer's inventory to its CaughtUp and returns the hosts it named.
 pub async fn peer_inventory_hosts(from: &Edge, to: Uuid) -> Result<Vec<Vec<u8>>, tonic::Status> {
     let mut client = from.peer(to).await.map_err(|error| error.status())?;
-    let mut events = client.subscribe_inventory(Empty {}).await?.into_inner();
+    let mut events = client
+        .agents
+        .subscribe_inventory(wire::SubscribeInventoryRequest {})
+        .await?
+        .into_inner();
     let mut hosts = Vec::new();
     loop {
         let InventoryEvent { of } = events
@@ -116,7 +118,7 @@ pub async fn peer_inventory_hosts(from: &Edge, to: Uuid) -> Result<Vec<Vec<u8>>,
             .await?
             .ok_or_else(|| tonic::Status::aborted("the inventory ended before CaughtUp"))?;
         match of {
-            Some(inventory_event::Of::Host(host)) => hosts.push(host.host_id),
+            Some(inventory_event::Of::Host(host)) => hosts.push(host.host_id().to_vec()),
             Some(inventory_event::Of::CaughtUp(_)) => return Ok(hosts),
             _ => {}
         }
@@ -129,17 +131,14 @@ pub async fn start_pairing(
     responder: &str,
     pairing: StartPairingRequest,
 ) -> Result<PairingWindow, tonic::Status> {
-    door(net, responder)
+    admin(net, responder)
         .await
-        .start_pairing(StartPairingRequest {
-            profile_id: profile(net, responder),
-            ..pairing
-        })
+        .start_pairing(pairing)
         .await
         .map(tonic::Response::into_inner)
 }
 
-/// A one-shot PIN window, for whichever profile `start_pairing` names.
+/// A one-shot PIN window.
 pub fn pin_window() -> StartPairingRequest {
     StartPairingRequest {
         method: Some(start_pairing_request::Method::Pin(Empty {})),
@@ -147,7 +146,7 @@ pub fn pin_window() -> StartPairingRequest {
     }
 }
 
-/// A one-shot QR window, for whichever profile `start_pairing` names.
+/// A one-shot QR window.
 pub fn qr_window() -> StartPairingRequest {
     StartPairingRequest {
         method: Some(start_pairing_request::Method::Qr(Empty {})),
@@ -160,7 +159,6 @@ pub fn demo_pin_window(pin: &str, ttl_seconds: u64) -> StartPairingRequest {
     StartPairingRequest {
         method: Some(start_pairing_request::Method::DemoPin(pin.to_owned())),
         ttl_seconds: Some(ttl_seconds),
-        ..StartPairingRequest::default()
     }
 }
 
@@ -180,10 +178,9 @@ pub async fn begin_pair(
     secret: begin_pair_request::Secret,
     addrs: Vec<String>,
 ) -> Result<wire::PendingPair, tonic::Status> {
-    door(net, initiator)
+    admin(net, initiator)
         .await
         .begin_pair(BeginPairRequest {
-            profile_id: profile(net, initiator),
             host_id: host
                 .map(|host| host.as_bytes().to_vec())
                 .unwrap_or_default(),
@@ -198,20 +195,17 @@ pub async fn confirm_pair(
     net: &Net,
     initiator: &str,
     token: Vec<u8>,
-) -> Result<wire::PeerEntry, tonic::Status> {
-    door(net, initiator)
+) -> Result<wire::Peer, tonic::Status> {
+    admin(net, initiator)
         .await
-        .confirm_pair(PendingPairRequest {
-            profile_id: profile(net, initiator),
-            token,
-        })
+        .confirm_pair(wire::ConfirmPairRequest { token })
         .await
         .map(tonic::Response::into_inner)
 }
 
 /// Pairs `initiator` with `responder` through both front doors with a PIN
 /// over the responder's LAN listener.
-pub async fn pair(net: &Net, initiator: &str, responder: &str) -> wire::PeerEntry {
+pub async fn pair(net: &Net, initiator: &str, responder: &str) -> wire::Peer {
     let started = start_pairing(net, responder, pin_window())
         .await
         .expect("the responder enters pairing mode");
@@ -241,9 +235,10 @@ pub async fn open_session(
         .await
         .map_err(|error| error.status())?;
     let mut events = client
-        .subscribe(wire::PeerSubscribeRequest {
+        .sessions
+        .subscribe_session(wire::PeerSubscribeSessionRequest {
             agent_id: agent.as_bytes().to_vec(),
-            from: Some(wire::peer_subscribe_request::From::Tail(10)),
+            from: Some(wire::peer_subscribe_session_request::From::Tail(10)),
         })
         .await?
         .into_inner();
@@ -273,8 +268,8 @@ pub async fn ended<T>(stream: &mut tonic::Streaming<T>, what: &str) -> String {
 
 /// The tier the host's relay link carries, once it is connected.
 pub fn tier(net: &Net, host: &str) -> Option<node::Tier> {
-    match edge(net, host).observed() {
-        Observed::Connected { tier, .. } => Some(tier),
+    match edge(net, host).relay() {
+        Some(Relay::Connected { tier, .. }) => Some(tier),
         _ => None,
     }
 }

@@ -695,7 +695,7 @@ async fn a_fleet_of_every_standing_matches_its_golden() {
             && exited(&crasher).is_some_and(|(lifecycle, _)| lifecycle == wire::Lifecycle::Exited)
             && fleet
                 .hosts()
-                .any(|host| host.name == "studio" && host.presence() == wire::Presence::Offline)
+                .any(|host| host.name() == "studio" && host.offline().is_some())
     })
     .await;
     let lines = session_lines(
@@ -955,7 +955,10 @@ struct SlowClearing {
 
 #[async_trait::async_trait]
 impl client::Client for SlowClearing {
-    async fn save_draft(&self, request: wire::SaveDraftRequest) -> Result<(), client::RpcError> {
+    async fn update_draft(
+        &self,
+        request: wire::UpdateDraftRequest,
+    ) -> Result<wire::Draft, client::RpcError> {
         self.saved.lock().unwrap().push(request.agent_id.clone());
         let text = request.draft.as_ref().map(|draft| draft.text.clone());
         {
@@ -974,12 +977,12 @@ impl client::Client for SlowClearing {
         if empty && self.hold.load(std::sync::atomic::Ordering::SeqCst) {
             std::future::pending::<()>().await;
         }
-        self.inner.save_draft(request).await
+        self.inner.update_draft(request).await
     }
     async fn get_draft(
         &self,
         request: wire::GetDraftRequest,
-    ) -> Result<wire::ComposerDraft, client::RpcError> {
+    ) -> Result<wire::Draft, client::RpcError> {
         self.inner.get_draft(request).await
     }
     async fn subscribe_inventory(
@@ -993,20 +996,23 @@ impl client::Client for SlowClearing {
     ) -> Result<wire::Agent, client::RpcError> {
         self.inner.resolve_agent(request).await
     }
-    async fn subscribe(
+    async fn subscribe_session(
         &self,
-        request: wire::SubscribeRequest,
+        request: wire::SubscribeSessionRequest,
     ) -> Result<client::EventStream<wire::SessionEvent>, client::RpcError> {
-        self.inner.subscribe(request).await
+        self.inner.subscribe_session(request).await
     }
-    async fn fetch(
+    async fn list_items(
         &self,
-        request: wire::FetchRequest,
-    ) -> Result<wire::FetchResponse, client::RpcError> {
-        self.inner.fetch(request).await
+        request: wire::ListItemsRequest,
+    ) -> Result<wire::ListItemsResponse, client::RpcError> {
+        self.inner.list_items(request).await
     }
-    async fn get(&self, request: wire::GetRequest) -> Result<wire::Item, client::RpcError> {
-        self.inner.get(request).await
+    async fn get_item(
+        &self,
+        request: wire::GetItemRequest,
+    ) -> Result<wire::Item, client::RpcError> {
+        self.inner.get_item(request).await
     }
     async fn send_input(
         &self,
@@ -1059,13 +1065,16 @@ impl client::Client for SlowClearing {
     ) -> Result<wire::GetBlobResponse, client::RpcError> {
         self.inner.get_blob(request).await
     }
-    async fn diff(&self, request: wire::DiffRequest) -> Result<wire::Diff, client::RpcError> {
-        self.inner.diff(request).await
+    async fn get_diff(
+        &self,
+        request: wire::GetDiffRequest,
+    ) -> Result<wire::Diff, client::RpcError> {
+        self.inner.get_diff(request).await
     }
     async fn get_catalogue(
         &self,
         request: wire::GetCatalogueRequest,
-    ) -> Result<wire::CatalogueBlob, client::RpcError> {
+    ) -> Result<wire::GetCatalogueResponse, client::RpcError> {
         self.inner.get_catalogue(request).await
     }
     async fn list_repositories(
@@ -1074,7 +1083,10 @@ impl client::Client for SlowClearing {
     ) -> Result<wire::ListRepositoriesResponse, client::RpcError> {
         self.inner.list_repositories(request).await
     }
-    async fn dump(&self, request: wire::DumpRequest) -> Result<wire::DumpReport, client::RpcError> {
+    async fn dump(
+        &self,
+        request: wire::DumpRequest,
+    ) -> Result<wire::DumpResponse, client::RpcError> {
         self.inner.dump(request).await
     }
 }
@@ -1093,9 +1105,9 @@ async fn a_cleared_draft_stays_cleared_before_the_daemon_hears_of_it() {
         agent_id: worker.as_bytes().to_vec(),
     };
     daemon
-        .save_draft(wire::SaveDraftRequest {
+        .update_draft(wire::UpdateDraftRequest {
             agent_id: worker.as_bytes().to_vec(),
-            draft: Some(wire::ComposerDraft {
+            draft: Some(wire::Draft {
                 text: "kept from before".into(),
                 attachments: Vec::new(),
             }),
@@ -1262,18 +1274,15 @@ async fn words_typed_into_a_chat_that_closes_under_the_person_end_no_other_agent
             .find(healthy.as_bytes())
             .is_none_or(|agent| agent.lifecycle() != wire::Lifecycle::Live)
     };
-    let mut changed = app.fleet.changed();
-    let stopped_by_typing = tokio::time::timeout(Duration::from_secs(3), async {
-        while !ended(&app) {
-            changed.changed().await.unwrap();
-        }
-    })
+    // A window: a key that home swallows leaves no mark to wait on.
+    testnet::holds_for(
+        "the words typed as the chat closed to leave healthy running",
+        Duration::from_millis(300),
+        || std::future::ready(!ended(&app)),
+    )
     .await
-    .is_ok();
-    assert!(
-        !stopped_by_typing,
-        "the words typed as the chat closed ended healthy"
-    );
+    .expect("the words typed as the chat closed ended healthy");
+    let mut changed = app.fleet.changed();
     // After half a second with no key, home's keys act again.
     tokio::time::sleep(Duration::from_millis(600)).await;
     press(&mut app, KeyCode::Char('x'));
@@ -1454,9 +1463,9 @@ async fn a_held_prompt_is_in_the_kept_draft_before_the_client_quits() {
     let daemon: std::sync::Arc<dyn client::Client> =
         std::sync::Arc::new(client::InProcess::new(net.client("desk").unwrap()));
     daemon
-        .save_draft(wire::SaveDraftRequest {
+        .update_draft(wire::UpdateDraftRequest {
             agent_id: id.as_bytes().to_vec(),
-            draft: Some(wire::ComposerDraft {
+            draft: Some(wire::Draft {
                 text: "an older draft".into(),
                 attachments: Vec::new(),
             }),
@@ -1496,11 +1505,11 @@ async fn a_held_prompt_is_in_the_kept_draft_before_the_client_quits() {
 }
 
 /// A send that no channel to its host could carry is held, and the host
-/// reads offline (the chat words it "away"): presence is what opening a
-/// channel finds. When a channel opens again the host reads online, and
-/// that alone releases the held prompt, which goes by itself. Before, the
-/// link stayed listed, the host never stopped reading online, and the
-/// prompt waited for good.
+/// reads offline (the chat words it "away"): the call closed the link it
+/// could not open a stream on. When a link comes up again the host reads
+/// online, and that alone releases the held prompt, which goes by itself.
+/// Before, the link stayed listed, the host never stopped reading online,
+/// and the prompt waited for good.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_prompt_held_when_no_call_reaches_its_host_goes_once_one_does() {
     use crossterm::event::KeyCode;

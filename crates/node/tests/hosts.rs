@@ -35,8 +35,9 @@ async fn remote_entry_carries_version_and_capabilities() {
         || {
             let listed = laptop_runtime
                 .host_entry_of(desk_host)
-                .map(|entry| (entry.version, entry.capabilities));
-            let expected = (Some(node::version().to_owned()), Some(expected.clone()));
+                .and_then(|entry| entry.host)
+                .map(|host| (host.version, host.capabilities));
+            let expected = (node::version().to_owned(), Some(expected.clone()));
             async move {
                 match listed {
                     Some(listed) if listed == expected => Ok(()),

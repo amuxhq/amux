@@ -8,11 +8,13 @@ timer and job the driver holds for it is named by a `CallId`, `TimerId` or
 `JobId`. `checkpoint` and `restore` take the core's state out and back in
 beside the store it was taken with.
 
-Pairing and trust are the core's too. The trust store is core state, read
-at start from the trust file (`Input::TrustRead`) and changed only by core
-steps, one at a time, each written whole by an `Fsync` job and served only
-once that write is done; the shell's handshakes read the copy the driver
-publishes. The pairing window (its secret, attempts, lockout and expiry), the
+Pairing and trust are the core's too. The paired hosts are rows of the
+profile's store, read when the core is made and changed only by core steps,
+one at a time, each committed in the step that makes it: pairing, unpairing,
+a key replacement and a pairing's rollback are synced to the drive before
+they are answered (the sync's time is left out of the step budget), the
+addresses and facts a host reports of itself are ordinary commits. The
+shell's handshakes read the copy the driver publishes. The pairing window (its secret, attempts, lockout and expiry), the
 SPAKE2 exchange, key confirmation and the sealed identities run as steps over
 `PairingMessage` inputs, with each conversation's deadline and each pending
 pairing's token as timers; the driver carries only the pairing streams. An
@@ -40,12 +42,7 @@ constant time per row it touched:
 - an agent's journal is reclaimed only below the cursor of the newest
   checkpoint on the drive;
 - the generation this host's streams open under only ever rises;
-- nothing is committed while a checkpoint moves the WAL into the main file;
-- at most one attempt the core asked for is in flight per host and route;
-- a host reads away only while the relay's refusal for the account's plan is
-  recorded;
-- a host waiting to be retried has its one retry timer armed, and no other
-  host has one.
+- nothing is committed while a checkpoint moves the WAL into the main file.
 
 A step that takes longer than its budget (`StartOptions::budget`, 100 ms by
 default) is logged and appends `Output::Dump` too, one per step that ran

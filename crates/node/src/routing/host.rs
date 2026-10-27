@@ -156,7 +156,7 @@ pub(crate) fn local_host(
         version: crate::version().to_owned(),
         capabilities,
         signed_in: Some(signed_in),
-        platform: Some(local_platform().to_string()),
+        platform: local_platform(),
     }
 }
 
@@ -166,12 +166,13 @@ pub(crate) fn local_host(
 /// model name like "Mac Studio" is not something a process can read without a
 /// hardware lookup table, and a table of marketing names would be this
 /// program guessing what computer it is running on.
-pub(crate) fn local_platform() -> &'static str {
+pub(crate) fn local_platform() -> wire::Platform {
     match std::env::consts::OS {
-        "macos" => "macOS",
-        "linux" => "Linux",
-        "windows" => "Windows",
-        other => other,
+        "macos" => wire::Platform::Macos,
+        "linux" => wire::Platform::Linux,
+        "windows" => wire::Platform::Windows,
+        "ios" => wire::Platform::Ios,
+        _ => wire::Platform::Unspecified,
     }
 }
 

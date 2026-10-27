@@ -620,7 +620,7 @@ public struct ChatStanding: View {
             case .settings?:
                 if let settings = model.settings {
                     SettingsCard(
-                        view: settings, kind: model.frame?.kind, change: model.change,
+                        view: settings, kind: model.frame?.kind, change: { model.change($0) },
                         close: { showing = nil })
                 } else {
                     composerStack
@@ -767,7 +767,7 @@ struct RowCellView: View {
                 row: row, expanded: model.isExpanded(row.id),
                 rail: RailJoin.of(row, next: model.row(below: row.id)),
                 placement: RunPlacement.of(
-                    row, open: row.run.map(model.isOpen) ?? false,
+                    row, open: row.run?.open ?? false,
                     counts: { row.run.flatMap(model.counts(of:)) }),
                 bytes: model.bytes(of:), toggle: { model.toggle(row.id) },
                 toggleRun: { if let run = row.run { model.toggleRun(run) } })

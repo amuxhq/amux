@@ -11,8 +11,8 @@ use futures_util::StreamExt as _;
 use provider_fakes::script::Step;
 use testnet::{AgentDecl, FakeKind, Net, Topology};
 use wire::{
-    ErrorCode, FetchRequest, GetBlobRequest, GetRequest, PutBlobRequest, SubscribeRequest,
-    inventory_event, session_event,
+    ErrorCode, GetBlobRequest, GetItemRequest, ListItemsRequest, PutBlobRequest,
+    SubscribeSessionRequest, inventory_event, session_event,
 };
 
 const PATIENCE: Duration = Duration::from_secs(20);
@@ -22,7 +22,7 @@ async fn clients(net: &Net) -> [(&'static str, Arc<dyn Client>); 2] {
         .front_door("desk")
         .await
         .unwrap()
-        .list_profiles(wire::Empty {})
+        .list_profiles(wire::ListProfilesRequest {})
         .await
         .unwrap()
         .into_inner()
@@ -78,7 +78,7 @@ async fn the_in_process_and_socket_clients_answer_alike() {
         // A subscription opens with its generation and snapshot and
         // reaches the reply.
         let mut stream = client
-            .subscribe(SubscribeRequest {
+            .subscribe_session(SubscribeSessionRequest {
                 agent_id: worker.clone(),
                 tail: 40,
             })
@@ -108,7 +108,7 @@ async fn the_in_process_and_socket_clients_answer_alike() {
             }
         }
         let item = client
-            .get(GetRequest {
+            .get_item(GetItemRequest {
                 agent_id: worker.clone(),
                 key: key.clone().unwrap(),
             })
@@ -116,10 +116,10 @@ async fn the_in_process_and_socket_clients_answer_alike() {
             .unwrap();
         assert!(item.text.contains("hello"), "{name}");
         let page = client
-            .fetch(FetchRequest {
+            .list_items(ListItemsRequest {
                 agent_id: worker.clone(),
                 before_order: None,
-                limit: 100,
+                page_size: 100,
             })
             .await
             .unwrap();
@@ -147,7 +147,7 @@ async fn the_in_process_and_socket_clients_answer_alike() {
 
         // The runtime's own errors arrive whole.
         let missing = client
-            .get(GetRequest {
+            .get_item(GetItemRequest {
                 agent_id: worker.clone(),
                 key: "no-such-key".into(),
             })

@@ -33,9 +33,12 @@ fn ev(of: inventory_event::Of) -> FleetMsg {
 
 fn host(id: &str) -> FleetMsg {
     ev(inventory_event::Of::Host(HostEntry {
-        host_id: id.as_bytes().to_vec(),
-        name: id.into(),
-        ..HostEntry::default()
+        host: Some(wire::Host {
+            host_id: id.as_bytes().to_vec(),
+            name: id.into(),
+            ..Default::default()
+        }),
+        ..Default::default()
     }))
 }
 
@@ -154,12 +157,11 @@ fn a_relist_after_reconnect_drops_what_was_not_listed_again() {
 }
 
 fn online(id: &str) -> FleetMsg {
-    ev(inventory_event::Of::Host(HostEntry {
-        host_id: id.as_bytes().to_vec(),
-        name: id.into(),
-        presence: wire::Presence::Online as i32,
-        ..HostEntry::default()
-    }))
+    ev(inventory_event::Of::Host(HostEntry::trusted_host(
+        id.as_bytes().to_vec(),
+        id,
+        wire::trusted::Reach::Online(wire::RouteKind::Unspecified as i32),
+    )))
 }
 
 /// A stop that could not reach a host this client still read as online,

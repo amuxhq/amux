@@ -67,7 +67,12 @@ fn body(kind: Kind, tool: Option<(&str, bool)>, text: bool) -> Vec<u8> {
                 name: name.into(),
                 state: ToolState::Succeeded as i32,
                 class: class(explore),
-                input_json: br#"{"file_path":"src/lib.rs"}"#.to_vec(),
+                input: Some(interpret::tool_input(
+                    name,
+                    "",
+                    &serde_json::json!({"file_path": "src/lib.rs"}),
+                    "",
+                )),
                 ..Default::default()
             };
             if kind == Kind::ClaudePty {
@@ -652,8 +657,17 @@ fn the_review_document_parses_files_hunks_and_places_comments() {
     );
     // A hunk carries git's name for where it is, not its ranges; one that
     // starts at a file's top leaves nothing out before it.
-    assert_eq!((a.hunks[0].skips, a.hunks[0].scope.as_str()), (true, "fn a()"));
-    assert_eq!((doc.files[1].hunks[0].skips, doc.files[1].hunks[0].scope.as_str()), (false, ""));
+    assert_eq!(
+        (a.hunks[0].skips, a.hunks[0].scope.as_str()),
+        (true, "fn a()")
+    );
+    assert_eq!(
+        (
+            doc.files[1].hunks[0].skips,
+            doc.files[1].hunks[0].scope.as_str()
+        ),
+        (false, "")
+    );
     let lines = &a.hunks[0].lines;
     assert_eq!(lines[0].old_line, Some(10));
     assert_eq!(
@@ -1110,14 +1124,29 @@ fn unknown_renders_one_way() {
 fn host_entry(host: &str, signed_in: Option<bool>) -> FleetMsg {
     FleetMsg::Event(Box::new(wire::InventoryEvent {
         of: Some(wire::inventory_event::Of::Host(wire::HostEntry {
-            host_id: host.as_bytes().to_vec(),
-            name: host.into(),
-            account_signed_in: signed_in,
-            trust: wire::Trust::Trusted as i32,
-            presence: wire::Presence::Online as i32,
-            ..wire::HostEntry::default()
+            host: Some(wire::Host {
+                host_id: host.as_bytes().to_vec(),
+                name: host.into(),
+                account_signed_in: signed_in,
+                ..Default::default()
+            }),
+            standing: Some(wire::host_entry::Standing::Trusted(wire::Trusted {
+                reach: Some(wire::trusted::Reach::Online(
+                    wire::RouteKind::Unspecified as i32,
+                )),
+                current: false,
+            })),
+            ..Default::default()
         })),
     }))
+}
+
+/// A trusted host's entry as reading `reach`.
+fn reads(entry: &mut wire::HostEntry, reach: wire::trusted::Reach) {
+    entry.standing = Some(wire::host_entry::Standing::Trusted(wire::Trusted {
+        reach: Some(reach),
+        current: false,
+    }));
 }
 
 fn set_host(fleet: &mut FleetState, host: &str, change: impl FnOnce(&mut wire::HostEntry)) {
@@ -1140,7 +1169,10 @@ fn a_host_is_reached_by_its_route_or_away_for_the_plan_or_offline_for_what_this_
     // A profile never bound to an account is not signed out.
     fleet.update(host_entry("laptop", None));
     set_host(&mut fleet, "desk", |entry| {
-        entry.via = wire::RouteKind::Relay as i32
+        reads(
+            entry,
+            wire::trusted::Reach::Online(wire::RouteKind::Relay as i32),
+        )
     });
     assert_eq!(
         reach(&fleet, b"laptop", b"desk"),
@@ -1155,31 +1187,30 @@ fn a_host_is_reached_by_its_route_or_away_for_the_plan_or_offline_for_what_this_
     );
 
     set_host(&mut fleet, "desk", |entry| {
-        entry.presence = wire::Presence::Offline as i32
+        reads(
+            entry,
+            wire::trusted::Reach::Offline(wire::Offline::default()),
+        )
     });
     assert_eq!(
         reach(&fleet, b"laptop", b"desk"),
         Reach::Offline(Offline::Plain)
     );
     set_host(&mut fleet, "desk", |entry| {
-        entry.presence = wire::Presence::Unspecified as i32
-    });
-    assert_eq!(
-        reach(&fleet, b"laptop", b"desk"),
-        Reach::Offline(Offline::Plain)
-    );
-    set_host(&mut fleet, "desk", |entry| {
-        entry.presence = wire::Presence::Away as i32
+        reads(entry, wire::trusted::Reach::Away(wire::Empty {}))
     });
     assert_eq!(reach(&fleet, b"laptop", b"desk"), Reach::Away);
 
     // Signed out, a host this machine does not reach is offline for that:
     // with no relay link, nothing the relay refused reads away.
     set_host(&mut fleet, "desk", |entry| {
-        entry.presence = wire::Presence::Offline as i32
+        reads(
+            entry,
+            wire::trusted::Reach::Offline(wire::Offline::default()),
+        )
     });
     set_host(&mut fleet, "laptop", |entry| {
-        entry.account_signed_in = Some(false)
+        entry.host.get_or_insert_default().account_signed_in = Some(false)
     });
     assert_eq!(
         reach(&fleet, b"laptop", b"desk"),
@@ -1190,8 +1221,10 @@ fn a_host_is_reached_by_its_route_or_away_for_the_plan_or_offline_for_what_this_
     assert!(reach(&fleet, b"desk", b"laptop").online());
     // A host reached directly needs no account.
     set_host(&mut fleet, "desk", |entry| {
-        entry.presence = wire::Presence::Online as i32;
-        entry.via = wire::RouteKind::Direct as i32;
+        reads(
+            entry,
+            wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+        )
     });
     assert_eq!(
         reach(&fleet, b"laptop", b"desk"),
@@ -1200,7 +1233,15 @@ fn a_host_is_reached_by_its_route_or_away_for_the_plan_or_offline_for_what_this_
 
     // A host that no longer trusts this machine says so first, whatever
     // route still reaches it.
-    set_host(&mut fleet, "desk", |entry| entry.revoked = Some(true));
+    set_host(&mut fleet, "desk", |entry| {
+        reads(
+            entry,
+            wire::trusted::Reach::Offline(wire::Offline {
+                revoked: true,
+                ..Default::default()
+            }),
+        )
+    });
     assert_eq!(
         reach(&fleet, b"laptop", b"desk"),
         Reach::Offline(Offline::Revoked)
@@ -1922,8 +1963,8 @@ fn tool_item(
         body: wire::ClaudeSdkItem {
             kind: Some(wire::claude_sdk_item::Kind::Tool(wire::ToolCall {
                 name: name.into(),
-                input_json: input.to_string().into_bytes(),
-                outcome_json: outcome.to_string().into_bytes(),
+                input: Some(interpret::tool_input(name, "", &input, "")),
+                patch: interpret::file_step(name, "", &outcome.to_string()).patch,
                 state: state as i32,
                 class: class as i32,
                 ..Default::default()
@@ -2118,7 +2159,12 @@ fn running(order: u64, revision: u64, command: &str) -> Item {
             name: "Bash".into(),
             state: ToolState::Running as i32,
             class: ToolClass::Consequential as i32,
-            input_json: format!(r#"{{"command":"{command}"}}"#).into_bytes(),
+            input: Some(interpret::tool_input(
+                "Bash",
+                "",
+                &serde_json::json!({ "command": command }),
+                "",
+            )),
             ..Default::default()
         }),
         "",
@@ -2244,7 +2290,10 @@ fn each_row_says_what_its_state_calls_for() {
         unreachable!()
     };
     if let Some(wire::inventory_event::Of::Host(entry)) = &mut far.of {
-        entry.presence = wire::Presence::Offline as i32;
+        reads(
+            entry,
+            wire::trusted::Reach::Offline(wire::Offline::default()),
+        );
     }
     fleet.update(FleetMsg::Event(far));
     let entry = |id: &str, phase| fleet_entry("a", id, phase, None, 1);
@@ -3010,12 +3059,16 @@ fn edit_ask_path(kind: Kind, cwd: &str, file: &str) -> String {
         item_key: "t1".into(),
         body: Some(wire::ask::Body::Permission(wire::PermissionAsk {
             tool_name: "Edit".into(),
-            input_json: serde_json::to_vec(&serde_json::json!({
-                "file_path": file,
-                "old_string": "CURRENT",
-                "new_string": "UPDATED",
-            }))
-            .unwrap(),
+            input: Some(interpret::tool_input(
+                "Edit",
+                "",
+                &serde_json::json!({
+                    "file_path": file,
+                    "old_string": "CURRENT",
+                    "new_string": "UPDATED",
+                }),
+                "",
+            )),
             ..Default::default()
         })),
         ..Default::default()
@@ -3054,7 +3107,7 @@ fn edit_ask_path(kind: Kind, cwd: &str, file: &str) -> String {
 /// the folder keeps its whole path.
 #[test]
 fn an_edit_asks_path_is_relative_to_the_agents_folder_when_the_file_is_inside_it() {
-    let cwd = "/Users/jlw/.local/state/amux-qa/20261011-171536/t6/.testnet/net/desk/work";
+    let cwd = "/Users/ada/.local/state/amux-qa/20261011-171536/t6/.testnet/net/desk/work";
     for kind in [Kind::ClaudeSdk, Kind::Codex] {
         assert_eq!(
             edit_ask_path(kind, cwd, &format!("{cwd}/notes.txt")),
@@ -3077,7 +3130,7 @@ fn an_edit_asks_path_is_relative_to_the_agents_folder_when_the_file_is_inside_it
 // Triage of QA runs 20261012-011936 and 20261012-025539: each test states
 // the behaviour a finding expected and fails today.
 
-const QA_CWD: &str = "/Users/jlw/.local/state/amux-qa/20261012-025539/t1/.testnet/net/desk/work";
+const QA_CWD: &str = "/Users/ada/.local/state/amux-qa/20261012-025539/t1/.testnet/net/desk/work";
 
 /// The head ask's card on a caught-up session of `kind` in `QA_CWD`.
 fn card_of(kind: Kind, claude: Vec<wire::Ask>, codex: Vec<wire::CodexAsk>) -> AskCard {
@@ -3104,7 +3157,7 @@ fn claude_permission(tool: &str, input: serde_json::Value) -> wire::Ask {
         item_key: "t1".into(),
         body: Some(wire::ask::Body::Permission(wire::PermissionAsk {
             tool_name: tool.into(),
-            input_json: serde_json::to_vec(&input).unwrap(),
+            input: Some(interpret::tool_input(tool, "", &input, "")),
             ..Default::default()
         })),
         ..Default::default()
@@ -3244,7 +3297,7 @@ fn header_counts_leave_out_agents_whose_host_is_out_of_reach() {
     fleet.update(host_entry("desk", None));
     fleet.update(host_entry("laptop", None));
     set_host(&mut fleet, "laptop", |entry| {
-        entry.presence = wire::Presence::Away as i32;
+        reads(entry, wire::trusted::Reach::Away(wire::Empty {}));
     });
     fleet.update(fleet_row("desk", "here", Phase::Working, None, 1));
     fleet.update(fleet_row("laptop", "far-working", Phase::Working, None, 2));
@@ -3664,8 +3717,13 @@ fn agents_on_a_host_that_no_longer_trusts_this_machine_do_not_read_away() {
     fleet.update(host_entry("desk", None));
     fleet.update(host_entry("laptop", None));
     set_host(&mut fleet, "laptop", |entry| {
-        entry.presence = wire::Presence::Away as i32;
-        entry.revoked = Some(true);
+        reads(
+            entry,
+            wire::trusted::Reach::Offline(wire::Offline {
+                revoked: true,
+                ..Default::default()
+            }),
+        );
     });
     fleet.update(fleet_row("laptop", "far", Phase::Working, None, 1));
     let view = fleet_view(&fleet, b"desk", &no_sessions(), &HashSet::new(), &|_| true);

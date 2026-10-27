@@ -21,7 +21,7 @@ use super::quic::LinkEndpoint;
 use super::resumption::SessionTickets;
 use super::run::spawn_connector_with_auth_establishment_and_shutdown;
 use super::socket::LinkSocket;
-use super::{ByteStream, LinkCarrier, LinkCtx, QuicCarrier};
+use super::{ByteStream, LinkCtx, QuicCarrier};
 use crate::identity::DeviceIdentity;
 use crate::routing::{
     Capabilities, LinkConnectorAuth, LinkConnectorToken, LinkConnectorTokenRefresher, LinkRegistry,

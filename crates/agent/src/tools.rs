@@ -1,4 +1,4 @@
-//! amux's tool server: `amux mcp <dir>`, which the harness spawns from the
+//! amux's tool server: `amux internal mcp <dir>`, which the harness spawns from the
 //! install path and speaks MCP to over stdio.
 //!
 //! Its identity is its agent's directory. The fleet tools (agents, hosts,
@@ -22,11 +22,10 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tonic::transport::{Channel, Endpoint};
 use tonic::{Code, Status};
-use wire::client_service_client::ClientServiceClient;
 use wire::{
-    Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, Empty, ExitCause, HostEntry, HostRef,
-    Kind, Lifecycle, PromptInput, PromptSubmission, ResolveAgentRequest, SendMessageRequest,
-    StopAgentRequest, Trust, attachment, create_agent_request, host_ref, inventory_event,
+    Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, ExitCause, HostEntry, HostRef, Kind,
+    Lifecycle, PromptInput, PromptSubmission, ResolveAgentRequest, SendMessageRequest,
+    StopAgentRequest, attachment, create_agent_request, host_ref, inventory_event,
 };
 
 use crate::dir;
@@ -83,7 +82,7 @@ pub enum ToolsError {
     Write(std::io::Error),
 }
 
-/// `amux mcp <dir>`: serves the harness on stdin and stdout until it
+/// `amux internal mcp <dir>`: serves the harness on stdin and stdout until it
 /// closes stdin.
 pub async fn serve_tools(dir: PathBuf) -> Result<(), ToolsError> {
     serve_tools_on(
@@ -236,8 +235,8 @@ impl Server {
         let host_name = |id: &[u8]| {
             hosts
                 .iter()
-                .find(|host| host.host_id == id)
-                .map_or_else(|| interpret::to_hex(id), |host| host.name.clone())
+                .find(|host| host.host_id() == id)
+                .map_or_else(|| interpret::to_hex(id), |host| host.name().to_owned())
         };
         let agent_name = |parent: &AgentRef| {
             agents
@@ -285,13 +284,18 @@ impl Server {
             .map(|agent| agent.host_id.clone());
         let rows = hosts
             .iter()
-            .filter(|host| host.trust() == Trust::Trusted)
+            .filter(|host| host.trusted().is_some())
             .map(|host| {
+                let presence = match host.reach() {
+                    Some(wire::trusted::Reach::Online(_)) => "online",
+                    Some(wire::trusted::Reach::Away(_)) => "away",
+                    _ => "offline",
+                };
                 let mut row = json!({
-                    "name": host.name,
-                    "presence": word(host.presence().as_str_name(), "PRESENCE_"),
+                    "name": host.name(),
+                    "presence": presence,
                 });
-                if here.as_deref() == Some(host.host_id.as_slice()) {
+                if here.as_deref() == Some(host.host_id()) {
                     row["this_host"] = json!(true);
                 }
                 row
@@ -323,14 +327,16 @@ impl Server {
                 host_id: recipient.host_id,
                 agent_id: recipient.agent_id,
             }),
-            text: positioned.text,
             context,
-            attachments: positioned.attachments,
+            body: Some(wire::MessageBody {
+                text: positioned.text,
+                attachments: positioned.attachments,
+            }),
         };
         let sent = self
             .daemon_once(format!("the message to {to}"), |mut client| {
                 let request = request.clone();
-                async move { client.send_message(request).await }
+                async move { client.agents.send_message(request).await }
             })
             .await
             .map_err(|refusal| refusal.or_else(|status| refused(&status, &to)))?;
@@ -383,7 +389,7 @@ impl Server {
         let agent = self
             .daemon_once("the new agent".to_owned(), |mut client| {
                 let request = request.clone();
-                async move { client.create_agent(request).await }
+                async move { client.agents.create_agent(request).await }
             })
             .await
             .map_err(|refusal| refusal.or_else(|status| Refusal(plain(&status))))?;
@@ -406,7 +412,7 @@ impl Server {
         };
         self.daemon_once(format!("the stop for {name}"), |mut client| {
             let request = request.clone();
-            async move { client.stop_agent(request).await }
+            async move { client.agents.stop_agent(request).await }
         })
         .await
         .map_err(|refusal| {
@@ -421,7 +427,7 @@ impl Server {
         };
         self.daemon(|mut client| {
             let request = request.clone();
-            async move { client.resolve_agent(request).await }
+            async move { client.agents.resolve_agent(request).await }
         })
         .await
         .map_err(|status| refused(&status, name))
@@ -430,16 +436,20 @@ impl Server {
     /// The inventory read to CaughtUp: every host entry and agent row.
     async fn inventory(&self) -> Result<(Vec<HostEntry>, Vec<Agent>), Refusal> {
         self.daemon(|mut client| async move {
-            let mut stream = client.subscribe_inventory(Empty {}).await?.into_inner();
+            let mut stream = client
+                .agents
+                .subscribe_inventory(wire::SubscribeInventoryRequest {})
+                .await?
+                .into_inner();
             let (mut hosts, mut agents) = (Vec::<HostEntry>::new(), Vec::<Agent>::new());
             while let Some(event) = stream.message().await? {
                 match event.of {
                     Some(inventory_event::Of::Host(host)) => {
-                        hosts.retain(|known| known.host_id != host.host_id);
+                        hosts.retain(|known| known.host_id() != host.host_id());
                         hosts.push(host);
                     }
                     Some(inventory_event::Of::HostRemoved(removed)) => {
-                        hosts.retain(|known| known.host_id != removed.host_id);
+                        hosts.retain(|known| known.host_id() != removed.host_id);
                     }
                     Some(inventory_event::Of::Agent(agent)) => {
                         agents.retain(|known| {
@@ -474,7 +484,7 @@ impl Server {
     /// the window closes; then the call reports that no daemon is running.
     async fn daemon<T, F, Fut>(&self, call: F) -> Result<T, Status>
     where
-        F: Fn(ClientServiceClient<Channel>) -> Fut,
+        F: Fn(wire::ClientStubs) -> Fut,
         Fut: std::future::Future<Output = Result<tonic::Response<T>, Status>>,
     {
         self.dial(call, true).await.map_err(|(status, _)| status)
@@ -487,7 +497,7 @@ impl Server {
     /// is the daemon's own refusal.
     async fn daemon_once<T, F, Fut>(&self, what: String, call: F) -> Result<T, Settled>
     where
-        F: Fn(ClientServiceClient<Channel>) -> Fut,
+        F: Fn(wire::ClientStubs) -> Fut,
         Fut: std::future::Future<Output = Result<tonic::Response<T>, Status>>,
     {
         match self.dial(call, false).await {
@@ -502,14 +512,14 @@ impl Server {
     /// The error says whether the call reached the daemon.
     async fn dial<T, F, Fut>(&self, call: F, resend: bool) -> Result<T, (Status, bool)>
     where
-        F: Fn(ClientServiceClient<Channel>) -> Fut,
+        F: Fn(wire::ClientStubs) -> Fut,
         Fut: std::future::Future<Output = Result<tonic::Response<T>, Status>>,
     {
         let deadline = tokio::time::Instant::now() + self.config.retry_window;
         let mut backoff = Duration::from_millis(50);
         loop {
             let failed = match connect(&self.dir.join(TOOLS_SOCK)).await {
-                Ok(channel) => match call(wire::client_service_client(channel)).await {
+                Ok(channel) => match call(wire::client_stubs(channel)).await {
                     Ok(response) => return Ok(response.into_inner()),
                     Err(status) if resend && lost(&status) => (status, true),
                     Err(status) => return Err((status, true)),

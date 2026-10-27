@@ -388,6 +388,7 @@ impl SimNet {
             given: Some(decl.name.clone()),
             branches: Default::default(),
             new_worktree: false,
+            recent: None,
             spec,
         };
         match &decl.journal {
@@ -864,7 +865,7 @@ impl World for SimNet {
         self.observe_call(
             host,
             format!("{agent} observed at {host}"),
-            ClientRequest::Subscribe {
+            ClientRequest::SubscribeSession {
                 agent_id: id.as_bytes().to_vec(),
                 tail,
             },
@@ -959,7 +960,7 @@ impl World for SimNet {
         agent: &str,
         before_order: Option<u64>,
         limit: u32,
-    ) -> Result<wire::FetchResponse, NetError> {
+    ) -> Result<wire::ListItemsResponse, NetError> {
         let id = self.agent_named(agent)?.id;
         let h = self.host_index(host)?;
         let mut sim = self.sim();
@@ -969,10 +970,10 @@ impl World for SimNet {
         }
         let call = sim.net.client_call(
             h,
-            ClientRequest::Fetch(wire::FetchRequest {
+            ClientRequest::ListItems(wire::ListItemsRequest {
                 agent_id: id.as_bytes().to_vec(),
                 before_order,
-                limit,
+                page_size: limit,
             }),
         );
         let what = format!("a page of {agent} at {host}");

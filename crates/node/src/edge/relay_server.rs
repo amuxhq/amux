@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, UNIX_EPOCH};
 
+use daemon_core::payload::CarrierKind;
 use futures_util::{Stream, StreamExt, stream};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
@@ -22,7 +23,7 @@ use crate::link::framed::{FramedKind, FramedPath};
 use crate::link::quic::{stream_carrier_kind, stream_path};
 use crate::link::relaying::Relaying;
 use crate::link::socket::{LinkSocket, Path, PathId};
-use crate::link::{CarrierKind, ChannelPool, LinkEndpoint, QuicCarrier, run_link};
+use crate::link::{ChannelPool, LinkEndpoint, QuicCarrier, run_link};
 use crate::resource_limits::HandshakeAdmission;
 use crate::routing::{
     AuthenticatedLinkContextProvider, AuthenticatedLinkUser, Capabilities, LinkCtx, LinkRegistry,
@@ -337,7 +338,7 @@ impl CloudLinkServer {
                             .with_path(stream_path(FramedKind::RelayTcp))
                         }
                         None => {
-                            QuicCarrier::from_accepted_with_kind(connection, CarrierKind::RelayQuic)
+                            QuicCarrier::from_accepted_with_kind(connection, CarrierKind::Relay)
                         }
                     };
                     let ctx = service
@@ -518,7 +519,6 @@ fn cloud_tls_incoming(
             if let Err(error) = stream.set_nodelay(true) {
                 tracing::warn!(error = %error, "failed to set TCP_NODELAY");
             }
-            crate::transport::configure_relay_tcp_keepalive(&stream);
             let acceptor = acceptor.clone();
             let tx = tx.clone();
             tokio::spawn(async move {
@@ -611,7 +611,6 @@ mod tests {
 
     use super::*;
     use crate::Tier;
-    use crate::link::LinkCarrier as _;
     use crate::link::run::spawn_connector_with_auth_establishment_and_shutdown;
     use crate::link::socket::LinkId;
     use crate::routing::{LinkConnectorAuth, LinkConnectorToken, LinkConnectorTokenRefresher};
@@ -769,7 +768,7 @@ mod tests {
                 .await
                 .unwrap(),
         );
-        assert_eq!(carrier.kind(), CarrierKind::RelayQuic);
+        assert_eq!(carrier.kind(), CarrierKind::Relay);
         let _near = link(near, carrier, &format!("{account}/pro")).await;
 
         let far = HostId::new_v4();

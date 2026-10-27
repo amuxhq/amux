@@ -3,7 +3,7 @@ use wire::message::Body;
 use wire::{Hello, Message, NeighborUp};
 
 use super::*;
-use crate::ids::{CallId, JobId, TimerId};
+use crate::ids::{CallId, JobId};
 use crate::io::{Input, Job};
 use crate::payload::{CarrierKind, ChannelClass, ClientRequest, JobResult, PublicKey};
 use crate::trust::{Reachability, TrustStore};
@@ -17,17 +17,14 @@ fn daemon(trusted: &[HostId]) -> Daemon {
     let mut daemon = Daemon::new(
         Sqlite::open_in_memory(OWN).expect("a store opens"),
         StartOptions {
-            trust: "/profile/trust.json".into(),
             budget: StepBudget::UNLIMITED,
             ..StartOptions::default()
         },
     );
-    step(
-        &mut daemon,
-        Input::TrustRead {
-            store: TrustStore::of_hosts(trusted.iter().copied()),
-        },
-    );
+    {
+        daemon.trust_for_test(TrustStore::of_hosts(trusted.iter().copied()));
+        step(&mut daemon, Input::Started)
+    };
     daemon
 }
 
@@ -105,7 +102,7 @@ fn entry(daemon: &Daemon, id: HostId) -> wire::HostEntry {
     daemon
         .host_set()
         .iter()
-        .find(|entry| entry.host_id == id.0)
+        .find(|entry| entry.host_id() == id.0)
         .cloned()
         .expect("the host is in the host set")
 }
@@ -140,18 +137,16 @@ fn channel(daemon: &mut Daemon, link: u64, peer: HostId) -> ChannelId {
     channel
 }
 
-fn written_or_none(out: &[Output]) -> Option<JobId> {
-    out.iter().find_map(|output| match output {
-        Output::Job {
-            id,
-            op: Job::Fsync { .. } | Job::TeardownHost { .. },
-        } => Some(*id),
-        _ => None,
-    })
-}
-
-fn written(out: &[Output]) -> JobId {
-    written_or_none(out).unwrap_or_else(|| panic!("expected a trust job, got {out:?}"))
+fn teardown(out: &[Output]) -> JobId {
+    out.iter()
+        .find_map(|output| match output {
+            Output::Job {
+                id,
+                op: Job::TeardownHost { .. },
+            } => Some(*id),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("expected a teardown, got {out:?}"))
 }
 
 fn pair(id: HostId, pubkey: Vec<u8>) -> TrustChange {
@@ -161,13 +156,6 @@ fn pair(id: HostId, pubkey: Vec<u8>) -> TrustChange {
         name: "desk".into(),
         reachability: Some(Reachability::Cloud),
     }
-}
-
-fn retried_now(out: &[Output], id: HostId, now: u64) -> bool {
-    out.contains(&Output::ArmTimer {
-        id: TimerId::Retry(id),
-        at_ms: now,
-    })
 }
 
 #[test]
@@ -214,7 +202,7 @@ fn past_the_cap_a_claim_evicts_the_oldest_untrusted_host_held_only_by_a_claim() 
 fn a_hosts_key_replacement_holds_nothing_of_it_until_the_new_key_is_written() {
     let mut daemon = daemon(&[DESK]);
     linked(&mut daemon, 1, DESK, CarrierKind::Direct, &[]);
-    assert_eq!(entry(&daemon, DESK).version.as_deref(), Some("1.2.3"));
+    assert_eq!(entry(&daemon, DESK).version(), Some("1.2.3"));
 
     // Pairing under a new key tears the host down first.
     let out = step(
@@ -224,7 +212,7 @@ fn a_hosts_key_replacement_holds_nothing_of_it_until_the_new_key_is_written() {
             request: ClientRequest::ChangeTrust(pair(DESK, vec![8; 32])),
         },
     );
-    let teardown = written(&out);
+    let teardown = self::teardown(&out);
     assert!(daemon.routing.catalogue.said(DESK).is_none());
     // What arrives meanwhile, on a link or a neighbor's word, is not held.
     linked(&mut daemon, 2, DESK, CarrierKind::Direct, &[]);
@@ -232,17 +220,10 @@ fn a_hosts_key_replacement_holds_nothing_of_it_until_the_new_key_is_written() {
     assert!(daemon.routing.catalogue.said(DESK).is_none());
     assert!(daemon.routing.catalogue.relays_to(DESK).is_empty());
 
-    let write = written(&step(
-        &mut daemon,
-        Input::JobDone {
-            job: teardown,
-            result: JobResult::Done,
-        },
-    ));
     step(
         &mut daemon,
         Input::JobDone {
-            job: write,
+            job: teardown,
             result: JobResult::Done,
         },
     );
@@ -262,10 +243,9 @@ fn only_a_channel_begun_after_a_revocation_takes_it_back() {
     assert!(daemon.routing.catalogue.revoked(DESK));
 
     let after = channel(&mut daemon, 1, DESK);
-    let out = step(&mut daemon, Input::ChannelAnswered { channel: after });
+    step(&mut daemon, Input::ChannelAnswered { channel: after });
     assert!(!daemon.routing.catalogue.revoked(DESK));
-    assert!(retried_now(&out, DESK, 0), "tried at once: {out:?}");
-    assert_eq!(entry(&daemon, DESK).revoked, None);
+    assert!(!entry(&daemon, DESK).revoked());
 }
 
 #[test]
@@ -276,12 +256,11 @@ fn a_trusted_host_the_relay_claims_is_remembered_as_on_the_account() {
             .trust()
             .entry(Uuid::from_bytes(DESK.0))
             .expect("the desk is trusted")
-            .reachabilities
-            .clone()
+            .on_account
     };
     // Paired on the same network: nothing says the relay reaches it.
     linked(&mut daemon, 1, DESK, CarrierKind::Direct, &[]);
-    assert!(!reachable(&daemon).contains(&Reachability::Cloud));
+    assert!(!reachable(&daemon));
 
     // The relay claims it: the next launch may send through the relay.
     step(
@@ -293,7 +272,7 @@ fn a_trusted_host_the_relay_claims_is_remembered_as_on_the_account() {
             resumed: None,
         },
     );
-    let out = step(
+    step(
         &mut daemon,
         Input::LinkControl {
             link: LinkId(2),
@@ -304,18 +283,10 @@ fn a_trusted_host_the_relay_claims_is_remembered_as_on_the_account() {
             },
         },
     );
-    let write = written(&out);
-    step(
-        &mut daemon,
-        Input::JobDone {
-            job: write,
-            result: JobResult::Done,
-        },
-    );
-    assert!(reachable(&daemon).contains(&Reachability::Cloud));
+    assert!(reachable(&daemon));
 
     // A claim on a link that is not the relay's says nothing of the account.
     let mut daemon = self::daemon(&[DESK]);
     linked(&mut daemon, 1, numbered(1), CarrierKind::Direct, &[DESK]);
-    assert!(!reachable(&daemon).contains(&Reachability::Cloud));
+    assert!(!reachable(&daemon));
 }

@@ -52,6 +52,7 @@ public struct AgentsHome: View {
     @Environment(\.photographed) private var photographed
     @Environment(\.reducesMotion) private var reducesMotion
     @Environment(\.reducesTransparency) private var reducesTransparency
+    @Environment(\.scenePhase) private var phase
     private let model: FleetStore
     private let accounts: AccountRegistry
     /// The machines, for the one thing this screen says about them: a phone
@@ -71,6 +72,12 @@ public struct AgentsHome: View {
     /// the chip chosen under it.
     @State private var words = ""
     @State private var only: FleetOnly?
+    /// Whether the phone is still dialling its hosts after coming on screen.
+    /// A reopened app lists its hosts as it last saw them, every one
+    /// unreached, and reaches them a few hundred milliseconds later; saying
+    /// they are offline in between flashes a card that is gone before it can
+    /// be read.
+    @State private var dialling = true
 
     public init(
         model: FleetStore,
@@ -155,6 +162,17 @@ public struct AgentsHome: View {
             }
         }
         .onAppear { actions(.refresh) }
+        // Put away, the phone lets go of every link, so coming back dials
+        // them all again.
+        .task(id: phase) {
+            switch phase {
+            case .background: dialling = true
+            case .active where dialling:
+                try? await Task.sleep(for: .seconds(1))
+                if !Task.isCancelled { dialling = false }
+            default: break
+            }
+        }
         // Ages count while the list is on screen, as the terminal's do. A
         // compared picture holds its clock still.
         .task(id: photographed) {
@@ -623,6 +641,7 @@ public struct AgentsHome: View {
     /// that a machine is offline. A phone that can reach every machine it owns
     /// shows none of it and is never asked for an account.
     private var exceptions: (text: String, act: HomeAction)? {
+        if dialling && !photographed { return nil }
         if signedIn, let trouble = model.relayTrouble {
             return (trouble, model.relay == .signInAgain ? .signIn : .openExceptions)
         }
@@ -1069,6 +1088,7 @@ struct StateMark: View {
     @Environment(\.photographed) private var photographed
     @Environment(\.reducesMotion) private var reducesMotion
     @Environment(\.workingMark) private var working
+    @Environment(\.hidesNeedsYouDot) private var hidesNeedsYou
     let state: RowState
 
     static let size: CGFloat = 10
@@ -1077,7 +1097,7 @@ struct StateMark: View {
         Group {
             switch state {
             case .needsYou:
-                Circle().fill(design.accent.color)
+                Circle().fill(design.accent.color).opacity(hidesNeedsYou ? 0 : 1)
             case .working, .starting:
                 Working(style: working, still: photographed || reducesMotion)
             case .idle:
@@ -1093,57 +1113,129 @@ struct StateMark: View {
         .accessibilityHidden(true)
     }
 
+    /// Moving, each style is a Core Animation leaf (``WorkingMotion``), so a working
+    /// fleet costs the main thread nothing between frames; still, for a
+    /// camera or a reader who asked for less motion, it is drawn once, at a
+    /// fixed instant of the same curves.
     private struct Working: View {
         @Environment(\.design) private var design
         let style: WorkingMark
         let still: Bool
 
         var body: some View {
-            TimelineView(.animation(paused: still)) { context in
-                let t = still ? 0.25 : context.date.timeIntervalSinceReferenceDate
+            Group {
+                if still {
+                    drawn(at: 0.25)
+                } else {
+                    WorkingMotion(kind: .mark(style), ink: design.ink, ring: design.hairline)
+                }
+            }
+            // The typing dots run a little wider than the mark's column.
+            .frame(width: style == .typing ? 14 : nil)
+        }
+
+        private func drawn(at t: Double) -> some View {
+            let ink = design.ink.color
+            let hairline = design.hairline.color
+            let style = style
+            return Canvas { context, size in
+                let center = CGPoint(x: size.width / 2, y: size.height / 2)
                 switch style {
                 case .breathing:
-                    let phase = (sin(t * .pi / 1.1) + 1) / 2
-                    Circle()
-                        .fill(design.ink.color)
-                        .scaleEffect(0.55 + 0.45 * phase)
-                        .opacity(0.35 + 0.5 * phase)
+                    let phase = MarkMotion.breath(at: t)
+                    let side = min(size.width, size.height) * MarkMotion.breathScale(phase)
+                    let dot = CGRect(
+                        x: center.x - side / 2, y: center.y - side / 2, width: side, height: side)
+                    context.fill(
+                        Path(ellipseIn: dot),
+                        with: .color(ink.opacity(MarkMotion.breathOpacity(phase))))
                 case .typing:
-                    HStack(spacing: 1.5) {
-                        ForEach(0..<3) { i in
-                            let phase = (sin((t * 2.4 - Double(i) * 0.7) * .pi) + 1) / 2
-                            Circle()
-                                .fill(design.ink.color)
-                                .frame(width: 2.6, height: 2.6)
-                                .opacity(0.3 + 0.7 * phase)
-                                .offset(y: -1.5 * phase)
-                        }
+                    for dot in 0..<3 {
+                        let phase = MarkMotion.typing(dot, at: t)
+                        let place = MarkMotion.typingDot(dot, phase: phase, center: center)
+                        context.fill(
+                            Path(ellipseIn: place),
+                            with: .color(ink.opacity(MarkMotion.typingOpacity(phase))))
                     }
-                    .frame(width: 14)
                 case .orbit:
-                    ZStack {
-                        Circle().strokeBorder(design.hairline.color, lineWidth: 1.5)
-                        Circle()
-                            .trim(from: 0, to: 0.22)
-                            .stroke(design.ink.color, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-                            .padding(0.75)
-                            .rotationEffect(.radians(t.truncatingRemainder(dividingBy: 1.4) / 1.4 * 2 * .pi))
-                    }
+                    ring(in: &context, size: size, color: hairline)
+                    arc(in: &context, size: size, from: 0, to: MarkMotion.orbitArc,
+                        turn: MarkMotion.orbitTurn(at: t), color: ink)
                 case .filling:
-                    let phase = (t.truncatingRemainder(dividingBy: 2.4)) / 2.4
-                    let fill = phase < 0.5 ? phase * 2 : 1
-                    let start = phase < 0.5 ? 0 : (phase - 0.5) * 2
-                    ZStack {
-                        Circle().strokeBorder(design.hairline.color, lineWidth: 1.5)
-                        Circle()
-                            .trim(from: start, to: fill)
-                            .stroke(design.ink.color, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-                            .padding(0.75)
-                            .rotationEffect(.degrees(-90))
-                    }
+                    ring(in: &context, size: size, color: hairline)
+                    let (start, end) = MarkMotion.filling(at: t)
+                    arc(in: &context, size: size, from: start, to: end, turn: -.pi / 2, color: ink)
                 }
             }
         }
+
+        /// The faint ring a stroked border drew: inside the mark's bounds.
+        private func ring(in context: inout GraphicsContext, size: CGSize, color: Color) {
+            context.stroke(
+                Path(ellipseIn: MarkMotion.ringBounds(size)), with: .color(color),
+                lineWidth: MarkMotion.stroke)
+        }
+
+        /// A trimmed circle turned about the centre.
+        private func arc(
+            in context: inout GraphicsContext, size: CGSize, from: Double, to: Double,
+            turn: Double, color: Color
+        ) {
+            var turned = context
+            turned.translateBy(x: size.width / 2, y: size.height / 2)
+            turned.rotate(by: .radians(turn))
+            turned.translateBy(x: -size.width / 2, y: -size.height / 2)
+            turned.stroke(
+                Path(ellipseIn: MarkMotion.ringBounds(size)).trimmedPath(from: from, to: to),
+                with: .color(color), style: StrokeStyle(lineWidth: MarkMotion.stroke, lineCap: .round))
+        }
+    }
+}
+
+/// The working marks' motion, as functions of the reference-date clock: what
+/// the still frame draws at one instant and ``WorkingMotion`` animates over a period.
+enum MarkMotion {
+    static let stroke: CGFloat = 1.5
+
+    /// Breathing: swells and fades over 2.2 s.
+    static let breathPeriod = 2.2
+    static func breath(at t: Double) -> Double { (sin(t * .pi / 1.1) + 1) / 2 }
+    static func breathScale(_ phase: Double) -> CGFloat { 0.55 + 0.45 * phase }
+    static func breathOpacity(_ phase: Double) -> Double { 0.35 + 0.5 * phase }
+
+    /// Typing: three dots rising in turn, each every 0.83 s.
+    static let typingPeriod = 1 / 1.2
+    static let typingDiameter: CGFloat = 2.6
+    static func typing(_ dot: Int, at t: Double) -> Double {
+        (sin((t * 2.4 - Double(dot) * 0.7) * .pi) + 1) / 2
+    }
+    static func typingOpacity(_ phase: Double) -> Double { 0.3 + 0.7 * phase }
+    static func typingDot(_ dot: Int, phase: Double, center: CGPoint) -> CGRect {
+        let spacing: CGFloat = 1.5
+        let row = 3 * typingDiameter + 2 * spacing
+        return CGRect(
+            x: center.x - row / 2 + CGFloat(dot) * (typingDiameter + spacing),
+            y: center.y - typingDiameter / 2 - 1.5 * phase,
+            width: typingDiameter, height: typingDiameter)
+    }
+
+    /// Orbit: a fifth of the ring going round every 1.4 s.
+    static let orbitPeriod = 1.4
+    static let orbitArc = 0.22
+    static func orbitTurn(at t: Double) -> Double {
+        t.truncatingRemainder(dividingBy: orbitPeriod) / orbitPeriod * 2 * .pi
+    }
+
+    /// Filling: the ring fills over 1.2 s and empties over the next 1.2.
+    static let fillingPeriod = 2.4
+    static func filling(at t: Double) -> (start: Double, end: Double) {
+        let phase = t.truncatingRemainder(dividingBy: fillingPeriod) / fillingPeriod
+        return phase < 0.5 ? (0, phase * 2) : ((phase - 0.5) * 2, 1)
+    }
+
+    /// Where a ring's stroke runs: inside the mark's bounds.
+    static func ringBounds(_ size: CGSize) -> CGRect {
+        CGRect(origin: .zero, size: size).insetBy(dx: stroke / 2, dy: stroke / 2)
     }
 }
 

@@ -157,11 +157,18 @@ impl UdpGate {
     /// The gate binds loopback in the upstream's family, so a host bound
     /// IPv6 only is gated over IPv6.
     pub fn bind(upstream: Option<SocketAddr>) -> std::io::Result<Self> {
-        let loopback = match upstream {
-            Some(SocketAddr::V6(_)) => SocketAddr::from((std::net::Ipv6Addr::LOCALHOST, 0)),
-            _ => SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, 0)),
+        let loopback: std::net::IpAddr = match upstream {
+            Some(SocketAddr::V6(_)) => std::net::Ipv6Addr::LOCALHOST.into(),
+            _ => std::net::Ipv4Addr::LOCALHOST.into(),
         };
-        let front = std::net::UdpSocket::bind(loopback)?;
+        Self::bind_on(loopback, upstream)
+    }
+
+    /// The same, its front socket on `front` rather than loopback: where a
+    /// client outside this Mac, a phone over its USB link, can dial it. The
+    /// socket toward the upstream is still this Mac's own.
+    pub fn bind_on(front: std::net::IpAddr, upstream: Option<SocketAddr>) -> std::io::Result<Self> {
+        let front = std::net::UdpSocket::bind(SocketAddr::new(front, 0))?;
         front.set_nonblocking(true)?;
         let front = Arc::new(UdpSocket::from_std(front)?);
         let addr = front.local_addr()?;
@@ -194,7 +201,15 @@ impl UdpGate {
                     let sender = match senders.get(&from) {
                         Some(sender) => sender,
                         None => {
-                            let Ok(back) = UdpSocket::bind(loopback).await else {
+                            // Toward the upstream from this Mac's own loopback,
+                            // in the upstream's family, wherever the front is.
+                            let loopback: std::net::IpAddr = if upstream.is_ipv6() {
+                                std::net::Ipv6Addr::LOCALHOST.into()
+                            } else {
+                                std::net::Ipv4Addr::LOCALHOST.into()
+                            };
+                            let Ok(back) = UdpSocket::bind(SocketAddr::new(loopback, 0)).await
+                            else {
                                 continue;
                             };
                             if back.connect(upstream).await.is_err() {

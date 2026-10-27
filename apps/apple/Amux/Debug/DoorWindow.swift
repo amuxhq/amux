@@ -47,11 +47,14 @@ enum DoorWindow {
 
     /// Only an animation that ends counts. Liquid Glass keeps animations
     /// of endless duration on its layers, tracking the views it sits on,
-    /// for as long as it is on screen.
+    /// for as long as it is on screen, and a working agent's motion repeats
+    /// a finite period forever.
     @MainActor
     private static func moving(_ layer: CALayer) -> Bool {
         let ending = layer.animationKeys()?.contains { key in
-            layer.animation(forKey: key)?.duration.isFinite == true
+            guard let animation = layer.animation(forKey: key) else { return false }
+            return animation.duration.isFinite && animation.repeatCount.isFinite
+                && animation.repeatDuration.isFinite
         } ?? false
         return ending || layer.sublayers?.contains(where: moving) ?? false
     }

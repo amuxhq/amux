@@ -56,8 +56,12 @@ impl ProfileRuntime {
     /// Opens a Subscribe stream on an agent: its Opening, its Snapshot,
     /// the newest `tail` rows of its block (at most K), its marker if one
     /// is set, then every change committed after it.
-    pub async fn subscribe(&self, agent_id: &[u8], tail: u32) -> Result<Subscription, ServeError> {
-        let ask = Ask::Subscribe {
+    pub async fn subscribe_session(
+        &self,
+        agent_id: &[u8],
+        tail: u32,
+    ) -> Result<Subscription, ServeError> {
+        let ask = Ask::SubscribeSession {
             agent_id: agent_id.to_vec(),
             tail,
         };
@@ -74,13 +78,13 @@ impl ProfileRuntime {
     /// one this origin runs, Reset and the newest rows. Either way the
     /// Opening and Snapshot lead and the marker follows, then every event.
     /// An agent this host only replicates is not found.
-    pub async fn peer_subscribe(
+    pub async fn peer_subscribe_session(
         &self,
         from: crate::HostId,
-        request: wire::PeerSubscribeRequest,
+        request: wire::PeerSubscribeSessionRequest,
     ) -> Result<Subscription, ServeError> {
         let room = self.launch().fanout_capacity;
-        let request = PeerRequest::Subscribe(request);
+        let request = PeerRequest::SubscribeSession(request);
         let mut answers = self
             .driver()
             .peer_call(core_host(from), request, room)

@@ -56,7 +56,12 @@ fn item(order: u64, read: Option<&str>) -> Item {
                 name: "Read".into(),
                 state: ToolState::Succeeded as i32,
                 class: ToolClass::Read as i32,
-                input_json: format!(r#"{{"file_path":"{path}"}}"#).into_bytes(),
+                input: Some(interpret::tool_input(
+                    "Read",
+                    "",
+                    &serde_json::json!({ "file_path": path }),
+                    "",
+                )),
                 ..Default::default()
             })),
         },
@@ -702,9 +707,9 @@ fn a_form_submits_what_was_typed() {
         });
     let mut view = ChatView::new(b"agent".to_vec(), at, false);
     // The one field takes the typing; Enter submits it.
-    typed(&mut view, &state, "jlw/amux");
+    typed(&mut view, &state, "ada/amux");
     let (buffer, _) = draw(&mut view, &state, at, 120, 60, theme());
-    assert!(text(&buffer).contains("› jlw/amux"), "{}", text(&buffer));
+    assert!(text(&buffer).contains("› ada/amux"), "{}", text(&buffer));
     let effects = view.key(&state, key(KeyCode::Enter), theme());
     let [ChatEffect::Answer(input)] = effects.as_slice() else {
         panic!("{effects:?}");
@@ -720,7 +725,7 @@ fn a_form_submits_what_was_typed() {
         panic!("{decoded:?}");
     };
     let content: serde_json::Value = serde_json::from_slice(&form.content_json).unwrap();
-    assert!(content.to_string().contains("jlw/amux"), "{content}");
+    assert!(content.to_string().contains("ada/amux"), "{content}");
 }
 
 #[test]
@@ -1002,8 +1007,11 @@ fn ctrl_v_attaches_a_file_through_put_blob() {
 fn detached_keeps_the_rows_and_the_draft() {
     let mut state = chat(replies(1, 5));
     state.update(Msg::Host(wire::HostEntry {
-        host_id: b"host".to_vec(),
-        name: "studio".into(),
+        host: Some(wire::Host {
+            host_id: b"host".to_vec(),
+            name: "studio".into(),
+            ..Default::default()
+        }),
         ..Default::default()
     }));
     state.update(event(session_event::Of::Detached(wire::Detached {})));
@@ -1025,25 +1033,14 @@ fn detached_keeps_the_rows_and_the_draft() {
 #[test]
 fn a_host_out_of_reach_while_this_machine_is_signed_out_names_this_machines_sign_out() {
     let mut fleet = FleetState::new();
-    let mut laptop = host(
-        b"laptop",
-        "laptop",
-        wire::Trust::Trusted,
-        wire::Presence::Online,
-    );
+    let mut laptop = host(b"laptop", "laptop", Reads::Online);
     if let wire::inventory_event::Of::Host(entry) = &mut laptop {
-        entry.via = wire::RouteKind::Unspecified as i32;
-        entry.account_signed_in = Some(false);
+        entry.host.get_or_insert_default().account_signed_in = Some(false);
     }
     inventory(&mut fleet, laptop);
-    let mut desk = host(
-        b"host",
-        "desk",
-        wire::Trust::Trusted,
-        wire::Presence::Offline,
-    );
+    let mut desk = host(b"host", "desk", Reads::Offline);
     if let wire::inventory_event::Of::Host(entry) = &mut desk {
-        entry.account_signed_in = Some(true);
+        entry.host.get_or_insert_default().account_signed_in = Some(true);
     }
     inventory(&mut fleet, desk);
 
@@ -1094,15 +1091,9 @@ fn a_host_out_of_reach_while_this_machine_is_signed_out_names_this_machines_sign
     assert!(screen.contains("signed out · amux login"), "{screen}");
 
     // Signed in again, the words are what they always were.
-    let mut signed_in = host(
-        b"laptop",
-        "laptop",
-        wire::Trust::Trusted,
-        wire::Presence::Online,
-    );
+    let mut signed_in = host(b"laptop", "laptop", Reads::Online);
     if let wire::inventory_event::Of::Host(entry) = &mut signed_in {
-        entry.via = wire::RouteKind::Unspecified as i32;
-        entry.account_signed_in = Some(true);
+        entry.host.get_or_insert_default().account_signed_in = Some(true);
     }
     inventory(&mut fleet, signed_in);
     view.reach = ui_view::reach(&fleet, b"laptop", b"host");
@@ -1119,20 +1110,10 @@ fn a_host_out_of_reach_while_this_machine_is_signed_out_names_this_machines_sign
 #[test]
 fn a_host_away_on_the_free_plan_names_the_plan() {
     let mut fleet = FleetState::new();
-    inventory(
-        &mut fleet,
-        host(
-            b"laptop",
-            "laptop",
-            wire::Trust::Trusted,
-            wire::Presence::Online,
-        ),
-    );
-    let mut desk = host(b"host", "desk", wire::Trust::Trusted, wire::Presence::Away);
+    inventory(&mut fleet, host(b"laptop", "laptop", Reads::Online));
+    let mut desk = host(b"host", "desk", Reads::Away);
     if let wire::inventory_event::Of::Host(entry) = &mut desk {
-        entry.via = wire::RouteKind::Relay as i32;
-        entry.account_signed_in = Some(true);
-        entry.last_dial_error = Some("127.0.0.1:61393: the QUIC handshake timed out".into());
+        entry.host.get_or_insert_default().account_signed_in = Some(true);
     }
     inventory(&mut fleet, desk);
 
@@ -1193,25 +1174,17 @@ fn an_empty_caught_up_chat_is_not_away_by_a_lagging_fleet() {
 #[test]
 fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
     let mut fleet = FleetState::new();
-    inventory(
-        &mut fleet,
-        host(
-            b"laptop",
-            "laptop",
-            wire::Trust::Trusted,
-            wire::Presence::Online,
-        ),
-    );
-    let mut desk = host(
-        b"host",
-        "desk",
-        wire::Trust::Trusted,
-        wire::Presence::Offline,
-    );
+    inventory(&mut fleet, host(b"laptop", "laptop", Reads::Online));
+    let mut desk = host(b"host", "desk", Reads::Offline);
     if let wire::inventory_event::Of::Host(entry) = &mut desk {
-        entry.via = wire::RouteKind::Unspecified as i32;
-        entry.account_signed_in = Some(false);
-        entry.revoked = Some(true);
+        entry.host.get_or_insert_default().account_signed_in = Some(false);
+        entry.standing = Some(wire::host_entry::Standing::Trusted(wire::Trusted {
+            reach: Some(wire::trusted::Reach::Offline(wire::Offline {
+                revoked: true,
+                ..Default::default()
+            })),
+            current: false,
+        }));
     }
     inventory(&mut fleet, desk);
 
@@ -1243,6 +1216,18 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
         "{screen}"
     );
     assert!(screen.contains("it sends once you pair again"), "{screen}");
+
+    // Home's top line says how to pair again, and does not count it away.
+    let mut fleet_view = FleetView {
+        local_host: b"laptop".to_vec(),
+        ..FleetView::default()
+    };
+    let screen = fleet_screen(&mut fleet_view, &fleet);
+    assert!(
+        screen.contains("desk no longer trusts this machine · amux pair desk"),
+        "{screen}"
+    );
+    assert!(!screen.contains("away"), "{screen}");
 }
 
 #[test]
@@ -1287,47 +1272,35 @@ fn inventory(fleet: &mut FleetState, of: wire::inventory_event::Of) {
     })));
 }
 
-fn host(
-    id: &[u8],
-    name: &str,
-    trust: wire::Trust,
-    presence: wire::Presence,
-) -> wire::inventory_event::Of {
-    wire::inventory_event::Of::Host(wire::HostEntry {
-        host_id: id.to_vec(),
-        name: name.into(),
-        trust: trust as i32,
-        presence: presence as i32,
-        via: wire::RouteKind::Direct as i32,
-        ..Default::default()
+/// How a test host reads.
+#[derive(Clone, Copy)]
+enum Reads {
+    Online,
+    Away,
+    Offline,
+    Candidate,
+}
+
+fn host(id: &[u8], name: &str, reads: Reads) -> wire::inventory_event::Of {
+    use wire::trusted::Reach;
+    wire::inventory_event::Of::Host(match reads {
+        Reads::Candidate => wire::HostEntry::candidate_host(id, name, Vec::new()),
+        Reads::Online => {
+            wire::HostEntry::trusted_host(id, name, Reach::Online(wire::RouteKind::Direct as i32))
+        }
+        Reads::Away => wire::HostEntry::trusted_host(id, name, Reach::Away(wire::Empty {})),
+        Reads::Offline => {
+            wire::HostEntry::trusted_host(id, name, Reach::Offline(wire::Offline::default()))
+        }
     })
 }
 
 #[test]
 fn the_hosts_overlay_draws_trusted_hosts_and_candidates() {
     let mut fleet = FleetState::new();
-    inventory(
-        &mut fleet,
-        host(b"a", "studio", wire::Trust::Trusted, wire::Presence::Online),
-    );
-    inventory(
-        &mut fleet,
-        host(
-            b"b",
-            "laptop",
-            wire::Trust::Trusted,
-            wire::Presence::Offline,
-        ),
-    );
-    inventory(
-        &mut fleet,
-        host(
-            b"c",
-            "den mac",
-            wire::Trust::Candidate,
-            wire::Presence::Online,
-        ),
-    );
+    inventory(&mut fleet, host(b"a", "studio", Reads::Online));
+    inventory(&mut fleet, host(b"b", "laptop", Reads::Offline));
+    inventory(&mut fleet, host(b"c", "den mac", Reads::Candidate));
     let lines = crate::hosts::modal_rows(&fleet, b"a", theme());
     let screen: Vec<String> = lines
         .iter()
@@ -1392,9 +1365,9 @@ fn fleet_screen(view: &mut FleetView, fleet: &FleetState) -> String {
 #[test]
 fn the_fleet_says_restart_to_update_when_the_daemon_runs_another_build() {
     let mut fleet = FleetState::new();
-    let mut studio = host(b"a", "studio", wire::Trust::Trusted, wire::Presence::Online);
+    let mut studio = host(b"a", "studio", Reads::Online);
     if let wire::inventory_event::Of::Host(entry) = &mut studio {
-        entry.version = Some("0.8.0".into());
+        entry.host.get_or_insert_default().version = "0.8.0".into();
     }
     inventory(&mut fleet, studio);
     inventory(
@@ -1879,13 +1852,13 @@ fn an_exited_agent_on_an_away_host_names_why_it_is_away() {
     exited.lifecycle = wire::Lifecycle::Exited as i32;
     exited.exit_cause = wire::ExitCause::Stopped as i32;
     state.update(Msg::Entry(exited));
-    state.update(Msg::Host(wire::HostEntry {
-        host_id: b"host".to_vec(),
-        name: "desk".into(),
-        trust: wire::Trust::Trusted as i32,
-        presence: wire::Presence::Offline as i32,
-        ..Default::default()
-    }));
+    state.update(Msg::Host(wire::HostEntry::trusted_host(
+        b"host".to_vec(),
+        "desk",
+        wire::trusted::Reach::Offline(wire::Offline {
+            ..Default::default()
+        }),
+    )));
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
     view.reach = ui_view::Reach::Offline(ui_view::Offline::SignedOut);
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
@@ -1897,13 +1870,11 @@ fn an_exited_agent_on_an_away_host_names_why_it_is_away() {
     assert!(screen.contains("Enter resumes"), "{screen}");
 
     // Back online, the header says how it ended.
-    state.update(Msg::Host(wire::HostEntry {
-        host_id: b"host".to_vec(),
-        name: "desk".into(),
-        trust: wire::Trust::Trusted as i32,
-        presence: wire::Presence::Online as i32,
-        ..Default::default()
-    }));
+    state.update(Msg::Host(wire::HostEntry::trusted_host(
+        b"host".to_vec(),
+        "desk",
+        wire::trusted::Reach::Online(wire::RouteKind::Unspecified as i32),
+    )));
     view.reach = ui_view::Reach::Online(wire::RouteKind::Direct);
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     // Stopped is an ordinary end: the header says exited, and no more.
@@ -1930,15 +1901,7 @@ fn an_agent_that_exited_while_the_daemon_was_away_says_exited_once() {
     assert!(!screen.contains("exited · exited"), "{screen}");
 
     let mut fleet = FleetState::new();
-    inventory(
-        &mut fleet,
-        host(
-            b"host",
-            "desk",
-            wire::Trust::Trusted,
-            wire::Presence::Online,
-        ),
-    );
+    inventory(&mut fleet, host(b"host", "desk", Reads::Online));
     inventory(&mut fleet, wire::inventory_event::Of::Agent(exited));
     // Home lists it under Exited, which starts folded.
     let mut fleet_view = FleetView::default();
@@ -2118,7 +2081,7 @@ fn ctrl_c_in_an_ask_field_clears_that_field_and_never_the_draft() {
     let (state, at) = form();
     let mut view = ChatView::new(b"agent".to_vec(), at, false);
     draft(&mut view);
-    typed(&mut view, &state, "jlw/amux");
+    typed(&mut view, &state, "ada/amux");
     assert!(view.field_text(&state));
     assert!(view.kill_field(&state));
     kept(&view);
@@ -2179,10 +2142,10 @@ fn a_paste_goes_to_the_field_with_the_keys() {
     // A form field.
     let (state, at) = form();
     let mut view = ChatView::new(b"agent".to_vec(), at, false);
-    view.paste_text(&state, "jlw/amux");
+    view.paste_text(&state, "ada/amux");
     assert!(view.editor.is_empty());
     let screen = screen_of(&mut view, &state, at);
-    assert!(screen.contains("› jlw/amux"), "{screen}");
+    assert!(screen.contains("› ada/amux"), "{screen}");
 }
 
 #[test]
@@ -2231,10 +2194,7 @@ fn a_paste_into_a_secret_answer_shows_as_bullets() {
 #[test]
 fn a_paste_in_the_fleet_types_into_the_rename_field() {
     let mut fleet = FleetState::new();
-    inventory(
-        &mut fleet,
-        host(b"a", "studio", wire::Trust::Trusted, wire::Presence::Online),
-    );
+    inventory(&mut fleet, host(b"a", "studio", Reads::Online));
     inventory(&mut fleet, agent_row(b"p", "planner", Phase::Idle, None));
     let mut view = FleetView::default();
     view.paste("ignored");
@@ -2252,10 +2212,7 @@ fn a_paste_in_the_fleet_types_into_the_rename_field() {
 #[test]
 fn q_and_question_mark_reach_an_open_fleet_overlay_first() {
     let mut fleet = FleetState::new();
-    inventory(
-        &mut fleet,
-        host(b"a", "studio", wire::Trust::Trusted, wire::Presence::Online),
-    );
+    inventory(&mut fleet, host(b"a", "studio", Reads::Online));
     inventory(&mut fleet, agent_row(b"p", "planner", Phase::Idle, None));
     let mut view = FleetView::default();
     let q = key(KeyCode::Char('q'));
@@ -2351,10 +2308,7 @@ fn now() -> i64 {
 fn home_fleet() -> FleetState {
     let now = now();
     let mut fleet = FleetState::new();
-    inventory(
-        &mut fleet,
-        host(b"a", "studio", wire::Trust::Trusted, wire::Presence::Online),
-    );
+    inventory(&mut fleet, host(b"a", "studio", Reads::Online));
     inventory(
         &mut fleet,
         home_agent(b"p", "planner", Phase::Idle, None, now - 60_000),
@@ -2985,7 +2939,7 @@ fn a_new_claude_steps_the_permissions_that_still_ask() {
 fn a_new_agent_says_when_its_provider_is_not_signed_in() {
     use crate::setup::Item;
     let mut fleet = home_fleet();
-    let mut studio = host(b"a", "studio", wire::Trust::Trusted, wire::Presence::Online);
+    let mut studio = host(b"a", "studio", Reads::Online);
     if let wire::inventory_event::Of::Host(entry) = &mut studio {
         entry.providers = vec![
             wire::ProviderOnHost {
@@ -3021,7 +2975,7 @@ fn a_new_agent_says_when_its_provider_is_not_signed_in() {
         version: HOME_PLACE.version,
         working_dir: HOME_PLACE.working_dir,
         attach: false,
-        chat_in: crate::setup::ChatIn::Terminal,
+        chat_in: crate::setup::ChatIn::Native,
         defaults: HOME_PLACE.defaults,
     };
     let mut home = crate::home::Home::default();
@@ -3105,7 +3059,7 @@ fn a_new_agent_asks_for_a_new_worktree_and_shows_why_a_start_failed() {
         version: HOME_PLACE.version,
         working_dir: HOME_PLACE.working_dir,
         attach: false,
-        chat_in: crate::setup::ChatIn::Terminal,
+        chat_in: crate::setup::ChatIn::Native,
         defaults: HOME_PLACE.defaults,
     };
     let mut home = crate::home::Home::default();
@@ -3289,7 +3243,12 @@ fn a_folded_run_keeps_a_failure_its_turn_left_unresolved() {
                 name: "Bash".into(),
                 state: ToolState::Succeeded as i32,
                 class: ToolClass::Consequential as i32,
-                input_json: format!(r#"{{"command":"{line}"}}"#).into_bytes(),
+                input: Some(interpret::tool_input(
+                    "Bash",
+                    "",
+                    &serde_json::json!({ "command": line }),
+                    "",
+                )),
                 exit_code: Some(exit),
                 ..Default::default()
             })),
@@ -3348,7 +3307,12 @@ fn tool_steps_switch_between_collapse_show_all_and_hide() {
                 name: "Bash".into(),
                 state: ToolState::Succeeded as i32,
                 class: ToolClass::Consequential as i32,
-                input_json: format!(r#"{{"command":"{line}"}}"#).into_bytes(),
+                input: Some(interpret::tool_input(
+                    "Bash",
+                    "",
+                    &serde_json::json!({ "command": line }),
+                    "",
+                )),
                 exit_code: Some(exit),
                 ..Default::default()
             })),
@@ -3441,7 +3405,31 @@ fn a_chats_tool_steps_choice_is_kept_for_that_chat() {
     assert_eq!(layout.tools_of(b"two"), ToolSteps::Collapse);
     // Back to the default, the chat is no longer named.
     assert!(layout.set_tools(b"one", ToolSteps::Collapse));
-    assert!(layout.tools.is_empty());
+    assert!(layout.chats.is_empty());
+}
+
+/// The layout keeps only the most recently changed chats: an agent deleted
+/// elsewhere is never named to this client, so age bounds the file.
+#[test]
+fn the_layout_keeps_the_most_recently_changed_chats() {
+    use crate::chat::ToolSteps;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("layout.json");
+    let mut layout = crate::app::Layout::default();
+    for n in 0..crate::app::CHATS_KEPT + 5 {
+        let id = (n as u32).to_be_bytes();
+        assert!(layout.set_tools(&id, ToolSteps::Hide));
+        let key: String = id.iter().map(|b| format!("{b:02x}")).collect();
+        layout.chats.get_mut(&key).unwrap().changed_ms = n as i64;
+    }
+    layout.save(Some(&path));
+    let layout = crate::app::Layout::load(Some(&path));
+    assert_eq!(layout.chats.len(), crate::app::CHATS_KEPT);
+    assert_eq!(layout.tools_of(&0u32.to_be_bytes()), ToolSteps::Collapse);
+    let newest = (crate::app::CHATS_KEPT as u32 + 4).to_be_bytes();
+    assert_eq!(layout.tools_of(&newest), ToolSteps::Hide);
+    let leftovers = std::fs::read_dir(dir.path()).unwrap().count();
+    assert_eq!(leftovers, 1, "no temporary file is left beside it");
 }
 
 /// The header names the agent under one blank line, and the composer is

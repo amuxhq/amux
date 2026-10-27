@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "machine_model": "iPhone15,2",
+  "configuration": "Measured",
+  "device": "iPhone15,2 (iOS 27.0)",
+  "medians": {
+    "cold first frame": 201.23302936553955,
+    "cold store read": 39.80600833892822,
+    "cold fleet render": 44.370055198669434,
+    "reconciliation at 0 ms": 44.375061988830566,
+    "reconciliation at 100 ms": 184.94808673858643,
+    "reconciliation through the relay at 100 ms": 447.02601432800293,
+    "opening hitch time": 72.66978750183155,
+    "opening main-thread CPU": 16.59552839886861,
+    "streaming hitch time": 2.9220912939708747,
+    "streaming main-thread CPU": 37.0882641159942,
+    "streaming footprint": 60.892539978027344,
+    "idle transcript commits": 0.0,
+    "idle display ticks": 0.0,
+    "idle main-thread CPU": 1.947535662087274,
+    "idle home main-thread CPU": 3.8393530598818377
+  }
+}

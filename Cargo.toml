@@ -22,7 +22,9 @@ members = [
     "crates/fake-amux",
     "crates/git-facts",
     "crates/interpret",
+    "crates/ios-tools",
     "crates/journal",
+    "crates/log-file",
     "crates/model",
     "crates/models",
     "crates/node",
@@ -58,6 +60,7 @@ license = "FSL-1.1-ALv2"
 agent = { path = "crates/agent" }
 agent-core = { path = "crates/agent-core" }
 core-ring = { path = "crates/core-ring" }
+log-file = { path = "crates/log-file" }
 daemon-core = { path = "crates/daemon-core" }
 relay-core = { path = "crates/relay-core" }
 path-core = { path = "crates/path-core" }
@@ -108,6 +111,8 @@ schemars = "1"
 postcard = { version = "1", features = ["alloc"] }
 serde_yaml = "0.9"
 toml = "0.8.23"
+serde_ignored = "0.1"
+toml_edit = "0.22.27"
 prost = "0.14"
 prost-types = "0.14"
 protoc-bin-vendored = "3"
@@ -162,7 +167,7 @@ glob = "0.3"
 bytes = "1"
 qrcode = { version = "0.14", default-features = false }
 nix = { version = "0.31", features = ["process", "signal"] }
-rusqlite = { version = "0.40.2", default-features = false, features = ["hooks"] }
+rusqlite = { version = "0.40.2", default-features = false, features = ["hooks", "cache"] }
 rustix = { version = "1.1", features = ["fs"] }
 if-addrs = "0.13"
 # A screen model of an attached agent's terminal, so leaving it for the
@@ -241,4 +246,4 @@ debug = false
 # ("The rustls patch") says what the patch holds, the jobs that keep it on
 # rustls's newest 0.23 release, and how to drop it.
 [patch.crates-io]
-rustls = { git = "https://github.com/jordanwebster/rustls", rev = "ad62be4607107d24c73c9c746dcc9edf57daaaea" }
+rustls = { git = "https://github.com/amuxhq/rustls", rev = "ad62be4607107d24c73c9c746dcc9edf57daaaea" }

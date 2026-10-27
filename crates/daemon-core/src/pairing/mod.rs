@@ -73,7 +73,7 @@ pub enum WindowSecret {
     Qr(Vec<u8>),
 }
 
-/// How a secret travelled, as analytics and the audit log count it.
+/// How a secret travelled, as analytics and the reason log count it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Method {
     Pin,
@@ -102,12 +102,12 @@ pub enum Failure {
     Other,
 }
 
-/// What a pairing came to, for the audit log and analytics.
+/// What a pairing came to, for the reason log and analytics.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Outcome {
-    /// The audit log's words, and the failure analytics counts, if any.
+    /// The reason log's words, and the failure analytics counts, if any.
     Failed {
-        audit: String,
+        reason: String,
         counted: Option<Failure>,
     },
     Succeeded {
@@ -387,8 +387,8 @@ fn error(reason: Reason, detail: &str) -> PairMessage {
     }))
 }
 
-/// The audit log's words for an error this host sends.
-fn audit_words(reason: Reason, detail: &str) -> String {
+/// The reason log's words for an error this host sends.
+fn failure_words(reason: Reason, detail: &str) -> String {
     match reason {
         Reason::InvalidPin => "invalid PIN".to_owned(),
         Reason::SelfPairing => "self pairing is not allowed".to_owned(),
@@ -457,7 +457,7 @@ impl Daemon {
                 role: Role::Offerer,
                 method,
                 outcome: Outcome::Failed {
-                    audit: "pair mode expired".to_owned(),
+                    reason: "pair mode expired".to_owned(),
                     counted: None,
                 },
             })));
@@ -694,7 +694,7 @@ impl Daemon {
             method,
             Role::Joiner,
             Outcome::Failed {
-                audit: failure.message.clone(),
+                reason: failure.message.clone(),
                 counted: Some(failure.counted()),
             },
             out,
@@ -703,7 +703,7 @@ impl Daemon {
 
     fn offerer_failed(
         method: Method,
-        audit: &str,
+        reason: &str,
         counted: Option<Failure>,
         out: &mut Vec<Output>,
     ) {
@@ -711,7 +711,7 @@ impl Daemon {
             method,
             Role::Offerer,
             Outcome::Failed {
-                audit: audit.to_owned(),
+                reason: reason.to_owned(),
                 counted,
             },
             out,
@@ -731,13 +731,13 @@ impl Daemon {
             self.record_failure(session, out);
             Self::offerer_failed(
                 method,
-                &audit_words(reason, detail),
+                &failure_words(reason, detail),
                 Some(Failure::WrongSecret),
                 out,
             );
         } else {
             self.release(session, out);
-            Self::offerer_failed(method, &audit_words(reason, detail), None, out);
+            Self::offerer_failed(method, &failure_words(reason, detail), None, out);
         }
         self.pairing.sessions.remove(&session);
         out.push(Output::Pair {
@@ -752,12 +752,12 @@ impl Daemon {
         &mut self,
         session: PairingId,
         method: Method,
-        audit: &str,
+        reason: &str,
         out: &mut Vec<Output>,
     ) {
         self.release(session, out);
         self.pairing.sessions.remove(&session);
-        Self::offerer_failed(method, audit, Some(Failure::Abandoned), out);
+        Self::offerer_failed(method, reason, Some(Failure::Abandoned), out);
         Self::end_pairing(session, None, out);
     }
 
@@ -1437,7 +1437,7 @@ impl Daemon {
                 initiate.method,
                 Role::Joiner,
                 Outcome::Failed {
-                    audit: "pairing abandoned".to_owned(),
+                    reason: "pairing abandoned".to_owned(),
                     counted: Some(Failure::Abandoned),
                 },
                 out,

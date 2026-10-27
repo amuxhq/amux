@@ -3,7 +3,9 @@ import Foundation
 
 /// A chat with no runtime behind it: rows, a frame, a card and what
 /// surrounds them set by whoever builds it. The component catalogue draws the real chat views
-/// from one, and a test drives a model through it.
+/// from one, and a test drives a model through it. What the script changes
+/// is gathered as the runtime gathers it, and handed to a model as one
+/// delta by `deliver(to:)`.
 public final class ScriptedChat: ChatSource, @unchecked Sendable {
     private let lock = NSLock()
     private var ordered: [Row]
@@ -14,7 +16,7 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     private var files: Changes?
     private var offered: SettingsView?
     private var images: [[UInt8]: Data]
-    private var pending = ChatChanges(keys: [], reloaded: false, session: false)
+    private var pending = Pending()
     /// What was sent, in order, for a test to read back.
     public private(set) var sent: [Draft] = []
     /// The settings picks sent, in order.
@@ -72,7 +74,7 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         public var controls: ControlsSummary
         public var context: ContextView?
         public var signIn: SignInView?
-        public var git: GitView?
+        public var git: Git?
         /// What the overview lists once it asks for the changed files.
         public var changes: Changes?
 
@@ -91,7 +93,7 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         tasks: TasksView? = nil, context: ContextView? = nil, model: String? = nil,
         effort: String? = nil, mode: String? = nil, usage: UsageView? = nil,
         failedServers: [ServerView] = [], signIn: SignInView? = nil, background: UInt32? = nil,
-        git: GitView? = nil, changes: Changes? = nil
+        git: Git? = nil, changes: Changes? = nil
     ) -> Surroundings {
         let jobs = (0..<(background ?? 0)).map {
             JobRow(command: "job \($0 + 1)", startedAtMs: 0, kind: .shell, step: nil)
@@ -133,19 +135,42 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
 
     // MARK: - Changing it
 
+    /// What moved since the last delta.
+    private struct Pending {
+        var above: [String] = []
+        var below: [String] = []
+        var dropped = 0
+        var rows: [String] = []
+        var session = false
+
+        /// Keys arriving at the newest edge, whose rows are read when drawn.
+        mutating func arrived(_ keys: [String]) {
+            above.append(contentsOf: keys)
+        }
+
+        /// The oldest key went as the window trimmed: one the model never
+        /// heard of is simply not handed over.
+        mutating func dropped(_ key: String) {
+            if let at = above.firstIndex(of: key) {
+                above.remove(at: at)
+            } else if let at = below.firstIndex(of: key) {
+                below.remove(at: at)
+            } else {
+                dropped += 1
+            }
+        }
+    }
+
     /// Rows arriving at the newest edge, as the session takes them: while
-    /// the reader follows they join the rows and say so on the next take; in
-    /// history they are held apart until the reader returns, and the frame
-    /// says they are.
+    /// the reader follows they join the rows and the next delta hands them
+    /// over; in history they are held apart until the reader returns, and
+    /// the frame says they are.
     public func append(_ rows: [Row]) {
         lock.withLock {
             if following {
                 ordered.append(contentsOf: rows)
-                pending.keys.append(contentsOf: rows.map(\.id))
-                if ordered.count > cap {
-                    ordered.removeFirst(ordered.count - cap)
-                    if let oldest = ordered.first { pending.keys.append(oldest.id) }
-                }
+                pending.arrived(rows.map(\.id))
+                trim()
             } else {
                 held.append(contentsOf: rows)
                 current.arrivalsHeld = true
@@ -154,23 +179,53 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         }
     }
 
-    /// Puts rows before the oldest, as a page of older history lands, and
-    /// says so on the next take.
+    private func trim() {
+        while ordered.count > cap { pending.dropped(ordered.removeFirst().id) }
+    }
+
+    /// Puts rows before the oldest, as a page of older history lands, for
+    /// the next delta to hand over.
     public func prepend(_ rows: [Row]) {
         lock.withLock {
             ordered.insert(contentsOf: rows, at: 0)
-            pending.keys.append(contentsOf: rows.map(\.id))
+            pending.below.insert(contentsOf: rows.map(\.id), at: 0)
         }
     }
 
-    /// Replaces rows in place and says so on the next take.
+    /// Replaces rows in place, for the next delta to hand over.
     public func revise(_ rows: [Row]) {
         lock.withLock {
             for row in rows {
                 if let index = ordered.firstIndex(where: { $0.id == row.id }) { ordered[index] = row }
             }
-            pending.keys.append(contentsOf: rows.map(\.id))
+            pending.rows.append(contentsOf: rows.map(\.id))
         }
+    }
+
+    /// What moved since the last delta, as the runtime hands it over; nil
+    /// when nothing did.
+    public func delta() -> ChatDelta? {
+        lock.withLock {
+            defer { pending = Pending() }
+            let keys: KeysMoved? =
+                pending.above.isEmpty && pending.below.isEmpty && pending.dropped == 0
+                ? nil
+                : .edges(above: pending.above, below: pending.below, dropped: UInt32(pending.dropped))
+            let wanted = Set(pending.rows).subtracting(pending.below).subtracting(pending.above)
+            let rows = ordered.filter { wanted.contains($0.id) }.map { Self.folding($0, open: openRuns) }
+            guard keys != nil || !rows.isEmpty || pending.session else { return nil }
+            let session = pending.session
+            return ChatDelta(
+                chat: 0, rows: rows, ask: session ? AskMoved(card: card) : nil,
+                frame: session ? current : nil, keys: keys, overview: session ? facts : nil,
+                settings: session ? offered : nil)
+        }
+    }
+
+    /// Hands a model what moved since the last delta, if anything did.
+    @MainActor
+    public func deliver(to model: ChatModel) {
+        if let delta = delta() { model.apply(delta) }
     }
 
     public func show(
@@ -192,28 +247,21 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
 
     // MARK: - ChatSource
 
-    public func keys() -> [String] { lock.withLock { ordered.map(\.id) } }
-
-    public func keys(above newest: String) -> [String]? {
+    public func opening() -> ChatDelta {
         lock.withLock {
-            guard let index = ordered.firstIndex(where: { $0.id == newest }) else { return nil }
-            return ordered[(index + 1)...].map(\.id)
+            pending = Pending()
+            return ChatDelta(
+                chat: 0, rows: [], ask: AskMoved(card: card), frame: current,
+                keys: .reload(ordered.map(\.id)), overview: facts, settings: offered)
         }
     }
-
-    public func keys(below oldest: String) -> [String]? {
-        lock.withLock {
-            guard let index = ordered.firstIndex(where: { $0.id == oldest }) else { return nil }
-            return ordered[..<index].map(\.id)
-        }
-    }
-
-    public func oldestKey() -> String? { lock.withLock { ordered.first?.id } }
 
     /// Where the reader was last said to be, in order, for a test to read.
     public private(set) var follows: [Bool] = []
     private var following = true
     private var held: [Row] = []
+    /// The runs the reader opened, by their newest step.
+    private var openRuns: Set<String> = []
 
     public func follow(_ following: Bool) {
         lock.withLock {
@@ -221,30 +269,33 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
             self.following = following
             guard following, !held.isEmpty else { return }
             ordered.append(contentsOf: held)
-            pending.keys.append(contentsOf: held.map(\.id))
+            pending.arrived(held.map(\.id))
+            trim()
             held = []
             current.arrivalsHeld = false
             pending.session = true
         }
     }
 
-    public func rows(for keys: [String], options: RowOptions?) -> [Row] {
+    public func rows(for keys: [String]) -> [Row] {
         lock.withLock {
             let wanted = Set(keys)
-            return ordered.filter { wanted.contains($0.id) }.map { Self.folding($0, options) }
+            return ordered.filter { wanted.contains($0.id) }.map { Self.folding($0, open: openRuns) }
         }
     }
 
-    /// A row as the shared fold leaves it for these options: a finished
-    /// run shows its newest step and the failures its turn left unfixed, a
-    /// live run its newest few, and an open run every step.
-    static func folding(_ row: Row, _ options: RowOptions?) -> Row {
-        guard case .collapse(let open)? = options?.tools, let run = row.run else { return row }
+    /// A row as the shared fold leaves it: a finished run shows its newest
+    /// step and the failures its turn left unfixed, a live run its newest
+    /// few, and an open run every step.
+    static func folding(_ row: Row, open: Set<String>) -> Row {
+        guard var run = row.run else { return row }
         let shown = run.live
             ? run.recent.map { $0 < 3 } ?? false
             : run.recent == 0 || run.unresolvedFailure
+        run.open = open.contains(run.last)
         var row = row
-        row.collapsed = row.collapsed || (!shown && !open.contains(run.last))
+        row.run = run
+        row.collapsed = row.collapsed || (!shown && !run.open)
         return row
     }
 
@@ -275,22 +326,10 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
             let after = index.map { total - 1 - UInt32($0) }
             row.run = Run(
                 first: first.id, last: last.id, steps: total, live: live, openBelow: openBelow,
-                unresolvedFailure: failed.contains(row.id),
+                unresolvedFailure: failed.contains(row.id), open: false,
                 counts: row.id == last.id ? counts : nil,
                 recent: after.flatMap { $0 < 3 ? $0 : nil })
             return row
-        }
-    }
-
-    public func askCard() -> AskCard? { lock.withLock { card } }
-    public func overview() -> Overview? { lock.withLock { facts } }
-    public func settings() -> SettingsView? { lock.withLock { offered } }
-    public func frame() -> ChatFrame? { lock.withLock { current } }
-
-    public func takeChanges() -> ChatChanges {
-        lock.withLock {
-            defer { pending = ChatChanges(keys: [], reloaded: false, session: false) }
-            return pending
         }
     }
 
@@ -302,10 +341,15 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     public func answer(_ ask: String, choice: Int, note: String?) async -> ActOutcome? { .done }
     public func answer(_ ask: String, responses: [QuestionResponse]) async -> ActOutcome? { .done }
     public func replyInstead(_ ask: String, text: String, soFar: [QuestionResponse]) async -> ActOutcome? { .done }
-    public func toggleRun(_ member: String, open: [String]) -> [String] {
-        open.contains(member) ? open.filter { $0 != member } : open + [member]
+    /// Opens or closes a run by its newest step, for the next delta to hand
+    /// its rows over; a script's runs do not grow.
+    public func toggleRun(_ member: String) {
+        lock.withLock {
+            guard let last = ordered.first(where: { $0.id == member })?.run?.last else { return }
+            if openRuns.remove(last) == nil { openRuns.insert(last) }
+            pending.rows.append(contentsOf: ordered.filter { $0.run?.last == last }.map(\.id))
+        }
     }
-    public func keepOpenRuns(_ open: [String]) -> [String] { open }
     public func answerForm(_ ask: String, values: [FormValue]) async -> ActOutcome? { .done }
     public func withdraw(_ input: [UInt8]) async -> ActOutcome? { .done }
     public func sendNow(_ input: [UInt8]) async -> ActOutcome? { .done }
@@ -315,6 +359,7 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         lock.withLock {
             current.underway.removeAll { $0.inputId == input }
             current.refused.removeAll { $0.inputId == input }
+            pending.session = true
         }
     }
 

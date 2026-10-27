@@ -2,16 +2,16 @@
 
 use anyhow::Result;
 use tonic::transport::Channel;
-use wire::profile_service_client::ProfileServiceClient;
-use wire::{CreateProfileRequest, DeleteProfileRequest, Empty, RenameProfileRequest};
+use wire::installation_service_client::InstallationServiceClient;
+use wire::{CreateProfileRequest, DeleteProfileRequest, RenameProfileRequest};
 
 use crate::connect;
 
-type Profiles = ProfileServiceClient<Channel>;
+type Profiles = InstallationServiceClient<Channel>;
 
 pub async fn list(profiles: &mut Profiles) -> Result<()> {
     let listed = profiles
-        .list_profiles(Empty {})
+        .list_profiles(wire::ListProfilesRequest {})
         .await
         .map_err(crate::plain)?
         .into_inner()
@@ -52,7 +52,6 @@ pub async fn rename(profiles: &mut Profiles, reference: &str, name: &str) -> Res
     let renamed = profiles
         .rename_profile(RenameProfileRequest {
             profile_id: profile.id.clone(),
-            expected_revision: profile.revision,
             override_name: Some(name.to_owned()),
         })
         .await
@@ -67,7 +66,6 @@ pub async fn delete(profiles: &mut Profiles, reference: &str) -> Result<()> {
     profiles
         .delete_profile(DeleteProfileRequest {
             profile_id: profile.id.clone(),
-            confirm_revision: profile.revision,
         })
         .await
         .map_err(crate::plain)?;

@@ -363,7 +363,6 @@ public actor AmuxCloudService: CloudService {
         case "report.json": "application/json"
         case "frame.png": "image/png"
         case "trace.jsonl": "application/x-ndjson"
-        case "log.txt": "text/plain"
         default: "application/octet-stream"
         }
     }

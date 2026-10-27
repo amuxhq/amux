@@ -111,12 +111,7 @@ pub struct Changes {
     pub folders: Vec<Folder>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
-pub struct ChangeTotals {
-    pub files: u32,
-    pub added: u32,
-    pub removed: u32,
-}
+pub use wire::ChangeTotals;
 
 /// One folder's changed files, sorted by name. Shortening a long path is
 /// the client's.
@@ -276,7 +271,7 @@ pub fn changes(diff: &Diff) -> Changes {
                 added: file.added,
                 removed: file.removed,
                 status: match file.change() {
-                    DiffFileChange::Changed => FileStatus::Modified,
+                    DiffFileChange::Changed | DiffFileChange::Unspecified => FileStatus::Modified,
                     DiffFileChange::Created => FileStatus::Added,
                     DiffFileChange::Deleted => FileStatus::Deleted,
                 },

@@ -38,7 +38,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
 
       - name: Build release
         run: just release-check -- --target ${{ matrix.target }}

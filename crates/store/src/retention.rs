@@ -128,7 +128,12 @@ fn remove_finished(
         .filter(|row| tables.is_own(&row.agent) && !is_live(row) && !protected(row))
         .filter(|row| descendants(row).iter().all(|child| !is_live(child)))
         .collect::<Vec<_>>();
-    candidates.sort_by_key(|row| (row.last_activity_ms.unwrap_or(i64::MIN), row.agent.clone()));
+    candidates.sort_by_key(|row| {
+        (
+            row.last_activity_ms().unwrap_or(i64::MIN),
+            row.agent.clone(),
+        )
+    });
 
     let mut gone = HashSet::new();
     for row in candidates {

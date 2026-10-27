@@ -18,7 +18,7 @@ use provider_fakes::script::Step;
 use support::*;
 use testnet::{AgentDecl, HostDecl, Net, PATIENCE, Topology, observe, until};
 use wire::begin_pair_request;
-use wire::client_service_server::ClientService as _;
+use wire::session_service_server::SessionService as _;
 
 /// Two hosts bound to IPv6 alone pair, link over IPv6, and one
 /// streams the other's session live.
@@ -138,6 +138,91 @@ async fn route_ssh_reaches_a_session_through_the_far_hosts_link_socket() {
     net.shutdown().await.unwrap();
 }
 
+/// `amux pair <target>` on the laptop pairs it with the desk over SSH
+/// alone: SSH runs `amux internal ssh-pair` on the desk, the two trade identities
+/// through their own daemons, each trusts the other, the laptop remembers
+/// the desk's SSH destination, and the link comes up over SSH. The same
+/// command aimed at the laptop itself is refused as a pairing with itself.
+#[tokio::test(flavor = "multi_thread")]
+async fn pair_over_ssh_from_the_cli_trusts_both_ends_and_links() {
+    let said = "paired over SSH";
+    let host = |name: &str| HostDecl {
+        name: name.to_owned(),
+        ..HostDecl::default()
+    };
+    let topology = Topology::new()
+        .host_decl(host("desk"))
+        .host_decl(host("laptop"))
+        .agent(worker_saying(said));
+    let net = Net::start(topology).await.unwrap();
+    let (desk, laptop) = (host_id(&net, "desk"), host_id(&net, "laptop"));
+    let config = net.host("laptop").unwrap().config.clone();
+    let pair = |target: String| {
+        let config = config.clone();
+        async move {
+            tokio::process::Command::new(testnet::Binaries::built().amux())
+                .arg("--config")
+                .arg(&config)
+                .args(["pair", &target])
+                .env_remove("AMUX_LOG")
+                .output()
+                .await
+                .unwrap()
+        }
+    };
+
+    // `amux pair` takes `user@host` as SSH; the stand-in drops the user.
+    let desk_target = format!("ada@{}", net.ssh_target("desk").unwrap());
+    let paired = pair(desk_target.clone()).await;
+    let out = String::from_utf8_lossy(&paired.stdout);
+    assert!(
+        paired.status.success(),
+        "amux pair: {out}{}",
+        String::from_utf8_lossy(&paired.stderr)
+    );
+    assert!(out.contains("Paired with desk"), "{out}");
+    let peers = |near: &'static str| {
+        let net = &net;
+        async move {
+            admin(net, near)
+                .await
+                .list_peers(wire::ListPeersRequest {})
+                .await
+                .unwrap()
+                .into_inner()
+                .peers
+        }
+    };
+    let desk_seen = peers("laptop").await;
+    assert_eq!(desk_seen.len(), 1);
+    assert_eq!(desk_seen[0].host_id, desk.as_bytes());
+    assert!(
+        desk_seen[0].reachabilities.iter().any(|way| matches!(
+            &way.kind,
+            Some(wire::peer_reachability::Kind::SshTarget(ssh))
+                if ssh.target == desk_target
+        )),
+        "the laptop remembers where it reached the desk: {desk_seen:?}"
+    );
+    let laptop_seen = peers("desk").await;
+    assert_eq!(laptop_seen.len(), 1);
+    assert_eq!(laptop_seen[0].host_id, laptop.as_bytes());
+    assert!(
+        laptop_seen[0].reachabilities.is_empty(),
+        "the desk did not dial, so it holds no way there: {laptop_seen:?}"
+    );
+    until_via(&net, "laptop", "desk", LiveRoute::Ssh).await;
+    streams_live(&net, &["laptop"], "worker", said).await;
+    println!("the CLI paired the laptop with the desk over SSH and linked");
+
+    let refused = pair(format!("ada@{}", net.ssh_target("laptop").unwrap())).await;
+    let said = String::from_utf8_lossy(&refused.stderr);
+    assert!(!refused.status.success(), "pairing with itself is refused");
+    assert!(said.contains("SELF_PAIRING"), "{said}");
+    assert_eq!(peers("laptop").await.len(), 1);
+    net.shutdown().await.unwrap();
+}
+
 /// Two hosts on one paid account with no network between them but the
 /// relay, reached over UDP alone: each links to the relay over UDP, and
 /// their own link, pinned at pairing, runs end to end through the relay's
@@ -193,30 +278,28 @@ async fn route_relay_signing_out_closes_the_links_the_relay_carried_until_signin
         &mut fleet,
         desk,
         "the laptop to read the desk online",
-        |row| row.presence() == wire::Presence::Online,
+        |row| row.online().is_some(),
     )
     .await;
     streams_live(&net, &["laptop"], "worker", said).await;
 
-    door(&net, "laptop")
+    admin(&net, "laptop")
         .await
-        .logout_profile(wire::ProfileRequest {
-            profile_id: profile(&net, "laptop"),
-        })
+        .sign_out(wire::SignOutRequest {})
         .await
         .unwrap();
     row_until(
         &mut fleet,
         laptop,
         "the laptop to read itself signed out",
-        |row| row.account_signed_in == Some(false),
+        |row| row.account_signed_in() == Some(false),
     )
     .await;
     row_until(
         &mut fleet,
         desk,
         "the laptop to read the desk offline",
-        |row| row.presence() == wire::Presence::Offline,
+        |row| row.offline().is_some(),
     )
     .await;
 
@@ -228,7 +311,7 @@ async fn route_relay_signing_out_closes_the_links_the_relay_carried_until_signin
         &mut fleet,
         desk,
         "the laptop to read the desk online again",
-        |row| row.presence() == wire::Presence::Online,
+        |row| row.online().is_some(),
     )
     .await;
     net.current("laptop", "worker").await.unwrap();
@@ -266,18 +349,16 @@ async fn route_lan_signing_out_keeps_the_direct_link_and_the_session() {
     net.sign_in("laptop", "ada").await.unwrap();
     let mut fleet = net.observe_inventory("laptop").await.unwrap();
 
-    door(&net, "laptop")
+    admin(&net, "laptop")
         .await
-        .logout_profile(wire::ProfileRequest {
-            profile_id: profile(&net, "laptop"),
-        })
+        .sign_out(wire::SignOutRequest {})
         .await
         .unwrap();
     row_until(
         &mut fleet,
         laptop,
         "the laptop to read itself signed out",
-        |row| row.account_signed_in == Some(false),
+        |row| row.account_signed_in() == Some(false),
     )
     .await;
     let on_the_lan_both_ways = || async {
@@ -296,7 +377,7 @@ async fn route_lan_signing_out_keeps_the_direct_link_and_the_session() {
         &mut fleet,
         desk,
         "the laptop to read the desk online",
-        |row| row.presence() == wire::Presence::Online,
+        |row| row.online().is_some(),
     )
     .await;
 
@@ -440,7 +521,7 @@ async fn entitlement_free_sees_presence_and_carries_nothing_while_lan_and_ssh_re
     // The phone sees the desk, through the relay's listing, and reads it
     // away: the relay refused to forward to it for the plan.
     row_until(&mut fleet, desk, "the phone to read the desk away", |row| {
-        row.presence() == wire::Presence::Away
+        row.away()
     })
     .await;
     let (refused, reason) = tokio::time::timeout(PATIENCE, refusals.recv())
@@ -537,7 +618,7 @@ async fn entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once()
             fleet,
             *peer,
             &format!("{host} to read its peer away"),
-            |row| row.presence() == wire::Presence::Away,
+            |row| row.away(),
         )
         .await;
     }
@@ -763,7 +844,7 @@ async fn row_until(
     let found = |events: &[wire::InventoryEvent]| {
         observe::inventory_hosts(events)
             .into_iter()
-            .find(|row| row.host_id == host.as_bytes())
+            .find(|row| row.host_id() == host.as_bytes())
     };
     fleet
         .observe_until(
@@ -774,13 +855,12 @@ async fn row_until(
         .unwrap_or_else(|stuck| panic!("{what}: {stuck}"));
 }
 
-/// `near` trusts `far` as an SSH pairing commits it, through its front
-/// door, with the target and profile it reaches `far` by.
+/// `near` trusts `far` as an SSH pairing commits it, through its
+/// profile's socket, with the target and profile it reaches `far` by.
 async fn trust_over_ssh(net: &Net, near: &str, far: &str) {
-    door(net, near)
+    admin(net, near)
         .await
         .trust_ssh_peer(wire::TrustSshPeerRequest {
-            profile_id: profile(net, near),
             peer: Some(wire::PairingIdentity {
                 host_id: host_id(net, far).as_bytes().to_vec(),
                 pubkey: edge(net, far).public_key().to_vec(),
@@ -789,7 +869,6 @@ async fn trust_over_ssh(net: &Net, near: &str, far: &str) {
             }),
             ssh_target: Some(wire::SshTarget {
                 target: net.ssh_target(far).unwrap(),
-                profile_id: profile(net, far),
             }),
         })
         .await
@@ -1222,7 +1301,7 @@ async fn revoked_ticket_refused_with_the_revocation() {
         &mut fleet,
         desk,
         "the laptop to read the desk as no longer trusting it",
-        |row| row.revoked == Some(true),
+        |row| row.revoked(),
     )
     .await;
     let refused = open_session(&edge(&net, "laptop"), desk, worker)
@@ -1491,11 +1570,10 @@ async fn token_lapse_within_hour_is_noticed_at_the_hourly_refresh() {
         ("desk", laptop, edge(&net, "desk").forward_refusals()),
         ("laptop", desk, edge(&net, "laptop").forward_refusals()),
     ];
-    let refresh_at = net.now_ms() + HOUR.as_millis() as i64;
-    tokio::time::timeout(PATIENCE, net.clock().unwrap().armed(refresh_at))
-        .await
-        .expect("the hourly refresh is armed");
-
+    // The refresh was armed an hour after the credentials were fetched,
+    // which carrying the links through the relay already took; the clock
+    // has not moved since. Only the soonest of a core's timers sleeps on
+    // the clock, so the hour is shown by crossing it, below.
     net.relay()
         .unwrap()
         .set_tier("ada", node::harness::Tier::Free);
@@ -1508,7 +1586,16 @@ async fn token_lapse_within_hour_is_noticed_at_the_hourly_refresh() {
     }
     println!("lapsed at the account service: the relay still forwards on the credentials it holds");
 
-    net.advance(HOUR).unwrap();
+    net.advance(HOUR - std::time::Duration::from_millis(1))
+        .unwrap();
+    streams_live(&net, &["laptop"], "worker", "said through the relay").await;
+    for (host, _, refusals) in &mut told {
+        assert!(
+            refusals.try_recv().is_err(),
+            "{host} is told nothing a moment before the hour"
+        );
+    }
+    net.advance(std::time::Duration::from_millis(1)).unwrap();
     for (host, peer, refusals) in &mut told {
         let refusal = tokio::time::timeout(PATIENCE, refusals.recv())
             .await
@@ -1701,17 +1788,17 @@ async fn punch_lapse_drops_the_punched_path() {
             let id = profile(&net, host);
             let seen = door(&net, host)
                 .await
-                .list_profiles(wire::Empty {})
+                .list_profiles(wire::ListProfilesRequest {})
                 .await
                 .map_err(|status| status.message().to_owned())?
                 .into_inner()
                 .profiles
                 .into_iter()
-                .find(|info| info.id == id)
-                .map(|info| info.observed());
-            (seen == Some(wire::Observed::Connected))
-                .then_some(())
-                .ok_or_else(|| format!("observed {seen:?}"))
+                .find(|info| info.id == id);
+            seen.as_ref()
+                .and_then(wire::Profile::relay_connected)
+                .map(|_| ())
+                .ok_or_else(|| format!("cloud {:?}", seen.as_ref().map(|info| &info.cloud)))
         })
         .await
         .unwrap();
@@ -1842,15 +1929,20 @@ fn ever_carried_by(net: &Net, host: &str, peer: &str, path: PathKind) -> bool {
 }
 
 /// The addresses `host` keeps for `peer` that the relay saw `peer` at, as
-/// its trust file lists them.
+/// its store lists them.
 fn observed_addresses(net: &Net, host: &str, peer: &str) -> Vec<String> {
     let info = net.host(host).unwrap();
-    let trust = node::profile_dir(&info.data_dir, info.profile).join("trust.json");
-    let trust: serde_json::Value = std::fs::read(trust)
+    let path = node::profile_dir(&info.data_dir, info.profile).join(node::STORE);
+    let peer = host_id(net, peer);
+    let listed: serde_json::Value = store::Sqlite::open(&path, [0; 16])
         .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .and_then(|store| store.trusted_hosts().ok())
+        .into_iter()
+        .flatten()
+        .find(|row| row.host_id == peer.as_bytes())
+        .and_then(|row| serde_json::from_str(&row.listed).ok())
         .unwrap_or_default();
-    trust[host_id(net, peer).to_string()]["listed"]
+    listed
         .as_array()
         .into_iter()
         .flatten()

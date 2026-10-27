@@ -6,7 +6,7 @@
 use ratatui::text::{Line, Span};
 use ui_state::FleetState;
 use ui_view::{Offline, Reach};
-use wire::{HostEntry, RouteKind, Trust};
+use wire::{HostEntry, RouteKind};
 
 use crate::text::{self, pad_to};
 use crate::theme::Theme;
@@ -31,8 +31,8 @@ pub fn route(reach: Reach, local: bool) -> &'static str {
 /// one offline because this machine is signed out names this machine rather
 /// than the host.
 pub fn caption(fleet: &FleetState, entry: &HostEntry, local_host: &[u8]) -> String {
-    let reach = ui_view::reach(fleet, local_host, &entry.host_id);
-    let mut parts = vec![format!("·{}", route(reach, entry.host_id == local_host))];
+    let reach = ui_view::reach(fleet, local_host, entry.host_id());
+    let mut parts = vec![format!("·{}", route(reach, entry.host_id() == local_host))];
     match reach {
         Reach::Offline(Offline::Revoked) => parts.push("no longer trusts this machine".into()),
         Reach::Offline(Offline::SignedOut) => parts.push("this machine is signed out".into()),
@@ -41,19 +41,23 @@ pub fn caption(fleet: &FleetState, entry: &HostEntry, local_host: &[u8]) -> Stri
         Reach::Away => parts.push(crate::chat::FREE_PLAN_AWAY.into()),
         // Signing in matters only for reaching a host through the relay.
         Reach::Online(RouteKind::Relay) | Reach::Offline(Offline::Plain)
-            if entry.account_signed_in == Some(false) =>
+            if entry.account_signed_in() == Some(false) =>
         {
             parts.push("not signed in".into());
         }
         Reach::Online(_) | Reach::Offline(Offline::Plain) => {}
     }
-    if let Some(error) = entry.last_dial_error.as_ref().filter(|e| !e.is_empty()) {
+    if let Some(error) = entry
+        .offline()
+        .and_then(|offline| offline.last_dial_error.as_ref())
+        .filter(|e| !e.is_empty())
+    {
         parts.push(error.clone());
     }
     parts.join(" · ")
 }
 
-fn shell_target(target: &str) -> String {
+pub(crate) fn shell_target(target: &str) -> String {
     if target
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
@@ -68,10 +72,10 @@ fn shell_target(target: &str) -> String {
 pub fn listed(fleet: &FleetState) -> Vec<&HostEntry> {
     let mut hosts: Vec<&HostEntry> = fleet.hosts().collect();
     hosts.sort_by(|a, b| {
-        (a.trust() != Trust::Trusted)
-            .cmp(&(b.trust() != Trust::Trusted))
-            .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-            .then(a.host_id.cmp(&b.host_id))
+        (a.trusted().is_none())
+            .cmp(&(b.trusted().is_none()))
+            .then(a.name().to_lowercase().cmp(&b.name().to_lowercase()))
+            .then(a.host_id().cmp(b.host_id()))
     });
     hosts
 }
@@ -85,10 +89,10 @@ pub fn modal_rows(fleet: &FleetState, local_host: &[u8], theme: Theme) -> Vec<Li
     let names: Vec<String> = hosts
         .iter()
         .map(|entry| {
-            if entry.name.is_empty() {
+            if entry.name().is_empty() {
                 "unnamed host".to_owned()
             } else {
-                entry.name.clone()
+                entry.name().to_owned()
             }
         })
         .collect();
@@ -103,12 +107,12 @@ pub fn modal_rows(fleet: &FleetState, local_host: &[u8], theme: Theme) -> Vec<Li
         rows.push(Line::from(Span::styled("No hosts known", theme.muted())));
     }
     for (entry, name) in hosts.iter().zip(names) {
-        let trusted = entry.trust() == Trust::Trusted;
+        let trusted = entry.trusted().is_some();
         let mut line = Line::default();
         let ink = if trusted { theme.text() } else { theme.faint() };
         line.spans.push(Span::styled(name.clone(), ink));
         pad_to(&mut line, column);
-        let words = if entry.host_id == local_host {
+        let words = if entry.host_id() == local_host {
             "this machine".to_owned()
         } else if trusted {
             caption(fleet, entry, local_host)

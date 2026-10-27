@@ -31,7 +31,7 @@ use crate::Daemon;
 use crate::ids::{ChannelId, HostId, LinkId};
 use crate::io::Output;
 use crate::payload::CarrierKind;
-use crate::trust::{Reachability, TrustChange};
+use crate::trust::TrustChange;
 
 /// How many hosts this profile does not trust it holds descriptions of.
 pub const HOST_CAP: usize = 1000;
@@ -42,7 +42,7 @@ pub struct Said {
     pub version: String,
     pub cloud_relay: bool,
     pub kinds: Vec<i32>,
-    pub platform: Option<String>,
+    pub platform: wire::Platform,
     pub signed_in: Option<bool>,
 }
 
@@ -53,7 +53,7 @@ impl Said {
             version: host.version.clone(),
             cloud_relay: capabilities.cloud_relay,
             kinds: capabilities.kinds,
-            platform: host.platform.clone(),
+            platform: host.platform(),
             signed_in: host.account_signed_in,
         }
     }
@@ -362,7 +362,7 @@ impl Daemon {
             .trust
             .store()
             .entry(uuid)
-            .is_none_or(|entry| entry.reachabilities.contains(&Reachability::Cloud));
+            .is_none_or(|entry| entry.on_account);
         if !known {
             self.change_trust(TrustChange::OnTheAccount { host: uuid }, None, out);
         }
@@ -373,17 +373,15 @@ impl Daemon {
         let uuid = Uuid::from_bytes(host.0);
         let moved = self.trust.store().entry(uuid).is_some_and(|entry| {
             entry.signed_in != said.account_signed_in
-                || said
-                    .platform
-                    .as_deref()
-                    .is_some_and(|platform| entry.platform.as_deref() != Some(platform))
+                || (said.platform() != wire::Platform::Unspecified
+                    && entry.platform != said.platform())
         });
         if moved {
             self.change_trust(
                 TrustChange::Remember {
                     host: uuid,
                     signed_in: said.account_signed_in,
-                    platform: said.platform.clone(),
+                    platform: said.platform(),
                 },
                 None,
                 out,
@@ -435,7 +433,8 @@ impl Daemon {
         self.routing.catalogue.replacing.remove(&host);
     }
 
-    /// The mark came off: a trusted host's channels open again at once.
+    /// The mark came off: a trusted host is dialled and its sources open
+    /// again at once.
     fn revocation_cleared(&mut self, host: HostId, out: &mut Vec<Output>) {
         self.touched.host_set = true;
         if self.sources.trusts(host) {
@@ -444,13 +443,12 @@ impl Daemon {
         }
     }
 
-    /// Whether the core asks for no attempt on `host`: one this profile
-    /// does not trust, or one that said it no longer trusts this host,
-    /// while no channel on another route answers for it. Pairing again
-    /// opens one of its own.
-    pub(crate) fn attempt_barred(&self, host: HostId, answering: bool) -> bool {
+    /// Whether the core asks for no dial to `host`: one this profile does
+    /// not trust, or one that said it no longer trusts this host. Pairing
+    /// again opens a link of its own.
+    pub(crate) fn dial_barred(&self, host: HostId) -> bool {
         (self.sources.knows_trust() && !self.sources.trusts(host))
-            || (self.routing.catalogue.revoked(host) && !answering)
+            || self.routing.catalogue.revoked(host)
     }
 }
 

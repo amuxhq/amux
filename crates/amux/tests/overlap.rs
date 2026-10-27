@@ -62,15 +62,17 @@ async fn agents_of_the_previous_build_work_on_after_an_update() {
     desk.run(&["server", "start"]).await;
 
     let mut agents: BTreeMap<&str, Vec<u8>> = BTreeMap::new();
-    for (name, kind) in [
-        ("terminal", "claude_pty"),
-        ("headless", "claude_sdk"),
-        ("codex", "codex"),
+    for (name, agent, interface) in [
+        ("terminal", "claude", "native"),
+        ("headless", "claude", "amux"),
+        ("codex", "codex", "amux"),
     ] {
         let created = desk
             .run(&[
-                "create",
-                kind,
+                "new",
+                agent,
+                "--in",
+                interface,
                 "--name",
                 name,
                 "--cwd",
@@ -147,8 +149,10 @@ async fn a_tui_of_the_previous_build_works_on_after_an_update() {
     let agent = created_id(
         &desk
             .run(&[
-                "create",
-                "claude_sdk",
+                "new",
+                "claude",
+                "--in",
+                "amux",
                 "--name",
                 "helper",
                 "--cwd",
@@ -241,8 +245,10 @@ async fn the_previous_build_reopens_a_store_the_new_one_migrated_before_prepared
     let agent = created_id(
         &desk
             .run(&[
-                "create",
-                "claude_sdk",
+                "new",
+                "claude",
+                "--in",
+                "amux",
                 "--name",
                 "headless",
                 "--cwd",
@@ -426,8 +432,10 @@ async fn restarting_the_launch_agent_leaves_the_agent_running() {
     let agent = created_id(
         &desk
             .run(&[
-                "create",
-                "claude_sdk",
+                "new",
+                "claude",
+                "--in",
+                "amux",
                 "--name",
                 "headless",
                 "--cwd",

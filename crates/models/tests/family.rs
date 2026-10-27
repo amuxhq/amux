@@ -3,14 +3,12 @@
 
 use models::{Bounds, FamilyDeliveries, check, walk};
 
-/// How long the exhaustive run may take under `just test`, sized to CI's
-/// four-core runner: twice its projected time there, rounded up to a whole
-/// minute. The runner took up to 313 s at the bounds before the parent's
-/// unasked exit moved to the nightly bounds (396,826 states); on the
-/// enrolled Mac the cut bounds take 0.61 of that time, so about 191 s; the
-/// first two runner measurements there took 178 s and 128 s. A run past it
-/// says the bounds have outgrown their place.
-const BUDGET_SECONDS: f64 = 420.0;
+/// How many states the exhaustive run may explore: the most it explored at
+/// these bounds on 2026-10-26 (204,278 to 207,372 states on twelve, four
+/// and two threads) with two percent over, since the count moves with the
+/// threads. A run past it says the bounds have outgrown their place; a run
+/// that hangs is the test harness's bound to catch.
+const BUDGET_STATES: u64 = 211_600;
 
 #[test]
 fn every_family_promise_holds_at_ci_bounds() {
@@ -27,9 +25,9 @@ fn every_family_promise_holds_at_ci_bounds() {
     );
     verdict.assert_holds();
     assert!(
-        measured.seconds <= BUDGET_SECONDS,
-        "the family model took {:.1}s, past its {BUDGET_SECONDS}s budget",
-        measured.seconds
+        measured.states <= BUDGET_STATES,
+        "the family model explored {} states, past its {BUDGET_STATES}",
+        measured.states
     );
 }
 

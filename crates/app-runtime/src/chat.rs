@@ -5,26 +5,28 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 
+use client::Client;
 use model::AgentKey;
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use ui_runtime::{Fleet, InputError, PageError, Session};
 use ui_state::{InputOutcome, InputState, Key, Refusal, RefusalReason, SessionState};
 use ui_view::{
     AskCard, ChatOptions, Comparison, FormValue, Overview, QuestionResponse, Row, SettingChange,
-    SettingsView,
+    SettingsView, ToolRows,
 };
 use wire::{BlobRef, send_input_response};
 
 use crate::coalesce::{Coalescer, WakeFn};
+use crate::delta::Sent;
 use crate::values::{
-    ActOutcome, ChatChanges, ChatFrame, CommandOutcome, Draft, FrozenReview, GitView, PageOutcome,
-    RowOptions, SendOutcome,
+    ActOutcome, AskMoved, ChatDelta, ChatFrame, CommandOutcome, Draft, FrozenReview, PageOutcome,
+    SendOutcome,
 };
 
-/// An open chat. Row ids are item keys and never move, so the host's id
-/// sequence changes only at its two edges: newer keys above the newest it
-/// holds, older ones below its oldest, and while the reader follows, the
-/// oldest dropped as the window trims to its cap; until a reload.
+/// An open chat. The host hears what moved as [`ChatDelta`]s: the window's
+/// keys at their edges, the rows that changed, and the views around them,
+/// each only when it moved.
 pub struct Chat {
     id: u64,
     agent: AgentKey,
@@ -39,9 +41,21 @@ pub struct Chat {
     /// Where each of this client's prompts was first drawn: true at the
     /// feed's end. A prompt stays where it was first drawn until it lands.
     first_drawn: Mutex<HashMap<Vec<u8>, bool>>,
+    /// The runs the reader opened, each held by one of its steps: rows
+    /// fold every other run to its newest step.
+    open_runs: Mutex<HashSet<Key>>,
+    /// The draft this device's daemon kept for the agent when the chat
+    /// opened.
+    kept: Option<Draft>,
+    /// The draft as it last stood, for the saver to hand the daemon.
+    draft: watch::Sender<Option<wire::Draft>>,
+    /// What the host was last handed; None until its model opens on the
+    /// chat, and no delta is computed before.
+    sent: Mutex<Option<Sent>>,
 }
 
 impl Chat {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn start(
         id: u64,
         agent: AgentKey,
@@ -49,12 +63,16 @@ impl Chat {
         fleet: Weak<Fleet>,
         wake: WakeFn,
         clock: Arc<dyn client::Clock>,
+        client: Arc<dyn Client>,
+        kept: Option<Draft>,
     ) -> Arc<Chat> {
         // Subscribed here, the receiver has seen the opening: its rows are
         // the host's first read, not news. Anything after is, even a change
         // that lands before the watcher first runs, so the watcher must not
         // mark the channel seen itself.
         let mut changed = session.changed();
+        let (draft, saving) = watch::channel(None);
+        tokio::spawn(save_drafts(client, agent.agent.clone(), saving));
         let chat = Arc::new(Chat {
             id,
             agent,
@@ -65,6 +83,10 @@ impl Chat {
             clock,
             changed_files: Mutex::new(None),
             first_drawn: Mutex::new(HashMap::new()),
+            open_runs: Mutex::new(HashSet::new()),
+            kept,
+            draft,
+            sent: Mutex::new(None),
         });
         // Spawned once the chat exists, so every change it sees finds the
         // chat; it ends when the chat is dropped or the session ends.
@@ -97,30 +119,18 @@ impl Chat {
         self.session.state().transcript().keys().cloned().collect()
     }
 
-    /// Keys newer than `newest`, oldest first; None when `newest` is not
-    /// held, and the host reads [`Chat::keys`] again.
-    pub fn keys_above(&self, newest: &str) -> Option<Vec<Key>> {
-        let state = self.session.state();
-        let transcript = state.transcript();
-        let order = transcript.get(newest)?.item.order;
-        Some(
-            transcript
-                .range(order.saturating_add(1)..=u64::MAX)
-                .map(|held| held.item.key.clone())
-                .collect(),
-        )
+    /// The draft this device kept for the agent when the chat opened.
+    pub fn kept_draft(&self) -> Option<Draft> {
+        self.kept.clone()
     }
 
-    /// The oldest key the window holds: while the reader follows, the
-    /// window drops its oldest rows as new ones arrive, and the host drops
-    /// the keys before this one.
-    pub fn oldest_key(&self) -> Option<Key> {
-        let state = self.session.state();
-        state
-            .transcript()
-            .iter()
-            .next()
-            .map(|held| held.item.key.clone())
+    /// Keeps the draft as it now stands with this device's daemon, so it
+    /// outlives the chat and the app; an empty one is forgotten. Saves go
+    /// in order, and one overtaken before it is sent is never sent.
+    pub fn keep_draft(&self, draft: &Draft) {
+        let (text, attachments) = draft.to_prompt();
+        self.draft
+            .send_replace(Some(wire::Draft { text, attachments }));
     }
 
     /// Where the reader is: at the newest row, or in history.
@@ -128,47 +138,36 @@ impl Chat {
         self.session.follow(following);
     }
 
-    /// Keys older than `oldest`, oldest first; None when `oldest` is not
-    /// held.
-    pub fn keys_below(&self, oldest: &str) -> Option<Vec<Key>> {
-        let state = self.session.state();
-        let transcript = state.transcript();
-        let order = transcript.get(oldest)?.item.order;
-        if order == 0 {
-            return Some(Vec::new());
-        }
-        Some(
-            transcript
-                .range(0..=order - 1)
-                .map(|held| held.item.key.clone())
-                .collect(),
-        )
-    }
-
-    /// Rows for these keys, in order, skipping keys not held.
-    pub fn rows_for(&self, keys: &[Key], options: &RowOptions) -> Vec<Row> {
-        let open = options.open();
+    /// Rows for these keys, in order, skipping keys not held, each run
+    /// folded to its newest step unless the reader opened it.
+    pub fn rows_for(&self, keys: &[Key]) -> Vec<Row> {
+        let open = self.open_runs.lock().unwrap();
         let opts = ChatOptions {
-            tools: options.tool_rows(&open),
+            tools: ToolRows::Collapse { open: &open },
         };
         ui_view::chat_rows_for(&self.session.state(), keys, &opts)
     }
 
-    /// Opens or closes the run `member` belongs to in a folding view's open
-    /// set, and answers the set to ask for rows with.
-    pub fn toggle_run(&self, member: &str, open: &[Key]) -> Vec<Key> {
-        let mut open = open.iter().cloned().collect();
-        ui_view::toggle_run(&self.session.state(), &member.to_owned(), &mut open);
-        open.into_iter().collect()
-    }
-
-    /// The open set re-held on each open run's newest step, so a run stays
-    /// open as it grows, older steps page in, or the window trims it. Asked
-    /// before rows are read.
-    pub fn keep_open_runs(&self, open: &[Key]) -> Vec<Key> {
-        let mut open = open.iter().cloned().collect();
-        ui_view::keep_open_runs(&self.session.state(), &mut open);
-        open.into_iter().collect()
+    /// Opens or closes the run `member` belongs to; the next delta carries
+    /// its rows drawn so, and every row read after draws it so.
+    pub fn toggle_run(&self, member: &str) {
+        let steps: Vec<Key> = {
+            let mut open = self.open_runs.lock().unwrap();
+            let state = self.session.state();
+            ui_view::toggle_run(&state, &member.to_owned(), &mut open);
+            let transcript = state.transcript();
+            transcript
+                .get(member)
+                .and_then(|held| transcript.run_span(held.item.order))
+                .map(|span| {
+                    transcript
+                        .range(span)
+                        .map(|held| held.item.key.clone())
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        self.changes.push(steps, false, false);
     }
 
     pub fn ask_card(&self) -> Option<AskCard> {
@@ -211,14 +210,65 @@ impl Chat {
         frame(&state, self.clock.now_ms(), ended, &first_drawn)
     }
 
-    /// Everything that changed since the last take; the next change wakes
-    /// the host again.
-    pub fn take_changes(&self) -> ChatChanges {
+    /// The chat whole, for the host's model opening on it: every key, the
+    /// frame and the views around it. Every delta after it says what moved
+    /// since.
+    pub fn opening(&self) -> ChatDelta {
+        let mut sent = self.sent.lock().unwrap();
+        let sent = sent.insert(Sent::default());
         let batch = self.changes.take();
-        ChatChanges {
-            keys: batch.keys,
-            reloaded: batch.reloaded,
-            session: batch.other,
+        self.moved(sent, true, &batch.keys)
+    }
+
+    /// What moved since the host last heard, or None when nothing did or
+    /// its model has not opened on the chat; the next change wakes the host
+    /// again.
+    pub fn delta(&self) -> Option<ChatDelta> {
+        let mut sent = self.sent.lock().unwrap();
+        let sent = sent.as_mut()?;
+        let batch = self.changes.take();
+        let delta = self.moved(sent, batch.reloaded, &batch.keys);
+        let moved = delta.keys.is_some()
+            || !delta.rows.is_empty()
+            || delta.frame.is_some()
+            || delta.ask.is_some()
+            || delta.overview.is_some()
+            || delta.settings.is_some();
+        moved.then_some(delta)
+    }
+
+    /// Everything that moved against `sent`, from one read of the session.
+    fn moved(&self, sent: &mut Sent, reloaded: bool, changed: &[Key]) -> ChatDelta {
+        let ended = self.session.ended().map(|error| error.to_string());
+        let files = self.changed_files.lock().unwrap().clone();
+        let mut open = self.open_runs.lock().unwrap();
+        let state = self.session.state();
+        // Each open run is re-held on its newest step before rows are read,
+        // so it stays open as it grows, older steps page in, or the window
+        // trims it.
+        if !open.is_empty() && (reloaded || !changed.is_empty()) {
+            ui_view::keep_open_runs(&state, &mut open);
+        }
+        let (keys, wanted) = sent.keys_moved(state.transcript(), reloaded, changed);
+        let opts = ChatOptions {
+            tools: ToolRows::Collapse { open: &open },
+        };
+        let rows = ui_view::chat_rows_for(&state, &wanted, &opts);
+        let frame = {
+            let mut first_drawn = self.first_drawn.lock().unwrap();
+            note_drawn(&state, &mut first_drawn);
+            frame(&state, self.clock.now_ms(), ended, &first_drawn)
+        };
+        ChatDelta {
+            chat: self.id,
+            keys,
+            rows,
+            frame: sent.frame(frame),
+            ask: sent
+                .ask(ui_view::ask_card(&state))
+                .map(|card| AskMoved { card }),
+            overview: sent.overview(ui_view::overview(&state, files.as_ref())),
+            settings: sent.settings(ui_view::settings(&state)),
         }
     }
 
@@ -495,6 +545,28 @@ impl Drop for Chat {
     }
 }
 
+/// Hands the daemon each draft the chat keeps, newest last, until the chat
+/// is gone and its last draft saved. A save that fails loses only what the
+/// phone still shows.
+async fn save_drafts(
+    client: Arc<dyn Client>,
+    agent_id: Vec<u8>,
+    mut drafts: watch::Receiver<Option<wire::Draft>>,
+) {
+    while drafts.changed().await.is_ok() {
+        let Some(draft) = drafts.borrow_and_update().clone() else {
+            continue;
+        };
+        let request = wire::UpdateDraftRequest {
+            agent_id: agent_id.clone(),
+            draft: Some(draft),
+        };
+        if let Err(error) = client.update_draft(request).await {
+            tracing::warn!(%error, "cannot keep the draft");
+        }
+    }
+}
+
 /// Notes where each prompt on its way is drawn as a frame first sees it,
 /// and forgets the ones no longer on their way.
 pub(crate) fn note_drawn(state: &SessionState, first_drawn: &mut HashMap<Vec<u8>, bool>) {
@@ -529,7 +601,7 @@ pub(crate) fn frame(
         composer: ui_view::composer(state, now_ms),
         waiting: ui_view::waiting(state),
         controls: ui_view::controls(state),
-        git: agent.git.as_ref().map(GitView::of),
+        git: agent.git.clone(),
         context: ui_view::context(state),
         sign_in: ui_view::sign_in(state),
         connection: state.connection(),

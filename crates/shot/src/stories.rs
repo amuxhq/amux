@@ -127,7 +127,7 @@ pub fn all() -> Vec<Story> {
             "The New Agent window `n` opens when the person chats in each agent's own terminal.",
             || {
                 let mut home = tui::vocabulary::authored_home();
-                home.chat_in = ChatIn::Terminal;
+                home.chat_in = ChatIn::Native;
                 home.key(KeyCode::Char('n'));
                 Scene::Home(Box::new(home))
             }
@@ -374,8 +374,11 @@ fn recorded(kind: Kind, fixture: &str, pick: Pick) -> ChatScene {
 fn held_while_away() -> Scene {
     let mut scene = recorded(Kind::ClaudeSdk, "recorded_multi_turn", Pick::Last);
     scene.state.update(Msg::Host(wire::HostEntry {
-        host_id: b"host".to_vec(),
-        name: "studio".into(),
+        host: Some(wire::Host {
+            host_id: b"host".to_vec(),
+            name: "studio".into(),
+            ..Default::default()
+        }),
         ..Default::default()
     }));
     scene.state.update(Msg::Event(wire::SessionEvent {
@@ -552,14 +555,11 @@ fn first_run() -> HomeScene {
 
     let mut fleet = FleetState::new();
     for of in [
-        Of::Host(wire::HostEntry {
-            host_id: b"desk".to_vec(),
-            name: "desk".into(),
-            trust: wire::Trust::Trusted as i32,
-            presence: wire::Presence::Online as i32,
-            via: wire::RouteKind::Direct as i32,
-            ..Default::default()
-        }),
+        Of::Host(wire::HostEntry::trusted_host(
+            b"desk".as_slice(),
+            "desk",
+            wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+        )),
         Of::CaughtUp(wire::CaughtUp { revision: 0 }),
     ] {
         fleet.update(FleetMsg::Event(Box::new(wire::InventoryEvent {

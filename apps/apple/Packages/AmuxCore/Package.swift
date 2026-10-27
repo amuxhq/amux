@@ -7,7 +7,7 @@ let package = Package(
     products: [
         .library(name: "AmuxCore", targets: ["AmuxCore"]),
         // The values the Rust bridge hands over, generated from their Rust
-        // definitions by `cargo run -p xtask -- swift-types`.
+        // definitions by `cargo run -p ios-tools -- swift-types`.
         .library(name: "AmuxValues", targets: ["AmuxValues"]),
     ],
     targets: [
@@ -19,13 +19,7 @@ let package = Package(
         .target(name: "LaunchClock"),
         .target(name: "AmuxValues"),
         .target(name: "AmuxCore", dependencies: ["AmuxApp", "AmuxValues", "LaunchClock"]),
-        // Fixtures/client-traces is written by `just client-traces` from the
-        // Rust client model; the chat model's trace test replays it.
-        .testTarget(
-            name: "AmuxCoreTests",
-            dependencies: ["AmuxCore"],
-            resources: [.copy("Fixtures")]
-        ),
+        .testTarget(name: "AmuxCoreTests", dependencies: ["AmuxCore"]),
     ],
     swiftLanguageModes: [.v6]
 )

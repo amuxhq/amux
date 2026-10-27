@@ -17,10 +17,9 @@ jobs:
   nightly:
     name: Nightly bounds (${{ matrix.target }})
     runs-on: ubuntu-latest
-    # The slowest model at its nightly bounds, the family, takes 757 s on
-    # the enrolled Mac's 12 threads and roughly seven times that here, with
-    # the build before it.
-    timeout-minutes: 100
+    # GitHub's cap for a hosted job: the single daemon's peer took two hours
+    # on the enrolled Mac's 12 threads, and the runner is several times slower.
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
@@ -33,7 +32,7 @@ jobs:
         with:
           shared-key: models
           save-if: false
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       - name: Check the model at its nightly bounds
         run: just models-nightly ${{ matrix.target }}
 
@@ -48,7 +47,7 @@ jobs:
         with:
           shared-key: test
           save-if: false
-      - uses: extractions/setup-just@v2
+      - uses: ./.github/actions/setup-just
       # The models run in the matrix above, so this walks seeds only; the
       # report names every failing seed and the command that reruns it.
       - name: Walk every simulated story under 2000 seeds

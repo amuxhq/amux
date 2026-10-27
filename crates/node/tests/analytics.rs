@@ -11,10 +11,11 @@ use node::{ClientApi, Daemon, Generation, ProfileRuntime, StartOptions, Telemetr
 use support::synthetic::*;
 use support::*;
 use tonic::Request;
-use wire::client_service_server::ClientService as _;
+use wire::agent_service_server::AgentService as _;
+use wire::session_service_server::SessionService as _;
 use wire::{
-    ClaudeAnswer, ClaudeSdkInput, Empty, Input, Interrupt, Kind as WireKind, PromptInput,
-    QuestionAnswer, SendInputRequest, claude_answer, claude_sdk_input,
+    ClaudeAnswer, ClaudeSdkInput, Input, Interrupt, Kind as WireKind, PromptInput, QuestionAnswer,
+    SendInputRequest, claude_answer, claude_sdk_input,
 };
 
 const SEGMENTS: u64 = 1 << 20;
@@ -145,7 +146,7 @@ async fn a_persons_prompts_and_answers_count_and_keys_do_not() {
     for _ in 0..2 {
         drop(
             person
-                .subscribe_inventory(Request::new(Empty {}))
+                .subscribe_inventory(Request::new(wire::SubscribeInventoryRequest {}))
                 .await
                 .unwrap(),
         );
@@ -172,7 +173,7 @@ async fn a_persons_prompts_and_answers_count_and_keys_do_not() {
     let plain = ClientApi::new(&runtime, None);
     drop(
         plain
-            .subscribe_inventory(Request::new(Empty {}))
+            .subscribe_inventory(Request::new(wire::SubscribeInventoryRequest {}))
             .await
             .unwrap(),
     );

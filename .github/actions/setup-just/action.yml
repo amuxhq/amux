@@ -1,0 +1,51 @@
+# Installs one pinned `just` release by its download URL and checks the
+# archive against its published SHA-256. It never lists releases: an action
+# that pages GitHub's Releases API to resolve a version fails every job at
+# once while that listing is unwell, whatever version or token it is given.
+# To move to another release, change the version and the sums together, from
+# that release's SHA256SUMS asset.
+name: Set up just
+description: Install the pinned just release from its download URL, checked against its SHA-256.
+runs:
+  using: composite
+  steps:
+    - name: Install just
+      shell: bash
+      env:
+        JUST_VERSION: "1.59.0"
+      run: |
+        set -euo pipefail
+        case "$RUNNER_OS-$RUNNER_ARCH" in
+          Linux-X64) target=x86_64-unknown-linux-musl ext=tar.gz sum=409044617b6f06517c1035e55ca38c8c856ff8b650e41bc2aa1ef82d5903a23e ;;
+          Linux-ARM64) target=aarch64-unknown-linux-musl ext=tar.gz sum=23871b1702bfd550fb5f901778fd4290ecf2ee034a45a889fbe96d89b188086d ;;
+          macOS-ARM64) target=aarch64-apple-darwin ext=tar.gz sum=6574cea774ed4cae12e24b6aa11857de33e80dab4667cf628fd5840df96a2a9d ;;
+          macOS-X64) target=x86_64-apple-darwin ext=tar.gz sum=036ead9df9bc31dbae9934ae3b4236ed124d0bafcffd33439460ae084d5c9cb7 ;;
+          Windows-X64) target=x86_64-pc-windows-msvc ext=zip sum=9c5463e2d0974e31bee71346aa5cbf19167de1585a4abc1bae7b3b04604ea9c0 ;;
+          Windows-ARM64) target=aarch64-pc-windows-msvc ext=zip sum=a72808bc8f8028c25aaae87cf26405d2bd85d2769a779380b344c69607216971 ;;
+          *) echo "no pinned just release for $RUNNER_OS on $RUNNER_ARCH" >&2; exit 1 ;;
+        esac
+        temp="$RUNNER_TEMP"
+        if [ "$RUNNER_OS" = Windows ]; then temp=$(cygpath -u "$RUNNER_TEMP"); fi
+        dir="$temp/just-$JUST_VERSION"
+        archive="$dir/just.$ext"
+        mkdir -p "$dir"
+        curl --fail --silent --show-error --location --retry 5 --retry-all-errors \
+          --output "$archive" \
+          "https://github.com/casey/just/releases/download/$JUST_VERSION/just-$JUST_VERSION-$target.$ext"
+        if command -v sha256sum >/dev/null; then
+          actual=$(sha256sum "$archive" | cut -d ' ' -f 1)
+        else
+          actual=$(shasum -a 256 "$archive" | cut -d ' ' -f 1)
+        fi
+        if [ "$actual" != "$sum" ]; then
+          echo "just-$JUST_VERSION-$target.$ext has SHA-256 $actual, not $sum" >&2
+          exit 1
+        fi
+        if [ "$ext" = zip ]; then
+          pwsh -NoProfile -Command "Expand-Archive -Force -Path '$(cygpath -w "$archive")' -DestinationPath '$(cygpath -w "$dir")'"
+          cygpath -w "$dir" >> "$GITHUB_PATH"
+        else
+          tar -xzf "$archive" -C "$dir" just
+          echo "$dir" >> "$GITHUB_PATH"
+        fi
+        "$dir/just" --version

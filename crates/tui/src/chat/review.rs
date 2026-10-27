@@ -869,11 +869,21 @@ impl ReviewPage {
                         lines.push(Line::default());
                         if h.skips {
                             let mut gap = Line::from(Span::raw("  "));
-                            push(&mut gap, format!("{:>digits$}   ", "⋯"), theme.muted(), width);
+                            push(
+                                &mut gap,
+                                format!("{:>digits$}   ", "⋯"),
+                                theme.muted(),
+                                width,
+                            );
                             if !h.scope.is_empty() {
                                 let room = width.saturating_sub(text::line_width(&gap) + 4);
                                 let scope = h.scope.replace('\t', "    ");
-                                push(&mut gap, text::clip_to_width(&scope, room), theme.muted(), width);
+                                push(
+                                    &mut gap,
+                                    text::clip_to_width(&scope, room),
+                                    theme.muted(),
+                                    width,
+                                );
                                 push(&mut gap, " ", theme.faint(), width);
                             }
                             let rule = width.saturating_sub(text::line_width(&gap) + 2);

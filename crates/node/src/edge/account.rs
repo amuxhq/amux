@@ -18,6 +18,7 @@ use super::binding::CloudServiceId;
 use crate::auth::oauth::{self, OAuthError};
 use crate::auth::{AccessToken, AuthError, CredentialProvider};
 use crate::identity::atomic_replace_private;
+use crate::registry::{ProfileRefusal, SignIn};
 
 pub const ACCOUNT_FILE: &str = "account";
 /// An access token this close to expiry is refreshed before it is handed out.
@@ -33,17 +34,26 @@ pub(crate) struct AccountRecord {
     pub(crate) name: Option<String>,
     pub(crate) email: Option<String>,
     /// The profile picture's URL, as the service said at sign-in.
-    #[serde(default)]
     pub(crate) picture: Option<String>,
     pub(crate) bound_at_ms: i64,
     /// Absent after a sign-out.
     pub(crate) refresh_token: Option<String>,
-    #[serde(default)]
     pub(crate) paused: bool,
     /// The OAuth client the refresh token was issued to, which is the only
     /// one it refreshes under: the CLI's, or the phone's.
-    #[serde(default = "cli_client")]
     pub(crate) client_id: String,
+}
+
+/// Where a profile stands with its account.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Binding {
+    /// Never signed in.
+    Unbound,
+    SignedIn,
+    /// Signed out, still tied to its account.
+    SignedOut,
+    /// Signed in, with the relay link held down.
+    Paused,
 }
 
 fn cli_client() -> String {
@@ -89,18 +99,18 @@ impl Account {
         self.record.lock().unwrap().clone()
     }
 
-    pub(crate) fn intent(&self) -> wire::Intent {
+    pub(crate) fn binding(&self) -> Binding {
         match &*self.record.lock().unwrap() {
-            None => wire::Intent::Unbound,
-            Some(record) if record.paused => wire::Intent::Paused,
-            Some(record) if record.refresh_token.is_some() => wire::Intent::Bound,
-            Some(_) => wire::Intent::LoggedOut,
+            None => Binding::Unbound,
+            Some(record) if record.paused => Binding::Paused,
+            Some(record) if record.refresh_token.is_some() => Binding::SignedIn,
+            Some(_) => Binding::SignedOut,
         }
     }
 
     /// Whether the cloud link should run: bound, signed in and not paused.
     pub(crate) fn wants_cloud(&self) -> bool {
-        self.intent() == wire::Intent::Bound
+        self.binding() == Binding::SignedIn
     }
 
     pub(crate) fn service(&self) -> Option<CloudServiceId> {
@@ -111,19 +121,10 @@ impl Account {
             .map(|record| record.service.clone())
     }
 
-    fn write(&self, record: Option<AccountRecord>) -> io::Result<()> {
-        match &record {
-            Some(record) => {
-                let bytes = serde_json::to_vec_pretty(record).map_err(io::Error::other)?;
-                atomic_replace_private(&self.path, &bytes).map_err(io::Error::other)?;
-            }
-            None => match std::fs::remove_file(&self.path) {
-                Ok(()) => {}
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error),
-            },
-        }
-        *self.record.lock().unwrap() = record;
+    fn write(&self, record: AccountRecord) -> io::Result<()> {
+        let bytes = serde_json::to_vec_pretty(&record).map_err(io::Error::other)?;
+        atomic_replace_private(&self.path, &bytes).map_err(io::Error::other)?;
+        *self.record.lock().unwrap() = Some(record);
         if let Some(changed) = self.changed.get() {
             changed();
         }
@@ -139,7 +140,7 @@ impl Account {
     pub(crate) async fn bind(&self, record: AccountRecord, access: AccessToken) -> io::Result<()> {
         let _change = self.changes.lock().await;
         self.forget_relay_token()?;
-        self.write(Some(record))?;
+        self.write(record)?;
         *self.access.lock().unwrap() = Some(access);
         Ok(())
     }
@@ -148,12 +149,13 @@ impl Account {
     /// finishes first.
     pub(crate) async fn sign_out(&self) -> io::Result<()> {
         let _change = self.changes.lock().await;
-        let record = self.record().map(|record| AccountRecord {
-            refresh_token: None,
-            ..record
-        });
         self.forget_relay_token()?;
-        self.write(record)?;
+        if let Some(record) = self.record() {
+            self.write(AccountRecord {
+                refresh_token: None,
+                ..record
+            })?;
+        }
         *self.access.lock().unwrap() = None;
         Ok(())
     }
@@ -173,7 +175,7 @@ impl Account {
         let record = self
             .record()
             .ok_or_else(|| io::Error::other("the profile is not bound to an account"))?;
-        self.write(Some(AccountRecord { paused, ..record }))
+        self.write(AccountRecord { paused, ..record })
     }
 
     /// The access token, refreshed first if it is missing or about to
@@ -215,10 +217,10 @@ impl Account {
         {
             // Written before the access token is used: a refresh token the
             // service rotated is the only one that works from now on.
-            self.write(Some(AccountRecord {
+            self.write(AccountRecord {
                 refresh_token: Some(rotated),
                 ..current
-            }))
+            })
             .map_err(|error| AuthError::Provider(error.to_string()))?;
         }
         *self.access.lock().unwrap() = Some(access.clone());
@@ -260,48 +262,44 @@ impl CredentialProvider for AccountCredentials {
 /// holds agents or paired hosts is adopted only when the request says so.
 pub(crate) async fn bind(
     installation: &Arc<crate::daemon::Installation>,
-    explicit: Option<crate::ProfileId>,
-    request: wire::BindProfileRequest,
-) -> Result<crate::ProfileId, tonic::Status> {
-    use wire::ErrorCode;
-
-    use crate::front_door::failed;
-
-    let service = CloudServiceId::canonicalize(&request.cloud_url)
-        .map_err(|error| failed(ErrorCode::InvalidArgument, error.to_string()))?;
-    if request.staged_refresh_token.is_empty() {
-        return Err(failed(
-            ErrorCode::InvalidArgument,
-            "the login carries no refresh token",
-        ));
+    sign_in: SignIn,
+) -> Result<crate::ProfileId, ProfileRefusal> {
+    let service = CloudServiceId::canonicalize(&sign_in.cloud_url)
+        .map_err(|error| ProfileRefusal::BadService(error.to_string()))?;
+    if sign_in.refresh_token.is_empty() {
+        return Err(ProfileRefusal::NoRefreshToken);
     }
-    let client_id = if request.client_id.is_empty() {
+    let client_id = if sign_in.client_id.is_empty() {
         cli_client()
     } else {
-        request.client_id.clone()
+        sign_in.client_id.clone()
     };
     let (access, rotated) =
-        oauth::refresh_access_token(service.as_str(), &client_id, &request.staged_refresh_token)
+        oauth::refresh_access_token(service.as_str(), &client_id, &sign_in.refresh_token)
             .await
-            .map_err(|error| failed(ErrorCode::Unauthenticated, error.to_string()))?;
-    let refresh = rotated.unwrap_or(request.staged_refresh_token);
+            .map_err(|error| ProfileRefusal::Rejected(error.to_string()))?;
+    let refresh = rotated.unwrap_or(sign_in.refresh_token);
     let info = super::binding::fetch_userinfo(&reqwest::Client::new(), service.as_str(), &access)
         .await
-        .map_err(|error| failed(ErrorCode::Unavailable, error.to_string()))?;
+        .map_err(|error| ProfileRefusal::Unreachable(error.to_string()))?;
     let same_account =
         |record: &AccountRecord| record.service == service && record.subject == info.sub;
 
-    let _change = installation.registry_changes.lock().await;
+    let _change = installation.profile_changes.lock().await;
     let hosted = installation
         .hosted
         .lock()
         .unwrap()
         .iter()
         .filter_map(|(id, hosted)| {
-            hosted
-                .runtime
-                .edge()
-                .map(|edge| (*id, hosted.position, hosted.runtime.clone(), edge))
+            hosted.runtime.edge().map(|edge| {
+                (
+                    *id,
+                    (hosted.entry.created_ms, hosted.entry.id),
+                    hosted.runtime.clone(),
+                    edge,
+                )
+            })
         })
         .collect::<Vec<_>>();
     let bound = hosted
@@ -312,13 +310,10 @@ pub(crate) async fn bind(
                 .is_some_and(|record| same_account(&record))
         })
         .map(|(id, ..)| *id);
-    let id = match explicit {
+    let id = match sign_in.profile {
         Some(id) => {
             if bound.is_some_and(|bound| bound != id) {
-                return Err(failed(
-                    ErrorCode::AlreadyExists,
-                    "that account is already signed in on another profile",
-                ));
+                return Err(ProfileRefusal::AccountElsewhere);
             }
             id
         }
@@ -330,7 +325,7 @@ pub(crate) async fn bind(
                     if edge.account().record().is_none()
                         && pristine(runtime, edge)
                             .await
-                            .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?
+                            .map_err(|error| ProfileRefusal::Failed(error.to_string()))?
                     {
                         unbound.push((*position, *id));
                     }
@@ -343,7 +338,7 @@ pub(crate) async fn bind(
                         installation
                             .create(&label)
                             .await
-                            .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?
+                            .map_err(|error| ProfileRefusal::Failed(error.to_string()))?
                     }
                 }
             }
@@ -351,32 +346,21 @@ pub(crate) async fn bind(
     };
     let (runtime, edge) = {
         let hosted = installation.hosted.lock().unwrap();
-        let hosted = hosted
-            .get(&id)
-            .ok_or_else(|| failed(ErrorCode::NotFound, format!("no profile {id}")))?;
-        let edge = hosted
-            .runtime
-            .edge()
-            .ok_or_else(|| failed(ErrorCode::Unavailable, "the profile is not in service"))?;
+        let hosted = hosted.get(&id).ok_or(ProfileRefusal::NoProfile(id))?;
+        let edge = hosted.runtime.edge().ok_or(ProfileRefusal::NotInService)?;
         (hosted.runtime.clone(), edge)
     };
     let existing = edge.account().record();
     match &existing {
         Some(record) if !same_account(record) => {
-            return Err(failed(
-                ErrorCode::FailedPrecondition,
-                "the profile belongs to another account",
-            ));
+            return Err(ProfileRefusal::OtherAccount);
         }
-        None if !request.adopt_non_pristine
+        None if !sign_in.adopt
             && !pristine(&runtime, &edge)
                 .await
-                .map_err(|error| failed(ErrorCode::Internal, error.to_string()))? =>
+                .map_err(|error| ProfileRefusal::Failed(error.to_string()))? =>
         {
-            return Err(failed(
-                ErrorCode::FailedPrecondition,
-                "the profile already holds agents or paired hosts; confirm adopting it",
-            ));
+            return Err(ProfileRefusal::HoldsData);
         }
         _ => {}
     }
@@ -396,7 +380,7 @@ pub(crate) async fn bind(
     };
     edge.bind_account(record, access)
         .await
-        .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
+        .map_err(|error| ProfileRefusal::Failed(error.to_string()))?;
     Ok(id)
 }
 

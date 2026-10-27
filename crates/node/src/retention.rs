@@ -48,6 +48,7 @@ impl ProfileRuntime {
             .await
             .ok_or(crate::runtime::Stopped)?;
         for dir in &retained.removed_dirs {
+            agent_dir::local_socket::forget_short_addresses(dir);
             match std::fs::remove_dir_all(dir) {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}

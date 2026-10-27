@@ -95,6 +95,9 @@ pub mod door;
 mod feed;
 mod gate;
 mod invariant;
+// The journeys drive the terminal client in tmux.
+#[cfg(unix)]
+pub mod journey;
 mod lan;
 pub mod link_log;
 pub mod modes;

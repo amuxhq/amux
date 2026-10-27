@@ -14,7 +14,7 @@ use sha2::{Digest as _, Sha256};
 use support::synthetic::*;
 use support::*;
 use tonic::Code;
-use wire::client_service_server::ClientService as _;
+use wire::agent_service_server::AgentService as _;
 use wire::{
     BlobRef, Catalogue, GetBlobRequest, GetCatalogueRequest, OfferedModel, Phase, SessionEvent,
     session_event,
@@ -124,7 +124,7 @@ impl Pair {
                 .await
         );
         let subscription = until("the laptop to list the desk's agent", || {
-            laptop_runtime.subscribe(agent.id.as_bytes(), 10)
+            laptop_runtime.subscribe_session(agent.id.as_bytes(), 10)
         })
         .await
         .unwrap();

@@ -82,18 +82,6 @@ final class RuntimeCoordinatorTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: coordinator.directory.path))
     }
 
-    func testALeftoverDirectoryOfPerAccountInstallationsIsDeletedAtStart() async throws {
-        let leftover = support.appendingPathComponent("installations/old", isDirectory: true)
-        try FileManager.default.createDirectory(at: leftover, withIntermediateDirectories: true)
-        let coordinator = coordinator(AccountRegistry())
-        defer { coordinator.stop() }
-        coordinator.start()
-        let started = await coordinator.started()
-        XCTAssertNotNil(started)
-        XCTAssertFalse(FileManager.default.fileExists(
-            atPath: support.appendingPathComponent("installations").path))
-    }
-
     func testTheRuntimeLendsNoBearerBeforeAnySignIn() async {
         let registry = AccountRegistry()
         let coordinator = coordinator(registry)
@@ -181,10 +169,9 @@ final class RuntimeCoordinatorTests: XCTestCase {
     }
 
     /// A second account is a profile of its own and goes on screen; the
-    /// first is paused, so one relay link is live. Switching back pauses
-    /// and resumes without the runtime stopping, and each account's fleet is
-    /// its own.
-    func testASecondAccountGetsItsOwnProfileAndSwitchingPausesTheOther() async throws {
+    /// first stays signed in, its relay link up. Switching back does not
+    /// stop the runtime, and each account's fleet is its own.
+    func testASecondAccountGetsItsOwnProfileAndBothStaySignedIn() async throws {
         let service = try await FakeAccountService.start()
         defer { service.stop() }
         let registry = AccountRegistry()
@@ -207,7 +194,7 @@ final class RuntimeCoordinatorTests: XCTestCase {
         XCTAssertNotEqual(bob, ada)
         XCTAssertEqual(coordinator.profile?.id, bob)
         XCTAssertEqual(registry.accounts.map(\.profile).sorted(), [ada, bob].compactMap { $0 }.sorted())
-        await eventually("ada paused") { binding(coordinator, ada) == .paused }
+        XCTAssertEqual(binding(coordinator, ada), .signedIn)
         XCTAssertEqual(binding(coordinator, bob), .signedIn)
         XCTAssertTrue(runtime.listsSources(bob ?? ""))
         XCTAssertFalse(runtime.listsSources(ada ?? ""), "only the profile on screen lists")
@@ -218,8 +205,8 @@ final class RuntimeCoordinatorTests: XCTestCase {
         registry.select(AccountId("ada"))
         XCTAssertTrue(coordinator.runtime === runtime, "switching never restarts the runtime")
         XCTAssertEqual(coordinator.profile?.id, ada)
-        await eventually("ada resumed") { binding(coordinator, ada) == .signedIn }
-        await eventually("bob paused") { binding(coordinator, bob) == .paused }
+        XCTAssertEqual(binding(coordinator, ada), .signedIn)
+        XCTAssertEqual(binding(coordinator, bob), .signedIn)
         let shown = coordinator.stores
         await eventually("ada's fleet shown again") { shown.hosts.local?.hostId == adaHost }
     }
@@ -287,19 +274,18 @@ final class RuntimeCoordinatorTests: XCTestCase {
         XCTAssertEqual(again.profile, ada)
         XCTAssertEqual(relaunched.profile?.id, ada)
         XCTAssertEqual(Set(again.accounts.map(\.id)), [AccountId("ada"), AccountId("bob")])
-        await eventually("bob paused, ada live") {
+        await eventually("both signed in") {
             binding(relaunched, ada) == .signedIn
-                && relaunched.profiles.filter { $0.account.binding == .paused }.count == 1
+                && relaunched.profiles.filter { $0.account.binding == .signedIn }.count == 2
         }
     }
 
     /// A push names a host and an agent only. The account it is for is the
     /// one whose profile trusts that host: off screen, it goes on screen,
-    /// the previous account's relay link paused before its own resumes,
     /// under the on-demand policy; on screen, nothing moves; a host nobody
     /// trusts is left alone.
     /// A coordinator whose stores open every pushed chat caught up, with ada
-    /// and then bob signed in: bob is on screen and ada paused.
+    /// and then bob signed in: bob is on screen.
     private func twoAccounts(
         _ service: FakeAccountService
     ) async throws -> (RuntimeCoordinator, AccountRegistry, Runtime, ada: String, bob: String) {
@@ -316,7 +302,6 @@ final class RuntimeCoordinatorTests: XCTestCase {
         let ada = try XCTUnwrap(registry.profile)
         await sign(coordinator, in: "bob", at: service)
         let bob = try XCTUnwrap(registry.profile)
-        await coordinator.settled()
         return (coordinator, registry, runtime, ada, bob)
     }
 
@@ -341,8 +326,6 @@ final class RuntimeCoordinatorTests: XCTestCase {
             }
             host = HostId(bytes: paired.hostId)
         }
-        coordinator.profilesMoved()
-        await coordinator.settled()
         return try XCTUnwrap(host)
     }
 
@@ -355,7 +338,8 @@ final class RuntimeCoordinatorTests: XCTestCase {
         XCTAssertEqual(registry.selected, AccountId("bob"))
         var changed = 0
         coordinator.accountChanged = { changed += 1 }
-        let live = { coordinator.profiles.filter { $0.account.binding == .signedIn }.map(\.id) }
+        let live = { coordinator.profiles.filter { $0.account.binding == .signedIn }.map(\.id).sorted() }
+        let both = [ada, bob].sorted()
 
         // The host of an account off screen, pushed in the background.
         let work = AgentKey(host: host, agent: UUID())
@@ -364,8 +348,7 @@ final class RuntimeCoordinatorTests: XCTestCase {
         XCTAssertEqual(registry.selected, AccountId("ada"))
         XCTAssertEqual(coordinator.profile?.id, ada)
         XCTAssertEqual(changed, 1, "the pages of the account left are dropped")
-        XCTAssertEqual(live(), [ada], "one relay link is live")
-        XCTAssertEqual(binding(coordinator, bob), .paused)
+        XCTAssertEqual(live(), both, "every bound profile keeps its relay link")
         XCTAssertFalse(runtime.listsSources(ada), "a background wake opens only its chat")
 
         // The host of the account on screen: nothing moves.
@@ -374,15 +357,14 @@ final class RuntimeCoordinatorTests: XCTestCase {
         XCTAssertEqual(onScreen, .current)
         XCTAssertEqual(registry.selected, AccountId("ada"))
         XCTAssertEqual(changed, 1)
-        XCTAssertEqual(live(), [ada])
+        XCTAssertEqual(live(), both)
 
         // A host nobody here trusts.
         let stranger = AgentKey(host: HostId(UUID()), agent: UUID())
         let unknown = await coordinator.warm(stranger, inBackground: true, within: .seconds(5))
         XCTAssertEqual(unknown, .unknownHost)
         XCTAssertEqual(registry.selected, AccountId("ada"))
-        XCTAssertEqual(live(), [ada])
-        XCTAssertEqual(binding(coordinator, bob), .paused, "nothing was resumed")
+        XCTAssertEqual(live(), both)
         XCTAssertFalse(coordinator.stores.holds(stranger))
     }
 
@@ -407,7 +389,7 @@ final class RuntimeCoordinatorTests: XCTestCase {
         XCTAssertEqual(registry.selected, AccountId("bob"))
         XCTAssertEqual(coordinator.profile?.id, bob)
         XCTAssertEqual(changed, 0)
-        XCTAssertEqual(binding(coordinator, ada), .paused)
+        XCTAssertEqual(binding(coordinator, ada), .signedIn)
     }
 
     /// In front of somebody, a push for another account's host changes
@@ -427,7 +409,7 @@ final class RuntimeCoordinatorTests: XCTestCase {
         XCTAssertEqual(registry.selected, AccountId("bob"))
         XCTAssertEqual(coordinator.profile?.id, bob)
         XCTAssertEqual(changed, 0)
-        XCTAssertEqual(binding(coordinator, ada), .paused)
+        XCTAssertEqual(binding(coordinator, ada), .signedIn)
         XCTAssertTrue(runtime.listsSources(bob), "still in front of somebody")
 
         let tapped = await coordinator.bringForward(host)

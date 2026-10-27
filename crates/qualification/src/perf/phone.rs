@@ -6,7 +6,7 @@
 //! for a fleet a person could plausibly hold, and one agent whose
 //! conversation is already a thousand rows long when it streams on cue.
 //! The phone pairs with every machine by the link it prints; the runner
-//! (`scripts/ios-perf.py`) says what is measured over each part and
+//! (`testnet journey perf`) says what is measured over each part and
 //! against which budget.
 
 use provider_fakes::script::{Outcome, Script, Step, Tool, ToolClass};

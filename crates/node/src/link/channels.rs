@@ -11,24 +11,21 @@ use std::task::{Context, Poll, ready};
 use futures_util::future::BoxFuture;
 use serde::Serialize;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tonic::codegen::http;
 use tonic::transport::{Channel, Endpoint};
 use wire::pb;
 
-use super::{ByteStream, LinkCarrier, OpenError};
+use super::{ByteStream, OpenError, QuicCarrier};
 use crate::HostId;
 use crate::dispatcher::TunnelDispatcher;
 use crate::driver::{CoreLinks, core_error};
 use crate::identity::IdentityError;
 use crate::routing::{LinkId, LinkRegistry, Route};
-use crate::transport::{Compressed, channel_from_single_io, configure_tonic_endpoint_keepalive};
+use crate::transport::{Compressed, channel_from_single_io};
 use crate::trust::SharedTrustStore;
-
-const HTTP2_FRAME_HEADER_LEN: usize = 9;
-const HTTP2_DATA_FRAME: u8 = 0;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -37,15 +34,6 @@ pub enum ChannelClass {
     /// Session subscriptions, on a channel of their own so that they
     /// neither wait behind nor hold up the host's calls.
     Session,
-    Bulk,
-}
-
-impl ChannelClass {
-    /// Whether one channel of this class serves every caller to a host
-    /// while its connection lasts.
-    fn shared(self) -> bool {
-        matches!(self, Self::Calls | Self::Session)
-    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
@@ -124,7 +112,7 @@ pub(crate) trait ForwardedDial: Send + Sync + 'static {
 
 /// Where a session subscription starts: the origin's tail, or after a
 /// revision this host already holds.
-pub type Cursor = wire::peer_subscribe_request::From;
+pub type Cursor = wire::peer_subscribe_session_request::From;
 
 /// The only calls the channel pool writes before a link's handshake
 /// finishes, as early data the far end may see more than once: each reads
@@ -136,31 +124,31 @@ pub type Cursor = wire::peer_subscribe_request::From;
 /// ```
 ///
 /// ```
-/// let _ = node::EarlyCall::Fetch(wire::FetchRequest::default());
+/// let _ = node::EarlyCall::ListItems(wire::ListItemsRequest::default());
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum EarlyCall {
     /// The host's inventory, which always opens with all of it: the wire
     /// gives it no cursor.
     SubscribeInventory,
-    Subscribe {
+    SubscribeSession {
         session: Vec<u8>,
         from: Cursor,
     },
-    Fetch(wire::FetchRequest),
+    ListItems(wire::ListItemsRequest),
     GetBlob(wire::GetBlobRequest),
-    Diff(wire::DiffRequest),
+    GetDiff(wire::GetDiffRequest),
 }
 
 impl EarlyCall {
     /// The channel the call rides, as the same call made later would.
     fn class(&self) -> ChannelClass {
         match self {
-            EarlyCall::SubscribeInventory | EarlyCall::Fetch(_) | EarlyCall::Diff(_) => {
-                ChannelClass::Calls
-            }
-            EarlyCall::Subscribe { .. } => ChannelClass::Session,
-            EarlyCall::GetBlob(_) => ChannelClass::Bulk,
+            EarlyCall::SubscribeInventory
+            | EarlyCall::ListItems(_)
+            | EarlyCall::GetBlob(_)
+            | EarlyCall::GetDiff(_) => ChannelClass::Calls,
+            EarlyCall::SubscribeSession { .. } => ChannelClass::Session,
         }
     }
 
@@ -168,10 +156,10 @@ impl EarlyCall {
     fn method(&self) -> &'static str {
         match self {
             EarlyCall::SubscribeInventory => "SubscribeInventory",
-            EarlyCall::Subscribe { .. } => "Subscribe",
-            EarlyCall::Fetch(_) => "Fetch",
+            EarlyCall::SubscribeSession { .. } => "SubscribeSession",
+            EarlyCall::ListItems(_) => "ListItems",
             EarlyCall::GetBlob(_) => "GetBlob",
-            EarlyCall::Diff(_) => "Diff",
+            EarlyCall::GetDiff(_) => "GetDiff",
         }
     }
 
@@ -179,26 +167,30 @@ impl EarlyCall {
         Ok(match self {
             EarlyCall::SubscribeInventory => EarlyAnswer::Inventory(
                 client
-                    .subscribe_inventory(wire::Empty {})
+                    .agents
+                    .subscribe_inventory(wire::SubscribeInventoryRequest {})
                     .await?
                     .into_inner(),
             ),
-            EarlyCall::Subscribe { session, from } => EarlyAnswer::Session(
+            EarlyCall::SubscribeSession { session, from } => EarlyAnswer::Session(
                 client
-                    .subscribe(wire::PeerSubscribeRequest {
+                    .sessions
+                    .subscribe_session(wire::PeerSubscribeSessionRequest {
                         agent_id: session,
                         from: Some(from),
                     })
                     .await?
                     .into_inner(),
             ),
-            EarlyCall::Fetch(request) => {
-                EarlyAnswer::Fetched(client.fetch(request).await?.into_inner())
+            EarlyCall::ListItems(request) => {
+                EarlyAnswer::Fetched(client.sessions.list_items(request).await?.into_inner())
             }
             EarlyCall::GetBlob(request) => {
-                EarlyAnswer::Blob(client.get_blob(request).await?.into_inner())
+                EarlyAnswer::Blob(client.agents.get_blob(request).await?.into_inner())
             }
-            EarlyCall::Diff(request) => EarlyAnswer::Diff(client.diff(request).await?.into_inner()),
+            EarlyCall::GetDiff(request) => {
+                EarlyAnswer::Diff(client.agents.get_diff(request).await?.into_inner())
+            }
         })
     }
 }
@@ -209,7 +201,7 @@ impl EarlyCall {
 pub enum EarlyAnswer {
     Inventory(tonic::Streaming<wire::InventoryEvent>),
     Session(tonic::Streaming<wire::SessionEvent>),
-    Fetched(wire::FetchResponse),
+    Fetched(wire::ListItemsResponse),
     Blob(wire::GetBlobResponse),
     Diff(wire::Diff),
 }
@@ -236,13 +228,13 @@ pub struct ResumedLink {
     pub early_data: super::link_log::EarlyData,
     pub replies: Vec<EarlyReply>,
     /// What carries the link, which names the path it came up on.
-    pub(crate) carrier: Arc<dyn LinkCarrier>,
+    pub(crate) carrier: Arc<QuicCarrier>,
 }
 
 /// A link a resumed dial has started: its carrier already carries data,
 /// and its connector has written the Hello.
 pub(crate) struct Resuming {
-    pub(crate) carrier: Arc<dyn LinkCarrier>,
+    pub(crate) carrier: Arc<QuicCarrier>,
     /// Resolves with the link once the host has answered the Hello and the
     /// link is registered, or with why it did not come up.
     pub(crate) established: BoxFuture<'static, Result<LinkId, ChannelError>>,
@@ -329,7 +321,6 @@ pub struct ChannelPool {
     forwarded: OnceLock<Arc<dyn ForwardedDial>>,
     /// How a link resuming with a ticket is dialled, once the edge is up.
     resumed: OnceLock<Arc<dyn ResumedDial>>,
-    bulk_response_holds: std::sync::Mutex<HashMap<HostId, PendingBulkResponseHold>>,
     /// Hosts no channel opens to while the link stays up: a fault a test
     /// network injects.
     refused: std::sync::Mutex<HashSet<HostId>>,
@@ -368,58 +359,6 @@ impl Drop for Telling {
     }
 }
 
-/// A bulk transfer held after its first data arrives, so a test can show
-/// what else moves while one is in flight. Dropping it releases the hold.
-pub struct BulkResponseHold {
-    entered: oneshot::Receiver<()>,
-    release: Option<oneshot::Sender<()>>,
-}
-
-impl BulkResponseHold {
-    /// Resolves once the held transfer's first data has arrived.
-    pub async fn entered(&mut self) -> Result<(), oneshot::error::RecvError> {
-        (&mut self.entered).await
-    }
-
-    pub fn release(mut self) {
-        if let Some(release) = self.release.take() {
-            let _ = release.send(());
-        }
-    }
-}
-
-impl Drop for BulkResponseHold {
-    fn drop(&mut self) {
-        if let Some(release) = self.release.take() {
-            let _ = release.send(());
-        }
-    }
-}
-
-struct PendingBulkResponseHold {
-    entered: Option<oneshot::Sender<()>>,
-    release: oneshot::Receiver<()>,
-}
-
-impl PendingBulkResponseHold {
-    fn has_entered(&self) -> bool {
-        self.entered.is_none()
-    }
-
-    fn enter(&mut self) {
-        if let Some(entered) = self.entered.take() {
-            let _ = entered.send(());
-        }
-    }
-
-    fn poll_release(&mut self, cx: &mut Context<'_>) -> Poll<()> {
-        match Pin::new(&mut self.release).poll(cx) {
-            Poll::Ready(_) => Poll::Ready(()),
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
-
 impl ChannelPool {
     pub(crate) fn new(links: Arc<LinkRegistry>) -> Self {
         Self {
@@ -430,7 +369,6 @@ impl ChannelPool {
             trust_store: None,
             forwarded: OnceLock::new(),
             resumed: OnceLock::new(),
-            bulk_response_holds: std::sync::Mutex::new(HashMap::new()),
             refused: std::sync::Mutex::default(),
         }
     }
@@ -481,16 +419,22 @@ impl ChannelPool {
             let channel = match opened.iter().find(|(opened, ..)| *opened == class) {
                 Some((_, channel, ..)) => channel.clone(),
                 None => {
-                    let stream = carrier
-                        .open_stream()
-                        .await
-                        .map_err(|error| map_open_error(error, Route::Via(peer)))?;
+                    let stream = match carrier.open_stream().await {
+                        Ok(stream) => stream,
+                        // The link ended before its early calls went out:
+                        // why it ended (a host refusing the ticket, say) is
+                        // the dial's answer.
+                        Err(error) => {
+                            return Err(match established.await {
+                                Err(ended) => ended,
+                                Ok(_) => map_open_error(error, Route::Via(peer)),
+                            });
+                        }
+                    };
                     tracing::debug!(%peer, ?class, "opened an early link stream");
                     let ended = Arc::new(Ending::default());
                     let lifetime = Arc::new(CancellationToken::new());
-                    let channel = self.channel_on(
-                        peer,
-                        class,
+                    let channel = channel_on(
                         Watched::new(stream, ended.clone()),
                         &ended,
                         lifetime.clone(),
@@ -570,24 +514,24 @@ impl ChannelPool {
             }
         }
         self.track(key, &lifetime);
-        if key.class.shared() {
-            self.by_key
-                .write()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .insert(
-                    key,
-                    Cached {
-                        channel,
-                        ended,
-                        link,
-                    },
-                );
-        }
+        self.by_key
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(
+                key,
+                Cached {
+                    channel,
+                    ended,
+                    link,
+                },
+            );
     }
 
     /// From now on every channel to `peer` is refused while `refuse`
-    /// holds, as a far end refusing every stream would refuse it, those
-    /// already opening included, and no cached one is handed out.
+    /// holds, as a link whose far end takes no stream would refuse it,
+    /// those already opening included, and no cached one is handed out.
+    /// The link each refusal was on closes, as any link a stream would not
+    /// open on does.
     pub(crate) fn refuse(&self, peer: HostId, refuse: bool) {
         let mut refused = self
             .refused
@@ -607,27 +551,17 @@ impl ChannelPool {
             .contains(&peer)
     }
 
-    /// Holds the next bulk channel opened to `peer` after the first data
-    /// frame of its response.
-    pub fn hold_next_bulk_response(&self, peer: HostId) -> BulkResponseHold {
-        let (entered_tx, entered) = oneshot::channel();
-        let (release, release_rx) = oneshot::channel();
-        let previous = self
-            .bulk_response_holds
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .insert(
-                peer,
-                PendingBulkResponseHold {
-                    entered: Some(entered_tx),
-                    release: release_rx,
-                },
-            );
-        assert!(previous.is_none(), "a bulk response hold is already armed");
-        BulkResponseHold {
-            entered,
-            release: Some(release),
-        }
+    /// A stream would not open on `link` while it stayed up: it closes as
+    /// a dead connection would, so the host reads as the links that remain
+    /// say, and redialling brings it back.
+    fn close_failed(&self, link: LinkId) {
+        tracing::warn!(?link, "no stream opened on the link; closing it");
+        let links = self.links.clone();
+        tokio::spawn(async move {
+            links
+                .close_link(link, crate::routing::LinkCloseRequest::CallsFailed)
+                .await;
+        });
     }
 
     pub fn link_registry(&self) -> Arc<LinkRegistry> {
@@ -635,9 +569,6 @@ impl ChannelPool {
     }
 
     pub(crate) async fn channel(&self, key: ChannelKey) -> Result<Channel, ChannelError> {
-        if !key.class.shared() {
-            return self.open_channel(key).await;
-        }
         let opener = self
             .opening
             .lock()
@@ -651,7 +582,7 @@ impl ChannelPool {
 
     async fn open_channel(&self, key: ChannelKey) -> Result<Channel, ChannelError> {
         let refused = self.refuses(key.peer);
-        let cached = if key.class.shared() && !refused {
+        let cached = if !refused {
             self.by_key
                 .read()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -718,10 +649,11 @@ impl ChannelPool {
             None => None,
         };
         if refused {
-            let refusal = ChannelError::Refused(pb::ForwardRefusal::NoRoute);
+            let refusal = streams_refused();
             if let Some(telling) = telling {
                 telling.failed(core_error(&refusal));
             }
+            self.close_failed(link);
             return Err(refusal);
         }
         let ended = Arc::new(Ending::default());
@@ -736,11 +668,12 @@ impl ChannelPool {
         // A refusal set while the channel was opening holds for it too, so
         // no channel opens once it is set.
         let secured = match secured {
-            Ok(_) if self.refuses(key.peer) => {
-                Err(ChannelError::Refused(pb::ForwardRefusal::NoRoute))
-            }
+            Ok(_) if self.refuses(key.peer) => Err(streams_refused()),
             secured => secured,
         };
+        if let Err(ChannelError::Handshake(_)) = &secured {
+            self.close_failed(link);
+        }
         if let Some(telling) = telling {
             match &secured {
                 Ok(_) => {
@@ -757,19 +690,17 @@ impl ChannelPool {
             elapsed_ms = opened.elapsed().as_millis(),
             "opened a link stream"
         );
-        if key.class.shared() {
-            self.by_key
-                .write()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .insert(
-                    key,
-                    Cached {
-                        channel: channel.clone(),
-                        ended,
-                        link,
-                    },
-                );
-        }
+        self.by_key
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(
+                key,
+                Cached {
+                    channel: channel.clone(),
+                    ended,
+                    link,
+                },
+            );
         Ok(channel)
     }
 
@@ -823,7 +754,7 @@ impl ChannelPool {
         &self,
         peer: HostId,
         route: Route,
-    ) -> Result<(LinkId, Arc<dyn LinkCarrier>), ChannelError> {
+    ) -> Result<(LinkId, Arc<QuicCarrier>), ChannelError> {
         match route {
             Route::Direct(link) => self
                 .links
@@ -833,26 +764,34 @@ impl ChannelPool {
                 .ok_or(ChannelError::LinkUnavailable {
                     host_id: link.peer(),
                 }),
-            Route::Via(forwarder) => {
-                if let Some(up) = self.links.native_carrier_to_peer(peer).await {
-                    return Ok(up);
-                }
-                let (through, _) = self
-                    .links
-                    .native_carrier_to_peer(forwarder)
-                    .await
-                    .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })?;
-                let dial = self
-                    .forwarded
-                    .get()
-                    .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })?;
-                dial.dial_through(peer, through).await?;
-                self.links
-                    .native_carrier_to_peer(peer)
-                    .await
-                    .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })
-            }
+            Route::Via(forwarder) => self.dial_through(peer, forwarder).await,
         }
+    }
+
+    /// The link of `peer`'s own that is up, or one dialled now whose
+    /// packets `forwarder` carries.
+    pub(crate) async fn dial_through(
+        &self,
+        peer: HostId,
+        forwarder: HostId,
+    ) -> Result<(LinkId, Arc<QuicCarrier>), ChannelError> {
+        if let Some(up) = self.links.native_carrier_to_peer(peer).await {
+            return Ok(up);
+        }
+        let (through, _) = self
+            .links
+            .native_carrier_to_peer(forwarder)
+            .await
+            .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })?;
+        let dial = self
+            .forwarded
+            .get()
+            .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })?;
+        dial.dial_through(peer, through).await?;
+        self.links
+            .native_carrier_to_peer(peer)
+            .await
+            .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })
     }
 
     /// The channel over a stream of the link: its handshake authenticated
@@ -865,7 +804,7 @@ impl ChannelPool {
     ) -> Channel {
         let lifetime = Arc::new(CancellationToken::new());
         self.track(key, &lifetime);
-        self.channel_on(key.peer, key.class, stream, ended, lifetime)
+        channel_on(stream, ended, lifetime)
     }
 
     /// Cancels `lifetime` when the channels `key` names are forgotten.
@@ -877,36 +816,6 @@ impl ChannelPool {
         let tracked = lifetimes.entry(key).or_default();
         tracked.retain(|lifetime| lifetime.strong_count() > 0);
         tracked.push(Arc::downgrade(lifetime));
-    }
-
-    /// The channel of class `class` to `peer` over `stream`, ending when
-    /// `lifetime` is cancelled.
-    fn channel_on(
-        &self,
-        peer: HostId,
-        class: ChannelClass,
-        stream: Watched<ByteStream>,
-        ended: &Arc<Ending>,
-        lifetime: Arc<CancellationToken>,
-    ) -> Channel {
-        let stream = crate::transport::ShutdownIo::new_shared(stream, lifetime);
-        // The acceptor wraps its end the same way (`TunnelDispatcher`).
-        let io = Compressed::new(TrustAnswer::new(stream, ended.clone()));
-        let endpoint = configure_tonic_endpoint_keepalive(Endpoint::from_static("https://peer"));
-        let hold = (class == ChannelClass::Bulk).then(|| {
-            self.bulk_response_holds
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .remove(&peer)
-        });
-        match hold.flatten() {
-            Some(hold) => channel_from_single_io(
-                endpoint,
-                "held native link channel",
-                HoldAfterFirstDataFrame::new(io, hold),
-            ),
-            None => channel_from_single_io(endpoint, "native link channel", io),
-        }
     }
 
     fn cancel_where(&self, predicate: impl Fn(&ChannelKey) -> bool) {
@@ -1099,143 +1008,39 @@ impl tower::Service<http::Request<tonic::body::Body>> for PeerChannel {
     }
 }
 
-/// A PeerService client on a [`PeerChannel`].
-pub type PeerClient = wire::peer_service_client::PeerServiceClient<PeerChannel>;
+/// The peer services' clients on one [`PeerChannel`].
+#[derive(Clone)]
+pub struct PeerClient {
+    pub agents: wire::peer_agent_service_client::PeerAgentServiceClient<PeerChannel>,
+    pub sessions: wire::peer_session_service_client::PeerSessionServiceClient<PeerChannel>,
+}
 
 pub(crate) fn peer_client(channel: Channel) -> PeerClient {
-    wire::peer_service_client::PeerServiceClient::new(PeerChannel::new(channel))
-        .max_decoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT)
-        .max_encoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT)
-}
-
-enum Http2ReadState {
-    Header {
-        bytes: [u8; HTTP2_FRAME_HEADER_LEN],
-        filled: usize,
-    },
-    Payload {
-        frame_type: u8,
-        remaining: usize,
-    },
-}
-
-struct HoldAfterFirstDataFrame<T> {
-    inner: T,
-    hold: Option<PendingBulkResponseHold>,
-    state: Http2ReadState,
-}
-
-impl<T> HoldAfterFirstDataFrame<T> {
-    fn new(inner: T, hold: PendingBulkResponseHold) -> Self {
-        Self {
-            inner,
-            hold: Some(hold),
-            state: Http2ReadState::Header {
-                bytes: [0; HTTP2_FRAME_HEADER_LEN],
-                filled: 0,
-            },
-        }
+    let channel = PeerChannel::new(channel);
+    PeerClient {
+        agents: wire::peer_agent_service_client::PeerAgentServiceClient::new(channel.clone())
+            .max_decoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT)
+            .max_encoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT),
+        sessions: wire::peer_session_service_client::PeerSessionServiceClient::new(channel)
+            .max_decoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT)
+            .max_encoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT),
     }
 }
 
-impl<T: AsyncRead + Unpin> AsyncRead for HoldAfterFirstDataFrame<T> {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        output: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        let this = self.get_mut();
-        if this.hold.as_ref().is_some_and(|hold| hold.has_entered()) {
-            ready!(this.hold.as_mut().expect("hold exists").poll_release(cx));
-            this.hold = None;
-        }
-        if output.remaining() == 0 {
-            return Poll::Ready(Ok(()));
-        }
-        let boundary = match &this.state {
-            Http2ReadState::Header { filled, .. } => HTTP2_FRAME_HEADER_LEN - filled,
-            Http2ReadState::Payload { remaining, .. } => *remaining,
-        };
-        let before = output.filled().len();
-        let (poll, initialized, read) = {
-            let mut limited = output.take(boundary);
-            let poll = Pin::new(&mut this.inner).poll_read(cx, &mut limited);
-            (poll, limited.initialized().len(), limited.filled().len())
-        };
-        // SAFETY: `limited` covered exactly this prefix of `output`'s
-        // unfilled storage and reported it initialized by the inner reader.
-        unsafe { output.assume_init(initialized) };
-        output.advance(read);
-        match poll {
-            Poll::Pending => return Poll::Pending,
-            Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
-            Poll::Ready(Ok(())) => {}
-        }
-        if read == 0 {
-            return Poll::Ready(Ok(()));
-        }
-        let bytes = &output.filled()[before..before + read];
-        match &mut this.state {
-            Http2ReadState::Header {
-                bytes: header,
-                filled,
-            } => {
-                header[*filled..*filled + read].copy_from_slice(bytes);
-                *filled += read;
-                if *filled == HTTP2_FRAME_HEADER_LEN {
-                    let length = usize::from(header[0]) << 16
-                        | usize::from(header[1]) << 8
-                        | usize::from(header[2]);
-                    if length == 0 {
-                        this.state = Http2ReadState::Header {
-                            bytes: [0; HTTP2_FRAME_HEADER_LEN],
-                            filled: 0,
-                        };
-                    } else {
-                        this.state = Http2ReadState::Payload {
-                            frame_type: header[3],
-                            remaining: length,
-                        };
-                    }
-                }
-            }
-            Http2ReadState::Payload {
-                frame_type,
-                remaining,
-            } => {
-                *remaining -= read;
-                if *remaining == 0 {
-                    let is_data = *frame_type == HTTP2_DATA_FRAME;
-                    this.state = Http2ReadState::Header {
-                        bytes: [0; HTTP2_FRAME_HEADER_LEN],
-                        filled: 0,
-                    };
-                    if is_data && let Some(hold) = &mut this.hold {
-                        hold.enter();
-                    }
-                }
-            }
-        }
-        Poll::Ready(Ok(()))
-    }
-}
-
-impl<T: AsyncWrite + Unpin> AsyncWrite for HoldAfterFirstDataFrame<T> {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        bytes: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.get_mut().inner).poll_write(cx, bytes)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().inner).poll_flush(cx)
-    }
-
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().inner).poll_shutdown(cx)
-    }
+/// A channel over `stream`, ending when `lifetime` is cancelled.
+fn channel_on(
+    stream: Watched<ByteStream>,
+    ended: &Arc<Ending>,
+    lifetime: Arc<CancellationToken>,
+) -> Channel {
+    let stream = crate::transport::ShutdownIo::new_shared(stream, lifetime);
+    // The acceptor wraps its end the same way (`TunnelDispatcher`).
+    let io = Compressed::new(TrustAnswer::new(stream, ended.clone()));
+    channel_from_single_io(
+        Endpoint::from_static("https://peer"),
+        "native link channel",
+        io,
+    )
 }
 
 /// A stream a peer opened to this host, from the link it arrived on.
@@ -1265,6 +1070,12 @@ pub(crate) fn serve_inbound_streams(
 /// being replaced.
 fn unpinned(peer: HostId) -> ChannelError {
     ChannelError::Tls(format!("no key is pinned for host {peer}"))
+}
+
+/// What a channel the refusal hook turned away fails with: a stream that
+/// would not open, as on a link whose far end takes none.
+fn streams_refused() -> ChannelError {
+    ChannelError::Handshake("the link refused the stream".to_owned())
 }
 
 fn map_open_error(error: OpenError, route: Route) -> ChannelError {
@@ -1345,21 +1156,21 @@ mod tests {
     fn an_early_call_is_only_a_call_that_changes_nothing() {
         let every = [
             EarlyCall::SubscribeInventory,
-            EarlyCall::Subscribe {
+            EarlyCall::SubscribeSession {
                 session: Vec::new(),
                 from: Cursor::Tail(10),
             },
-            EarlyCall::Fetch(wire::FetchRequest::default()),
+            EarlyCall::ListItems(wire::ListItemsRequest::default()),
             EarlyCall::GetBlob(wire::GetBlobRequest::default()),
-            EarlyCall::Diff(wire::DiffRequest::default()),
+            EarlyCall::GetDiff(wire::GetDiffRequest::default()),
         ];
         for call in &every {
             match call {
                 EarlyCall::SubscribeInventory
-                | EarlyCall::Subscribe { .. }
-                | EarlyCall::Fetch(_)
+                | EarlyCall::SubscribeSession { .. }
+                | EarlyCall::ListItems(_)
                 | EarlyCall::GetBlob(_)
-                | EarlyCall::Diff(_) => {}
+                | EarlyCall::GetDiff(_) => {}
             }
         }
         let methods: Vec<_> = every.iter().map(EarlyCall::method).collect();
@@ -1367,10 +1178,10 @@ mod tests {
             methods,
             [
                 "SubscribeInventory",
-                "Subscribe",
-                "Fetch",
+                "SubscribeSession",
+                "ListItems",
                 "GetBlob",
-                "Diff"
+                "GetDiff"
             ]
         );
         for writes in [
@@ -1394,7 +1205,8 @@ mod tests {
 
         use tokio::sync::watch;
         use tonic::{Request, Response, Status};
-        use wire::peer_service_server::PeerService;
+        use wire::peer_agent_service_server::PeerAgentService;
+        use wire::peer_session_service_server::PeerSessionService;
 
         use super::*;
         use crate::identity::DeviceIdentity;
@@ -1402,7 +1214,7 @@ mod tests {
         use crate::link::resumption::{HOST_TICKETS, SessionTickets};
         use crate::link::{LinkEndpoint, QuicCarrier};
         use crate::routing::{Capabilities, Host, LiveLocalHost};
-        use crate::transport::{BoxedGrpcIo, tonic_server_builder};
+        use crate::transport::BoxedGrpcIo;
 
         /// Counts the calls a host answered, by method.
         #[derive(Clone, Default)]
@@ -1421,13 +1233,12 @@ mod tests {
         }
 
         #[tonic::async_trait]
-        impl PeerService for Answering {
+        impl PeerAgentService for Answering {
             type SubscribeInventoryStream = Events<wire::InventoryEvent>;
-            type SubscribeStream = Events<wire::SessionEvent>;
 
             async fn subscribe_inventory(
                 &self,
-                _: Request<wire::Empty>,
+                _: Request<wire::SubscribeInventoryRequest>,
             ) -> Answer<Self::SubscribeInventoryStream> {
                 self.inventory.fetch_add(1, Ordering::SeqCst);
                 let event = wire::InventoryEvent::default();
@@ -1435,87 +1246,114 @@ mod tests {
                     event,
                 )]))))
             }
-            async fn subscribe(
-                &self,
-                _: Request<wire::PeerSubscribeRequest>,
-            ) -> Answer<Self::SubscribeStream> {
-                self.sessions.fetch_add(1, Ordering::SeqCst);
-                let event = wire::SessionEvent::default();
-                Ok(Response::new(Box::pin(futures_util::stream::iter([Ok(
-                    event,
-                )]))))
-            }
-            async fn fetch(&self, _: Request<wire::FetchRequest>) -> Answer<wire::FetchResponse> {
-                self.fetches.fetch_add(1, Ordering::SeqCst);
-                Ok(Response::new(wire::FetchResponse::default()))
-            }
-            async fn get(&self, _: Request<wire::GetRequest>) -> Answer<wire::Item> {
-                unanswered()
-            }
-            async fn send_input(
-                &self,
-                _: Request<wire::SendInputRequest>,
-            ) -> Answer<wire::SendInputResponse> {
-                unanswered()
-            }
+
             async fn create_agent(
                 &self,
                 _: Request<wire::CreateAgentRequest>,
             ) -> Answer<wire::Agent> {
                 unanswered()
             }
+
             async fn rename_agent(
                 &self,
                 _: Request<wire::RenameAgentRequest>,
             ) -> Answer<wire::Agent> {
                 unanswered()
             }
-            async fn stop_agent(&self, _: Request<wire::StopAgentRequest>) -> Answer<wire::Empty> {
+
+            async fn stop_agent(
+                &self,
+                _: Request<wire::StopAgentRequest>,
+            ) -> Answer<wire::StopAgentResponse> {
                 unanswered()
             }
+
             async fn resume_agent(
                 &self,
                 _: Request<wire::ResumeAgentRequest>,
             ) -> Answer<wire::Agent> {
                 unanswered()
             }
+
             async fn delete_agent(
                 &self,
                 _: Request<wire::DeleteAgentRequest>,
             ) -> Answer<wire::Empty> {
                 unanswered()
             }
+
             async fn send_message(
                 &self,
-                _: Request<wire::Envelope>,
+                _: Request<wire::PeerSendMessageRequest>,
             ) -> Answer<wire::SendMessageResponse> {
                 unanswered()
             }
+
             async fn put_blob(&self, _: Request<wire::PutBlobRequest>) -> Answer<wire::BlobRef> {
                 unanswered()
             }
+
             async fn get_blob(
                 &self,
                 _: Request<wire::GetBlobRequest>,
             ) -> Answer<wire::GetBlobResponse> {
                 unanswered()
             }
-            async fn diff(&self, _: Request<wire::DiffRequest>) -> Answer<wire::Diff> {
+
+            async fn get_diff(&self, _: Request<wire::GetDiffRequest>) -> Answer<wire::Diff> {
                 unanswered()
             }
+
             async fn get_catalogue(
                 &self,
                 _: Request<wire::GetCatalogueRequest>,
-            ) -> Answer<wire::CatalogueBlob> {
+            ) -> Answer<wire::GetCatalogueResponse> {
                 unanswered()
             }
+
             async fn list_repositories(
                 &self,
                 _: Request<wire::ListRepositoriesRequest>,
             ) -> Answer<wire::ListRepositoriesResponse> {
                 unanswered()
             }
+
             async fn dump(&self, _: Request<wire::DumpRequest>) -> Answer<wire::DumpPart> {
+                unanswered()
+            }
+        }
+
+        #[tonic::async_trait]
+        impl PeerSessionService for Answering {
+            type SubscribeSessionStream = Events<wire::SessionEvent>;
+
+            async fn subscribe_session(
+                &self,
+                _: Request<wire::PeerSubscribeSessionRequest>,
+            ) -> Answer<Self::SubscribeSessionStream> {
+                self.sessions.fetch_add(1, Ordering::SeqCst);
+                let event = wire::SessionEvent::default();
+                Ok(Response::new(Box::pin(futures_util::stream::iter([Ok(
+                    event,
+                )]))))
+            }
+
+            async fn list_items(
+                &self,
+                _: Request<wire::ListItemsRequest>,
+            ) -> Answer<wire::ListItemsResponse> {
+                self.fetches.fetch_add(1, Ordering::SeqCst);
+                Ok(Response::new(wire::ListItemsResponse::default()))
+            }
+
+            async fn get_item(&self, _: Request<wire::GetItemRequest>) -> Answer<wire::Item> {
+                unanswered()
+            }
+
+            async fn send_input(
+                &self,
+                _: Request<wire::SendInputRequest>,
+            ) -> Answer<wire::SendInputResponse> {
                 unanswered()
             }
         }
@@ -1527,7 +1365,7 @@ mod tests {
                 version: "test".to_string(),
                 capabilities: Capabilities::default(),
                 signed_in: Some(false),
-                platform: None,
+                platform: wire::Platform::Unspecified,
             }
         }
 
@@ -1573,8 +1411,9 @@ mod tests {
                     served.poll_recv(cx).map(|io| io.map(Ok::<_, io::Error>))
                 });
                 tokio::spawn(
-                    tonic_server_builder()
-                        .add_service(wire::peer_service_server(answering.clone()))
+                    tonic::transport::Server::builder()
+                        .add_service(wire::peer_agent_service_server(answering.clone()))
+                        .add_service(wire::peer_session_service_server(answering.clone()))
                         .serve_with_incoming(incoming),
                 );
                 let early = arrived_early.clone();
@@ -1707,11 +1546,11 @@ mod tests {
         fn calls() -> Vec<EarlyCall> {
             vec![
                 EarlyCall::SubscribeInventory,
-                EarlyCall::Subscribe {
+                EarlyCall::SubscribeSession {
                     session: b"agent".to_vec(),
                     from: Cursor::Tail(10),
                 },
-                EarlyCall::Fetch(wire::FetchRequest::default()),
+                EarlyCall::ListItems(wire::ListItemsRequest::default()),
             ]
         }
 

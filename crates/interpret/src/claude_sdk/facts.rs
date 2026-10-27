@@ -27,8 +27,8 @@ use super::{
 use crate::claude_common::{
     AnsweredResult, BackgroundInput, JobInput, PLAN_TOOL, QUESTION_TOOL, TASK_TOOLS, Verdict,
     apply_task_tool, auto_models, blocks_text, claude_limit, compact_json, job_kind, message_text,
-    offered_commands, offered_models, permission_scopes, plan_ask, plan_mode_write, question_ask,
-    question_ask_text, shown_input, split_tool_name, tool_class, tool_result_images,
+    offered_commands, offered_models, old_source, permission_scopes, plan_ask, plan_mode_write,
+    question_ask, question_ask_text, split_tool_name, tool_class, tool_input, tool_result_images,
     tool_result_text, without_image_bytes,
 };
 use crate::shared::json_as_written;
@@ -66,6 +66,12 @@ struct TaskReport<'a> {
 }
 
 impl State {
+    /// Whether a path is in the folder Claude was launched in. An agent
+    /// whose folder is not known has none to be in.
+    fn in_folder(&self, path: &str) -> bool {
+        !self.cwd.is_empty() && std::path::Path::new(path).starts_with(&self.cwd)
+    }
+
     pub(super) fn fact(&mut self, emit: &mut Emit, fact: Fact) {
         if fact.channel != Channel::Stream {
             return;
@@ -1249,16 +1255,24 @@ impl State {
             _ => {
                 let reason = match &asked.decision_reason {
                     Some(reason) => reason.clone(),
+                    // Claude names the path a command would write even
+                    // inside its folder, where it asks only because writes
+                    // need asking; only a path beyond the folder is the
+                    // reason.
                     None => written_opt(asked.blocked_path.as_deref())
+                        .filter(|path| !self.in_folder(path))
                         .map(|path| format!("outside the allowed directories: {path}"))
                         .unwrap_or_default(),
                 };
                 (
                     wire::ask::Body::Permission(PermissionAsk {
                         tool_name: tool.clone(),
-                        input_json: shown_input(input, &asked.extensions)
-                            .to_string()
-                            .into_bytes(),
+                        input: Some(tool_input(
+                            &tool,
+                            &server,
+                            input,
+                            old_source(&asked.extensions),
+                        )),
                         scopes: permission_scopes(&suggestions),
                         reason,
                         description: written_opt(asked.description.as_deref())

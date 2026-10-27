@@ -13,13 +13,13 @@ use async_trait::async_trait;
 use client::{Client, EventStream, RpcError};
 use tokio::sync::{mpsc, oneshot};
 use wire::{
-    Agent, Attachment, BlobRef, CreateAgentRequest, DeleteAgentRequest, Diff, DiffRequest,
-    DumpReport, DumpRequest, ErrorCode, FetchRequest, FetchResponse, GetBlobRequest,
-    GetBlobResponse, GetRequest, InventoryEvent, Item, Kind, Lifecycle, ListRepositoriesRequest,
+    Agent, Attachment, BlobRef, CreateAgentRequest, DeleteAgentRequest, Diff, DumpRequest,
+    DumpResponse, GetBlobRequest, GetBlobResponse, GetDiffRequest, GetItemRequest, InventoryEvent,
+    Item, Kind, Lifecycle, ListItemsRequest, ListItemsResponse, ListRepositoriesRequest,
     ListRepositoriesResponse, Phase, PutBlobRequest, QueuedInput, RenameAgentRequest,
     ResolveAgentRequest, ResumeAgentRequest, SendInputRequest, SendInputResponse,
-    SendMessageResponse, SessionEvent, Snapshot, StopAgentRequest, SubscribeRequest, attachment,
-    inventory_event, send_input_response, session_event,
+    SendMessageResponse, SessionEvent, Snapshot, StopAgentRequest, SubscribeSessionRequest,
+    attachment, inventory_event, send_input_response, session_event,
 };
 
 /// How long a test waits for the driver's next call before failing.
@@ -28,16 +28,16 @@ pub const PATIENCE: Duration = Duration::from_secs(5);
 pub type Reply<T> = oneshot::Sender<Result<T, RpcError>>;
 
 pub enum Call {
-    Subscribe(SubscribeRequest, Reply<EventStream<SessionEvent>>),
+    Subscribe(SubscribeSessionRequest, Reply<EventStream<SessionEvent>>),
     Inventory(Reply<EventStream<InventoryEvent>>),
-    Fetch(FetchRequest, Reply<FetchResponse>),
-    Get(GetRequest, Reply<Item>),
+    Fetch(ListItemsRequest, Reply<ListItemsResponse>),
+    Get(GetItemRequest, Reply<Item>),
     SendInput(SendInputRequest, Reply<SendInputResponse>),
     Resume(ResumeAgentRequest, Reply<Agent>),
     GetBlob(GetBlobRequest, Reply<GetBlobResponse>),
     PutBlob(PutBlobRequest, Reply<BlobRef>),
     Stop(StopAgentRequest, Reply<()>),
-    Dump(DumpRequest, Reply<DumpReport>),
+    Dump(DumpRequest, Reply<DumpResponse>),
 }
 
 impl std::fmt::Debug for Call {
@@ -118,18 +118,18 @@ impl Client for FakeRuntime {
         unimplemented!("resolve_agent")
     }
 
-    async fn subscribe(
+    async fn subscribe_session(
         &self,
-        request: SubscribeRequest,
+        request: SubscribeSessionRequest,
     ) -> Result<EventStream<SessionEvent>, RpcError> {
         self.call(|reply| Call::Subscribe(request, reply)).await
     }
 
-    async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, RpcError> {
+    async fn list_items(&self, request: ListItemsRequest) -> Result<ListItemsResponse, RpcError> {
         self.call(|reply| Call::Fetch(request, reply)).await
     }
 
-    async fn get(&self, request: GetRequest) -> Result<Item, RpcError> {
+    async fn get_item(&self, request: GetItemRequest) -> Result<Item, RpcError> {
         self.call(|reply| Call::Get(request, reply)).await
     }
 
@@ -172,14 +172,14 @@ impl Client for FakeRuntime {
         self.call(|reply| Call::GetBlob(request, reply)).await
     }
 
-    async fn diff(&self, _: DiffRequest) -> Result<Diff, RpcError> {
+    async fn get_diff(&self, _: GetDiffRequest) -> Result<Diff, RpcError> {
         unimplemented!("diff")
     }
 
     async fn get_catalogue(
         &self,
         _: wire::GetCatalogueRequest,
-    ) -> Result<wire::CatalogueBlob, RpcError> {
+    ) -> Result<wire::GetCatalogueResponse, RpcError> {
         unimplemented!("get_catalogue")
     }
 
@@ -190,7 +190,7 @@ impl Client for FakeRuntime {
         unimplemented!("list_repositories")
     }
 
-    async fn dump(&self, request: DumpRequest) -> Result<DumpReport, RpcError> {
+    async fn dump(&self, request: DumpRequest) -> Result<DumpResponse, RpcError> {
         self.call(|reply| Call::Dump(request, reply)).await
     }
 }
@@ -213,7 +213,7 @@ impl Calls {
     }
 
     /// Answers the next call, a Subscribe, with a fresh stream.
-    pub async fn subscribe(&mut self) -> (SubscribeRequest, Feed<SessionEvent>) {
+    pub async fn subscribe_session(&mut self) -> (SubscribeSessionRequest, Feed<SessionEvent>) {
         match self.next().await {
             Call::Subscribe(request, reply) => {
                 let (feed, stream) = stream();
@@ -252,14 +252,14 @@ impl Calls {
         }
     }
 
-    pub async fn fetch(&mut self) -> (FetchRequest, Reply<FetchResponse>) {
+    pub async fn list_items(&mut self) -> (ListItemsRequest, Reply<ListItemsResponse>) {
         match self.next().await {
             Call::Fetch(request, reply) => (request, reply),
             other => panic!("expected Fetch, got {other:?}"),
         }
     }
 
-    pub async fn get(&mut self) -> (GetRequest, Reply<Item>) {
+    pub async fn get_item(&mut self) -> (GetItemRequest, Reply<Item>) {
         match self.next().await {
             Call::Get(request, reply) => (request, reply),
             other => panic!("expected Get, got {other:?}"),
@@ -409,11 +409,10 @@ pub fn rejected(refusal: wire::Refusal) -> SendInputResponse {
 }
 
 pub fn unreachable() -> RpcError {
-    RpcError::Refused(wire::Error {
-        code: ErrorCode::Unreachable as i32,
-        message: "older history is held by the agent's host, which cannot be reached".into(),
-        details: Vec::new(),
-    })
+    RpcError::Refused(wire::Error::because(
+        wire::ErrorReason::HostUnreachable,
+        "older history is held by the agent's host, which cannot be reached",
+    ))
 }
 
 pub fn transport() -> RpcError {

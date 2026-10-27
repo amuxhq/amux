@@ -11,14 +11,12 @@
 //! shutdown that marks the installation clean.
 
 mod activation;
-mod audit;
 mod auth;
 mod blobs;
 mod connection;
 mod daemon;
 pub mod discovery;
 mod dispatcher;
-mod drafts;
 mod driver;
 mod dump;
 mod edge;
@@ -35,7 +33,9 @@ mod net_error;
 mod offers;
 mod outbox;
 mod pairing;
+mod profile_admin;
 mod profiles;
+mod registry;
 mod relay;
 pub mod release;
 mod replicas;
@@ -65,12 +65,12 @@ pub use driver::{
 };
 pub use dump::{
     CLIENT_CHECKPOINT, CLIENT_EVENTS, CLIENT_SESSIONS, DAEMON_LOG, DUMP_LOG_BYTES, DUMP_ROWS,
-    DUMP_SEGMENTS, DumpError, MANIFEST, pack,
+    DUMP_SEGMENTS, DumpError, MANIFEST, SUPERVISOR_LOG, pack,
 };
 pub use edge::{
-    ACCOUNT_FILE, CloudLinkServer, CloudOptions, DUAL_STACK_ANY, DiscoveryFactory, Edge, EdgeError,
-    EdgeOptions, FREE_TIER_REFRESH_INTERVAL, JwtCloudLinkAuthenticator, LAN_PORT_FILE, LINK_SOCKET,
-    LanOptions, LoopbackLink, NetworkChange, Observed, RELAY_TOKEN_FILE, RelayCarrier,
+    ACCOUNT_FILE, Cloud, CloudLinkServer, CloudOptions, DUAL_STACK_ANY, DiscoveryFactory, Edge,
+    EdgeError, EdgeOptions, FREE_TIER_REFRESH_INTERVAL, JwtCloudLinkAuthenticator, LAN_PORT_FILE,
+    LINK_SOCKET, LanOptions, LoopbackLink, NetworkChange, RELAY_TOKEN_FILE, Relay, RelayCarrier,
     RelayIdentity, RelayQuic, RelayServing, UDP_BLOCKED_MEMORY, interface_addrs, mdns_discovery,
     test_interfaces,
 };
@@ -78,10 +78,10 @@ pub use forward::{ForwardError, HostNameError, Owner};
 pub use front_door::FrontDoor;
 pub use generation::{Generation, boot_id};
 pub use grpc::{ClientApi, status};
-pub use identity::{quic_endpoint, quic_endpoint_config};
+pub use identity::{LinkLiveness, quic_endpoint, quic_endpoint_config};
 pub use install::{
-    AGENTS, CORE_CHECKPOINT, CORE_RING, GENERATION, HOST_ID, INSTALLATION_LOCK, InstallationLock,
-    LockError, PROFILES, REGISTRY, REPLICAS, REPORTS, STORE, write_durably,
+    AGENTS, CORE_RING, GENERATION, INSTALLATION_LOCK, InstallationLock, LockError, PROFILES,
+    REPLICAS, REPORTS, STORE, write_durably,
 };
 pub use link::{
     Cursor, EarlyAnswer, EarlyCall, EarlyReply, PeerChannel, PeerClient, ResumedLink,
@@ -89,18 +89,22 @@ pub use link::{
 };
 pub use offers::{CatalogueError, HostCatalogue, PROVIDERS, Provider};
 pub use outbox::{DrainReport, HttpSender, NoopSender, Push, PushError, PushFuture, PushSender};
-pub use pairing::PairingAdmin;
 pub use pairing::qr::{
     PAIR_LINK, QrPairingError, QrPairingPayload, encode_qr_pairing_invitation, pair_link,
     parse_pair_link, parse_qr_pairing_payload,
 };
-pub use pairing::ssh::{
-    SshPairingError, SshPairingPeer, SshPairingProfile, SshTarget, pair_via_ssh_target,
-};
 #[cfg(unix)]
-pub use pairing::ssh::{pair_via_ssh_responder_stdio, relay_stdio_to_unix_socket};
+pub use pairing::ssh::relay_stdio_to_unix_socket;
+pub use pairing::ssh::{
+    SshPairingError, exchange_over_ssh, read_ssh_identity, ssh_stdio, write_ssh_identity,
+};
+pub use profile_admin::ProfileAdmin;
 pub use profiles::{
-    PROFILE_SOCKET, ProfileEntry, ProfileId, Registry, create_profile, host_id, profile_dir,
+    PROFILE_SOCKET, ProfileEntry, ProfileId, create_profile, create_profile_as, profile_dir,
+};
+pub use registry::{
+    AccountState, FellBehind, ProfileEvent, ProfileRefusal, ProfileState, ProfileSubscription,
+    Registry, SignIn,
 };
 pub use relay::RelayError;
 pub use replicas::{InventoryHook, SourceHook, SourcePolicy, SourceVerdict};
@@ -123,7 +127,7 @@ pub mod harness {
 
     pub use crate::auth::claims::Tier;
     pub use crate::discovery::{Advertisement, Discovery, DiscoveryEvent, ScriptedDiscovery};
-    pub use crate::identity::{device_key_path, host_id_path};
+    pub use crate::identity::device_key_path;
     pub use crate::link::ByteStream;
     pub use crate::link::relay_host::RelayHost;
     pub use crate::routing::{AuthenticatedLinkUser, LinkTokenAuthenticator, LiveRoute};

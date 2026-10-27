@@ -303,13 +303,16 @@ pub fn inventory_hosts(events: &[InventoryEvent]) -> Vec<wire::HostEntry> {
     for event in events {
         match &event.of {
             Some(inventory_event::Of::Host(host)) => {
-                match hosts.iter_mut().find(|held| held.host_id == host.host_id) {
+                match hosts
+                    .iter_mut()
+                    .find(|held| held.host_id() == host.host_id())
+                {
                     Some(held) => *held = host.clone(),
                     None => hosts.push(host.clone()),
                 }
             }
             Some(inventory_event::Of::HostRemoved(removed)) => {
-                hosts.retain(|held| held.host_id != removed.host_id);
+                hosts.retain(|held| held.host_id() != removed.host_id);
             }
             _ => {}
         }
@@ -319,7 +322,7 @@ pub fn inventory_hosts(events: &[InventoryEvent]) -> Vec<wire::HostEntry> {
 
 /// Whether a host's inventory entry says it is trusted and online now.
 pub fn host_online(host: &wire::HostEntry) -> bool {
-    host.trust() == wire::Trust::Trusted && host.presence() == wire::Presence::Online
+    host.trusted().is_some() && host.online().is_some()
 }
 
 impl Describe for SessionEvent {
@@ -365,12 +368,11 @@ impl Describe for InventoryEvent {
     fn describe(&self) -> String {
         match &self.of {
             Some(inventory_event::Of::Host(host)) => format!(
-                "Host {} {} generation={} trust={:?} presence={:?}",
-                host.name,
-                short(&host.host_id),
+                "Host {} {} generation={} {:?}",
+                host.name(),
+                short(host.host_id()),
                 host.generation,
-                wire::Trust::try_from(host.trust).unwrap_or_default(),
-                wire::Presence::try_from(host.presence).unwrap_or_default(),
+                host.standing,
             ),
             Some(inventory_event::Of::HostRemoved(removed)) => {
                 format!("HostRemoved {}", short(&removed.host_id))

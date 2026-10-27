@@ -44,7 +44,8 @@ pub fn relay_quic_server_config_from_der(
         .with_no_client_auth()
         .with_single_cert(certs, key)
         .map_err(|error| TransportError::Config(format!("TLS config error: {error}")))?;
-    crate::identity::quic_server_config_issuing(tls, tickets).map_err(TransportError::Config)
+    crate::identity::quic_server_config_issuing(tls, tickets, Default::default())
+        .map_err(TransportError::Config)
 }
 
 fn parse_server_identity(

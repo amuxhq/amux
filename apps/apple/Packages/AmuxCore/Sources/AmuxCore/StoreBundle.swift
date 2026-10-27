@@ -12,9 +12,10 @@ extension Chat: OpenChat {}
 
 /// Everything one account's screens draw, over the profile that serves it.
 ///
-/// The profile wakes this once per turn for however much changed; the
-/// bundle takes the changes and reads the fleet and hosts again. Acts go
-/// to the profile and their answers land in the store the screen draws.
+/// The fleet opens whole when the profile attaches, and the profile hands
+/// over what moved in it and in each open chat as deltas, which the bundle
+/// applies to the store or the chat model that draws them. Acts go to the
+/// profile and their answers land in the store the screen draws.
 @MainActor
 @Observable
 public final class StoreBundle {
@@ -23,7 +24,7 @@ public final class StoreBundle {
     public let hosts: HostsStore
     public let pairing: PairingStore
     public let newAgent: NewAgentStore
-    /// How many times the fleet was read, for a driver waiting on one.
+    /// How many times the fleet moved, for a driver waiting on it.
     public private(set) var applied = 0
     /// The launch's reconciliation is marked once: the first read in which
     /// every trusted host was current.
@@ -31,8 +32,8 @@ public final class StoreBundle {
 
     /// The profile serving this account, while it is on screen.
     @ObservationIgnored public private(set) var profile: Profile?
-    /// Open chats by the id the profile's wake names them with.
-    @ObservationIgnored private var chats: [UInt64: (chat: OpenChat, woke: @MainActor () -> Void)] = [:]
+    /// Open chats by the id the profile's deltas name them with.
+    @ObservationIgnored private var chats: [UInt64: (chat: OpenChat, moved: @MainActor (ChatDelta) -> Void)] = [:]
     /// The chat sessions held open, by agent: every chat a page shows,
     /// chats viewed within the retention, and a chat a push is bringing
     /// current.
@@ -45,29 +46,26 @@ public final class StoreBundle {
     @ObservationIgnored private var viewed: [AgentKey: Date] = [:]
     /// How long a chat nobody shows stays open after it was last viewed.
     @ObservationIgnored public let sessionRetention: Duration
-    /// This account's drafts, kept on the phone past every session.
-    @ObservationIgnored public let drafts: DraftShelf
     /// Opens a session; the profile's unless a test hands one in.
     @ObservationIgnored private let opener: (@MainActor (AgentKey) throws(RuntimeFailure) -> OpenChat)?
     /// Acts on an agent; the profile's unless a test hands one in.
     @ObservationIgnored private let acting: (@MainActor (AgentAct, AgentKey) async -> Result<Nothing, RuntimeFailure>)?
     @ObservationIgnored public let now: @MainActor () -> Date
     /// Told how many machines this account has paired and how many of its
-    /// agents need the person, each time the fleet is read.
+    /// agents need the person, each time the fleet moves.
     @ObservationIgnored public var saw: (@MainActor (_ hosts: Int, _ attention: Int) -> Void)?
     /// Whether a re-read of a relay link still coming up is scheduled.
     @ObservationIgnored private var settling = false
-    /// A fleet wake that arrived while the launch's first frame was going up.
-    @ObservationIgnored private var held = false
-    /// How long a fleet wake waits for the launch's first frame at most.
+    /// What moved in the fleet while the launch's first frame was going up,
+    /// applied once it is up.
+    @ObservationIgnored private var held: FleetDelta?
+    /// The held delta being applied after the first frame, so a test can
+    /// wait for it to land rather than guess when the next turn comes.
+    @ObservationIgnored private(set) var applyingHeld: Task<Void, Never>?
+    /// How long what moved waits for the launch's first frame at most.
     public static let firstFrameHold: Duration = .milliseconds(250)
-    /// When the fleet was last read for a wake, whether a read is waiting
-    /// out the spacing after it, and whether changes taken since are unread.
-    @ObservationIgnored private var lastFleetRead: ContinuousClock.Instant?
-    @ObservationIgnored private var spacing = false
-    @ObservationIgnored private var owed = false
-    /// The least time between two fleet reads a wake asks for.
-    public static let fleetReadSpacing: Duration = .milliseconds(250)
+    /// Home's sections and the hosts as the fleet last stood.
+    @ObservationIgnored private var listed: (view: FleetView, hosts: [HostView])?
 
     public init(
         account: AccountId, clock: @escaping @MainActor () -> Date = { Date() },
@@ -76,7 +74,6 @@ public final class StoreBundle {
         acting: (@MainActor (AgentAct, AgentKey) async -> Result<Nothing, RuntimeFailure>)? = nil
     ) {
         self.account = account
-        self.drafts = DraftShelf(account: account)
         self.now = clock
         self.sessionRetention = sessionRetention
         self.opener = opener
@@ -85,94 +82,72 @@ public final class StoreBundle {
         self.hosts = HostsStore(clock: clock)
         self.pairing = PairingStore(clock: clock)
         self.newAgent = NewAgentStore()
-        // Read after the refresh that put the frame up, not inside it.
+        // Applied after the refresh that put the frame up, not inside it.
         fleet.presented = { [weak self] in
-            guard let self, self.held else { return }
-            self.held = false
-            Task { [weak self] in self?.woke(0) }
+            guard let self, self.held != nil else { return }
+            self.applyingHeld = Task { [weak self] in
+                guard let self, let held = self.held else { return }
+                self.held = nil
+                self.apply(held)
+            }
         }
     }
 
-    /// Starts drawing from a profile, or stops when it is gone.
+    /// Starts drawing from a profile, opening its fleet whole, or stops
+    /// when it is gone.
     public func attach(_ profile: Profile?) {
         self.profile = profile
-        guard profile != nil else { return }
-        read(hostsMoved: true)
+        guard let profile else { return }
+        apply(profile.fleetOpening())
     }
 
-    /// The profile moved: the fleet when `chat` is 0, else that chat.
-    public func woke(_ chat: UInt64) {
-        if chat == 0 {
-            guard let profile else { return }
-            // The runtime wakes the fleet as soon as it opens, for its
+    /// What moved in the profile: its fleet, or one of its chats.
+    public func moved(_ moved: Moved) {
+        switch moved {
+        case .fleet(let delta):
+            // The runtime moves the fleet as soon as it opens, for its
             // agents' sessions starting; the second lines they bring arrive
             // a moment after the remembered rows. Applied before the launch's
             // first frame is on screen, they lay the rows out again inside
-            // it, so they wait for that frame, and not for long.
-            if fleet.presenting {
-                if !held {
-                    held = true
-                    Task { [weak self] in
-                        try? await Task.sleep(for: Self.firstFrameHold)
-                        self?.fleet.finishPresenting()
-                    }
-                }
+            // it, so they wait for that frame, and not for long. What moves
+            // while the held delta waits to be applied joins it, newest
+            // last, rather than going up ahead of the older one.
+            guard fleet.presenting || held != nil else {
+                apply(delta)
                 return
             }
-            // A working agent's step moving wakes home, which for a
-            // streaming turn is many times a second, and each read lays out
-            // the whole fleet on the main thread. Agents' changes soon after
-            // a read wait out the spacing and one read takes them all; a
-            // host moving is read at once, since that is what a reconnecting
-            // fleet is waiting on.
-            let changes = profile.takeFleetChanges()
-            let at = ContinuousClock.now
-            if !changes.hosts, !changes.agents.isEmpty,
-               let last = lastFleetRead, at - last < Self.fleetReadSpacing {
-                owed = true
-                if !spacing {
-                    spacing = true
-                    Task { [weak self] in await self?.readOwed() }
+            if held == nil {
+                Task { [weak self] in
+                    try? await Task.sleep(for: Self.firstFrameHold)
+                    self?.fleet.finishPresenting()
                 }
-                return
             }
-            lastFleetRead = at
-            read(hostsMoved: changes.hosts)
-        } else {
-            chats[chat]?.woke()
+            held = FleetDelta(hosts: delta.hosts ?? held?.hosts, view: delta.view ?? held?.view)
+        case .chat(let delta):
+            chats[delta.chat]?.moved(delta)
         }
     }
 
-    /// Reads the fleet for the changes a wake left owed once the spacing
-    /// after the latest read has passed.
-    private func readOwed() async {
-        while let last = lastFleetRead, ContinuousClock.now < last + Self.fleetReadSpacing {
-            try? await Task.sleep(until: last + Self.fleetReadSpacing)
-        }
-        spacing = false
-        guard owed else { return }
-        lastFleetRead = ContinuousClock.now
-        read(hostsMoved: false)
-    }
-
-    private func read(hostsMoved: Bool) {
-        guard let profile else { return }
-        owed = false
-        let views = profile.hosts()
-        fleet.show(profile.fleetView(expanding: Array(fleet.expanded), filter: fleet.filter), hosts: views)
-        hosts.show(views)
-        if !markedReconciled {
-            let trusted = views.filter { $0.trusted && !$0.local }
-            if !trusted.isEmpty, trusted.allSatisfy(\.current) {
-                markedReconciled = true
-                Signposts.emitWhenPresented(.reconciled)
+    private func apply(_ delta: FleetDelta) {
+        guard let view = delta.view ?? listed?.view, let views = delta.hosts ?? listed?.hosts
+        else { return }
+        listed = (view, views)
+        fleet.show(view, hosts: views)
+        if delta.hosts != nil {
+            hosts.show(views)
+            if !markedReconciled {
+                let trusted = views.filter { $0.trusted && !$0.local }
+                if !trusted.isEmpty, trusted.allSatisfy(\.current) {
+                    markedReconciled = true
+                    Signposts.emitWhenPresented(.reconciled)
+                }
             }
         }
         newAgent.remember(fleet.rows)
         saw?(fleet.machines.filter(\.trusted).count, fleet.needYou)
         applied += 1
         keepSessions()
-        if hostsMoved {
+        if delta.hosts != nil {
             Task { await refreshAccount() }
             if hosts.rosterBehind { Task { await refreshRoster() } }
         }
@@ -205,13 +180,12 @@ public final class StoreBundle {
     /// Narrows the list to what `filter` keeps.
     public func filterFleet(_ filter: FleetFilter) {
         fleet.filter = filter
-        read(hostsMoved: false)
+        profile?.filter(filter)
     }
 
     /// Lists or folds a family's members.
     public func toggleFamily(_ head: AgentKey) {
-        fleet.toggle(head)
-        read(hostsMoved: false)
+        profile?.toggleFamily(head)
     }
 
     // MARK: - Chats
@@ -221,9 +195,9 @@ public final class StoreBundle {
     /// sessions a phone holds follow what the person is looking at.
     public static let sessionRetention: Duration = .seconds(300)
 
-    /// Opens an agent's chat and routes its wakes to `woke`.
+    /// Opens an agent's chat and routes what moves in it to `moved`.
     public func openChat(
-        _ agent: AgentKey, woke: @escaping @MainActor () -> Void
+        _ agent: AgentKey, moved: @escaping @MainActor (ChatDelta) -> Void
     ) throws(RuntimeFailure) -> OpenChat {
         let chat: OpenChat
         if let opener {
@@ -232,7 +206,7 @@ public final class StoreBundle {
             guard let profile else { throw RuntimeFailure("nothing is running for this account") }
             chat = try profile.openChat(agent)
         }
-        chats[chat.id] = (chat, woke)
+        chats[chat.id] = (chat, moved)
         fleet.opened(agent, at: now())
         return chat
     }
@@ -252,11 +226,10 @@ public final class StoreBundle {
 
     private func model(_ agent: AgentKey) throws(RuntimeFailure) -> ChatModel {
         if let open = models[agent] { return open.model }
-        let chat = try openChat(agent) { [weak self] in self?.models[agent]?.model.woke() }
+        let chat = try openChat(agent) { [weak self] in self?.models[agent]?.model.apply($0) }
         let model = ChatModel(source: chat)
-        let shelf = drafts
-        if let kept = shelf.draft(for: agent) { model.reopen(kept) }
-        model.keeping = { shelf.keep($0, for: agent) }
+        if let kept = chat.keptDraft() { model.reopen(kept) }
+        model.keeping = { chat.keep($0) }
         models[agent] = (chat, model)
         return model
     }
@@ -275,7 +248,7 @@ public final class StoreBundle {
         }
     }
 
-    /// Which chat sessions exist, after every read of the fleet. A shown
+    /// Which chat sessions exist, after every move of the fleet. A shown
     /// chat keeps its own; a chat viewed within the retention keeps its
     /// own; a chat a push is bringing current keeps its own until it is; a
     /// chat holding a prompt for a host that cannot be reached keeps its
@@ -306,7 +279,7 @@ public final class StoreBundle {
     @discardableResult
     public func warm(_ agent: AgentKey, within limit: Duration = .seconds(25)) async -> Bool {
         guard let model = try? model(agent) else { return false }
-        // Every read of the fleet asks which sessions to keep; the one
+        // Every move of the fleet asks which sessions to keep; the one
         // catching up must survive them until it is current.
         warming.insert(agent)
         let deadline = ContinuousClock.now + limit
@@ -470,13 +443,12 @@ public final class StoreBundle {
         return await profile.act(.cancelStop, on: agent)
     }
 
-    /// Deletes an agent. Its draft goes with it: forgotten from the shelf,
-    /// and nothing typed into its chat while the page leaves is kept.
+    /// Deletes an agent. Its draft goes with it: the daemon forgets it, and
+    /// nothing typed into its chat while the page leaves is kept.
     public func delete(_ agent: AgentKey) async -> Result<Nothing, RuntimeFailure> {
         let outcome = await act(.delete, on: agent)
         if case .success = outcome {
             models[agent]?.model.keeping = nil
-            drafts.forget(agent)
         }
         return outcome
     }

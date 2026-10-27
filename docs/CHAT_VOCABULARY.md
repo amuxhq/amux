@@ -253,7 +253,7 @@ row or the row failed.
 | `jobs` | Each background job still running: its command, when it started, and the step that started it | partial | partial | partial |
 | `failed_servers` | Only tool servers that failed to start or need signing in | none | full | full |
 | `usage_near_limit` | Nothing while fine; a warning near a limit; a foot card when blocked | none | full | full |
-| `changes` | The changed files by folder, root files first, once fetched with `Diff` and no patch (`changes(diff)`) | full | full | full |
+| `changes` | The changed files by folder, root files first, once fetched with `GetDiff` and no patch (`changes(diff)`) | full | full | full |
 
 Beside it, read from the same state:
 

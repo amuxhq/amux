@@ -5,11 +5,9 @@
 
 use daemon_core::payload::{CallError, PeerRequest, Response, Status};
 pub use daemon_core::serve::MAX_PAGE;
-use prost::{Message as _, Name as _};
 use store::{AgentKey, StoreError};
 use wire::{
-    Agent, AmbiguousAgentName, ErrorCode, ErrorDetail, FetchRequest, FetchResponse, GetRequest,
-    Item,
+    Agent, AmbiguousAgentName, ErrorCode, GetItemRequest, Item, ListItemsRequest, ListItemsResponse,
 };
 
 use crate::driver::{Answers, Ask, Delivered};
@@ -82,21 +80,16 @@ impl ServeError {
         let code = match self {
             Self::NoAgent | Self::NoAgentNamed(_) | Self::NoItem(_) => ErrorCode::NotFound,
             Self::Ambiguous { .. } => ErrorCode::FailedPrecondition,
-            Self::OriginUnreachable => ErrorCode::Unreachable,
+            Self::OriginUnreachable => {
+                return wire::Error::because(wire::ErrorReason::HostUnreachable, self.to_string());
+            }
             Self::Store(_) | Self::Failed(_) => ErrorCode::Internal,
             Self::Stopped => ErrorCode::Unavailable,
         };
-        let details = match self {
-            Self::Ambiguous { detail, .. } => vec![ErrorDetail {
-                r#type: AmbiguousAgentName::full_name(),
-                value: detail.encode_to_vec(),
-            }],
-            _ => Vec::new(),
-        };
-        wire::Error {
-            code: code as i32,
-            message: self.to_string(),
-            details,
+        let error = wire::Error::new(code, self.to_string());
+        match self {
+            Self::Ambiguous { detail, .. } => error.with_detail(detail),
+            _ => error,
         }
     }
 }
@@ -106,19 +99,22 @@ impl ProfileRuntime {
     /// below a replica's block the history is at the origin, which is asked
     /// and whose answer extends the block where it joins it. An origin that
     /// cannot be asked is an error, never an empty page.
-    pub async fn fetch(&self, request: &FetchRequest) -> Result<FetchResponse, ServeError> {
-        let answers = self.driver().call(Ask::Fetch(request.clone()), 1).await;
+    pub async fn list_items(
+        &self,
+        request: &ListItemsRequest,
+    ) -> Result<ListItemsResponse, ServeError> {
+        let answers = self.driver().call(Ask::ListItems(request.clone()), 1).await;
         fetched(answers).await
     }
 
     /// A page of older items of one of this host's own agents, for the
     /// paired host `from`. An agent this host only replicates is not found.
-    pub(crate) async fn peer_fetch(
+    pub(crate) async fn peer_list_items(
         &self,
         from: crate::HostId,
-        request: FetchRequest,
-    ) -> Result<FetchResponse, ServeError> {
-        let request = PeerRequest::Fetch(request);
+        request: ListItemsRequest,
+    ) -> Result<ListItemsResponse, ServeError> {
+        let request = PeerRequest::ListItems(request);
         let answers = self.driver().peer_call(core_host(from), request, 1).await;
         fetched(answers).await
     }
@@ -134,19 +130,19 @@ impl ProfileRuntime {
     }
 
     /// One item in full.
-    pub async fn get(&self, request: &GetRequest) -> Result<Item, ServeError> {
-        let answers = self.driver().call(Ask::Get(request.clone()), 1).await;
+    pub async fn get_item(&self, request: &GetItemRequest) -> Result<Item, ServeError> {
+        let answers = self.driver().call(Ask::GetItem(request.clone()), 1).await;
         item(answers).await
     }
 
     /// One item in full of one of this host's own agents, for the paired
     /// host `from`. An agent this host only replicates is not found.
-    pub(crate) async fn peer_get(
+    pub(crate) async fn peer_get_item(
         &self,
         from: crate::HostId,
-        request: GetRequest,
+        request: GetItemRequest,
     ) -> Result<Item, ServeError> {
-        let request = PeerRequest::Get(request);
+        let request = PeerRequest::GetItem(request);
         item(self.driver().peer_call(core_host(from), request, 1).await).await
     }
 
@@ -232,8 +228,8 @@ impl ProfileRuntime {
             .map(|agent| {
                 let host = hosts
                     .iter()
-                    .find(|host| host.host_id == agent.host_id)
-                    .map(|host| host.name.as_str())
+                    .find(|host| host.host_id() == agent.host_id)
+                    .map(|host| host.name())
                     .filter(|name| !name.is_empty());
                 let alone_there = agents
                     .iter()
@@ -241,7 +237,7 @@ impl ProfileRuntime {
                     .count()
                     == 1;
                 let named_once =
-                    |name: &str| hosts.iter().filter(|host| host.name == name).count() == 1;
+                    |name: &str| hosts.iter().filter(|host| host.name() == name).count() == 1;
                 match host {
                     Some(host) if alone_there && named_once(host) => {
                         format!("{}@{host}", agent.name)
@@ -261,7 +257,7 @@ fn is_short_id(reference: &str) -> bool {
     (8..=32).contains(&reference.len()) && reference.chars().all(|c| c.is_ascii_hexdigit())
 }
 
-async fn fetched(answers: Answers) -> Result<FetchResponse, ServeError> {
+async fn fetched(answers: Answers) -> Result<ListItemsResponse, ServeError> {
     match unary(answers).await? {
         Response::Fetched(page) => Ok(page),
         _ => Err(ServeError::Stopped),

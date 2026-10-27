@@ -26,8 +26,8 @@ use sha2::{Digest as _, Sha256};
 use store::StoreError;
 use uuid::Uuid;
 use wire::{
-    BlobRef, DiffBase, DiffFile, DiffFileChange, DiffRequest, ErrorCode, GetBlobRequest,
-    GetBlobResponse, PutBlobRequest, diff_base,
+    BlobRef, DiffBase, DiffFile, DiffFileChange, ErrorCode, GetBlobRequest, GetBlobResponse,
+    GetDiffRequest, PutBlobRequest, diff_base,
 };
 
 use crate::driver::{Ask, Delivered};
@@ -118,11 +118,16 @@ fn answered_with(answer: impl std::fmt::Debug) -> BlobError {
 impl ProfileRuntime {
     /// Writes a person's attachment into the named own agent's directory
     /// and returns its reference. The same bytes twice are one file.
-    pub async fn put_blob(&self, request: PutBlobRequest) -> Result<BlobRef, BlobError> {
+    pub async fn put_blob(&self, mut request: PutBlobRequest) -> Result<BlobRef, BlobError> {
         within_limit(&request)?;
-        let hash = Sha256::digest(&request.bytes).to_vec();
+        let bytes = std::mem::take(&mut request.bytes);
+        let hash = Sha256::digest(&bytes).to_vec();
         match self
-            .blob_call(ClientRequest::PutBlob { request, hash })
+            .blob_call(ClientRequest::PutBlob {
+                request,
+                hash,
+                bytes,
+            })
             .await?
         {
             Some(Response::Peer(reply)) => match *reply {
@@ -224,8 +229,8 @@ impl ProfileRuntime {
         }
     }
 
-    pub async fn diff(&self, request: DiffRequest) -> Result<wire::Diff, BlobError> {
-        match self.blob_call(ClientRequest::Diff(request)).await? {
+    pub async fn get_diff(&self, request: GetDiffRequest) -> Result<wire::Diff, BlobError> {
+        match self.blob_call(ClientRequest::GetDiff(request)).await? {
             Some(Response::Peer(reply)) => match *reply {
                 PeerReply::Diff(diff) => Ok(diff),
                 other => Err(answered_with(other)),

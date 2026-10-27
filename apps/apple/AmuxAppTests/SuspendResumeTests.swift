@@ -27,7 +27,7 @@ final class SuspendResumeTests: XCTestCase {
     }
 
     private func trusts(_ coordinator: RuntimeCoordinator, _ host: [UInt8]) -> Bool {
-        coordinator.profile?.hosts().contains { $0.hostId == host && $0.trusted } == true
+        coordinator.stores.fleet.machines.contains { $0.hostId == host && $0.trusted }
     }
 
     private func eventually(
@@ -62,12 +62,17 @@ final class SuspendResumeTests: XCTestCase {
         }
         await eventually("the desk trusted") { trusts(first, paired.hostId) }
 
-        let checkpoint = first.directory
-            .appendingPathComponent("profiles/\(phone.id)/core.checkpoint")
-        try? FileManager.default.removeItem(at: checkpoint)
+        // Each checkpoint of the core starts a segment of its input ring,
+        // with the core's state beside it as `<offset>.checkpoint`.
+        let ring = first.directory.appendingPathComponent("profiles/\(phone.id)/core-ring")
+        let checkpoints = {
+            Set(((try? FileManager.default.contentsOfDirectory(atPath: ring.path)) ?? [])
+                .filter { $0.hasSuffix(".checkpoint") })
+        }
+        let before = checkpoints()
         await first.suspending()
-        XCTAssertTrue(
-            FileManager.default.fileExists(atPath: checkpoint.path),
+        XCTAssertFalse(
+            checkpoints().subtracting(before).isEmpty,
             "the suspend left no checkpoint of the phone's core")
         first.stop()
 

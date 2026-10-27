@@ -7,19 +7,14 @@ description = "Developer tasks: `cargo run -p xtask -- codegen` regenerates the 
 publish = false
 
 [dependencies]
-app-runtime = { workspace = true }
-model = { workspace = true }
 release = { workspace = true }
 semver = { workspace = true }
-schemars = { workspace = true }
-ui-view = { workspace = true }
-wire = { workspace = true }
 tonic-prost-build = { workspace = true }
 protoc-bin-vendored = { workspace = true }
-serde = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
-png = { workspace = true }
 version-stamp = { workspace = true }
 
 [dev-dependencies]

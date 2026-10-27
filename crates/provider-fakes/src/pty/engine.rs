@@ -444,6 +444,10 @@ impl Engine {
                 && let Some(next) = self.queue.pop_front()
             {
                 self.session_start();
+                if next.text.trim() == "/clear" {
+                    self.clear();
+                    continue;
+                }
                 if let Some(code) = self.turn(next).await {
                     return code;
                 }
@@ -478,6 +482,30 @@ impl Engine {
             "permissionMode": self.mode,
             "sessionId": self.session,
         }));
+    }
+
+    /// `/clear`: Claude starts a new session under a new id, with a
+    /// transcript of its own, and runs the SessionStart hooks for it. It is
+    /// not a turn.
+    fn clear(&mut self) {
+        self.session = uuid();
+        self.transcript = transcript_path(
+            &claude_config_dir(),
+            std::path::Path::new(&self.cwd),
+            &self.session,
+        );
+        self.parent = None;
+        self.hook(json!({
+            "hook_event_name": "SessionStart",
+            "model": self.model,
+            "source": "clear",
+        }));
+        self.row(json!({
+            "type": "permission-mode",
+            "permissionMode": self.mode,
+            "sessionId": self.session,
+        }));
+        self.screen("Claude Code (scripted)");
     }
 
     /// Wait for the next input and act on it.

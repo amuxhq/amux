@@ -5,16 +5,17 @@
 use models::net::agent_id;
 use models::{Bounds, ComposedNet, Machine as _, check, walk};
 
-/// How long the three exhaustive runs together may take under `just
-/// test`, sized to CI's four-core runner: twice the slowest of the binary's
-/// measured times there (207 s; the README lists them all), rounded up to a
-/// whole minute. A run past it says the bounds have outgrown their place.
-const BUDGET_SECONDS: f64 = 420.0;
+/// How many states the three exhaustive runs together may explore: their
+/// count at these bounds (33,025, 9,935 and 216,320 on 2026-10-23) with two
+/// percent over, since the count moves by a few dozen states with the
+/// threads. A run past it says the bounds have outgrown their place; a run
+/// that hangs is the test harness's bound to catch.
+const BUDGET_STATES: u64 = 264_500;
 
 #[test]
 fn every_composed_promise_holds_at_ci_bounds() {
     let threads = models::threads();
-    let mut seconds = 0.0;
+    let mut states = 0;
     for (name, model) in ComposedNet::ci() {
         let verdict = check(&model, Bounds::exhaustive().threads(threads));
         println!("{name}:\n{verdict}");
@@ -24,11 +25,11 @@ fn every_composed_promise_holds_at_ci_bounds() {
             measured.states, measured.seconds, measured.states_per_second
         );
         verdict.assert_holds();
-        seconds += measured.seconds;
+        states += measured.states;
     }
     assert!(
-        seconds <= BUDGET_SECONDS,
-        "the composed net took {seconds:.1}s, past its {BUDGET_SECONDS}s budget"
+        states <= BUDGET_STATES,
+        "the composed net explored {states} states, past its {BUDGET_STATES}"
     );
 }
 

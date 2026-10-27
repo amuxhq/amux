@@ -82,7 +82,7 @@ impl ProfileRuntime {
     /// agents may have sources.
     pub fn host_ready(&self, host: HostId) -> bool {
         self.host_entry_of(host)
-            .is_some_and(|entry| entry.current == Some(true))
+            .is_some_and(|entry| entry.current())
     }
 
     /// For tests: consulted by every source for every event it receives.

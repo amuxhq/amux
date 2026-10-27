@@ -5,23 +5,23 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use anyhow::{Result, anyhow, bail};
-use tonic::transport::Channel;
+use settings::{ChatInSetting, InstallationConfig};
 use uuid::Uuid;
-use wire::client_service_client::ClientServiceClient;
 use wire::{
     Agent, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
-    CreateAgentRequest, DeleteAgentRequest, DumpRequest, Empty, HostEntry, Input, Kind, Lifecycle,
-    Phase, PromptInput, PromptSubmission, Refusal, RenameAgentRequest, ResolveAgentRequest,
+    CreateAgentRequest, DeleteAgentRequest, DumpRequest, HostEntry, Input, Kind, Lifecycle, Phase,
+    PromptInput, PromptSubmission, Refusal, RenameAgentRequest, ResolveAgentRequest,
     ResumeAgentRequest, SendInputRequest, StopAgentRequest, claude_pty_input, claude_sdk_input,
     codex_input, create_agent_request, inventory_event, send_input_response,
 };
 
-type Client = ClientServiceClient<Channel>;
+type Client = wire::ClientStubs;
 
 /// Every host entry and agent row, read to the inventory's CaughtUp.
 pub async fn inventory(client: &mut Client) -> Result<(Vec<HostEntry>, Vec<Agent>)> {
     let mut stream = client
-        .subscribe_inventory(Empty {})
+        .agents
+        .subscribe_inventory(wire::SubscribeInventoryRequest {})
         .await
         .map_err(crate::plain)?
         .into_inner();
@@ -30,7 +30,7 @@ pub async fn inventory(client: &mut Client) -> Result<(Vec<HostEntry>, Vec<Agent
     while let Some(event) = stream.message().await.map_err(crate::plain)? {
         match event.of {
             Some(inventory_event::Of::Host(host)) => {
-                hosts.insert(host.host_id.clone(), host);
+                hosts.insert(host.host_id().to_vec(), host);
             }
             Some(inventory_event::Of::HostRemoved(removed)) => {
                 hosts.remove(&removed.host_id);
@@ -59,6 +59,7 @@ pub async fn inventory(client: &mut Client) -> Result<(Vec<HostEntry>, Vec<Agent
 /// short id `amux ls` prints, its name, or `name@host`).
 pub async fn resolve(client: &mut Client, reference: &str) -> Result<Agent> {
     client
+        .agents
         .resolve_agent(ResolveAgentRequest {
             name: reference.to_owned(),
         })
@@ -73,15 +74,13 @@ fn short_id(id: &[u8]) -> String {
         .unwrap_or_default()
 }
 
-/// A kind as the listing says it: the enum value's own name, lowercase,
-/// without the enum's prefix.
-fn kind_word(kind: i32) -> String {
+/// A kind as the listing says it: the agent a person chose, whichever
+/// interface it runs for.
+fn kind_word(kind: i32) -> &'static str {
     match Kind::try_from(kind).unwrap_or(Kind::Unspecified) {
-        Kind::Unspecified => "unknown".to_owned(),
-        known => known
-            .as_str_name()
-            .trim_start_matches("KIND_")
-            .to_ascii_lowercase(),
+        Kind::Unspecified => "unknown",
+        Kind::ClaudePty | Kind::ClaudeSdk => "claude",
+        Kind::Codex => "codex",
     }
 }
 
@@ -119,7 +118,8 @@ fn state(agent: &Agent) -> String {
             None => "exited".to_owned(),
         };
     }
-    let phase = match Phase::try_from(agent.phase).unwrap_or(Phase::Starting) {
+    let phase = match Phase::try_from(agent.phase).unwrap_or(Phase::Unspecified) {
+        Phase::Unspecified => "unknown",
         Phase::Starting => "starting",
         Phase::Idle => "idle",
         Phase::Working => "working",
@@ -146,8 +146,8 @@ fn ls_table(hosts: &[HostEntry], agents: &[Agent]) -> String {
     let host_name = |id: &[u8]| {
         hosts
             .iter()
-            .find(|host| host.host_id == id)
-            .map(|host| host.name.clone())
+            .find(|host| host.host_id() == id)
+            .map(|host| host.name().to_owned())
             .filter(|name| !name.is_empty())
             .unwrap_or_else(|| short_id(id))
     };
@@ -202,11 +202,11 @@ fn ls_table(hosts: &[HostEntry], agents: &[Agent]) -> String {
         .collect();
     let width = names.iter().map(String::len).max().unwrap_or(4).max(4);
     let mut out = String::new();
-    let _ = writeln!(out, "{:width$}  {:8}  {:10}  STATE", "NAME", "ID", "KIND");
+    let _ = writeln!(out, "{:width$}  {:8}  {:7}  STATE", "NAME", "ID", "KIND");
     for (name, (_, agent)) in names.iter().zip(&rows) {
         let _ = writeln!(
             out,
-            "{name:width$}  {:8}  {:10}  {}",
+            "{name:width$}  {:8}  {:7}  {}",
             short_id(&agent.agent_id),
             kind_word(agent.kind),
             listed_state(agent, hosts, &host_name(&agent.host_id)),
@@ -220,26 +220,50 @@ fn ls_table(hosts: &[HostEntry], agents: &[Agent]) -> String {
 /// heard from the host is not what the agent is doing now.
 fn listed_state(agent: &Agent, hosts: &[HostEntry], host_name: &str) -> String {
     let live = Lifecycle::try_from(agent.lifecycle) != Ok(Lifecycle::Exited);
-    match hosts.iter().find(|host| host.host_id == agent.host_id) {
-        Some(host) if live && host.revoked == Some(true) => {
+    match hosts.iter().find(|host| host.host_id() == agent.host_id) {
+        Some(host) if live && host.revoked() => {
             format!("{host_name} no longer trusts this machine")
         }
-        Some(host) if live && host.presence() != wire::Presence::Online => {
+        Some(host) if live && host.online().is_none() => {
             format!("{host_name} is away")
         }
         _ => state(agent),
     }
 }
 
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
-pub enum CliKind {
-    /// Claude in a terminal.
-    #[value(name = "claude_pty", alias = "claude-pty", alias = "claude")]
-    ClaudePty,
-    /// Headless Claude.
-    #[value(name = "claude_sdk", alias = "claude-sdk")]
-    ClaudeSdk,
+/// The agents a person chooses between.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum CliAgent {
+    Claude,
     Codex,
+}
+
+/// Where a person chats with an agent: amux's chat, or the agent's own
+/// interface (Claude Code's or Codex's), as `ui.chat_in` names them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum Interface {
+    Amux,
+    Native,
+}
+
+impl Interface {
+    /// The interface asked for, else the configured one.
+    pub fn chosen(asked: Option<Interface>, config: &InstallationConfig) -> Interface {
+        asked.unwrap_or(match config.ui.chat_in {
+            ChatInSetting::Amux => Interface::Amux,
+            ChatInSetting::Native => Interface::Native,
+        })
+    }
+}
+
+/// What a new agent runs on. Claude runs headless for amux's chat and in a
+/// terminal for its own; Codex is the same agent for both.
+fn kind_for(agent: CliAgent, interface: Interface) -> Kind {
+    match (agent, interface) {
+        (CliAgent::Claude, Interface::Amux) => Kind::ClaudeSdk,
+        (CliAgent::Claude, Interface::Native) => Kind::ClaudePty,
+        (CliAgent::Codex, _) => Kind::Codex,
+    }
 }
 
 /// A prompt in the input arm the agent's kind takes.
@@ -274,38 +298,65 @@ pub fn prompt(kind: i32, text: &str) -> Input {
 }
 
 pub struct Create {
-    pub kind: CliKind,
+    pub agent: CliAgent,
+    pub interface: Option<Interface>,
     pub name: Option<String>,
     pub cwd: Option<PathBuf>,
     pub model: Option<String>,
+    pub effort: Option<String>,
+    pub permission: Option<String>,
     pub prompt: Option<String>,
     pub args: Vec<String>,
 }
 
-pub async fn create(client: &mut Client, create: Create) -> Result<()> {
+/// `amux new`: an agent as the terminal app starts one, with its starting
+/// model, effort and permission from `new_agent` where none is given. In
+/// the agent's own interface those are its own to set, as in the app.
+pub async fn create(
+    client: &mut Client,
+    config: &InstallationConfig,
+    create: Create,
+) -> Result<()> {
     let cwd = match create.cwd {
         Some(cwd) => std::path::absolute(cwd)?,
         None => std::env::current_dir()?,
     };
+    let interface = Interface::chosen(create.interface, config);
+    let defaults = match create.agent {
+        CliAgent::Claude => &config.new_agent.claude,
+        CliAgent::Codex => &config.new_agent.codex,
+    };
+    let configured = |given: &Option<String>, default: &str| {
+        given
+            .clone()
+            .or_else(|| (interface == Interface::Amux).then(|| default.to_owned()))
+    };
+    let model = configured(&create.model, &defaults.model);
+    let effort = configured(&create.effort, &defaults.effort);
+    let permission = configured(&create.permission, &defaults.permission);
     let claude = || ClaudeCreateConfig {
         args: create.args.clone(),
-        model: create.model.clone(),
-        ..ClaudeCreateConfig::default()
+        model: model.clone(),
+        effort: effort.clone(),
+        permission: permission.clone(),
     };
-    let config = match create.kind {
-        CliKind::ClaudePty => create_agent_request::Agent::ClaudePty(claude()),
-        CliKind::ClaudeSdk => create_agent_request::Agent::ClaudeSdk(claude()),
-        CliKind::Codex => {
+    let config = match kind_for(create.agent, interface) {
+        Kind::ClaudePty => create_agent_request::Agent::ClaudePty(claude()),
+        Kind::ClaudeSdk => create_agent_request::Agent::ClaudeSdk(claude()),
+        _ => {
             if !create.args.is_empty() {
                 bail!("codex agents take no extra provider arguments");
             }
             create_agent_request::Agent::Codex(CodexCreateConfig {
-                model: create.model.clone(),
-                ..CodexCreateConfig::default()
+                model: model.clone(),
+                effort: effort.clone(),
+                permission: permission.clone(),
+                mode: None,
             })
         }
     };
     let agent = client
+        .agents
         .create_agent(CreateAgentRequest {
             agent_id: Uuid::new_v4().as_bytes().to_vec(),
             name: create.name,
@@ -329,6 +380,7 @@ pub async fn create(client: &mut Client, create: Create) -> Result<()> {
 pub async fn send(client: &mut Client, reference: &str, text: &str) -> Result<()> {
     let agent = resolve(client, reference).await?;
     let response = client
+        .sessions
         .send_input(SendInputRequest {
             agent_id: agent.agent_id.clone(),
             input: Some(prompt(agent.kind, text)),
@@ -378,6 +430,7 @@ fn refusal_words(name: &str, refusal: Refusal) -> String {
 pub async fn stop(client: &mut Client, reference: &str) -> Result<()> {
     let agent = resolve(client, reference).await?;
     client
+        .agents
         .stop_agent(StopAgentRequest {
             agent_id: agent.agent_id.clone(),
         })
@@ -390,6 +443,7 @@ pub async fn stop(client: &mut Client, reference: &str) -> Result<()> {
 pub async fn delete(client: &mut Client, reference: &str) -> Result<()> {
     let agent = resolve(client, reference).await?;
     client
+        .agents
         .delete_agent(DeleteAgentRequest {
             agent_id: agent.agent_id.clone(),
         })
@@ -402,6 +456,7 @@ pub async fn delete(client: &mut Client, reference: &str) -> Result<()> {
 pub async fn resume(client: &mut Client, reference: &str, text: Option<&str>) -> Result<()> {
     let agent = resolve(client, reference).await?;
     let resumed = client
+        .agents
         .resume_agent(ResumeAgentRequest {
             agent_id: agent.agent_id.clone(),
             initial_prompt: text.map(submission),
@@ -416,6 +471,7 @@ pub async fn resume(client: &mut Client, reference: &str, text: Option<&str>) ->
 pub async fn rename(client: &mut Client, reference: &str, name: &str) -> Result<()> {
     let agent = resolve(client, reference).await?;
     let renamed = client
+        .agents
         .rename_agent(RenameAgentRequest {
             agent_id: agent.agent_id.clone(),
             name: name.to_owned(),
@@ -429,6 +485,7 @@ pub async fn rename(client: &mut Client, reference: &str, name: &str) -> Result<
 
 pub async fn dump(
     client: &mut Client,
+    admin: &mut crate::pairing::Admin,
     references: &[String],
     reason: Option<String>,
 ) -> Result<()> {
@@ -436,7 +493,7 @@ pub async fn dump(
     for reference in references {
         agent_ids.push(resolve(client, reference).await?.agent_id);
     }
-    let response = client
+    let response = admin
         .dump(DumpRequest {
             agent_ids,
             reason: reason.unwrap_or_default(),
@@ -460,12 +517,8 @@ mod tests {
     /// not what the agent is doing now.
     #[test]
     fn ls_says_an_agent_on_an_away_host_is_away_not_its_last_phase() {
-        let host = |id: u8, name: &str, presence: wire::Presence| HostEntry {
-            host_id: vec![id; 16],
-            name: name.into(),
-            trust: wire::Trust::Trusted as i32,
-            presence: presence as i32,
-            ..HostEntry::default()
+        let host = |id: u8, name: &str, reach: wire::trusted::Reach| {
+            HostEntry::trusted_host(vec![id; 16], name, reach)
         };
         let agent = |id: u8, host: u8, name: &str| Agent {
             agent_id: vec![id; 16],
@@ -479,8 +532,12 @@ mod tests {
         };
         let table = ls_table(
             &[
-                host(1, "pdesk", wire::Presence::Online),
-                host(2, "plap", wire::Presence::Away),
+                host(
+                    1,
+                    "pdesk",
+                    wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+                ),
+                host(2, "plap", wire::trusted::Reach::Away(wire::Empty {})),
             ],
             &[agent(1, 1, "here"), agent(2, 2, "c1")],
         );

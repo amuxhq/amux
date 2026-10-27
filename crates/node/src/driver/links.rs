@@ -72,21 +72,6 @@ impl CoreLinks {
         runtime.driver().look(look).await
     }
 
-    /// A channel a call opened to `peer` on `route` failed with `error`:
-    /// the route the core names for the call to try next, if any.
-    pub(crate) async fn route_failed(
-        &self,
-        peer: HostId,
-        route: daemon_core::Route,
-        error: payload::ChannelError,
-    ) -> Option<daemon_core::Route> {
-        let runtime = self.0.upgrade()?;
-        runtime
-            .driver()
-            .route_failed(core_host(peer), route, error)
-            .await
-    }
-
     /// The channel's handshake verified the key the core gave.
     pub(crate) fn opened(
         &self,
@@ -112,7 +97,6 @@ pub(crate) fn core_class(class: ChannelClass) -> payload::ChannelClass {
     match class {
         ChannelClass::Calls => payload::ChannelClass::Calls,
         ChannelClass::Session => payload::ChannelClass::Session,
-        ChannelClass::Bulk => payload::ChannelClass::Bulk,
     }
 }
 

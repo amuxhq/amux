@@ -69,15 +69,7 @@ extension Composition {
         Task {
             await reports.send(
                 with: cloud, as: account, build: AppFiles.build,
-                gitSHA: AppFiles.gitSHA, log: logTail)
+                gitSHA: AppFiles.gitSHA)
         }
-    }
-}
-
-extension Composition {
-    /// The end of the running installation's own log.
-    var logTail: Result<String, PartAbsent> {
-        runtime.logTail().map { .success($0) }
-            ?? .failure(PartAbsent("nothing was running, so there was no log to read"))
     }
 }

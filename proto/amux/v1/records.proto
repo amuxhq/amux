@@ -1,0 +1,402 @@
+syntax = "proto3";
+
+package amux.v1;
+
+// Session records: what an agent's interpreter writes to its journal, what
+// the daemon commits to the store, and what every SubscribeSession stream
+// carries.
+//
+// The daemon and the store read only the envelope (Step, Item, Append,
+// Snapshot). An item or snapshot body is the per-kind message named by
+// `kind`, encoded, and is decoded only by the interpreter that wrote it and
+// by the client's per-kind layer. Bodies therefore pass through a daemon of
+// any version intact.
+//
+// Every timestamp in the protocol is a field named `..._ms`: milliseconds
+// since the Unix epoch, as an int64. A duration names its own unit
+// (`grace_ms`, `ttl_seconds`, `window_minutes`) and is not a timestamp.
+
+// ---------------------------------------------------------------------------
+// Common
+// ---------------------------------------------------------------------------
+
+message Empty {}
+
+// An agent anywhere in the fleet: the host it lives on and its id. A
+// message's recipient and an agent's parent are both one.
+message AgentRef {
+  bytes host_id = 1;
+  bytes agent_id = 2;
+}
+
+// What travels to an agent from another agent, a person or a child: a
+// message, or a child's report to its parent. `from` is set by the daemon
+// from the caller's identity; the recipient's daemon dedupes by id against
+// the recipient's items.
+message Envelope {
+  bytes id = 1;
+  optional bytes context = 2;
+  Sender from = 3;
+  AgentRef to = 4;
+  oneof body {
+    MessageBody message = 5;
+    ChildReport report = 6;
+  }
+}
+
+// What an agent or a person sends.
+message MessageBody {
+  string text = 1;
+  // Blobs in the sender's directory on the sender's host.
+  repeated Attachment attachments = 2;
+}
+
+// A child's report to its parent, written by the child's daemon from its
+// outbox; no sender can send one.
+message ChildReport {
+  // The parent's incarnation the report is for: the recipient's daemon
+  // drops it for any other.
+  uint32 to_incarnation = 1;
+  // The child's own incarnation it is from, so its parent matches the
+  // report to that incarnation whichever comes first, the report or the
+  // daemon's word that the incarnation is live.
+  uint32 from_incarnation = 2;
+  oneof end {
+    TurnEnded turn_ended = 3;
+    Exited exited = 4;
+  }
+}
+
+// A child's turn ended.
+message TurnEnded {
+  // The child's last message; empty when the turn ended with no text.
+  string text = 1;
+  // How the turn ended, so the parent hears a stopped or interrupted turn
+  // as that, not as finished.
+  TurnOutcome outcome = 2;
+  // The turn was the incarnation's last, reported as it exits. A parent
+  // waiting on its children waits for each incarnation's last report, not
+  // merely for one.
+  bool last = 3;
+}
+
+// A child's incarnation ended without a turn end. Always the
+// incarnation's last report.
+message Exited {
+  // How it ended; the recipient's interpreter words it for the parent's
+  // provider.
+  IncarnationEnd ended = 1;
+}
+
+message Sender {
+  oneof value {
+    AgentSender agent = 1;
+    Human human = 2;
+  }
+}
+
+message AgentSender {
+  AgentRef agent = 1;
+  string name = 2;
+}
+
+message Human {}
+
+// ---------------------------------------------------------------------------
+// Envelope
+// ---------------------------------------------------------------------------
+
+// One interpreter step: what the journal frames.
+message Step {
+  // The durable payload; one provider fact can yield several.
+  repeated Item items = 1;
+  repeated Append appends = 2;
+  // Rides along when the step changed it; re-derived on restart, never
+  // relied on.
+  optional Snapshot snapshot = 3;
+  // Set when this step ended a turn.
+  optional TurnEnd turn_end = 4;
+  // Set on the last step of an incarnation: why it ended, in the agent's
+  // own terms. The daemon copies it onto the row. A journal that stops
+  // without one (the process was killed or crashed) gets the daemon's own
+  // cause.
+  optional IncarnationEnd incarnation_end = 5;
+}
+
+message IncarnationEnd {
+  ExitCause cause = 1;
+  // The cause's own words, when it has any: "exit code 1".
+  optional string detail = 2;
+}
+
+// Full state per revision. Keys and at_ms come from the interpreter; order
+// and revision are zero in the journal and assigned by the owning daemon at
+// commit: order once per key, revision on every upsert.
+message Item {
+  bytes agent_id = 1;
+  string key = 2;
+  uint64 order = 3;
+  uint64 revision = 4;
+  // The agent binary that wrote it.
+  string producer_version = 5;
+  // Set on a prompt's reflection, and on an agent message's item (the
+  // envelope id).
+  bytes input_id = 6;
+  // The one appendable field; U+FFFC marks each attachment's position.
+  string text = 7;
+  repeated Attachment attachments = 8;
+  // Which per-kind item message `body` holds.
+  Kind kind = 9;
+  bytes body = 10;
+  // When the item happened: the provider's own timestamp where it has one,
+  // else the interpreter's clock. Durations are differences of two of these.
+  int64 at_ms = 11;
+}
+
+// The one delta: extends `text` on an open item. Sent only live, after
+// CaughtUp; a base mismatch makes the client call GetItem.
+message Append {
+  bytes agent_id = 1;
+  string key = 2;
+  uint64 base_revision = 3;
+  uint64 revision = 4;
+  string text = 5;
+}
+
+// Everything a client needs to draw the agent without items. Every field of
+// the per-kind body is present in every snapshot, at an explicit unknown
+// until the interpreter learns it.
+message Snapshot {
+  bytes agent_id = 1;
+  uint64 revision = 2;
+  repeated QueuedInput queue = 3;
+  // Which per-kind snapshot `body` holds. Before the interpreter's first
+  // snapshot is ingested, SubscribeSession answers with the kind and an empty body.
+  Kind kind = 4;
+  bytes body = 5;
+  // STARTING until the provider accepts input; NEEDS_YOU whenever an ask is
+  // open. The daemon copies phase and working_on onto the inventory row.
+  Phase phase = 6;
+  // From the status tool call or the spawn prompt; never cleared
+  // automatically.
+  optional string working_on = 7;
+  // The interpreter's clock when the step that produced this snapshot ran.
+  int64 at_ms = 8;
+  // The interpreter's clock when `phase` last changed; streamed output and
+  // other changes within one phase leave it alone. The daemon copies it onto
+  // the inventory row.
+  int64 phase_since_ms = 9;
+  // The branch and change totals of the agent's folder, read by the agent
+  // process at start and at each turn end. Absent outside a repository. The
+  // daemon copies it onto the inventory row.
+  optional Git git = 10;
+  // The SHA-256 of the Catalogue blob the agent offers now, in its
+  // directory; absent until its provider says what it offers. Not copied
+  // onto the row.
+  optional bytes catalogue = 11;
+  // How many jobs the body's background list holds; zero while the list is
+  // unknown. The daemon copies it onto the inventory row, so a fleet row
+  // counts what a stop would cut without decoding a body.
+  uint32 background_jobs = 12;
+}
+
+// The kind is the interpreter.
+enum Kind {
+  KIND_UNSPECIFIED = 0;
+  KIND_CLAUDE_PTY = 1;
+  KIND_CLAUDE_SDK = 2;
+  KIND_CODEX = 3;
+}
+
+// Why an agent's incarnation ended. UNSPECIFIED while it runs, and for a
+// cause this build does not know: unknown is not failure.
+enum ExitCause {
+  EXIT_CAUSE_UNSPECIFIED = 0;
+  // A child's turn ended with nothing queued: the one-shot rule.
+  EXIT_CAUSE_FINISHED = 1;
+  // Stopped by a person or an agent's stop tool, by a delete (which stops a
+  // live agent first), or because its parent exited or was deleted: the
+  // turn was cancelled the provider's own way, then the agent exited.
+  EXIT_CAUSE_STOPPED = 2;
+  // The daemon killed the provider's process group at once: its escalation
+  // when a stop overruns its deadline, or a runtime being torn down.
+  EXIT_CAUSE_KILLED = 3;
+  // The provider process ended on its own; the detail is its exit code
+  // or signal.
+  EXIT_CAUSE_PROVIDER_EXITED = 4;
+  // The agent drained after its daemon was gone past the grace period.
+  EXIT_CAUSE_DAEMON_LOST = 5;
+  // An ask was open with nobody to answer it when the daemon was lost.
+  EXIT_CAUSE_ORPHANED = 6;
+  // The agent process or its provider could not start; the detail says
+  // which and why.
+  EXIT_CAUSE_COULD_NOT_START = 7;
+  // Its directory is gone, or a write to it failed; the detail says which.
+  EXIT_CAUSE_DIRECTORY_FAILED = 8;
+  // The process was found dead when a daemon returned, and its journal
+  // does not say why.
+  EXIT_CAUSE_ENDED_WHILE_AWAY = 9;
+  // The process ended while a daemon watched, and its journal does not say
+  // why.
+  EXIT_CAUSE_ENDED_UNEXPECTEDLY = 10;
+}
+
+// What a row says about the git repository an agent works in.
+message Git {
+  // Absent on a detached head.
+  optional string branch = 1;
+  // The branch a worktree amux made was made from, else the repository's
+  // default branch; absent when neither is known.
+  optional string base_branch = 2;
+  // Working tree against HEAD.
+  optional ChangeTotals uncommitted = 3;
+  // From where the branch left its base to the working tree, so uncommitted
+  // work counts.
+  optional ChangeTotals on_branch = 4;
+}
+
+message ChangeTotals {
+  uint32 files = 1;
+  uint32 added = 2;
+  uint32 removed = 3;
+}
+
+// UNSPECIFIED is never sent: it is what a phase this build does not know
+// reads as.
+enum Phase {
+  PHASE_UNSPECIFIED = 0;
+  PHASE_STARTING = 1;
+  PHASE_IDLE = 2;
+  PHASE_WORKING = 3;
+  PHASE_NEEDS_YOU = 4;
+}
+
+// What the daemon needs to notify a parent without decoding a body. An ask
+// is mid-turn and is not a turn end.
+message TurnEnd {
+  // The interpreter's per-agent turn counter; identifies the notification.
+  uint64 turn_id = 1;
+  // The turn's newest complete text item, or empty if the turn ended with
+  // no assistant text.
+  string last_message_key = 2;
+  // How the turn ended; a parent's finished report carries it.
+  TurnOutcome outcome = 3;
+  // The incarnation exits after this turn: a one-shot agent with nothing
+  // left to do, or an agent already on its way out. Its finished report is
+  // its incarnation's last.
+  bool last = 4;
+}
+
+// How a turn ended: on a kind's Turn item, on the step's TurnEnd, and on a
+// child's finished report to its parent.
+enum TurnOutcome {
+  TURN_OUTCOME_UNSPECIFIED = 0;
+  TURN_OUTCOME_COMPLETED = 1;
+  // The turn was cancelled and the agent stays live.
+  TURN_OUTCOME_INTERRUPTED = 2;
+  TURN_OUTCOME_FAILED = 3;
+  // The turn was cut short because the agent was stopped.
+  TURN_OUTCOME_STOPPED = 4;
+}
+
+// A person's queued prompt, or an agent's message where its provider has no
+// injection channel. Labelled by sender so nothing is parsed from text.
+message QueuedInput {
+  bytes input_id = 1;
+  string text = 2;
+  repeated Attachment attachments = 3;
+  bool steer = 4;
+  Sender sender = 5;
+}
+
+// ---------------------------------------------------------------------------
+// Attachments, blobs, diffs
+// ---------------------------------------------------------------------------
+
+message Attachment {
+  oneof of {
+    BlobRef image = 1;
+    BlobRef file = 2;
+    InlineText text = 3;
+    Review review = 4;
+  }
+}
+
+// Content-addressed bytes in the owning agent's directory. The name belongs
+// to the reference, not the bytes.
+message BlobRef {
+  // SHA-256 of the bytes.
+  bytes hash = 1;
+  string name = 2;
+  string mime = 3;
+  uint64 size = 4;
+}
+
+message InlineText {
+  string name = 1;
+  string text = 2;
+}
+
+// A comparison of an agent's working tree, made on the agent's host. It
+// runs to the working tree, untracked files included, from HEAD or from
+// where the branch left the named base. The patch is a text/x-diff blob of
+// the agent, built only when asked for; its index lines carry each file's
+// full object ids.
+message Diff {
+  BlobRef patch = 1;
+  DiffBase base = 2;
+  // Empty before the first commit.
+  string head = 3;
+  optional string merge_base = 4;
+  repeated DiffFile files = 5;
+}
+
+message DiffFile {
+  string path = 1;
+  // Lines; none for a binary file.
+  uint32 added = 2;
+  uint32 removed = 3;
+  DiffFileChange change = 4;
+  bool binary = 5;
+}
+
+enum DiffFileChange {
+  DIFF_FILE_CHANGE_UNSPECIFIED = 0;
+  DIFF_FILE_CHANGE_CHANGED = 1;
+  DIFF_FILE_CHANGE_CREATED = 2;
+  DIFF_FILE_CHANGE_DELETED = 3;
+}
+
+message DiffBase {
+  oneof base {
+    // From the folder's HEAD commit.
+    Empty head = 1;
+    string branch = 2;
+  }
+}
+
+// A diff exactly as the GetDiff call returned it, frozen when the review page
+// opened, plus a person's comments.
+message Review {
+  Diff diff = 1;
+  repeated ReviewComment comments = 2;
+}
+
+message ReviewComment {
+  string path = 1;
+  // New-side line; zero comments on the file as a whole.
+  uint32 line = 2;
+  // Old-side line for a comment on a removed line.
+  uint32 old_line = 3;
+  string text = 4;
+}
+
+// "You hold what the origin holds as of now", on every stream. On a session
+// stream, the origin's revision replay is complete through: a source stores
+// it as its cursor and clients ignore it.
+message CaughtUp {
+  uint64 revision = 1;
+}
+
+// The stream closes after this; the client re-tails.
+message Lagged {}

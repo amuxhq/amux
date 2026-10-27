@@ -40,23 +40,8 @@ fn amux_xdg_dir(env_var: &str, default_suffix: &str) -> PathBuf {
     xdg_dir(env_var, default_suffix).join("amux")
 }
 
-#[cfg(not(target_os = "ios"))]
 fn default_data_dir() -> PathBuf {
     amux_xdg_dir("XDG_DATA_HOME", ".local/share")
-}
-
-#[cfg(target_os = "ios")]
-fn default_data_dir() -> PathBuf {
-    ios_application_support_dir()
-}
-
-#[cfg(target_os = "ios")]
-fn ios_application_support_dir() -> PathBuf {
-    std::env::var("HOME")
-        .ok()
-        .map(PathBuf::from)
-        .map(|home| home.join("Library/Application Support/amux"))
-        .unwrap_or_else(|| PathBuf::from("Library/Application Support/amux"))
 }
 
 #[derive(Debug, Error)]
@@ -97,11 +82,8 @@ impl Clone for ConfigError {
 /// The amux account service a profile signs in to unless told otherwise.
 pub const DEFAULT_CLOUD_URL: &str = "https://amux.sh";
 
-/// The host name a configuration falls back to when none is written: the
-/// system hostname without its mDNS `.local` suffix. This runs on every default
-/// and deserialization, so it must stay cheap and free of subprocesses; the
-/// friendlier suggestion is computed once, by setup, and written to the file.
-pub fn default_host_name() -> String {
+/// The system hostname without its mDNS `.local` suffix.
+fn system_host_name() -> String {
     fallback_host_name(
         &gethostname()
             .into_string()
@@ -109,14 +91,16 @@ pub fn default_host_name() -> String {
     )
 }
 
-/// The name `amux init` suggests for a new host: the Mac's Computer Name where
-/// there is one, otherwise [`default_host_name`].
-pub fn suggested_host_name() -> String {
+/// The name a host goes by when the config names none: the Mac's Computer
+/// Name where there is one, otherwise the system hostname without its mDNS
+/// `.local` suffix. On a Mac this runs a subprocess, so the daemon resolves
+/// it once at start.
+pub fn default_host_name() -> String {
     #[cfg(target_os = "macos")]
     if let Some(name) = macos_computer_name() {
         return name;
     }
-    default_host_name()
+    system_host_name()
 }
 
 #[cfg(target_os = "macos")]
@@ -261,18 +245,10 @@ impl<'de> Deserialize<'de> for LeaderKey {
 
 /// Keybind configuration
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct Keybinds {
     /// Leader key prefix for keybinds (default: ctrl+a)
     pub leader: LeaderKey,
-}
-
-/// A setting that is on or off, spelled `on` or `off`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Switch {
-    On,
-    Off,
 }
 
 /// Whether the supervisor installs releases itself.
@@ -293,38 +269,9 @@ pub enum Channel {
     Preview,
 }
 
-/// Storage budgets. The starting points are not measured yet; each comment
-/// names its basis so a measurement can replace it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct RetentionSettings {
-    /// Per profile, for the agents this host runs, counted as the bytes of
-    /// their stored rows; an agent's directory and blobs go with its row.
-    /// Basis: a generous multiple of the largest transcripts
-    /// seen so far, pending measurement against typical sizes.
-    pub own_budget_mib: u64,
-    /// Per runtime, for rows replicated from other hosts. Basis: the bound
-    /// the old client cache had, 256 MiB.
-    pub replica_rows_mib: u64,
-    /// Per runtime, for blobs fetched from other hosts, evicted least
-    /// recently read first. Basis: twice the row budget, since images
-    /// dominate what is fetched; to be measured.
-    pub replica_blobs_mib: u64,
-}
-
-impl Default for RetentionSettings {
-    fn default() -> Self {
-        Self {
-            own_budget_mib: 2048,
-            replica_rows_mib: 256,
-            replica_blobs_mib: 512,
-        }
-    }
-}
-
 /// Local-network discovery.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct DiscoverySettings {
     /// Matched exactly against other daemons' advertised scope: a daemon
     /// lists only candidates in its own scope. Empty for real machines; a
@@ -335,7 +282,7 @@ pub struct DiscoverySettings {
 /// What each agent process is started with, copied into its spec at spawn.
 /// A change affects the next spawn or resume, never a running agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct AgentSettings {
     /// How long an agent keeps running after its daemon disappears before
     /// it drains and exits. Basis: minutes, enough to ride out a daemon
@@ -360,22 +307,55 @@ impl Default for AgentSettings {
     }
 }
 
-/// What a new agent starts with when a person starts one: per agent, the
-/// model, reasoning effort and permission. Shipped with real values, so a new
-/// agent always shows what it will run; onboarding and settings change
-/// them, and starting one beside a running chat copies that chat's instead.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+/// What a new agent starts with when a person starts one in the terminal
+/// client: per agent, the model, reasoning effort and permission. Shipped
+/// with real values, so a new agent always shows what it will run; a person
+/// changes them in the config file, and starting one beside a running chat
+/// copies that chat's instead. A file that sets some of an agent's values
+/// keeps the shipped ones for the rest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct NewAgentSettings {
     pub claude: NewAgentDefaults,
     pub codex: NewAgentDefaults,
+}
+
+impl<'de> Deserialize<'de> for NewAgentSettings {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        #[derive(Default, Deserialize)]
+        #[serde(default)]
+        struct Given {
+            model: Option<String>,
+            effort: Option<String>,
+            permission: Option<String>,
+        }
+        #[derive(Default, Deserialize)]
+        #[serde(default)]
+        struct Both {
+            claude: Given,
+            codex: Given,
+        }
+        fn over(given: Given, shipped: NewAgentDefaults) -> NewAgentDefaults {
+            NewAgentDefaults {
+                model: given.model.unwrap_or(shipped.model),
+                effort: given.effort.unwrap_or(shipped.effort),
+                permission: given.permission.unwrap_or(shipped.permission),
+            }
+        }
+        let given = Both::deserialize(deserializer)?;
+        let shipped = Self::default();
+        Ok(Self {
+            claude: over(given.claude, shipped.claude),
+            codex: over(given.codex, shipped.codex),
+        })
+    }
 }
 
 /// One agent's starting model, effort and permission, in the agent's own
 /// words: a Claude alias or a Codex model id, the effort as the agent names
 /// it, and the permission by the value the agent's catalogue gives it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct NewAgentDefaults {
     pub model: String,
     pub effort: String,
@@ -452,96 +432,109 @@ pub enum ColorSetting {
 }
 
 /// Where a person chats with their agents: in amux's own chat, or in each
-/// agent's own terminal, which a new agent is attached to when it starts.
+/// agent's own interface (Claude Code's or Codex's), which a new agent is
+/// attached to when it starts and `amux attach` opens.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ChatInSetting {
     #[default]
     Amux,
-    Terminal,
+    Native,
 }
 
 /// Client UI configuration (the TUI; future desktop clients read the same
 /// keys).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct UiSettings {
     /// A shipped theme name or a path resolved beside the config file.
     pub theme: ThemeSetting,
     /// Whether to detect, force, or disable truecolor output.
     pub color: ColorSetting,
-    /// Where new agents are chatted with: `amux` or `terminal`.
+    /// Where agents are chatted with: `amux` or `native`.
     pub chat_in: ChatInSetting,
 }
 
 /// Preferences shared by every profile in an installation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct InstallationConfig {
+    /// What paired hosts and the phone call this machine. Absent means
+    /// [`default_host_name`], resolved once by the daemon.
+    pub host_name: Option<String>,
     pub repository_roots: Vec<PathBuf>,
-    pub root: PathBuf,
-    pub front_door_socket: PathBuf,
-    pub host_name: String,
-    /// Whether this install runs the daemon under `amux supervise`. Decided
-    /// by the install, not chosen: the desktop installer writes `on`; a host
-    /// whose service manager runs the daemon directly leaves it `off`.
-    pub supervisor: Switch,
+    /// Whether this install runs the daemon under `amux supervise`. A host
+    /// whose service manager runs `amux daemon` directly sets it false.
+    pub supervisor: bool,
     /// Whether the supervisor also installs releases. Absent means `auto`
     /// under a supervisor and `manual` without one; `auto` without a
     /// supervisor is an error. Read it through [`InstallationConfig::updates`].
     pub updates: Option<Updates>,
     pub channel: Channel,
     /// Whether the supervisor holds the machine's sleep assertion.
-    pub keep_awake: Switch,
-    pub retention: RetentionSettings,
-    pub discovery: DiscoverySettings,
-    pub agent: AgentSettings,
-    pub keybinds: Keybinds,
+    pub keep_awake: bool,
+    /// Whether a published build sends product analytics to amux.sh. The
+    /// `DO_NOT_TRACK` environment variable turns it off as well.
+    pub telemetry: bool,
     pub ui: UiSettings,
+    pub keybinds: Keybinds,
     pub new_agent: NewAgentSettings,
+    /// Where the installation keeps its data: profiles, stores, reports.
+    pub root: PathBuf,
+    pub front_door_socket: PathBuf,
     /// Where channel manifests live: the supervisor reads
     /// `<releases_url>/<channel>.json`.
     pub releases_url: String,
-    /// Whether a published build sends product analytics to amux.sh. The
-    /// `DO_NOT_TRACK` environment variable turns it off as well.
-    pub telemetry: Switch,
+    pub discovery: DiscoverySettings,
+    pub agent: AgentSettings,
     #[serde(skip)]
     pub path: Option<PathBuf>,
+    /// Keys the file set that this version does not know, as dotted paths.
+    /// They are ignored rather than refused, so one file still starts an
+    /// older or newer amux; whoever loads the file warns about them.
+    #[serde(skip)]
+    pub ignored: Vec<String>,
 }
 
 impl Default for InstallationConfig {
     fn default() -> Self {
         Self {
+            host_name: None,
             repository_roots: Vec::new(),
-            root: default_data_dir(),
-            front_door_socket: default_socket_path(),
-            host_name: default_host_name(),
-            supervisor: Switch::Off,
+            supervisor: true,
             updates: None,
             channel: Channel::default(),
-            keep_awake: Switch::On,
-            retention: RetentionSettings::default(),
+            keep_awake: true,
+            telemetry: true,
+            ui: UiSettings::default(),
+            keybinds: Keybinds::default(),
+            new_agent: NewAgentSettings::default(),
+            root: default_data_dir(),
+            front_door_socket: default_socket_path(),
+            releases_url: format!("{DEFAULT_CLOUD_URL}/releases"),
             discovery: DiscoverySettings::default(),
             agent: AgentSettings::default(),
-            keybinds: Keybinds::default(),
-            ui: UiSettings::default(),
-            new_agent: NewAgentSettings::default(),
-            releases_url: format!("{DEFAULT_CLOUD_URL}/releases"),
-            telemetry: Switch::On,
             path: None,
+            ignored: Vec::new(),
         }
     }
 }
 
 impl InstallationConfig {
     pub fn default_path() -> PathBuf {
-        amux_xdg_dir("XDG_CONFIG_HOME", ".config").join("config.yaml")
+        amux_xdg_dir("XDG_CONFIG_HOME", ".config").join("config.toml")
     }
 
-    /// Parses installation YAML, rejecting retired keys by name and an
-    /// impossible supervisor and updates pair.
-    pub fn from_yaml(yaml: &str) -> Result<Self, ConfigError> {
-        let config: Self = parse_yaml(yaml)?;
+    /// Parses installation TOML, refusing an impossible supervisor and
+    /// updates pair. Unknown keys are collected in
+    /// [`ignored`](Self::ignored).
+    pub fn from_toml(text: &str) -> Result<Self, ConfigError> {
+        let mut ignored = Vec::new();
+        let mut config: Self = serde_ignored::deserialize(toml::Deserializer::new(text), |key| {
+            ignored.push(key.to_string())
+        })
+        .map_err(|error| ConfigError::Invalid(error.to_string()))?;
+        config.ignored = ignored;
         config.updates()?;
         Ok(config)
     }
@@ -550,19 +543,19 @@ impl InstallationConfig {
     /// since only a supervisor installs releases.
     pub fn updates(&self) -> Result<Updates, ConfigError> {
         match (self.supervisor, self.updates) {
-            (Switch::Off, Some(Updates::Auto)) => Err(ConfigError::Invalid(
-                "updates: auto needs supervisor: on; without a supervisor, updates are deploys (updates: manual)".into(),
+            (false, Some(Updates::Auto)) => Err(ConfigError::Invalid(
+                "updates = \"auto\" needs supervisor = true; without a supervisor, updates are deploys (updates = \"manual\")".into(),
             )),
             (_, Some(updates)) => Ok(updates),
-            (Switch::On, None) => Ok(Updates::Auto),
-            (Switch::Off, None) => Ok(Updates::Manual),
+            (true, None) => Ok(Updates::Auto),
+            (false, None) => Ok(Updates::Manual),
         }
     }
 
     pub fn from_file(path: &Path) -> Result<Self, ConfigError> {
         let path = absolute_path(path, &std::env::current_dir()?)?;
-        let yaml = std::fs::read_to_string(&path)?;
-        let mut config = Self::from_yaml(&yaml)
+        let text = std::fs::read_to_string(&path)?;
+        let mut config = Self::from_toml(&text)
             .map_err(|error| ConfigError::Invalid(format!("{}: {error}", path.display())))?;
         let base = path.parent().unwrap();
         config.root = absolute_path(&config.root, base)?;
@@ -586,7 +579,16 @@ impl InstallationConfig {
                 "invalid leader key: byte 0x{ch:02x} is not a lowercase letter (expected ctrl+<a-z>)"
             )));
         }
-        validate_host_name(&self.host_name)
+        match &self.host_name {
+            Some(host_name) => validate_host_name(host_name),
+            None => Ok(()),
+        }
+    }
+
+    /// The name this host goes by: the configured one, else
+    /// [`default_host_name`].
+    pub fn host_name(&self) -> String {
+        self.host_name.clone().unwrap_or_else(default_host_name)
     }
 
     /// The configured channel as the manifests name it.
@@ -605,73 +607,36 @@ impl InstallationConfig {
             self.channel_name()
         )
     }
-
-    pub fn file_path(&self) -> PathBuf {
-        self.path
-            .clone()
-            .unwrap_or_else(|| self.root.join("config.yaml"))
-    }
 }
 
-/// Keys that used to exist, each with what replaced it, so an old config
-/// file fails with the reason rather than a bare unknown-field error.
-const RETIRED_KEYS: &[(&[&str], &str)] = &[
-    (
-        &["ui", "artifact_cache_mib"],
-        "clients keep no attachment cache; attachment bytes live in each agent's directory and go with it",
-    ),
-    (
-        &["prevent_idle_sleep"],
-        "replaced by keep_awake (on | off), which the supervisor holds for its lifetime",
-    ),
-    (
-        &["update_manifest_url"],
-        "the supervisor reads <releases_url>/<channel>.json; set channel (stable | preview) instead",
-    ),
-    (
-        &["ui", "default_open_mode"],
-        "Enter in the fleet always opens the chat; Ctrl+Enter or o opens a terminal agent's own screen",
-    ),
-    (
-        &["claude", "driver"],
-        "every new agent names its kind: claude_pty (Claude in a terminal) or claude_sdk (headless Claude)",
-    ),
-    (
-        &["reports_dir"],
-        "dumps are written to the reports directory under root",
-    ),
-    (
-        &["keymaps_dir"],
-        "terminal Claude's keymaps are built into amux",
-    ),
-    (
-        &["minimum_client_versions"],
-        "hosts agree on the protocol version when they link",
-    ),
-    (
-        &["agent", "facts_ring_segments"],
-        "the facts ring always keeps two segments; agent.facts_ring_mib sets its whole size",
-    ),
+/// Every key the installation's file takes, dotted as `amux config` names
+/// them, in the order the file documents them.
+pub const INSTALLATION_KEYS: &[&str] = &[
+    "host_name",
+    "repository_roots",
+    "supervisor",
+    "updates",
+    "channel",
+    "keep_awake",
+    "telemetry",
+    "ui.theme",
+    "ui.color",
+    "ui.chat_in",
+    "keybinds.leader",
+    "new_agent.claude.model",
+    "new_agent.claude.effort",
+    "new_agent.claude.permission",
+    "new_agent.codex.model",
+    "new_agent.codex.effort",
+    "new_agent.codex.permission",
+    "root",
+    "front_door_socket",
+    "releases_url",
+    "discovery.scope",
+    "agent.grace_secs",
+    "agent.drain_secs",
+    "agent.facts_ring_mib",
 ];
-
-/// Parses YAML into a config type after rejecting retired keys by name.
-fn parse_yaml<T: serde::de::DeserializeOwned>(yaml: &str) -> Result<T, ConfigError> {
-    let value: serde_yaml::Value =
-        serde_yaml::from_str(yaml).map_err(|error| ConfigError::Invalid(error.to_string()))?;
-    for (path, why) in RETIRED_KEYS {
-        let mut node = Some(&value);
-        for key in *path {
-            node = node.and_then(|node| node.get(*key));
-        }
-        if node.is_some() {
-            return Err(ConfigError::Invalid(format!(
-                "`{}` is no longer a setting: {why}",
-                path.join(".")
-            )));
-        }
-    }
-    serde_yaml::from_value(value).map_err(|error| ConfigError::Invalid(error.to_string()))
-}
 
 // Resolve aliases in the existing ancestor, even before a socket or state file
 // exists. This gives /tmp and /private/tmp the same identity on macOS.
@@ -704,14 +669,56 @@ fn absolute_path(path: &Path, base: &Path) -> Result<PathBuf, ConfigError> {
 mod tests {
     use super::*;
 
-    fn installation(yaml: &str) -> Result<InstallationConfig, ConfigError> {
-        InstallationConfig::from_yaml(yaml)
+    fn installation(text: &str) -> Result<InstallationConfig, ConfigError> {
+        InstallationConfig::from_toml(text)
+    }
+
+    /// The key list `amux config` checks against is every field the file
+    /// takes: the leaves of a default config, and the two that are absent
+    /// until set.
+    #[test]
+    fn an_agent_setting_given_alone_keeps_the_shipped_rest() {
+        let config = installation("[new_agent.claude]\nmodel = \"sonnet\"\n").unwrap();
+        assert_eq!(config.new_agent.claude.model, "sonnet");
+        assert_eq!(
+            config.new_agent.claude.effort,
+            NewAgentSettings::default().claude.effort
+        );
+        assert_eq!(config.new_agent.codex, NewAgentSettings::default().codex);
+    }
+
+    #[test]
+    fn the_key_list_is_every_field() {
+        fn leaves(prefix: &str, table: &toml::Table, out: &mut Vec<String>) {
+            for (key, value) in table {
+                let path = if prefix.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{prefix}.{key}")
+                };
+                match value {
+                    toml::Value::Table(inner) => leaves(&path, inner, out),
+                    _ => out.push(path),
+                }
+            }
+        }
+        let default = toml::Table::try_from(InstallationConfig::default()).unwrap();
+        let mut found = Vec::new();
+        leaves("", &default, &mut found);
+        found.extend(["host_name".to_owned(), "updates".to_owned()]);
+        found.sort();
+        let mut listed: Vec<String> = INSTALLATION_KEYS
+            .iter()
+            .map(|key| key.to_string())
+            .collect();
+        listed.sort();
+        assert_eq!(found, listed);
     }
 
     #[test]
     fn root_defaults_to_the_data_dir() {
         assert_eq!(InstallationConfig::default().root, default_data_dir());
-        assert_eq!(installation("{}\n").unwrap().root, default_data_dir());
+        assert_eq!(installation("").unwrap().root, default_data_dir());
     }
 
     #[test]
@@ -742,14 +749,15 @@ mod tests {
 
     #[test]
     fn config_with_keybinds() {
-        let config = installation("keybinds:\n  leader: ctrl+b\n").unwrap();
+        let config = installation("[keybinds]\nleader = \"ctrl+b\"\n").unwrap();
         assert_eq!(config.keybinds.leader.char, b'b');
     }
 
     #[test]
     fn config_without_keybinds_uses_default() {
-        let config = installation("host_name: test\n").unwrap();
+        let config = installation("host_name = \"test\"\n").unwrap();
         assert_eq!(config.keybinds.leader.char, b'a');
+        assert_eq!(config.host_name(), "test");
     }
 
     #[test]
@@ -758,49 +766,74 @@ mod tests {
         assert_eq!(config.ui.theme, ThemeSetting::Terminal);
         assert_eq!(config.ui.color, ColorSetting::Auto);
 
-        let parsed = installation("ui: {}\n").unwrap();
+        let parsed = installation("[ui]\n").unwrap();
         assert_eq!(parsed.ui.theme, ThemeSetting::Terminal);
         assert_eq!(parsed.ui.color, ColorSetting::Auto);
     }
 
     #[test]
-    fn ui_theme_and_color_yaml_roundtrip() {
-        let config = installation("ui:\n  theme: light\n  color: ansi\n").unwrap();
+    fn ui_theme_and_color_roundtrip() {
+        let config = installation("[ui]\ntheme = \"light\"\ncolor = \"ansi\"\n").unwrap();
         assert_eq!(config.ui.theme, ThemeSetting::Light);
         assert_eq!(config.ui.color, ColorSetting::Ansi);
 
-        let parsed = installation(&serde_yaml::to_string(&config).unwrap()).unwrap();
+        let parsed = installation(&toml::to_string(&config).unwrap()).unwrap();
         assert_eq!(parsed.ui.theme, ThemeSetting::Light);
         assert_eq!(parsed.ui.color, ColorSetting::Ansi);
     }
 
     #[test]
-    fn ui_theme_file_path_yaml_roundtrip() {
+    fn ui_theme_file_path_roundtrip() {
         let config =
-            installation("ui:\n  theme: themes/forest.yaml\n  color: truecolor\n").unwrap();
+            installation("[ui]\ntheme = \"themes/forest.yaml\"\ncolor = \"truecolor\"\n").unwrap();
         assert_eq!(
             config.ui.theme,
             ThemeSetting::File(PathBuf::from("themes/forest.yaml"))
         );
         assert_eq!(config.ui.color, ColorSetting::TrueColor);
 
-        let parsed = installation(&serde_yaml::to_string(&config).unwrap()).unwrap();
+        let parsed = installation(&toml::to_string(&config).unwrap()).unwrap();
         assert_eq!(parsed.ui.theme, config.ui.theme);
         assert_eq!(parsed.ui.color, config.ui.color);
     }
 
     #[test]
     fn unknown_ui_color_is_rejected() {
-        let error = installation("ui:\n  color: millions\n").unwrap_err();
+        let error = installation("[ui]\ncolor = \"millions\"\n").unwrap_err();
         assert!(error.to_string().contains("unknown variant"));
     }
 
     #[test]
-    fn unknown_config_field_is_rejected() {
-        for yaml in ["enable_cloud_mode: false\n", "check_for_updates: false\n"] {
-            let error = installation(yaml).unwrap_err();
-            assert!(error.to_string().contains("unknown field"), "{error}");
-        }
+    fn unknown_keys_are_ignored_and_named() {
+        let config = installation(
+            "host_name = \"desk\"\nprevent_idle_sleep = true\n\
+             [retention]\nown_budget_mib = 1\n\
+             [agent]\nfacts_ring_segments = 3\n\
+             [new_agent.claude]\nmodel = \"opus\"\neffort = \"high\"\npermission = \"default\"\nflavour = 1\n",
+        )
+        .unwrap();
+        assert_eq!(config.host_name(), "desk");
+        assert_eq!(config.new_agent.claude.model, "opus");
+        assert_eq!(
+            config.ignored,
+            [
+                "prevent_idle_sleep",
+                "retention",
+                "agent.facts_ring_segments",
+                "new_agent.claude.flavour",
+            ]
+        );
+        assert!(
+            installation("host_name = \"desk\"\n")
+                .unwrap()
+                .ignored
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_yaml_file_is_refused() {
+        assert!(installation("host_name: desk\nkeep_awake: off\n").is_err());
     }
 
     #[test]
@@ -814,7 +847,7 @@ mod tests {
     #[test]
     fn validate_rejects_empty_host_name() {
         let config = InstallationConfig {
-            host_name: String::new(),
+            host_name: Some(String::new()),
             ..InstallationConfig::default()
         };
         let err = config.validate().unwrap_err();
@@ -824,7 +857,7 @@ mod tests {
     #[test]
     fn validate_accepts_long_host_name() {
         let config = InstallationConfig {
-            host_name: "a".repeat(MAX_HOST_NAME_BYTES),
+            host_name: Some("a".repeat(MAX_HOST_NAME_BYTES)),
             ..InstallationConfig::default()
         };
         assert!(config.validate().is_ok());
@@ -833,7 +866,7 @@ mod tests {
     #[test]
     fn validate_rejects_oversized_host_name() {
         let config = InstallationConfig {
-            host_name: "a".repeat(MAX_HOST_NAME_BYTES + 1),
+            host_name: Some("a".repeat(MAX_HOST_NAME_BYTES + 1)),
             ..InstallationConfig::default()
         };
         let err = config.validate().unwrap_err();
@@ -841,11 +874,13 @@ mod tests {
     }
 
     #[test]
+    fn an_unnamed_host_goes_by_a_default_name() {
+        assert!(!InstallationConfig::default().host_name().is_empty());
+    }
+
+    #[test]
     fn fallback_host_name_strips_the_mdns_suffix() {
-        assert_eq!(
-            fallback_host_name("Jordans-MacBook.local"),
-            "Jordans-MacBook"
-        );
+        assert_eq!(fallback_host_name("Adas-MacBook.local"), "Adas-MacBook");
         assert_eq!(fallback_host_name("build-host"), "build-host");
     }
 
@@ -853,29 +888,38 @@ mod tests {
     fn supervisor_and_updates_cover_every_cell_of_the_table() {
         // (supervisor, updates) as written -> effective updates, or an error.
         let cells: &[(&str, Option<Updates>)] = &[
-            ("supervisor: on\nupdates: auto\n", Some(Updates::Auto)),
-            ("supervisor: on\nupdates: manual\n", Some(Updates::Manual)),
-            ("supervisor: off\nupdates: manual\n", Some(Updates::Manual)),
-            ("supervisor: off\nupdates: auto\n", None),
-            ("supervisor: on\n", Some(Updates::Auto)),
-            ("supervisor: off\n", Some(Updates::Manual)),
-            ("{}\n", Some(Updates::Manual)),
-            ("updates: auto\n", None),
+            (
+                "supervisor = true\nupdates = \"auto\"\n",
+                Some(Updates::Auto),
+            ),
+            (
+                "supervisor = true\nupdates = \"manual\"\n",
+                Some(Updates::Manual),
+            ),
+            (
+                "supervisor = false\nupdates = \"manual\"\n",
+                Some(Updates::Manual),
+            ),
+            ("supervisor = false\nupdates = \"auto\"\n", None),
+            ("supervisor = true\n", Some(Updates::Auto)),
+            ("supervisor = false\n", Some(Updates::Manual)),
+            ("", Some(Updates::Auto)),
+            ("updates = \"manual\"\n", Some(Updates::Manual)),
         ];
-        for (yaml, expected) in cells {
-            match (installation(yaml), expected) {
+        for (text, expected) in cells {
+            match (installation(text), expected) {
                 (Ok(config), Some(updates)) => {
-                    assert_eq!(config.updates().unwrap(), *updates, "{yaml}");
+                    assert_eq!(config.updates().unwrap(), *updates, "{text}");
                 }
                 (Err(error), None) => {
                     assert!(
                         error
                             .to_string()
-                            .contains("updates: auto needs supervisor: on"),
-                        "{yaml}: {error}"
+                            .contains("updates = \"auto\" needs supervisor = true"),
+                        "{text}: {error}"
                     );
                 }
-                (outcome, expected) => panic!("{yaml}: {outcome:?}, expected {expected:?}"),
+                (outcome, expected) => panic!("{text}: {outcome:?}, expected {expected:?}"),
             }
         }
     }
@@ -883,7 +927,7 @@ mod tests {
     #[test]
     fn a_constructed_config_with_auto_and_no_supervisor_fails_validation() {
         let config = InstallationConfig {
-            supervisor: Switch::Off,
+            supervisor: false,
             updates: Some(Updates::Auto),
             ..InstallationConfig::default()
         };
@@ -892,55 +936,45 @@ mod tests {
 
     #[test]
     fn supervisor_updates_channel_and_keep_awake_parse_and_default() {
-        let defaults = installation("{}\n").unwrap();
-        assert_eq!(defaults.supervisor, Switch::Off);
+        let defaults = installation("").unwrap();
+        assert!(defaults.supervisor);
         assert_eq!(defaults.channel, Channel::Stable);
-        assert_eq!(defaults.keep_awake, Switch::On);
-        assert_eq!(defaults.telemetry, Switch::On);
+        assert!(defaults.keep_awake);
+        assert!(defaults.telemetry);
 
-        let set =
-            installation("supervisor: on\nchannel: preview\nkeep_awake: off\ntelemetry: off\n")
-                .unwrap();
-        assert_eq!(set.supervisor, Switch::On);
+        let set = installation(
+            "supervisor = false\nchannel = \"preview\"\nkeep_awake = false\ntelemetry = false\n",
+        )
+        .unwrap();
+        assert!(!set.supervisor);
         assert_eq!(set.channel, Channel::Preview);
-        assert_eq!(set.keep_awake, Switch::Off);
-        assert_eq!(set.telemetry, Switch::Off);
+        assert!(!set.keep_awake);
+        assert!(!set.telemetry);
 
         for bad in [
-            "supervisor: yes\n",
-            "updates: sometimes\n",
-            "channel: beta\n",
-            "keep_awake: true\n",
-            "telemetry: false\n",
+            "supervisor = \"on\"\n",
+            "updates = \"sometimes\"\n",
+            "channel = \"beta\"\n",
+            "keep_awake = \"off\"\n",
+            "telemetry = 0\n",
         ] {
             assert!(installation(bad).is_err(), "{bad}");
         }
     }
 
     #[test]
-    fn budgets_discovery_and_agent_parameters_parse_with_starting_points() {
-        let defaults = installation("{}\n").unwrap();
-        assert_eq!(defaults.retention, RetentionSettings::default());
-        assert_eq!(defaults.retention.replica_rows_mib, 256);
+    fn discovery_and_agent_parameters_parse_with_starting_points() {
+        let defaults = installation("").unwrap();
         assert_eq!(defaults.discovery.scope, "");
         assert_eq!(defaults.agent, AgentSettings::default());
         assert_eq!(defaults.agent.grace_secs, 300);
         assert_eq!(defaults.agent.drain_secs, 300);
 
         let set = installation(
-            "retention:\n  own_budget_mib: 100\n  replica_rows_mib: 10\n  replica_blobs_mib: 20\n\
-             discovery:\n  scope: rearchitect\n\
-             agent:\n  grace_secs: 60\n  drain_secs: 30\n  facts_ring_mib: 2\n",
+            "[discovery]\nscope = \"rearchitect\"\n\
+             [agent]\ngrace_secs = 60\ndrain_secs = 30\nfacts_ring_mib = 2\n",
         )
         .unwrap();
-        assert_eq!(
-            set.retention,
-            RetentionSettings {
-                own_budget_mib: 100,
-                replica_rows_mib: 10,
-                replica_blobs_mib: 20,
-            }
-        );
         assert_eq!(set.discovery.scope, "rearchitect");
         assert_eq!(
             set.agent,
@@ -950,53 +984,15 @@ mod tests {
                 facts_ring_mib: 2,
             }
         );
-        assert!(installation("retention:\n  budget: 1\n").is_err());
-        assert_eq!(
-            installation("discovery:\n  scope: \"3\"\n")
-                .unwrap()
-                .discovery
-                .scope,
-            "3"
-        );
     }
 
     #[test]
-    fn retired_keys_are_rejected_with_what_replaced_them() {
-        for (yaml, key, why) in [
-            (
-                "ui:\n  artifact_cache_mib: 48\n",
-                "ui.artifact_cache_mib",
-                "agent's directory",
-            ),
-            (
-                "prevent_idle_sleep: true\n",
-                "prevent_idle_sleep",
-                "keep_awake",
-            ),
-            (
-                "ui:\n  default_open_mode: raw\n",
-                "ui.default_open_mode",
-                "always opens the chat",
-            ),
-            ("claude:\n  driver: sdk\n", "claude.driver", "claude_sdk"),
-            ("reports_dir: null\n", "reports_dir", "under root"),
-            ("keymaps_dir: /k\n", "keymaps_dir", "built into amux"),
-            (
-                "minimum_client_versions: {}\n",
-                "minimum_client_versions",
-                "protocol version",
-            ),
-            (
-                "agent:\n  facts_ring_segments: 3\n",
-                "agent.facts_ring_segments",
-                "facts_ring_mib",
-            ),
-        ] {
-            let error = installation(yaml).unwrap_err().to_string();
-            assert!(
-                error.contains(&format!("`{key}` is no longer a setting")) && error.contains(why),
-                "{error}"
-            );
-        }
+    fn new_agent_defaults_parse_per_agent() {
+        let set = installation(
+            "[new_agent.claude]\nmodel = \"haiku\"\neffort = \"low\"\npermission = \"default\"\n",
+        )
+        .unwrap();
+        assert_eq!(set.new_agent.claude.model, "haiku");
+        assert_eq!(set.new_agent.codex, NewAgentSettings::default().codex);
     }
 }

@@ -163,7 +163,10 @@ impl Pane {
     fn paint(&self, mut frame: Frame) -> Frame {
         if let Some(palette) = &self.palette {
             let slot = |colour: &mut String| {
-                if let Some(n) = colour.strip_prefix("ansi:").and_then(|n| n.parse::<usize>().ok()) {
+                if let Some(n) = colour
+                    .strip_prefix("ansi:")
+                    .and_then(|n| n.parse::<usize>().ok())
+                {
                     match palette.ansi.get(n) {
                         Some(named) => *colour = named.clone(),
                         None => {
@@ -198,7 +201,11 @@ impl Palette {
         let palette: Self = serde_json::from_str(&text)
             .map_err(|error| format!("{} is not a palette: {error}", path.display()))?;
         if palette.ansi.len() != 16 {
-            return Err(format!("{} names {} ansi colours, not 16", path.display(), palette.ansi.len()));
+            return Err(format!(
+                "{} names {} ansi colours, not 16",
+                path.display(),
+                palette.ansi.len()
+            ));
         }
         Ok(palette)
     }
@@ -356,7 +363,9 @@ pub(crate) fn run(folder: &Folder, command: TuiCommand) -> Result<Outcome, Strin
             palette,
             name,
         } => {
-            let palette = palette.map(|path| Palette::read(&folder.input(&path))).transpose()?;
+            let palette = palette
+                .map(|path| Palette::read(&folder.input(&path)))
+                .transpose()?;
             open(folder, &host, &wanted, theme, palette, name)
         }
         TuiCommand::Keys { pane, keys } => {
@@ -578,11 +587,15 @@ fn open(
     };
     // The pane's own copy of the host's config, so its theme is its own.
     let config = entry["config"].as_str().ok_or("the host has no config")?;
-    let mut yaml = std::fs::read_to_string(config).map_err(|error| error.to_string())?;
-    let chosen = if palette.is_some() { "terminal" } else { theme.word() };
-    yaml.push_str(&format!("ui:\n  theme: {chosen}\n"));
-    let pane_config = folder.net_dir().join(format!("pane-{name}.yaml"));
-    std::fs::write(&pane_config, yaml).map_err(|error| error.to_string())?;
+    let text = std::fs::read_to_string(config).map_err(|error| error.to_string())?;
+    let chosen = if palette.is_some() {
+        "terminal"
+    } else {
+        theme.word()
+    };
+    let text = crate::net::with_settings(&text, &format!("[ui]\ntheme = {chosen:?}\n"))?;
+    let pane_config = folder.net_dir().join(format!("pane-{name}.toml"));
+    std::fs::write(&pane_config, text).map_err(|error| error.to_string())?;
     let work = PathBuf::from(entry["dir"].as_str().unwrap_or_default()).join("work");
     let command = client_command(&[
         binary("amux").to_string_lossy().as_ref(),
@@ -606,9 +619,7 @@ fn open(
     );
     save_panes(folder, &all)?;
     Ok(Outcome::new(
-        format!(
-            "pane {name}: the terminal client on {host}, {cols}x{rows}, {colours}"
-        ),
+        format!("pane {name}: the terminal client on {host}, {cols}x{rows}, {colours}"),
         json!({"pane": name}),
     ))
 }
@@ -625,7 +636,7 @@ fn client_command(args: &[&str]) -> String {
     )
 }
 
-fn shell_word(text: &str) -> String {
+pub(crate) fn shell_word(text: &str) -> String {
     format!("'{}'", text.replace('\'', r"'\''"))
 }
 
@@ -660,7 +671,9 @@ fn start_pane(
         "-c",
         command,
     ];
-    let colours = palette.map(|palette| palette.tmux_args(name)).unwrap_or_default();
+    let colours = palette
+        .map(|palette| palette.tmux_args(name))
+        .unwrap_or_default();
     args.extend(colours.iter().map(String::as_str));
     tmux(folder, &args)?;
     // The session's size, not whatever client attaches later, decides the
@@ -723,7 +736,15 @@ fn attach(folder: &Folder, pane: &str, agent: &str) -> Result<Outcome, String> {
         listed["id"].as_str().unwrap_or(agent),
     ]);
     let work = PathBuf::from(owner["dir"].as_str().unwrap_or_default()).join("work");
-    start_pane(folder, &name, cols, rows, &work, &command, from.palette.as_ref())?;
+    start_pane(
+        folder,
+        &name,
+        cols,
+        rows,
+        &work,
+        &command,
+        from.palette.as_ref(),
+    )?;
     let mut all = panes(folder);
     all.insert(
         name.clone(),
@@ -757,18 +778,16 @@ fn clip(folder: &Folder, pane: &str, file: &Path, image: bool) -> Result<Outcome
             "--image puts a PNG on the clipboard; attach other files without it".to_owned(),
         );
     }
-    // Every session on this Mac shares the clipboard; one paste at a time.
+    // Every session on this machine shares the clipboard; one paste at a
+    // time.
     let lock = std::fs::File::create(std::env::temp_dir().join("testnet-clipboard.lock"))
         .map_err(|error| error.to_string())?;
     lock.lock().map_err(|error| error.to_string())?;
     // Only the clipboard's text is kept and put back: an image or a file
     // someone had copied is replaced by it.
-    let before_text = std::process::Command::new("pbpaste")
-        .output()
-        .map(|output| output.stdout)
-        .unwrap_or_default();
+    let before_text = clipboard_text();
     let pasted = paste_from_clipboard(folder, pane, &file, image);
-    let _ = pb_copy(&before_text);
+    let _ = set_clipboard_text(&before_text);
     drop(lock);
     pasted?;
     Ok(Outcome::new(
@@ -785,10 +804,10 @@ fn paste_from_clipboard(
     file: &Path,
     image: bool,
 ) -> Result<(), String> {
-    let set = if image {
+    let set = match (cfg!(target_os = "macos"), image) {
         // The path goes in as an argument, never into the script's source,
         // so no file name can change what the script does.
-        std::process::Command::new("osascript")
+        (true, true) => std::process::Command::new("osascript")
             .args([
                 "-e",
                 "on run argv",
@@ -798,9 +817,11 @@ fn paste_from_clipboard(
                 "end run",
             ])
             .arg(file)
-            .output()
-    } else {
-        pb_copy(file.to_string_lossy().as_bytes())
+            .output(),
+        (true, false) => set_clipboard_text(file.to_string_lossy().as_bytes()),
+        (false, true) => xclip_in("image/png", &std::fs::read(file).unwrap_or_default()),
+        // As a Linux file manager copies a file.
+        (false, false) => xclip_in("text/uri-list", file_uri(file).as_bytes()),
     };
     match set {
         Ok(output) if output.status.success() => {}
@@ -827,7 +848,29 @@ fn paste_from_clipboard(
     Ok(())
 }
 
-fn pb_copy(bytes: &[u8]) -> std::io::Result<std::process::Output> {
+/// The clipboard's text: `pbpaste` on macOS, elsewhere `xclip` on the X
+/// display in `DISPLAY`. Nothing when it holds none.
+fn clipboard_text() -> Vec<u8> {
+    let mut command = if cfg!(target_os = "macos") {
+        std::process::Command::new("pbpaste")
+    } else {
+        let mut xclip = std::process::Command::new("xclip");
+        xclip.args(["-selection", "clipboard", "-o"]);
+        xclip
+    };
+    command
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| output.stdout)
+        .unwrap_or_default()
+}
+
+fn set_clipboard_text(bytes: &[u8]) -> std::io::Result<std::process::Output> {
+    if !cfg!(target_os = "macos") {
+        return xclip_in("text/plain", bytes);
+    }
     use std::io::Write as _;
     let mut child = std::process::Command::new("pbcopy")
         .stdin(std::process::Stdio::piped())
@@ -838,6 +881,38 @@ fn pb_copy(bytes: &[u8]) -> std::io::Result<std::process::Output> {
         stdin.write_all(bytes)?;
     }
     child.wait_with_output()
+}
+
+/// Puts BYTES on the X clipboard as TARGET. xclip leaves a child behind to
+/// serve the clipboard until something else takes it, and that child holds
+/// whatever output it was given, so its output goes nowhere: reading it
+/// would wait for the next copy.
+fn xclip_in(target: &str, bytes: &[u8]) -> std::io::Result<std::process::Output> {
+    use std::io::Write as _;
+    let mut child = std::process::Command::new("xclip")
+        .args(["-selection", "clipboard", "-t", target, "-i"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(bytes)?;
+    }
+    child.wait_with_output()
+}
+
+/// A `file://` URI for an absolute path, every byte outside the URI's
+/// unreserved characters and `/` percent-encoded.
+fn file_uri(path: &Path) -> String {
+    let mut uri = String::from("file://");
+    for &byte in path.as_os_str().as_encoded_bytes() {
+        if byte.is_ascii_alphanumeric() || b"-._~/".contains(&byte) {
+            uri.push(char::from(byte));
+        } else {
+            uri.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    uri
 }
 
 fn cursor(folder: &Folder, pane: &str) -> Result<(u16, u16, bool), String> {
@@ -880,7 +955,14 @@ pub(crate) fn shot(folder: &Folder, pane: &str) -> Result<(PathBuf, PathBuf), St
     let (cols, rows) = size(dims.trim())?;
     let (x, y, shown) = cursor(folder, pane)?;
     let (fg, bg) = known.ink();
-    let frame = known.paint(frame(&styled, cols, rows, &fg, &bg, shown.then_some((x, y))));
+    let frame = known.paint(frame(
+        &styled,
+        cols,
+        rows,
+        &fg,
+        &bg,
+        shown.then_some((x, y)),
+    ));
     let dir = folder.dir.join("shots");
     std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
     let stamp = chrono::Utc::now().format("%H%M%S%3f");
@@ -942,7 +1024,14 @@ fn record(
                 ],
             )?;
             let (cols, rows) = size(dims.trim())?;
-            let frame = known.paint(frame(&styled, cols, rows, &fg, &bg, shown.then_some((x, y))));
+            let frame = known.paint(frame(
+                &styled,
+                cols,
+                rows,
+                &fg,
+                &bg,
+                shown.then_some((x, y)),
+            ));
             let line = json!({"ms": start.elapsed().as_millis() as u64, "frame": frame});
             writeln!(out, "{line}").map_err(|error| error.to_string())?;
             out.flush().map_err(|error| error.to_string())?;
@@ -1280,6 +1369,16 @@ fn frame_value(styled: &str, cols: u16, rows: u16) -> Value {
 mod tests {
     use super::*;
 
+    /// A copied file reaches the clipboard as a file manager writes it, so
+    /// a name with spaces or other bytes comes back as the same path.
+    #[test]
+    fn a_copied_file_is_a_percent_encoded_file_uri() {
+        assert_eq!(
+            file_uri(Path::new("/net/desk/work/a b%é.png")),
+            "file:///net/desk/work/a%20b%25%C3%A9.png"
+        );
+    }
+
     /// A paste arrives byte for byte, line endings and all, however long:
     /// a pane whose program reads raw input keeps exactly what was pasted.
     /// It drives a real tmux, which Windows does not have.
@@ -1399,7 +1498,8 @@ mod tests {
         };
         let (fg, bg) = pane.ink();
         let styled = "\u{1b}[31ma\u{1b}[38;5;200mb\u{1b}[38;2;1;2;3mc";
-        let frame = serde_json::to_value(pane.paint(super::frame(styled, 3, 1, &fg, &bg, None))).unwrap();
+        let frame =
+            serde_json::to_value(pane.paint(super::frame(styled, 3, 1, &fg, &bg, None))).unwrap();
         assert_eq!(frame["default"], json!({"fg": "#657b83", "bg": "#fdf6e3"}));
         let row = &frame["rows"][0];
         assert_eq!(row[0]["fg"], "#dc322f");

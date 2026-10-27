@@ -16,7 +16,7 @@
     choices 
     body Unanswerable { reason: "Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent." }
   composer Send activity=None queue=[] underway=[] refused=[]
-## 11 input {"answer":{"answer":{"form":{"action":"accept","content":{"repo":"jlw/amux"}}},"ask":"ask:1"},"id":"x1"}
+## 11 input {"answer":{"answer":{"form":{"action":"accept","content":{"repo":"ada/amux"}}},"ask":"ask:1"},"id":"x1"}
   ask ask:1 -> "ask:ask:1" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
     choices 
     body Unanswerable { reason: "Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent." }

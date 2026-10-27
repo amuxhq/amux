@@ -152,7 +152,7 @@ fn a_multi_line_answer_shows_its_line_breaks_before_it_is_sent() {
 #[test]
 fn a_long_edit_path_keeps_the_files_name() {
     let path =
-        "/Users/jlw/.local/state/amux-qa/20261011-171536/t6/.testnet/net/desk/work/notes.txt";
+        "/Users/ada/.local/state/amux-qa/20261011-171536/t6/.testnet/net/desk/work/notes.txt";
     let card = AskCard {
         kind: Kind::Codex,
         key: "ask".into(),
@@ -307,13 +307,13 @@ fn a_long_commands_choices_stay_on_a_short_screen() {
             item_key: "call-1".into(),
             body: Some(wire::ask::Body::Permission(wire::PermissionAsk {
                 tool_name: "Bash".into(),
-                input_json: input.to_string().into_bytes(),
+                input: Some(interpret::tool_input("Bash", "", &input, "")),
                 scopes: vec![
                     grant(vec![format!("Bash({}:*)", &command[..40])], vec![]),
-                    grant(vec![], vec!["/Users/jlw/work".into()]),
+                    grant(vec![], vec!["/Users/ada/work".into()]),
                 ],
                 reason: "outside the allowed directories: \
-                         /Users/jlw/.local/state/amux-qa/20261011-171536/t6/.testnet/net/desk/work/qa_t6_out.txt"
+                         /Users/ada/.local/state/amux-qa/20261011-171536/t6/.testnet/net/desk/work/qa_t6_out.txt"
                     .into(),
                 ..Default::default()
             })),
@@ -358,10 +358,7 @@ fn fleet_screen_at(view: &mut FleetView, fleet: &FleetState, width: u16, height:
 #[test]
 fn a_refused_rename_keeps_its_reason_and_way_out_at_80_columns() {
     let mut fleet = FleetState::new();
-    inventory(
-        &mut fleet,
-        host(b"a", "studio", wire::Trust::Trusted, wire::Presence::Online),
-    );
+    inventory(&mut fleet, host(b"a", "studio", Reads::Online));
     inventory(
         &mut fleet,
         agent_row(b"p", "brisk-raven", Phase::Idle, None),
@@ -475,10 +472,7 @@ fn a_question_card_draws_inline_code_without_backticks() {
 #[test]
 fn an_idle_rows_background_jobs_are_counted_on_it() {
     let mut fleet = FleetState::new();
-    inventory(
-        &mut fleet,
-        host(b"a", "studio", wire::Trust::Trusted, wire::Presence::Online),
-    );
+    inventory(&mut fleet, host(b"a", "studio", Reads::Online));
     let wire::inventory_event::Of::Agent(mut agent) = agent_row(b"p", "cx-cmd", Phase::Idle, None)
     else {
         unreachable!()

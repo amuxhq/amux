@@ -23,7 +23,7 @@ use ui_view::{
     ActivityLine, AskSubject, AskSummary, ExitCause, FleetRow, FleetSection, FleetView, Offline,
     Reach, SecondLine, SectionKind, SessionLine, StuckReason,
 };
-use wire::{Kind, Lifecycle, SignInState, Trust};
+use wire::{Kind, Lifecycle, SignInState};
 
 use crate::chat::composer::editor_lines;
 use crate::editor::Editor;
@@ -746,7 +746,7 @@ impl Home {
             .draft
             .setup
             .as_ref()
-            .is_some_and(|setup| setup.chat_in == ChatIn::Terminal)
+            .is_some_and(|setup| setup.chat_in == ChatIn::Native)
         {
             let (Some(setup), Some(form)) = (&mut self.draft.setup, &mut self.draft.form) else {
                 return vec![];
@@ -1052,7 +1052,7 @@ impl Home {
                 .draft
                 .setup
                 .as_ref()
-                .is_some_and(|setup| setup.chat_in == ChatIn::Terminal);
+                .is_some_and(|setup| setup.chat_in == ChatIn::Native);
         if modal && self.draft.form.is_none() {
             self.draft.form = self.draft.setup.as_ref().map(Form::new);
         }
@@ -1292,22 +1292,27 @@ impl Home {
         // reason.
         let reaches: Vec<(&str, Reach)> = fleet
             .hosts()
-            .filter(|host| host.trust() == Trust::Trusted && host.host_id != local_host)
+            .filter(|host| host.trusted().is_some() && host.host_id() != local_host)
             .map(|host| {
                 (
-                    host.name.as_str(),
-                    ui_view::reach(fleet, local_host, &host.host_id),
+                    host.name(),
+                    ui_view::reach(fleet, local_host, host.host_id()),
                 )
             })
             .filter(|(_, reach)| !reach.online())
             .collect();
-        let away: Vec<&str> = reaches.iter().map(|(name, _)| *name).collect();
+        // A host that no longer trusts this machine is not merely away:
+        // only pairing again brings it back.
+        let (revoked, away): (Vec<_>, Vec<_>) = reaches
+            .iter()
+            .partition(|(_, reach)| *reach == Reach::Offline(Offline::Revoked));
+        let away: Vec<&str> = away.iter().map(|(name, _)| *name).collect();
         let mut parts: Vec<(String, Style)> = Vec::new();
         // A daemon that restarted into a newer build keeps serving this
         // older client; only the person can restart it.
         if let Some(running) = fleet
             .host(local_host)
-            .and_then(|host| host.version.as_deref())
+            .and_then(wire::HostEntry::version)
             .filter(|running| !place.version.is_empty() && *running != place.version)
         {
             parts.push((
@@ -1322,6 +1327,20 @@ impl Home {
             .any(|(_, reach)| *reach == Reach::Offline(Offline::SignedOut))
         {
             parts.push(("signed out · amux login".into(), theme.warning()));
+        }
+        match revoked.as_slice() {
+            [] => {}
+            [(one, _)] => parts.push((
+                format!(
+                    "{one} no longer trusts this machine · amux pair {}",
+                    crate::hosts::shell_target(one)
+                ),
+                theme.warning(),
+            )),
+            many => parts.push((
+                format!("{} hosts no longer trust this machine", many.len()),
+                theme.warning(),
+            )),
         }
         match fleet.connection() {
             Connection::Live => {}

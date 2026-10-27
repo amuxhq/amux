@@ -1,6 +1,7 @@
 //! `<data_dir>/supervisor.sock`: how the CLI reaches a running supervisor.
 //! One request line, one answer line. `check` is `amux update`: check the
-//! channel now, ignoring the rejected build. `stop` is `amux server stop`
+//! channel now; `retry` is `amux update --retry`, which may install the
+//! build rolled back here again. `stop` is `amux server stop`
 //! on Windows, which has no signals; on Unix the CLI signals the pid in the
 //! supervisor's lock file instead.
 
@@ -18,6 +19,7 @@ pub const SUPERVISOR_SOCKET: &str = "supervisor.sock";
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Request {
     Check,
+    Retry,
     Stop,
 }
 
@@ -25,6 +27,7 @@ impl Request {
     fn word(self) -> &'static str {
         match self {
             Self::Check => "check",
+            Self::Retry => "retry",
             Self::Stop => "stop",
         }
     }
@@ -32,6 +35,7 @@ impl Request {
     fn parse(word: &str) -> Option<Self> {
         match word {
             "check" => Some(Self::Check),
+            "retry" => Some(Self::Retry),
             "stop" => Some(Self::Stop),
             _ => None,
         }

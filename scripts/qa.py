@@ -351,7 +351,15 @@ def results(lines: list[str]) -> tuple[str, float | None]:
 
 
 def memory_in_use() -> int:
-    """Bytes of memory the machine has in use: active, wired and compressed."""
+    """Bytes of memory the machine has in use: on macOS active, wired and
+    compressed; on Linux all but what the kernel says is available."""
+    if sys.platform.startswith("linux"):
+        try:
+            text = Path("/proc/meminfo").read_text()
+        except OSError:
+            return 0
+        kib = {match[1]: int(match[2]) for match in re.finditer(r"^(\w+):\s+(\d+) kB", text, re.M)}
+        return max(kib.get("MemTotal", 0) - kib.get("MemAvailable", 0), 0) * 1024
     try:
         text = subprocess.run(["vm_stat"], capture_output=True, text=True, check=True).stdout
     except (OSError, subprocess.CalledProcessError):
@@ -375,25 +383,46 @@ def memory_in_use() -> int:
 UNITS = {"B": 1, "K": 2**10, "M": 2**20, "G": 2**30}
 
 
-def processes() -> dict[int, tuple[int, int, str]]:
-    """Every process: its parent, its memory and its command line.
+def footprints() -> dict[int, int]:
+    """Each process's physical footprint in bytes, where it can be read.
 
-    Memory is the physical footprint `top` reports (what Activity Monitor
-    shows), not the resident size: resident sizes count the pages processes
-    share once for each of them, which for a simulator's few hundred
-    processes adds up to several times the machine's memory."""
+    Not the resident size: resident sizes count the pages processes share
+    once for each of them, which for a simulator's few hundred processes
+    adds up to several times the machine's memory. On macOS it is the
+    footprint `top` reports (what Activity Monitor shows); on Linux the
+    proportional set size, which divides each shared page among the
+    processes sharing it, readable for this user's own processes."""
+    footprint = {}
+    if sys.platform.startswith("linux"):
+        for rollup in Path("/proc").glob("[0-9]*/smaps_rollup"):
+            try:
+                match = re.search(r"^Pss:\s+(\d+) kB", rollup.read_text(), re.M)
+            except OSError:
+                continue
+            if match:
+                footprint[int(rollup.parent.name)] = int(match[1]) * 1024
+        return footprint
     try:
-        listed = subprocess.run(["ps", "-axo", "pid=,ppid=,command="],
-                                capture_output=True, text=True, check=True).stdout
         top = subprocess.run(["top", "-l", "1", "-stats", "pid,mem", "-n", "100000"],
                              capture_output=True, text=True, check=True).stdout
     except (OSError, subprocess.CalledProcessError):
-        return {}
-    footprint = {}
+        return footprint
     for line in top.splitlines():
         match = re.match(r"\s*(\d+)\s+([\d.]+)([BKMG])[+-]?\s*$", line)
         if match:
             footprint[int(match[1])] = int(float(match[2]) * UNITS[match[3]])
+    return footprint
+
+
+def processes() -> dict[int, tuple[int, int, str]]:
+    """Every process: its parent, its footprint (zero where it cannot be
+    read) and its command line."""
+    try:
+        listed = subprocess.run(["ps", "-axo", "pid=,ppid=,command="],
+                                capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return {}
+    footprint = footprints()
     table = {}
     for line in listed.splitlines():
         parts = line.split(None, 2)

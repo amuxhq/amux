@@ -28,7 +28,7 @@ settings:
     CODE_SIGNING_ALLOWED: NO
     "CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]": YES
     "CODE_SIGN_IDENTITY[sdk=iphonesimulator*]": "-"
-    # The Rust bridge is assembled for arm64 alone (scripts/ios-rust.py), the
+    # The Rust bridge is assembled for arm64 alone (apps/apple/Tools/ios-rust.py), the
     # phone is arm64 and every simulator this is measured on runs on Apple
     # silicon. An Intel slice would be a second configuration nobody builds
     # and nobody would notice going stale.
@@ -149,7 +149,6 @@ targets:
         # Git worktree metadata can live outside SRCROOT. The revision phase
         # reads it each build and updates only the built app's Info.plist.
         ENABLE_USER_SCRIPT_SANDBOXING: NO
-        CODE_SIGN_ENTITLEMENTS: Amux/Amux.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: sh.amux.app
         # What the App Store shows, and the number that identifies one binary
         # forever. `just ios release` writes both here; nothing else should.
@@ -165,6 +164,11 @@ targets:
         SUPPORTS_MACCATALYST: NO
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+        # The slice of the driving bridge a Debug or Measured build
+        # force-loads, by the SDK it builds for. A phone's slice exists only
+        # once `apps/apple/Tools/ios-rust.py --device` has built it.
+        AMUX_DRIVING_SLICE: ios-arm64-simulator
+        "AMUX_DRIVING_SLICE[sdk=iphoneos*]": ios-arm64
       configs:
         Debug:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG AMUX_DEBUG_TOOLS
@@ -174,14 +178,14 @@ targets:
           # defined by the time the shipping archive the package carries is
           # reached, so nothing is taken from that one. `just ios scope-audit`
           # checks that the release binary does not carry the build marker.
-          OTHER_LDFLAGS: -Wl,-force_load,$(SRCROOT)/../../target/ios/AmuxAppDebugTools.xcframework/ios-arm64-simulator/libamux_app.a
+          OTHER_LDFLAGS: -Wl,-force_load,$(SRCROOT)/../../target/ios/AmuxAppDebugTools.xcframework/$(AMUX_DRIVING_SLICE)/libamux_app.a
         Measured:
           # The same tools as Debug, and for the same reason: the suite
           # drives the app through the door. What it does not carry is
           # DEBUG, so the app and the packages behind it are compiled the
           # way a shipped build is.
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: AMUX_DEBUG_TOOLS
-          OTHER_LDFLAGS: -Wl,-force_load,$(SRCROOT)/../../target/ios/AmuxAppDebugTools.xcframework/ios-arm64-simulator/libamux_app.a
+          OTHER_LDFLAGS: -Wl,-force_load,$(SRCROOT)/../../target/ios/AmuxAppDebugTools.xcframework/$(AMUX_DRIVING_SLICE)/libamux_app.a
         Release:
           # Belt as well as the AMUX_DEBUG_TOOLS braces: the debug sources
           # are not compiled at all, so a door symbol or a fixture cannot
@@ -285,7 +289,7 @@ schemes:
     test:
       config: Debug
       # The package unit suites run from their own package schemes (see
-      # scripts/ios-unit.py); this action carries the accessibility audit's
+      # apps/apple/Tools/ios-unit.py); this action carries the accessibility audit's
       # UI test and the app-hosted tests.
       targets:
         - AmuxUITests

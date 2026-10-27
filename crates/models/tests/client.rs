@@ -3,11 +3,12 @@
 
 use models::{Bounds, ClientModel, check, walk};
 
-/// How long the exhaustive run may take under `just test`, sized to CI's
-/// four-core runner: twice the slowest of its measured times there (116 s;
-/// the README lists them all), rounded up to a whole minute. A run past it
-/// says the bounds have outgrown their place.
-const BUDGET_SECONDS: f64 = 240.0;
+/// How many states the exhaustive run may explore: its count at these
+/// bounds (1,217,819 on 2026-10-23) with two percent over, since the count
+/// moves by a few dozen states with the threads. A run past it says the
+/// bounds have outgrown their place; a run that hangs is the test
+/// harness's bound to catch.
+const BUDGET_STATES: u64 = 1_242_200;
 
 #[test]
 fn every_client_promise_holds_at_ci_bounds() {
@@ -21,9 +22,9 @@ fn every_client_promise_holds_at_ci_bounds() {
     );
     verdict.assert_holds();
     assert!(
-        measured.seconds <= BUDGET_SECONDS,
-        "the client model took {:.1}s, past its {BUDGET_SECONDS}s budget",
-        measured.seconds
+        measured.states <= BUDGET_STATES,
+        "the client model explored {} states, past its {BUDGET_STATES}",
+        measured.states
     );
 }
 

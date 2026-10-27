@@ -14,7 +14,7 @@ use std::process::Command;
 use prost::Message as _;
 use support::synthetic::{quiet_launch, read_until};
 use support::*;
-use wire::client_service_server::ClientService as _;
+use wire::agent_service_server::AgentService as _;
 use wire::{AgentSpec, CreateAgentRequest, SessionEvent, session_event};
 
 fn git(cwd: &Path, args: &[&str]) -> String {
@@ -81,7 +81,7 @@ fn same_place(a: &Path, b: &Path) -> bool {
 /// The git facts the agent's snapshot reports once it has read them.
 async fn reported_git(runtime: &node::ProfileRuntime, agent: &wire::Agent) -> wire::Git {
     let mut subscription = until("a subscription to the new agent", || {
-        runtime.subscribe(&agent.agent_id, 10)
+        runtime.subscribe_session(&agent.agent_id, 10)
     })
     .await
     .unwrap();

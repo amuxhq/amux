@@ -104,6 +104,7 @@
       {"literal": "\"new-agent\"", "context": "if router.composing { return \"new-agent\" }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Amux/Debug/DoorServer.swift": [
+      {"literal": "\"\\(given) is not an IPv4 or IPv6 address\"", "context": "case .unparsable(let given): \"\\(given) is not an IPv4 or IPv6 address\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"the driving door could not open: \\(error)\"", "context": "fatalError(\"the driving door could not open: \\(error)\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"socket() failed with errno \\(code)\"", "context": "case .socket(let code): \"socket() failed with errno \\(code)\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"bind() failed with errno \\(code)\"", "context": "case .bind(let code): \"bind() failed with errno \\(code)\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
@@ -138,14 +139,15 @@
     ],
     "apps/apple/Amux/Sources/AmuxApp.swift": [
       {"literal": "\"suspending\"", "context": "let held = UIApplication.shared.beginBackgroundTask(withName: \"suspending\") { [weak self] in", "reason": "Background task name the system logs, not app interface copy.", "count": 1},
-      {"literal": "\"AMUX_COMPONENT_SNAPSHOTS\"", "context": "if environment[\"AMUX_COMPONENT_SNAPSHOTS\"] == \"1\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"1\"", "context": "if environment[\"AMUX_COMPONENT_SNAPSHOTS\"] == \"1\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"XCODE_RUNNING_FOR_PREVIEWS\"", "context": "|| environment[\"XCODE_RUNNING_FOR_PREVIEWS\"] == \"1\" {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"1\"", "context": "|| environment[\"XCODE_RUNNING_FOR_PREVIEWS\"] == \"1\" {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"AMUX_COMPONENT_SNAPSHOTS\"", "context": "return environment[\"AMUX_COMPONENT_SNAPSHOTS\"] != \"1\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"1\"", "context": "return environment[\"AMUX_COMPONENT_SNAPSHOTS\"] != \"1\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"XCODE_RUNNING_FOR_PREVIEWS\"", "context": "&& environment[\"XCODE_RUNNING_FOR_PREVIEWS\"] != \"1\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"1\"", "context": "&& environment[\"XCODE_RUNNING_FOR_PREVIEWS\"] != \"1\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Amux/Sources/Composition.swift": [
       {"literal": "\"notificationsOfferDeclined\"", "context": "private static let notificationsOfferKey = \"notificationsOfferDeclined\"", "reason": "Storage filename, keychain service identifier, or relay URL syntax; not app interface copy.", "count": 1},
       {"literal": "\"shareUsage\"", "context": "private static let shareUsageKey = \"shareUsage\"", "reason": "Storage filename, keychain service identifier, or relay URL syntax; not app interface copy.", "count": 1},
+      {"literal": "\"appearance\"", "context": "private static let appearanceKey = \"appearance\"", "reason": "Storage filename, keychain service identifier, or relay URL syntax; not app interface copy.", "count": 1},
       {"literal": "\"accounts.json\"", "context": "let accounts = AccountRegistry(file: AppFiles.support.appendingPathComponent(\"accounts.json\"))", "reason": "Storage filename, keychain service identifier, or relay URL syntax; not app interface copy.", "count": 1},
       {"literal": "\"-\\(Door.scriptedCloudArgument)\"", "context": ".contains(\"-\\(Door.scriptedCloudArgument)\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"CFBundleShortVersionString\"", "context": "let version = Bundle.main.object(forInfoDictionaryKey: \"CFBundleShortVersionString\")", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
@@ -222,8 +224,6 @@
       {"literal": "\"image/png\"", "context": "case \"frame.png\": \"image/png\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"trace.jsonl\"", "context": "case \"trace.jsonl\": \"application/x-ndjson\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"application/x-ndjson\"", "context": "case \"trace.jsonl\": \"application/x-ndjson\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"log.txt\"", "context": "case \"log.txt\": \"text/plain\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"text/plain\"", "context": "case \"log.txt\": \"text/plain\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"application/octet-stream\"", "context": "default: \"application/octet-stream\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"application/x-www-form-urlencoded\"", "context": "\"application/x-www-form-urlencoded\", forHTTPHeaderField: \"Content-Type\")", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"Content-Type\"", "context": "\"application/x-www-form-urlencoded\", forHTTPHeaderField: \"Content-Type\")", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
@@ -281,7 +281,9 @@
       {"literal": "\"on-this-network\"", "context": "case .onThisNetwork: \"on-this-network\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"through-the-relay\"", "context": "case .throughTheRelay: \"through-the-relay\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"away\"", "context": "case .away: \"away\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"offline\"", "context": "case .offline: \"offline\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1}
+      {"literal": "\"offline\"", "context": "case .offline: \"offline\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
+      {"literal": "\"macOS\"", "context": "case .macos: \"macOS\"", "reason": "Platform name, spelled as the platform spells it; not translated.", "count": 1},
+      {"literal": "\"iOS\"", "context": "case .ios: \"iOS\"", "reason": "Platform name, spelled as the platform spells it; not translated.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/Identifiers.swift": [
       {"literal": "\"not a UUID: \\(text)\"", "context": ".init(codingPath: decoder.codingPath, debugDescription: \"not a UUID: \\(text)\"))", "reason": "Decoder or invariant diagnostic retained for debugging; not displayed by a view.", "count": 1},
@@ -330,7 +332,6 @@
       {"literal": "\"report.json\"", "context": "public static let reportFile = \"report.json\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"frame.png\"", "context": "public static let frameFile = \"frame.png\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"trace.jsonl\"", "context": "public static let traceFile = \"trace.jsonl\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"log.txt\"", "context": "public static let logFile = \"log.txt\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"absent\"", "context": "return [\"absent\": [\"reason\": \"the app did not consider this part\"]]", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"reason\"", "context": "return [\"absent\": [\"reason\": \"the app did not consider this part\"]]", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"present\"", "context": "if part.present { return \"present\" }", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
@@ -338,7 +339,6 @@
       {"literal": "\"reason\"", "context": "return [\"absent\": [\"reason\": part.absenceReason ?? \"not captured\"]]", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"frame\"", "context": "\"frame\": declared(frameFile),", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"trace\"", "context": "\"trace\": declared(traceFile),", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"log\"", "context": "\"log\": declared(logFile),", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"trace_kind\"", "context": "declarations[\"trace_kind\"] = \"native_view\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"native_view\"", "context": "declarations[\"trace_kind\"] = \"native_view\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"schema_version\"", "context": "\"schema_version\": schemaVersion,", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
@@ -374,7 +374,11 @@
       {"literal": "\"dump\"", "context": "\"dump\": dumpAbsent.map { [\"absent\": [\"reason\": $0]] as Any } ?? \"present\",", "reason": "Report bundle layout key or path, read by the account service, not interface copy.", "count": 1},
       {"literal": "\"absent\"", "context": "\"dump\": dumpAbsent.map { [\"absent\": [\"reason\": $0]] as Any } ?? \"present\",", "reason": "Report bundle layout key or path, read by the account service, not interface copy.", "count": 1},
       {"literal": "\"reason\"", "context": "\"dump\": dumpAbsent.map { [\"absent\": [\"reason\": $0]] as Any } ?? \"present\",", "reason": "Report bundle layout key or path, read by the account service, not interface copy.", "count": 1},
-      {"literal": "\"present\"", "context": "\"dump\": dumpAbsent.map { [\"absent\": [\"reason\": $0]] as Any } ?? \"present\",", "reason": "Report bundle layout key or path, read by the account service, not interface copy.", "count": 1}
+      {"literal": "\"present\"", "context": "\"dump\": dumpAbsent.map { [\"absent\": [\"reason\": $0]] as Any } ?? \"present\",", "reason": "Report bundle layout key or path, read by the account service, not interface copy.", "count": 1},
+      {"literal": "\"the runtime's log is in the dump, redacted\"", "context": "static let logAbsent = \"the runtime's log is in the dump, redacted\"", "reason": "Report bundle absence reason, read by the daemon tooling and never shown on the phone.", "count": 1},
+      {"literal": "\"log\"", "context": "\"log\": [\"absent\": [\"reason\": logAbsent]],", "reason": "Report bundle layout key or path, read by the account service, not interface copy.", "count": 1},
+      {"literal": "\"absent\"", "context": "\"log\": [\"absent\": [\"reason\": logAbsent]],", "reason": "Report bundle layout key or path, read by the account service, not interface copy.", "count": 1},
+      {"literal": "\"reason\"", "context": "\"log\": [\"absent\": [\"reason\": logAbsent]],", "reason": "Report bundle layout key or path, read by the account service, not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/Runtime.swift": [
       {"literal": "\"amux.core\"", "context": "private let queue = DispatchQueue(label: \"amux.core\", qos: .userInitiated)", "reason": "Dispatch queue label for debugging tools, not app interface copy.", "count": 1},
@@ -390,7 +394,6 @@
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/RuntimeCoordinator.swift": [
       {"literal": "\"installation\"", "context": "support.appendingPathComponent(\"installation\", isDirectory: true)", "reason": "File or directory name on disk, not interface copy.", "count": 1},
-      {"literal": "\"installations\"", "context": "at: support.appendingPathComponent(\"installations\", isDirectory: true))", "reason": "File or directory name on disk, not interface copy.", "count": 1},
       {"literal": "\"runtime.log\"", "context": "forReadingFrom: directory.appendingPathComponent(\"runtime.log\"))", "reason": "File or directory name on disk, not interface copy.", "count": 1},
       {"literal": "\"runtime.log\"", "context": "logPath: directory.appendingPathComponent(\"runtime.log\").path,", "reason": "File or directory name on disk, not interface copy.", "count": 1}
     ],
@@ -552,21 +555,16 @@
       {"literal": "\"hosts.subtitle\"", "context": "LargeSubtitle(text: subtitle, identifier: \"hosts.subtitle\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"hosts.empty\"", "context": ".identified(\"hosts.empty\", value: \"No hosts yet\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"chevron.right\"", "context": "Image(systemName: \"chevron.right\")", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
-      {"literal": "\"server.rack\"", "context": "case \"Linux\": \"server.rack\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"pc\"", "context": "case \"Windows\": \"pc\"", "reason": "View metadata, driving state or asset identifier, not displayed copy.", "count": 1},
-      {"literal": "\"desktopcomputer\"", "context": "default: \"desktopcomputer\"", "reason": "View metadata, driving state or asset identifier, not displayed copy.", "count": 1},
-      {"literal": "\"Mac Studio\"", "context": "case \"Mac Studio\": \"desktopcomputer\"", "reason": "Protocol field, accessibility identifier, model value or SF Symbol; not interface copy.", "count": 1},
-      {"literal": "\"desktopcomputer\"", "context": "case \"Mac Studio\": \"desktopcomputer\"", "reason": "Protocol field, accessibility identifier, model value or SF Symbol; not interface copy.", "count": 1},
-      {"literal": "\"Mac mini\"", "context": "case \"Mac mini\": \"macmini\"", "reason": "Protocol field, accessibility identifier, model value or SF Symbol; not interface copy.", "count": 1},
-      {"literal": "\"macmini\"", "context": "case \"Mac mini\": \"macmini\"", "reason": "Protocol field, accessibility identifier, model value or SF Symbol; not interface copy.", "count": 1},
-      {"literal": "\"MacBook Air\"", "context": "case \"MacBook Air\": \"laptopcomputer\"", "reason": "Protocol field, accessibility identifier, model value or SF Symbol; not interface copy.", "count": 1},
-      {"literal": "\"laptopcomputer\"", "context": "case \"MacBook Air\": \"laptopcomputer\"", "reason": "Protocol field, accessibility identifier, model value or SF Symbol; not interface copy.", "count": 1},
       {"literal": "\"hosts.empty.howToPair\"", "context": ".identified(\"hosts.empty.howToPair\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"pair.\\(host.name)\"", "context": "id: \"pair.\\(host.name)\", glyph: \"plus.circle\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"plus.circle\"", "context": "id: \"pair.\\(host.name)\", glyph: \"plus.circle\",", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"hosts.pair.\\(key(host))\"", "context": "identifier: \"hosts.pair.\\(key(host))\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"hosts.row.\\(key(host))\"", "context": "\"hosts.row.\\(key(host))\", label: spoken(host), value: host.group.name)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"hosts.localNetwork\"", "context": "LocalNetworkRefused(heading: model.hosts.isEmpty, identifier: \"hosts.localNetwork\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"hosts.localNetwork\"", "context": "LocalNetworkRefused(heading: model.hosts.isEmpty, identifier: \"hosts.localNetwork\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"server.rack\"", "context": "case .linux: \"server.rack\"", "reason": "SF Symbol name, not interface copy.", "count": 1},
+      {"literal": "\"pc\"", "context": "case .windows: \"pc\"", "reason": "SF Symbol name, not interface copy.", "count": 1},
+      {"literal": "\"iphone\"", "context": "case .ios: \"iphone\"", "reason": "SF Symbol name, not interface copy.", "count": 1},
+      {"literal": "\"desktopcomputer\"", "context": "case .macos, .unspecified, nil: \"desktopcomputer\"", "reason": "SF Symbol name, not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift": [
       {"literal": "\"new-agent\"", "context": ".identified(\"new-agent\", value: model.directory)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
@@ -675,6 +673,8 @@
       {"literal": "\"root\"", "context": "} else if path.hasPrefix(\"/\"), parts.first == \"root\" {", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"~\"", "context": "} else if parts.first == \"~\" {", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"~\"", "context": "guard let last = parts.last else { return \"~\" }", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
+      {"literal": "\"~\"", "context": "return parts.isEmpty ? \"~\" : root + parts.joined(separator: \"/\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
+      {"literal": "\"/\"", "context": "return parts.isEmpty ? \"~\" : root + parts.joined(separator: \"/\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\".\"", "context": "if part.hasPrefix(\".\"), part.count > 1 { return String(part.prefix(2)) }", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"/\"", "context": "return root + (parents + [last]).joined(separator: \"/\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"~\"", "context": "return parts.isEmpty ? \"~\" : root + parts.joined(separator: \"/\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
@@ -898,6 +898,8 @@
       {"literal": "\"error\"", "context": "try fields.encode(\"error\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"amux-door-ready\"", "context": "public static let readyArgument = \"amux-door-ready\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"amux-door-port\"", "context": "public static let portArgument = \"amux-door-port\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"amux-door-bind\"", "context": "public static let bindArgument = \"amux-door-bind\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"amux-fresh-start\"", "context": "public static let freshStartArgument = \"amux-fresh-start\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"amux-relay\"", "context": "public static let relayArgument = \"amux-relay\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"amux-scripted-cloud\"", "context": "public static let scriptedCloudArgument = \"amux-scripted-cloud\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"amux-link\"", "context": "public static let linkArgument = \"amux-link\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
@@ -933,7 +935,10 @@
       {"literal": "\"holdBackground\"", "context": "try fields.encode(\"holdBackground\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"push\"", "context": "try fields.encode(\"push\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"awaitBackground\"", "context": "case \"awaitBackground\":", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"awaitBackground\"", "context": "try fields.encode(\"awaitBackground\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}
+      {"literal": "\"awaitBackground\"", "context": "try fields.encode(\"awaitBackground\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"condition\"", "context": "case \"condition\": self = .condition", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"condition\"", "context": "try fields.encode(\"condition\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 2},
+      {"literal": "\"condition\"", "context": "case \"condition\":", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxTestSupport/Sources/AmuxTestSupport/ScriptedCloud.swift": [
       {"literal": "\"scripted-connect-token\"", "context": "token: String? = \"scripted-connect-token\",", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
@@ -1187,15 +1192,6 @@
       {"literal": "\"hosts.\\(id)\"", "context": "ComponentExample(id: \"hosts.\\(id)\", family: .hosts, canvas: CGSize(width: 390, height: 844)) {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"host.\\(id)\"", "context": "ComponentExample(id: \"host.\\(id)\", family: .hosts, canvas: CGSize(width: 390, height: 844)) {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"0.8.0\"", "context": "candidate: Bool = false, addrs: [String] = [], version: String? = \"0.8.0\",", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"Mac Studio\"", "context": "static let deskHost = machine(1, \"desk\", platform: \"Mac Studio\", reach: .online(.direct), addrs: [\"192.168.1.20:4433\", \"[fe80::1c2b:9aff:fe31:7d10]:4433\"])", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"192.168.1.20:4433\"", "context": "static let deskHost = machine(1, \"desk\", platform: \"Mac Studio\", reach: .online(.direct), addrs: [\"192.168.1.20:4433\", \"[fe80::1c2b:9aff:fe31:7d10]:4433\"])", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"[fe80::1c2b:9aff:fe31:7d10]:4433\"", "context": "static let deskHost = machine(1, \"desk\", platform: \"Mac Studio\", reach: .online(.direct), addrs: [\"192.168.1.20:4433\", \"[fe80::1c2b:9aff:fe31:7d10]:4433\"])", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"old-laptop\"", "context": "static let oldLaptop = machine(6, \"old-laptop\", platform: \"MacBook Air\", reach: .offline(.revoked))", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"MacBook Air\"", "context": "static let oldLaptop = machine(6, \"old-laptop\", platform: \"MacBook Air\", reach: .offline(.revoked))", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"build-box\"", "context": "machine(2, \"build-box\", platform: \"Linux\", reach: .online(.relay)),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"mini\"", "context": "machine(3, \"mini\", platform: \"Mac mini\", reach: .away),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"Mac mini\"", "context": "machine(3, \"mini\", platform: \"Mac mini\", reach: .away),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"MacBook Air\"", "context": "machine(5, \"laptop\", platform: \"MacBook Air\", reach: .online(.direct), trusted: false, candidate: true, version: nil, providers: []),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"Ada’s iPhone\"", "context": "identity: Identity(hostId: Array(repeating: 9, count: 16), name: \"Ada’s iPhone\", fingerprint: fingerprint(9)),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"%02x\"", "context": "(0..<32).map { String(format: \"%02x\", UInt8(truncatingIfNeeded: Int(seed) &* 37 &+ $0 &* 11)) }.joined()", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"typing\"", "context": "code(\"typing\") { $0.enter(\"418\") },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1213,8 +1209,6 @@
       {"literal": "\"pair.needs-account\"", "context": "ComponentExample(id: \"pair.needs-account\", family: .pairing, canvas: CGSize(width: 390, height: 844)) {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"pair.code-\\(id)\"", "context": "id: \"pair.code-\\(id)\", family: .pairing, canvas: CGSize(width: 390, height: 844), settlesLate: true", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"pair.\\(id)\"", "context": "ComponentExample(id: \"pair.\\(id)\", family: .pairing, canvas: CGSize(width: 390, height: 844)) {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"MacBook Air\"", "context": "static let nearbyLaptop = machine(5, \"laptop\", platform: \"MacBook Air\", reach: .online(.direct), trusted: false, candidate: true, version: nil, providers: [])", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"MacBook Air\"", "context": "static let relayLaptop = machine(5, \"laptop\", platform: \"MacBook Air\", reach: .online(.relay), trusted: false, candidate: true, version: nil, providers: [])", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"host_id\"", "context": "\"host_id\": nearbyLaptop.hostId.map(Int.init), \"name\": nearbyLaptop.name,", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"name\"", "context": "\"host_id\": nearbyLaptop.hostId.map(Int.init), \"name\": nearbyLaptop.name,", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"two-accounts\"", "context": "sheet(\"two-accounts\") { StoryApp(settingsOpen: true) { StoryFleet.busy(accounts: 2) }.settings },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1264,7 +1258,12 @@
       {"literal": "\"No agents yet · 3 hosts\"", "context": "Text(\"No agents yet · 3 hosts\")", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"fix-flaky-ci\"", "context": "ForEach([\"fix-flaky-ci\", \"relay-backoff\", \"docs-pass\"], id: \\.self) { name in", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"relay-backoff\"", "context": "ForEach([\"fix-flaky-ci\", \"relay-backoff\", \"docs-pass\"], id: \\.self) { name in", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"desk · Working\"", "context": "Text(\"desk · Working\")", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1}
+      {"literal": "\"desk · Working\"", "context": "Text(\"desk · Working\")", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"192.168.1.20:4433\"", "context": "static let deskHost = machine(1, \"desk\", platform: .macos, reach: .online(.direct), addrs: [\"192.168.1.20:4433\", \"[fe80::1c2b:9aff:fe31:7d10]:4433\"])", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"[fe80::1c2b:9aff:fe31:7d10]:4433\"", "context": "static let deskHost = machine(1, \"desk\", platform: .macos, reach: .online(.direct), addrs: [\"192.168.1.20:4433\", \"[fe80::1c2b:9aff:fe31:7d10]:4433\"])", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"old-laptop\"", "context": "static let oldLaptop = machine(6, \"old-laptop\", platform: .macos, reach: .offline(.revoked))", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"build-box\"", "context": "machine(2, \"build-box\", platform: .linux, reach: .online(.relay)),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"mini\"", "context": "machine(3, \"mini\", platform: .macos, reach: .away),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1}
     ],
     "apps/apple/Amux/Debug/Stories.swift": [
       {"literal": "\"notifications-offer\"", "context": "fleet(\"notifications-offer\", offerNotifications: true) { StoryFleet.busy(nearby: false) },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1654,11 +1653,6 @@
       {"literal": "\"chat.overview.usage.\\(index).detail.volatile\"", "context": ".reported(\"chat.overview.usage.\\(index).detail.volatile\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.overview.usage.\\(index)\"", "context": "\"chat.overview.usage.\\(index)\", label: label, value: ChatWords.used(window))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
-    "apps/apple/Packages/AmuxCore/Sources/AmuxCore/Drafts.swift": [
-      {"literal": "\"amux/drafts\"", "context": ".appendingPathComponent(\"amux/drafts\", isDirectory: true)", "reason": "File or directory name on disk, not interface copy.", "count": 1},
-      {"literal": "\"\\(Self.hex(agent.host))-\\(Self.hex(agent.agent)).json\"", "context": "folder.appendingPathComponent(\"\\(Self.hex(agent.host))-\\(Self.hex(agent.agent)).json\")", "reason": "File or directory name on disk, not interface copy.", "count": 1},
-      {"literal": "\"%02x\"", "context": "bytes.map { String(format: \"%02x\", $0) }.joined()", "reason": "Format string for hex digits, not interface copy.", "count": 1}
-    ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift": [
       {"literal": "\"host.pairAgain\"", "context": ".identified(\"host.pairAgain\", label: String(localized: \"Pair Again\"))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"host.gone\"", "context": ".identified(\"host.gone\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1786,6 +1780,26 @@
       {"literal": "\"report.sending\"", "context": "#Preview(\"Report · sending\") { StoryScreen(\"report.sending\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"report.failed\"", "context": "#Preview(\"Report · not sent\") { StoryScreen(\"report.failed\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"report.sent\"", "context": "#Preview(\"Report · sent\") { StoryScreen(\"report.sent\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+    ],
+    "apps/apple/Packages/AmuxTestSupport/Sources/AmuxTestSupport/Instrumentation.swift": [
+      {"literal": "\"nominal\"", "context": "case .nominal: \"nominal\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"fair\"", "context": "case .fair: \"fair\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"serious\"", "context": "case .serious: \"serious\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"critical\"", "context": "case .critical: \"critical\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"unknown\"", "context": "@unknown default: \"unknown\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}
+    ],
+    "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Leaves/WorkingMotion.swift": [
+      {"literal": "\"init(coder:) is not used\"", "context": "required init?(coder: NSCoder) { fatalError(\"init(coder:) is not used\") }", "reason": "Programmer error for an initializer nothing calls, not displayed text.", "count": 1},
+      {"literal": "\"position.x\"", "context": "keyframes(\"position.x\", period: period, from: at) {", "reason": "Core Animation key path or animation key, not displayed text.", "count": 1},
+      {"literal": "\"bounds.size.width\"", "context": "keyframes(\"bounds.size.width\", period: period, from: at) {", "reason": "Core Animation key path or animation key, not displayed text.", "count": 1},
+      {"literal": "\"motion\"", "context": "forKey: \"motion\")", "reason": "Core Animation key path or animation key, not displayed text.", "count": 4},
+      {"literal": "\"transform.scale\"", "context": "keyframes(\"transform.scale\", period: period, from: at) {", "reason": "Core Animation key path or animation key, not displayed text.", "count": 1},
+      {"literal": "\"opacity\"", "context": "keyframes(\"opacity\", period: period, from: at) {", "reason": "Core Animation key path or animation key, not displayed text.", "count": 2},
+      {"literal": "\"position.y\"", "context": "keyframes(\"position.y\", period: period, from: at) {", "reason": "Core Animation key path or animation key, not displayed text.", "count": 1},
+      {"literal": "\"transform.rotation.z\"", "context": "let turn = CABasicAnimation(keyPath: \"transform.rotation.z\")", "reason": "Core Animation key path or animation key, not displayed text.", "count": 1},
+      {"literal": "\"motion\"", "context": "arc.add(clock.endless([turn], period: period, at: at, aligned: false), forKey: \"motion\")", "reason": "Core Animation key path or animation key, not displayed text.", "count": 1},
+      {"literal": "\"strokeStart\"", "context": "keyframes(\"strokeStart\", period: period, from: at) {", "reason": "Core Animation key path or animation key, not displayed text.", "count": 1},
+      {"literal": "\"strokeEnd\"", "context": "keyframes(\"strokeEnd\", period: period, from: at) {", "reason": "Core Animation key path or animation key, not displayed text.", "count": 1}
     ]
   }
 }

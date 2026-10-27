@@ -14,12 +14,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use node::{Daemon, JoinHook, Launch, ProfileRuntime, ServeError};
-use prost::{Message as _, Name as _};
 use support::synthetic::*;
 use support::*;
 use wire::{
-    AmbiguousAgentName, ErrorCode, FetchRequest, GetRequest, InventoryEvent, Lifecycle, Phase,
-    Presence, SessionEvent, Step, Trust, inventory_event, session_event,
+    AmbiguousAgentName, ErrorCode, GetItemRequest, InventoryEvent, Lifecycle, ListItemsRequest,
+    Phase, SessionEvent, Step, inventory_event, session_event,
 };
 
 const BIG_SEGMENTS: u64 = 1 << 20;
@@ -262,7 +261,10 @@ async fn cut_run(cut: Cut, at: usize) -> Held {
             at + 1
         }
         Cut::CommitFailsAtItemWrite | Cut::CommitFailsAtCursorWrite => {
-            let mut subscription = runtime.subscribe(agent.id.as_bytes(), 0).await.unwrap();
+            let mut subscription = runtime
+                .subscribe_session(agent.id.as_bytes(), 0)
+                .await
+                .unwrap();
             let mut opening = Vec::new();
             drain(&mut subscription, &mut opening, Duration::from_millis(20)).await;
             let before = held(&runtime, &agent, &install).await;
@@ -360,7 +362,10 @@ async fn torn_tails_are_never_read_whether_the_writer_lives_or_dies() {
         .unwrap();
     agent.go_live();
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
-    let mut subscription = runtime.subscribe(agent.id.as_bytes(), 10).await.unwrap();
+    let mut subscription = runtime
+        .subscribe_session(agent.id.as_bytes(), 10)
+        .await
+        .unwrap();
     let mut seen = Vec::new();
     drain(&mut subscription, &mut seen, Duration::from_millis(100)).await;
     assert_eq!(
@@ -400,7 +405,10 @@ async fn torn_tails_are_never_read_whether_the_writer_lives_or_dies() {
         .write_partial(&item("b", "two"), frame / 2)
         .unwrap();
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
-    let mut subscription = runtime.subscribe(agent.id.as_bytes(), 10).await.unwrap();
+    let mut subscription = runtime
+        .subscribe_session(agent.id.as_bytes(), 10)
+        .await
+        .unwrap();
     let mut seen = Vec::new();
     read_until(&mut subscription, &mut seen, "the opening", |seen| {
         caught_ups(seen) == 1
@@ -461,8 +469,14 @@ async fn a_lagging_subscriber_is_closed_with_lagged_and_ingest_never_waits() {
         ..quiet_launch()
     };
     let (daemon, runtime) = start(&install, "boot-1", launch).await;
-    let mut stalled = runtime.subscribe(agent.id.as_bytes(), 10).await.unwrap();
-    let mut keeping_up = runtime.subscribe(agent.id.as_bytes(), 10).await.unwrap();
+    let mut stalled = runtime
+        .subscribe_session(agent.id.as_bytes(), 10)
+        .await
+        .unwrap();
+    let mut keeping_up = runtime
+        .subscribe_session(agent.id.as_bytes(), 10)
+        .await
+        .unwrap();
     let mut kept = Vec::new();
     read_until(&mut keeping_up, &mut kept, "the opening", |seen| {
         seen.len() == 2
@@ -505,7 +519,10 @@ async fn a_lagging_subscriber_is_closed_with_lagged_and_ingest_never_waits() {
     );
 
     // Re-tailing through the ordinary path reads the store.
-    let mut again = runtime.subscribe(agent.id.as_bytes(), 3).await.unwrap();
+    let mut again = runtime
+        .subscribe_session(agent.id.as_bytes(), 3)
+        .await
+        .unwrap();
     let mut seen = Vec::new();
     read_until(&mut again, &mut seen, "the re-tail", |seen| {
         caught_ups(seen) == 1
@@ -588,7 +605,10 @@ async fn a_withdrawn_prompt_is_never_read_as_queued() {
     agent.register_offline(&install);
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
     write_and_ingest(&runtime, &mut agent, &[queued.clone(), withdrawn.clone()]).await;
-    let mut subscription = runtime.subscribe(agent.id.as_bytes(), 10).await.unwrap();
+    let mut subscription = runtime
+        .subscribe_session(agent.id.as_bytes(), 10)
+        .await
+        .unwrap();
     let mut seen = Vec::new();
     read_until(&mut subscription, &mut seen, "the opening", |seen| {
         caught_ups(seen) == 1
@@ -611,7 +631,10 @@ async fn a_withdrawn_prompt_is_never_read_as_queued() {
     write_and_ingest(&runtime, &mut agent, &[queued]).await;
     agent.append(&withdrawn);
     ingest_between_join_and_cut(&runtime, agent.id);
-    let mut subscription = runtime.subscribe(agent.id.as_bytes(), 10).await.unwrap();
+    let mut subscription = runtime
+        .subscribe_session(agent.id.as_bytes(), 10)
+        .await
+        .unwrap();
     runtime.set_join_hook(None);
     let mut seen = Vec::new();
     read_until(&mut subscription, &mut seen, "the withdrawal", |seen| {
@@ -738,7 +761,7 @@ fn lose_power(install: &Install, checkpointed: &[u8]) {
     }
 }
 
-async fn host_generation(runtime: &ProfileRuntime) -> (u64, i32, i32) {
+async fn host_generation(runtime: &ProfileRuntime) -> (u64, Option<wire::RouteKind>) {
     let mut inventory = runtime.subscribe_inventory().await.unwrap();
     let mut seen = Vec::new();
     read_inventory_until(&mut inventory, &mut seen, "the host entry", |seen| {
@@ -746,7 +769,7 @@ async fn host_generation(runtime: &ProfileRuntime) -> (u64, i32, i32) {
     })
     .await;
     match &seen[0].of {
-        Some(inventory_event::Of::Host(host)) => (host.generation, host.trust, host.presence),
+        Some(inventory_event::Of::Host(host)) => (host.generation, host.online()),
         other => panic!("the inventory opens with this host, not {other:?}"),
     }
 }
@@ -790,7 +813,7 @@ async fn power_loss_bumps_the_generation_and_re_ingests_from_the_durable_cursor(
     );
     assert_eq!(
         host_generation(&runtime).await,
-        (2, Trust::Trusted as i32, Presence::Online as i32),
+        (2, Some(wire::RouteKind::Unspecified)),
         "this host's entry carries the new generation"
     );
     assert_eq!(
@@ -879,7 +902,10 @@ async fn a_journal_cut_below_a_durable_cursor_rewinds_it_and_re_derived_steps_co
         "revisions keep counting up from where they were"
     );
 
-    let mut subscription = runtime.subscribe(agent.id.as_bytes(), 10).await.unwrap();
+    let mut subscription = runtime
+        .subscribe_session(agent.id.as_bytes(), 10)
+        .await
+        .unwrap();
     let mut opening = Vec::new();
     read_until(&mut subscription, &mut opening, "the opening", |seen| {
         caught_ups(seen) == 1
@@ -919,6 +945,40 @@ async fn a_journal_cut_below_a_durable_cursor_rewinds_it_and_re_derived_steps_co
     crash(daemon, runtime).await;
 }
 
+/// A power cut can leave the journal's unsynced tail zero-filled at its full
+/// length rather than cut short: the cursor then sits exactly at the file's
+/// end, with nothing past it to read as torn.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_journal_zero_filled_up_to_a_durable_cursor_rewinds_it() {
+    let install = Install::new();
+    let mut agent = SyntheticAgent::new(&install, "zeroed", BIG_SEGMENTS);
+    agent.register_offline(&install);
+    let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
+    let offsets = write_and_ingest(&runtime, &mut agent, &steps()).await;
+    runtime.checkpoint().await.unwrap();
+    let before = held(&runtime, &agent, &install).await;
+    let journal = agent.dir.join(agent_dir::JOURNAL);
+    assert_eq!(before.cursor, offsets[7]);
+    assert_eq!(
+        journal::end(&journal).unwrap(),
+        offsets[7],
+        "the cursor is at the journal's end"
+    );
+    let checkpointed = checkpointed_store(&runtime, &install).await;
+    crash(daemon, runtime).await;
+    lose_power(&install, &checkpointed);
+    journal::synthetic::zero_from(&journal, offsets[5] + 3).unwrap();
+
+    let (daemon, runtime) = start(&install, "boot-2", quiet_launch()).await;
+    let after = held(&runtime, &agent, &install).await;
+    assert_eq!(
+        after.cursor, offsets[5],
+        "the cursor rewound to the journal's last whole frame"
+    );
+    assert_eq!(after.items, before.items, "nothing committed is lost");
+    crash(daemon, runtime).await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_batch_that_fails_on_a_later_frame_commits_and_broadcasts_none_of_it() {
     let install = Install::new();
@@ -927,7 +987,10 @@ async fn a_batch_that_fails_on_a_later_frame_commits_and_broadcasts_none_of_it()
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
     let steps = steps();
     write_and_ingest(&runtime, &mut agent, &steps[..1]).await;
-    let mut subscription = runtime.subscribe(agent.id.as_bytes(), 0).await.unwrap();
+    let mut subscription = runtime
+        .subscribe_session(agent.id.as_bytes(), 0)
+        .await
+        .unwrap();
     let mut opening = Vec::new();
     drain(&mut subscription, &mut opening, Duration::from_millis(20)).await;
     let before = held(&runtime, &agent, &install).await;
@@ -1021,7 +1084,10 @@ async fn the_sweep_ingests_a_finished_childs_journal_before_marking_it_exited() 
         })],
         "one finished delivery and no failed one"
     );
-    let mut subscription = runtime.subscribe(child.id.as_bytes(), 10).await.unwrap();
+    let mut subscription = runtime
+        .subscribe_session(child.id.as_bytes(), 10)
+        .await
+        .unwrap();
     let mut opening = Vec::new();
     read_until(&mut subscription, &mut opening, "the opening", |seen| {
         caught_ups(seen) == 1
@@ -1068,12 +1134,12 @@ async fn fetch_and_get_are_store_reads() {
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
     write_and_ingest(&runtime, &mut agent, &steps()).await;
     let id = agent.id.as_bytes().to_vec();
-    let fetch = |before_order: Option<u64>, limit: u32| FetchRequest {
+    let fetch = |before_order: Option<u64>, limit: u32| ListItemsRequest {
         agent_id: id.clone(),
         before_order,
-        limit,
+        page_size: limit,
     };
-    let keys = |response: &wire::FetchResponse| {
+    let keys = |response: &wire::ListItemsResponse| {
         response
             .items
             .iter()
@@ -1081,21 +1147,21 @@ async fn fetch_and_get_are_store_reads() {
             .collect::<Vec<_>>()
     };
 
-    let newest = runtime.fetch(&fetch(None, 2)).await.unwrap();
+    let newest = runtime.list_items(&fetch(None, 2)).await.unwrap();
     assert_eq!(
         (keys(&newest), newest.exhausted),
         (vec!["d".into(), "c".into()], false)
     );
-    let older = runtime.fetch(&fetch(Some(3), 2)).await.unwrap();
+    let older = runtime.list_items(&fetch(Some(3), 2)).await.unwrap();
     assert_eq!(
         (keys(&older), older.exhausted),
         (vec!["b".into(), "a".into()], false)
     );
-    let oldest = runtime.fetch(&fetch(Some(1), 2)).await.unwrap();
+    let oldest = runtime.list_items(&fetch(Some(1), 2)).await.unwrap();
     assert_eq!((keys(&oldest), oldest.exhausted), (vec![], true));
 
     let item = runtime
-        .get(&GetRequest {
+        .get_item(&GetItemRequest {
             agent_id: id.clone(),
             key: "b".into(),
         })
@@ -1106,7 +1172,7 @@ async fn fetch_and_get_are_store_reads() {
         (2, 6, "two, again")
     );
     let missing = runtime
-        .get(&GetRequest {
+        .get_item(&GetItemRequest {
             agent_id: id.clone(),
             key: "zz".into(),
         })
@@ -1115,10 +1181,10 @@ async fn fetch_and_get_are_store_reads() {
     assert!(matches!(missing, ServeError::NoItem(_)));
     assert_eq!(missing.to_wire().code, ErrorCode::NotFound as i32);
     let nobody = runtime
-        .fetch(&FetchRequest {
+        .list_items(&ListItemsRequest {
             agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
             before_order: None,
-            limit: 5,
+            page_size: 5,
         })
         .await
         .unwrap_err();
@@ -1129,10 +1195,9 @@ async fn fetch_and_get_are_store_reads() {
 fn describe_inventory(event: &InventoryEvent) -> String {
     match event.of.as_ref().expect("an event") {
         inventory_event::Of::Host(host) => format!(
-            "host generation={} trust={:?} presence={:?}",
+            "host generation={} online={}",
             host.generation,
-            Trust::try_from(host.trust).unwrap(),
-            Presence::try_from(host.presence).unwrap()
+            host.online().is_some()
         ),
         inventory_event::Of::HostRemoved(_) => "host removed".into(),
         inventory_event::Of::Agent(agent) => format!(
@@ -1194,7 +1259,7 @@ async fn the_inventory_streams_hosts_and_rows_then_caught_up_then_deltas() {
     assert_eq!(
         described,
         vec![
-            "host generation=1 trust=Trusted presence=Online",
+            "host generation=1 online=true",
             "agent alpha Exited Starting working_on=None",
             "caught_up",
             "agent beta Exited Starting working_on=None",
@@ -1238,7 +1303,7 @@ async fn a_lagging_inventory_subscriber_is_told_it_lagged() {
     assert_eq!(
         described,
         vec![
-            "host generation=1 trust=Trusted presence=Online",
+            "host generation=1 online=true",
             "agent alpha Exited Starting working_on=None",
             "caught_up",
             "lagged",
@@ -1271,8 +1336,9 @@ async fn resolve_agent_finds_one_name_or_says_why_not() {
     let error = ambiguous.to_wire();
     assert_eq!(error.code, ErrorCode::FailedPrecondition as i32);
     assert_eq!(error.details.len(), 1);
-    assert_eq!(error.details[0].r#type, AmbiguousAgentName::full_name());
-    let detail = AmbiguousAgentName::decode(error.details[0].value.as_slice()).unwrap();
+    let detail = error
+        .detail::<AmbiguousAgentName>()
+        .expect("the candidates");
     let mut candidates: Vec<_> = detail
         .candidates
         .iter()
@@ -1334,7 +1400,7 @@ async fn table(runtime: &ProfileRuntime, named: &Named) -> Vec<String> {
         } else {
             "exited"
         };
-        let activity = match row.last_activity_ms {
+        let activity = match row.last_activity_ms() {
             Some(at) if at < 1_000_000 => format!("t={at}"),
             Some(_) => "recent".to_owned(),
             None => "-".to_owned(),
@@ -1562,9 +1628,11 @@ async fn retention_sweep() {
                     host_id: runtime.host().as_bytes().to_vec(),
                     agent_id: child.as_bytes().to_vec(),
                 }),
-                text: "one more thing".into(),
                 context: None,
-                attachments: Vec::new(),
+                body: Some(wire::MessageBody {
+                    text: "one more thing".into(),
+                    attachments: Vec::new(),
+                }),
             },
             Some(parent),
         )
@@ -1613,7 +1681,10 @@ async fn a_backlog_is_committed_in_batches_and_caught_up_once_at_its_end() {
     agent.append(&item("first", "row"));
     agent.go_live();
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
-    let mut subscription = runtime.subscribe(agent.id.as_bytes(), 0).await.unwrap();
+    let mut subscription = runtime
+        .subscribe_session(agent.id.as_bytes(), 0)
+        .await
+        .unwrap();
     let mut seen = Vec::new();
     read_until(&mut subscription, &mut seen, "the opening", |seen| {
         caught_ups(seen) == 1
@@ -1704,25 +1775,16 @@ async fn every_input_is_recorded_and_the_ring_starts_again_at_each_checkpoint() 
 
     runtime.checkpoint().await.unwrap();
     let after = saved();
-    assert_eq!(
-        after.checkpoint,
-        std::fs::read(install.profile_dir().join(node::CORE_CHECKPOINT)).unwrap(),
-        "the ring starts again at the checkpoint on the drive"
-    );
+    daemon_core::Checkpoint::from_bytes(&after.checkpoint)
+        .expect("the ring starts again at a checkpoint that reads");
     assert_eq!(
         nudges(&after.inputs),
         0,
         "what the checkpoint holds is not replayed"
     );
     assert!(
-        matches!(
-            after.inputs.last(),
-            Some(daemon_core::Input::JobDone {
-                result: daemon_core::payload::JobResult::Done,
-                ..
-            })
-        ),
-        "the checkpoint's own outcome is the first input it does not hold: {:?}",
+        matches!(after.inputs.last(), Some(daemon_core::Input::Checkpointed)),
+        "the driver's word that the ring started here is the first input the checkpoint does not hold: {:?}",
         after.inputs
     );
 
@@ -1771,7 +1833,10 @@ async fn a_subscribes_opening_reaches_its_reader_whole() {
     let (daemon, runtime) = start(&install, "boot-1", launch).await;
     runtime.ingest(agent.id).await.unwrap();
     for opening in 0..20 {
-        let mut subscription = runtime.subscribe(agent.id.as_bytes(), ROWS).await.unwrap();
+        let mut subscription = runtime
+            .subscribe_session(agent.id.as_bytes(), ROWS)
+            .await
+            .unwrap();
         let mut seen = Vec::new();
         while let Some(Some(event)) = subscription.next().now_or_never() {
             seen.push((*event).clone());

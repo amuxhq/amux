@@ -58,6 +58,41 @@ impl Binaries {
         })
     }
 
+    /// The binaries a journey driver hands down to the net it serves,
+    /// found before it starts one: in the directory [`PREBUILT_ENV`] names,
+    /// else beside the driver, where its recipe built `amux` and the fakes
+    /// in the same cargo invocation as the driver, so their features match.
+    /// A served net left to find them itself would build them alone,
+    /// unifying features otherwise and rebuilding much of the workspace
+    /// before it is ready; a binary missing here is an error at once.
+    pub fn for_driver() -> Result<Binaries, String> {
+        let dir = match std::env::var_os(PREBUILT_ENV) {
+            Some(dir) => PathBuf::from(dir),
+            None => std::env::current_exe()
+                .map_err(|error| format!("this driver's path: {error}"))?
+                .parent()
+                .ok_or("this driver has no directory")?
+                .to_owned(),
+        };
+        let binaries = Binaries { dir };
+        let missing: Vec<String> = std::iter::once(binaries.amux())
+            .chain(
+                [FakeKind::ClaudePty, FakeKind::ClaudeSdk, FakeKind::Codex]
+                    .map(|kind| binaries.fake(kind)),
+            )
+            .filter(|binary| !binary.is_file())
+            .map(|binary| binary.display().to_string())
+            .collect();
+        if missing.is_empty() {
+            Ok(binaries)
+        } else {
+            Err(format!(
+                "{} not built: build amux and provider-fakes in the cargo invocation that builds testnet",
+                missing.join(", ")
+            ))
+        }
+    }
+
     pub fn dir(&self) -> &Path {
         &self.dir
     }

@@ -356,7 +356,9 @@ impl Machine for Replication {
             .commit(&agent(), &[(1, first)], CLOCK)
             .expect("the origin commits");
         origin.set_marker(&agent(), Some(Marker::CaughtUp));
-        let replica = Sqlite::open_in_memory(REPLICA.0).expect("a replica opens");
+        TrustStore::of_hosts([REPLICA]).write_for_test(&mut origin);
+        let mut replica = Sqlite::open_in_memory(REPLICA.0).expect("a replica opens");
+        TrustStore::of_hosts([ORIGIN]).write_for_test(&mut replica);
         let (origin, _) = Held::of(Daemon::new(origin, options(1)));
         let (replica, _) = Held::of(Daemon::new(replica, options(1)));
         let mut s = State {
@@ -388,12 +390,10 @@ impl Machine for Replication {
                 next: &mut s,
             };
             t.origin(Input::Configure(self.settings()));
-            t.origin_trusts();
+            t.origin(Input::Started);
             t.resumed();
             t.replica(Input::Configure(self.settings()));
-            t.replica(Input::TrustRead {
-                store: daemon_core::trust::TrustStore::of_hosts(vec![ORIGIN]),
-            });
+            t.replica(Input::Started);
             t.replica(Input::LinkUp {
                 link: LINK,
                 peer: ORIGIN,
@@ -617,7 +617,7 @@ impl Transition<'_> {
                     Daemon::new(store, options(generation))
                 });
                 self.origin(Input::Configure(self.model.settings()));
-                self.origin_trusts();
+                self.origin(Input::Started);
                 // The replica's driver resumes the link the reboot dropped,
                 // and what it asks next rides it as early data.
                 self.next.accepted = false;
@@ -657,14 +657,15 @@ impl Transition<'_> {
                     unreachable!("answered without an ask")
                 };
                 let call = *call;
-                let request = wire::PeerSubscribeRequest::decode(request.as_slice())
+                let request = wire::PeerSubscribeSessionRequest::decode(request.as_slice())
                     .expect("a request decodes");
                 self.next.link = Link::Open {
                     call,
                     queue: Vec::new(),
                     live: true,
                 };
-                let answered = self.serve(ORIGIN_LINK, call, PeerRequest::Subscribe(request));
+                let answered =
+                    self.serve(ORIGIN_LINK, call, PeerRequest::SubscribeSession(request));
                 let (events, ended) = answers_to(call, &answered);
                 let Link::Open { queue, live, .. } = &mut self.next.link else {
                     unreachable!("the stream was just opened")
@@ -712,7 +713,7 @@ impl Transition<'_> {
                 let (call, page) = self.next.page.take().expect("a page in flight");
                 let answer = match page {
                     Some(page) => Answer::Reply(Box::new(PeerReply::Fetched(
-                        wire::FetchResponse::decode(page.as_slice()).expect("a page decodes"),
+                        wire::ListItemsResponse::decode(page.as_slice()).expect("a page decodes"),
                     ))),
                     None => Answer::Failed(PeerFailure::Uncertain),
                 };
@@ -809,16 +810,16 @@ impl Transition<'_> {
         };
         let asked = self.replica(Input::ClientCall {
             call: CLIENT,
-            request: ClientRequest::Fetch(wire::FetchRequest {
+            request: ClientRequest::ListItems(wire::ListItemsRequest {
                 agent_id: AGENT.0.to_vec(),
                 before_order: Some(floor),
-                limit: self.model.cap,
+                page_size: self.model.cap,
             }),
         });
         let Some((made, request)) = asked.into_iter().find_map(|output| match output {
             Output::Call {
                 call,
-                request: request @ PeerRequest::Fetch(_),
+                request: request @ PeerRequest::ListItems(_),
                 ..
             } => Some((call, request)),
             _ => None,
@@ -892,13 +893,6 @@ impl Transition<'_> {
         out
     }
 
-    /// The origin's driver reads its trust store, which pins the replica.
-    fn origin_trusts(&mut self) {
-        self.origin(Input::TrustRead {
-            store: TrustStore::of_hosts([REPLICA]),
-        });
-    }
-
     /// The origin's driver reports the replica's resumed link, its ticket
     /// naming the key the origin pinned for the replica.
     fn resumed(&mut self) {
@@ -913,8 +907,8 @@ impl Transition<'_> {
         let Link::Asked { request, .. } = &self.next.link else {
             unreachable!("only an opening in flight is replayed")
         };
-        let request =
-            wire::PeerSubscribeRequest::decode(request.as_slice()).expect("a request decodes");
+        let request = wire::PeerSubscribeSessionRequest::decode(request.as_slice())
+            .expect("a request decodes");
         self.next.replays += 1;
         let before = (
             self.next.origin.store.clone(),
@@ -923,7 +917,11 @@ impl Transition<'_> {
         );
         let out = self.origin(resumed_up(REPLAY_LINK));
         if !out.contains(&Output::RefuseResumed { link: REPLAY_LINK }) {
-            self.serve(REPLAY_LINK, REPLAYED, PeerRequest::Subscribe(request));
+            self.serve(
+                REPLAY_LINK,
+                REPLAYED,
+                PeerRequest::SubscribeSession(request),
+            );
             self.origin(Input::CallCancelled { call: REPLAYED });
         }
         self.origin(Input::LinkDown {
@@ -957,7 +955,7 @@ impl Transition<'_> {
             match output {
                 Output::Call {
                     call,
-                    request: PeerRequest::Subscribe(request),
+                    request: PeerRequest::SubscribeSession(request),
                     ..
                 } => {
                     if let Some(old) = self.next.link.call() {
@@ -1138,7 +1136,7 @@ impl fmt::Debug for State {
                     "page",
                     &self.page.as_ref().map(|(_, page)| {
                         page.as_ref().map(|page| {
-                            let page = wire::FetchResponse::decode(page.as_slice())
+                            let page = wire::ListItemsResponse::decode(page.as_slice())
                                 .expect("a page decodes");
                             page.items.iter().map(row).collect::<Vec<_>>()
                         })

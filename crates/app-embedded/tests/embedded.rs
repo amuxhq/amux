@@ -107,7 +107,7 @@ async fn app(embedded: &EmbeddedRuntime, profile: ProfileId) -> AppRuntime {
 
 /// The one profile a fresh installation has.
 async fn only_profile(embedded: &EmbeddedRuntime) -> ProfileId {
-    let profiles = embedded.profiles().await.unwrap();
+    let profiles = embedded.profiles().unwrap();
     assert_eq!(profiles.len(), 1, "{profiles:?}");
     profiles[0].id.parse().unwrap()
 }
@@ -145,7 +145,7 @@ async fn converse(app: &AppRuntime, net: &Net) {
     let chat = app.open_chat(&agent, 50).await.unwrap();
     let says = |wanted: &str| {
         let keys = chat.keys();
-        chat.rows_for(&keys, &Default::default())
+        chat.rows_for(&keys)
             .iter()
             .any(|row| format!("{:?}", row.kind).contains(wanted))
     };
@@ -159,13 +159,11 @@ async fn converse(app: &AppRuntime, net: &Net) {
 
 /// Opens pairing mode on the desk: the PIN it shows and where it listens.
 async fn pairing_pin(net: &Net) -> (String, Vec<String>) {
-    let desk = net.host("desk").unwrap();
     let started = net
-        .front_door("desk")
+        .admin("desk")
         .await
         .unwrap()
         .start_pairing(StartPairingRequest {
-            profile_id: desk.profile.as_bytes().to_vec(),
             method: Some(start_pairing_request::Method::Pin(Empty {})),
             ttl_seconds: None,
         })
@@ -240,15 +238,15 @@ async fn a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows() {
         .parse()
         .unwrap();
     assert_eq!(
-        embedded.trusting(desk.host_id.as_bytes()).await.unwrap(),
+        embedded.trusting(desk.host_id.as_bytes()).unwrap(),
         vec![phone]
     );
-    assert!(embedded.trusting(&[7; 16]).await.unwrap().is_empty());
+    assert!(embedded.trusting(&[7; 16]).unwrap().is_empty());
     assert_ne!(
         embedded.host_id(other).unwrap(),
         embedded.host_id(phone).unwrap()
     );
-    assert!(embedded.roster(other).await.unwrap().peers.is_empty());
+    assert!(embedded.roster(other).unwrap().peers.is_empty());
     // Two profiles of one installation pair like any two hosts; each
     // trusts the other and nobody else.
     let link = embedded.offer_pairing(other).await.unwrap();
@@ -257,16 +255,15 @@ async fn a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows() {
         .await
         .unwrap();
     let other_host = embedded.host_id(other).unwrap();
-    assert_eq!(embedded.trusting(&other_host).await.unwrap(), vec![phone]);
+    assert_eq!(embedded.trusting(&other_host).unwrap(), vec![phone]);
     assert_eq!(
         embedded
             .trusting(&embedded.host_id(phone).unwrap())
-            .await
             .unwrap(),
         vec![other]
     );
     embedded.delete_profile(other).await.unwrap();
-    assert_eq!(embedded.profiles().await.unwrap().len(), 1);
+    assert_eq!(embedded.profiles().unwrap().len(), 1);
 
     let app = app(&embedded, phone).await;
     converse(&app, &net).await;
@@ -294,7 +291,7 @@ async fn a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows() {
     chat.send(&Draft::words("still there?")).await;
     eventually(&app, "the desk's answer after the return", || {
         let keys = chat.keys();
-        chat.rows_for(&keys, &Default::default())
+        chat.rows_for(&keys)
             .iter()
             .any(|row| format!("{:?}", row.kind).contains("answered after the phone came back"))
     })
@@ -303,16 +300,13 @@ async fn a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows() {
 
     // In the background only the chats asked for keep a source.
     assert_eq!(embedded.source_policy(phone).unwrap(), SourcePolicy::Listed);
-    embedded
-        .set_source_policy(phone, SourcePolicy::OnDemand)
-        .unwrap();
+    embedded.list_sources(None);
     assert_eq!(
         embedded.source_policy(phone).unwrap(),
         SourcePolicy::OnDemand
     );
-    embedded
-        .set_source_policy(phone, SourcePolicy::Listed)
-        .unwrap();
+    embedded.list_sources(Some(phone));
+    assert_eq!(embedded.source_policy(phone).unwrap(), SourcePolicy::Listed);
 
     embedded
         .unpair(phone, desk.host_id.as_bytes())
@@ -436,7 +430,7 @@ async fn a_phone_links_to_its_desk_again_once_its_browser_finds_the_desk_back() 
 /// Waits until a profile's relay link says `wanted`.
 async fn relay_link(embedded: &EmbeddedRuntime, profile: ProfileId, wanted: RelayLink) {
     until(&format!("the relay link to say {wanted:?}"), || async {
-        let relay = embedded.account(profile).await.unwrap().relay;
+        let relay = embedded.account(profile).unwrap().relay;
         (relay == wanted)
             .then_some(())
             .ok_or_else(|| format!("relay link {relay:?}"))
@@ -470,7 +464,7 @@ async fn each_account_is_a_profile_and_only_the_resumed_one_holds_a_relay_link()
     )
     .await
     .unwrap();
-    let mut events = embedded.watch_profiles().await.unwrap();
+    let mut events = embedded.subscribe_profiles().unwrap();
     let ada = only_profile(&embedded).await;
     embedded
         .bind(Some(ada), relay.url(), "mobile", &Relay::login("ada"))
@@ -500,16 +494,8 @@ async fn each_account_is_a_profile_and_only_the_resumed_one_holds_a_relay_link()
     .expect("the watch announced bob's profile");
     relay_link(&embedded, bob, RelayLink::Connected).await;
 
-    // Pausing ada leaves bob's the only relay link; resuming brings it back.
-    let paused = embedded.pause(ada).await.unwrap();
-    assert_eq!(paused.account.binding, AccountBinding::Paused);
-    relay_link(&embedded, ada, RelayLink::Off).await;
-    assert_eq!(
-        embedded.account(bob).await.unwrap().relay,
-        RelayLink::Connected
-    );
-    embedded.resume(ada).await.unwrap();
-    relay_link(&embedded, ada, RelayLink::Connected).await;
+    // Both accounts' relay links stay up together.
+    assert_eq!(embedded.account(ada).unwrap().relay, RelayLink::Connected);
 
     // Signing out keeps the profile tied to its account, and signing back
     // in finds it again.
@@ -517,18 +503,18 @@ async fn each_account_is_a_profile_and_only_the_resumed_one_holds_a_relay_link()
     assert_eq!(out.account.binding, AccountBinding::SignedOut);
     assert_eq!(out.subject, "bob");
     assert_eq!(out.account.email, "bob@example.com");
-    // A signed-out profile has no relay link to pause.
+    // A signed-out profile has no relay link.
     relay_link(&embedded, bob, RelayLink::Off).await;
     let again = embedded
         .bind(None, relay.url(), "mobile", &Relay::login("bob"))
         .await
         .unwrap();
     assert_eq!(again.id, bob.to_string());
-    assert_eq!(embedded.profiles().await.unwrap().len(), 2);
+    assert_eq!(embedded.profiles().unwrap().len(), 2);
 
     // Removing an account deletes its profile.
     embedded.delete_profile(bob).await.unwrap();
-    let left = embedded.profiles().await.unwrap();
+    let left = embedded.profiles().unwrap();
     assert_eq!(left.len(), 1);
     assert_eq!(left[0].subject, "ada");
 
@@ -581,7 +567,7 @@ async fn a_phone_signed_in_to_the_account_reaches_its_hosts_over_the_relay() {
     );
     // The token refreshes as the client that obtained it.
     assert_eq!(relay.refreshed_as()[before..], ["mobile"]);
-    let account = embedded.account(phone).await.unwrap();
+    let account = embedded.account(phone).unwrap();
     assert_eq!(account.binding, AccountBinding::SignedIn);
     assert_eq!(account.email, "ada@example.com");
     assert_eq!(
@@ -589,15 +575,15 @@ async fn a_phone_signed_in_to_the_account_reaches_its_hosts_over_the_relay() {
         "access-ada"
     );
     relay_link(&embedded, phone, RelayLink::Connected).await;
-    assert_eq!(embedded.account(phone).await.unwrap().pro, Some(true));
+    assert_eq!(embedded.account(phone).unwrap().pro, Some(true));
     // What the account buys changes (a purchase, or here a lapse) and the
     // phone asks at once rather than waiting for the link's next refresh.
     relay.set_tier("ada", node::harness::Tier::Free);
     embedded.refresh_entitlement(phone).await.unwrap();
-    assert_eq!(embedded.account(phone).await.unwrap().pro, Some(false));
+    assert_eq!(embedded.account(phone).unwrap().pro, Some(false));
     relay.set_tier("ada", node::harness::Tier::Pro);
     embedded.refresh_entitlement(phone).await.unwrap();
-    assert_eq!(embedded.account(phone).await.unwrap().pro, Some(true));
+    assert_eq!(embedded.account(phone).unwrap().pro, Some(true));
     // The account lists its hosts; pairing is what makes one trusted. The
     // desk listens on no local network: the pairing goes over the relay.
     let (pin, _) = pairing_pin(&net).await;
@@ -701,7 +687,7 @@ async fn shown(app: &AppRuntime, agent: &AgentKey) -> (FleetCard, Vec<String>) {
     let chat = app.open_chat(agent, 50).await.unwrap();
     let rows = || {
         let keys = chat.keys();
-        chat.rows_for(&keys, &Default::default())
+        chat.rows_for(&keys)
             .iter()
             .map(|row| format!("{:?}", row.kind))
             .collect::<Vec<_>>()
@@ -765,19 +751,28 @@ async fn a_phone_relaunched_after_a_suspend_shows_the_fleet_and_chat_it_left() {
     .await;
     let before = shown(&first, &agent).await;
 
-    // The app is suspended, then the system ends it: the checkpoint is on
-    // the drive and nothing shuts the runtime down.
+    // The app is suspended, then the system ends it: the store's main
+    // file is at a checkpoint, the ring starts at it, and nothing shuts
+    // the runtime down.
     embedded.checkpoint().await.unwrap();
-    let checkpoint = dir
+    let ring = dir
         .path()
         .join("data")
         .join(node::PROFILES)
         .join(phone.to_string())
-        .join(node::CORE_CHECKPOINT);
+        .join(node::CORE_RING);
+    let checkpoints = std::fs::read_dir(&ring)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|entry| entry.file_name().to_string_lossy().ends_with(".checkpoint"))
+                .count()
+        })
+        .unwrap_or(0);
     assert!(
-        checkpoint.exists(),
-        "no checkpoint at {}",
-        checkpoint.display()
+        checkpoints > 0,
+        "no checkpoint heads a segment in {}",
+        ring.display()
     );
     drop(first);
     drop(embedded);

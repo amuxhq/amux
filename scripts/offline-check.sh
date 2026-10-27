@@ -1,5 +1,13 @@
 #!/bin/sh
 
+# Runs a command with no network but loopback, and with its own empty
+# configuration homes. The command runs in a network namespace of its own,
+# which holds nothing but a loopback interface, rather than under a rule
+# filter: a filter such as macOS's sandbox also refuses setuid programs and
+# misreads loopback addresses, so tests failed there for reasons that had
+# nothing to do with the network. Creating the namespace takes root, so the
+# command runs through sudo and then drops back to the calling user.
+
 set -eu
 
 if [ "$#" -eq 0 ]; then
@@ -7,8 +15,8 @@ if [ "$#" -eq 0 ]; then
     exit 64
 fi
 
-if [ ! -x /usr/bin/sandbox-exec ]; then
-    echo "offline-check: /usr/bin/sandbox-exec is unavailable" >&2
+if [ "$(uname -s)" != Linux ]; then
+    echo "offline-check: needs Linux, for a network namespace" >&2
     exit 69
 fi
 
@@ -35,19 +43,7 @@ trap 'exit 1' HUP INT TERM
 offline_home="$offline_root/home"
 offline_claude_config="$offline_root/claude"
 offline_codex_home="$offline_root/codex"
-offline_profile="$offline_root/network.sb"
 mkdir -p "$offline_home" "$offline_claude_config" "$offline_codex_home"
-
-cat >"$offline_profile" <<'PROFILE'
-(version 1)
-(allow default)
-(deny network*)
-(allow network-outbound (remote unix-socket))
-(allow network-inbound (local unix-socket))
-(allow network-outbound (remote ip "localhost:*"))
-(allow network-inbound (local ip "localhost:*"))
-(allow network-bind (local ip "localhost:*"))
-PROFILE
 
 printf '%s\n' \
     "HOME=$offline_home" \
@@ -59,10 +55,19 @@ printf '%s\n' \
     "CARGO_NET_OFFLINE=true" \
     "AMUX_OFFLINE=1"
 
-run_sandboxed() {
-    /usr/bin/sandbox-exec -f "$offline_profile" \
+run_offline() {
+    # sudo keeps the caller's environment but resets PATH, which env sets
+    # again once the command runs as the caller.
+    sudo --preserve-env unshare --net -- /bin/sh -c '
+        ip link set lo up
+        user=$1 group=$2
+        shift 2
+        exec setpriv --reuid="$user" --regid="$group" --init-groups -- "$@"
+    ' sh "$(id -u)" "$(id -g)" \
         /usr/bin/env \
         HOME="$offline_home" \
+        USER="$(id -un)" \
+        LOGNAME="$(id -un)" \
         CLAUDE_CONFIG_DIR="$offline_claude_config" \
         CODEX_HOME="$offline_codex_home" \
         CARGO_HOME="$offline_cargo_home" \
@@ -73,9 +78,9 @@ run_sandboxed() {
         "$@"
 }
 
-if run_sandboxed /usr/bin/nc -z -w 1 1.1.1.1 443 >/dev/null 2>&1; then
-    echo "offline-check: refusing to run because the sandbox permits outbound TCP" >&2
+if run_offline nc -z -w 1 1.1.1.1 443 >/dev/null 2>&1; then
+    echo "offline-check: refusing to run because outbound TCP is reachable" >&2
     exit 70
 fi
 
-run_sandboxed "$@"
+run_offline "$@"

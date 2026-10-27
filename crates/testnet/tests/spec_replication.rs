@@ -22,9 +22,9 @@ use prost::Message as _;
 use provider_fakes::script::{Ask, Question, Step};
 use store::{AgentKey, CommitClock, Marker, PageEnd};
 use testnet::observe::{self, Mark, marks};
-use testnet::{AgentDecl, JournalCut, Net, NetOptions, PATIENCE, Topology, until};
-use wire::client_service_server::ClientService as _;
-use wire::{FetchRequest, InventoryEvent, Item, SessionEvent, inventory_event, session_event};
+use testnet::{AgentDecl, JournalCut, Net, NetOptions, PATIENCE, Topology, holds_for, until};
+use wire::session_service_server::SessionService as _;
+use wire::{InventoryEvent, Item, ListItemsRequest, SessionEvent, inventory_event, session_event};
 
 fn text(text: &str) -> Step {
     Step::Text {
@@ -160,14 +160,14 @@ async fn fetch(
     agent: &str,
     before_order: Option<u64>,
     limit: u32,
-) -> Result<wire::FetchResponse, node::ServeError> {
+) -> Result<wire::ListItemsResponse, node::ServeError> {
     let id = net.agent(agent).unwrap().id;
     net.runtime(host)
         .unwrap()
-        .fetch(&FetchRequest {
+        .list_items(&ListItemsRequest {
             agent_id: id.as_bytes().to_vec(),
             before_order,
-            limit,
+            page_size: limit,
         })
         .await
 }
@@ -184,7 +184,11 @@ async fn restore(net: &mut Net) {
 
 /// Waits until a source's first retry is armed on the policy clock, one
 /// backoff from now. Policy time stands still, so the deadline is exact;
-/// with it armed and unfired, nothing has reconnected early.
+/// with it armed and unfired, nothing has reconnected early. A host's
+/// driver sleeps only until its soonest timer, so a retry due after
+/// another is not seen here: this is for a loss that shows nothing else
+/// of the step arming the retry, which counts its backoff from then, so
+/// the clock must not move first.
 async fn backoff_armed(net: &Net) {
     let at = net.now_ms() + Launch::default().source_backoff_ms;
     tokio::time::timeout(PATIENCE, net.clock().unwrap().armed(at))
@@ -517,20 +521,27 @@ async fn a_stream_lost_with_the_link_up_detaches_through_the_backoff() {
     assert!(dropped.load(Ordering::SeqCst));
     let desk = net.host("desk").unwrap().host_id;
     assert!(laptop.host_ready(desk), "the host was never lost");
-    backoff_armed(&net).await;
-    assert_eq!(
-        stage(
-            "read the replica's marker",
-            replica_state(&net, "laptop", "worker")
-        )
-        .await
-        .unwrap()
-        .1,
-        Some(Marker::Detached),
-        "the marker reads Detached through the backoff"
-    );
+    // The step that published the Detached the chat saw armed the
+    // source's retry one backoff from then. Short of it the marker reads
+    // Detached; at it the source opens again.
+    let backoff = Duration::from_millis(Launch::default().source_backoff_ms as u64);
+    net.advance(backoff - Duration::from_millis(1)).unwrap();
+    stage(
+        "the marker through the backoff",
+        holds_for(
+            "the marker to read Detached through the backoff",
+            Duration::from_millis(500),
+            || async {
+                replica_state(&net, "laptop", "worker")
+                    .await
+                    .is_some_and(|(_, marker)| marker == Some(Marker::Detached))
+            },
+        ),
+    )
+    .await
+    .unwrap();
 
-    net.advance(Duration::from_secs(1)).unwrap();
+    net.advance(Duration::from_millis(1)).unwrap();
     chat.observe_until(
         |events| {
             since_last_detached(&events[seen..])
@@ -1067,7 +1078,7 @@ async fn an_exited_agent_settles_only_once_its_own_stream_has_passed_the_exit() 
 /// bytes under the replica, so the next read needs no link.
 #[tokio::test(flavor = "multi_thread")]
 async fn blobs_and_diffs_of_a_peers_agent_are_made_at_its_origin_and_kept_by_the_reader() {
-    use wire::client_service_server::ClientService as _;
+    use wire::agent_service_server::AgentService as _;
     let topology = desk_and_laptop().agent(
         AgentDecl::new("worker", "desk")
             .steps(turns(1, 1))
@@ -1125,7 +1136,7 @@ async fn blobs_and_diffs_of_a_peers_agent_are_made_at_its_origin_and_kept_by_the
         let agent_id = agent_id.clone();
         async move {
             laptop
-                .diff(tonic::Request::new(wire::DiffRequest {
+                .get_diff(tonic::Request::new(wire::GetDiffRequest {
                     agent_id,
                     base: Some(wire::DiffBase {
                         base: Some(wire::diff_base::Base::Head(wire::Empty {})),

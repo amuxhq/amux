@@ -26,6 +26,7 @@ dependencies = [
  "interpret",
  "journal",
  "libc",
+ "log-file",
  "patience",
  "prost",
  "provider-fakes",
@@ -47,6 +48,7 @@ dependencies = [
 name = "agent-core"
 version = "0.1.0"
 dependencies = [
+ "core-ring",
  "interpret",
  "serde_json",
  "wire",
@@ -94,7 +96,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "amux"
-version = "0.8.0"
+version = "0.8.2"
 dependencies = [
  "agent",
  "agent-dir",
@@ -114,6 +116,7 @@ dependencies = [
  "journal",
  "jsonwebtoken",
  "libc",
+ "log-file",
  "node",
  "patience",
  "prost",
@@ -123,13 +126,16 @@ dependencies = [
  "quinn",
  "rcgen",
  "release",
+ "semver",
  "serde",
+ "serde_ignored",
  "serde_json",
- "serde_yaml",
  "settings",
  "store",
  "tempfile",
  "tokio",
+ "toml 0.8.23",
+ "toml_edit",
  "tonic",
  "tower",
  "tracing",
@@ -229,6 +235,7 @@ dependencies = [
  "app-runtime",
  "client",
  "futures-util",
+ "log-file",
  "model",
  "node",
  "patience",
@@ -283,6 +290,7 @@ dependencies = [
  "testnet",
  "thiserror 2.0.20",
  "tokio",
+ "tracing",
  "ui-runtime",
  "ui-state",
  "ui-view",
@@ -1074,6 +1082,7 @@ name = "daemon-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "core-ring",
  "curve25519-dalek",
  "journal",
  "postcard",
@@ -1755,6 +1764,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hashlink"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32069d97bb81e38fa67eab65e3393bf804bb85969f2bc06bf13f64aef5aba248"
+dependencies = [
+ "hashbrown 0.17.1",
+]
+
+[[package]]
 name = "heapless"
 version = "0.7.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2144,6 +2162,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ios-tools"
+version = "0.1.0"
+dependencies = [
+ "app-runtime",
+ "model",
+ "png 0.17.16",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "ui-view",
+ "wire",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2321,6 +2354,14 @@ name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
+
+[[package]]
+name = "log-file"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "tempfile",
+]
 
 [[package]]
 name = "lru"
@@ -2530,7 +2571,7 @@ dependencies = [
 
 [[package]]
 name = "node"
-version = "0.8.0"
+version = "0.8.2"
 dependencies = [
  "agent-dir",
  "analytics",
@@ -2552,6 +2593,7 @@ dependencies = [
  "journal",
  "jsonwebtoken",
  "libc",
+ "log-file",
  "mdns-sd",
  "oauth2",
  "path-core",
@@ -3762,6 +3804,7 @@ dependencies = [
 name = "redaction"
 version = "0.1.0"
 dependencies = [
+ "gethostname",
  "serde",
  "serde_json",
  "unicode-width 0.2.2",
@@ -3830,6 +3873,7 @@ name = "relay-core"
 version = "0.1.0"
 dependencies = [
  "daemon-core",
+ "serde",
 ]
 
 [[package]]
@@ -3962,6 +4006,7 @@ dependencies = [
  "bitflags 2.13.1",
  "fallible-iterator",
  "fallible-streaming-iterator",
+ "hashlink",
  "libsqlite3-sys",
  "smallvec",
 ]
@@ -4019,7 +4064,7 @@ dependencies = [
 [[package]]
 name = "rustls"
 version = "0.23.46"
-source = "git+https://github.com/jordanwebster/rustls?rev=ad62be4607107d24c73c9c746dcc9edf57daaaea#ad62be4607107d24c73c9c746dcc9edf57daaaea"
+source = "git+https://github.com/amuxhq/rustls?rev=ad62be4607107d24c73c9c746dcc9edf57daaaea#ad62be4607107d24c73c9c746dcc9edf57daaaea"
 dependencies = [
  "once_cell",
  "ring",
@@ -4177,6 +4222,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_ignored"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "115dffd5f3853e06e746965a20dcbae6ee747ae30b543d91b0e089668bb07798"
+dependencies = [
+ "serde",
+ "serde_core",
+]
+
+[[package]]
 name = "serde_json"
 version = "1.0.151"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4261,8 +4316,9 @@ dependencies = [
  "gethostname",
  "libc",
  "serde",
- "serde_yaml",
+ "serde_ignored",
  "thiserror 2.0.20",
+ "toml 0.8.23",
 ]
 
 [[package]]
@@ -4544,6 +4600,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 name = "supervisor-core"
 version = "0.1.0"
 dependencies = [
+ "core-ring",
  "release",
  "semver",
  "uuid",
@@ -4740,6 +4797,7 @@ dependencies = [
  "agent-dir",
  "analytics",
  "anyhow",
+ "base64 0.22.1",
  "bytes",
  "chrono",
  "clap",
@@ -4757,10 +4815,12 @@ dependencies = [
  "provider-fakes",
  "quinn",
  "rcgen",
+ "regex",
  "release",
  "rustls",
  "serde",
  "serde_json",
+ "sha2",
  "shot",
  "store",
  "tempfile",
@@ -5993,21 +6053,16 @@ dependencies = [
 name = "xtask"
 version = "0.1.0"
 dependencies = [
- "app-runtime",
- "model",
- "png 0.17.16",
+ "prost",
+ "prost-types",
  "protoc-bin-vendored",
  "release",
- "schemars",
  "semver",
- "serde",
  "serde_json",
  "tempfile",
  "toml 0.8.23",
  "tonic-prost-build",
- "ui-view",
  "version-stamp",
- "wire",
 ]
 
 [[package]]

@@ -400,8 +400,10 @@ impl Daemon {
             context: None,
             from: Some(Sender {
                 value: Some(sender::Value::Agent(AgentSender {
-                    agent_id: row.child_id.clone(),
-                    host_id: self.store.own_host().to_vec(),
+                    agent: Some(AgentRef {
+                        host_id: self.store.own_host().to_vec(),
+                        agent_id: row.child_id.clone(),
+                    }),
                     name: child.map(|child| child.name).unwrap_or_default(),
                 })),
             }),
@@ -597,14 +599,17 @@ impl Daemon {
                 let key = self.own_key(caller);
                 let name = self.store.agent(&key)?.map(|row| row.name);
                 let sender = AgentSender {
-                    agent_id: caller.0.to_vec(),
-                    host_id: self.store.own_host().to_vec(),
+                    agent: Some(AgentRef {
+                        host_id: self.store.own_host().to_vec(),
+                        agent_id: caller.0.to_vec(),
+                    }),
                     name: name.unwrap_or_default(),
                 };
                 (sender::Value::Agent(sender), Some(key))
             }
             MessageFrom::Peer(sender) => {
-                let key = AgentKey::new(sender.host_id.clone(), sender.agent_id.clone());
+                let agent = sender.agent.clone().unwrap_or_default();
+                let key = AgentKey::new(agent.host_id, agent.agent_id);
                 (sender::Value::Agent(sender), Some(key))
             }
         };
@@ -965,7 +970,22 @@ impl Daemon {
     pub(crate) fn lane_timer(&mut self, agent: AgentId, out: &mut Vec<Output>) {
         let result = match self.stage(agent) {
             Some(Stage::Connecting) => Err(MessageRefusal::Unavailable),
-            Some(Stage::Verdict) => Err(MessageRefusal::Lost),
+            Some(Stage::Verdict) => {
+                // Ahead of anything the conclusion writes, so a retry of
+                // the message waits for a verdict of its own.
+                if let Some(current) = self
+                    .deliveries
+                    .lanes
+                    .get(&agent)
+                    .and_then(|lane| lane.current.as_ref())
+                {
+                    out.push(Output::ForgetVerdict {
+                        agent,
+                        input_id: current.message.envelope.id.clone(),
+                    });
+                }
+                Err(MessageRefusal::Lost)
+            }
             Some(Stage::Accepting) if self.accepted(agent) => Ok(()),
             Some(Stage::Accepting) => Err(MessageRefusal::Lost),
             Some(Stage::Resuming) | None => return,
@@ -1050,6 +1070,18 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    /// The child's report owed to `parent`, over the child's row, which
+    /// names the parent: an exited incarnation that owes nothing more.
+    fn owe_report(daemon: &mut Daemon, parent: AgentKey) {
+        let mut child = AgentRow::new(daemon.own_key(CHILD), 1, "/src");
+        child.parent = Some(parent.clone());
+        child.incarnation = 1;
+        child.lifecycle = wire::Lifecycle::Exited as i32;
+        child.owes_report = false;
+        daemon.store.put_agent(&child).unwrap();
+        daemon.store.put_delivery(&report_to(parent)).unwrap();
     }
 
     fn report_to(parent: AgentKey) -> Delivery {
@@ -1138,6 +1170,75 @@ mod tests {
     }
 
     #[test]
+    fn a_message_out_of_reply_patience_has_its_verdict_forgotten_before_its_retry_is_written() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let mut daemon = daemon(&dir);
+        daemon
+            .store
+            .put_agent(&AgentRow::new(daemon.own_key(PARENT), 1, "/src"))
+            .unwrap();
+        step(&mut daemon, Input::Swept);
+        step(
+            &mut daemon,
+            Input::AgentHello {
+                agent: PARENT,
+                hello: Default::default(),
+            },
+        );
+        let envelope = Envelope {
+            id: b"envelope".to_vec(),
+            to: Some(AgentRef {
+                host_id: OWN.to_vec(),
+                agent_id: PARENT.0.to_vec(),
+            }),
+            ..Envelope::default()
+        };
+        let send = |call| Input::ClientCall {
+            call: CallId(call),
+            request: ClientRequest::SendMessage {
+                envelope: Box::new(envelope.clone()),
+                from: MessageFrom::Person,
+            },
+        };
+        step(&mut daemon, send(1));
+        // The sender's retry waits in the lane behind the first write.
+        step(&mut daemon, send(2));
+        let out = step(
+            &mut daemon,
+            Input::Timer {
+                id: TimerId::Lane(PARENT),
+            },
+        );
+        assert!(
+            out.contains(&Output::EndCall {
+                call: CallId(1),
+                status: Status::Failed(CallError::Message(MessageRefusal::Lost)),
+            }),
+            "{out:?}"
+        );
+        // The driver stops waiting on the first write before it writes the
+        // retry, so nothing it says of the first write answers the retry.
+        let forgotten = out.iter().position(|output| {
+            *output
+                == Output::ForgetVerdict {
+                    agent: PARENT,
+                    input_id: b"envelope".to_vec(),
+                }
+        });
+        let retried = out.iter().position(|output| {
+            matches!(
+                output,
+                Output::WriteControl { agent: PARENT, frame }
+                    if matches!(&frame.of, Some(ctl_frame::Of::AgentMessage(written)) if written.id == envelope.id)
+            )
+        });
+        assert!(
+            matches!((forgotten, retried), (Some(forgotten), Some(retried)) if forgotten < retried),
+            "{out:?}"
+        );
+    }
+
+    #[test]
     fn a_report_handed_to_a_parent_here_while_one_is_in_its_lane_asks_for_a_dump() {
         let dir = tempfile::tempdir().expect("a temporary directory");
         let mut daemon = daemon(&dir);
@@ -1150,7 +1251,7 @@ mod tests {
                 row
             })
             .unwrap();
-        daemon.store.put_delivery(&report_to(parent)).unwrap();
+        owe_report(&mut daemon, parent);
         step(
             &mut daemon,
             Input::AgentHello {
@@ -1227,13 +1328,11 @@ mod tests {
                 row
             })
             .unwrap();
-        daemon.store.put_delivery(&report_to(parent)).unwrap();
-        step(
-            &mut daemon,
-            Input::TrustRead {
-                store: crate::trust::TrustStore::of_hosts(vec![FAR]),
-            },
-        );
+        owe_report(&mut daemon, parent);
+        {
+            daemon.trust_for_test(crate::trust::TrustStore::of_hosts(vec![FAR]));
+            step(&mut daemon, Input::Started)
+        };
         let out = step(&mut daemon, Input::Swept);
         assert!(
             out.iter().any(|output| matches!(

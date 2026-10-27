@@ -2,7 +2,7 @@
 
 *For developers changing the agent process or adding a provider.*
 
-Every agent runs in a process of its own: `amux agent <dir>`, a hidden
+Every agent runs in a process of its own: `amux internal agent <dir>`, a hidden
 subcommand of the amux binary, started on the agent's directory. It hosts
 exactly one provider child (Claude in a terminal, headless Claude, or a Codex
 app server), runs that kind's interpreter over everything the provider says,
@@ -34,7 +34,7 @@ provider children, and how it ends.
 | [`crates/journal`](../crates/journal/src/lib.rs) | The segmented, append-only journal writer and reader |
 | [`crates/pty-host`](../crates/pty-host/src/lib.rs) | Provider-neutral pseudo-terminal hosting: spawn in a process group, output stream, input, resize, signals |
 | [`crates/interpret`](../crates/interpret/src/lib.rs) | The per-kind interpreters the process runs |
-| [`crates/amux/src/main.rs`](../crates/amux/src/main.rs) | The hidden subcommands a harness runs from the install path: `amux agent <dir>`, `amux mcp <dir>` (the tool server) and `amux hooks claude` (terminal Claude's hook command) |
+| [`crates/amux/src/main.rs`](../crates/amux/src/main.rs) | The hidden subcommands a harness runs from the install path: `amux internal agent <dir>`, `amux internal mcp <dir>` (the tool server) and `amux internal hook claude` (terminal Claude's hook command) |
 
 The daemon's side of the relationship is the agent registry: what to
 start, stop, kill, delete, resume or rename, and when, is decided in the
@@ -82,10 +82,12 @@ path holds its name.
 
 ## Starting
 
-The daemon writes `spec.<n>` and starts `amux agent <dir>` detached from
+The daemon writes `spec.<n>` and starts `amux internal agent <dir>` detached from
 itself: in its own process group, with stdin and stdout closed and stderr
 appended to `agent.log`, so neither the daemon's terminal nor its death
-reaches the agent.
+reaches the agent. The agent holds `agent.log` and `private/provider.log`
+to 1 MiB each, checking every 30 seconds and moving a log past its cap to
+`<name>.1`; a dump carries the tail of both.
 
 `agent::run` then:
 
@@ -239,7 +241,7 @@ parent. See [agent tools](AGENT_TOOLS.md) for families.
 ## The control socket
 
 `ctl.sock` carries `CtlFrame` messages
-([`agent.proto`](../crates/wire/proto/amux/v1/agent.proto)), each a varint
+([`agent_process.proto`](../proto/amux/v1/agent_process.proto)), each a varint
 length followed by the encoded message, the same framing the journal uses for
 steps. A frame over 64 MiB is treated as a broken peer. The surface has no
 version integer, and a frame a reader does not know is ignored.
@@ -573,7 +575,7 @@ end of stream means the view ended. The client side is
 ## The tool server
 
 amux's tools (agents, hosts, send, spawn, stop, status, attach) are served by
-`amux mcp <dir>`, a separate process that the provider launches from the
+`amux internal mcp <dir>`, a separate process that the provider launches from the
 install path, like any MCP server it is configured with; it is not the agent
 process. The agent only names it in the provider's launch (`--mcp-config`
 for Claude, `--config mcp_servers.amux.…` for Codex), and only when the

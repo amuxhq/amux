@@ -3,8 +3,8 @@
 The daemon around the state-machine cores. Each profile's protocol
 decisions are its daemon core's (`crates/daemon-core`): the store, the
 registry, replication, families and deliveries, presence and routes (what a
-host reads as, which route a call takes and tries next after its link went,
-and what a call finding no channel says of the host), pairing and trust, the host catalogue and the host set the inventory carries. Which
+host reads as from the links up to it, which route a call takes, and which
+hosts to dial through a forwarder), pairing and trust, the host catalogue and the host set the inventory carries. Which
 streams a relay carries, and the adjacency every link follows, are the
 forwarding core's (`crates/relay-core`). node is their driver: it turns
 sockets, files, processes and the clock into decoded inputs, carries out the
@@ -26,7 +26,7 @@ client is told. Each module below owns one such policy.
 
 | Module | Policy | Why it is the driver's |
 | --- | --- | --- |
-| `services/reachability.rs` | Dialling a paired host's link: the address order (what discovery resolved, then the addresses remembered from where it last answered), the redial backoff (1 s doubling to 30 s), the short pause after a link that dropped at once, and the handshake timeouts. | Link reconnection is transport: the core says which host to dial (`Output::Dial`) and hears of the link only once it is up, so how many sockets were tried on the way changes nothing it decides. |
+| `services/reachability.rs` | Dialling a paired host's link: the address order (what discovery resolved, then the addresses remembered from where it last answered), the redial backoff (1 s doubling to 30 s) for direct dials and for dials through a forwarder, the short pause after a link that dropped at once, and the handshake timeouts. | Link reconnection is transport: the core says which host to dial (`Output::Dial`, or `Output::DialThrough` through a host claiming it) and hears of the link only once it is up, so how many sockets or tries it took changes nothing it decides. |
 | `edge/cloud.rs`, `edge/token.rs` | Keeping the relay link up: the backoff with jitter (1 s to 300 s, reset after 30 s up), stopping on an authentication failure, the TCP fallback when UDP is eaten; keeping the relay token between launches and presenting it while it is more than five minutes from expiry. | The same: the relay link is a carrier, and its credential's expiry and refresh are the core's (`Input::Credential`, `TimerId::Refresh`). |
 | `edge/admin.rs` | Reaching a host to pair with: its pairing addresses, then the relay. | Dialling for pairing is transport; the pairing window, the exchange and every trust change are the core's. |
 | `link/run.rs`, `routing/link.rs` | The link handshake: protocol version negotiation, refusing a peer that is not the one dialled or that claims this host's own id, a relay's token check and its same-user reauthentication. | The handshake is codec and cryptographic mechanism; the core is told the link once it is registered and what the peer's handshake said. |
@@ -34,10 +34,8 @@ client is told. Each module below owns one such policy.
 | `grpc.rs`, `forward.rs`, `edge/peer.rs`, `relay.rs` | Serving calls: looking up which host owns an agent before a call, forwarding one hop to the owner, mapping core and peer answers to gRPC statuses, stamping a message's sender from the socket it came in on, refusing a person's input to an agent that has exited. | RPC mechanics. A person's input goes straight to the agent's control connection and its interpreter's verdict is the answer, so the exited row is the only refusal there is, read before the write. |
 | `runtime.rs` | Refusing a spawn on a host whose announced capabilities do not list the agent's kind. | A check of the host's own announced word, worded for the person before a call goes out; the far host's own create makes the same check against its capabilities. |
 
-Deadlines are the driver's too, by the same rule: how long an attempt the
-core asked for may take to open its channel (`connection.rs`), how long a
-call waits to reach a host before the core is told it found no channel
-(`forward.rs`), how long a page asked of a peer may take (`driver/mod.rs`), how long a message waits for
+Deadlines are the driver's too, by the same rule: how long a call waits to
+reach a host before it closes the host's links (`forward.rs`), how long a page asked of a peer may take (`driver/mod.rs`), how long a message waits for
 its verdict on the agent's connection (`runtime.rs`). So are the largest blob
 the driver will send and the replica blob files' least-recently-used eviction
 against their budget (`retention.rs`): the core decides which rows are kept,
@@ -58,7 +56,7 @@ task here.
 | `driver/mod.rs` | Serving a `GetBlob` from its file | The bytes never pass through the core. |
 | `driver/mod.rs`, `driver/calls.rs` | Waiting for room on a full core input channel (`post`, a dropped call's cancel) | The caller is synchronous and the input must not be lost. |
 | `driver/pairing.rs` | Reading a pairing conversation's stream into the core | Awaits the stream's next message. |
-| `connection.rs` | One per attempt the core asks for; one per closing of a host's links the core asks for | Opening a channel awaits a handshake; closing a link awaits the link registry. |
+| `connection.rs`, `link/channels.rs` | One per closing of a host's links after a call found no channel, or of a link a stream would not open on | Closing a link awaits the link registry. |
 | `runtime.rs` | Per agent: the control writer, the watcher reading its control connection, the reaper awaiting its exit, starting its process, awaiting a message's verdict | Each awaits the agent's socket or process. |
 | `runtime.rs` | The repositories scan; the daily check-in | Blocking directory walk; a sleep until the check-in is due. |
 | `retention.rs` | The retention sweep loop | Sleeps between sweeps and removes files. |
@@ -72,7 +70,7 @@ task here.
 | `edge/peer.rs`, `grpc.rs`, `front_door.rs` | The peer, client and front-door gRPC servers | Servers await connections for their lifetime. |
 | `edge/cloud.rs` | The relay link loop; the losing QUIC dial after TCP won | A reconnecting network loop; the losing dial is still in flight. |
 | `edge/account.rs` | A token exchange and the save of its rotated refresh token | Detached so a caller's cancellation cannot land between the two and lose the token. |
-| `services/reachability.rs` | The discovery event loop; one per dial; redialling once a dial in flight settles | Each awaits discovery, a link's establishment or a backoff. |
+| `services/reachability.rs` | The discovery event loop; one per dial; redialling once a dial in flight settles; one per host dialled through forwarders | Each awaits discovery, a link's establishment or a backoff. |
 | `discovery/mdns.rs` | The browse receiver thread and the wake monitor thread | The mDNS library's channel and the sleep detector block. |
 | `daemon.rs` | Republishing a profile's description when its edge's status moves | Awaits a watch. |
 | `supervisor/*` | The child's readiness pipe, its exit wait (`waitpid` or the Windows wait), the control socket's accept loop and its connections, the update check, the Windows keep-awake thread | Blocking OS waits, a socket, a network fetch; the sleep assertion belongs to one thread. |
@@ -103,7 +101,7 @@ slots shared between the tasks above.
 | `edge/mod.rs`, `edge/cloud.rs` | The running cloud link; the edge's tasks; relays where UDP is blocked; the refresh receiver | Start, stop and refresh paths hold the link across its stop; dials record and read the UDP memory. |
 | `edge/relay_server.rs`, `dispatcher.rs` | Each relay account's state; QUIC retry admission | Accepting link tasks create and read accounts; the accept path admits addresses not yet validated. |
 | `auth/jwt.rs` | The signing keys and when they were fetched | Many link tasks validate tokens while one refreshes the keys over the network. |
-| `services/reachability.rs` | Dials in flight, peers queued to redial, the dial tasks, the shutdown signal, the discovery handle and QUIC endpoint set at edge start | Dial tasks, discovery and the core's `Dial` outputs meet here. |
+| `services/reachability.rs` | Dials in flight, peers queued to redial, hosts being dialled through forwarders, the dial tasks, the shutdown signal, the discovery handle and QUIC endpoint set at edge start | Dial tasks, discovery and the core's `Dial` and `DialThrough` outputs meet here. |
 | `discovery/*` | Hosts found, the advertised name, mDNS names resolved, the scripted bus | Browse tasks write and dialers and listings read; the scripted bus is shared by every profile in a test. |
 | `daemon.rs` | The hosted profiles; one registry change at a time; publishing a profile's description | Front-door handlers start, stop and change profiles across awaits; a watcher's snapshot and subscription see one moment. |
 | `telemetry.rs` | Turn counts since the last check-in | Ingest adds, the check-in takes. |

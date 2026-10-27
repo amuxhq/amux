@@ -23,36 +23,19 @@ page says where things are on disk, how to take and read a dump, and how to narr
 
 ## Where things are
 
-The installation root is `root:` in the installation config (`$XDG_CONFIG_HOME/amux/config.yaml`, normally
-`~/.config/amux/config.yaml`, or the file `--config` or `AMUX_CONFIG` names). It defaults to
-`$XDG_DATA_HOME/amux`, normally `~/.local/share/amux`.
+Every file amux keeps is in [the one on-disk listing](ARCHITECTURE.md#everything-else-on-disk), with the agent
+directory [just before it](ARCHITECTURE.md#the-agent-directory-is-the-contract). For debugging, the installation
+root (`<root>`, normally `~/.local/share/amux`) holds `daemon.log`, `supervisor.log` when amux runs under one, and
+`reports/`; each agent's directory, `profiles/<profile id>/agents/<agent id>/`, holds `agent.log` and its
+`private/provider.log`.
 
-```text
-<root>/
-  daemon.log                 the daemon's log; AMUX_LOG names another file
-  supervisor.log             the supervisor's log, when amux runs under one
-  reports/                   dumps: dump-<unix ms>-<id>/
-  profiles/<profile id>/
-    store.sqlite             the profile's store: own rows and replica rows
-    agents/<agent id>/       one agent's directory
-      lock                   held by the agent process for its lifetime
-      ctl.sock  pty.sock     the agent's control and raw-terminal sockets
-      tools.sock             the daemon's socket for this agent's tool server
-      spec.<n>               what each incarnation was started with
-      journal/<segment>      the agent's steps, segments named by byte offset
-      pty/<segment>          raw terminal bytes, for terminal Claude
-      blobs/<hash>           bytes the agent's items reference
-      agent.log              the agent process's standard error
-      private/               the agent's own state; the daemon never reads it
-        facts/<segment>      the facts ring
-        facts/<segment>.checkpoint
-        provider.log         the provider's standard error
-        provider-session     the provider's own session id, for resume
-    replicas/                blobs fetched from other hosts
-```
-
-On the phone the embedded runtime keeps the same layout inside the app's container; its log is `runtime.log`,
-capped at 8 MiB and cut back to its newest 4 MiB.
+Every log is capped the same way: past its cap its contents move to `<name>.1`, replacing the previous one, and
+the file starts again from empty, so a log and its `.1` are all there is. The caps are 8 MiB for `daemon.log`,
+`supervisor.log` and the phone's log, and 1 MiB each for `agent.log` and `provider.log`. The move copies and
+truncates in place rather than renaming, so a process's standard error and a provider's, which other handles hold,
+keep landing in the live file; the daemon and the supervisor also move their own standard error onto their log, so
+a panic is in it. On the phone the embedded runtime keeps the same layout inside the app's container; its log is
+`runtime.log`.
 
 What the agent directory is and who writes what is described in [the agent process](AGENT_PROCESS.md); the
 journal and the store in [Journal and store](JOURNAL_AND_STORE.md).
@@ -85,9 +68,9 @@ For terminal Claude and Codex the provider's own transcript is also a complete r
 adds what that transcript lacks (hooks, inputs, ticks). For headless Claude the ring is the only record.
 
 **The daemon** keeps each agent's journal and its rows in the store. Each profile's core takes a checkpoint a
-minute after any step that changed a row: its state, written to `core.checkpoint` beside the store once the store's
-WAL is in its main file. Its driver records every input the core steps in `core-ring/` beside them, and starts the
-ring afresh at each checkpoint, so the checkpoint and the ring together are the core's state now. The daemon keeps
+minute after any step that changed a row: its state, serialized once the store's WAL is in its main file. Its
+driver records every input the core steps in `core-ring/` beside the store, and starts the ring afresh at each
+checkpoint, which heads the segment, so the checkpoint and the ring together are the core's state now. The daemon keeps
 every agent's journal from the newest checkpoint's cursor on, and at least the last two segments, so a dump always
 has the records behind the newest rows and every frame the recorded inputs read.
 
@@ -125,8 +108,8 @@ stderr (`the agent core: `) and asks its daemon for a dump of it over the contro
 the daemon's own parts for the core's. The relay and the supervisor log the same kind of reason (`the relay core: `,
 `the supervisor core: `) and write a text file beside it: the reason, the core's state when the driver's window began,
 every input stepped since (at least the last 256) and the state now. The supervisor writes
-`<data_dir>/reports/supervisor-<unix ms>-<id>.txt`; a relay writes `relay-<unix ms>-<id>.txt` into its configuration's
-`reports_dir` (by default `reports` beside the configuration file), and a daemon's own relay core into the
+`<data_dir>/reports/supervisor-<unix ms>-<id>.txt`; a relay writes `relay-<unix ms>-<id>.txt` into `reports/` under its
+`state_dir` (see [running the relay](CLOUD.md#running-the-relay)), and a daemon's own relay core into the
 installation's `reports/`. Neither core is a replay stage and nothing replays these files: they are what a person
 turns into a step test of that core by hand. Each process reports one per kind of reason (one per broken invariant,
 one for steps over budget) every ten minutes, and the daemon writes one agent-asked bundle per kind in the same
@@ -148,7 +131,8 @@ find it ([replaying a dump](#replaying-a-dump)). The files are laid out as:
 reports/dump-<unix ms>-<id>/
   manifest.json                 dump id, time, reason, profile, host, generation, daemon version,
                                 one entry per agent, and errors
-  daemon.log                    the last 4 MiB of the daemon's log, redacted
+  daemon.log                    the last 4 MiB of the daemon's log and its .1, redacted
+  supervisor.log                the same of the supervisor's, when amux runs under one
   agents/<agent id>/
     row.pb                      the inventory row (a wire.Agent)
     store.pb                    the store slice: one wire.Step holding the snapshot and the newest
@@ -158,6 +142,8 @@ reports/dump-<unix ms>-<id>/
     part/facts/<segment>        the agent process's facts ring, redacted line by line
     part/facts/<segment>.checkpoint
     part/spec.<n>               the spec of each incarnation
+    part/agent.log              the tail of the agent's and the provider's logs, each across its .1,
+    part/provider.log           redacted
     part/dump-errors            anything the agent process could not read
     host/row.pb, host/store.pb  for another host's agent: that host's row and slice
   hosts/<host id>/manifest.json that host's own manifest
@@ -327,7 +313,7 @@ The bundle holds:
 | `report.json` | Build and git revision, time, note, marks in points with the frame's size and scale, and every part declared present or absent with a reason |
 | `frame.png` | The frozen screen, without the status bar |
 | `trace.jsonl` | The view-state trace, in builds with the driving tools only; a shipping build declares it absent |
-| `log.txt` | The last 64 KiB of the runtime's log |
+| `log` | Declared absent: the runtime's log rides in the dump below, redacted |
 | `dump/…` | The profile's dump, as above, with the app runtime's client parts |
 
 What the account service does with reports is on [Cloud](CLOUD.md); the report screen itself is on [the iPhone

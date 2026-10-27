@@ -124,7 +124,7 @@ impl Daemon {
                     agent_id,
                     revision,
                     due_at_ms: 0,
-                    name: None,
+                    name: String::new(),
                     working_on: None,
                     text: String::new(),
                 };

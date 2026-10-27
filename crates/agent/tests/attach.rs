@@ -115,6 +115,53 @@ fn two_clients_read_terminal_claude_from_its_files_and_type_into_it() {
     });
 }
 
+/// `/clear` typed at terminal Claude starts a new session: the next
+/// incarnation resumes that one, not the conversation the clear left.
+#[test]
+fn a_clear_typed_at_the_terminal_is_the_session_the_next_incarnation_resumes() {
+    terminal_test(async {
+        let agent = Agent::start(Setup {
+            kind: Kind::ClaudePty,
+            steps: vec![
+                provider_fakes::Step::Text {
+                    chunks: vec!["before the clear".into()],
+                },
+                provider_fakes::Step::TurnEnd,
+            ],
+            ..Setup::sdk()
+        })
+        .await;
+        let mut daemon = agent.dial().await;
+        agent.ready().await;
+        let mut screen = Screen::attach(&agent).await;
+        screen.until("Claude Code (scripted)").await;
+        screen.attached.keys(b"say hello\r").await.unwrap();
+        agent
+            .wait("the first turn ends", |log| log.turn_ends() == 1)
+            .await;
+        let before = agent.provider_session();
+
+        screen.attached.keys(b"/clear\r").await.unwrap();
+        agent
+            .wait("the clear", |log| {
+                log.boundaries().iter().any(|kind| kind.contains("CLEARED"))
+            })
+            .await;
+        let after = agent.provider_session();
+        assert_ne!(after, before, "the clear's session is the one kept");
+        drop(screen);
+        daemon.kill().await;
+        assert_eq!(agent.exit().await, ExitCause::Killed);
+
+        agent.resume();
+        let mut daemon = agent.dial().await;
+        agent.ready().await;
+        assert_eq!(agent.provider_session(), after, "resumed, not replaced");
+        daemon.stop().await;
+        assert_eq!(agent.exit().await, ExitCause::Stopped);
+    });
+}
+
 #[test]
 fn each_codex_client_gets_its_own_view_on_the_agents_thread() {
     terminal_test(async {

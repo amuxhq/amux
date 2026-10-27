@@ -35,6 +35,9 @@ pub const JOURNAL: &str = "journal";
 pub const PTY: &str = "pty";
 /// The agent's own state; the daemon never reads it.
 pub const PRIVATE: &str = "private";
+/// What the agent process writes to stderr: the daemon opens it for the
+/// process, which has no terminal and no daemon pipe to write to.
+pub const AGENT_LOG: &str = "agent.log";
 /// Bytes the agent references, named by their hash: attachments, images
 /// the model read, and what the agent offers as an encoded Catalogue, whose
 /// hash the snapshot names.

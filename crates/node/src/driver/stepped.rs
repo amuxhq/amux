@@ -1,14 +1,15 @@
-//! Cores stepped by their caller rather than by threads of their own.
+//! Cores stepped by their caller.
 //!
 //! The phone runs its cores on a queue its app owns. Nothing here ever
 //! calls into the app: an input arriving for any core rings the bell the
 //! app gave, and the app calls [`Cores::step`] on its queue when it hears
 //! it. The tokio runtime the shell runs on stays where the app started it;
 //! a step enters it only so the timers and jobs the core asks for are
-//! spawned there.
+//! spawned there. A daemon with no caller of its own gives each profile a
+//! [`Stepper`]: a thread that waits on the bell and steps, the same loop.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::ThreadId;
 
 use tokio::runtime::Handle;
@@ -109,6 +110,87 @@ impl Cores {
         self.0.slots.lock().unwrap().push(slot.clone());
         (self.0.bell)();
         slot
+    }
+}
+
+/// A thread that steps one profile's cores whenever the bell rings, for a
+/// daemon whose profiles have no caller stepping them.
+pub(crate) struct Stepper {
+    thread: Option<std::thread::JoinHandle<()>>,
+    rung: Arc<Rung>,
+}
+
+/// The bell as a thread waits on it: how many times it rang.
+struct Rung {
+    count: Mutex<u64>,
+    rang: Condvar,
+    stopping: AtomicBool,
+}
+
+impl Rung {
+    fn ring(&self) {
+        *self.count.lock().unwrap() += 1;
+        self.rang.notify_one();
+    }
+
+    /// Waits until the bell rang since `seen`, and answers the count.
+    fn wait_past(&self, seen: u64) -> u64 {
+        let mut count = self.count.lock().unwrap();
+        while *count == seen {
+            count = self.rang.wait(count).unwrap();
+        }
+        *count
+    }
+}
+
+impl Stepper {
+    /// Cores with a thread of their own stepping them.
+    pub(crate) fn start() -> (Cores, Stepper) {
+        let rung = Arc::new(Rung {
+            count: Mutex::new(0),
+            rang: Condvar::new(),
+            stopping: AtomicBool::new(false),
+        });
+        let cores = Cores::new({
+            let rung = rung.clone();
+            move || rung.ring()
+        });
+        let thread = std::thread::Builder::new()
+            .name("amux-core".to_owned())
+            .spawn({
+                let cores = cores.clone();
+                let rung = rung.clone();
+                move || {
+                    let mut seen = 0;
+                    loop {
+                        cores.step();
+                        if rung.stopping.load(Ordering::SeqCst) && cores.is_empty() {
+                            return;
+                        }
+                        seen = rung.wait_past(seen);
+                    }
+                }
+            })
+            .expect("the core thread starts");
+        (
+            cores,
+            Stepper {
+                thread: Some(thread),
+                rung,
+            },
+        )
+    }
+
+    /// Lets the thread end once its cores have, and waits for it unless
+    /// it is the calling thread, which ends on its own.
+    pub(crate) fn stop(mut self) {
+        self.rung.stopping.store(true, Ordering::SeqCst);
+        self.rung.ring();
+        if let Some(thread) = self.thread.take()
+            && thread.thread().id() != std::thread::current().id()
+        {
+            let _ = thread.join();
+        }
     }
 }
 

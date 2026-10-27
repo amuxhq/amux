@@ -3,20 +3,19 @@
 
 use models::{Bounds, SingleDaemon, check, walk};
 
-/// How long the exhaustive runs may take under `just test`, sized to CI's
-/// four-core runner: the slowest of the journal's measured times there
-/// (161 s; the README lists them all) plus the peer's four-thread Mac time
-/// (21.3 s) times 4.7, the slowest runner-to-Mac ratio, since no runner has
-/// timed the peer yet; doubled and rounded up to a whole minute. A run past
-/// it says the bounds have outgrown their place.
-const BUDGET_SECONDS: f64 = 540.0;
+/// How many states the two exhaustive runs together may explore: their
+/// count at these bounds (106,592 and 28,248 on 2026-10-26) with two
+/// percent over, since the count can move with the threads. A run past it
+/// says the bounds have outgrown their place; a run that hangs is the test
+/// harness's bound to catch.
+const BUDGET_STATES: u64 = 137_600;
 
 /// The journal's bounds and the peer's, each explored in full; the budget
 /// is for both.
 #[test]
 fn every_single_daemon_promise_holds_at_ci_bounds() {
     let threads = models::threads();
-    let mut seconds = 0.0;
+    let mut states = 0;
     for model in [SingleDaemon::ci(), SingleDaemon::peer()] {
         let verdict = check(&model, Bounds::exhaustive().threads(threads));
         println!("{verdict}");
@@ -26,11 +25,11 @@ fn every_single_daemon_promise_holds_at_ci_bounds() {
             measured.states, measured.seconds, measured.states_per_second
         );
         verdict.assert_holds();
-        seconds += measured.seconds;
+        states += measured.states;
     }
     assert!(
-        seconds <= BUDGET_SECONDS,
-        "the single-daemon model took {seconds:.1}s, past its {BUDGET_SECONDS}s budget"
+        states <= BUDGET_STATES,
+        "the single-daemon model explored {states} states, past its {BUDGET_STATES}"
     );
 }
 

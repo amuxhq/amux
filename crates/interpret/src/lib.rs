@@ -26,7 +26,7 @@ pub mod unknown;
 #[cfg(any(test, feature = "testkind"))]
 pub mod testkind;
 
-pub use claude_common::NOTEBOOK_OLD_SOURCE;
+pub use claude_common::{FileStep, NOTEBOOK_OLD_SOURCE, file_step, tool_input};
 pub use golden::{
     EndRules, FixtureInput, FixtureScript, GoldenReport, Replayed, UPDATE_GOLDENS_ENV,
     check_invariants, claude_pty_input, claude_sdk_input, codex_input, fixture_script, render_item,
@@ -286,7 +286,7 @@ pub enum RedactTarget {
     /// An encoded `wire::Agent`, the inventory row: its name, directory,
     /// what it is working on and its exit cause.
     Agent(Vec<u8>),
-    /// An encoded `wire::ClientSessionHistory` of the kind: a client's
+    /// An encoded `wire::dump::ClientSessionHistory` of the kind: a client's
     /// session state and the messages since, with the items, snapshots and
     /// inputs inside them, bodies included.
     ClientSession(Vec<u8>),

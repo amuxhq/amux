@@ -24,32 +24,36 @@ default:
     @just --list ios
 
 # The Rust tools the phone recipes drive: the screenshot comparator and door
-# client, and the served test network the journeys connect a simulator to.
+# client, and the served test network the journeys connect a simulator to with
+# the amux and fake providers its machines run. One cargo invocation builds
+# them all, so the served net runs binaries whose features match its own and
+# builds nothing itself.
 # Build the Rust tools the phone recipes drive.
 tools:
-    {{bounded}} 900 cargo build --locked -p xtask -p testnet -p qualification --bins --features store/bundled
+    {{bounded}} 900 cargo build --locked -p ios-tools -p testnet -p qualification -p amux -p provider-fakes --bins --features store/bundled
 
 # The rules the screens package is written to: SwiftUI only outside a
 # registered leaf, no platform conditionals, no spinners. Pure text, so it runs
 # before anything is compiled and says which line is wrong.
 # Check the Swift sources against the screens package's writing rules.
 lint:
-    {{bounded}} 300 sh -c 'sh apps/apple/Tools/feature-lint.sh && apps/apple/Tools/strings-lint.sh'
+    {{bounded}} 300 sh -c 'sh apps/apple/Tools/feature-lint.sh && sh apps/apple/Tools/test-waits-lint.sh && apps/apple/Tools/strings-lint.sh'
 
-# The one bridge slice a development build links: the simulator, with the
-# driving tools, under the `phone-dev` profile (release without LTO). Repackages only when
+# The bridge slice a development build links: the simulator, with the
+# driving tools, under the `phone-dev` profile (release without LTO), and with
+# `--device` the same for a plugged-in phone. Repackages only when
 # the library or its generated header changed; runs no cargo at all when no
 # Rust input changed, so a Swift-only edit pays nothing here.
-# Build the one bridge slice a development build links.
-rust:
-    {{bounded}} 1800 {{python}} -B scripts/ios-rust.py
+# Build the bridge slice a development build links.
+rust *ARGS:
+    {{bounded}} 1800 {{python}} -B apps/apple/Tools/ios-rust.py "$@"
 
 # Every shipping slice under the `release` profile, assembled
 # into the XCFramework the app packages ship with, then linked from Swift and
 # run on the pinned simulator to prove it loads. What the release recipes use.
 # Build every shipping bridge slice into the XCFramework and prove it links.
 package:
-    {{bounded}} 2400 {{python}} -B scripts/ios-package.py
+    {{bounded}} 2400 {{python}} -B apps/apple/Tools/ios-package.py
 
 # Prove the bridge graph carries no provider, agent host or test
 # infrastructure onto the phone. The driving tools are the one deliberate
@@ -74,27 +78,27 @@ graph-check:
 # tight enough to fire first only reports that something took a while.
 # Create and boot the pinned simulators. Names one or both kinds: golden, small.
 simulator *NAMES:
-    scripts/with iphone iphone-small -- {{bounded}} 3600 {{python}} -B scripts/ios_simulators.py {{NAMES}}
+    scripts/with iphone iphone-small -- {{bounded}} 3600 {{python}} -B apps/apple/Tools/ios_simulators.py {{NAMES}}
 
 # Generates apps/apple/Amux.xcodeproj from apps/apple/project.yml, then builds the app for
 # the golden simulator. The bridge is an input, so `rust` runs first.
 # Generate the Xcode project and build the debug app.
 build: rust
-    {{bounded}} 1800 {{python}} -B scripts/ios-build.py
+    {{bounded}} 1800 {{python}} -B apps/apple/Tools/ios-build.py
 
 # The app and every suite `unit` and `component-snapshots` run, built once for
 # any simulator, so both can then run with `--skip-build`. The gate builds
 # this way rather than letting each recipe compile the app again.
 # Build the app and every unit and component suite once.
 test-build: rust
-    {{bounded}} 1800 {{python}} -B scripts/ios-build.py --tests
+    {{bounded}} 1800 {{python}} -B apps/apple/Tools/ios-build.py --tests
 
 # The package and app-hosted unit suites. Arguments are xcodebuild's, and a
 # `-only-testing:` selector picks suites; `--skip-build` runs what the last
 # build left behind.
 # Run the package and app-hosted unit suites on the golden simulator.
 unit *ARGS: rust
-    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 1800 {{python}} -B scripts/ios-unit.py "$@"
+    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 1800 {{python}} -B apps/apple/Tools/ios-unit.py "$@"
 
 # Build once, then render the shared SwiftUI component catalog in-process,
 # every frosted surface drawn flat. A list of component IDs selects a subset;
@@ -103,7 +107,7 @@ unit *ARGS: rust
 # with their glass on to DIR for a person to look at, comparing nothing.
 # Compare stable components with their native image baselines.
 component-snapshots *ARGS: rust
-    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 2100 {{python}} -B scripts/ios-component-snapshots.py "$@"
+    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 2100 {{python}} -B apps/apple/Tools/ios-component-snapshots.py "$@"
 
 # Verify the selected baseline first, then draw an unmistakable strip over the
 # component and require SnapshotTesting to report an image mismatch.
@@ -119,28 +123,28 @@ component-snapshots-perturb *ARGS:
 # person to look at, comparing nothing.
 # Compare the phone's whole screens with their goldens.
 goldens *ARGS: build tools
-    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 2400 {{python}} -B scripts/ios-goldens.py "$@"
+    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 2400 target/debug/testnet journey goldens "$@"
 
 # Move one design token, then take away the needs-you dot, and require the
 # golden run to fail with a difference image each time. What proves the golden
 # check would notice a change, down to one small mark.
 # Prove the golden comparison notices a moved token and a missing small mark.
 goldens-perturb *ARGS: build tools
-    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 1200 {{python}} -B scripts/ios-goldens-perturb.py "$@"
+    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 1200 target/debug/testnet journey goldens-perturb "$@"
 
 # The app driven the way a person drives it, against a real relay and real
 # daemons started from a committed topology. No arguments runs every journey
 # journeys/manifest.json declares.
 # Drive the app like a person against real daemons and a real relay.
 journey *ARGS: build tools
-    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 2400 {{python}} -B scripts/ios-journey.py "$@"
+    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 2400 target/debug/testnet journey phone "$@"
 
 # Sweep every state this build draws and require each control on it to have a
 # name VoiceOver can read and at least 44 pt to hit. A UI test, because that is
 # the only accessibility client an app cannot be for itself.
 # Audit every drawn state for VoiceOver names and 44 pt targets.
-accessibility: build
-    scripts/with iphone -- {{bounded}} 2400 {{python}} -B scripts/ios-accessibility.py
+accessibility: build tools
+    scripts/with iphone -- {{bounded}} 2400 target/debug/testnet journey accessibility
 
 # Link the driving bridge from a bare Swift executable, run it on the
 # simulator, pair it with a machine a served test network runs by the link
@@ -155,16 +159,38 @@ loopback-smoke: tools
 # streaming and idle; budgets and drift per docs/PERFORMANCE.md.
 # `--baseline` records this machine's medians; `--only GROUP` takes one
 # group; `--describe` says what would run without running it.
+# `--device` runs it on the phone plugged into this Mac instead, over its
+# USB link: the bridge and the app are built for the phone and signed with
+# the local signing file's Team ID, and no simulator is leased.
 # Measure the phone.
-perf *ARGS: rust tools
-    {{bounded}} 1800 {{python}} -B scripts/ios-build.py --configuration Measured
-    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 3600 {{python}} -B scripts/ios-perf.py "$@"
+perf *ARGS: tools
+    if [ "${1-}" = -- ]; then shift; fi; \
+    device=; for argument in "$@"; do [ "$argument" = --device ] && device=--device; done; \
+    {{bounded}} 1800 {{python}} -B apps/apple/Tools/ios-rust.py $device && \
+    {{bounded}} 2400 {{python}} -B apps/apple/Tools/ios-build.py --configuration Measured $device && \
+    if [ -n "$device" ]; then {{bounded}} 3600 target/debug/testnet journey perf "$@"; \
+    else scripts/with iphone -- {{bounded}} 3600 target/debug/testnet journey perf "$@"; fi
+
+# The same run on the phone plugged into this Mac, with the first sample of
+# GROUP (cold, reconciliation, streaming or idle) recorded under the named
+# Instruments template (`xcrun xctrace list templates`: Time Profiler, App
+# Launch, Animation Hitches, SwiftUI, Swift Concurrency, Allocations, Power
+# Profiler, ...). The trace and its tables, exported as XML, land in
+# target/ios/traces/.
+# Profile one part of the phone run on the plugged-in phone.
+profile GROUP TEMPLATE="Time Profiler": tools
+    mkdir -p target/ios/traces; \
+    trace="target/ios/traces/$1-$(printf %s "$2" | tr ' A-Z' '-a-z')-$(date +%Y%m%d-%H%M%S).trace"; \
+    {{bounded}} 1800 {{python}} -B apps/apple/Tools/ios-rust.py --device && \
+    {{bounded}} 2400 {{python}} -B apps/apple/Tools/ios-build.py --configuration Measured --device && \
+    {{bounded}} 3600 target/debug/testnet journey perf --device --only "$1" \
+        --trace "$trace" --template "$2" --during "$1"
 
 # Inspect the release bundle for excluded platforms and debug-only surfaces.
 # Release links the shipping library, so the package is its input.
 # Inspect the release bundle for debug surfaces and excluded platforms.
 scope-audit: package
-    {{bounded}} 1200 {{python}} -B scripts/ios-scope-audit.py
+    {{bounded}} 1200 {{python}} -B apps/apple/Tools/ios-scope-audit.py
 
 # Everything a change to the app is held to, in dependency order, stopping at
 # the first failure: formatting, lint and tests of the Rust workspace, then
@@ -172,7 +198,7 @@ scope-audit: package
 # accessibility, measured run and shipped-scope audit.
 # Run everything a change to the app is held to, in order.
 verify:
-    {{bounded}} 12600 cargo run --locked -q -p xtask -- ios-verify
+    {{bounded}} 12600 cargo run --locked -q -p ios-tools -- verify
 
 # The half of verification that building the app can settle: graphs, bridge,
 # app, packaged framework, unit suites and the shipped-scope audit. Nothing
@@ -180,38 +206,38 @@ verify:
 # is what makes it fit to gate a push.
 # Run the half of verification a build can settle.
 gate:
-    {{bounded}} 12600 cargo run --locked -q -p xtask -- ios-verify --gate
+    {{bounded}} 12600 cargo run --locked -q -p ios-tools -- verify --gate
 
 # The half that drives a running app and judges what it drew: smoke, goldens,
 # journeys, accessibility and the measured run. Slow, and sensitive to the
 # machine holding the camera.
 # Run the half that photographs a running app.
 captures:
-    {{bounded}} 12600 cargo run --locked -q -p xtask -- ios-verify --captures
+    {{bounded}} 12600 cargo run --locked -q -p ios-tools -- verify --captures
 
 # What the shipping bundle is held to. `release` depends on both of these, so
 # cutting a release runs them whether or not anybody ran this.
 # Build the shipping bundle and audit what it contains.
 shipping:
-    {{bounded}} 12600 cargo run --locked -q -p xtask -- ios-verify --shipping
+    {{bounded}} 12600 cargo run --locked -q -p ios-tools -- verify --shipping
 
 # `just ios perf` under the verifier, so the whole run and this stage report
 # the same way.
 # The phone measured on this Mac.
 measured:
-    {{bounded}} 12600 cargo run --locked -q -p xtask -- ios-verify --measured
+    {{bounded}} 12600 cargo run --locked -q -p ios-tools -- verify --measured
 
-# The unit tests of the recipe scripts themselves. Pure Python; nothing is
+# The unit tests of the phone's recipe scripts. Pure Python; nothing is
 # built or booted.
-# Run the recipe scripts' own unit tests.
+# Run the phone's recipe scripts' own unit tests.
 script-tests:
-    {{bounded}} 120 {{python}} -m unittest discover -s scripts/tests -p '*_test.py' -t scripts/tests
+    {{bounded}} 120 {{python}} -m unittest discover -s apps/apple/Tools/tests -p '*_test.py' -t apps/apple/Tools/tests
 
 # Read-only toward the supplied design checkout; all experimental variants and
 # captures are generated in a fresh ignored output directory.
 # Measure iteration against a design checkout, read-only.
 design-benchmark *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 900 {{python}} -B scripts/ios-design-benchmark.py "$@"
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 900 {{python}} -B apps/apple/Tools/ios-design-benchmark.py "$@"
 
 # Version, tag, archive, export, validate and upload the iPhone app, then push
 # the tag and main (--no-upload and --no-push stop short). --preflight reports
@@ -231,14 +257,14 @@ release *ARGS: package scope-audit
 # Never attaches a build or submits for review (docs/RELEASE.md).
 # Put the App Store's screenshots on the version being prepared.
 screenshots *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 900 {{python}} -B scripts/ios-screenshots.py "$@"
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 900 {{python}} -B apps/apple/Tools/ios-screenshots.py "$@"
 
 # Signs a QA account into the real amux.sh from this Mac, with no app, the
 # same way the phone does, and reports what that account is entitled to and
 # whether the relay will issue it a credential. Evidence a person runs by
 # hand, never a test and never in CI: it reaches the production account
 # service and needs a password out of this Mac's login keychain. Deliberately
-# absent from the verification list in crates/xtask/src/ios_verify.rs.
+# absent from the verification list in crates/ios-tools/src/ios_verify.rs.
 # Sign a QA account into the real amux.sh from this Mac (by hand only).
 qa-cloud-signin:
     {{bounded}} 300 {{python}} -B scripts/qa-cloud-signin.py
@@ -250,7 +276,7 @@ qa-cloud-signin:
 # never invents one; `--preflight` reports what is present and missing on this
 # Mac without touching StoreKit, the store or amux.sh. Evidence a person runs
 # by hand, never a test and never in CI, and deliberately absent from the
-# verification list in crates/xtask/src/ios_verify.rs.
+# verification list in crates/ios-tools/src/ios_verify.rs.
 # Carry a real sandbox purchase from a phone to the account service (by hand only).
 qa-sandbox-purchase *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 3600 {{python}} -B scripts/qa-sandbox-purchase.py "$@"
@@ -265,7 +291,7 @@ qa-sandbox-purchase *ARGS:
 # the signature it validates — is exercised at all. It spends real money on a
 # real agent and reaches a real account, so it is evidence a person runs by
 # hand, never a test and never in CI, and it is deliberately absent from the
-# verification list in crates/xtask/src/ios_verify.rs. The checkout's daemon
+# verification list in crates/ios-tools/src/ios_verify.rs. The checkout's daemon
 # is a worktree resource (`wt run daemon`); the script refuses to start
 # without it.
 # Run the whole product once against the real cloud (by hand only).

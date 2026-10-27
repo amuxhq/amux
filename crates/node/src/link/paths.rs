@@ -21,7 +21,6 @@ use tokio::sync::{Notify, mpsc};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
-use super::carrier::LinkCarrier;
 use super::link_log::{EarlyData, LinkEvent, LinkTransition, PathKind};
 use super::socket::{LinkSocket, PathEvent, ProbeAnswered};
 use crate::HostId;
@@ -104,7 +103,7 @@ impl PathDriver {
 
     /// A link to `peer` came up on `carrier`. One with no stand-in on this
     /// socket (a byte stream's endpoint of its own) has no paths to choose.
-    pub(crate) fn link_up(&self, link: LinkId, peer: HostId, carrier: &dyn LinkCarrier) {
+    pub(crate) fn link_up(&self, link: LinkId, peer: HostId, carrier: &super::QuicCarrier) {
         if let Some(stand_in) = carrier.remote_address() {
             self.link_up_at(link, peer, stand_in, carrier.path_kind());
         }
@@ -605,10 +604,12 @@ mod tests {
     use std::task::{Context, Poll};
     use std::time::Duration;
 
+    use daemon_core::trust::PairingUpdate;
+
     use super::*;
     use crate::identity::DeviceIdentity;
     use crate::link::socket::{Datagrams, PacketKind, encode_delivered, parse};
-    use crate::trust::{SharedTrustStore, TrustStore, TrustStorePairingUpdate};
+    use crate::trust::{SharedTrustStore, TrustStore};
 
     /// The real loopback network, with the path to one address that can
     /// be cut both ways: what is sent there and what comes from there is
@@ -675,7 +676,7 @@ mod tests {
                     chrono::Utc::now(),
                 )
                 .unwrap(),
-            TrustStorePairingUpdate::Inserted
+            PairingUpdate::Inserted
         );
         Arc::new(std::sync::RwLock::new(trust))
     }

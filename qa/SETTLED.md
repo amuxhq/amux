@@ -15,6 +15,11 @@ you are testing still behaves otherwise, that difference is a finding.
   agents.
 - A host's clients show its own agents and those of the hosts it trusts. Once
   two hosts unpair, neither lists the other's agents.
+- Unpairing is one machine's decision. When only desk unpairs laptop, laptop
+  still trusts desk and keeps listing desk's agents, each saying desk no
+  longer trusts this machine; laptop's home top line and `amux peers` say to
+  run `amux pair desk`. Laptop listing them is not a finding; laptop showing
+  desk as merely away, or reaching its agents, is.
 
 ## A test net's daemon grace
 
@@ -43,6 +48,12 @@ you are testing still behaves otherwise, that difference is a finding.
   letters are documented keys, so typing there presses them.
 - A refused rename shows its reason on the key line, while the row still
   shows the name being edited.
+- An exited agent's record keeps the phase and working-on line it last
+  had, usually starting, since its provider is gone. Every client reads the
+  lifecycle first and shows the agent as exited, with how it ended, so
+  `ctl fleet` and `ctl chat` printing phase STARTING for an exited agent is
+  not a finding. A client showing an exited agent as starting, working or
+  idle is.
 
 ## Asks and keys
 
@@ -113,6 +124,11 @@ you are testing still behaves otherwise, that difference is a finding.
   never hangs for half a minute first.
 - Paired hosts keep redialling each other's last working address while one
   is away, with backoff, whether or not discovery finds it.
+- A host that dies without a word (killed, cut off, asleep) is noticed when
+  its link has been silent too long: within 40 seconds on a computer, 80 on
+  the phone. Until then the other side still shows it reachable, its agents
+  as they last were (a turn's timer still ticking), and a prompt typed
+  meanwhile as queued; once the host reads away, the rules above apply.
 
 ## Slash commands and modes
 

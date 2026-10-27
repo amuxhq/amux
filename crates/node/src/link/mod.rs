@@ -14,13 +14,10 @@ pub(crate) mod run;
 pub mod socket;
 pub(crate) mod validation;
 
-pub use carrier::{
-    ByteStream, CarrierKind, ControlSink, ControlSource, LinkCarrier, OpenError, read_message,
-    write_message,
-};
+pub use carrier::{ByteStream, ControlSink, ControlSource, OpenError, read_message, write_message};
 pub use channels::{
-    BulkResponseHold, ChannelClass, ChannelError, ChannelPool, Cursor, EarlyAnswer, EarlyCall,
-    EarlyReply, PeerChannel, PeerClient, ResumedLink, TRUST_REVOKED,
+    ChannelClass, ChannelError, ChannelPool, Cursor, EarlyAnswer, EarlyCall, EarlyReply,
+    PeerChannel, PeerClient, ResumedLink, TRUST_REVOKED,
 };
 pub(crate) use channels::{ChannelKey, InboundStream, peer_client, serve_inbound_streams};
 pub use quic::QuicCarrier;

@@ -148,15 +148,7 @@ fn a_step_after_always_allow_keeps_its_command_at_80_columns() {
 #[test]
 fn a_folder_with_no_separators_keeps_kind_and_host_on_its_row() {
     let mut fleet = home_fleet();
-    inventory(
-        &mut fleet,
-        host(
-            b"b",
-            "buildbox",
-            wire::Trust::Trusted,
-            wire::Presence::Online,
-        ),
-    );
+    inventory(&mut fleet, host(b"b", "buildbox", Reads::Online));
     let mut row = home_agent(b"d8", "dir8", Phase::Idle, None, now() - 1_000);
     if let wire::inventory_event::Of::Agent(agent) = &mut row {
         agent.host_id = b"b".to_vec();

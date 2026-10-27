@@ -5,11 +5,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result, bail};
-use node::supervisor::{Inherited, Params, SuperviseOptions, UpdatePolicy, UpdateSource};
-use settings::{InstallationConfig, Switch, Updates};
-
 /// The supervisor's log file under the data dir.
-pub const SUPERVISOR_LOG: &str = "supervisor.log";
+pub use node::SUPERVISOR_LOG;
+use node::supervisor::{Inherited, Params, SuperviseOptions, UpdatePolicy, UpdateSource};
+use settings::{InstallationConfig, Updates};
 
 /// What the config says the supervisor may install. A build without a
 /// release key installs nothing.
@@ -28,7 +27,7 @@ pub fn run(
     config_path: Option<&Path>,
     inherit: Option<&str>,
 ) -> Result<()> {
-    if config.supervisor == Switch::Off {
+    if !config.supervisor {
         bail!(
             "this install has no supervisor (supervisor: off): the service manager runs amux daemon"
         );
@@ -69,7 +68,7 @@ pub fn run(
             .context("this build's version is not semver")?,
         target: node::release::TARGET.to_owned(),
         updates,
-        keep_awake: config.keep_awake == Switch::On,
+        keep_awake: config.keep_awake,
         clock: Arc::new(agent_dir::SystemClock),
         params: Params::default(),
         inherited,

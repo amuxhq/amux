@@ -55,7 +55,7 @@ Show it failing before the fix.
 | Client event order | A `ui-state` spec (`crates/ui-state/tests/spec`) |
 | View | A `ui-view` test (`crates/ui-view/tests`) |
 | Terminal drawing | A component or whole-frame golden (`crates/tui/tests`), with an explicit assertion beside the golden |
-| Phone drawing | A component snapshot or whole-screen golden (see [the iPhone app](../docs/IOS.md)), with an explicit assertion |
+| Phone drawing | A component snapshot, or a phone journey screen's element geometry (see [the iPhone app](../docs/IOS.md)), with an explicit assertion |
 | Network, replication, families, lifecycle | A many-host spec in `crates/testnet/tests`, with fake scripts, gates, fences and cuts in place of timing |
 | Process, supervisor, updates | The same on process or supervised hosts, or `crates/amux/tests` |
 | Only visible through a real client | A journey story (`journeys/manifest.json`) |

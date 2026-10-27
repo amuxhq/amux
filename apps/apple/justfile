@@ -115,23 +115,6 @@ component-snapshots *ARGS: rust
 component-snapshots-perturb *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; just ios component-snapshots --skip-build --negative-control "$@"
 
-# Reach each whole screen the golden manifest names on the phone driver, over
-# a served topology through the app's door, and compare its display and
-# element geometry with the golden in light and dark, every frosted surface
-# drawn flat. `--only ID` runs one screen; `--update` rewrites the goldens that
-# differ; `--review DIR` writes every screen with its glass on to DIR for a
-# person to look at, comparing nothing.
-# Compare the phone's whole screens with their goldens.
-goldens *ARGS: build tools
-    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 2400 target/debug/testnet journey goldens "$@"
-
-# Move one design token, then take away the needs-you dot, and require the
-# golden run to fail with a difference image each time. What proves the golden
-# check would notice a change, down to one small mark.
-# Prove the golden comparison notices a moved token and a missing small mark.
-goldens-perturb *ARGS: build tools
-    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 1200 target/debug/testnet journey goldens-perturb "$@"
-
 # The app driven the way a person drives it, against a real relay and real
 # daemons started from a committed topology. No arguments runs every journey
 # journeys/manifest.json declares.
@@ -194,24 +177,23 @@ scope-audit: package
 
 # Everything a change to the app is held to, in dependency order, stopping at
 # the first failure: formatting, lint and tests of the Rust workspace, then
-# the phone's lint, bridge, build, smokes, units, goldens, journeys,
-# accessibility, measured run and shipped-scope audit.
+# the phone's lint, bridge, build, smokes, units, journeys, accessibility,
+# measured run and shipped-scope audit.
 # Run everything a change to the app is held to, in order.
 verify:
     {{bounded}} 12600 cargo run --locked -q -p ios-tools -- verify
 
 # The half of verification that building the app can settle: graphs, bridge,
 # app, packaged framework, unit suites and the shipped-scope audit. Nothing
-# here compares a photograph, so it says the same thing on any machine, which
-# is what makes it fit to gate a push.
+# here drives a running app against served machines, which is what keeps it
+# quick enough to gate a push.
 # Run the half of verification a build can settle.
 gate:
     {{bounded}} 12600 cargo run --locked -q -p ios-tools -- verify --gate
 
-# The half that drives a running app and judges what it drew: smoke, goldens,
-# journeys, accessibility and the measured run. Slow, and sensitive to the
-# machine holding the camera.
-# Run the half that photographs a running app.
+# The half that drives a running app and judges what it drew: the store suite
+# on the simulator, journeys and the accessibility audit. Slow.
+# Run the half that drives a running app.
 captures:
     {{bounded}} 12600 cargo run --locked -q -p ios-tools -- verify --captures
 

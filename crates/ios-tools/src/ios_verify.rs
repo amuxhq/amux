@@ -13,7 +13,7 @@ use std::thread::JoinHandle;
 ///
 /// Someone running one command before pushing wants these first, because a
 /// bridge built from a workspace that does not compile is not worth
-/// photographing. `test` runs the whole workspace's test targets, the spec
+/// driving. `test` runs the whole workspace's test targets, the spec
 /// suites among them, so `spec` is not run again. Continuous integration
 /// already runs every one of them as its own job (the phone's target graphs
 /// in the iOS target check), so it asks for the phone stages alone rather
@@ -26,7 +26,7 @@ const WORKSPACE: &[&str] = &["fmt-check", "lint", "test", "mobile-check"];
 /// simulator graphs are allowed to contain, whether the bridge and the app
 /// build, whether the packaged framework links and loads, and what the unit
 /// suites say. Component images render in-process against a pinned native
-/// environment; photographs of the full simulator display run separately.
+/// environment; the suites that drive the running app run separately.
 ///
 /// The app and every suite are built once, by `ios test-build`, and the
 /// suites then run what it built: built by each recipe in turn, the app was
@@ -64,18 +64,11 @@ const SHIPPING: &[&str] = &["ios package", "ios scope-audit"];
 
 /// Everything that drives a running app or validates its recorded state.
 ///
-/// This is the slow half and the environment-sensitive half, and they are the
-/// same half for one reason: they validate the app beyond what compilation and
-/// unit tests can settle. A photograph of a simulator records the machine that
-/// took it as well as the app. Kept apart from the gate so that a change to the
-/// app is not held up by a difference between two Macs.
-const CAPTURES: &[&str] = &[
-    "ios goldens",
-    "ios goldens-perturb",
-    "test-store-ios",
-    "ios journey",
-    "ios accessibility",
-];
+/// This is the slow half: these validate the app beyond what compilation and
+/// unit tests can settle, by driving it on a simulator against served
+/// machines, which takes minutes a stage. Kept apart from the gate so that a
+/// change to the app is not held up by them.
+const CAPTURES: &[&str] = &["test-store-ios", "ios journey", "ios accessibility"];
 
 /// The phone measured: the optimised app against the served performance
 /// network, judged against budgets and the enrolled Mac's baseline
@@ -519,14 +512,14 @@ mod tests {
     }
 
     /// The push gate includes small in-process component renders, but leaves
-    /// full-display photography and the long interaction suites off that path.
+    /// the long interaction suites off that path.
     #[test]
-    fn the_gate_compares_components_but_not_the_simulator_display() {
+    fn the_gate_compares_components_but_drives_no_running_app() {
         let gate = recipes(Phases::Gate, ROOT_JUSTFILE, IOS_JUSTFILE).unwrap();
-        for photographed in ["ios goldens", "ios journey", "ios accessibility"] {
+        for driven in ["ios journey", "ios accessibility"] {
             assert!(
-                !gate.contains(&photographed),
-                "{photographed} compares pictures and cannot gate a push"
+                !gate.contains(&driven),
+                "{driven} drives a running app and does not gate a push"
             );
         }
         let runs = |name: &str| gate.iter().any(|stage| recipe_name(stage) == name);

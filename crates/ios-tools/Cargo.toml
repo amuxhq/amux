@@ -14,7 +14,6 @@ ui-view = { workspace = true }
 wire = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-png = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

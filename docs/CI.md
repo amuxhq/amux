@@ -14,7 +14,7 @@ recipes; [Testing](TESTING.md) describes the suites they run.
 | CI | [`ci.yml`](../.github/workflows/ci.yml) | Pushes to `main`; pull requests into `main` | Every check a change is held to, on Linux, macOS and Windows |
 | iOS gate | [`ios.yml`](../.github/workflows/ios.yml) | Pushes to `main` and pull requests into `main` that touch the phone's paths, and by hand | `just ios gate` on Xcode 26.6 |
 | Weekly offline tests | [`offline.yml`](../.github/workflows/offline.yml) | Sundays 04:00 UTC (GitHub often starts it hours late), and by hand | The workspace tests with no external network |
-| iOS captures | [`ios-captures.yml`](../.github/workflows/ios-captures.yml) | Nightly 03:00 UTC (GitHub often starts it hours late), and by hand | The phone's photographed suites |
+| iOS captures | [`ios-captures.yml`](../.github/workflows/ios-captures.yml) | Nightly 03:00 UTC (GitHub often starts it hours late), and by hand | The phone's component snapshots nightly; journeys and the accessibility audit by hand |
 | Models at nightly bounds | [`models-nightly.yml`](../.github/workflows/models-nightly.yml) | Daily 02:00 UTC (GitHub often starts it hours late), and by hand | Every protocol model at its nightly bounds, one Linux job per model, and every simulated testnet story under 2000 seeds |
 | Release | [`release.yml`](../.github/workflows/release.yml) | A pushed `v*` tag | The `amux` release binaries; see [Release](RELEASE.md) |
 
@@ -180,9 +180,9 @@ half of the phone's verification that building the app can settle.
 `unit --skip-build`. The simulator boots while `test-build` compiles the app
 and every unit and component suite once, for any simulator, and the gate
 waits for both before the suites run what was built. `mobile-check` is left
-to the iOS target check, which runs it on every push. None of it compares a
-photograph of the whole display, so it answers the same on any machine. The
-component snapshot batch runs under its own bound, sized by the rule above
+to the iOS target check, which runs it on every push. The only pictures it
+compares are the component snapshots, drawn in-process and flat, so it
+answers the same on any machine. The component snapshot batch runs under its own bound, sized by the rule above
 from the slowest clean CI run: 466 s with only the examples marked to settle
 late waiting (371 to 429 s is usual), so 700 s, and 629 s in the nightly
 captures run, where every picture waits a quiet second (`--settle-all`, also
@@ -192,23 +192,23 @@ passed or not.
 
 `just ios verify` is the whole sequence a developer runs before pushing a
 phone change: the workspace's `fmt-check`, `lint` and `test` (which runs the spec suites), then the
-gate, then the captures (`ios goldens`, `ios goldens-perturb`,
-`test-store-ios`, `ios journey`, `ios accessibility`), then the
+gate, then the captures (`test-store-ios`, `ios journey`,
+`ios accessibility`), then the
 shipping stages (`ios package`, `ios scope-audit`). It refuses to start if
 any stage names a recipe the justfiles no longer declare. `just ios captures`
 and `just ios shipping` run those halves alone.
 
 ### iOS captures
 
-The nightly workflow boots the golden simulator on `macos-26`, compares the
-native component snapshots, and compares the whole-screen goldens. Nothing
-it runs uses the small simulator, which took seven minutes to boot. It
+The nightly workflow boots the golden simulator on `macos-26` and compares the
+native component snapshots with every example waiting to stop changing
+(`--settle-all`). Nothing it runs uses the small simulator, which took seven minutes to boot. It
 restores the iOS gate's Rust cache and never saves its own: a cache keyed to
 the nightly job was saved only after a green run and evicted before the next
 one, so every night built the Rust bridge and tools from nothing. Run by
-hand, it instead runs `just ios captures` — goldens, journeys and the
-accessibility sweep. It uploads the golden comparisons, the journey evidence
-and the component snapshots. [The iPhone app](IOS.md) explains what those
+hand, it also runs `just ios captures`: the store suite on the simulator,
+journeys and the accessibility sweep. It uploads the journey evidence, the
+audit's record and the component snapshot comparisons. [The iPhone app](IOS.md) explains what those
 compare.
 
 ### Waiting
@@ -238,7 +238,7 @@ journey or baseline that does not exist.
 | `fast` | Offline, credential-free tests with no wall-time settling: unit tests, spec suites, adapter replays, store and effect integration, renderer goldens | `just test` on every push, on all three platforms |
 | `system` | Real processes and transports with bounded deadlines: the built `amux` binary and its supervisor, the phone bridge on a simulator, the store on iOS | The desktop suites in `just test` on every push (Unix runners); `ios loopback-smoke` in the iOS gate; `test-store-ios` in `just ios captures` |
 | `tool` | The repository's own machinery: script contracts, source and dependency policy, the CI tooling, the shipping scope audit | The Rust side in `just test`; `just script-tests` on every push; `ios script-tests` and `ios lint` in the iOS gate; `ios scope-audit` before every app release |
-| `journey` | Complete client stories through the shared manifest, and the phone's whole-screen goldens | The terminal journeys job and the system journey inside `just test` on every push; phone goldens nightly; phone journeys and the accessibility sweep in iOS captures run by hand |
+| `journey` | Complete client stories through the shared manifest, and the phone's accessibility sweep | The terminal journeys job and the system journey inside `just test` on every push; phone journeys and the accessibility sweep in iOS captures run by hand |
 | `qualification` | Real providers, real cloud accounts and measured performance | Never on an ordinary push: `just live`, `just perf` and the `just ios qa-*` recipes by hand, on machines that have the credentials or hardware; `just ios perf` by hand on the enrolled Mac, last in `just ios verify` |
 
 [Testing](TESTING.md) defines the lanes and boundaries fully.

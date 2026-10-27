@@ -189,7 +189,7 @@
       "stage": 16,
       "clients": ["phone"],
       "topology": "journeys/topologies/phone-accessible.json",
-      "claim": "The app, saying it draws at an accessibility text size, pairs with a machine on the keypad, opens a Claude agent and sends it a prompt; the permission card it raises is read and answered with Allow once at that size, the machine holds the prompt once and finishes the turn, and the provider receives exactly one allow."
+      "claim": "The app, saying it draws at an accessibility text size, pairs with a machine on the keypad, opens a Claude agent and sends it a prompt; the permission card it raises is read and answered with Allow once at that size, the machine holds the prompt once and finishes the turn, and the provider receives exactly one allow. At that size every control on Hosts and Settings lies whole across the screen, and the Appearance choices are clear of one another."
     },
     {
       "id": "local-network",
@@ -219,7 +219,7 @@
     }
   ],
   "retired_phone_journeys": {
-    "about": "Phone journeys written for the app before it ran on one runtime per profile. Each claim of each is either carried by a named step of a current story (story/screen, a screen that story photographs) or listed as dropped with why.",
+    "about": "Phone journeys written for the app before it ran on one runtime per profile. Each claim of each is either carried by a named step of a current story (story/screen, a screen that story compares) or listed as dropped with why.",
     "journeys": [
       {
         "id": "onramp",
@@ -312,7 +312,7 @@
         "dropped": [
           {
             "claim": "Six agents on two machines listed in recency order, with the subtitle '1 need you · 6 agents' and ages like '6m ago'.",
-            "why": "The fleet's order and wording are held by the whole-screen fleet golden (just ios goldens, fleet) rather than a story; no story pairs two machines."
+            "why": "The fleet's order and wording are held by the shared view goldens (crates/ui-view/tests/goldens) and the fleet.busy component snapshot rather than a story; no story pairs two machines."
           },
           {
             "claim": "Edge-swipe back returns to the fleet.",
@@ -637,7 +637,7 @@
           },
           {
             "claim": "Sign-in refused and cancelled, the paywall's declined and pending purchases, a web subscription kept, sign-in mismatch, a lapsed subscription, Remove from This Phone, appearance and Contact Support.",
-            "why": "Held by SignInStoreTests, PaywallStoreTests, AccountRegistryTests and the whole-screen goldens; no story walks them."
+            "why": "Held by SignInStoreTests, PaywallStoreTests, AccountRegistryTests and the settings component snapshots (sign-in failed and mismatched, the paywall's pending and unconfirmed purchases, and Settings with its appearance control and Contact Support); no story walks them."
           }
         ]
       },

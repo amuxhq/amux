@@ -61,9 +61,9 @@ private struct HidesNeedsYouDotKey: EnvironmentKey {
 extension EnvironmentValues {
     /// Whether the needs-you dots are drawn clear: the one beside a row's
     /// age and the mark in front of a row whose agent waits on you. Only a
-    /// driving build sets it, to show that a whole-screen golden notices one
-    /// small mark gone; the dots are too small to be elements the geometry
-    /// names.
+    /// driving build sets it, through the door's `perturb` request, to take
+    /// one small mark away on purpose; the dots are too small to be elements
+    /// the geometry names.
     public var hidesNeedsYouDot: Bool {
         get { self[HidesNeedsYouDotKey.self] }
         set { self[HidesNeedsYouDotKey.self] = newValue }

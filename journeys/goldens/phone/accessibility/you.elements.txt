@@ -1,5 +1,5 @@
 shell |  | you | 0,62,402,778
-home |  | signed-out | 0,116,402,675
+home |  | signed-out | 0,187,402,604
 hosts |  | 1 reachable | 0,221,402,570
 you |  | none | 0,132,402,708
 you.signIn | Sign In |  | 16,176,370,137
@@ -16,18 +16,14 @@ you.report | Report a Problem |  | 16,1216,370,69
 you.dump | Export Diagnostics |  | 16,1286,370,112
 you.help.caption |  |  | 16,1405,366,106
 you.close | Close |  | 326,82,56,36
- | All |  | 16,114,60,44
- | Needs you, 2 |  | 84,114,191,44
- | Working |  | 283,114,140,44
- | dialog, Needs you, Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,160,370,150
- | asker, Needs you, Which changes should the release notes keep?, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,310,370,150
- | keeper, Idle, The recovery state is safely stored., desk, /tmp/amux-phone-journey/net/desk/work, <age>, unread |  | 16,460,370,150
- | planner, Idle, The pairing errors all come from one table in the wire crate, so they can share one string., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,611,370,150
+ | All |  | 16,185,60,44
+ | Needs you |  | 84,185,165,44
+ | Working |  | 257,185,140,44
+ | decision-sdk, Idle, The deploy check passed., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,231,370,150
+ | Agents |  | 16,124,174,62
  | Switch account |  | 21,66,42,36
- | Agents |  | 167,65,68,25
  | New Agent |  | 338,62,44,44
- | 2 need you |  | 171,89,60,14
- | Search |  | 16,117,370,0
+ | Search |  | 16,188,370,0
  | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12
  | Hosts |  | 197,795,94,54

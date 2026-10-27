@@ -153,6 +153,20 @@ final class AccountRegistryTests: XCTestCase {
         XCTAssertFalse(again.persistenceFailed)
     }
 
+    func testAnAccountTakenOffThePhoneIsForgottenInTheFile() throws {
+        let file = file()
+        let registry = AccountRegistry(file: file)
+        registry.show([profile("p0", "ada"), profile("p1", "bob")])
+        registry.saw(hosts: 2, attention: 1, for: AccountId("bob"))
+        registry.show([profile("p0", "ada")])
+        let saved = try String(contentsOf: file, encoding: .utf8)
+        XCTAssertFalse(saved.contains("bob"), saved)
+        // Back again, it starts from nothing seen.
+        registry.show([profile("p0", "ada"), profile("p1", "bob")])
+        let bob = registry.accounts.first { $0.id == AccountId("bob") }
+        XCTAssertNil(bob?.attention)
+    }
+
     func testALateAnswerForAnAccountNotOnScreenIsDropped() {
         let registry = AccountRegistry()
         registry.show([profile("p0", "ada")])

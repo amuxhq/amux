@@ -173,6 +173,14 @@ public final class AccountRegistry {
                 profile: view.id)
         }
         unbound = profiles.first { $0.subject.isEmpty }?.id
+        // The installation lists every profile it has, so an account it
+        // no longer lists was taken off this phone: forget what was seen
+        // of it.
+        let listed = Set(accounts.map(\.id))
+        if seen.keys.contains(where: { !listed.contains($0) }) {
+            seen = seen.filter { listed.contains($0.key) }
+            persist()
+        }
         // Nothing was on screen yet, or what was is gone.
         if selected.map({ id in !accounts.contains { $0.id == id } }) ?? (unbound == nil) {
             place(next())

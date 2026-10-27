@@ -87,6 +87,20 @@ pub fn unix_private_address(path: &Path) -> io::Result<PathBuf> {
     imp::private_address(&std::path::absolute(path)?)
 }
 
+/// Removes the short addresses made for sockets in `dir` and its private
+/// directory, which go with the directory itself: the link to each, and
+/// the real directory a program binding its own socket was given. Nothing
+/// to do on Windows, where a pipe ends with its last handle.
+pub fn forget_short_addresses(dir: &Path) {
+    #[cfg(unix)]
+    if let Ok(dir) = std::path::absolute(dir) {
+        imp::forget(&dir);
+        imp::forget(&dir.join(crate::PRIVATE));
+    }
+    #[cfg(not(unix))]
+    let _ = dir;
+}
+
 /// FNV-1a: stable across processes and versions, which is all a derived
 /// address needs.
 fn fnv(bytes: &[u8]) -> u64 {
@@ -206,6 +220,18 @@ mod imp {
             ));
         }
         Ok(address)
+    }
+
+    /// Removes the short link to `dir` and its private short directory, if
+    /// either was ever made.
+    pub fn forget(dir: &Path) {
+        let Ok(runtime) = runtime_dir() else { return };
+        let hash = fnv(dir.as_os_str().as_bytes());
+        let link = runtime.join(format!("{hash:016x}"));
+        if fs::read_link(&link).is_ok_and(|target| target == dir) {
+            let _ = fs::remove_file(&link);
+        }
+        let _ = fs::remove_dir_all(runtime.join(format!("{hash:016x}.d")));
     }
 
     fn limit() -> usize {
@@ -424,6 +450,27 @@ mod tests {
 
         let short = root.path().join("m.sock");
         assert_eq!(unix_private_address(&short).unwrap(), short);
+    }
+
+    #[test]
+    fn an_agents_short_addresses_go_with_its_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let agent = root.path().join("d".repeat(60)).join("e".repeat(60));
+        let private = agent.join(crate::PRIVATE);
+        std::fs::create_dir_all(&private).unwrap();
+        let link = unix_address(&agent.join("ctl.sock")).unwrap();
+        let link = link.parent().unwrap().to_owned();
+        let real = unix_private_address(&private.join("messaging.sock")).unwrap();
+        let real = real.parent().unwrap().to_owned();
+        assert!(std::fs::symlink_metadata(&link).is_ok());
+        assert!(real.is_dir());
+
+        forget_short_addresses(&agent);
+        assert!(
+            std::fs::symlink_metadata(&link).is_err(),
+            "the link is gone"
+        );
+        assert!(!real.exists(), "the private directory is gone");
     }
 }
 

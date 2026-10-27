@@ -102,6 +102,67 @@ pub enum LockError {
     Io(io::Error),
 }
 
+/// How many reports `reports/` keeps: dump bundles, and the text files the
+/// relay and the supervisor write when their cores break.
+pub const REPORTS_KEPT: usize = 20;
+
+/// Removes all but the newest [`REPORTS_KEPT`] reports in `dir`, by when
+/// each was last written. A dotted name, a bundle still being assembled,
+/// is left alone.
+pub fn prune_reports(dir: &Path) -> io::Result<()> {
+    let mut reports = Vec::new();
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        if entry.file_name().to_string_lossy().starts_with('.') {
+            continue;
+        }
+        let meta = entry.metadata()?;
+        reports.push((meta.modified()?, entry.file_name(), meta.is_dir()));
+    }
+    reports.sort();
+    let excess = reports.len().saturating_sub(REPORTS_KEPT);
+    for (_, name, is_dir) in reports.into_iter().take(excess) {
+        let path = dir.join(name);
+        let removed = if is_dir {
+            fs::remove_dir_all(&path)
+        } else {
+            fs::remove_file(&path)
+        };
+        match removed {
+            Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error),
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Removes what dumps a crash interrupted left: bundles being assembled
+/// under `reports/`, and the store copies beside each profile's store,
+/// which are unredacted. Run at start, under the installation lock, when no
+/// dump can be under way.
+pub(crate) fn sweep_dump_leftovers(data_dir: &Path, profile_dirs: &[PathBuf]) {
+    let dirs = std::iter::once(data_dir.join(REPORTS)).chain(profile_dirs.iter().cloned());
+    for dir in dirs {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            if !entry.file_name().to_string_lossy().starts_with(".dump-") {
+                continue;
+            }
+            let path = entry.path();
+            let removed = if path.is_dir() {
+                fs::remove_dir_all(&path)
+            } else {
+                fs::remove_file(&path)
+            };
+            if let Err(error) = removed {
+                tracing::warn!(%error, path = %path.display(), "cannot remove a dump's leftover");
+            }
+        }
+    }
+}
+
 /// Creates a directory, and its parents, only this user can enter.
 pub fn private_dir(path: &Path) -> io::Result<()> {
     let mut builder = fs::DirBuilder::new();
@@ -167,4 +228,58 @@ pub fn sync_dir(dir: &Path) -> io::Result<()> {
 #[cfg(not(unix))]
 pub fn sync_dir(_dir: &Path) -> io::Result<()> {
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reports_keep_the_newest_and_leave_a_bundle_being_assembled() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000);
+        for n in 0..REPORTS_KEPT + 2 {
+            let path = dir.path().join(format!("dump-{n:02}"));
+            fs::create_dir(&path).unwrap();
+            fs::write(path.join("manifest.json"), b"{}").unwrap();
+            let at = old + std::time::Duration::from_secs(n as u64);
+            File::open(&path).unwrap().set_modified(at).unwrap();
+        }
+        let text = dir.path().join("relay-1-ab.txt");
+        fs::write(&text, b"window").unwrap();
+        fs::create_dir(dir.path().join(".dump-99")).unwrap();
+
+        prune_reports(dir.path()).unwrap();
+        let mut left: Vec<String> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        assert_eq!(left.len(), REPORTS_KEPT + 1, "{left:?}");
+        assert!(left.contains(&".dump-99".to_owned()));
+        assert!(left.contains(&"relay-1-ab.txt".to_owned()));
+        // The three oldest bundles went.
+        for gone in ["dump-00", "dump-01", "dump-02"] {
+            assert!(!left.contains(&gone.to_owned()), "{left:?}");
+        }
+    }
+
+    #[test]
+    fn a_crashed_dumps_leftovers_are_swept_and_nothing_else() {
+        let data = tempfile::tempdir().unwrap();
+        let reports = data.path().join(REPORTS);
+        let profile = data.path().join(PROFILES).join("p");
+        fs::create_dir_all(reports.join(".dump-1-ab")).unwrap();
+        fs::create_dir_all(reports.join("dump-2-cd")).unwrap();
+        fs::create_dir_all(&profile).unwrap();
+        for name in [".dump-ef.sqlite", ".dump-ef.sqlite-wal", STORE] {
+            fs::write(profile.join(name), b"x").unwrap();
+        }
+        sweep_dump_leftovers(data.path(), std::slice::from_ref(&profile));
+        assert!(!reports.join(".dump-1-ab").exists());
+        assert!(reports.join("dump-2-cd").exists());
+        assert!(!profile.join(".dump-ef.sqlite").exists());
+        assert!(!profile.join(".dump-ef.sqlite-wal").exists());
+        assert!(profile.join(STORE).exists());
+    }
 }

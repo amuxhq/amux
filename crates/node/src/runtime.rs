@@ -1581,6 +1581,7 @@ impl ProfileRuntime {
             }
         }
         for id in looked.orphans {
+            agent_dir::local_socket::forget_short_addresses(&self.agent_dir(id));
             match std::fs::remove_dir_all(self.agent_dir(id)) {
                 Ok(()) => report.removed.push(id),
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {}

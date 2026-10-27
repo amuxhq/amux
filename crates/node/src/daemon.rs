@@ -460,6 +460,11 @@ pub async fn start(
     let uploader = installation.start_analytics(telemetry);
 
     let listed = profiles::list(&installation.data_dir).map_err(StartError::Profiles)?;
+    let profile_dirs: Vec<PathBuf> = listed
+        .iter()
+        .map(|entry| profiles::profile_dir(&installation.data_dir, entry.id))
+        .collect();
+    crate::install::sweep_dump_leftovers(&installation.data_dir, &profile_dirs);
     let mut opened: Vec<(ProfileEntry, Arc<ProfileRuntime>, Looked)> = Vec::new();
     for entry in listed {
         let profile = entry.id;

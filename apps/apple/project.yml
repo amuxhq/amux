@@ -149,7 +149,6 @@ targets:
         # Git worktree metadata can live outside SRCROOT. The revision phase
         # reads it each build and updates only the built app's Info.plist.
         ENABLE_USER_SCRIPT_SANDBOXING: NO
-        CODE_SIGN_ENTITLEMENTS: Amux/Amux.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: sh.amux.app
         # What the App Store shows, and the number that identifies one binary
         # forever. `just ios release` writes both here; nothing else should.

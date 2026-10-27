@@ -76,6 +76,7 @@ pub async fn run(dir: PathBuf, clock: impl Clock) -> Result<ExitCause, AgentErro
     dir::private_dir(&dir.join(dir::PRIVATE)).map_err(AgentError::Dir)?;
     let clock: Arc<dyn Clock> = Arc::new(clock);
     let trimming = tokio::spawn(trim_logs(dir.clone()));
+    let codex_sock = dir.join(dir::PRIVATE).join(dir::CODEX_SOCK);
     let ended = match wire::Kind::try_from(spec.kind) {
         Ok(wire::Kind::ClaudeSdk) => host::run::<ClaudeSdk>(dir, spec, clock).await,
         Ok(wire::Kind::ClaudePty) => host::run::<ClaudePty>(dir, spec, clock).await,
@@ -83,6 +84,8 @@ pub async fn run(dir: PathBuf, clock: impl Clock) -> Result<ExitCause, AgentErro
         Ok(wire::Kind::Unspecified) | Err(_) => Err(AgentError::UnknownKind(spec.kind)),
     };
     trimming.abort();
+    // Codex binds its socket itself and leaves it behind when it exits.
+    let _ = std::fs::remove_file(codex_sock);
     ended
 }
 

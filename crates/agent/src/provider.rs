@@ -691,7 +691,22 @@ impl Provider {
                 self.write_line(&request).await
             }
             Effect::FollowTranscript { path } => {
-                self.follow(PathBuf::from(path));
+                let path = PathBuf::from(path);
+                // A transcript is named by its session. A new one (a
+                // `/clear`, or a resume Claude ran itself) is the session
+                // the next incarnation resumes.
+                if let Some(session) = path.file_stem().and_then(|stem| stem.to_str()) {
+                    let file = self.dir.join(dir::PRIVATE).join(dir::PROVIDER_SESSION);
+                    if std::fs::read_to_string(&file)
+                        .ok()
+                        .as_deref()
+                        .map(str::trim)
+                        != Some(session)
+                    {
+                        persist(&self.events, &file, session).await;
+                    }
+                }
+                self.follow(path);
                 Ok(())
             }
             Effect::Terminal(input) => {

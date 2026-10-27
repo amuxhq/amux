@@ -330,6 +330,9 @@ impl ProfileRuntime {
         )?;
         let bundle = self.reports.join(&name);
         std::fs::rename(&partial, &bundle)?;
+        if let Err(error) = crate::install::prune_reports(&self.reports) {
+            tracing::warn!(%error, "cannot prune the reports");
+        }
         Ok(bundle)
     }
 

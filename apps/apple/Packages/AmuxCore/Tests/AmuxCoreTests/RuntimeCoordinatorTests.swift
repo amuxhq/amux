@@ -82,32 +82,6 @@ final class RuntimeCoordinatorTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: coordinator.directory.path))
     }
 
-    func testALeftoverDirectoryOfPerAccountInstallationsIsDeletedAtStart() async throws {
-        let leftover = support.appendingPathComponent("installations/old", isDirectory: true)
-        try FileManager.default.createDirectory(at: leftover, withIntermediateDirectories: true)
-        let coordinator = coordinator(AccountRegistry())
-        defer { coordinator.stop() }
-        coordinator.start()
-        let started = await coordinator.started()
-        XCTAssertNotNil(started)
-        XCTAssertFalse(FileManager.default.fileExists(
-            atPath: support.appendingPathComponent("installations").path))
-    }
-
-    func testAnInstallationFromBeforeProfileDirectoriesIsReplacedAtStart() async throws {
-        let coordinator = coordinator(AccountRegistry())
-        defer { coordinator.stop() }
-        let old = coordinator.directory.appendingPathComponent("old-profile", isDirectory: true)
-        try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
-        try Data("{}".utf8).write(to: coordinator.directory.appendingPathComponent("registry"))
-        coordinator.start()
-        let started = await coordinator.started()
-        XCTAssertNotNil(started)
-        XCTAssertNil(coordinator.storeFailure)
-        XCTAssertEqual(coordinator.profiles.count, 1)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: old.path))
-    }
-
     func testTheRuntimeLendsNoBearerBeforeAnySignIn() async {
         let registry = AccountRegistry()
         let coordinator = coordinator(registry)

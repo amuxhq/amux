@@ -1447,9 +1447,12 @@ async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: Wea
             }
         }
         Job::RemoveDir { path } => {
-            blocking(move || match std::fs::remove_dir_all(&path) {
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                removed => removed,
+            blocking(move || {
+                agent_dir::local_socket::forget_short_addresses(&path);
+                match std::fs::remove_dir_all(&path) {
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                    removed => removed,
+                }
             })
             .await
         }

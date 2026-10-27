@@ -3405,7 +3405,31 @@ fn a_chats_tool_steps_choice_is_kept_for_that_chat() {
     assert_eq!(layout.tools_of(b"two"), ToolSteps::Collapse);
     // Back to the default, the chat is no longer named.
     assert!(layout.set_tools(b"one", ToolSteps::Collapse));
-    assert!(layout.tools.is_empty());
+    assert!(layout.chats.is_empty());
+}
+
+/// The layout keeps only the most recently changed chats: an agent deleted
+/// elsewhere is never named to this client, so age bounds the file.
+#[test]
+fn the_layout_keeps_the_most_recently_changed_chats() {
+    use crate::chat::ToolSteps;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("layout.json");
+    let mut layout = crate::app::Layout::default();
+    for n in 0..crate::app::CHATS_KEPT + 5 {
+        let id = (n as u32).to_be_bytes();
+        assert!(layout.set_tools(&id, ToolSteps::Hide));
+        let key: String = id.iter().map(|b| format!("{b:02x}")).collect();
+        layout.chats.get_mut(&key).unwrap().changed_ms = n as i64;
+    }
+    layout.save(Some(&path));
+    let layout = crate::app::Layout::load(Some(&path));
+    assert_eq!(layout.chats.len(), crate::app::CHATS_KEPT);
+    assert_eq!(layout.tools_of(&0u32.to_be_bytes()), ToolSteps::Collapse);
+    let newest = (crate::app::CHATS_KEPT as u32 + 4).to_be_bytes();
+    assert_eq!(layout.tools_of(&newest), ToolSteps::Hide);
+    let leftovers = std::fs::read_dir(dir.path()).unwrap().count();
+    assert_eq!(leftovers, 1, "no temporary file is left beside it");
 }
 
 /// The header names the agent under one blank line, and the composer is

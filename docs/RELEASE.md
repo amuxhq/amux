@@ -147,22 +147,13 @@ that is what testers should read.
 
 ### Signing
 
-Three things sign this app, and they belong in different places.
+Two things sign this app, and they belong in different places.
 
 **Committed, in `apps/apple/project.yml`:** device signing is off by default
 (`CODE_SIGNING_ALLOWED: NO`), and the simulator SDK turns it back on with an
 ad-hoc identity (`CODE_SIGN_IDENTITY[sdk=iphonesimulator*]: "-"`). Every
 routine build in this repository is a simulator build, so the default is the
 one that needs no identity at all.
-
-**Committed, `apps/apple/Amux/Amux.entitlements`:** `keychain-access-groups`
-naming the app's own group. On the simulator that grant comes from the ad-hoc
-signature, which is why the entitlements file exists at all — see the
-Keychain section of [the iPhone app page](IOS.md). On a phone the same grant
-comes from the provisioning profile instead, but the entitlement still has to
-be requested by the binary: the distribution archive keeps
-`CODE_SIGN_ENTITLEMENTS` pointing at that same file, and an archive built
-without it produces an app whose Keychain reads fail on the device only.
 
 **Untracked, `apps/apple/Signing.local.xcconfig`:** the Team ID, and nothing
 else.

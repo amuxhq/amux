@@ -110,6 +110,7 @@ schemars = "1"
 postcard = { version = "1", features = ["alloc"] }
 serde_yaml = "0.9"
 toml = "0.8.23"
+serde_ignored = "0.1"
 toml_edit = "0.22.27"
 prost = "0.14"
 prost-types = "0.14"

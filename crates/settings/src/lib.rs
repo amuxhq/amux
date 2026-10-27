@@ -245,7 +245,7 @@ impl<'de> Deserialize<'de> for LeaderKey {
 
 /// Keybind configuration
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct Keybinds {
     /// Leader key prefix for keybinds (default: ctrl+a)
     pub leader: LeaderKey,
@@ -271,7 +271,7 @@ pub enum Channel {
 
 /// Local-network discovery.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct DiscoverySettings {
     /// Matched exactly against other daemons' advertised scope: a daemon
     /// lists only candidates in its own scope. Empty for real machines; a
@@ -282,7 +282,7 @@ pub struct DiscoverySettings {
 /// What each agent process is started with, copied into its spec at spawn.
 /// A change affects the next spawn or resume, never a running agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct AgentSettings {
     /// How long an agent keeps running after its daemon disappears before
     /// it drains and exits. Basis: minutes, enough to ride out a daemon
@@ -313,7 +313,7 @@ impl Default for AgentSettings {
 /// changes them in the config file, and starting one beside a running chat
 /// copies that chat's instead.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct NewAgentSettings {
     pub claude: NewAgentDefaults,
     pub codex: NewAgentDefaults,
@@ -323,7 +323,6 @@ pub struct NewAgentSettings {
 /// words: a Claude alias or a Codex model id, the effort as the agent names
 /// it, and the permission by the value the agent's catalogue gives it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct NewAgentDefaults {
     pub model: String,
     pub effort: String,
@@ -412,7 +411,7 @@ pub enum ChatInSetting {
 /// Client UI configuration (the TUI; future desktop clients read the same
 /// keys).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct UiSettings {
     /// A shipped theme name or a path resolved beside the config file.
     pub theme: ThemeSetting,
@@ -424,7 +423,7 @@ pub struct UiSettings {
 
 /// Preferences shared by every profile in an installation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct InstallationConfig {
     /// What paired hosts and the phone call this machine. Absent means
     /// [`default_host_name`], resolved once by the daemon.
@@ -456,6 +455,11 @@ pub struct InstallationConfig {
     pub agent: AgentSettings,
     #[serde(skip)]
     pub path: Option<PathBuf>,
+    /// Keys the file set that this version does not know, as dotted paths.
+    /// They are ignored rather than refused, so one file still starts an
+    /// older or newer amux; whoever loads the file warns about them.
+    #[serde(skip)]
+    pub ignored: Vec<String>,
 }
 
 impl Default for InstallationConfig {
@@ -477,6 +481,7 @@ impl Default for InstallationConfig {
             discovery: DiscoverySettings::default(),
             agent: AgentSettings::default(),
             path: None,
+            ignored: Vec::new(),
         }
     }
 }
@@ -486,11 +491,16 @@ impl InstallationConfig {
         amux_xdg_dir("XDG_CONFIG_HOME", ".config").join("config.toml")
     }
 
-    /// Parses installation TOML, refusing unknown keys and an impossible
-    /// supervisor and updates pair.
+    /// Parses installation TOML, refusing an impossible supervisor and
+    /// updates pair. Unknown keys are collected in
+    /// [`ignored`](Self::ignored).
     pub fn from_toml(text: &str) -> Result<Self, ConfigError> {
-        let config: Self =
-            toml::from_str(text).map_err(|error| ConfigError::Invalid(error.to_string()))?;
+        let mut ignored = Vec::new();
+        let mut config: Self = serde_ignored::deserialize(toml::Deserializer::new(text), |key| {
+            ignored.push(key.to_string())
+        })
+        .map_err(|error| ConfigError::Invalid(error.to_string()))?;
+        config.ignored = ignored;
         config.updates()?;
         Ok(config)
     }
@@ -689,16 +699,31 @@ mod tests {
     }
 
     #[test]
-    fn unknown_config_fields_are_rejected() {
-        for text in [
-            "enable_cloud_mode = false\n",
-            "prevent_idle_sleep = true\n",
-            "[retention]\nown_budget_mib = 1\n",
-            "[agent]\nfacts_ring_segments = 3\n",
-        ] {
-            let error = installation(text).unwrap_err();
-            assert!(error.to_string().contains("unknown field"), "{error}");
-        }
+    fn unknown_keys_are_ignored_and_named() {
+        let config = installation(
+            "host_name = \"desk\"\nprevent_idle_sleep = true\n\
+             [retention]\nown_budget_mib = 1\n\
+             [agent]\nfacts_ring_segments = 3\n\
+             [new_agent.claude]\nmodel = \"opus\"\neffort = \"high\"\npermission = \"default\"\nflavour = 1\n",
+        )
+        .unwrap();
+        assert_eq!(config.host_name(), "desk");
+        assert_eq!(config.new_agent.claude.model, "opus");
+        assert_eq!(
+            config.ignored,
+            [
+                "prevent_idle_sleep",
+                "retention",
+                "agent.facts_ring_segments",
+                "new_agent.claude.flavour",
+            ]
+        );
+        assert!(
+            installation("host_name = \"desk\"\n")
+                .unwrap()
+                .ignored
+                .is_empty()
+        );
     }
 
     #[test]

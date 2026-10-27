@@ -31,6 +31,7 @@ node = { workspace = true }
 qrcode = { workspace = true }
 quinn = { workspace = true }
 serde = { workspace = true }
+serde_ignored = { workspace = true }
 toml = { workspace = true }
 toml_edit = { workspace = true }
 settings = { workspace = true }

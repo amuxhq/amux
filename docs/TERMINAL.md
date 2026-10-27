@@ -303,7 +303,8 @@ phone's settings sheet offers every model, effort, permission and mode the agent
 
 The terminal's appearance, its leader key and how new agents start come from the installation config file
 (`~/.config/amux/config.toml` unless `--config` or `AMUX_CONFIG` names another), read by
-[`crates/settings`](../crates/settings/src/lib.rs):
+[`crates/settings`](../crates/settings/src/lib.rs). A key this version does not know is ignored with a warning,
+so one file serves an older or newer amux; a known key with a bad value is still refused:
 
 ```toml
 [ui]

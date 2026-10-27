@@ -28,7 +28,12 @@ pub fn load_config(path: Option<&Path>) -> Result<InstallationConfig> {
             default
         }
     };
-    InstallationConfig::from_file(&path).with_context(|| format!("reading {}", path.display()))
+    let config = InstallationConfig::from_file(&path)
+        .with_context(|| format!("reading {}", path.display()))?;
+    for key in &config.ignored {
+        eprintln!("amux: {}: ignoring unknown key `{key}`", path.display());
+    }
+    Ok(config)
 }
 
 /// A gRPC channel over the local socket named by `path`.

@@ -272,8 +272,9 @@ payload to the app directly.
 ## Running the relay
 
 The relay is `amux server start --cloud --foreground`, run by a service
-manager. It reads one TOML file, named by `--config` or `AMUX_CONFIG`, and
-refuses a key it does not know:
+manager. It reads one TOML file, named by `--config` or `AMUX_CONFIG`. A key
+it does not know is logged and ignored, so the same file serves the relay
+versions either side of a deploy or a rollback:
 
 ```toml
 host_name = "s1.amux.sh"    # the name credentials are minted for

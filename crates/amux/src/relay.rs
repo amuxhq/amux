@@ -8,7 +8,8 @@
 //! started it.
 //!
 //! The configuration is the TOML file `--config` (or `AMUX_CONFIG`) names;
-//! a key it does not know is refused:
+//! a key it does not know is logged and ignored, so one file serves the
+//! relay versions either side of a deploy:
 //!
 //! ```toml
 //! host_name = "s1.amux.sh"   # the name connection tokens are minted for
@@ -45,7 +46,6 @@ const LOG_ENV: &str = "AMUX_LOG";
 const STATE_DIRECTORY_ENV: &str = "STATE_DIRECTORY";
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct RelayConfig {
     host_name: String,
     tcp_port: u16,
@@ -77,18 +77,24 @@ pub fn run(config: Option<&Path>) -> Result<()> {
     let path = config_path(config)?;
     let text =
         std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-    let config: RelayConfig =
-        toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+    let mut ignored = Vec::new();
+    let config: RelayConfig = serde_ignored::deserialize(toml::Deserializer::new(&text), |key| {
+        ignored.push(key.to_string())
+    })
+    .with_context(|| format!("parsing {}", path.display()))?;
     if config.host_name.is_empty() {
         bail!("{}: host_name must name the relay", path.display());
     }
-    let base = path.parent().unwrap_or_else(|| Path::new("."));
-    let cert = read_pem(&base.join(&config.tls_cert), "certificate")?;
-    let key = read_pem(&base.join(&config.tls_key), "key")?;
     match std::env::var_os(LOG_ENV) {
         Some(file) => crate::server::log_to(Path::new(&file))?,
         None => crate::server::log_to_stderr(),
     }
+    for key in &ignored {
+        tracing::warn!(key, config = %path.display(), "ignoring an unknown config key");
+    }
+    let base = path.parent().unwrap_or_else(|| Path::new("."));
+    let cert = read_pem(&base.join(&config.tls_cert), "certificate")?;
+    let key = read_pem(&base.join(&config.tls_key), "key")?;
     let state = state_dir(
         base,
         config.state_dir.as_deref(),
@@ -206,10 +212,16 @@ mod tests {
     }
 
     #[test]
-    fn a_key_the_relay_does_not_know_is_refused() {
-        let text = "host_name = \"r\"\ntcp_port = 1\ntls_cert = \"c\"\ntls_key = \"k\"\n";
-        assert!(toml::from_str::<RelayConfig>(text).is_ok());
-        let old = format!("{text}reports_dir = \"/r\"\n");
-        assert!(toml::from_str::<RelayConfig>(&old).is_err());
+    fn a_key_the_relay_does_not_know_is_ignored() {
+        let text = "host_name = \"r\"\ntcp_port = 1\ntls_cert = \"c\"\ntls_key = \"k\"\n\
+                    reports_dir = \"/r\"\n";
+        let mut ignored = Vec::new();
+        let config: RelayConfig =
+            serde_ignored::deserialize(toml::Deserializer::new(text), |key| {
+                ignored.push(key.to_string())
+            })
+            .unwrap();
+        assert_eq!(config.host_name, "r");
+        assert_eq!(ignored, ["reports_dir"]);
     }
 }

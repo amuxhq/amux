@@ -195,7 +195,7 @@ enum Command {
     #[command(hide = true)]
     Daemon,
     /// Run the daemon under a supervisor that restarts it and, under
-    /// `updates: auto`, installs releases.
+    /// `updates = "auto"`, installs releases.
     Supervise {
         /// The state a supervisor hands the binary it execs after an update.
         #[arg(long, hide = true)]

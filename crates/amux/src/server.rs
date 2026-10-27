@@ -81,6 +81,9 @@ fn launch(config: &InstallationConfig) -> Result<Launch> {
 pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>) -> Result<()> {
     let log = daemon_log(config);
     log_to(&log)?;
+    for key in &config.ignored {
+        tracing::warn!(key, "ignoring an unknown config key");
+    }
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;

@@ -26,7 +26,7 @@ hash, and is exactly its recorded cell grid times the cell size. `frame`
 draws a terminal report's frozen screen from its `frame.json` into
 `frame.png` beside it, so the client itself carries no fonts.
 
-`amux-storybook` is the terminal client's storybook of whole screens:
-`just storybook` steps through them in this terminal and `just storybook
-capture --out DIR` draws each to text and PNG. See
-[the storybook](../../docs/TERMINAL.md#storybook).
+`amux-storybook` is the terminal client's storybook of whole screens, the
+terminal stories listed in `tests/stories.json`: `just storybook` steps
+through them in this terminal and `just storybook capture --out DIR` draws
+each to text and PNG. See [the storybook](../../docs/TERMINAL.md#storybook).

@@ -562,7 +562,8 @@ fn build_log() -> PathBuf {
     root().join("target/storybook/build.log")
 }
 
-/// The newest change under the sources a story is drawn by.
+/// The newest change under the sources a story is drawn by, and the list
+/// of stories.
 fn newest_source() -> SystemTime {
     fn walk(path: &Path, newest: &mut SystemTime) {
         let Ok(entries) = std::fs::read_dir(path) else {
@@ -577,7 +578,9 @@ fn newest_source() -> SystemTime {
             }
         }
     }
-    let mut newest = SystemTime::UNIX_EPOCH;
+    let mut newest = std::fs::metadata(root().join("tests/stories.json"))
+        .and_then(|meta| meta.modified())
+        .unwrap_or(SystemTime::UNIX_EPOCH);
     for crate_dir in ["tui", "ui-view", "ui-state", "shot"] {
         walk(
             &root().join("crates").join(crate_dir).join("src"),

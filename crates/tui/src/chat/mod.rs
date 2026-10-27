@@ -2307,13 +2307,9 @@ impl ChatView {
             // The agent's account needs signing in: the box says how, as an
             // ask would, and keeps the draft for afterwards. An ask the
             // agent exited with leaves the composer to say it exited.
-            _ if sign_in.is_some() => {
-                const MARGIN: usize = 2;
-                let inner = width.saturating_sub(2 * MARGIN + 4).max(1);
-                let body = sign_in.as_ref().map_or_else(Vec::new, |sign_in| {
-                    sign_in_lines(state.kind(), &host, sign_in, inner, theme)
-                });
-                let (lines, mode, _) = framed(body, theme.attention(), &edge_words, width, theme);
+            _ if let Some(sign_in) = &sign_in => {
+                let (lines, mode) =
+                    sign_in_box(state.kind(), &host, sign_in, &edge_words, width, theme);
                 if let Some(cols) = mode {
                     ask_mode = Some((bottom.len() + lines.len() - 1, cols));
                 }
@@ -3071,6 +3067,42 @@ fn ends_with_exit(state: &SessionState) -> bool {
                 }
             )
         })
+}
+
+/// The sign-in box in the composer's place, framed with the composer's
+/// edge, and the columns of the mode's words on that edge.
+fn sign_in_box(
+    kind: wire::Kind,
+    host: &str,
+    sign_in: &ui_view::SignInView,
+    edge_words: &EdgeWords,
+    width: usize,
+    theme: Theme,
+) -> (Vec<Line<'static>>, Option<(usize, usize)>) {
+    const MARGIN: usize = 2;
+    let inner = width.saturating_sub(2 * MARGIN + 4).max(1);
+    let body = sign_in_lines(kind, host, sign_in, inner, theme);
+    let (lines, mode, _) = framed(body, theme.attention(), edge_words, width, theme);
+    (lines, mode)
+}
+
+/// The sign-in box alone, its edge naming `model`, as the component
+/// catalogue draws it.
+#[cfg(feature = "fixtures")]
+pub(crate) fn sign_in_composer_lines(
+    kind: wire::Kind,
+    host: &str,
+    sign_in: &ui_view::SignInView,
+    model: &str,
+    width: usize,
+    theme: Theme,
+) -> Vec<Line<'static>> {
+    let edge = EdgeWords {
+        model: Some(model.to_owned()),
+        effort: None,
+        controls: None,
+    };
+    sign_in_box(kind, host, sign_in, &edge, width, theme).0
 }
 
 /// The box for an agent whose account needs signing in: who, the account

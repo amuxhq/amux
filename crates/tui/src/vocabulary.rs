@@ -24,10 +24,10 @@ use ui_view::{
 use wire::{BlobRef, BoundaryKind, EnvelopeKind, SendState};
 
 use crate::chat::ask::AskUi;
-use crate::chat::composer::QueueEntry;
+use crate::chat::composer::{QueueEntry, edge_row};
 use crate::chat::review::ReviewPage;
 use crate::chat::rows::{RowFacts, RowState, row_lines};
-use crate::chat::{composer_lines, feed};
+use crate::chat::{composer_lines, feed, sign_in_composer_lines};
 use crate::editor::Editor;
 use crate::theme::Theme;
 
@@ -137,6 +137,38 @@ pub fn components(theme: Theme) -> Vec<Component> {
         let lines = composer_lines(&editor, &composer, "fixer", "studio", reach, w, theme);
         add(name, shows, lines);
     }
+    for (name, shows, overview, jobs) in edge_rows() {
+        let mut lines: Vec<Line<'static>> =
+            edge_row(&overview, true, jobs, false, written_at(), w, theme)
+                .into_iter()
+                .collect();
+        lines.extend(composer_lines(
+            &Editor::default(),
+            &Composer::Send,
+            "fixer",
+            "studio",
+            Reach::Online(wire::RouteKind::Direct),
+            w,
+            theme,
+        ));
+        add(name, shows, lines);
+    }
+    add(
+        "composer_signed_out_codex",
+        "Codex refused its sign-in: in the composer's place a box says Codex needs you to sign in, that sign-in failed and the provider's words why, and to run codex login on the agent's host, with the model on its edge.",
+        sign_in_composer_lines(
+            wire::Kind::Codex,
+            "studio",
+            &ui_view::SignInView {
+                state: wire::SignInState::Failed,
+                account: String::new(),
+                message: "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header".into(),
+            },
+            "GPT-5.5",
+            w,
+            theme,
+        ),
+    );
     for (name, shows, buffer) in chat_surroundings(theme)
         .into_iter()
         .chain(chat_controls(theme))
@@ -320,10 +352,8 @@ impl HomeScene {
     }
 
     /// A key pressed on home, as the person would press it.
-    pub fn key(&mut self, code: crossterm::event::KeyCode) {
-        let _ = self
-            .home
-            .key(&self.fleet, crossterm::event::KeyEvent::from(code), false);
+    pub fn key(&mut self, key: impl Into<crossterm::event::KeyEvent>) {
+        let _ = self.home.key(&self.fleet, key.into(), false);
     }
 }
 
@@ -2086,6 +2116,55 @@ fn cards() -> Vec<CardSet> {
 
 // --- the composer ----------------------------------------------------------
 
+/// The row resting on the composer's box, over a plain composer: what is
+/// still in flight in the chat, and how many background jobs run.
+fn edge_rows() -> Vec<(&'static str, &'static str, ui_view::Overview, usize)> {
+    use ui_view::{Overview, ServerView, TaskLine, TaskMark, TasksView};
+
+    let server = |name: &str, error: &str, needs_auth: bool| ServerView {
+        name: name.into(),
+        error: error.into(),
+        needs_auth,
+    };
+    let task = |subject: &str, mark| TaskLine {
+        subject: subject.into(),
+        mark,
+    };
+    vec![
+        (
+            "composer_tool_servers",
+            "Tool servers newly failing, called out on the row above the composer: two need signing in (warning ink) and one failed to start (error ink), and ctrl+o, which opens the overview that lists them.",
+            Overview {
+                failed_servers: vec![
+                    server("linear", "needs authentication", true),
+                    server("github", "needs authentication", true),
+                    server("postgres", "connection refused", false),
+                ],
+                ..Overview::default()
+            },
+            0,
+        ),
+        (
+            "composer_tasks",
+            "A task list part done on the row above the composer: the task in progress by name, how many of the tasks are done, the background jobs still running and ctrl+o.",
+            Overview {
+                tasks: Some(TasksView {
+                    done: 1,
+                    total: 3,
+                    current: "Reviewing the draft".into(),
+                    entries: vec![
+                        task("Draft", TaskMark::Done),
+                        task("Review", TaskMark::Current),
+                        task("Publish", TaskMark::Todo),
+                    ],
+                }),
+                ..Overview::default()
+            },
+            2,
+        ),
+    ]
+}
+
 fn composers() -> Vec<(&'static str, &'static str, Composer, Reach, &'static str)> {
     vec![
         (
@@ -2167,6 +2246,18 @@ impl ChatScene {
 /// Chats with the overview open beside them: changes uncommitted and on
 /// the branch, and Claude and Codex near a usage limit.
 pub fn surroundings() -> Vec<(&'static str, &'static str, ChatScene)> {
+    around_a_chat().0
+}
+
+/// A Claude chat with the overview open on everything at once: its
+/// background jobs, the uncommitted files by folder and the usage windows.
+pub fn chat_overview() -> ChatScene {
+    around_a_chat().1
+}
+
+/// The [`surroundings`], and the [`chat_overview`] built from the same
+/// parts.
+fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) {
     use prost::Message as _;
     use ui_state::{Connection, Msg, SessionState};
     use wire::{Kind, session_event};
@@ -2396,6 +2487,18 @@ pub fn surroundings() -> Vec<(&'static str, &'static str, ChatScene)> {
             model: Some("opus".into()),
             model_name: Some("Opus".into()),
             permission: Some("default".into()),
+            usage: Some(claude_usage.clone()),
+            ..Default::default()
+        }
+        .encode_to_vec(),
+    );
+    let everything = session(
+        Kind::ClaudeSdk,
+        wire::ClaudeSdkSnapshot {
+            model: Some("opus".into()),
+            model_name: Some("Opus".into()),
+            permission: Some("default".into()),
+            background_jobs: Some(jobs.clone()),
             usage: Some(claude_usage),
             ..Default::default()
         }
@@ -2413,7 +2516,8 @@ pub fn surroundings() -> Vec<(&'static str, &'static str, ChatScene)> {
         }
         .encode_to_vec(),
     );
-    vec![
+    let overview = scene(&everything, Comparison::Uncommitted, Some(&uncommitted));
+    let goldens = vec![
         (
             "chat_changes_uncommitted",
             "A chat counting uncommitted changes: the header's [Diff +42 −7] from the agent's row, and the overview open beside it with the two background jobs, each command with how long it has run, and the four changed files under their folders, root files first, each with its lines added and removed.",
@@ -2434,7 +2538,8 @@ pub fn surroundings() -> Vec<(&'static str, &'static str, ChatScene)> {
             "A Codex chat near a usage limit, the overview listing its 5-hour limit near and its weekly limit fine, each with its fullness and reset time, and the credits left.",
             scene(&codex, Comparison::Uncommitted, None),
         ),
-    ]
+    ];
+    (goldens, overview)
 }
 
 /// The permission and mode controls on a chat's composer, each agent with
@@ -2442,12 +2547,67 @@ pub fn surroundings() -> Vec<(&'static str, &'static str, ChatScene)> {
 /// agent's normal one, the key under it that changes it, and the
 /// permission picker Ctrl+S then p opens.
 fn chat_controls(theme: Theme) -> Vec<(&'static str, &'static str, Buffer)> {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use crate::chat::ChatView;
+
+    let now = written_at();
+    let draw = |state: &ui_state::SessionState, keys: &[KeyEvent]| {
+        let mut view = ChatView::new(b"agent".to_vec(), now, false);
+        let (width, height) = CHAT_SIZE;
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("test terminal");
+        let mut paint = |view: &mut ChatView| {
+            terminal
+                .draw(|frame| {
+                    let area = frame.area();
+                    view.draw(frame, area, state, None, None, now, theme);
+                })
+                .expect("draw");
+        };
+        paint(&mut view);
+        for key in keys {
+            view.key(state, *key, theme);
+            paint(&mut view);
+        }
+        terminal.backend().buffer().clone()
+    };
+    control_chats()
+        .into_iter()
+        .map(|(name, shows, state, keys)| (name, shows, draw(&state, &keys)))
+        .collect()
+}
+
+/// A headless Claude chat with Ctrl+S then m pressed: the model picker
+/// open over the composer's edge.
+pub fn chat_settings() -> ChatScene {
+    use crossterm::event::KeyModifiers;
+
+    let (_, _, state, _) = control_chats()
+        .into_iter()
+        .next()
+        .expect("the headless Claude chat comes first");
+    let now = written_at();
+    let mut view = crate::chat::ChatView::new(b"agent".to_vec(), now, false);
+    let theme = Theme::default();
+    for key in [
+        KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+        KeyEvent::from(KeyCode::Char('m')),
+    ] {
+        view.key(&state, key, theme);
+    }
+    ChatScene { view, state, now }
+}
+
+/// The chats [`chat_controls`] draws, each with the keys pressed on it.
+#[allow(clippy::type_complexity)]
+fn control_chats() -> Vec<(
+    &'static str,
+    &'static str,
+    ui_state::SessionState,
+    Vec<KeyEvent>,
+)> {
+    use crossterm::event::KeyModifiers;
     use prost::Message as _;
     use ui_state::{Connection, Msg, SessionState};
     use wire::{Kind, OfferedMode, OfferedPermission, session_event};
-
-    use crate::chat::ChatView;
 
     let now = written_at();
     let permission = |value: &str, name: &str, settable: bool| OfferedPermission {
@@ -2591,25 +2751,6 @@ fn chat_controls(theme: Theme) -> Vec<(&'static str, &'static str, Buffer)> {
         })));
         state
     };
-    let draw = |state: &SessionState, keys: &[KeyEvent]| {
-        let mut view = ChatView::new(b"agent".to_vec(), now, false);
-        let (width, height) = CHAT_SIZE;
-        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("test terminal");
-        let mut paint = |view: &mut ChatView| {
-            terminal
-                .draw(|frame| {
-                    let area = frame.area();
-                    view.draw(frame, area, state, None, None, now, theme);
-                })
-                .expect("draw");
-        };
-        paint(&mut view);
-        for key in keys {
-            view.key(state, *key, theme);
-            paint(&mut view);
-        }
-        terminal.backend().buffer().clone()
-    };
     let permission_picker = [
         KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
         KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE),
@@ -2686,22 +2827,26 @@ fn chat_controls(theme: Theme) -> Vec<(&'static str, &'static str, Buffer)> {
         (
             "chat_controls_claude",
             "A headless Claude chat in accept edits: the composer's edge names the model, its effort and the permission, the keys under it offer shift+tab for the next permission, and Ctrl+S then p has opened the permission picker over the edge, accept edits marked, ask, plan and auto beside it.",
-            draw(&claude_sdk, &permission_picker),
+            claude_sdk,
+            permission_picker.to_vec(),
         ),
         (
             "chat_controls_codex",
             "A Codex chat with full access in plan mode: the edge names both, shift+tab moves the mode, and Ctrl+S then p has opened the permission picker with read only, default, auto and full access, full access marked as acting without asking.",
-            draw(&codex_plan, &permission_picker),
+            codex_plan,
+            permission_picker.to_vec(),
         ),
         (
             "chat_controls_codex_custom",
             "A Codex chat whose approval policy and sandbox match no named permission: the edge reads custom, and shift+tab still moves the mode.",
-            draw(&codex_custom, &[]),
+            codex_custom,
+            vec![],
         ),
         (
             "chat_controls_claude_terminal",
             "A terminal Claude chat in plan: the edge names the permission, and shift+tab presses Claude's own cycle key, the only way its permission changes.",
-            draw(&claude_pty, &[]),
+            claude_pty,
+            vec![],
         ),
     ]
 }

@@ -65,7 +65,7 @@ pub use driver::{
 };
 pub use dump::{
     CLIENT_CHECKPOINT, CLIENT_EVENTS, CLIENT_SESSIONS, DAEMON_LOG, DUMP_LOG_BYTES, DUMP_ROWS,
-    DUMP_SEGMENTS, DumpError, MANIFEST, pack,
+    DUMP_SEGMENTS, DumpError, MANIFEST, SUPERVISOR_LOG, pack,
 };
 pub use edge::{
     ACCOUNT_FILE, Cloud, CloudLinkServer, CloudOptions, DUAL_STACK_ANY, DiscoveryFactory, Edge,

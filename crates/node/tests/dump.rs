@@ -78,8 +78,15 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
         format!("INFO started\nWARN a relay call failed: Authorization: Bearer {KEY}\n"),
     )
     .unwrap();
+    let supervisor_log = install.path("supervisor.log");
+    std::fs::write(
+        &supervisor_log,
+        format!("INFO restarting the daemon with GITHUB_TOKEN={TOKEN}\n"),
+    )
+    .unwrap();
     let options = node::StartOptions {
         daemon_log: Some(log),
+        supervisor_log: Some(supervisor_log),
         ..install.options("boot-1", launch)
     };
     let daemon = node::start(options, None).await.unwrap();
@@ -226,6 +233,11 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
     };
     has(MANIFEST.to_owned());
     has(DAEMON_LOG.to_owned());
+    has(node::SUPERVISOR_LOG.to_owned());
+    // The live agent's process sends the tails of its own log and its
+    // provider's.
+    has(format!("agents/{live}/part/agent.log"));
+    has(format!("agents/{live}/part/provider.log"));
     for id in [live, stopped] {
         has(format!("agents/{id}/row.pb"));
         has(format!("agents/{id}/store.pb"));
@@ -381,7 +393,7 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
     assert!(ring_holds, "the live ring holds {KEY}");
     transcript.push(format!(
         "planted {} secrets in the prompt, a later input, the model's reply, the provider's \
-         environment, the dump reason, the daemon log and the client's session; none is in any \
+         environment, the dump reason, the daemon and supervisor logs and the client's session; none is in any \
          file of the bundle, as text or hex",
         PLANTED.len()
     ));
@@ -487,6 +499,7 @@ async fn a_peers_dump_answer_carries_no_daemon_log() {
     std::fs::write(&log, format!("INFO {OTHER}\n")).unwrap();
     let options = node::StartOptions {
         daemon_log: Some(log),
+        supervisor_log: None,
         ..install.options("boot-1", support::synthetic::quiet_launch())
     };
     let daemon = node::start(options, None).await.unwrap();

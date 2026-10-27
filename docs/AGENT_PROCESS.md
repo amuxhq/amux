@@ -85,7 +85,9 @@ path holds its name.
 The daemon writes `spec.<n>` and starts `amux agent <dir>` detached from
 itself: in its own process group, with stdin and stdout closed and stderr
 appended to `agent.log`, so neither the daemon's terminal nor its death
-reaches the agent.
+reaches the agent. The agent holds `agent.log` and `private/provider.log`
+to 1 MiB each, checking every 30 seconds and moving a log past its cap to
+`<name>.1`; a dump carries the tail of both.
 
 `agent::run` then:
 

@@ -128,6 +128,7 @@ impl Install {
             clock: Arc::new(agent_dir::SystemClock),
             push: Arc::new(node::NoopSender),
             daemon_log: None,
+            supervisor_log: None,
             front_door: None,
             edge: node::EdgeOptions::default(),
             analytics: node::Telemetry::Off,

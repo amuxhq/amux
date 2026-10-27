@@ -40,6 +40,8 @@ pub struct StartOptions {
     pub push: Arc<dyn PushSender>,
     /// The daemon's own log file, which dumps include.
     pub daemon_log: Option<PathBuf>,
+    /// Its supervisor's log, which dumps include too, when it has one.
+    pub supervisor_log: Option<PathBuf>,
     /// Where the front door listens. None serves nothing on sockets: the
     /// runtimes are reached in process.
     pub front_door: Option<PathBuf>,
@@ -97,6 +99,7 @@ pub(crate) struct Installation {
     clock: Arc<dyn Clock>,
     push: Arc<dyn PushSender>,
     daemon_log: Option<PathBuf>,
+    supervisor_log: Option<PathBuf>,
     edge: EdgeOptions,
     pub(crate) hosted: Mutex<BTreeMap<ProfileId, Hosted>>,
     /// One change to the profile set at a time: create, rename, delete.
@@ -158,6 +161,7 @@ impl Installation {
             push: self.push.clone(),
             reports: self.data_dir.join(REPORTS),
             daemon_log: self.daemon_log.clone(),
+            supervisor_log: self.supervisor_log.clone(),
             analytics: match self.analytics.get() {
                 Some(sink) => analytics::Analytics::new(host, sink.clone()),
                 None => analytics::Analytics::off(),
@@ -420,6 +424,7 @@ pub async fn start(
         clock,
         push,
         daemon_log,
+        supervisor_log,
         front_door,
         edge,
         analytics: telemetry,
@@ -443,6 +448,7 @@ pub async fn start(
         clock,
         push,
         daemon_log,
+        supervisor_log,
         edge,
         hosted: Mutex::new(BTreeMap::new()),
         profile_changes: tokio::sync::Mutex::new(()),

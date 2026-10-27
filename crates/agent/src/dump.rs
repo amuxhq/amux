@@ -2,8 +2,9 @@
 //! by its own interpreter before it leaves the process.
 //!
 //! The part is the facts ring's segments (the last two, which is all the
-//! ring keeps), the checkpoint at the start of each, and every spec file in
-//! the directory. Each facts entry is redacted on its own and written back
+//! ring keeps), the checkpoint at the start of each, every spec file in
+//! the directory, and the tail of the agent's own log and its provider's,
+//! each read across its `.1` and redacted as text. Each facts entry is redacted on its own and written back
 //! as a line of the same shape, so a dump reader replays the ring exactly
 //! as the agent would. A file that cannot be read is left out and named in
 //! `dump-errors`, never included unredacted.
@@ -61,6 +62,22 @@ pub(crate) fn part<I: Interpreter>(dir: &Path, dump_id: Vec<u8>) -> DumpPart {
             }
         }
         Err(error) => errors.push(format!("specs: {error}")),
+    }
+    for (name, path) in [
+        (agent_dir::AGENT_LOG, dir.join(agent_dir::AGENT_LOG)),
+        (
+            dir::PROVIDER_LOG,
+            dir.join(dir::PRIVATE).join(dir::PROVIDER_LOG),
+        ),
+    ] {
+        match log_file::tail(&path, log_file::AGENT_CAP) {
+            Ok(Some((tail, _))) => files.push(file(
+                name.to_owned(),
+                interpret::redact_text(&String::from_utf8_lossy(&tail)).into_bytes(),
+            )),
+            Ok(None) => {}
+            Err(error) => errors.push(format!("{name}: {error}")),
+        }
     }
     if !errors.is_empty() {
         errors.push(String::new());

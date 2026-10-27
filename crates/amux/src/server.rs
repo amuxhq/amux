@@ -34,16 +34,13 @@ pub(crate) fn daemon_log(config: &InstallationConfig) -> PathBuf {
         .unwrap_or_else(|| config.root.join(DAEMON_LOG))
 }
 
+/// Logs to `path`, capped as every amux log is, with the process's standard
+/// error moved onto it so a panic lands there too.
 pub(crate) fn log_to(path: &Path) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
-    }
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .with_context(|| format!("opening the daemon log {}", path.display()))?;
+    let file = log_file::LogFile::open(path, log_file::PROCESS_CAP)
+        .with_context(|| format!("opening the log {}", path.display()))?;
+    file.claim_stderr()
+        .with_context(|| format!("moving standard error onto {}", path.display()))?;
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
@@ -97,6 +94,8 @@ pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>
             // not connect to yet.
             push: Arc::new(NoopSender),
             daemon_log: Some(log),
+            // A supervised daemon is handed its supervisor's pipe.
+            supervisor_log: pipe.is_some().then(|| config.root.join(SUPERVISOR_LOG)),
             front_door: Some(config.front_door_socket.clone()),
             edge: edge_options(config),
             analytics: telemetry(config),

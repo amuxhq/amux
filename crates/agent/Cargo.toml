@@ -7,6 +7,7 @@ description = "The agent process: hosts one provider, runs its interpreter and w
 publish = false
 
 [dependencies]
+log-file = { workspace = true }
 agent-core = { workspace = true }
 agent-dir = { workspace = true }
 attachments = { workspace = true }

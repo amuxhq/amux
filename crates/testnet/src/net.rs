@@ -1886,6 +1886,7 @@ impl Net {
             clock: self.clock.clone(),
             push: Arc::new(node::NoopSender),
             daemon_log: None,
+            supervisor_log: None,
             front_door: Some(host.info.front_door.clone()),
             edge,
             analytics: self.analytics.clone().unwrap_or(node::Telemetry::Off),

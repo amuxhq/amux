@@ -51,8 +51,13 @@ The installation root is `root` in the installation config (`$XDG_CONFIG_HOME/am
     replicas/                blobs fetched from other hosts
 ```
 
-On the phone the embedded runtime keeps the same layout inside the app's container; its log is `runtime.log`,
-capped at 8 MiB and cut back to its newest 4 MiB.
+Every log is capped the same way: past its cap its contents move to `<name>.1`, replacing the previous one, and
+the file starts again from empty, so a log and its `.1` are all there is. The caps are 8 MiB for `daemon.log`,
+`supervisor.log` and the phone's log, and 1 MiB each for `agent.log` and `provider.log`. The move copies and
+truncates in place rather than renaming, so a process's standard error and a provider's, which other handles hold,
+keep landing in the live file; the daemon and the supervisor also move their own standard error onto their log, so
+a panic is in it. On the phone the embedded runtime keeps the same layout inside the app's container; its log is
+`runtime.log`.
 
 What the agent directory is and who writes what is described in [the agent process](AGENT_PROCESS.md); the
 journal and the store in [Journal and store](JOURNAL_AND_STORE.md).
@@ -148,7 +153,8 @@ find it ([replaying a dump](#replaying-a-dump)). The files are laid out as:
 reports/dump-<unix ms>-<id>/
   manifest.json                 dump id, time, reason, profile, host, generation, daemon version,
                                 one entry per agent, and errors
-  daemon.log                    the last 4 MiB of the daemon's log, redacted
+  daemon.log                    the last 4 MiB of the daemon's log and its .1, redacted
+  supervisor.log                the same of the supervisor's, when amux runs under one
   agents/<agent id>/
     row.pb                      the inventory row (a wire.Agent)
     store.pb                    the store slice: one wire.Step holding the snapshot and the newest
@@ -158,6 +164,8 @@ reports/dump-<unix ms>-<id>/
     part/facts/<segment>        the agent process's facts ring, redacted line by line
     part/facts/<segment>.checkpoint
     part/spec.<n>               the spec of each incarnation
+    part/agent.log              the tail of the agent's and the provider's logs, each across its .1,
+    part/provider.log           redacted
     part/dump-errors            anything the agent process could not read
     host/row.pb, host/store.pb  for another host's agent: that host's row and slice
   hosts/<host id>/manifest.json that host's own manifest

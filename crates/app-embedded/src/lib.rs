@@ -236,6 +236,7 @@ impl EmbeddedRuntime {
             clock: clock.clone(),
             push: Arc::new(node::NoopSender),
             daemon_log: config.log_path.clone(),
+            supervisor_log: None,
             front_door: None,
             edge,
             analytics,

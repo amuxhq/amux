@@ -23,6 +23,7 @@ members = [
     "crates/git-facts",
     "crates/interpret",
     "crates/journal",
+    "crates/log-file",
     "crates/model",
     "crates/models",
     "crates/node",
@@ -58,6 +59,7 @@ license = "FSL-1.1-ALv2"
 agent = { path = "crates/agent" }
 agent-core = { path = "crates/agent-core" }
 core-ring = { path = "crates/core-ring" }
+log-file = { path = "crates/log-file" }
 daemon-core = { path = "crates/daemon-core" }
 relay-core = { path = "crates/relay-core" }
 path-core = { path = "crates/path-core" }

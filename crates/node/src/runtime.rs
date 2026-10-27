@@ -428,6 +428,7 @@ pub struct ProfileRuntime {
     pub(crate) retention: watch::Sender<Retention>,
     pub(crate) reports: PathBuf,
     pub(crate) daemon_log: Option<PathBuf>,
+    pub(crate) supervisor_log: Option<PathBuf>,
     worktrees: Arc<dyn crate::worktree::MakeWorktree>,
     pub(crate) me: Weak<ProfileRuntime>,
     /// The network edge, once the profile is in service.
@@ -647,6 +648,8 @@ pub struct Profile {
     pub reports: PathBuf,
     /// The daemon's own log, which a dump includes.
     pub daemon_log: Option<PathBuf>,
+    /// Its supervisor's log, which a dump includes too, when it has one.
+    pub supervisor_log: Option<PathBuf>,
     /// Where the profile records product analytics.
     pub analytics: analytics::Analytics,
     /// What makes the worktree an agent asked to start in one starts in.
@@ -667,6 +670,7 @@ impl ProfileRuntime {
             push,
             reports,
             daemon_log,
+            supervisor_log,
             analytics,
             worktrees,
         } = profile;
@@ -705,6 +709,7 @@ impl ProfileRuntime {
             retention: watch::Sender::new(Retention::default()),
             reports,
             daemon_log,
+            supervisor_log,
             worktrees,
             me: me.clone(),
             edge: std::sync::OnceLock::new(),
@@ -1974,9 +1979,7 @@ fn spawn_agent(install_path: &Path, dir: &Path) -> io::Result<tokio::process::Ch
     command.spawn()
 }
 
-/// What the agent process writes to stderr, beside its directory's other
-/// files: it has no terminal and no daemon pipe to write to.
-pub const AGENT_LOG: &str = "agent.log";
+pub use agent_dir::AGENT_LOG;
 
 /// Waits on a child this daemon started, so it never lingers as a zombie.
 async fn reap(mut child: tokio::process::Child) {

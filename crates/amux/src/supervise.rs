@@ -5,11 +5,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result, bail};
+/// The supervisor's log file under the data dir.
+pub use node::SUPERVISOR_LOG;
 use node::supervisor::{Inherited, Params, SuperviseOptions, UpdatePolicy, UpdateSource};
 use settings::{InstallationConfig, Updates};
-
-/// The supervisor's log file under the data dir.
-pub const SUPERVISOR_LOG: &str = "supervisor.log";
 
 /// What the config says the supervisor may install. A build without a
 /// release key installs nothing.

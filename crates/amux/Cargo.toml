@@ -15,6 +15,7 @@ name = "amux"
 path = "src/main.rs"
 
 [dependencies]
+log-file = { workspace = true }
 agent = { workspace = true }
 agent-dir = { workspace = true }
 analytics = { workspace = true }

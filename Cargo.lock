@@ -26,6 +26,7 @@ dependencies = [
  "interpret",
  "journal",
  "libc",
+ "log-file",
  "patience",
  "prost",
  "provider-fakes",
@@ -115,6 +116,7 @@ dependencies = [
  "journal",
  "jsonwebtoken",
  "libc",
+ "log-file",
  "node",
  "patience",
  "prost",
@@ -231,6 +233,7 @@ dependencies = [
  "app-runtime",
  "client",
  "futures-util",
+ "log-file",
  "model",
  "node",
  "patience",
@@ -2336,6 +2339,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
+name = "log-file"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "tempfile",
+]
+
+[[package]]
 name = "lru"
 version = "0.18.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2565,6 +2576,7 @@ dependencies = [
  "journal",
  "jsonwebtoken",
  "libc",
+ "log-file",
  "mdns-sd",
  "oauth2",
  "path-core",

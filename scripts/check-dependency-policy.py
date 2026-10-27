@@ -22,6 +22,8 @@ ALLOWED_LOCAL = {
     "store": {"wire"},
     "agent-dir": {"wire"},
     "redaction": set(),
+    # The capped log file every process writes and a dump reads the tail of.
+    "log-file": set(),
     # Reads an agent folder's branch and change totals by running git; the
     # agent process and the daemon share it.
     "git-facts": set(),
@@ -31,7 +33,8 @@ ALLOWED_LOCAL = {
     # and the provider hosts.
     "agent": {
         "agent-core", "agent-dir", "attachments", "claude", "claude-protocol", "codex",
-        "codex-protocol", "core-ring", "git-facts", "interpret", "journal", "pty-host", "wire",
+        "codex-protocol", "core-ring", "git-facts", "interpret", "journal", "log-file", "pty-host",
+        "wire",
     },
     "claude": {"claude-protocol", "pty-host"},
     "codex": {"codex-protocol"},
@@ -45,8 +48,8 @@ ALLOWED_LOCAL = {
     # provider in its graph.
     # interpret only for the dump path's per-kind redactor: the one stated
     # exception to "the daemon interprets nothing".
-    "node": {"agent-dir", "analytics", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "path-core", "relay-core", "release", "settings", "store", "supervisor-core", "version-stamp", "wire"},
-    "amux": {"agent", "agent-dir", "analytics", "claude", "client", "node", "settings", "store", "tui", "wire"},
+    "node": {"agent-dir", "analytics", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "log-file", "path-core", "relay-core", "release", "settings", "store", "supervisor-core", "version-stamp", "wire"},
+    "amux": {"agent", "agent-dir", "analytics", "claude", "client", "log-file", "node", "settings", "store", "tui", "wire"},
     # The version stamp a release tool can rewrite in a built binary, and the
     # release manifest the tool signs and the daemon verifies; the xtask
     # shares both without building the daemon.
@@ -64,7 +67,7 @@ ALLOWED_LOCAL = {
     # The phone's chats and fleet over the local runtime, with no node.
     "app-runtime": {"client", "model", "ui-runtime", "ui-state", "ui-view", "wire"},
     # The daemon's profile runtime hosted in the phone's process.
-    "app-embedded": {"analytics", "app-runtime", "client", "node", "wire"},
+    "app-embedded": {"analytics", "app-runtime", "client", "log-file", "node", "wire"},
     # The C ABI over both.
     "app-ffi": {"app-embedded", "app-runtime", "client", "model", "node", "ui-view"},
     # The terminal client composes the views over the drivers' state.

@@ -14,7 +14,9 @@
 //! reports/dump-<unix ms>-<id>/
 //!   manifest.json            what was dumped, when, why, by which daemon, and
 //!                            every file or part that could not be gathered
-//!   daemon.log               the tail of the daemon's own log, redacted as text
+//!   daemon.log               the tail of the daemon's own log and its .1,
+//!                            redacted as text
+//!   supervisor.log           the same of the supervisor's, when there is one
 //!   agents/<agent_id>/
 //!     row.pb                 the inventory row, a wire.Agent
 //!     store.pb               the store slice: one wire.Step holding the
@@ -28,7 +30,8 @@
 //!                            (own agents)
 //!     part/...               the agent process's part, as it sent it:
 //!                            facts/<segment>, facts/<segment>.checkpoint,
-//!                            spec.<n>, and dump-errors when it had any. An
+//!                            spec.<n>, the tails of agent.log and
+//!                            provider.log, and dump-errors when it had any. An
 //!                            agent with no process has only its specs here,
 //!                            redacted by the daemon
 //!   client/sessions/<agent_id>/
@@ -111,13 +114,15 @@ pub const CLIENT_EVENTS: &str = "events";
 /// store's main file is being checkpointed.
 const CAPTURE_TRIES: u32 = 30;
 const CAPTURE_APART: Duration = Duration::from_millis(100);
-/// How much of the daemon's log a dump carries, from its end.
+/// How much of each of the installation's logs a dump carries, from its
+/// end.
 pub const DUMP_LOG_BYTES: u64 = 4 << 20;
 /// How long an agent process has to send its part.
 const PART_PATIENCE: Duration = Duration::from_secs(10);
 
 pub const MANIFEST: &str = "manifest.json";
 pub const DAEMON_LOG: &str = "daemon.log";
+pub const SUPERVISOR_LOG: &str = "supervisor.log";
 
 /// Who a bundle is for.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -287,10 +292,18 @@ impl ProfileRuntime {
             sessions = client_sessions(&request.sessions, &rows, &partial, &mut errors)?;
             self.gather_hosts(request, &rows, &partial, &mut agents, &mut errors)
                 .await?;
-            match self.dump_log(&partial) {
-                Ok(Some(bytes)) => log_cut_note(&mut errors, bytes),
-                Ok(None) => {}
-                Err(error) => errors.push(format!("{DAEMON_LOG}: {error}")),
+            for (name, path) in [
+                (DAEMON_LOG, &self.daemon_log),
+                (SUPERVISOR_LOG, &self.supervisor_log),
+            ] {
+                let Some(path) = path else { continue };
+                match dump_log(path, &partial.join(name)) {
+                    Ok(Some(skipped)) => errors.push(format!(
+                        "{name}: the first {skipped} bytes of the log were left out"
+                    )),
+                    Ok(None) => {}
+                    Err(error) => errors.push(format!("{name}: {error}")),
+                }
             }
         }
         let manifest = serde_json::json!({
@@ -550,30 +563,17 @@ impl ProfileRuntime {
         handle.forget_dump(dump_id);
         part
     }
+}
 
-    /// The tail of the daemon's log, redacted. Returns how many bytes of
-    /// the log were left out, when the log was cut.
-    fn dump_log(&self, bundle: &Path) -> io::Result<Option<u64>> {
-        let Some(path) = &self.daemon_log else {
-            return Ok(None);
-        };
-        let bytes = match std::fs::read(path) {
-            Ok(bytes) => bytes,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(error),
-        };
-        let skipped = (bytes.len() as u64).saturating_sub(DUMP_LOG_BYTES);
-        let mut tail = &bytes[skipped as usize..];
-        // Start at a line, not in the middle of one.
-        if skipped > 0
-            && let Some(newline) = tail.iter().position(|byte| *byte == b'\n')
-        {
-            tail = &tail[newline + 1..];
-        }
-        let text = interpret::redact_text(&String::from_utf8_lossy(tail));
-        std::fs::write(bundle.join(DAEMON_LOG), text)?;
-        Ok((skipped > 0).then_some(skipped))
-    }
+/// The tail of the log at `path` and its `.1`, redacted, written to `to`.
+/// Returns how many bytes of the log were left out, when it was cut.
+fn dump_log(path: &Path, to: &Path) -> io::Result<Option<u64>> {
+    let Some((tail, skipped)) = log_file::tail(path, DUMP_LOG_BYTES)? else {
+        return Ok(None);
+    };
+    let text = interpret::redact_text(&String::from_utf8_lossy(&tail));
+    std::fs::write(to, text)?;
+    Ok((skipped > 0).then_some(skipped))
 }
 
 /// Writes one host's packed answer into the bundle: each asked agent's
@@ -635,12 +635,6 @@ fn unpack_host(
         }
     }
     Ok(())
-}
-
-fn log_cut_note(errors: &mut Vec<String>, skipped: u64) {
-    errors.push(format!(
-        "{DAEMON_LOG}: the first {skipped} bytes of the log were left out"
-    ));
 }
 
 /// One target through the kind's redactor, as the bytes it came back as.

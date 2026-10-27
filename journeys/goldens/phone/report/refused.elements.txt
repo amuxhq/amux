@@ -3,7 +3,9 @@ home |  | ready | 0,174,402,617
 home.chip.all | All | on | 16,172,44,44
 home.chip.needsYou | Needs you | off | 68,172,87,44
 home.chip.working | Working | off | 163,172,76,44
-home.row.<desk-work> | desk-work, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,218,370,64
+home.callout.notifications | Get notified |  | 16,222,326,60
+home.callout.notifications.dismiss | Not Now |  | 342,222,44,60
+home.row.<desk-work> | desk-work, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,290,370,64
 home.row.<desk-work>.age.volatile | <volatile>
 home.newAgent | New Agent |  | 338,62,44,44
 home.accounts | Switch account |  | 19,69,30,30
@@ -22,7 +24,9 @@ report.send | Retry |  | 338,62,44,44
  | All |  | 16,172,44,44
  | Needs you |  | 68,172,87,44
  | Working |  | 163,172,76,44
- | desk-work, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,218,370,64
+ | Get notified, When an agent needs you, Turn On |  | 16,222,326,60
+ | Close |  | 342,222,44,60
+ | desk-work, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,290,370,64
  | Agents |  | 16,127,116,42
  | Switch account |  | 19,69,30,30
  | New Agent |  | 338,62,44,44

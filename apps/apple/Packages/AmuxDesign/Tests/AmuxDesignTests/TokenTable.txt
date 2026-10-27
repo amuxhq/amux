@@ -9,8 +9,8 @@ hairline        #DCDCE0  #38383A
 ink             #1D1C1F  #F5F5F7
 inkMuted        #5E5E66  #98989F
 inkFaint        #8A8A93  #6E6E73
-accent          #0E5F6E  #4FBACD
-onAccent        #FFFFFF  #06080B
+accent          #0071C2  #3B90DF
+onAccent        #FFFFFF  #FFFFFF
 added           #29854F  #70C78C
 removed         #A8333D  #E68080
 

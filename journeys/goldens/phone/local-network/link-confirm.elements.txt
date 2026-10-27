@@ -9,9 +9,14 @@ pair-confirm.abandon | Not Now |  | 16,780,370,44
 pair.close | Close |  | 20,82,56,36
  | Pair your first host |  | 16,204,214,32
  | amux runs agents on your computers. Pair one and its agents appear here. |  | 16,244,368,37
- | desk is nearby, Pair it to see its agents here, Pair |  | 16,305,370,60
- | Have an amux account? |  | 16,389,164,18
- | Sign In |  | 184,376,48,44
+ | Looking on this network… |  | 36,305,174,18
+ | 1 |  | 25,351,5,16
+ | On your computer, install amux from amux.sh. |  | 52,348,231,39
+ | Send Link |  | 52,400,106,44
+ | 2 |  | 24,464,7,16
+ | Run amux pair --qr on it and scan the code with the Camera app. |  | 52,461,325,39
+ | Have an amux account? |  | 16,524,164,18
+ | Sign In |  | 184,511,48,44
  | Switch account |  | 24,66,37,36
  | Agents |  | 16,127,116,42
  | Agents |  | 111,795,94,54

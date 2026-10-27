@@ -461,7 +461,7 @@
       {"literal": "\"bell\"", "context": "id: \"notifications\", glyph: \"bell\",", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
       {"literal": "\"notifications\"", "context": "id: \"notifications\", glyph: \"bell\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"home\"", "context": ".identified(\"home\", value: accounts.gate.name)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"plus\"", "context": "Button { actions(.newAgent) } label: { Image(systemName: \"plus\") }", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
+      {"literal": "\"plus\"", "context": "Button { actions(.newAgent) } label: { Image(systemName: \"plus\").foregroundStyle(design.onAccent.color) }", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
       {"literal": "\"home.newAgent\"", "context": ".identified(\"home.newAgent\", label: \"New Agent\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"home.subtitle\"", "context": "LargeSubtitle(text: subtitle, identifier: \"home.subtitle\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"chevron.down\"", "context": "Image(systemName: \"chevron.down\")", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},

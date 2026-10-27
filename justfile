@@ -136,6 +136,10 @@ deploy VERSION *ARGS:
 release-key *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 600 cargo run --locked -q -p xtask -- release key "$@"
 
+# Install the pre-push credential scan (scripts/hooks/pre-push) for every worktree.
+hooks:
+    scripts/hooks/install
+
 # Check the provider-free graph used by embedded clients.
 embedded-check:
     {{bounded}} 900 cargo check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded

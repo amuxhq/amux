@@ -3107,7 +3107,7 @@ fn edit_ask_path(kind: Kind, cwd: &str, file: &str) -> String {
 /// the folder keeps its whole path.
 #[test]
 fn an_edit_asks_path_is_relative_to_the_agents_folder_when_the_file_is_inside_it() {
-    let cwd = "/Users/jlw/.local/state/amux-qa/20261011-171536/t6/.testnet/net/desk/work";
+    let cwd = "/Users/ada/.local/state/amux-qa/20261011-171536/t6/.testnet/net/desk/work";
     for kind in [Kind::ClaudeSdk, Kind::Codex] {
         assert_eq!(
             edit_ask_path(kind, cwd, &format!("{cwd}/notes.txt")),
@@ -3130,7 +3130,7 @@ fn an_edit_asks_path_is_relative_to_the_agents_folder_when_the_file_is_inside_it
 // Triage of QA runs 20261012-011936 and 20261012-025539: each test states
 // the behaviour a finding expected and fails today.
 
-const QA_CWD: &str = "/Users/jlw/.local/state/amux-qa/20261012-025539/t1/.testnet/net/desk/work";
+const QA_CWD: &str = "/Users/ada/.local/state/amux-qa/20261012-025539/t1/.testnet/net/desk/work";
 
 /// The head ask's card on a caught-up session of `kind` in `QA_CWD`.
 fn card_of(kind: Kind, claude: Vec<wire::Ask>, codex: Vec<wire::CodexAsk>) -> AskCard {

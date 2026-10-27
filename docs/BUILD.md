@@ -27,13 +27,19 @@ Other tools a full checkout uses:
   3.9.
 - Xcode and XcodeGen build the iPhone app (see [the iPhone app](IOS.md)).
 - `tmux` drives the terminal journeys.
+- [`gitleaks`](https://github.com/gitleaks/gitleaks) scans what a push
+  would publish for credentials. `just hooks` installs that scan as the
+  pre-push hook, for every worktree at once; it reads `.gitleaks.toml`, and
+  `.gitleaksignore` lists the test keys committed on purpose. The repository
+  is public, so the scan runs before a push rather than in CI, which would
+  only see a leak after it was published.
 
 ### The Nix dev shell
 
 On a machine with [Nix](https://nixos.org/download/) and flakes enabled,
 `nix develop` at the root opens a shell with everything above except Xcode:
 the toolchain `rust-toolchain.toml` pins, the formatting nightly, `just`,
-`tmux`, Python, `git` and, on Linux, a C compiler. `nix develop -c just test`
+`tmux`, Python, `git`, `gitleaks` and, on Linux, a C compiler. `nix develop -c just test`
 runs one recipe in it. [`nix/toolchain.nix`](../nix/toolchain.nix) is the
 list, and `flake.lock` pins every tool in it, so two machines on the same
 revision get the same tools. `nix profile install .#toolchain` installs the

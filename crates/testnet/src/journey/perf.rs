@@ -1839,8 +1839,10 @@ fn measure(
             let (device, udid) = golden_device()?;
             (device, Target::Simulator(udid))
         }
+        // The hardware, not the name its owner gave the phone: the baseline
+        // is committed, and that name is personal.
         Bench::Phone(phone) => (
-            format!("{} (iOS {})", phone.name, phone.os_version),
+            format!("{} (iOS {})", phone.model, phone.os_version),
             Target::Phone(phone.clone()),
         ),
     };

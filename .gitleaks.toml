@@ -1,0 +1,19 @@
+# gitleaks reads this from the repository root: its default rules, less two
+# kinds of string the generic-key rule mistakes for keys.
+
+[extend]
+useDefault = true
+
+# Recorded agent sessions are full of identifiers: Codex names each command
+# `exec-<uuid>` and Claude each retry by a bare UUID. Only in recordings, so a
+# UUID-shaped key pasted into source is still caught.
+[[allowlists]]
+description = "Session identifiers in recorded fixtures and goldens"
+condition = "AND"
+paths = ['''(^|/)(fixtures|goldens?)/''']
+regexes = ['''^(exec-)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$''']
+
+# Tests that prove redaction plant fake credentials and mark them so.
+[[allowlists]]
+description = "Planted test credentials"
+regexes = ['''PLANTED''']

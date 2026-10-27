@@ -26,7 +26,7 @@ Every workflow sets `CARGO_INCREMENTAL=0`, and every job has a
 | --- | --- | --- |
 | Check and Clippy | `ubuntu-latest` | `just check`, `just lint` |
 | Format | `ubuntu-latest` | `just fmt-check` with `nightly-2026-08-30` |
-| Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just cores-check`, `just typed-provider-check`, `just tests-check`, `just docs-check`, `just proto-compat` |
+| Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just cores-check`, `just typed-provider-check`, `just tests-check`, `just script-tests`, `just docs-check`, `just proto-compat` |
 | Test | `ubuntu-latest`, `macos-latest`, `windows-latest` | `scripts/no-update-flags.sh`, `just test -- --no-fail-fast --exclude models` |
 | Simulated stories, doctests and contracts | `ubuntu-latest` | `just sim`, `just contracts-check`, `just doctest`: what reads the same on every platform, run once |
 | Models | `ubuntu-latest`, one job per protocol-models test target | `just test-crate models -- --test <target>`: one model at its CI bounds |
@@ -82,11 +82,11 @@ or slow test.
 
 What the bounds were sized from, on a warm cache:
 
-| Platform | CI run | Compile | Test run | Whole job |
-| --- | --- | --- | --- | --- |
-| `ubuntu-latest` | [36448433638](https://github.com/jordanwebster/amux/actions/runs/36448433638) | 145 s | 601 s | 13 min 6 s |
-| `macos-latest` | [36448433638](https://github.com/jordanwebster/amux/actions/runs/36448433638) | 95 s | 449 s | 13 min 13 s |
-| `windows-latest` | [36467514576](https://github.com/jordanwebster/amux/actions/runs/36467514576) | 239 s | 286 s | 11 min 41 s |
+| Platform | Compile | Test run | Whole job |
+| --- | --- | --- | --- |
+| `ubuntu-latest` | 145 s | 601 s | 13 min 6 s |
+| `macos-latest` | 95 s | 449 s | 13 min 13 s |
+| `windows-latest` | 239 s | 286 s | 11 min 41 s |
 
 Linux is the slowest clean test run: 601 s × 1.5 is 902 s, so the run's
 bound is 1000 s. Every job ends near 13 minutes, well inside the 30-minute
@@ -102,8 +102,7 @@ Tests that build `amux` or the fake providers mid-run start cargo through
 the package under test. Started with them, every test crate's build reran
 `ring`'s build script and recompiled everything above it, about a minute a
 crate on the macOS runner; that pushed the macOS run from 449 s to past its
-1000 s bound in
-[36616922626](https://github.com/jordanwebster/amux/actions/runs/36616922626).
+1000 s bound.
 
 ### Protocol models
 
@@ -119,8 +118,7 @@ stays far inside the run's wall time, which the iOS gate sets.
 
 A model's bounds are sized to that runner; its test asserts the state count
 those bounds explore, not the time (a run that hangs is the job guard's).
-CI run
-[39185561814](https://github.com/jordanwebster/amux/actions/runs/39185561814)
+A CI run
 measured the models there at their CI bounds: the runner took 2.1 to 4.2 times
 the enrolled Mac's four-thread time, and replication, the model heaviest on
 the store, was the slowest (274 s against 66 s); a later run measured presence

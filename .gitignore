@@ -57,3 +57,12 @@ __pycache__/
 # would build somebody else's app under their team. docs/RELEASE.md holds its
 # contract.
 apps/apple/Signing.local.xcconfig
+
+# Credentials that must never be committed: environment files, App Store
+# Connect keys, certificates and their private keys, provisioning profiles.
+.env
+.env.*
+*.p8
+*.p12
+*.pem
+*.mobileprovision

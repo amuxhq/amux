@@ -2,7 +2,7 @@
   "schema_version": 1,
   "machine_model": "iPhone15,2",
   "configuration": "Measured",
-  "device": "Jordan’s iPhone (iOS 27.0)",
+  "device": "iPhone15,2 (iOS 27.0)",
   "medians": {
     "cold first frame": 201.23302936553955,
     "cold store read": 39.80600833892822,

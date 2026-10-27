@@ -260,6 +260,17 @@ impl Daemon {
         self.arm(TimerId::Refresh(link), at_ms, out);
     }
 
+    /// The relay asked for a fresh credential: another link of the account
+    /// presented a paid plan, so this one's may be out of date. It is
+    /// refreshed at once, as its timer would refresh it. Only a link holding
+    /// a credential has a refresh armed, so a peer that is not the relay
+    /// asks nothing of a link it has no say over.
+    fn refresh_asked(&mut self, link: LinkId, out: &mut Vec<Output>) {
+        if self.timers.armed.contains(&TimerId::Refresh(link)) {
+            self.refresh_due(link, out);
+        }
+    }
+
     /// The relay link's credential is due for refresh.
     pub(crate) fn refresh_due(&mut self, link: LinkId, out: &mut Vec<Output>) {
         self.timers.armed.remove(&TimerId::Refresh(link));
@@ -334,6 +345,10 @@ impl Daemon {
                     claims.remove(&host);
                 }
             }
+            Some(Body::RefreshCredential(_)) => {
+                self.refresh_asked(link, out);
+                return;
+            }
             Some(
                 Body::HelloAck(_)
                 | Body::Reauth(_)
@@ -401,7 +416,8 @@ impl Daemon {
             | Body::NeighborUp(_)
             | Body::NeighborDown(_)
             | Body::Reauth(_)
-            | Body::LinkClose(_) => {}
+            | Body::LinkClose(_)
+            | Body::RefreshCredential(_) => {}
         }
     }
 
@@ -1210,5 +1226,51 @@ mod tests {
             "{out:?}"
         );
         assert_eq!(step(&mut daemon, Input::Timer { id: refresh }), Vec::new());
+    }
+
+    /// The relay asks for a fresh credential when another device of the
+    /// account has just paid: the refresh its timer would make is made at
+    /// once, and the timer goes with it.
+    #[test]
+    fn the_relay_asking_refreshes_the_credential_at_once() {
+        let mut daemon = daemon();
+        up(&mut daemon);
+        let ask = || Input::LinkControl {
+            link: LINK,
+            frame: Message {
+                body: Some(Body::RefreshCredential(wire::RefreshCredential {})),
+            },
+        };
+        assert_eq!(
+            step(&mut daemon, ask()),
+            Vec::new(),
+            "a link holding no credential has nothing to refresh"
+        );
+
+        step(
+            &mut daemon,
+            Input::Credential {
+                link: LINK,
+                expires_at_ms: 7 * 24 * REFRESH_AFTER_MS,
+                fetched_at_ms: 0,
+                free_every_ms: Some(180_000),
+            },
+        );
+        let out = step(&mut daemon, ask());
+        assert!(
+            matches!(
+                out.as_slice(),
+                [Output::Job {
+                    op: Job::RefreshToken { link: LINK },
+                    ..
+                }]
+            ),
+            "{out:?}"
+        );
+        assert_eq!(
+            step(&mut daemon, ask()),
+            Vec::new(),
+            "one refresh until the fresh credential arms the next"
+        );
     }
 }

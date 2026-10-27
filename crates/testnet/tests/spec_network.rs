@@ -1624,44 +1624,36 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
     println!("the tablet paired directly on the free account; its client saw the desk go direct");
 
     // The account buys Pro. The desk, where the purchase happened, asks at
-    // once and reauthenticates on its live link; the phone has not asked
-    // yet, and a Pro host still opens nothing toward a free one.
+    // once and reauthenticates on its live link. Seeing a paid credential,
+    // the relay asks the account's links still on the free plan for a
+    // fresh one, so the phone and the tablet carry Pro too, on the links
+    // already up and long before their free refresh interval: the policy
+    // clock does not move.
     net.relay().unwrap().set_tier("ada", node::Tier::Pro);
-    let connects = net.relay().unwrap().connects().len();
     assert_eq!(
         edge(&net, "desk").refresh_entitlement().await.unwrap(),
         node::Tier::Pro
     );
-    until("the desk's link to carry Pro", || async {
-        let tier = tier(&net, "desk");
-        (tier == Some(node::Tier::Pro))
-            .then_some(())
-            .ok_or_else(|| format!("tier {tier:?}"))
-    })
+    until(
+        "every link to carry Pro, the others asked by the relay",
+        || async {
+            let tiers = (
+                tier(&net, "desk"),
+                tier(&net, "phone"),
+                tier(&net, "tablet"),
+            );
+            (tiers
+                == (
+                    Some(node::Tier::Pro),
+                    Some(node::Tier::Pro),
+                    Some(node::Tier::Pro),
+                ))
+                .then_some(())
+                .ok_or_else(|| format!("desk, phone, tablet tiers {tiers:?}"))
+        },
+    )
     .await
     .unwrap();
-    assert_eq!(tier(&net, "phone"), Some(node::Tier::Free));
-    peer_inventory_hosts(&edge(&net, "desk"), phone)
-        .await
-        .expect_err("a Pro link opens nothing toward a free one");
-
-    // The others ask on their free refresh interval, on the policy clock,
-    // and from then on the phone and the desk call each other, on the same
-    // links.
-    net.advance(node::FREE_TIER_REFRESH_INTERVAL).unwrap();
-    until("the others' links to carry Pro", || async {
-        let tiers = (tier(&net, "phone"), tier(&net, "tablet"));
-        (tiers == (Some(node::Tier::Pro), Some(node::Tier::Pro)))
-            .then_some(())
-            .ok_or_else(|| format!("phone, tablet tiers {tiers:?}"))
-    })
-    .await
-    .unwrap();
-    assert_eq!(
-        net.relay().unwrap().connects().len(),
-        connects + 3,
-        "each host asked once"
-    );
     peer_inventory_hosts(&edge(&net, "phone"), desk)
         .await
         .expect("the phone calls the desk on Pro");
@@ -1673,7 +1665,9 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
     let mut expected = vec![(desk, 1), (phone, 1), (host_id(&net, "tablet"), 1)];
     expected.sort();
     assert_eq!(links, expected, "Pro arrived on the links already up");
-    println!("Pro: the desk at once, the phone after its interval, on the same links");
+    println!(
+        "Pro: the desk at once, the phone and the tablet asked by the relay, on the same links"
+    );
 
     // A credential refresh under a live link keeps what the link carries:
     // the phone's inventory of the desk, held open, sees a new agent after

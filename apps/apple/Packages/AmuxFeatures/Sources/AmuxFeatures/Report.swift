@@ -239,7 +239,7 @@ public struct ReportScreen: View {
             .sharedBackgroundVisibility(.hidden)
         } else if !isSent {
             ToolbarItem(placement: .confirmationAction) {
-                Button { actions(.send) } label: { Image(systemName: sendSymbol) }
+                Button { actions(.send) } label: { Image(systemName: sendSymbol).foregroundStyle(design.onAccent.color) }
                     .prominentBarButton()
                     .tint(design.accent.color)
                     .disabled(!sendable)

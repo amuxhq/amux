@@ -143,7 +143,7 @@ public struct AgentsHome: View {
                 reducesTransparency || accounts.selectedAccount != nil ? .hidden : .automatic)
             if canStartAnAgent {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { actions(.newAgent) } label: { Image(systemName: "plus") }
+                    Button { actions(.newAgent) } label: { Image(systemName: "plus").foregroundStyle(design.onAccent.color) }
                         .prominentBarButton()
                         .tint(design.accent.color)
                         .accessibilityLabel("New Agent")

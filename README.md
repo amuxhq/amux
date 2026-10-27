@@ -119,7 +119,7 @@ can and cannot do.
 
 ## amux in 50 seconds
 
-https://github.com/user-attachments/assets/714575f7-a9cb-497a-90ef-f12283c535a1
+https://github.com/user-attachments/assets/a3107516-9e6f-4f48-be5e-e22091125002
 
 ## Get started
 

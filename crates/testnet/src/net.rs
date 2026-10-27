@@ -3754,6 +3754,30 @@ fn work_dir(work: &Path, cwd: Option<&str>) -> Result<String, NetError> {
 }
 
 /// An input id as a failure message shows it.
+/// A host's installation config `text` with the settings in `added`, both
+/// TOML, laid over it: a table in both is merged key by key, and any other
+/// value in `added` replaces the one in `text`.
+pub(crate) fn with_settings(text: &str, added: &str) -> Result<String, String> {
+    fn lay(over: toml::Table, into: &mut toml::Table) {
+        for (key, value) in over {
+            match (value, into.get_mut(&key)) {
+                (toml::Value::Table(over), Some(toml::Value::Table(into))) => lay(over, into),
+                (value, _) => {
+                    into.insert(key, value);
+                }
+            }
+        }
+    }
+    let mut config: toml::Table = text
+        .parse()
+        .map_err(|error| format!("the config: {error}"))?;
+    let added: toml::Table = added
+        .parse()
+        .map_err(|error| format!("the settings: {error}"))?;
+    lay(added, &mut config);
+    toml::to_string(&config).map_err(|error| error.to_string())
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }

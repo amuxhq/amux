@@ -368,18 +368,16 @@ impl TerminalJourney {
             .unwrap_or_default()
     }
 
-    /// Adds top-level settings to `host`'s installation config, before a
-    /// client starts there.
-    pub(crate) fn configure(&mut self, host: &str, yaml: &str) -> Result<(), String> {
-        use std::io::Write as _;
-        let mut config = std::fs::OpenOptions::new()
-            .append(true)
-            .open(self.config(host))
-            .map_err(|error| error.to_string())?;
-        writeln!(config, "{}", yaml.trim_end_matches('\n')).map_err(|error| error.to_string())?;
+    /// Lays `settings`, in TOML, over `host`'s installation config, before
+    /// a client starts there.
+    pub(crate) fn configure(&mut self, host: &str, settings: &str) -> Result<(), String> {
+        let path = self.config(host);
+        let text = std::fs::read_to_string(&path).map_err(|error| error.to_string())?;
+        let text = crate::net::with_settings(&text, settings)?;
+        std::fs::write(&path, text).map_err(|error| error.to_string())?;
         self.record
             .actions
-            .push(format!("configure {host}: {:?}", yaml.trim()));
+            .push(format!("configure {host}: {:?}", settings.trim()));
         Ok(())
     }
 

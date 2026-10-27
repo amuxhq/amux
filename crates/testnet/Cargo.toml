@@ -47,6 +47,7 @@ tonic = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+toml = { workspace = true }
 tui = { workspace = true }
 unicode-width = "0.2"
 uuid = { workspace = true }
@@ -54,5 +55,4 @@ wire = { workspace = true, features = ["grpc"] }
 
 [dev-dependencies]
 analytics = { workspace = true }
-toml = { workspace = true }
 ui-state = { workspace = true }

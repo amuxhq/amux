@@ -338,6 +338,8 @@ their own copies.
   supervisor.lock             one supervisor per installation
   supervisor.sock             how the CLI reaches a running supervisor (`amux update`, and stop on Windows)
   daemon.log, daemon.log.1    the daemon's log, 8 MiB each; AMUX_LOG names another file
+  daemon-startup.log          what a daemon `amux server start` ran without a supervisor said before its log
+                              opened; made afresh at each such start
   supervisor.log, .1          the supervisor's log, when amux runs under one, capped the same
   reports/                    dumps and core reports, the newest 20 kept; .dump-* is one being written
   worktrees/<repository>/<agent name>/

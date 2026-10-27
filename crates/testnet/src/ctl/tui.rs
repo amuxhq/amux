@@ -587,15 +587,15 @@ fn open(
     };
     // The pane's own copy of the host's config, so its theme is its own.
     let config = entry["config"].as_str().ok_or("the host has no config")?;
-    let mut yaml = std::fs::read_to_string(config).map_err(|error| error.to_string())?;
+    let text = std::fs::read_to_string(config).map_err(|error| error.to_string())?;
     let chosen = if palette.is_some() {
         "terminal"
     } else {
         theme.word()
     };
-    yaml.push_str(&format!("ui:\n  theme: {chosen}\n"));
-    let pane_config = folder.net_dir().join(format!("pane-{name}.yaml"));
-    std::fs::write(&pane_config, yaml).map_err(|error| error.to_string())?;
+    let text = crate::net::with_settings(&text, &format!("[ui]\ntheme = {chosen:?}\n"))?;
+    let pane_config = folder.net_dir().join(format!("pane-{name}.toml"));
+    std::fs::write(&pane_config, text).map_err(|error| error.to_string())?;
     let work = PathBuf::from(entry["dir"].as_str().unwrap_or_default()).join("work");
     let command = client_command(&[
         binary("amux").to_string_lossy().as_ref(),

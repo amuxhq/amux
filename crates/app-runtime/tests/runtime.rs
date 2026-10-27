@@ -147,6 +147,17 @@ impl Host {
         }
         chat.delta()
     }
+
+    /// Takes what is pending for `chat` on the wakes already queued for it,
+    /// so no wake is left behind for a batch taken without one.
+    fn settle(&mut self, chat: &Chat) {
+        let wanted = Wake::Chat(chat.id());
+        while let Ok(wake) = self.wakes.try_recv() {
+            self.held.push(wake);
+        }
+        self.held.retain(|wake| *wake != wanted);
+        chat.delta();
+    }
 }
 
 /// Opens a chat as the host's model does: the opening hands it over whole.
@@ -225,7 +236,7 @@ async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
     })
     .await;
     // What the turn left is handed over before the next one starts.
-    chat.delta();
+    host.settle(&chat);
     let before = chat.keys();
 
     let sent = chat.send(&Draft::words("please run it")).await;

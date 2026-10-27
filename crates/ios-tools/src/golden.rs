@@ -1,12 +1,13 @@
 //! The phone's component manifest: every picture the component snapshot
-//! suite pins, with a sentence saying what it shows, checked against the
-//! committed baselines.
+//! suite pins that is not a story, with a sentence saying what it shows,
+//! checked against the committed baselines.
 //!
 //! `apps/apple/Goldens/manifest.json` lists the components the snapshot
-//! suite photographs in-process from authored view data. A reviewer reads it
-//! as the index of those pictures, so each must say what it shows, no name
-//! may be used twice, and the list and the baselines must name the same
-//! pictures.
+//! suite photographs in-process from authored view data; the stories among
+//! them say what they show in `tests/stories.json`, the storybook list both
+//! clients share. A reviewer reads the two as the index of those pictures, so
+//! each must say what it shows, no name may be used twice, and together they
+//! and the baselines must name the same pictures.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -85,11 +86,29 @@ mod tests {
     }
 
     const GOLDENS: &str = "../../apps/apple/Goldens";
+    const STORIES: &str = "../../tests/stories.json";
     const SNAPSHOTS: &str =
         "../../apps/apple/AmuxComponentSnapshotTests/__Snapshots__/ComponentSnapshotTests";
 
     fn committed() -> GoldenManifest {
         GoldenManifest::read(&Path::new(GOLDENS).join("manifest.json")).expect("the manifest")
+    }
+
+    /// The stories the storybook list gives the phone.
+    fn phone_stories() -> Vec<String> {
+        let text = std::fs::read_to_string(STORIES).expect("the storybook list");
+        let list: serde_json::Value = serde_json::from_str(&text).expect("the list is JSON");
+        list["stories"]
+            .as_array()
+            .expect("the list's stories")
+            .iter()
+            .filter(|story| {
+                story["clients"]
+                    .as_array()
+                    .is_some_and(|clients| clients.iter().any(|client| client == "phone"))
+            })
+            .map(|story| story["name"].as_str().expect("a story's name").to_owned())
+            .collect()
     }
 
     fn files(directory: &str, extension: &str) -> BTreeSet<String> {
@@ -112,24 +131,26 @@ mod tests {
         format!("components.{}-{appearance}.png", id.replace('.', "-"))
     }
 
-    /// Every component the catalogue pins has a sentence, and the catalogue
-    /// vocabulary is all there: each row kind, the activity line, each ask
+    /// Every picture the catalogue pins has a sentence, in the manifest or,
+    /// for a story, the storybook list, and the catalogue vocabulary is all
+    /// there: each row kind, the activity line, each ask
     /// body, the escape, not-confirmed with resend and discard, the exited
     /// composer's resume and the strip once per provider kind.
     #[test]
     fn the_components_are_the_catalogue_with_a_sentence_each() {
         let manifest = committed();
+        let stories = phone_stories();
         let named: BTreeSet<String> = manifest
             .components
             .iter()
-            .flat_map(|component| {
-                ["light", "dark"].map(|appearance| snapshot(&component.id, appearance))
-            })
+            .map(|component| component.id.as_str())
+            .chain(stories.iter().map(String::as_str))
+            .flat_map(|id| ["light", "dark"].map(|appearance| snapshot(id, appearance)))
             .collect();
         assert_eq!(
             named,
             files(SNAPSHOTS, ".png"),
-            "components and their baselines disagree"
+            "components and stories disagree with their baselines"
         );
         let ids: BTreeSet<&str> = manifest.components.iter().map(|c| c.id.as_str()).collect();
         let required = [

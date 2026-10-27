@@ -1,0 +1,89 @@
+# The phone's gate, apart from ci.yml so that it runs only when a change
+# reaches the phone. Whatever else the bridge reads crosses to Swift as the
+# generated mirrors in apps/apple, which a workspace test holds to the Rust
+# definitions, so a shape change upstream cannot land without touching the
+# app. Behaviour upstream is the workspace tests' to judge, and ci.yml's iOS
+# target check compiles the bridge's graph on every push. The phone's own
+# scripts and tools live under apps/apple and crates/ios-tools; the files
+# named one by one are the shared runners the gate's recipes call.
+name: iOS gate
+
+on:
+  push:
+    branches: [main]
+    paths: &phone
+      - 'apps/apple/**'
+      - 'crates/app-ffi/**'
+      - 'crates/app-embedded/**'
+      - 'crates/app-runtime/**'
+      - 'crates/ios-tools/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'journeys/topologies/phone-loopback.json'
+      - 'scripts/bounded'
+      - 'scripts/no-update-flags.sh'
+      - 'scripts/py'
+      - 'scripts/python'
+      - 'scripts/sqlite_linkage.py'
+      - 'scripts/with'
+      - '.github/actions/setup-just/**'
+      - '.github/workflows/ios.yml'
+  pull_request:
+    branches: [main]
+    paths: *phone
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  gate:
+    name: iOS gate
+    runs-on: macos-26
+    # The gate builds the app and runs the suites one simulator can answer.
+    # The capture suites are not here: see `just ios captures`.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refuse fixture update flags
+        shell: bash
+        run: scripts/no-update-flags.sh
+      - name: Select Xcode 26.6
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
+          xcodebuild -version | grep -Fx 'Xcode 26.6'
+      - name: Assert simulator runtime and device type
+        run: |
+          xcrun simctl list runtimes --json | jq -e '.runtimes[] | select(.identifier == "com.apple.CoreSimulator.SimRuntime.iOS-26-5" and .isAvailable == true)'
+          xcrun simctl list devicetypes --json | jq -e '.devicetypes[] | select(.identifier == "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro")'
+      - uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          components: clippy
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+      # Named, because the nightly iOS captures job restores it.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ios-gate
+      - uses: ./.github/actions/setup-just
+      - name: Install build tools
+        run: brew install xcodegen
+      - name: Run the iOS gate
+        run: just ios gate
+      - name: Upload component snapshot comparisons and timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-component-snapshots
+          path: target/ios/component-snapshots
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Upload the shipped-scope audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-scope-audit
+          path: target/ios/scope-audit
+          if-no-files-found: warn
+          retention-days: 7

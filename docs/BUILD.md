@@ -147,8 +147,8 @@ renamed; [the wire](WIRE.md#compatibility) has the rules.
 
 **Swift value types.** The Swift mirrors of the view values the phone reads,
 `apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values.swift`, are generated
-from the Rust definitions by `cargo run -p xtask -- swift-types`. A unit test
-in the `xtask` crate, run by `just test`, fails when the committed file
+from the Rust definitions by `cargo run -p ios-tools -- swift-types`. A unit test
+in the `ios-tools` crate, run by `just test`, fails when the committed file
 differs from what the generator writes.
 
 ## Worktrees

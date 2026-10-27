@@ -85,8 +85,8 @@ fi
 }
 
 fn ios_verify_command(dir: &Path) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_xtask"));
-    command.arg("ios-verify").current_dir(dir).env(
+    let mut command = Command::new(env!("CARGO_BIN_EXE_ios-tools"));
+    command.arg("verify").current_dir(dir).env(
         "PATH",
         format!("{}:{}", dir.display(), std::env::var("PATH").unwrap()),
     );

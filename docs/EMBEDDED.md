@@ -165,11 +165,11 @@ Every value the bridge carries has a Swift mirror in
 from the Rust definitions:
 
 ```sh
-cargo run -p xtask -- swift-types          # regenerate
-cargo run -p xtask -- swift-types --check  # fail when the committed file differs
+cargo run -p ios-tools -- swift-types          # regenerate
+cargo run -p ios-tools -- swift-types --check  # fail when the committed file differs
 ```
 
-`crates/xtask/src/swift_types.rs` lists the root types, from `model`,
+`crates/ios-tools/src/swift_types.rs` lists the root types, from `model`,
 `ui-view` and `app-runtime::values`; everything they hold comes along. The
 schemas come from `schemars`. A struct becomes a Swift struct with the Rust
 field names as coding keys; a string-only enum becomes a raw-value enum; any
@@ -229,7 +229,7 @@ Every call, its arguments and its threading are in
 
 The bridge is `app-ffi` built as `libamux_app.a`, with the header
 `amux_app.h`, packaged into an XCFramework whose module is `AmuxApp`.
-`scripts/ios_bridge.py` holds the names and layout both bridge recipes share.
+`apps/apple/Tools/ios_bridge.py` holds the names and layout both bridge recipes share.
 
 ```sh
 just ios rust      # the simulator slice a development build links

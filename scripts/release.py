@@ -37,6 +37,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(1, str(Path(__file__).resolve().parents[1] / "apps/apple/Tools"))
 import ios_project
 
 SPEC = Path("apps/apple/project.yml")

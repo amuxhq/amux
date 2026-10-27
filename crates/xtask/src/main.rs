@@ -1,28 +1,18 @@
 use std::path::Path;
 
-mod door;
-mod golden;
 mod release;
-use xtask::ios_verify;
-mod simulator;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     match std::env::args().nth(1).as_deref() {
         Some("codegen") => codegen(),
-        Some("door") => door::main(),
-        Some("golden") => golden::main(),
-        Some("ios-verify") => ios_verify::run(),
         Some("proto-compat") => {
             xtask::proto_compat::main(&std::env::args().skip(2).collect::<Vec<_>>())
-        }
-        Some("swift-types") => {
-            xtask::swift_types::main(&std::env::args().skip(2).collect::<Vec<_>>())
         }
         Some("release") => release::main(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("restamp") => restamp(&std::env::args().skip(2).collect::<Vec<_>>()),
         _ => {
             eprintln!(
-                "usage: xtask <codegen|proto-compat [REF]|swift-types [--check]|golden diff [ARGS]|restamp FROM TO [VERSION]|release <key generate|key public|cut VERSION|deploy VERSION [--channel C] [--rollout N]>|door [--simulator NAME] [--bundle-id ID] [--install APP] [--timeout SECS] [--requests FILE] [JSON...]|ios-verify>"
+                "usage: xtask <codegen|proto-compat [REF]|restamp FROM TO [VERSION]|release <key generate|key public|cut VERSION|deploy VERSION [--channel C] [--rollout N]>>"
             );
             std::process::exit(2);
         }

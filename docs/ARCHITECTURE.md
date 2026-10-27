@@ -605,7 +605,8 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 | [`replay-support`](../crates/replay-support/src/lib.rs) | Replays a debug bundle through its four stages with the protocol's properties judged at every step, and manages provider recordings for the capture tools. |
 | [`fake-amux`](../crates/fake-amux/src/main.rs) | A stand-in `amux` binary running the real supervisor over a scripted daemon. |
 | [`shot`](../crates/shot/README.md) | Deterministic PNG renderings of the terminal client's named states, and its storybook of whole screens. |
-| [`xtask`](../crates/xtask/src/main.rs) | Developer tasks: protobuf codegen, Swift type generation, re-stamping, iOS verification. |
+| [`xtask`](../crates/xtask/src/main.rs) | Developer tasks: protobuf codegen, the protocol compatibility check, re-stamping, releases. |
+| [`ios-tools`](../crates/ios-tools/src/main.rs) | The phone's developer tools: iOS verification, Swift type generation, the screenshot comparator and the door client. |
 
 ## The dependency policy
 
@@ -663,7 +664,8 @@ The allowed sets encode the layering above:
 | `amux` | `agent`, `agent-dir`, `analytics`, `claude`, `client`, `node`, `settings`, `store`, `tui`, `wire` | the one binary |
 | `models` | `agent-core`, `daemon-core`, `interpret`, `journal`, `path-core`, `provider-fakes`, `relay-core`, `release`, `store`, `supervisor-core`, `ui-state`, `wire` | the properties, explored over the real cores, store and session state |
 | `replay-support` | `core-ring`, `daemon-core`, `interpret`, `journal`, `models`, `redaction`, `store`, `ui-state`, `ui-view`, `wire` | replays the four stages, judging the models' properties; a debugging tool nothing that ships links |
-| `xtask` | `app-runtime`, `model`, `release`, `ui-view`, `version-stamp`, `wire` | generates the Swift mirrors; signs releases |
+| `xtask` | `release`, `version-stamp` | signs releases |
+| `ios-tools` | `app-runtime`, `model`, `ui-view`, `wire` | generates the Swift mirrors |
 
 The phone bridge (`app-embedded`, `app-ffi`) links `node` on purpose: it
 hosts the runtime in process. `just embedded-check` and `just mobile-check`

@@ -374,7 +374,7 @@ excluded platform; there is no Mac, Catalyst or iPad target.
 Recipes name a kind of device, never a device. `golden` is an iPhone 17 Pro
 on iOS 26.5 at 3×, the device every budget and baseline is pinned to;
 `small` is the iPhone SE (3rd generation) on the same runtime, for the
-narrowest supported width. `scripts/ios_simulators.py` decides which device a
+narrowest supported width. `apps/apple/Tools/ios_simulators.py` decides which device a
 kind means: inside a `wt` worktree it is the one leased for the command
 (`scripts/with iphone -- ...`), so two checkouts never drive one device;
 elsewhere, including CI, it is `amux-iphone-1` or `amux-small-1`. The
@@ -408,12 +408,12 @@ signs the app into a served relay, and `cloud` and `store` script what the
 account service and the App Store answer, for journeys about accounts and
 purchases.
 
-`xtask door` launches the installed app on a pinned simulator, speaks the
+`ios-tools door` launches the installed app on a pinned simulator, speaks the
 requests it is given and prints the answers:
 
 ```sh
 just ios build && just ios tools
-timeout 120 target/debug/xtask door --simulator golden \
+timeout 120 target/debug/ios-tools door --simulator golden \
   --install target/ios/DerivedData/Build/Products/Debug-iphonesimulator/Amux.app \
   '{"kind":"open","screen":"home"}' \
   '{"kind":"appearance","appearance":"dark"}' \
@@ -518,7 +518,7 @@ once hid a misplaced mask, and neither is a percentage, which would grow
 with the picture.
 
 The numbers live in two places that must agree: `golden::ALLOWANCE` in
-`crates/xtask/src/golden.rs` for the screens, and `RoundingImageDiff.swift`
+`crates/ios-tools/src/golden.rs` for the screens, and `RoundingImageDiff.swift`
 for the component snapshots. A match that spent some of the allowance says
 so in the run's output (`AMUX_SNAPSHOT_STRAYS`, `AMUX_PICTURE_STRAYS`), so
 the numbers can be judged from what runs actually see.
@@ -600,7 +600,7 @@ fresh with the reduce-transparency flag on, pairs with the desk by the code
 it printed, and taps through to each screen while the served network makes
 the desk's agents act. Each screen is compared in light and dark twice over:
 
-- The display's pixels outside the masks, with `xtask golden diff`, under
+- The display's pixels outside the masks, with `ios-tools golden diff`, under
   the allowance every compared phone picture shares (see
   [What a compared picture may differ by](#what-a-compared-picture-may-differ-by)).
 - The door's element geometry, as `<screen>.elements.txt`, compared word for

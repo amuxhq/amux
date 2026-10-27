@@ -22,6 +22,7 @@ members = [
     "crates/fake-amux",
     "crates/git-facts",
     "crates/interpret",
+    "crates/ios-tools",
     "crates/journal",
     "crates/model",
     "crates/models",

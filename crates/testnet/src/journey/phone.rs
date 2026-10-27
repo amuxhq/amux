@@ -6,7 +6,7 @@
 //! pair by the link or code the machine printed, and appearance. It judges
 //! by what the hosts recorded (the served net's Chat, Inventory and
 //! ProviderInput verbs) and by compared screens: the simulator's display PNG
-//! against `journeys/goldens/phone/<story>/<label>.png` with `xtask golden
+//! against `journeys/goldens/phone/<story>/<label>.png` with `ios-tools golden
 //! diff` under the pinned simulator's system-chrome masks, and the door's
 //! element geometry against `<label>.elements.txt`. Stories supply the acts
 //! and the assertions; `UPDATE_JOURNEY_GOLDENS=1` rewrites the goldens that
@@ -245,7 +245,7 @@ fn number(value: &Value) -> f64 {
     value.as_f64().unwrap_or_default()
 }
 
-/// Pixel rectangles, as `xtask golden diff --mask` reads them, of every
+/// Pixel rectangles, as `ios-tools golden diff --mask` reads them, of every
 /// surface a view declared volatile and every element a story named so (a
 /// key fingerprint made fresh each run, a countdown), on the page the door
 /// says is on screen.
@@ -566,7 +566,7 @@ pub(crate) fn golden_udid() -> Result<String, String> {
 pub(crate) fn golden_device() -> Result<(String, String), String> {
     let mut command = Command::new(root().join("scripts/py"));
     command
-        .args(["-B", "scripts/ios_simulators.py", SIMULATOR])
+        .args(["-B", "apps/apple/Tools/ios_simulators.py", SIMULATOR])
         .current_dir(root());
     let said = run_within(command, Duration::from_secs(1800))?;
     // `golden (amux-iphone-1): <udid> (iOS 26.5, booted, ...)`
@@ -1531,10 +1531,10 @@ impl PhoneJourney {
             )));
         }
         let out = self.output.join("diff").join(label);
-        let xtask = std::env::current_exe()
+        let tools = std::env::current_exe()
             .map_err(|error| error.to_string())?
-            .with_file_name("xtask");
-        let mut command = Command::new(xtask);
+            .with_file_name("ios-tools");
+        let mut command = Command::new(tools);
         command
             .args(["golden", "diff", "--expected"])
             .arg(golden_png)

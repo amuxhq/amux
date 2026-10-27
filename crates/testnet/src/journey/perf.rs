@@ -1769,7 +1769,7 @@ pub(crate) fn run(asked: Asked) -> ExitCode {
     }
     if !app.is_dir() {
         return refused(format!(
-            "{} is not built; `scripts/ios-build.py --configuration Measured{}` builds it",
+            "{} is not built; `apps/apple/Tools/ios-build.py --configuration Measured{}` builds it",
             app.display(),
             if asked.device { " --device" } else { "" }
         ));

@@ -45,7 +45,7 @@ Among amux's own crates, `ui-state` links only `model` and `wire`; `ui-view` add
 adds `client` and `ui-view`, whose fleet line decides when a session wakes home.
 
 Every value the views return for drawing derives `Serialize` and `JsonSchema`. The phone receives them as JSON over the C
-bridge, and its Swift types are generated from the Rust definitions (`cargo run -p xtask -- swift-types`), so
+bridge, and its Swift types are generated from the Rust definitions (`cargo run -p ios-tools -- swift-types`), so
 there is one definition of each. [EMBEDDED.md](EMBEDDED.md) covers the bridge.
 
 ## The client seam

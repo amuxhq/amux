@@ -28,7 +28,7 @@ settings:
     CODE_SIGNING_ALLOWED: NO
     "CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]": YES
     "CODE_SIGN_IDENTITY[sdk=iphonesimulator*]": "-"
-    # The Rust bridge is assembled for arm64 alone (scripts/ios-rust.py), the
+    # The Rust bridge is assembled for arm64 alone (apps/apple/Tools/ios-rust.py), the
     # phone is arm64 and every simulator this is measured on runs on Apple
     # silicon. An Intel slice would be a second configuration nobody builds
     # and nobody would notice going stale.
@@ -167,7 +167,7 @@ targets:
         SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
         # The slice of the driving bridge a Debug or Measured build
         # force-loads, by the SDK it builds for. A phone's slice exists only
-        # once `scripts/ios-rust.py --device` has built it.
+        # once `apps/apple/Tools/ios-rust.py --device` has built it.
         AMUX_DRIVING_SLICE: ios-arm64-simulator
         "AMUX_DRIVING_SLICE[sdk=iphoneos*]": ios-arm64
       configs:
@@ -290,7 +290,7 @@ schemes:
     test:
       config: Debug
       # The package unit suites run from their own package schemes (see
-      # scripts/ios-unit.py); this action carries the accessibility audit's
+      # apps/apple/Tools/ios-unit.py); this action carries the accessibility audit's
       # UI test and the app-hosted tests.
       targets:
         - AmuxUITests

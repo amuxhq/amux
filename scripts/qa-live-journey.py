@@ -40,6 +40,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(1, str(Path(__file__).resolve().parents[1] / "apps/apple/Tools"))
 import ios_simulators
 import qa_cloud
 from qa_cloud import BASE, fail, masked
@@ -382,7 +383,7 @@ def speak(journal: Journal, udid: str, requests: list[dict], seconds: int) -> li
         plan.write_text(json.dumps(requests))
         plan.chmod(0o600)
         spoken = subprocess.run([
-            str(Path("target/debug/xtask").resolve()), "door",
+            str(Path("target/debug/ios-tools").resolve()), "door",
             "--simulator", SIMULATOR,
             "--bundle-id", BUNDLE_ID,
             "--timeout", str(seconds),

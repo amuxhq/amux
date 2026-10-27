@@ -41,7 +41,7 @@ API = "https://api.appstoreconnect.apple.com"
 BUNDLE = "sh.amux.app"
 KEYCHAIN_SERVICE = "amux-appstoreconnect"
 KEY_DIRECTORY = Path.home() / ".appstoreconnect/private_keys"
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 FRAMES = Path.home() / ".local/state/amux-marketing" / ROOT.name / "store"
 COUNT = 7
 # The 6.9-inch iPhone's two accepted portrait sizes.

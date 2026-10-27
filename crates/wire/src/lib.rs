@@ -4,7 +4,7 @@
 //! installation services.
 
 /// Protocol version for the native-stream link handshake. It moves only for
-/// a break both ends of a link must take; see `proto/amux/v1/README.md`.
+/// a break both ends of a link must take; see `proto/amux/v1/README.md` at the repository root.
 pub const PROTOCOL_VERSION: u32 = 1;
 
 pub mod amux {

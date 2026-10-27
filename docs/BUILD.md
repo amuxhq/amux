@@ -123,7 +123,7 @@ The recipes a build or change usually needs:
 Generated code is committed, and a check fails when it is stale.
 
 **Protobuf.** The schemas live under
-[`crates/wire/proto/amux/v1`](../crates/wire/proto/amux/v1). The generated
+[`proto/amux/v1`](../proto/amux/v1). The generated
 Rust (`amux.v1.rs`) and descriptor set (`amux.v1.bin`) are committed under
 [`crates/wire/src/generated`](../crates/wire/src/generated). After changing a
 schema:

@@ -17,15 +17,15 @@ forwarder, tickets and early data), `crates/node/src/routing/`
 the relay server), and `crates/node/src/grpc.rs`,
 `crates/node/src/front_door.rs` and `crates/node/src/edge/peer.rs` (the
 services). The protobuf source is in
-[`crates/wire/proto/amux/v1/`](../crates/wire/proto/amux/v1/): link control in
-[`link.proto`](../crates/wire/proto/amux/v1/link.proto), pairing in
-[`pairing_service.proto`](../crates/wire/proto/amux/v1/pairing_service.proto),
+[`proto/amux/v1/`](../proto/amux/v1/): link control in
+[`link.proto`](../proto/amux/v1/link.proto), pairing in
+[`pairing_service.proto`](../proto/amux/v1/pairing_service.proto),
 the front door in
-[`installation_service.proto`](../crates/wire/proto/amux/v1/installation_service.proto),
+[`installation_service.proto`](../proto/amux/v1/installation_service.proto),
 each profile's administration in
-[`profile_admin_service.proto`](../crates/wire/proto/amux/v1/profile_admin_service.proto),
+[`profile_admin_service.proto`](../proto/amux/v1/profile_admin_service.proto),
 and the peer services in
-[`peer_service.proto`](../crates/wire/proto/amux/v1/peer_service.proto).
+[`peer_service.proto`](../proto/amux/v1/peer_service.proto).
 
 ## The promises, as properties
 
@@ -918,10 +918,10 @@ daemon is not answering, which a caller retries; another host being
 unreachable is `FAILED_PRECONDITION` with reason `HOST_UNREACHABLE`, because
 it is an answer, not an outage. A lapsed plan is `PERMISSION_DENIED` with
 reason `PAYMENT_REQUIRED`. The googleapis files are vendored under
-`crates/wire/proto/google/`.
+`proto/google/`.
 
 The protobuf files change only as
-[their README](../crates/wire/proto/amux/v1/README.md) and
+[their README](../proto/amux/v1/README.md) and
 [the wire](WIRE.md#compatibility) allow: added to, never renumbered, with a
 removed field's number reserved; `just proto-compat` checks it against the
 latest release. `PROTOCOL_VERSION` exists only in the link handshake. The

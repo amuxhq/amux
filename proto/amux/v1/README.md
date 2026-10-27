@@ -46,5 +46,5 @@ meant:
 `PROTOCOL_VERSION` (`Hello.supported_protocol_versions`) moves only for a
 break both ends of a link must take.
 
-What a client writes into a dump is `amux.dump` (`../dump/session.proto`),
+What a client writes into a dump is `amux.dump` (`crates/wire/proto/amux/dump/session.proto`),
 read only by the build that wrote it and outside these promises.

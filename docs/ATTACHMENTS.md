@@ -11,7 +11,7 @@ fetch bytes only when they draw them.
 The pieces are:
 
 - `wire::Attachment`, `wire::BlobRef` and friends in
-  [`crates/wire/proto/amux/v1/records.proto`](../crates/wire/proto/amux/v1/records.proto).
+  [`proto/amux/v1/records.proto`](../proto/amux/v1/records.proto).
 - The [`attachments`](../crates/attachments/src/lib.rs) crate: positioned
   text and the `<amux-attachment>` element a model sees.
 - The daemon's blob calls in

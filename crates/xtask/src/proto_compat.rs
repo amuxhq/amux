@@ -77,7 +77,7 @@ pub fn main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("{found}");
     }
     Err(format!(
-        "{} break(s) against {baseline}; see crates/wire/proto/amux/v1/README.md",
+        "{} break(s) against {baseline}; see proto/amux/v1/README.md",
         breaks.len()
     )
     .into())

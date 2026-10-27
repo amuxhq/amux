@@ -51,7 +51,7 @@ there is one definition of each. [EMBEDDED.md](EMBEDDED.md) covers the bridge.
 ## The client seam
 
 [`client::Client`](../crates/client/src/lib.rs) has one async method per call of the client services
-(`crates/wire/proto/`), with the same names: `subscribe_inventory`, `resolve_agent`, `subscribe_session`,
+(`proto/`), with the same names: `subscribe_inventory`, `resolve_agent`, `subscribe_session`,
 `list_items`, `get_item`, `send_input`, `create_agent`, `rename_agent`, `stop_agent`, `resume_agent`, `delete_agent`,
 `send_message`, `put_blob`, `get_blob`, `get_diff`, `get_catalogue`, `list_repositories`, `dump`, `update_draft` and
 `get_draft`. Streams come back as

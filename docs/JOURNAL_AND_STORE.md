@@ -88,7 +88,7 @@ produced:
 The snapshot rides in the same frame because it costs nothing, but nothing
 depends on it being there: after a restart the interpreter re-derives and
 re-emits it. The fields are in
-[`records.proto`](../crates/wire/proto/amux/v1/records.proto); their meaning on
+[`records.proto`](../proto/amux/v1/records.proto); their meaning on
 the wire is in [the wire](WIRE.md).
 
 `journal::decode_frame` answers one of three things about the front of a

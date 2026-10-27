@@ -3,30 +3,30 @@
 *For developers writing a client or changing the amux.v1 service.*
 
 The wire is the protobuf package `amux.v1`, in
-[`crates/wire/proto/amux/v1/`](../crates/wire/proto/amux/v1/), with
+[`proto/amux/v1/`](../proto/amux/v1/), with
 generated Rust committed under `crates/wire/src/generated/`. This page covers
-the client-facing surface: the `AgentService` and `SessionService` calls, the records its streams
+the client-facing surface: the `AgentService` and `SessionService` calls, the records their streams
 carry, how inputs are answered, and the discipline that keeps binaries of
 different versions talking. Host-to-host links, pairing and the relay are in
 [the protocol](PROTOCOL.md).
 
 | File | Holds |
 | --- | --- |
-| [`agent_service.proto`](../crates/wire/proto/amux/v1/agent_service.proto) | `AgentService` and its requests: the fleet, agents' lifecycle and messages, blobs, diffs, catalogues, repositories |
-| [`session_service.proto`](../crates/wire/proto/amux/v1/session_service.proto) | `SessionService` and its requests: one agent's conversation, `Input` and `SendInputResponse`, the composer's draft |
-| [`peer_service.proto`](../crates/wire/proto/amux/v1/peer_service.proto) | `PeerAgentService` and `PeerSessionService`, and the requests only peers send |
-| [`inventory.proto`](../crates/wire/proto/amux/v1/inventory.proto) | Hosts and agent rows, as the inventory streams them |
-| [`records.proto`](../crates/wire/proto/amux/v1/records.proto) | The kind-neutral records: `Step`, `Item`, `Append`, `Snapshot`, `Kind`, `ExitCause`, agent messages, attachments, blobs, diffs, and the streams' `CaughtUp` and `Lagged` |
-| [`chat.proto`](../crates/wire/proto/amux/v1/chat.proto) | What the kinds share inside a body: item bodies, snapshot pieces, asks, input and answer pieces, the catalogue |
-| [`claude.proto`](../crates/wire/proto/amux/v1/claude.proto), [`codex.proto`](../crates/wire/proto/amux/v1/codex.proto) | The per-kind item, snapshot and input bodies |
-| [`agent_process.proto`](../crates/wire/proto/amux/v1/agent_process.proto) | The agent spec and what seeds its queue, and the `ctl.sock` and `pty.sock` frames |
-| [`error.proto`](../crates/wire/proto/amux/v1/error.proto) | `ErrorReason`, the amux reasons an error's `google.rpc.ErrorInfo` names |
-| [`link.proto`](../crates/wire/proto/amux/v1/link.proto), [`pairing_service.proto`](../crates/wire/proto/amux/v1/pairing_service.proto) | Host-to-host link control, and pairing |
-| [`installation_service.proto`](../crates/wire/proto/amux/v1/installation_service.proto) | `InstallationService`: the installation and its profiles |
-| [`profile_admin_service.proto`](../crates/wire/proto/amux/v1/profile_admin_service.proto) | `ProfileAdminService`: one profile's account, pairing, peers and dump |
-| [`dump.proto`](../crates/wire/proto/amux/v1/dump.proto) | The diagnostic dump's request, answer and parts |
+| [`agent_service.proto`](../proto/amux/v1/agent_service.proto) | `AgentService` and its requests: the fleet, agents' lifecycle and messages, blobs, diffs, catalogues, repositories |
+| [`session_service.proto`](../proto/amux/v1/session_service.proto) | `SessionService` and its requests: one agent's conversation, `Input` and `SendInputResponse`, the composer's draft |
+| [`peer_service.proto`](../proto/amux/v1/peer_service.proto) | `PeerAgentService` and `PeerSessionService`, and the requests only peers send |
+| [`inventory.proto`](../proto/amux/v1/inventory.proto) | Hosts and agent rows, as the inventory streams them |
+| [`records.proto`](../proto/amux/v1/records.proto) | The kind-neutral records: `Step`, `Item`, `Append`, `Snapshot`, `Kind`, `ExitCause`, agent messages, attachments, blobs, diffs, and the streams' `CaughtUp` and `Lagged` |
+| [`chat.proto`](../proto/amux/v1/chat.proto) | What the kinds share inside a body: item bodies, snapshot pieces, asks, input and answer pieces, the catalogue |
+| [`claude.proto`](../proto/amux/v1/claude.proto), [`codex.proto`](../proto/amux/v1/codex.proto) | The per-kind item, snapshot and input bodies |
+| [`agent_process.proto`](../proto/amux/v1/agent_process.proto) | The agent spec and what seeds its queue, and the `ctl.sock` and `pty.sock` frames |
+| [`error.proto`](../proto/amux/v1/error.proto) | `ErrorReason`, the amux reasons an error's `google.rpc.ErrorInfo` names |
+| [`link.proto`](../proto/amux/v1/link.proto), [`pairing_service.proto`](../proto/amux/v1/pairing_service.proto) | Host-to-host link control, and pairing |
+| [`installation_service.proto`](../proto/amux/v1/installation_service.proto) | `InstallationService`: the installation and its profiles |
+| [`profile_admin_service.proto`](../proto/amux/v1/profile_admin_service.proto) | `ProfileAdminService`: one profile's account, pairing, peers and dump |
+| [`dump.proto`](../proto/amux/v1/dump.proto) | The diagnostic dump's request, answer and parts |
 | [`amux/dump/session.proto`](../crates/wire/proto/amux/dump/session.proto) | `amux.dump`: a client's session history as a dump carries it, outside the wire's promises |
-| [`google/rpc/`](../crates/wire/proto/google/rpc/) | `google.rpc.Status`, `Code` and `ErrorInfo`, vendored from googleapis |
+| [`google/rpc/`](../proto/google/rpc/) | `google.rpc.Status`, `Code` and `ErrorInfo`, vendored from googleapis |
 
 ## Where clients call
 
@@ -90,7 +90,7 @@ meets often:
 
 ## The calls
 
-`service AgentService` in [`agent_service.proto`](../crates/wire/proto/amux/v1/agent_service.proto):
+`service AgentService` in [`agent_service.proto`](../proto/amux/v1/agent_service.proto):
 
 | Call | Returns | Meaning |
 | --- | --- | --- |
@@ -108,7 +108,7 @@ meets often:
 | `GetCatalogue(GetCatalogueRequest)` | `GetCatalogueResponse` | What a provider on a host offers with no agent running: the encoded `Catalogue` and its hash. An agent's catalogue is a blob, read with `GetBlob` |
 | `ListRepositories` | `ListRepositoriesResponse` | Repositories a host offers to spawn agents in |
 
-`service SessionService` in [`session_service.proto`](../crates/wire/proto/amux/v1/session_service.proto):
+`service SessionService` in [`session_service.proto`](../proto/amux/v1/session_service.proto):
 
 | Call | Returns | Meaning |
 | --- | --- | --- |
@@ -273,8 +273,8 @@ returns to the fleet.
 ## Records
 
 The records are defined once in
-[`records.proto`](../crates/wire/proto/amux/v1/records.proto), and the bodies
-the kinds share in [`chat.proto`](../crates/wire/proto/amux/v1/chat.proto). The
+[`records.proto`](../proto/amux/v1/records.proto), and the bodies
+the kinds share in [`chat.proto`](../proto/amux/v1/chat.proto). The
 journal frames them, the store keeps them and every stream carries them.
 
 ### The envelope

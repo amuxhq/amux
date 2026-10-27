@@ -333,7 +333,7 @@ their own copies.
 
 <root>/                       the config's `root`; default ~/.local/share/amux ($XDG_DATA_HOME/amux)
   installation.lock           one daemon per installation
-  installation_id             minted at the first start; what usage analytics count an install by
+  installation_id             what usage analytics count an install by; minted at the first start that sends them
   generation                  boot id, clean-shutdown flag and a counter a replica compares
   supervisor.lock             one supervisor per installation
   supervisor.sock             how the CLI reaches a running supervisor (`amux update`, and stop on Windows)

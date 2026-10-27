@@ -932,8 +932,8 @@ cargo = [
 
 [[suite]]
 name = "terminal-evidence-tools"
-contract = "Terminal evidence tools render deterministic PNGs of every vocabulary component and verify them, and every storybook story draws at every size in both palettes."
-paths = ["crates/shot/src"]
+contract = "Terminal evidence tools render deterministic PNGs of every vocabulary component and verify them, the storybook's stories are the terminal stories of tests/stories.json by name and in its order, and every story draws at every size in both palettes."
+paths = ["crates/shot/src", "tests/stories.json"]
 recipe = "just test-crate shot"
 boundary = "Native presentation"
 oracle = "Byte-stable images, exact dimensions, a face for every drawn glyph, and manifest membership."

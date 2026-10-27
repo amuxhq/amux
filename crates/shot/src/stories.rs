@@ -2,36 +2,73 @@
 //! client's own views from data, with no daemon, provider or network behind
 //! it.
 //!
+//! A story is one whole screen a person reaches, in one state that changes
+//! how the screen is put together; one piece in one variant (a row kind, an
+//! ask card, a message inside an otherwise identical screen) is a component
+//! example in `tui::vocabulary` instead. Which stories there are, their
+//! order and what each shows is `tests/stories.json`, the list the phone's
+//! storybook is held to as well: [`all`] draws exactly its terminal
+//! stories, in its order, and a test fails when the two differ.
+//!
 //! A story is a picture, not a live client. Home is the authored fleet the
 //! component goldens use, with the keys a person would press to open hosts,
 //! a filter or a new agent; a chat is a session replayed from a recorded
-//! interpreter fixture up to the moment it shows. Names are shared with the
-//! phone's storybook where the concept is the same (`fleet.busy`,
-//! `chat.plan`, `review.page`), and the first segment of a name is its
-//! group. The list is in screen order: home, hosts, new agent, chat, asks,
-//! review.
+//! interpreter fixture up to the moment it shows. The first segment of a
+//! name is its group.
 
 use std::path::Path;
+use std::sync::LazyLock;
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
 use interpret::{Replayed, replay};
 use ratatui::Frame;
 use ratatui::layout::Rect;
+use serde::Deserialize;
 use tui::Theme;
 use tui::chat::ChatView;
 use tui::chat::review::ReviewPage;
+use tui::report::Report;
 use tui::sessions::{Committer, agent, caught_up};
 use tui::setup::ChatIn;
 use tui::vocabulary::{ChatScene, HomeScene};
 use ui_state::{Connection, FleetMsg, FleetState, InputOutcome, Msg, PhaseView, SessionState};
 use wire::Kind;
 
+/// The storybook both clients are held to.
+const LIST: &str = include_str!("../../../tests/stories.json");
+
+#[derive(Deserialize)]
+struct List {
+    stories: Vec<Listed>,
+}
+
+/// One story of the list.
+#[derive(Deserialize)]
+pub struct Listed {
+    pub name: String,
+    pub shows: String,
+    pub clients: Vec<String>,
+}
+
+static LISTED: LazyLock<Vec<Listed>> = LazyLock::new(|| {
+    serde_json::from_str::<List>(LIST)
+        .unwrap_or_else(|error| panic!("tests/stories.json: {error}"))
+        .stories
+});
+
+/// The list's terminal stories, in its order.
+pub fn listed() -> impl Iterator<Item = &'static Listed> {
+    LISTED
+        .iter()
+        .filter(|story| story.clients.iter().any(|client| client == "terminal"))
+}
+
 pub struct Story {
     pub id: &'static str,
-    /// What the story shows, in a sentence.
+    /// What the story shows, in a sentence, as the list says.
     pub shows: &'static str,
     build: fn() -> Scene,
 }
@@ -53,6 +90,9 @@ pub enum Scene {
     Home(Box<HomeScene>),
     Chat(Box<ChatScene>),
     Review(Box<ReviewPage>),
+    /// Report a problem, over the screen it froze: the screen is drawn
+    /// first and frozen as drawn, as the client freezes it at the key.
+    Report(Box<Scene>),
 }
 
 impl Scene {
@@ -61,270 +101,189 @@ impl Scene {
             Scene::Home(home) => home.draw(frame, area, theme),
             Scene::Chat(chat) => chat.draw(frame, area, theme),
             Scene::Review(page) => page.draw(frame, area, None, theme),
+            Scene::Report(under) => {
+                under.draw(frame, area, theme);
+                let frozen = frame.buffer_mut().clone();
+                Report::without_dump(frozen, theme).draw(frame, area, theme);
+            }
         }
     }
 }
 
-macro_rules! story {
-    ($id:literal, $shows:literal, $build:expr) => {
-        Story {
-            id: $id,
-            shows: $shows,
-            build: $build,
-        }
-    };
+/// A story the list's terminal stories name, with what the list says it
+/// shows; a name the list lacks is a mistake here.
+fn story(id: &'static str, build: fn() -> Scene) -> Story {
+    let shows = listed()
+        .find(|listed| listed.name == id)
+        .unwrap_or_else(|| panic!("{id} is not a terminal story in tests/stories.json"));
+    Story {
+        id,
+        shows: &shows.shows,
+        build,
+    }
 }
 
-/// Every story, in the order the storybook steps through them.
+/// Every story, in the order the storybook steps through them: the list's.
 pub fn all() -> Vec<Story> {
     vec![
-        // Home.
-        story!(
-            "fleet.first-run",
-            "Home on a machine with no agents yet: what to do first.",
-            || { Scene::Home(Box::new(first_run())) }
-        ),
-        story!(
-            "fleet.busy",
-            "Home over a day's fleet: two hosts, one away, a dozen agents in every standing, with families, branches and the exited fold open.",
-            || Scene::Home(Box::new(tui::vocabulary::authored_home()))
-        ),
-        story!(
-            "fleet.filter",
-            "Home narrowed by `/` to the agents whose names match \"spec\".",
-            || {
-                let mut home = tui::vocabulary::authored_home();
-                home.key(KeyCode::Char('/'));
-                for c in "spec".chars() {
-                    home.key(KeyCode::Char(c));
-                }
-                Scene::Home(Box::new(home))
+        // The agent list.
+        story("fleet.first-run", || Scene::Home(Box::new(first_run()))),
+        story("fleet.busy", || {
+            Scene::Home(Box::new(tui::vocabulary::authored_home()))
+        }),
+        story("fleet.filter", || filtered("spec")),
+        story("fleet.no-matches", || filtered("zebra")),
+        story("fleet.stop", stop),
+        story("fleet.delete", || {
+            let mut home = tui::vocabulary::authored_home();
+            home.key(KeyCode::Char('G'));
+            home.key(KeyCode::Char('x'));
+            Scene::Home(Box::new(home))
+        }),
+        story("fleet.rename", || {
+            let mut home = tui::vocabulary::authored_home();
+            home.key(KeyCode::Char('r'));
+            for c in "-v2".chars() {
+                home.key(KeyCode::Char(c));
             }
-        ),
+            Scene::Home(Box::new(home))
+        }),
         // Hosts.
-        story!(
-            "hosts.list",
-            "The hosts screen `h` opens over home: each host, how it is reached, and the one away.",
-            || {
-                let mut home = tui::vocabulary::authored_home();
-                home.key(KeyCode::Char('h'));
-                Scene::Home(Box::new(home))
-            }
-        ),
+        story("hosts.list", hosts),
+        story("hosts.empty", || {
+            let mut home = first_run();
+            home.key(KeyCode::Char('h'));
+            Scene::Home(Box::new(home))
+        }),
         // A new agent.
-        story!(
-            "new-agent.claude",
-            "The new-agent composer `n` opens on home, with its edge of name, agent, model, effort, folder and host.",
-            || {
-                let mut home = tui::vocabulary::authored_home();
-                home.key(KeyCode::Char('n'));
-                home.offer(wire::Provider::Claude, &claude_offer());
-                Scene::Home(Box::new(home))
-            }
-        ),
-        story!(
-            "new-agent.terminal",
-            "The New Agent window `n` opens when the person chats in each agent's own terminal.",
-            || {
-                let mut home = tui::vocabulary::authored_home();
-                home.chat_in = ChatIn::Native;
-                home.key(KeyCode::Char('n'));
-                Scene::Home(Box::new(home))
-            }
-        ),
+        story("new-agent.claude", || {
+            let mut home = tui::vocabulary::authored_home();
+            home.key(KeyCode::Char('n'));
+            home.offer(wire::Provider::Claude, &claude_offer());
+            Scene::Home(Box::new(home))
+        }),
+        story("new-agent.browsing", || {
+            let mut home = tui::vocabulary::authored_home();
+            home.key(KeyCode::Char('n'));
+            home.offer(wire::Provider::Claude, &claude_offer());
+            home.key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
+            home.key(KeyCode::Char('d'));
+            Scene::Home(Box::new(home))
+        }),
+        story("new-agent.terminal", || {
+            let mut home = tui::vocabulary::authored_home();
+            home.chat_in = ChatIn::Native;
+            home.key(KeyCode::Char('n'));
+            Scene::Home(Box::new(home))
+        }),
         // Chats.
-        story!(
-            "chat.working",
-            "A Claude turn at work: prose so far and the step it is on.",
-            || { chat(Kind::ClaudeSdk, "recorded_multi_turn", Pick::Working) }
-        ),
-        story!(
-            "chat.conversation",
-            "A finished multi-turn Claude conversation.",
-            || { chat(Kind::ClaudeSdk, "recorded_multi_turn", Pick::Last) }
-        ),
-        story!(
-            "chat.tools",
-            "Terminal Claude's reads, edits and commands as rows.",
-            || { chat(Kind::ClaudePty, "recorded_tools", Pick::Last) }
-        ),
-        story!(
-            "chat.failure",
-            "A command that failed, and the turn that followed it.",
-            || { chat(Kind::ClaudeSdk, "recorded_failing_command", Pick::Last) }
-        ),
-        story!("chat.interrupted", "A turn stopped part way.", || {
-            chat(Kind::ClaudeSdk, "recorded_interrupted", Pick::Last)
+        story("chat.loading", loading),
+        story("chat.working", || {
+            chat(Kind::ClaudeSdk, "recorded_multi_turn", Pick::Working)
         }),
-        story!("chat.task-list", "A turn that kept a task list.", || {
-            chat(Kind::ClaudeSdk, "recorded_task_list", Pick::Last)
+        story("chat.conversation", || {
+            chat(Kind::ClaudeSdk, "recorded_multi_turn", Pick::Last)
         }),
-        story!(
-            "chat.subagent",
-            "A turn that handed work to a subagent.",
-            || { chat(Kind::ClaudeSdk, "recorded_subagent_task", Pick::Last) }
-        ),
-        story!(
-            "chat.background",
-            "A command left running in the background.",
-            || { chat(Kind::ClaudeSdk, "recorded_background_shell", Pick::Last) }
-        ),
-        story!(
-            "chat.markdown",
-            "A reply in every markdown construct an agent writes: headings, nested and numbered lists, a table, fenced code, a quote, links, a rule and emphasis.",
-            markdown
-        ),
-        story!(
-            "chat.queued",
-            "A prompt queued behind a turn still running its command.",
-            || { chat(Kind::ClaudeSdk, "recorded_steer_folded", Pick::Queued) }
-        ),
-        story!(
-            "chat.held",
-            "The host is away: the chat says so and is not current, and a prompt sent meanwhile waits to go when the host is back.",
-            held_while_away
-        ),
-        story!(
-            "chat.exited",
-            "An agent whose provider crashed, with a draft in the composer that Enter sends as it resumes.",
-            exited_with_a_draft
-        ),
-        story!(
-            "chat.exited-resumed",
-            "An agent that exited mid-task and was resumed, both marked in the transcript.",
-            || { chat(Kind::Codex, "interrupt_exited", Pick::Last) }
-        ),
-        story!(
-            "chat.compacted",
-            "A conversation compacted, with how far it shrank.",
-            || { chat(Kind::ClaudeSdk, "recorded_compacted", Pick::Last) }
-        ),
-        story!(
-            "chat.edits",
-            "A Codex turn whose three patches fold into one row.",
-            || { chat(Kind::Codex, "recorded_file_changes", Pick::Last) }
-        ),
-        story!(
-            "chat.api-error",
-            "A turn the provider's API refused, its error marked in the transcript.",
-            || { chat(Kind::ClaudePty, "recorded_api_error", Pick::Last) }
-        ),
-        story!(
-            "chat.tool-servers",
-            "Tool servers that need signing in and one that failed to start, called out above the composer.",
-            || { chat(Kind::ClaudeSdk, "recorded_failed_tool_server", Pick::Last) }
-        ),
-        story!(
-            "chat.signed-out.claude",
-            "Claude refused its credential: the card in place of the composer says how to sign in on its host.",
-            || { chat(Kind::ClaudeSdk, "recorded_sign_in_problem", Pick::Last) }
-        ),
-        story!(
-            "chat.signed-out.codex",
-            "Codex signed out: the card in place of the composer says to run codex login on its host.",
-            || { chat(Kind::Codex, "recorded_signed_out", Pick::Last) }
-        ),
-        story!("chat.codex", "A Codex turn from prompt to reply.", || {
-            chat(Kind::Codex, "recorded_turn_round_trip", Pick::Last)
+        story("chat.asking", || {
+            chat(Kind::ClaudeSdk, "recorded_question_asked", Pick::Asking)
         }),
-        story!(
-            "chat.codex-exploring",
-            "Codex exploring a repository: its reads and searches folded.",
-            || { chat(Kind::Codex, "recorded_exploring", Pick::Last) }
-        ),
-        story!(
-            "chat.plan",
-            "A plan Claude proposes, waiting to be approved.",
-            || { chat(Kind::ClaudeSdk, "recorded_plan_reviewed", Pick::LastAsking) }
-        ),
-        story!(
-            "chat.changes.uncommitted",
-            "The overview open beside a chat: background jobs and the uncommitted files by folder.",
-            || { surroundings(0) }
-        ),
-        story!(
-            "chat.changes.branch",
-            "The overview counting everything on the branch.",
-            || { surroundings(1) }
-        ),
-        story!(
-            "chat.usage.claude",
-            "A Claude chat near a usage limit, the overview listing every window.",
-            || { surroundings(2) }
-        ),
-        story!(
-            "chat.usage.codex",
-            "A Codex chat near a usage limit, with the credits left.",
-            || { surroundings(3) }
-        ),
-        // Asks.
-        story!("ask.permission", "Claude asking to run a command.", || {
-            chat(
-                Kind::ClaudeSdk,
-                "recorded_permission_callback",
-                Pick::Asking,
-            )
+        story("chat.plan", || {
+            chat(Kind::ClaudeSdk, "recorded_plan_reviewed", Pick::LastAsking)
         }),
-        story!(
-            "ask.permission.terminal",
-            "Terminal Claude's own permission menu, as a question.",
-            || {
-                chat(
-                    Kind::ClaudePty,
-                    "recorded_permission_allow_once",
-                    Pick::Asking,
-                )
-            }
-        ),
-        story!(
-            "ask.approval.codex",
-            "Codex asking to approve a command, with its scopes.",
-            || { chat(Kind::Codex, "recorded_approval_scopes", Pick::Asking) }
-        ),
-        story!(
-            "ask.question",
-            "Claude asking a question with options.",
-            || { chat(Kind::ClaudeSdk, "recorded_question_asked", Pick::Asking) }
-        ),
-        story!(
-            "ask.question.every-shape",
-            "Several questions at once: single, multiple and with previews.",
-            || {
-                chat(
-                    Kind::ClaudeSdk,
-                    "recorded_question_every_shape",
-                    Pick::Asking,
-                )
-            }
-        ),
-        story!("ask.question.codex", "Codex asking questions.", || {
-            chat(Kind::Codex, "recorded_live_questions", Pick::Asking)
+        story("chat.queued", || {
+            chat(Kind::ClaudeSdk, "recorded_steer_folded", Pick::Queued)
         }),
-        story!("ask.form", "A tool server's form, through Codex.", || {
-            chat(Kind::Codex, "recorded_tool_server_form", Pick::Asking)
+        story("chat.away", held_while_away),
+        story("chat.exited", exited_with_a_draft),
+        story("chat.signed-out", || {
+            chat(Kind::ClaudeSdk, "recorded_sign_in_problem", Pick::Last)
         }),
-        story!(
-            "ask.access",
-            "Codex asking for access outside its folder.",
-            || { chat(Kind::Codex, "recorded_access_grant", Pick::Asking) }
-        ),
-        story!(
-            "ask.trust-folder",
-            "Terminal Claude's first question in a new folder: whether to trust it.",
-            || { chat(Kind::ClaudePty, "trust_dialog", Pick::Asking) }
-        ),
-        story!(
-            "ask.terminal-only",
-            "A dialog only terminal Claude's own screen can answer.",
-            || { chat(Kind::ClaudePty, "unanswerable", Pick::Asking) }
-        ),
+        story("chat.overview", || {
+            Scene::Chat(Box::new(tui::vocabulary::chat_overview()))
+        }),
+        story("chat.settings", || {
+            Scene::Chat(Box::new(tui::vocabulary::chat_settings()))
+        }),
         // Review.
-        story!(
-            "review.page",
-            "The review page over a two-file diff, one comment made and a second being written.",
-            || { Scene::Review(Box::new(tui::vocabulary::commented_review())) }
-        ),
+        story("review.page", || {
+            Scene::Review(Box::new(tui::vocabulary::commented_review()))
+        }),
+        // Reporting a problem.
+        story("report.ready", || {
+            Scene::Report(Box::new(Scene::Home(Box::new(
+                tui::vocabulary::authored_home(),
+            ))))
+        }),
     ]
+}
+
+/// Home narrowed by `/` to the agents whose names match `word`.
+fn filtered(word: &str) -> Scene {
+    let mut home = tui::vocabulary::authored_home();
+    home.key(KeyCode::Char('/'));
+    for c in word.chars() {
+        home.key(KeyCode::Char(c));
+    }
+    Scene::Home(Box::new(home))
+}
+
+/// The Stop window over the working agent, which has background jobs and
+/// a subagent for the window to name.
+fn stop() -> Scene {
+    use wire::inventory_event::Of;
+
+    let mut home = tui::vocabulary::authored_home();
+    let key = ui_state::agent_key(home.fleet.find(b"quiet-heron").expect("listed"));
+    let mut working = home.fleet.agent(&key).expect("listed").clone();
+    working.background_jobs = 2;
+    working.descendants = 1;
+    home.fleet
+        .update(FleetMsg::Event(Box::new(wire::InventoryEvent {
+            of: Some(Of::Agent(working)),
+        })));
+    home.home.select(key);
+    home.key(KeyCode::Char('x'));
+    Scene::Home(Box::new(home))
+}
+
+/// The hosts window over home, with a paired machine reached through the
+/// relay and one found nearby that is not paired.
+fn hosts() -> Scene {
+    use wire::inventory_event::Of;
+
+    let mut home = tui::vocabulary::authored_home();
+    for host in [
+        wire::HostEntry::trusted_host(
+            b"laptop".as_slice(),
+            "laptop",
+            wire::trusted::Reach::Online(wire::RouteKind::Relay as i32),
+        ),
+        wire::HostEntry::candidate_host(
+            b"den-mini".as_slice(),
+            "den-mini",
+            vec!["192.168.1.24:7420".into()],
+        ),
+    ] {
+        home.fleet
+            .update(FleetMsg::Event(Box::new(wire::InventoryEvent {
+                of: Some(Of::Host(host)),
+            })));
+    }
+    home.key(KeyCode::Char('h'));
+    Scene::Home(Box::new(home))
+}
+
+/// A chat just opened: nothing of it held yet, and long enough since it
+/// opened that it says it is loading.
+fn loading() -> Scene {
+    let opened = 1_790_000_000_000;
+    let mut state = SessionState::new(agent(Kind::ClaudeSdk), tui::chat::layout::CAP as usize);
+    state.update(Msg::Connection(Connection::Live));
+    Scene::Chat(Box::new(ChatScene {
+        view: ChatView::new(b"agent".to_vec(), opened, false),
+        state,
+        now: opened + 1_000,
+    }))
 }
 
 /// Which moment of a recorded session a story shows.
@@ -412,80 +371,6 @@ fn exited_with_a_draft() -> Scene {
     Scene::Chat(Box::new(scene))
 }
 
-/// What an agent writes when it explains: every markdown construct the
-/// chat draws, in one reply.
-const MARKDOWN: &str = r#"## What changed
-
-The relay now **retries** after a dropped link, with *jittered* backoff, and the
-retry budget lives in `RelayConfig::retries`.
-
-1. The link notices the drop.
-2. It waits, then dials again:
-   - first after 200 ms,
-   - then doubling up to 5 s.
-3. After the budget it gives up and says so.
-
-| Case | Before | After |
-|---|---|---|
-| Wi-Fi blip | dropped | resumes |
-| Laptop asleep | dropped | resumes on wake |
-| Relay restart | 30 s gap | under 2 s |
-
-```rust
-fn backoff(attempt: u32) -> Duration {
-    Duration::from_millis(200 << attempt.min(5))
-}
-```
-
-> The phone keeps its own timer; this only changes the host's side.
-
----
-
-See [the relay design](https://example.com/docs/relay) and
-https://example.com/a/very/long/link/that/runs/past/the/edge/of/a/narrow/terminal/window
-for the measurements."#;
-
-fn markdown() -> Scene {
-    use prost::Message as _;
-    use wire::claude_sdk_item::Kind as K;
-
-    let now = 1_790_000_000_000;
-    let item = |order: u64, kind: K, text: &str| wire::Item {
-        key: format!("k{order}"),
-        order,
-        revision: order,
-        text: text.into(),
-        kind: Kind::ClaudeSdk as i32,
-        body: wire::ClaudeSdkItem { kind: Some(kind) }.encode_to_vec(),
-        at_ms: now - 60_000 + order as i64 * 1_000,
-        ..Default::default()
-    };
-    let mut state = SessionState::new(agent(Kind::ClaudeSdk), tui::chat::layout::CAP as usize);
-    state.update(Msg::Connection(Connection::Live));
-    let event = |of| Msg::Event(wire::SessionEvent { of: Some(of) });
-    state.update(event(wire::session_event::Of::Snapshot(wire::Snapshot {
-        kind: Kind::ClaudeSdk as i32,
-        phase: wire::Phase::Idle as i32,
-        ..Default::default()
-    })));
-    for item in [
-        item(
-            1,
-            K::Prompt(wire::Prompt {}),
-            "Explain what the relay change does.",
-        ),
-        item(2, K::Message(wire::Text { complete: true }), MARKDOWN),
-    ] {
-        state.update(event(wire::session_event::Of::Item(item)));
-    }
-    state.update(caught_up(2));
-    Scene::Chat(Box::new(ChatScene {
-        view: ChatView::new(b"agent".to_vec(), now, false),
-        state,
-        now,
-    }))
-}
-
 /// The session after each frame of a recorded fixture, with the newest
 /// item's time: caught up after the first frame, as a live chat is.
 fn replayed(kind: Kind, fixture: &str) -> Vec<(SessionState, i64)> {
@@ -539,14 +424,6 @@ fn replayed(kind: Kind, fixture: &str) -> Vec<(SessionState, i64)> {
         out.push((state.clone(), at));
     }
     out
-}
-
-fn surroundings(index: usize) -> Scene {
-    let (_, _, scene) = tui::vocabulary::surroundings()
-        .into_iter()
-        .nth(index)
-        .expect("the overview stories are the vocabulary's");
-    Scene::Chat(Box::new(scene))
 }
 
 /// Home with the local host and nothing on it.
@@ -622,6 +499,29 @@ mod tests {
     use tui::ColorMode;
 
     use super::*;
+
+    /// The storybook is the list's terminal stories, by the list's names
+    /// and in its order; a difference is named.
+    #[test]
+    fn the_stories_are_the_lists_terminal_stories_in_its_order() {
+        let ours: Vec<&str> = all().iter().map(|story| story.id).collect();
+        let listed: Vec<&str> = listed().map(|story| story.name.as_str()).collect();
+        let missing: Vec<&&str> = listed.iter().filter(|name| !ours.contains(name)).collect();
+        let unlisted: Vec<&&str> = ours.iter().filter(|id| !listed.contains(id)).collect();
+        assert!(
+            missing.is_empty() && unlisted.is_empty(),
+            "tests/stories.json lists terminal stories the storybook lacks: {missing:?}; \
+             the storybook has stories the list does not give the terminal: {unlisted:?}"
+        );
+        if let Some(at) = (0..ours.len()).find(|&at| ours[at] != listed[at]) {
+            panic!(
+                "story {} is {} in the storybook but {} in tests/stories.json",
+                at + 1,
+                ours[at],
+                listed[at]
+            );
+        }
+    }
 
     /// Every story draws at every size the storybook offers, in both
     /// shipped palettes; names are unique and each group is contiguous, so

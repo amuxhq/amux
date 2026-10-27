@@ -147,6 +147,7 @@
     "apps/apple/Amux/Sources/Composition.swift": [
       {"literal": "\"notificationsOfferDeclined\"", "context": "private static let notificationsOfferKey = \"notificationsOfferDeclined\"", "reason": "Storage filename, keychain service identifier, or relay URL syntax; not app interface copy.", "count": 1},
       {"literal": "\"shareUsage\"", "context": "private static let shareUsageKey = \"shareUsage\"", "reason": "Storage filename, keychain service identifier, or relay URL syntax; not app interface copy.", "count": 1},
+      {"literal": "\"appearance\"", "context": "private static let appearanceKey = \"appearance\"", "reason": "Storage filename, keychain service identifier, or relay URL syntax; not app interface copy.", "count": 1},
       {"literal": "\"accounts.json\"", "context": "let accounts = AccountRegistry(file: AppFiles.support.appendingPathComponent(\"accounts.json\"))", "reason": "Storage filename, keychain service identifier, or relay URL syntax; not app interface copy.", "count": 1},
       {"literal": "\"-\\(Door.scriptedCloudArgument)\"", "context": ".contains(\"-\\(Door.scriptedCloudArgument)\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"CFBundleShortVersionString\"", "context": "let version = Bundle.main.object(forInfoDictionaryKey: \"CFBundleShortVersionString\")", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
@@ -393,11 +394,8 @@
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/RuntimeCoordinator.swift": [
       {"literal": "\"installation\"", "context": "support.appendingPathComponent(\"installation\", isDirectory: true)", "reason": "File or directory name on disk, not interface copy.", "count": 1},
-      {"literal": "\"installations\"", "context": "at: support.appendingPathComponent(\"installations\", isDirectory: true))", "reason": "File or directory name on disk, not interface copy.", "count": 1},
       {"literal": "\"runtime.log\"", "context": "forReadingFrom: directory.appendingPathComponent(\"runtime.log\"))", "reason": "File or directory name on disk, not interface copy.", "count": 1},
-      {"literal": "\"runtime.log\"", "context": "logPath: directory.appendingPathComponent(\"runtime.log\").path,", "reason": "File or directory name on disk, not interface copy.", "count": 1},
-      {"literal": "\"drafts\"", "context": "at: support.appendingPathComponent(\"drafts\", isDirectory: true))", "reason": "File or directory name on disk, not interface copy.", "count": 1},
-      {"literal": "\"registry\"", "context": "atPath: directory.appendingPathComponent(\"registry\").path)", "reason": "File or directory name on disk, not interface copy.", "count": 1}
+      {"literal": "\"runtime.log\"", "context": "logPath: directory.appendingPathComponent(\"runtime.log\").path,", "reason": "File or directory name on disk, not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/Signposts.swift": [
       {"literal": "\"sh.amux.app\"", "context": "public static let subsystem = \"sh.amux.app\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},

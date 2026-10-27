@@ -1270,8 +1270,8 @@
       {"literal": "\"OAuth token has expired.\"", "context": "static let expiredSignIn = SignInView(state: .expired, account: \"ada@example.com\", message: \"OAuth token has expired.\")", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"large-text\"", "context": "hostsList(\"large-text\", size: .accessibility3) { _ in },", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"hosts.\\(id)\"", "context": "id: \"hosts.\\(id)\", family: .hosts, canvas: CGSize(width: 390, height: 844), dynamicTypeSize: size", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"large-text\"", "context": "sheet(\"large-text\", size: .accessibility3) { StoryApp(settingsOpen: true).settings },", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"settings.\\(id)\"", "context": "id: \"settings.\\(id)\", family: .settings, canvas: CGSize(width: 390, height: 844), dynamicTypeSize: size", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}
+      {"literal": "\"large-text\"", "context": "sheet(\"large-text\", size: .accessibility3, height: 2600) { StoryApp(settingsOpen: true).settings },", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"settings.\\(id)\"", "context": "id: \"settings.\\(id)\", family: .settings, canvas: CGSize(width: 390, height: height), dynamicTypeSize: size", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}
     ],
     "apps/apple/Amux/Debug/Stories.swift": [
       {"literal": "\"notifications-offer\"", "context": "fleet(\"notifications-offer\", offerNotifications: true) { StoryFleet.busy(nearby: false) },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},

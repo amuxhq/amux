@@ -97,9 +97,45 @@ pub struct Component {
 pub(crate) static TIMES_IN_UTC: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+/// A reply in every markdown construct an agent writes, for the prose row
+/// that renders them.
+const EVERY_MARKDOWN: &str = r#"## What changed
+
+The relay now **retries** after a dropped link, with *jittered* backoff, and the
+retry budget lives in `RelayConfig::retries`.
+
+1. The link notices the drop.
+2. It waits, then dials again:
+   - first after 200 ms,
+   - then doubling up to 5 s.
+3. After the budget it gives up and says so.
+
+| Case | Before | After |
+|---|---|---|
+| Wi-Fi blip | dropped | resumes |
+| Laptop asleep | dropped | resumes on wake |
+| Relay restart | 30 s gap | under 2 s |
+
+```rust
+fn backoff(attempt: u32) -> Duration {
+    Duration::from_millis(200 << attempt.min(5))
+}
+```
+
+> The phone keeps its own timer; this only changes the host's side.
+
+---
+
+See [the relay design](https://example.com/docs/relay) and
+https://example.com/a/very/long/link/that/runs/past/the/edge/of/a/narrow/terminal/window
+for the measurements."#;
+
 /// Every component, in catalogue order.
 pub fn components(theme: Theme) -> Vec<Component> {
     TIMES_IN_UTC.store(true, std::sync::atomic::Ordering::Relaxed);
+    // A fenced block is drawn plain until the grammars finish loading in the
+    // background, so a reference waits for them.
+    crate::highlight::preload();
     let w = usize::from(WIDTH);
     let mut out = Vec::new();
     let mut add = |name, shows, lines: Vec<Line<'static>>| {
@@ -939,6 +975,18 @@ fn row_sets() -> Vec<RowSet> {
                 ),
                 (attention, CLOSED),
             ],
+        ),
+        (
+            "row_prose_markdown",
+            "A reply in every markdown construct an agent writes: headings, nested and numbered lists, a table, fenced code, a quote, links, a rule and emphasis.",
+            vec![(
+                row(RowKind::Prose {
+                    text: text(EVERY_MARKDOWN),
+                    streaming: false,
+                    working_note: false,
+                }),
+                CLOSED,
+            )],
         ),
         (
             "row_thinking",

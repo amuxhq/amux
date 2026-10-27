@@ -1649,7 +1649,8 @@ extension ComponentCatalog {
         sheet("two-accounts") { StoryApp(settingsOpen: true) { StoryFleet.busy(accounts: 2) }.settings },
         sheet("signed-out") { StoryApp(settingsOpen: true) { StoryFleet.busy(accounts: 0) }.settings },
         sheet("notifications") { StoryApp(settingsOpen: true, notifications: .on).settings },
-        sheet("large-text", size: .accessibility3) { StoryApp(settingsOpen: true).settings },
+        // Tall enough to hold the whole sheet, down to its help rows.
+        sheet("large-text", size: .accessibility3, height: 2600) { StoryApp(settingsOpen: true).settings },
         sheet("delete") {
             let stores = StoryFleet.busy()
             return DeleteAccountOverlay(
@@ -1704,10 +1705,11 @@ extension ComponentCatalog {
     ]
 
     private static func sheet(
-        _ id: String, size: DynamicTypeSize = .large, build: @escaping @MainActor () -> some View
+        _ id: String, size: DynamicTypeSize = .large, height: CGFloat = 844,
+        build: @escaping @MainActor () -> some View
     ) -> ComponentExample {
         ComponentExample(
-            id: "settings.\(id)", family: .settings, canvas: CGSize(width: 390, height: 844), dynamicTypeSize: size
+            id: "settings.\(id)", family: .settings, canvas: CGSize(width: 390, height: height), dynamicTypeSize: size
         ) {
             NavigationStack { build() }
         }

@@ -940,9 +940,7 @@ functions are sampled at 120 a second over one period into keyframes, and
 each animation begins as far into its period as the wall clock is, so the
 motion is the one SwiftUI drew and every mark on a screen keeps the same
 phase. A still picture, for a camera or a reader who asked for less motion,
-is still drawn by SwiftUI from the same functions. `WorkingMotionTests`
-stops the layers' clock at instants through each period and holds what they
-show to the curves. With it, the main thread idles at about 2% in a working
+is still drawn by SwiftUI from the same functions. With it, the main thread idles at about 2% in a working
 chat and 4% on home, and the motion keeps its pace while a chat opens.
 
 What would reopen it: a SwiftUI animation that runs without updating the view

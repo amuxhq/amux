@@ -1,5 +1,5 @@
 {
-  "scope": "phone-goldens",
+  "scope": "phone-audit",
   "hosts": [
     {"name": "desk", "lan": true, "bonjour": true}
   ],
@@ -24,8 +24,6 @@
       "script": {"steps": [
         {"tool": {"name": "mcp__amux__status", "class": "exploration", "input": {"working_on": "Keeping the recovery state safe"}}},
         {"text": {"chunks": ["The recovery state is safely stored."]}},
-        "turn_end",
-        {"text": {"chunks": ["A second turn, after the checkpoint."]}},
         "turn_end"
       ]}
     },

@@ -1,32 +1,4 @@
 {
-  "simulators": {
-    "golden": {
-      "system_chrome": [
-        {
-          "what": "status bar clock: SpringBoard draws 9:41 in the style the app's scene asks for, and applies a change of style late enough on a loaded runner to be photographed in the old colour",
-          "x": 150,
-          "y": 56,
-          "width": 140,
-          "height": 80
-        },
-        {
-          "what": "status bar indicators: signal, Wi-Fi and battery, drawn by SpringBoard in the same lagging style as the clock",
-          "x": 840,
-          "y": 56,
-          "width": 290,
-          "height": 80
-        },
-        {
-          "what": "home indicator: SpringBoard's bar, 144 by 5 points, 8 points above the bottom edge, at 3x with three pixels of margin; drawn at launch and withdrawn once backboardd reports attention lost, which a loaded GitHub runner never does",
-          "x": 384,
-          "y": 2580,
-          "width": 438,
-          "height": 21
-        }
-      ]
-    }
-  },
-  "topology": "journeys/topologies/phone-goldens.json",
   "components": [
     {
       "id": "row.prompt",
@@ -867,80 +839,6 @@
     {
       "id": "fleet.settings-open",
       "shows": "The whole app with the settings sheet raised from the account disc."
-    }
-  ],
-  "screens": [
-    {
-      "id": "pairing",
-      "shows": "The pairing confirmation after typing the six digits the desk printed: the desk's own name and key before anything is trusted."
-    },
-    {
-      "id": "hosts",
-      "shows": "The hosts tab with the paired desk, reached and trusted."
-    },
-    {
-      "id": "fleet",
-      "shows": "The fleet: an agent asking a question first, then the rest by most recent activity."
-    },
-    {
-      "id": "chat-turn",
-      "shows": "A claude_sdk chat after a turn with an exploration step, its header and its composer."
-    },
-    {
-      "id": "claude-sdk-ask-question",
-      "shows": "A claude_sdk chat with its question ask open, the options stated as answers."
-    },
-    {
-      "id": "ask-escape",
-      "shows": "A terminal Claude chat whose tool server opened a dialog the phone cannot answer, with the way out of it."
-    },
-    {
-      "id": "composer-chips",
-      "shows": "A chat's draft holding two files at an accessibility text size: each name wraps rather than losing its extension, its size under it, each remove mark a thumb's target."
-    },
-    {
-      "id": "large-text",
-      "shows": "The screens read most, at the accessibility3 text size: nothing overprints, no word is cut, and every control stays on the screen.",
-      "frames": [
-        {
-          "name": "fleet",
-          "shows": "Agents home: its header, the account and New Agent buttons beside the title, and each row's name and second line wrapping."
-        },
-        {
-          "name": "hosts",
-          "shows": "Hosts: this phone's identity row with its label above its value, and the paired desk."
-        },
-        {
-          "name": "you",
-          "shows": "You: the phone's rows and the Appearance control with every choice whole."
-        },
-        {
-          "name": "new-agent",
-          "shows": "New Agent: the back link above the title, and the Start bar clear of the Model and Permission rows."
-        },
-        {
-          "name": "chat",
-          "shows": "A chat after a turn: the header pill, the feed's step rows keeping their file names, and the composer's model chip."
-        },
-        {
-          "name": "question",
-          "shows": "A docked question card taller than the room it has: the question and options scroll under the pinned Skip, Send and Reply instead."
-        }
-      ]
-    },
-    {
-      "id": "origin-rewind",
-      "shows": "A chat through its host losing power back to a checkpoint: the phone's replica is Reset and the rebuilt chat swaps in under the rows on screen.",
-      "frames": [
-        {
-          "name": "before",
-          "shows": "The chat with a turn after the checkpoint, the agent live."
-        },
-        {
-          "name": "after",
-          "shows": "The same rows after the swap, the agent exited and its composer offering Resume."
-        }
-      ]
     }
   ]
 }

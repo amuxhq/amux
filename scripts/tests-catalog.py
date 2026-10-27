@@ -333,20 +333,6 @@ def validate(suites: list[dict[str, Any]]) -> tuple[list[str], set[tuple[str, st
                         errors.append(f"{label}: journey {journey} is already listed by {catalog_journeys[key]}")
                     catalog_journeys[key] = label
 
-        for manifest_path in suite.get("golden_manifests", []):
-            selected += 1
-            path = ROOT / manifest_path
-            if not path.is_file():
-                errors.append(f"{label}: golden manifest {manifest_path!r} does not exist")
-                continue
-            try:
-                manifest_json = json.loads(path.read_text())
-            except json.JSONDecodeError as error:
-                errors.append(f"{label}: golden manifest {manifest_path} is invalid: {error}")
-                continue
-            if not manifest_json.get("screens"):
-                errors.append(f"{label}: golden manifest {manifest_path} selects zero screens")
-
         for baseline in suite.get("baselines", []):
             selected += 1
             if not (ROOT / baseline).exists():

@@ -436,7 +436,7 @@ a page (`conversation`, `pin`, `new-agent`, ...) about a machine or agent the
 runtime lists, named in the request's `fixture` field. A page about something
 the runtime does not list is refused. On its own the app has no machines, so
 anything beyond the tabs is reached against a served test network, which is
-what the golden, journey and accessibility recipes set up.
+what the journey and accessibility recipes set up.
 
 ## Testing
 
@@ -446,8 +446,7 @@ Use the cheapest test that can see the regression:
 | --- | --- | --- |
 | Unit suites | Model state, decisions and projections, without rendering | `just ios unit` |
 | Component snapshots | One production view from typed inputs: its text, size and both appearances | `just ios component-snapshots` |
-| Whole-screen goldens | Composition, safe areas and navigation on a few screens of the running app | `just ios goldens` |
-| Journeys | Real taps and typing, routing, persistence and the machines on the other side | `just ios journey` |
+| Journeys | Real taps and typing, routing, persistence, where each element of a screen is drawn, and the machines on the other side | `just ios journey` |
 | Accessibility audit | Every control on every drawn state has a VoiceOver name and a 44 pt target | `just ios accessibility` |
 
 Journeys prove actions; a picture of a final state proves nothing about the
@@ -457,12 +456,12 @@ against are on [the testnet page](TESTNET.md).
 
 ### Compared pictures are drawn flat
 
-Every picture a check compares, component snapshot or whole-screen golden, is
-drawn with the app's reduce-transparency flag on. Each frosted surface then
-takes the flat branch of `Frosted` in `AmuxDesign/Glass.swift`: a raised fill
-with a hairline rim, exactly what a person who turned on Reduce Transparency
-sees. The app itself is unchanged and still draws Liquid Glass and material
-on a phone.
+The pictures a check compares are the component snapshots, drawn in-process
+with the app's reduce-transparency flag on. Each frosted surface then takes
+the flat branch of `Frosted` in `AmuxDesign/Glass.swift`: a raised fill with
+a hairline rim, exactly what a person who turned on Reduce Transparency sees.
+The app itself is unchanged and still draws Liquid Glass and material on a
+phone.
 
 Glass is not something an exact comparison can hold. The render server
 finishes it after SwiftUI has drawn, out of the app's sight and on its own
@@ -470,36 +469,37 @@ schedule: small glass eases its shadow and filters toward the brightness
 behind it after reports that arrive a third of a second later on one machine
 and more than half a second on another, and larger glass completes in a
 second pass the app cannot observe. A photograph taken at any fixed moment
-shows one stage or another of that work. Drawn flat, the same screens repeat
+shows one stage or another of that work. Drawn flat, the same views repeat
 pixel for pixel.
+
+No photograph of the simulator's display is compared anywhere. The system
+draws its own glass over the app, such as the tab bar's selected pill and the
+fade under a large title, and one Mac draws it differently from another, so a
+display photographed on one machine does not match the same display
+photographed on another.
 
 Glass is looked at by eye instead, in review captures nothing compares:
 
 ```sh
-just ios goldens -- --review DIR
 just ios component-snapshots -- --review DIR
 just ios component-snapshots -- --review DIR composer.strip ask.plan
 ```
 
-The golden run walks the same way with the flag off and writes every
-manifest screen, light and dark, to `DIR/<screen>.<appearance>.png`. The
-snapshot run draws with the flag off every selected example that wears a
+The snapshot run draws with the flag off every selected example that wears a
 frosted surface: one whose window, once it is ready, holds a Liquid Glass
 layer or a backdrop layer SwiftUI draws itself (the material under a panel;
 a list's scroll edge effect is UIKit's and does not count). It waits 2.5 s,
 longer than the render server has been seen to take to finish glass, and
-writes `DIR/<id>.<appearance>.png`. Neither reads or writes a baseline,
-neither can fail on a picture, and neither runs in `just ci`, the gate or any
-check.
+writes `DIR/<id>.<appearance>.png`. It neither reads nor writes a baseline,
+cannot fail on a picture, and runs in no check.
 
 The phone journeys are drawn flat too: the journey driver turns the flag on
-at every launch, including the reopens a story makes, and their screens are
-held to the same thresholds as the whole-screen goldens.
+at every launch, including the reopens a story makes, so the picture each
+compared screen leaves for review shows the screen finished.
 
 ### What a compared picture may differ by
 
-The component snapshots, the whole-screen goldens and the journeys' screens
-are held to one allowance:
+The component snapshots are held to one allowance:
 
 - any pixel may move by one 8-bit level per channel, which is the
   rasteriser's rounding;
@@ -517,11 +517,9 @@ numbers are deliberately tight, since slack of 12 levels over 600 pixels
 once hid a misplaced mask, and neither is a percentage, which would grow
 with the picture.
 
-The numbers live in two places that must agree: `golden::ALLOWANCE` in
-`crates/ios-tools/src/golden.rs` for the screens, and `RoundingImageDiff.swift`
-for the component snapshots. A match that spent some of the allowance says
-so in the run's output (`AMUX_SNAPSHOT_STRAYS`, `AMUX_PICTURE_STRAYS`), so
-the numbers can be judged from what runs actually see.
+The numbers live in `RoundingImageDiff.swift`. A match that spent some of
+the allowance says so in the run's output (`AMUX_SNAPSHOT_STRAYS`), so the
+numbers can be judged from what runs actually see.
 
 ### Component snapshots
 
@@ -545,8 +543,8 @@ written: inspect both appearances before committing it, then run an ordinary
 comparison. The perturbation recipe verifies the unchanged baseline, draws a
 stripe over the component and requires a mismatch.
 
-Comparisons use Point-Free's SnapshotTesting under the allowance every
-compared phone picture shares (`RoundingImageDiff`; see
+Comparisons use Point-Free's SnapshotTesting under the allowance above
+(`RoundingImageDiff`; see
 [What a compared picture may differ by](#what-a-compared-picture-may-differ-by)).
 Each example is drawn flat (see above) in a
 window of its own, on screen, and photographed once it reports ready and two
@@ -562,7 +560,7 @@ example whose window still holds glass or material when it is photographed
 fails by name, so a surface that reaches glass without the flag is a plain
 failure, never a flaky one. These in-process images say nothing about system
 chrome, keyboards, scrolling or layering between screens; those belong to the
-goldens and journeys.
+journeys.
 
 Examples whose ids end in `-large-text` are drawn at an accessibility text
 size (accessibility3, accessibility5 for the question card). For these the
@@ -573,55 +571,6 @@ over another, or when a control reaches more than a thumb target's slack
 past the canvas. The tree combines a row's words into one element, so this
 check finds text overprinting text and controls cut off. It does not find
 words clipped inside a single element. The pictures cover that case.
-
-### Whole-screen goldens
-
-```sh
-just ios goldens
-just ios goldens -- --only origin-rewind
-just ios goldens -- --update
-just ios goldens-perturb
-```
-
-`apps/apple/Goldens/manifest.json` has two parts, each picture with a
-sentence saying what it shows. `components` is every example the component
-catalogue pins, and the snapshot suite checks that the two name the same
-pictures. `screens` is the handful of whole screens the phone is held to:
-pairing, hosts, the fleet, a chat with its strip, a question ask, the way out
-of an ask the phone cannot answer, the screens read most at accessibility3
-(`large-text`: the fleet, hosts, You, New Agent, a chat and a docked
-question), and a chat through its host's power loss before and after the
-swap.
-
-`testnet journey goldens` reaches every screen the way a person does, on the
-journeys' phone driver. It
-serves `journeys/topologies/phone-goldens.json`, installs the debug app
-fresh with the reduce-transparency flag on, pairs with the desk by the code
-it printed, and taps through to each screen while the served network makes
-the desk's agents act. Each screen is compared in light and dark twice over:
-
-- The display's pixels outside the masks, with `ios-tools golden diff`, under
-  the allowance every compared phone picture shares (see
-  [What a compared picture may differ by](#what-a-compared-picture-may-differ-by)).
-- The door's element geometry, as `<screen>.elements.txt`, compared word for
-  word and frame for frame. Tab pages covered by a pushed page are left out.
-
-The manifest declares the pinned simulator and the system chrome it draws
-over every app, and no pixel under that chrome is compared: the status bar's
-clock and indicators, which SpringBoard can draw late in the previous
-appearance's colour on a loaded machine, and the home indicator, which a
-runner with both pinned devices booted can leave on screen. The difference
-image washes every excluded rectangle blue so a reviewer sees what was not
-compared.
-
-`--only` photographs the named screens but still walks the whole way, so each
-is reached in the same state. `--update` rewrites only the goldens that
-differ; inspect both appearances before committing them. The perturbation
-recipe reaches the fleet twice, once with the accent token moved and once with
-only the needs-you dot taken away, and fails unless both come back different
-with a difference image each time. Expected, actual and difference images
-land in `target/ios/goldens/`. Never refresh a baseline to hide
-nondeterminism.
 
 ### Journeys
 
@@ -643,9 +592,15 @@ reduce-transparency flag on, and acts only as a person would, through the
 door: tap, type, paste, pair by the code or link a machine printed. It judges
 by what the machines recorded (the served network's chat, inventory and
 provider-input reads) and by screens compared with reviewed goldens under
-`journeys/goldens/phone/<story>/`, pixels and element geometry both, at the
-whole-screen goldens' thresholds. Results land in `target/journeys/phone/<story>/`;
-`UPDATE_JOURNEY_GOLDENS=1` rewrites the goldens that differ.
+`journeys/goldens/phone/<story>/`. A screen's golden is its element geometry,
+`<screen>.elements.txt`: one line per element the door names, with its words
+and its frame in whole points, compared word for word and frame for frame.
+Ages, keys, durations and the phone's own name are masked, an element a
+story names volatile keeps only its name, and tab pages covered by a pushed
+page are left out. Each compared screen is photographed too, into
+`target/journeys/phone/<story>/actual/` beside its geometry, for a person to
+look at; the picture is never compared. `UPDATE_JOURNEY_GOLDENS=1` rewrites
+the geometry that differs; review it before committing.
 
 The machines in a journey are real daemons with scripted providers, and the
 relay is a real relay beside a stand-in account service that mints its
@@ -655,9 +610,13 @@ live provider; the by-hand recipes on [the cloud page](CLOUD.md) are.
 
 ### The accessibility audit
 
-`just ios accessibility` reaches every page the goldens reach, the same way,
-and at each one asks a running UI test (`AmuxUITests/AccessibilityAuditTests`)
-to audit what is on screen: every control has a name VoiceOver can read and at
+`just ios accessibility` serves `journeys/topologies/phone-audit.json`,
+pairs with its desk by the code it printed and taps to each page a person
+reads: pairing, hosts, the fleet, an answered chat, a question, the way out of
+an ask the phone cannot answer, a draft holding two files at an
+accessibility text size, Settings and New Agent. At each one it asks a
+running UI test (`AmuxUITests/AccessibilityAuditTests`) to audit what is on
+screen: every control has a name VoiceOver can read and at
 least a 44 pt target. It is a UI test because XCUITest is the only
 accessibility client an app cannot be for itself. Links inside an agent's
 prose are judged on their name only and listed in the record, which lands in
@@ -668,7 +627,7 @@ prose are judged on their name only and listed in the record, which lands in
 | Recipe | Runs |
 | --- | --- |
 | `just ios gate` | Lint, script tests, bridge graph check, bridge, simulator, one build of the app and every unit and component suite, then component snapshots, loopback smoke and unit suites. What CI runs on every push that touches the phone's paths ([CI](CI.md)). |
-| `just ios captures` | Goldens and their perturbation, the store suite on the simulator, journeys and the accessibility audit. Nightly and on demand in CI. |
+| `just ios captures` | The store suite on the simulator, journeys and the accessibility audit. On demand in CI. |
 | `just ios shipping` | The shipping XCFramework and the Release scope audit. `just ios release` depends on both. |
 | `just ios measured` | The phone measured on this Mac: `just ios perf`, on an enrolled Mac only ([Performance](PERFORMANCE.md)). |
 | `just ios verify` | The workspace's format, lint, tests and specs, then all four of the above, stopping at the first failure. |
@@ -706,7 +665,8 @@ At accessibility text sizes the phone reflows rather than cuts:
 [The copy standard](IOS_COPY.md) sets wording, case, terms and punctuation.
 `just ios lint` checks every Swift literal in the app and its packages
 against the English catalogue or an exact non-copy exemption. A copy change
-includes its affected light and dark goldens.
+includes its affected component snapshot baselines, light and dark, and the
+journey geometry that names the words.
 
 ## The app icon
 
@@ -867,8 +827,8 @@ chips are the same `AttachmentChip` view wherever an attachment is drawn.
 A chip names the file cut in its middle, so the extension stays, and its
 size apart, never cut; at an accessibility text size the name may take two
 lines and the size goes under it, and the remove mark grows with the text
-inside a target of at least 44 points, which the `composer-chips` golden
-screen puts in front of the accessibility audit.
+inside a target of at least 44 points, which the accessibility audit checks
+on a draft holding two files at accessibility3.
 What it sends is a `Draft`: the words followed by the attachments, as
 ordered parts, which is where a sent message draws them. The parts become
 text with one placeholder per attachment only in Rust, so the phone cannot

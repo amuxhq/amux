@@ -275,9 +275,8 @@ fn converse(
 /// with a full battery, which the design's own references draw too. The home
 /// indicator cannot be pinned: SpringBoard draws it at launch and withdraws it
 /// when backboardd's attention timer fires, and on a loaded GitHub runner that
-/// event reaches a stale client and the bar stays for the whole run. So the
-/// comparison, not the photograph, is what looks past it: the manifest names
-/// the bar's rectangle for the device and no pixel under it is compared.
+/// event reaches a stale client and the bar stays for the whole run. The
+/// photograph is for a person to look at; nothing compares it.
 fn display(udid: &str, destination: &Path) -> Result<(), DoorError> {
     if let Some(directory) = destination.parent() {
         std::fs::create_dir_all(directory)?;
@@ -288,7 +287,7 @@ fn display(udid: &str, destination: &Path) -> Result<(), DoorError> {
     // The ceiling exists because some screens never come to rest — a row that
     // is only remembered has a sweep passing over it forever — and a capture
     // of one still has to happen. Whatever the last photograph caught is what
-    // is kept, and the comparison against the baseline is what judges it.
+    // is kept.
     let mut previous: Option<Vec<u8>> = None;
     let mut agreed = 1;
     for _ in 0..STEADY_SHOTS {

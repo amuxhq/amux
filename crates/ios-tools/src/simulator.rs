@@ -1,8 +1,8 @@
 //! Which device a simulator kind means, decided the same way the recipes'
 //! Python decides it (`apps/apple/Tools/ios_simulators.py`).
 //!
-//! Every manifest entry and every `--simulator` argument names a kind, `golden`
-//! or `small`, never a device. Inside a wt worktree the kind means the device
+//! Every recipe and every `--simulator` argument names a kind, `golden` or
+//! `small`, never a device. Inside a wt worktree the kind means the device
 //! wt leased for this command, named in `WT_LEASE_IPHONE` or
 //! `WT_LEASE_IPHONE_SMALL`; without a lease the tool refuses rather than drive
 //! a device another checkout may be using. Outside a worktree, which is CI or a

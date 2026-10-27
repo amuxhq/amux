@@ -1,6 +1,6 @@
-# Component snapshots also run on pull requests. This workflow adds the slower
-# full-display composition checks nightly, and the real interaction journeys,
-# accessibility sweep and performance qualification when dispatched by hand.
+# Component snapshots also run on pull requests. This workflow runs them again
+# nightly with every example waiting to stop changing, and the real
+# interaction journeys and accessibility sweep when dispatched by hand.
 name: iOS captures
 
 on:
@@ -48,20 +48,17 @@ jobs:
         # Every example waits to stop changing here, which is what proves the
         # ones the gate photographs at once never change after they are ready.
         run: just ios component-snapshots --settle-all
-      - name: Compare whole-screen goldens
-        if: github.event_name == 'schedule'
-        run: just ios goldens
       - name: Run the capture suites
         if: github.event_name != 'schedule'
         run: just ios captures
-      - name: Upload golden triplets and journeys
+      - name: Upload journeys, the audit and component snapshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ios-captures
           path: |
-            target/ios/goldens
-            target/ios/journeys
+            target/journeys/phone
+            target/ios/accessibility
             target/ios/component-snapshots
           if-no-files-found: warn
           retention-days: 7

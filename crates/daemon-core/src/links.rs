@@ -262,18 +262,25 @@ impl Daemon {
 
     /// The relay asked for a fresh credential: another link of the account
     /// presented a paid plan, so this one's may be out of date. It is
-    /// refreshed at once, as its timer would refresh it. Only a link holding
-    /// a credential has a refresh armed, so a peer that is not the relay
-    /// asks nothing of a link it has no say over.
+    /// refreshed at once in place of its timer, which is cancelled. Only a
+    /// link holding a credential has a refresh armed, so a peer that is not
+    /// the relay asks nothing of a link it has no say over.
     fn refresh_asked(&mut self, link: LinkId, out: &mut Vec<Output>) {
         if self.timers.armed.contains(&TimerId::Refresh(link)) {
-            self.refresh_due(link, out);
+            self.cancel(TimerId::Refresh(link), out);
+            self.refresh(link, out);
         }
     }
 
-    /// The relay link's credential is due for refresh.
+    /// The relay link's credential is due for refresh. A timer cancelled
+    /// after it rang, by a refresh the relay asked for, is not due.
     pub(crate) fn refresh_due(&mut self, link: LinkId, out: &mut Vec<Output>) {
-        self.timers.armed.remove(&TimerId::Refresh(link));
+        if self.timers.armed.remove(&TimerId::Refresh(link)) {
+            self.refresh(link, out);
+        }
+    }
+
+    fn refresh(&mut self, link: LinkId, out: &mut Vec<Output>) {
         if self.routing.links.links.contains_key(&link) {
             let id = self.pending.mint();
             out.push(Output::Job {
@@ -1230,7 +1237,7 @@ mod tests {
 
     /// The relay asks for a fresh credential when another device of the
     /// account has just paid: the refresh its timer would make is made at
-    /// once, and the timer goes with it.
+    /// once, and the timer is cancelled so it does not refresh again.
     #[test]
     fn the_relay_asking_refreshes_the_credential_at_once() {
         let mut daemon = daemon();
@@ -1256,21 +1263,30 @@ mod tests {
                 free_every_ms: Some(180_000),
             },
         );
+        let refresh = TimerId::Refresh(LINK);
         let out = step(&mut daemon, ask());
         assert!(
             matches!(
                 out.as_slice(),
-                [Output::Job {
-                    op: Job::RefreshToken { link: LINK },
-                    ..
-                }]
+                [
+                    Output::CancelTimer { id },
+                    Output::Job {
+                        op: Job::RefreshToken { link: LINK },
+                        ..
+                    }
+                ] if *id == refresh
             ),
-            "{out:?}"
+            "the refresh is made at once in place of its timer: {out:?}"
         );
         assert_eq!(
             step(&mut daemon, ask()),
             Vec::new(),
             "one refresh until the fresh credential arms the next"
+        );
+        assert_eq!(
+            step(&mut daemon, Input::Timer { id: refresh }),
+            Vec::new(),
+            "a timer that rang before it was cancelled refreshes nothing"
         );
     }
 }

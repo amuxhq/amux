@@ -838,6 +838,44 @@ mod tests {
         );
     }
 
+    #[test]
+    fn an_address_list_heard_while_the_wal_moves_is_kept_once_it_has() {
+        let (mut daemon, _) = trusting();
+        up(&mut daemon);
+        let started = step(
+            &mut daemon,
+            Input::Timer {
+                id: crate::TimerId::Checkpoint,
+            },
+        );
+        let wal = started
+            .iter()
+            .find_map(|output| match output {
+                Output::Job {
+                    id,
+                    op: crate::io::Job::CheckpointWal,
+                } => Some(*id),
+                _ => None,
+            })
+            .expect("a WAL job");
+        // A control frame is not held by the checkpoint, so its trust
+        // change queues behind it.
+        listed(&mut daemon, addresses(&["192.168.1.9:7000"], None));
+        let stored = |daemon: &Daemon| daemon.store().trusted_hosts().unwrap()[0].listed.clone();
+        assert_eq!(stored(&daemon), "[]", "nothing lands while the WAL moves");
+        step(
+            &mut daemon,
+            Input::JobDone {
+                job: wal,
+                result: crate::payload::JobResult::Done,
+            },
+        );
+        step(&mut daemon, Input::Checkpointed);
+        let entry = daemon.trust().entry(Uuid::from_bytes(PEER.0)).unwrap();
+        assert!(!entry.listed.is_empty(), "the served trust has the list");
+        assert_ne!(stored(&daemon), "[]", "and so does the store");
+    }
+
     fn listed(daemon: &mut Daemon, body: Body) -> Vec<Output> {
         listed_on(daemon, LINK, body)
     }

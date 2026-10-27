@@ -161,6 +161,11 @@ pub(crate) fn discard(data_dir: &Path, profile: ProfileId) -> io::Result<()> {
         Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error),
         _ => {}
     }
+    if let Ok(agents) = std::fs::read_dir(dir.join(crate::install::AGENTS)) {
+        for agent in agents.flatten() {
+            agent_dir::local_socket::forget_short_addresses(&agent.path());
+        }
+    }
     match std::fs::remove_dir_all(dir) {
         Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
         _ => Ok(()),

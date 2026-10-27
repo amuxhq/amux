@@ -276,14 +276,16 @@ impl Daemon {
     }
 
     /// Steps the inputs that waited for a WAL checkpoint, in the order they
-    /// came, unless one is under way; one of them may start the next.
+    /// came, unless one is under way; one of them may start the next. Then
+    /// starts the trust changes queued behind it: an input it does not hold,
+    /// such as a link's control frame, may have queued one.
     pub(crate) fn release_held(&mut self, out: &mut Vec<Output>) {
-        while !self.checkpoints.holding() {
-            let Some(input) = self.checkpoints.held.pop_front() else {
-                return;
-            };
+        while !self.checkpoints.holding()
+            && let Some(input) = self.checkpoints.held.pop_front()
+        {
             self.dispatch(input, out);
         }
+        self.next_trust_change(out);
     }
 
     /// Notes a commit of the agent's journal, whose cursor the next

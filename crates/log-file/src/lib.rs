@@ -139,10 +139,15 @@ fn read_tail(path: &Path, max: u64) -> io::Result<Option<(Vec<u8>, u64)>> {
         Err(error) => return Err(error),
     };
     let len = file.metadata()?.len();
-    let skipped = len.saturating_sub(max);
+    let mut skipped = len.saturating_sub(max);
     file.seek(SeekFrom::Start(skipped))?;
     let mut bytes = Vec::with_capacity((len - skipped) as usize);
     file.read_to_end(&mut bytes)?;
+    // The file may have grown since its length was read: the newest `max`
+    // bytes are still all there is room for.
+    let grown = (bytes.len() as u64).saturating_sub(max);
+    bytes.drain(..grown as usize);
+    skipped += grown;
     Ok(Some((bytes, skipped)))
 }
 

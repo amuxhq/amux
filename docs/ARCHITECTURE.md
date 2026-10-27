@@ -330,6 +330,13 @@ their own copies.
 ```text
 ~/.config/amux/config.toml    the installation config ($XDG_CONFIG_HOME/amux; --config or AMUX_CONFIG name another)
 ~/.amux/bin/amux              the installed binary; an update stages amux.staged and keeps amux.prev beside it
+~/Library/LaunchAgents/sh.amux.supervise.plist
+                              the login item `amux init` writes on macOS; ~/.config/systemd/user/amux.service
+                              on Linux, and a scheduled task named amux on Windows
+$TMPDIR/amux/amux.sock        the front door, the config's front_door_socket ($XDG_RUNTIME_DIR/amux on Linux,
+                              /tmp/amux-<uid> without either)
+$TMPDIR/amux-<uid>/<hash>, <hash>.d
+                              short socket addresses for agents whose paths are too long (see above)
 
 <root>/                       the config's `root`; default ~/.local/share/amux ($XDG_DATA_HOME/amux)
   installation.lock           one daemon per installation

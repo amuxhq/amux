@@ -10,8 +10,8 @@ use provider_fakes::Kind;
 use serde_json::{Value, json};
 use support::Host as Line;
 
-/// A cancel answer is shown by the probe of Claude 2.1.282
-/// (notes/rearchitect/probes/sdk-side-channel.md), not by any recording yet.
+/// A cancel answer was seen in a probe of Claude 2.1.282, not in any
+/// recording yet.
 /// Claude 2.1.283 sends control_cancel_request when an interrupt lands on an
 /// open permission request, as seen live; no recording has one yet.
 const EXEMPT: &[&str] = &[

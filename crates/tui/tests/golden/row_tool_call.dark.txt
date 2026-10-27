@@ -1,4 +1,4 @@
-  │ Using github create_issue · jlw/amux
+  │ Using github create_issue · ada/amux
 
   │ Used WebFetch · docs.rs/ratatui · allowed for this session
 

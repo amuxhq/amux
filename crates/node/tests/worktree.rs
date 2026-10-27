@@ -14,7 +14,7 @@ use std::process::Command;
 use prost::Message as _;
 use support::synthetic::{quiet_launch, read_until};
 use support::*;
-use wire::client_service_server::ClientService as _;
+use wire::agent_service_server::AgentService as _;
 use wire::{AgentSpec, CreateAgentRequest, SessionEvent, session_event};
 
 fn git(cwd: &Path, args: &[&str]) -> String {

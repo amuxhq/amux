@@ -209,10 +209,9 @@ fn is_empty_turn(write: &Value) -> bool {
     write["method"] == "turn/start" && write["params"]["input"] == json!([])
 }
 
-/// The probe (notes/rearchitect/probes/codex-inject-drain.md, codex-cli
-/// 0.157.0) found that a running turn drains injected items: the message
-/// is consumed at the inject's acknowledgement and no empty turn is kicked
-/// at turn end.
+/// A probe of codex-cli 0.157.0 found that a running turn drains injected
+/// items: the message is consumed at the inject's acknowledgement and no
+/// empty turn is kicked at turn end.
 #[test]
 fn probe_decided_codex_consumption() {
     assert_eq!(CODEX_INJECT_CONSUMPTION, InjectConsumption::DrainedMidTurn);

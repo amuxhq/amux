@@ -775,10 +775,7 @@ mod tests {
 
     #[test]
     fn fallback_host_name_strips_the_mdns_suffix() {
-        assert_eq!(
-            fallback_host_name("Jordans-MacBook.local"),
-            "Jordans-MacBook"
-        );
+        assert_eq!(fallback_host_name("Adas-MacBook.local"), "Adas-MacBook");
         assert_eq!(fallback_host_name("build-host"), "build-host");
     }
 

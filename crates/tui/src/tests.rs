@@ -707,9 +707,9 @@ fn a_form_submits_what_was_typed() {
         });
     let mut view = ChatView::new(b"agent".to_vec(), at, false);
     // The one field takes the typing; Enter submits it.
-    typed(&mut view, &state, "jlw/amux");
+    typed(&mut view, &state, "ada/amux");
     let (buffer, _) = draw(&mut view, &state, at, 120, 60, theme());
-    assert!(text(&buffer).contains("› jlw/amux"), "{}", text(&buffer));
+    assert!(text(&buffer).contains("› ada/amux"), "{}", text(&buffer));
     let effects = view.key(&state, key(KeyCode::Enter), theme());
     let [ChatEffect::Answer(input)] = effects.as_slice() else {
         panic!("{effects:?}");
@@ -725,7 +725,7 @@ fn a_form_submits_what_was_typed() {
         panic!("{decoded:?}");
     };
     let content: serde_json::Value = serde_json::from_slice(&form.content_json).unwrap();
-    assert!(content.to_string().contains("jlw/amux"), "{content}");
+    assert!(content.to_string().contains("ada/amux"), "{content}");
 }
 
 #[test]
@@ -2081,7 +2081,7 @@ fn ctrl_c_in_an_ask_field_clears_that_field_and_never_the_draft() {
     let (state, at) = form();
     let mut view = ChatView::new(b"agent".to_vec(), at, false);
     draft(&mut view);
-    typed(&mut view, &state, "jlw/amux");
+    typed(&mut view, &state, "ada/amux");
     assert!(view.field_text(&state));
     assert!(view.kill_field(&state));
     kept(&view);
@@ -2142,10 +2142,10 @@ fn a_paste_goes_to_the_field_with_the_keys() {
     // A form field.
     let (state, at) = form();
     let mut view = ChatView::new(b"agent".to_vec(), at, false);
-    view.paste_text(&state, "jlw/amux");
+    view.paste_text(&state, "ada/amux");
     assert!(view.editor.is_empty());
     let screen = screen_of(&mut view, &state, at);
-    assert!(screen.contains("› jlw/amux"), "{screen}");
+    assert!(screen.contains("› ada/amux"), "{screen}");
 }
 
 #[test]

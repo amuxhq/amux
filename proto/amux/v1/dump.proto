@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package amux.v1;
+
+// The diagnostic dump: what a client asks for and gets back, and the parts a
+// paired host contributes for the agents it runs.
+
+// Assembles the host-side parts of a dump bundle into the reports
+// directory: the agents' journal tails, store slices and agent parts, all
+// redacted.
+message DumpRequest {
+  // Empty means every agent of the profile.
+  repeated bytes agent_ids = 1;
+  string reason = 2;
+  // Produced on an invariant violation or panic rather than on request.
+  bool automatic = 3;
+  // The asking client's open sessions, each an encoded
+  // amux.dump.ClientSessionHistory: the session as its trace began and every
+  // message since, the client stage of a replay. Opaque here because only the
+  // build that wrote it reads it; a daemon that cannot decode one leaves it
+  // out of the bundle and says so. Unredacted as the client holds it; the
+  // daemon redacts each through its agent's kind before it writes it into the
+  // bundle, and passes none on to another host.
+  repeated bytes sessions = 4;
+}
+
+// Where the bundle was written, for a caller on the same machine.
+message DumpResponse {
+  string report_path = 1;
+}
+
+// The agent process's part of a dump: its facts ring and checkpoint,
+// already redacted.
+message DumpPart {
+  bytes dump_id = 1;
+  repeated DumpFile files = 2;
+}
+
+message DumpFile {
+  string name = 1;
+  bytes contents = 2;
+}

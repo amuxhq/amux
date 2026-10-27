@@ -267,7 +267,7 @@ final class ChatWordsTests: XCTestCase {
         XCTAssertEqual(untouched, [FormProblem(field: 0, problem: .required)])
         XCTAssertNil(FormEntry.shown(untouched, at: 0, of: entries[0]), "a required field says so on its label")
         var filled = entries
-        filled[0].value = .text("jlw/amux")
+        filled[0].value = .text("ada/amux")
         filled[1].value = .text("0")
         let low = try XCTUnwrap(Bridge.formProblems(asked, filled.map(\.value)))
         XCTAssertEqual(FormEntry.shown(low, at: 1, of: filled[1]), .belowMinimum(minimum: 1))
@@ -277,13 +277,13 @@ final class ChatWordsTests: XCTestCase {
 
     func testAFormDrawnAgainRestoresTheValuesItKept() {
         var typed = FormEntry.entries(asked)
-        typed[0].value = .text("jlw/amux")
+        typed[0].value = .text("ada/amux")
         typed[2].value = .toggle(false)
         let kept = typed.map(\.value)
         XCTAssertEqual(FormEntry.entries(asked, kept: kept), typed, "drawn again, it holds what was typed")
         XCTAssertEqual(FormEntry.entries(asked, kept: nil), FormEntry.entries(asked), "a new form starts as written")
         XCTAssertEqual(
-            FormEntry.entries(asked, kept: [.text("jlw/amux")]).map(\.value), [.text(""), .text(""), .toggle(true)],
+            FormEntry.entries(asked, kept: [.text("ada/amux")]).map(\.value), [.text(""), .text(""), .toggle(true)],
             "values kept for another shape of form are not this one's")
     }
 

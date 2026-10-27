@@ -1,5 +1,5 @@
 //! Which device a simulator kind means, decided the same way the recipes'
-//! Python decides it (`scripts/ios_simulators.py`).
+//! Python decides it (`apps/apple/Tools/ios_simulators.py`).
 //!
 //! Every manifest entry and every `--simulator` argument names a kind, `golden`
 //! or `small`, never a device. Inside a wt worktree the kind means the device

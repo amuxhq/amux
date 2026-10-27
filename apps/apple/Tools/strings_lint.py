@@ -134,7 +134,7 @@ def literals(source):
 
 # Swift generated from the Rust definitions of the bridge's values: its
 # literals are wire keys and case names, which change with the Rust and are
-# never shown to anybody, and `xtask swift-types --check` already fails on
+# never shown to anybody, and `ios-tools swift-types --check` already fails on
 # any hand edit.
 GENERATED = Path("apps/apple/Packages/AmuxCore/Sources/AmuxValues")
 

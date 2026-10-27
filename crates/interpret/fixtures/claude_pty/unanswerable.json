@@ -157,7 +157,7 @@
             "form": {
               "action": "accept",
               "content": {
-                "repo": "jlw/amux"
+                "repo": "ada/amux"
               }
             }
           }

@@ -23,7 +23,7 @@ use provider_fakes::script::{Ask, Question, Step};
 use store::{AgentKey, CommitClock, Marker, PageEnd};
 use testnet::observe::{self, Mark, marks};
 use testnet::{AgentDecl, JournalCut, Net, NetOptions, PATIENCE, Topology, holds_for, until};
-use wire::client_service_server::ClientService as _;
+use wire::session_service_server::SessionService as _;
 use wire::{InventoryEvent, Item, ListItemsRequest, SessionEvent, inventory_event, session_event};
 
 fn text(text: &str) -> Step {
@@ -1078,7 +1078,7 @@ async fn an_exited_agent_settles_only_once_its_own_stream_has_passed_the_exit() 
 /// bytes under the replica, so the next read needs no link.
 #[tokio::test(flavor = "multi_thread")]
 async fn blobs_and_diffs_of_a_peers_agent_are_made_at_its_origin_and_kept_by_the_reader() {
-    use wire::client_service_server::ClientService as _;
+    use wire::agent_service_server::AgentService as _;
     let topology = desk_and_laptop().agent(
         AgentDecl::new("worker", "desk")
             .steps(turns(1, 1))

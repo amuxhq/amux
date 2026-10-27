@@ -21,7 +21,8 @@ use testnet::{AgentDecl, Net, PATIENCE, Topology, observe, until};
 use tonic::{Code, Request};
 use ui_state::{Attention, FleetMsg, FleetState};
 use uuid::Uuid;
-use wire::client_service_server::ClientService as _;
+use wire::agent_service_server::AgentService as _;
+use wire::session_service_server::SessionService as _;
 use wire::{
     AgentRef, AmbiguousHostName, ClaudeSdkInput, CreateAgentRequest, InventoryEvent, Kind,
     Lifecycle, Phase, claude_sdk_input, inventory_event,

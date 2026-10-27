@@ -109,7 +109,7 @@ impl ForwardError {
     }
 }
 
-/// A PeerService request that can be forwarded, and the reply it gets.
+/// A peer services request that can be forwarded, and the reply it gets.
 pub(crate) trait PeerRpc {
     type Reply;
     fn request(self) -> PeerRequest;
@@ -372,7 +372,7 @@ impl ProfileRuntime {
     }
 }
 
-/// Makes one PeerService call and reads its whole reply.
+/// Makes one peer services call and reads its whole reply.
 async fn dispatch(
     mut client: crate::PeerClient,
     request: PeerRequest,
@@ -384,45 +384,61 @@ async fn dispatch(
         answer.map(|answer| reply(answer.into_inner()))
     }
     match request {
-        PeerRequest::ListItems(request) => {
-            unary(client.list_items(request).await, PeerReply::Fetched)
+        PeerRequest::ListItems(request) => unary(
+            client.sessions.list_items(request).await,
+            PeerReply::Fetched,
+        ),
+        PeerRequest::GetItem(request) => {
+            unary(client.sessions.get_item(request).await, PeerReply::Item)
         }
-        PeerRequest::GetItem(request) => unary(client.get_item(request).await, PeerReply::Item),
-        PeerRequest::SendInput(request) => {
-            unary(client.send_input(request).await, PeerReply::SendInput)
-        }
+        PeerRequest::SendInput(request) => unary(
+            client.sessions.send_input(request).await,
+            PeerReply::SendInput,
+        ),
         PeerRequest::CreateAgent(request) => {
-            unary(client.create_agent(request).await, PeerReply::Agent)
+            unary(client.agents.create_agent(request).await, PeerReply::Agent)
         }
         PeerRequest::RenameAgent(request) => {
-            unary(client.rename_agent(request).await, PeerReply::Agent)
+            unary(client.agents.rename_agent(request).await, PeerReply::Agent)
         }
         PeerRequest::StopAgent(request) => {
-            unary(client.stop_agent(request).await, |_| PeerReply::Done)
+            unary(client.agents.stop_agent(request).await, |_| PeerReply::Done)
         }
         PeerRequest::ResumeAgent(request) => {
-            unary(client.resume_agent(request).await, PeerReply::Agent)
+            unary(client.agents.resume_agent(request).await, PeerReply::Agent)
         }
         PeerRequest::DeleteAgent(request) => {
-            unary(client.delete_agent(request).await, |_| PeerReply::Done)
+            unary(client.agents.delete_agent(request).await, |_| {
+                PeerReply::Done
+            })
         }
         PeerRequest::SendMessage(envelope) => {
             let request = wire::PeerSendMessageRequest {
                 envelope: Some(envelope),
             };
-            unary(client.send_message(request).await, PeerReply::SendMessage)
+            unary(
+                client.agents.send_message(request).await,
+                PeerReply::SendMessage,
+            )
         }
-        PeerRequest::PutBlob(request) => unary(client.put_blob(request).await, PeerReply::Blob),
-        PeerRequest::GetBlob(request) => unary(client.get_blob(request).await, PeerReply::GetBlob),
-        PeerRequest::GetDiff(request) => unary(client.get_diff(request).await, PeerReply::Diff),
-        PeerRequest::GetCatalogue(request) => {
-            unary(client.get_catalogue(request).await, PeerReply::Catalogue)
+        PeerRequest::PutBlob(request) => {
+            unary(client.agents.put_blob(request).await, PeerReply::Blob)
         }
+        PeerRequest::GetBlob(request) => {
+            unary(client.agents.get_blob(request).await, PeerReply::GetBlob)
+        }
+        PeerRequest::GetDiff(request) => {
+            unary(client.agents.get_diff(request).await, PeerReply::Diff)
+        }
+        PeerRequest::GetCatalogue(request) => unary(
+            client.agents.get_catalogue(request).await,
+            PeerReply::Catalogue,
+        ),
         PeerRequest::ListRepositories(request) => unary(
-            client.list_repositories(request).await,
+            client.agents.list_repositories(request).await,
             PeerReply::Repositories,
         ),
-        PeerRequest::Dump(request) => unary(client.dump(request).await, PeerReply::Dump),
+        PeerRequest::Dump(request) => unary(client.agents.dump(request).await, PeerReply::Dump),
         // Streams are opened by the replica's source, not forwarded.
         PeerRequest::SubscribeSession(_) | PeerRequest::SubscribeInventory => Err(
             Status::unimplemented("a stream is not made as a forwarded call"),

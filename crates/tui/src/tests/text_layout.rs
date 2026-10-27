@@ -152,7 +152,7 @@ fn a_multi_line_answer_shows_its_line_breaks_before_it_is_sent() {
 #[test]
 fn a_long_edit_path_keeps_the_files_name() {
     let path =
-        "/Users/jlw/.local/state/amux-qa/20261011-171536/t6/.testnet/net/desk/work/notes.txt";
+        "/Users/ada/.local/state/amux-qa/20261011-171536/t6/.testnet/net/desk/work/notes.txt";
     let card = AskCard {
         kind: Kind::Codex,
         key: "ask".into(),
@@ -310,10 +310,10 @@ fn a_long_commands_choices_stay_on_a_short_screen() {
                 input: Some(interpret::tool_input("Bash", "", &input, "")),
                 scopes: vec![
                     grant(vec![format!("Bash({}:*)", &command[..40])], vec![]),
-                    grant(vec![], vec!["/Users/jlw/work".into()]),
+                    grant(vec![], vec!["/Users/ada/work".into()]),
                 ],
                 reason: "outside the allowed directories: \
-                         /Users/jlw/.local/state/amux-qa/20261011-171536/t6/.testnet/net/desk/work/qa_t6_out.txt"
+                         /Users/ada/.local/state/amux-qa/20261011-171536/t6/.testnet/net/desk/work/qa_t6_out.txt"
                     .into(),
                 ..Default::default()
             })),

@@ -522,7 +522,9 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                     }
                     Command::Delete { agent } => verbs::delete(&mut client, &agent).await,
                     Command::Dump { agents, reason } => {
-                        verbs::dump(&mut client, &agents, reason).await
+                        let selected = connect::profile(&config, profile).await?;
+                        let mut admin = connect::admin_of(&selected).await?;
+                        verbs::dump(&mut client, &mut admin, &agents, reason).await
                     }
                     _ => unreachable!("dispatched above"),
                 }

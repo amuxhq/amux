@@ -324,7 +324,7 @@ operator's untracked file.
 These are evidence a person runs on a Mac. They are not tests, they never run
 in CI, and nothing gates on them: they reach the production account service
 with a real account, and a red one is a conversation rather than a build
-failure. `crates/xtask/src/ios_verify.rs` leaves them out of every
+failure. `crates/ios-tools/src/ios_verify.rs` leaves them out of every
 verification list on purpose.
 
 - **`just ios qa-cloud-signin`** signs a QA account into `https://amux.sh`

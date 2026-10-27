@@ -8,8 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use tonic::transport::Channel;
-use wire::client_service_client::ClientServiceClient;
-use wire::profile_service_client::ProfileServiceClient;
+use wire::installation_service_client::InstallationServiceClient;
 
 use crate::net::local_channel;
 
@@ -135,16 +134,16 @@ impl ProcessHost {
         .map_err(|error| error.to_string())
     }
 
-    pub(crate) async fn front_door(&self) -> Result<ProfileServiceClient<Channel>, String> {
+    pub(crate) async fn front_door(&self) -> Result<InstallationServiceClient<Channel>, String> {
         let channel = local_channel(&self.front_door)
             .await
             .map_err(|error| format!("the front door does not answer: {error}"))?;
-        Ok(ProfileServiceClient::new(channel))
+        Ok(InstallationServiceClient::new(channel))
     }
 
     /// The client service on the host's one profile, as the CLI and the
     /// terminal client reach it.
-    pub(crate) async fn client(&self) -> Result<ClientServiceClient<Channel>, String> {
+    pub(crate) async fn client(&self) -> Result<wire::ClientStubs, String> {
         // A daemon between a crash and its supervisor's next start answers
         // nothing for a moment; a person's client would retry, and so does
         // this one, for as long as such a start takes.
@@ -158,7 +157,7 @@ impl ProcessHost {
         }
     }
 
-    async fn connect(&self) -> Result<ClientServiceClient<Channel>, String> {
+    async fn connect(&self) -> Result<wire::ClientStubs, String> {
         let profile = self
             .front_door()
             .await?
@@ -173,7 +172,7 @@ impl ProcessHost {
         let channel = local_channel(Path::new(&profile.socket_path))
             .await
             .map_err(|error| format!("the profile socket does not answer: {error}"))?;
-        Ok(wire::client_service_client(channel))
+        Ok(wire::client_stubs(channel))
     }
 }
 

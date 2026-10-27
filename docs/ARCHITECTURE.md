@@ -198,10 +198,10 @@ addresses change. See [embedding](EMBEDDED.md).
 
 | Caller | Where | What it speaks |
 |---|---|---|
-| CLI and terminal client | the front door (`amux.sock` in the per-user runtime directory), then the profile's `profiles/<id>/sock` | `ProfileService` and `InstallationService` on the front door; `ClientService` on the profile socket |
-| phone UI | in process, through [`client::InProcess`](../crates/client/src/lib.rs) | the same `ClientService` calls |
-| paired daemon | a link stream, after a pinned mutual-TLS handshake | `PeerService`, the same calls answered only for this host's own agents |
-| an agent's tool server | `agents/<id>/tools.sock`, which the daemon listens on for that agent alone | `ClientService`; the socket it arrived on is the caller's identity |
+| CLI and terminal client | the front door (`amux.sock` in the per-user runtime directory), then the profile's `profiles/<id>/sock` | `InstallationService` on the front door; `AgentService`, `SessionService` and `ProfileAdminService` on the profile socket |
+| phone UI | in process, through [`client::InProcess`](../crates/client/src/lib.rs) | the same `AgentService` and `SessionService` calls |
+| paired daemon | a link stream, after a pinned mutual-TLS handshake | `PeerAgentService` and `PeerSessionService`, the same calls answered only for this host's own agents |
+| an agent's tool server | `agents/<id>/tools.sock`, which the daemon listens on for that agent alone | `AgentService` and `SessionService`; the socket it arrived on is the caller's identity |
 
 The daemon dials in the other direction exactly once per agent: it connects
 to `ctl.sock`, reads a Hello, ingests the journal whenever a Nudge arrives,
@@ -589,7 +589,7 @@ checks.
 
 | Crate | What it is |
 |---|---|
-| [`wire`](../crates/wire/src/lib.rs) | Committed protobuf types for every boundary: the journal's records, the agent spec and control frames, and the client, peer, pairing, profile and installation services. Sources in `crates/wire/proto/`. The services and tonic sit behind its `grpc` feature: a crate that only speaks the messages leaves it off and takes no tokio from `wire`. |
+| [`wire`](../crates/wire/src/lib.rs) | Committed protobuf types for every boundary: the journal's records, the agent spec and control frames, and the client, peer, pairing, profile and installation services. Sources in `proto/` (the public contract) and `crates/wire/proto/` (the dump schema only amux reads). The services and tonic sit behind its `grpc` feature: a crate that only speaks the messages leaves it off and takes no tokio from `wire`. |
 | [`model`](../crates/model/src/lib.rs) | Plain values the views and the phone bridge share; the Swift mirrors are generated from them. |
 | [`attachments`](../crates/attachments/src/lib.rs) | Attachments as positioned text, and the `<amux-attachment>` element the model sees. |
 | [`settings`](../crates/settings/src/lib.rs) | Installation, profile and UI settings, and where their files live. |
@@ -665,7 +665,8 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 | [`replay-support`](../crates/replay-support/src/lib.rs) | Replays a debug bundle through its four stages with the protocol's properties judged at every step, and manages provider recordings for the capture tools. |
 | [`fake-amux`](../crates/fake-amux/src/main.rs) | A stand-in `amux` binary running the real supervisor over a scripted daemon. |
 | [`shot`](../crates/shot/README.md) | Deterministic PNG renderings of the terminal client's named states, and its storybook of whole screens. |
-| [`xtask`](../crates/xtask/src/main.rs) | Developer tasks: protobuf codegen, Swift type generation, re-stamping, iOS verification. |
+| [`xtask`](../crates/xtask/src/main.rs) | Developer tasks: protobuf codegen, the protocol compatibility check, re-stamping, releases. |
+| [`ios-tools`](../crates/ios-tools/src/main.rs) | The phone's developer tools: iOS verification, Swift type generation, the screenshot comparator and the door client. |
 
 ## The dependency policy
 
@@ -723,7 +724,8 @@ The allowed sets encode the layering above:
 | `amux` | `agent`, `agent-dir`, `analytics`, `claude`, `client`, `log-file`, `node`, `settings`, `store`, `tui`, `wire` | the one binary |
 | `models` | `agent-core`, `daemon-core`, `interpret`, `journal`, `path-core`, `provider-fakes`, `relay-core`, `release`, `store`, `supervisor-core`, `ui-state`, `wire` | the properties, explored over the real cores, store and session state |
 | `replay-support` | `core-ring`, `daemon-core`, `interpret`, `journal`, `models`, `redaction`, `store`, `ui-state`, `ui-view`, `wire` | replays the four stages, judging the models' properties; a debugging tool nothing that ships links |
-| `xtask` | `app-runtime`, `model`, `release`, `ui-view`, `version-stamp`, `wire` | generates the Swift mirrors; signs releases |
+| `xtask` | `release`, `version-stamp` | signs releases |
+| `ios-tools` | `app-runtime`, `model`, `ui-view`, `wire` | generates the Swift mirrors |
 
 The phone bridge (`app-embedded`, `app-ffi`) links `node` on purpose: it
 hosts the runtime in process. `just embedded-check` and `just mobile-check`

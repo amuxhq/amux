@@ -289,7 +289,11 @@ class TheSigningFile(unittest.TestCase):
             self.assertEqual("", recipe.team())
 
     def test_without_it_the_run_says_which_piece_is_missing(self):
-        with checkout():
+        # The keychain and the installed profiles are this Mac's, and Linux
+        # has neither to ask.
+        with checkout(), \
+                unittest.mock.patch.object(recipe, "keychain", lambda _: ""), \
+                unittest.mock.patch.object(recipe, "installed_profiles", lambda: []):
             checks, facts = recipe.inputs()
             team = [check for check in checks if check.what == "a Team ID"][0]
             self.assertFalse(team.held)

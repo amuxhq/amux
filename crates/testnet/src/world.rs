@@ -291,12 +291,13 @@ impl World for Net {
                 host: from.to_owned(),
                 error: format!("no channel to {to}: {error}"),
             })?;
-        peer.send_message(wire::PeerSendMessageRequest {
-            envelope: Some(envelope),
-        })
-        .await
-        .map(tonic::Response::into_inner)
-        .map_err(|status| NetError::Refused(Box::new(status)))
+        peer.agents
+            .send_message(wire::PeerSendMessageRequest {
+                envelope: Some(envelope),
+            })
+            .await
+            .map(tonic::Response::into_inner)
+            .map_err(|status| NetError::Refused(Box::new(status)))
     }
 
     async fn observe(&self, host: &str, agent: &str, tail: u32) -> Result<Observer, NetError> {

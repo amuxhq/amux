@@ -33,7 +33,7 @@
       <text x="125" y="83" text-anchor="middle">profile registry</text>
       <rect class="box2" x="230" y="56" width="300" height="44" rx="4"/>
       <text x="380" y="76" text-anchor="middle">front door</text>
-      <text class="s" x="380" y="92" text-anchor="middle">ProfileService · InstallationService</text>
+      <text class="s" x="380" y="92" text-anchor="middle">InstallationService</text>
       <rect class="box2" x="550" y="56" width="140" height="44" rx="4"/>
       <text x="620" y="83" text-anchor="middle">supervisor pipe</text>
       <rect class="box2" x="710" y="56" width="150" height="44" rx="4"/>

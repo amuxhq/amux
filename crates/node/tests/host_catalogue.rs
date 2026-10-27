@@ -13,7 +13,7 @@ use provider_fakes::script::{INPUT_LOG_ENV, OfferedCommand, OfferedModel, SCRIPT
 use sha2::{Digest as _, Sha256};
 use support::synthetic::*;
 use support::*;
-use wire::client_service_server::ClientService as _;
+use wire::agent_service_server::AgentService as _;
 use wire::{
     Catalogue, GetBlobRequest, GetCatalogueRequest, GetCatalogueResponse, ProviderOnHost,
     inventory_event,

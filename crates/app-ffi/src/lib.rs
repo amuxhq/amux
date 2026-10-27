@@ -4,7 +4,7 @@
 //! per account. An [`AmuxProfile`] is the
 //! fleet and chats of one of its profiles, opened for as long as it is on
 //! screen; each open chat is an [`AmuxChat`]. View values cross as JSON whose Swift mirrors are generated
-//! from the Rust definitions (`cargo run -p xtask -- swift-types`), so the
+//! from the Rust definitions (`cargo run -p ios-tools -- swift-types`), so the
 //! two sides share one definition of every value.
 //!
 //! A profile's fleet and each open chat open with the whole of what they

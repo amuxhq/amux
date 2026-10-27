@@ -304,7 +304,7 @@ pub enum MessageRefusal {
     Store(String),
 }
 
-/// A request on a peer's PeerService, decoded: one a paired host makes of
+/// A request on a peer's services, decoded: one a paired host makes of
 /// this one, or one this host makes of a paired host.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PeerRequest {

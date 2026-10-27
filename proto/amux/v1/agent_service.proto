@@ -1,0 +1,174 @@
+syntax = "proto3";
+
+package amux.v1;
+
+import "amux/v1/claude.proto";
+import "amux/v1/codex.proto";
+import "amux/v1/inventory.proto";
+import "amux/v1/records.proto";
+import "amux/v1/session_service.proto";
+
+// Agents: the fleet's hosts and agents, their lifecycle, the messages they
+// send each other, and what an agent holds (its blobs, its working tree's
+// changes) or a host offers (providers' catalogues, repositories).
+//
+// Served on a profile's socket. On an agent's tools socket the caller is the
+// agent: it may message other agents, and every other call that changes an
+// agent is refused there.
+
+service AgentService {
+  rpc SubscribeInventory(SubscribeInventoryRequest) returns (stream InventoryEvent);
+  // Fleet-wide name to row: NOT_FOUND, or AmbiguousAgentName with the
+  // candidates. Every other call takes an agent id.
+  rpc ResolveAgent(ResolveAgentRequest) returns (Agent);
+  rpc CreateAgent(CreateAgentRequest) returns (Agent);
+  rpc RenameAgent(RenameAgentRequest) returns (Agent);
+  rpc StopAgent(StopAgentRequest) returns (StopAgentResponse);
+  // Spawn the directory again.
+  rpc ResumeAgent(ResumeAgentRequest) returns (Agent);
+  // Removes the agent for good, stopping it first when it is live. Its
+  // children, on any host, follow on their own hosts by the family rule.
+  rpc DeleteAgent(DeleteAgentRequest) returns (Empty);
+  // Also called by the tool server with the agent's identity. The daemon
+  // stamps the sender from the caller and never from the request.
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+  // The only put: written into that agent's directory.
+  rpc PutBlob(PutBlobRequest) returns (BlobRef);
+  rpc GetBlob(GetBlobRequest) returns (GetBlobResponse);
+  // The changed files; with_patch also puts the patch blob on the host.
+  rpc GetDiff(GetDiffRequest) returns (Diff);
+  // What a provider on a host offers with no agent running, read from the
+  // host's own copy; an agent's catalogue is a blob named by its snapshot.
+  rpc GetCatalogue(GetCatalogueRequest) returns (GetCatalogueResponse);
+  rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
+}
+
+message SubscribeInventoryRequest {}
+
+message ResolveAgentRequest {
+  string name = 1;
+}
+
+message CreateAgentRequest {
+  bytes agent_id = 1;
+  // The host that runs it; absent means this host.
+  optional HostRef host = 2;
+  // Lowercase letters, digits and hyphens, starting with a letter or digit
+  // (wire::agent_name_problem); the host picks a free one when absent.
+  optional string name = 3;
+  optional AgentRef parent = 4;
+  string cwd = 5;
+  // Which interpreter, with that kind's settings.
+  oneof agent {
+    ClaudeCreateConfig claude_pty = 6;
+    ClaudeCreateConfig claude_sdk = 7;
+    CodexCreateConfig codex = 8;
+  }
+  // The first prompt, with attachments, queued before the agent starts.
+  optional PromptSubmission initial_prompt = 9;
+  // Start the agent in a new git worktree of cwd's repository, on a new
+  // branch named after the agent, made from whatever cwd has checked out.
+  // The agent's host chooses where the worktree lives; the agent's cwd is
+  // the worktree. Fails the call, making no agent, when cwd is not in a
+  // repository or the branch exists. The name is valid as a branch, so it
+  // is the branch as given.
+  bool new_worktree = 10;
+}
+
+message RenameAgentRequest {
+  bytes agent_id = 1;
+  // As CreateAgentRequest's name. The agent's branch keeps the name it
+  // was made with.
+  string name = 2;
+}
+
+// Ends the agent now: the running turn is cancelled the provider's own way
+// and the agent exits, resumable. Named apart from the Interrupt input, which
+// ends only the turn.
+message StopAgentRequest {
+  bytes agent_id = 1;
+}
+
+message StopAgentResponse {}
+
+// The composer of an exited chat sends its draft through initial_prompt.
+message ResumeAgentRequest {
+  bytes agent_id = 1;
+  optional PromptSubmission initial_prompt = 2;
+}
+
+message DeleteAgentRequest {
+  bytes agent_id = 1;
+}
+
+// A message to an agent. `id` is the caller's, so the recipient's daemon
+// can dedupe a resend against the recipient's items; the tool server mints
+// one per send. Who it is from is the caller: a person on a client socket,
+// or the agent whose tools socket made the call. A child's reports to its
+// parent are the daemon's own and cannot be submitted.
+message SendMessageRequest {
+  bytes id = 1;
+  AgentRef to = 2;
+  optional bytes context = 3;
+  MessageBody body = 4;
+}
+
+message SendMessageResponse {
+  bytes envelope_id = 1;
+}
+
+message PutBlobRequest {
+  bytes agent_id = 1;
+  string name = 2;
+  string mime = 3;
+  bytes bytes = 4;
+}
+
+message GetBlobRequest {
+  bytes agent_id = 1;
+  bytes hash = 2;
+}
+
+// GetBlob answers bytes alone; the caller named the hash.
+message GetBlobResponse {
+  bytes bytes = 1;
+}
+
+message GetDiffRequest {
+  bytes agent_id = 1;
+  DiffBase base = 2;
+  // Also build the patch and store it as the agent's blob.
+  bool with_patch = 3;
+}
+
+message GetCatalogueRequest {
+  bytes host_id = 1;
+  Provider provider = 2;
+}
+
+// The encoded Catalogue and the SHA-256 of exactly these bytes, which is
+// what HostEntry.providers names.
+message GetCatalogueResponse {
+  bytes hash = 1;
+  bytes bytes = 2;
+}
+
+// Host-owned discovery; the client chooses a host, never a search root.
+message ListRepositoriesRequest {
+  optional string query = 1;
+  uint32 limit = 2;
+  // Absent means the answering host.
+  optional bytes host_id = 3;
+}
+
+message ListRepositoriesResponse {
+  repeated ProjectEntry recent = 1;
+  repeated ProjectEntry repositories = 2;
+  repeated string roots = 3;
+}
+
+message ProjectEntry {
+  string path = 1;
+  string name = 2;
+  optional int64 last_used_ms = 3;
+}

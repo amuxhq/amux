@@ -18,7 +18,8 @@ use serde_json::{Value, json};
 use support::*;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, ReadBuf};
 use tonic::{Request, Response, Status};
-use wire::client_service_server::ClientService;
+use wire::agent_service_server::AgentService;
+use wire::session_service_server::SessionService;
 use wire::{
     Agent as Row, AgentRef, AgentSpec, AmbiguousAgentName, CreateAgentRequest, HostEntry,
     InventoryEvent, Kind, Lifecycle, Phase, SendInputRequest, SendInputResponse,
@@ -89,9 +90,8 @@ type Sessions =
     Pin<Box<dyn futures_util::Stream<Item = Result<wire::SessionEvent, Status>> + Send>>;
 
 #[tonic::async_trait]
-impl ClientService for Fleet {
+impl AgentService for Fleet {
     type SubscribeInventoryStream = Events;
-    type SubscribeSessionStream = Sessions;
 
     async fn subscribe_inventory(
         &self,
@@ -186,6 +186,79 @@ impl ClientService for Fleet {
         Ok(Response::new(row(&request.agent_id, &host, &name)))
     }
 
+    async fn rename_agent(
+        &self,
+        _: Request<wire::RenameAgentRequest>,
+    ) -> Result<Response<Row>, Status> {
+        Err(Status::unimplemented("rename"))
+    }
+
+    async fn stop_agent(
+        &self,
+        request: Request<wire::StopAgentRequest>,
+    ) -> Result<Response<wire::StopAgentResponse>, Status> {
+        self.record(Call::Stop(request.into_inner()));
+        self.severed().await?;
+        match &self.refuse_stop {
+            Some(status) => Err(status.clone()),
+            None => Ok(Response::new(wire::StopAgentResponse {})),
+        }
+    }
+
+    async fn resume_agent(
+        &self,
+        _: Request<wire::ResumeAgentRequest>,
+    ) -> Result<Response<Row>, Status> {
+        Err(Status::unimplemented("resume"))
+    }
+
+    async fn delete_agent(
+        &self,
+        _: Request<wire::DeleteAgentRequest>,
+    ) -> Result<Response<wire::Empty>, Status> {
+        Err(Status::unimplemented("delete"))
+    }
+
+    async fn put_blob(
+        &self,
+        _: Request<wire::PutBlobRequest>,
+    ) -> Result<Response<wire::BlobRef>, Status> {
+        Err(Status::unimplemented("put_blob"))
+    }
+
+    async fn get_blob(
+        &self,
+        _: Request<wire::GetBlobRequest>,
+    ) -> Result<Response<wire::GetBlobResponse>, Status> {
+        Err(Status::unimplemented("get_blob"))
+    }
+
+    async fn get_diff(
+        &self,
+        _: Request<wire::GetDiffRequest>,
+    ) -> Result<Response<wire::Diff>, Status> {
+        Err(Status::unimplemented("diff"))
+    }
+
+    async fn get_catalogue(
+        &self,
+        _: Request<wire::GetCatalogueRequest>,
+    ) -> Result<Response<wire::GetCatalogueResponse>, Status> {
+        Err(Status::unimplemented("get_catalogue"))
+    }
+
+    async fn list_repositories(
+        &self,
+        _: Request<wire::ListRepositoriesRequest>,
+    ) -> Result<Response<wire::ListRepositoriesResponse>, Status> {
+        Err(Status::unimplemented("list_repositories"))
+    }
+}
+
+#[tonic::async_trait]
+impl SessionService for Fleet {
+    type SubscribeSessionStream = Sessions;
+
     async fn send_input(
         &self,
         _: Request<SendInputRequest>,
@@ -200,89 +273,28 @@ impl ClientService for Fleet {
     ) -> Result<Response<Sessions>, Status> {
         Err(Status::unimplemented("subscribe"))
     }
+
     async fn list_items(
         &self,
         _: Request<wire::ListItemsRequest>,
     ) -> Result<Response<wire::ListItemsResponse>, Status> {
         Err(Status::unimplemented("fetch"))
     }
+
     async fn get_item(
         &self,
         _: Request<wire::GetItemRequest>,
     ) -> Result<Response<wire::Item>, Status> {
         Err(Status::unimplemented("get"))
     }
-    async fn rename_agent(
-        &self,
-        _: Request<wire::RenameAgentRequest>,
-    ) -> Result<Response<Row>, Status> {
-        Err(Status::unimplemented("rename"))
-    }
-    async fn stop_agent(
-        &self,
-        request: Request<wire::StopAgentRequest>,
-    ) -> Result<Response<wire::StopAgentResponse>, Status> {
-        self.record(Call::Stop(request.into_inner()));
-        self.severed().await?;
-        match &self.refuse_stop {
-            Some(status) => Err(status.clone()),
-            None => Ok(Response::new(wire::StopAgentResponse {})),
-        }
-    }
-    async fn resume_agent(
-        &self,
-        _: Request<wire::ResumeAgentRequest>,
-    ) -> Result<Response<Row>, Status> {
-        Err(Status::unimplemented("resume"))
-    }
-    async fn delete_agent(
-        &self,
-        _: Request<wire::DeleteAgentRequest>,
-    ) -> Result<Response<wire::Empty>, Status> {
-        Err(Status::unimplemented("delete"))
-    }
-    async fn put_blob(
-        &self,
-        _: Request<wire::PutBlobRequest>,
-    ) -> Result<Response<wire::BlobRef>, Status> {
-        Err(Status::unimplemented("put_blob"))
-    }
-    async fn get_blob(
-        &self,
-        _: Request<wire::GetBlobRequest>,
-    ) -> Result<Response<wire::GetBlobResponse>, Status> {
-        Err(Status::unimplemented("get_blob"))
-    }
-    async fn get_diff(
-        &self,
-        _: Request<wire::GetDiffRequest>,
-    ) -> Result<Response<wire::Diff>, Status> {
-        Err(Status::unimplemented("diff"))
-    }
-    async fn get_catalogue(
-        &self,
-        _: Request<wire::GetCatalogueRequest>,
-    ) -> Result<Response<wire::GetCatalogueResponse>, Status> {
-        Err(Status::unimplemented("get_catalogue"))
-    }
-    async fn list_repositories(
-        &self,
-        _: Request<wire::ListRepositoriesRequest>,
-    ) -> Result<Response<wire::ListRepositoriesResponse>, Status> {
-        Err(Status::unimplemented("list_repositories"))
-    }
-    async fn dump(
-        &self,
-        _: Request<wire::DumpRequest>,
-    ) -> Result<Response<wire::DumpResponse>, Status> {
-        Err(Status::unimplemented("dump"))
-    }
+
     async fn update_draft(
         &self,
         _: Request<wire::UpdateDraftRequest>,
     ) -> Result<Response<wire::Draft>, Status> {
         Err(Status::unimplemented("save_draft"))
     }
+
     async fn get_draft(
         &self,
         _: Request<wire::GetDraftRequest>,
@@ -369,7 +381,8 @@ impl Daemon {
         });
         let task = tokio::spawn(async move {
             let _ = tonic::transport::Server::builder()
-                .add_service(wire::client_service_server(fleet))
+                .add_service(wire::agent_service_server(fleet.clone()))
+                .add_service(wire::session_service_server(fleet))
                 .serve_with_incoming(incoming)
                 .await;
         });

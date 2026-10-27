@@ -15,8 +15,8 @@ from the Rust definitions into
 `apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values.swift`:
 
 ```sh
-cargo run -p xtask -- swift-types          # regenerate
-cargo run -p xtask -- swift-types --check  # fail when the committed file differs
+cargo run -p ios-tools -- swift-types          # regenerate
+cargo run -p ios-tools -- swift-types --check  # fail when the committed file differs
 ```
 
 Rows, ask cards, the overview and fleet cards are the `ui-view` values the

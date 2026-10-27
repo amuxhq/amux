@@ -7,9 +7,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context as _, Result, anyhow, bail};
 use settings::InstallationConfig;
 use tonic::transport::{Channel, Endpoint};
-use wire::client_service_client::ClientServiceClient;
 use wire::installation_service_client::InstallationServiceClient;
-use wire::profile_service_client::ProfileServiceClient;
 
 /// How long a client waits for a daemon it did not find.
 const WAIT_FOR_DAEMON: Duration = Duration::from_secs(30);
@@ -100,8 +98,8 @@ pub async fn front_door(config: &InstallationConfig) -> Result<Channel> {
     }
 }
 
-pub fn profiles(channel: Channel) -> ProfileServiceClient<Channel> {
-    ProfileServiceClient::new(channel)
+pub fn profiles(channel: Channel) -> InstallationServiceClient<Channel> {
+    InstallationServiceClient::new(channel)
 }
 
 pub fn installation(channel: Channel) -> InstallationServiceClient<Channel> {
@@ -111,7 +109,7 @@ pub fn installation(channel: Channel) -> InstallationServiceClient<Channel> {
 /// The profile a reference names — its id or its label — or, with none
 /// given, the installation's first profile.
 pub async fn select(
-    profiles: &mut ProfileServiceClient<Channel>,
+    profiles: &mut InstallationServiceClient<Channel>,
     wanted: Option<&str>,
 ) -> Result<wire::Profile> {
     let listed = profiles
@@ -161,9 +159,9 @@ async fn profile_channel(profile: &wire::Profile) -> Result<Channel> {
         .with_context(|| format!("connecting to {}", socket.display()))
 }
 
-/// The client service of a profile the front door described.
-pub async fn client_of(profile: &wire::Profile) -> Result<ClientServiceClient<Channel>> {
-    Ok(wire::client_service_client(profile_channel(profile).await?))
+/// The client services of a profile the front door described.
+pub async fn client_of(profile: &wire::Profile) -> Result<wire::ClientStubs> {
+    Ok(wire::client_stubs(profile_channel(profile).await?))
 }
 
 /// The administration of a profile the front door described: its pairing,
@@ -172,10 +170,10 @@ pub async fn admin_of(profile: &wire::Profile) -> Result<crate::pairing::Admin> 
     Ok(crate::pairing::Admin::new(profile_channel(profile).await?))
 }
 
-/// The client service of the selected profile.
+/// The client services of the selected profile.
 pub async fn client(
     config: &InstallationConfig,
     profile: Option<&str>,
-) -> Result<ClientServiceClient<Channel>> {
+) -> Result<wire::ClientStubs> {
     client_of(&self::profile(config, profile).await?).await
 }

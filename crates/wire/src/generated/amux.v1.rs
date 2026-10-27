@@ -742,6 +742,37 @@ impl ::prost::Name for ReviewComment {
         "type.googleapis.com/amux.v1.ReviewComment".into()
     }
 }
+/// "You hold what the origin holds as of now", on every stream. On a session
+/// stream, the origin's revision replay is complete through: a source stores
+/// it as its cursor and clients ignore it.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CaughtUp {
+    #[prost(uint64, tag = "1")]
+    pub revision: u64,
+}
+impl ::prost::Name for CaughtUp {
+    const NAME: &'static str = "CaughtUp";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.CaughtUp".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.CaughtUp".into()
+    }
+}
+/// The stream closes after this; the client re-tails.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Lagged {}
+impl ::prost::Name for Lagged {
+    const NAME: &'static str = "Lagged";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Lagged".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Lagged".into()
+    }
+}
 /// The kind is the interpreter.
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -1392,450 +1423,6 @@ impl Platform {
             "PLATFORM_IOS" => Some(Self::Ios),
             _ => None,
         }
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct PairMessage {
-    #[prost(oneof = "pair_message::Body", tags = "1, 2, 3, 4, 5, 6")]
-    pub body: ::core::option::Option<pair_message::Body>,
-}
-/// Nested message and enum types in `PairMessage`.
-pub mod pair_message {
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
-    pub enum Body {
-        #[prost(bytes, tag = "1")]
-        Spake2Message(::prost::alloc::vec::Vec<u8>),
-        #[prost(bytes, tag = "2")]
-        KeyConfirmation(::prost::alloc::vec::Vec<u8>),
-        #[prost(bytes, tag = "3")]
-        SealedIdentity(::prost::alloc::vec::Vec<u8>),
-        #[prost(message, tag = "4")]
-        Error(super::PairingError),
-        #[prost(message, tag = "5")]
-        PairingComplete(super::PairingComplete),
-        #[prost(message, tag = "6")]
-        PairingAbandoned(super::PairingAbandoned),
-    }
-}
-impl ::prost::Name for PairMessage {
-    const NAME: &'static str = "PairMessage";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.PairMessage".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.PairMessage".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct PairingComplete {}
-impl ::prost::Name for PairingComplete {
-    const NAME: &'static str = "PairingComplete";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.PairingComplete".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.PairingComplete".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct PairingAbandoned {}
-impl ::prost::Name for PairingAbandoned {
-    const NAME: &'static str = "PairingAbandoned";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.PairingAbandoned".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.PairingAbandoned".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct PairingError {
-    #[prost(enumeration = "pairing_error::Reason", tag = "1")]
-    pub reason: i32,
-    #[prost(string, tag = "2")]
-    pub detail: ::prost::alloc::string::String,
-}
-/// Nested message and enum types in `PairingError`.
-pub mod pairing_error {
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
-    #[repr(i32)]
-    pub enum Reason {
-        Unspecified = 0,
-        NotInPairingMode = 1,
-        InvalidPin = 2,
-        ProtocolViolation = 3,
-        Timeout = 4,
-        UserRejected = 5,
-        SelfPairing = 6,
-    }
-    impl Reason {
-        /// String value of the enum field names used in the ProtoBuf definition.
-        ///
-        /// The values are not transformed in any way and thus are considered stable
-        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-        pub fn as_str_name(&self) -> &'static str {
-            match self {
-                Self::Unspecified => "REASON_UNSPECIFIED",
-                Self::NotInPairingMode => "NOT_IN_PAIRING_MODE",
-                Self::InvalidPin => "INVALID_PIN",
-                Self::ProtocolViolation => "PROTOCOL_VIOLATION",
-                Self::Timeout => "TIMEOUT",
-                Self::UserRejected => "USER_REJECTED",
-                Self::SelfPairing => "SELF_PAIRING",
-            }
-        }
-        /// Creates an enum from field names used in the ProtoBuf definition.
-        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-            match value {
-                "REASON_UNSPECIFIED" => Some(Self::Unspecified),
-                "NOT_IN_PAIRING_MODE" => Some(Self::NotInPairingMode),
-                "INVALID_PIN" => Some(Self::InvalidPin),
-                "PROTOCOL_VIOLATION" => Some(Self::ProtocolViolation),
-                "TIMEOUT" => Some(Self::Timeout),
-                "USER_REJECTED" => Some(Self::UserRejected),
-                "SELF_PAIRING" => Some(Self::SelfPairing),
-                _ => None,
-            }
-        }
-    }
-}
-impl ::prost::Name for PairingError {
-    const NAME: &'static str = "PairingError";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.PairingError".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.PairingError".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct PairingIdentity {
-    #[prost(bytes = "vec", tag = "1")]
-    pub host_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes = "vec", tag = "2")]
-    pub pubkey: ::prost::alloc::vec::Vec<u8>,
-    #[prost(string, tag = "3")]
-    pub name: ::prost::alloc::string::String,
-    /// Authenticated along with the responder identity by SPAKE2 sealing.
-    #[prost(int64, tag = "4")]
-    pub expires_at_ms: i64,
-}
-impl ::prost::Name for PairingIdentity {
-    const NAME: &'static str = "PairingIdentity";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.PairingIdentity".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.PairingIdentity".into()
-    }
-}
-/// Generated client implementations.
-#[cfg(feature = "grpc")]
-pub mod pairing_service_client {
-    #![allow(
-        unused_variables,
-        dead_code,
-        missing_docs,
-        clippy::wildcard_imports,
-        clippy::let_unit_value,
-    )]
-    use tonic::codegen::*;
-    use tonic::codegen::http::Uri;
-    #[derive(Debug, Clone)]
-    pub struct PairingServiceClient<T> {
-        inner: tonic::client::Grpc<T>,
-    }
-    impl<T> PairingServiceClient<T>
-    where
-        T: tonic::client::GrpcService<tonic::body::Body>,
-        T::Error: Into<StdError>,
-        T::ResponseBody: Body<Data = Bytes> + std::marker::Send + 'static,
-        <T::ResponseBody as Body>::Error: Into<StdError> + std::marker::Send,
-    {
-        pub fn new(inner: T) -> Self {
-            let inner = tonic::client::Grpc::new(inner);
-            Self { inner }
-        }
-        pub fn with_origin(inner: T, origin: Uri) -> Self {
-            let inner = tonic::client::Grpc::with_origin(inner, origin);
-            Self { inner }
-        }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> PairingServiceClient<InterceptedService<T, F>>
-        where
-            F: tonic::service::Interceptor,
-            T::ResponseBody: Default,
-            T: tonic::codegen::Service<
-                http::Request<tonic::body::Body>,
-                Response = http::Response<
-                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
-                >,
-            >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::Body>,
-            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
-        {
-            PairingServiceClient::new(InterceptedService::new(inner, interceptor))
-        }
-        /// Compress requests with the given encoding.
-        ///
-        /// This requires the server to support it otherwise it might respond with an
-        /// error.
-        #[must_use]
-        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
-            self.inner = self.inner.send_compressed(encoding);
-            self
-        }
-        /// Enable decompressing responses.
-        #[must_use]
-        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
-            self.inner = self.inner.accept_compressed(encoding);
-            self
-        }
-        /// Limits the maximum size of a decoded message.
-        ///
-        /// Default: `4MB`
-        #[must_use]
-        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
-            self.inner = self.inner.max_decoding_message_size(limit);
-            self
-        }
-        /// Limits the maximum size of an encoded message.
-        ///
-        /// Default: `usize::MAX`
-        #[must_use]
-        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
-            self.inner = self.inner.max_encoding_message_size(limit);
-            self
-        }
-        pub async fn pair(
-            &mut self,
-            request: impl tonic::IntoStreamingRequest<Message = super::PairMessage>,
-        ) -> std::result::Result<
-            tonic::Response<tonic::codec::Streaming<super::PairMessage>>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.PairingService/Pair",
-            );
-            let mut req = request.into_streaming_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.PairingService", "Pair"));
-            self.inner.streaming(req, path, codec).await
-        }
-    }
-}
-/// Generated server implementations.
-#[cfg(feature = "grpc")]
-pub mod pairing_service_server {
-    #![allow(
-        unused_variables,
-        dead_code,
-        missing_docs,
-        clippy::wildcard_imports,
-        clippy::let_unit_value,
-    )]
-    use tonic::codegen::*;
-    /// Generated trait containing gRPC methods that should be implemented for use with PairingServiceServer.
-    #[async_trait]
-    pub trait PairingService: std::marker::Send + std::marker::Sync + 'static {
-        /// Server streaming response type for the Pair method.
-        type PairStream: tonic::codegen::tokio_stream::Stream<
-                Item = std::result::Result<super::PairMessage, tonic::Status>,
-            >
-            + std::marker::Send
-            + 'static;
-        async fn pair(
-            &self,
-            request: tonic::Request<tonic::Streaming<super::PairMessage>>,
-        ) -> std::result::Result<tonic::Response<Self::PairStream>, tonic::Status>;
-    }
-    #[derive(Debug)]
-    pub struct PairingServiceServer<T> {
-        inner: Arc<T>,
-        accept_compression_encodings: EnabledCompressionEncodings,
-        send_compression_encodings: EnabledCompressionEncodings,
-        max_decoding_message_size: Option<usize>,
-        max_encoding_message_size: Option<usize>,
-    }
-    impl<T> PairingServiceServer<T> {
-        pub fn new(inner: T) -> Self {
-            Self::from_arc(Arc::new(inner))
-        }
-        pub fn from_arc(inner: Arc<T>) -> Self {
-            Self {
-                inner,
-                accept_compression_encodings: Default::default(),
-                send_compression_encodings: Default::default(),
-                max_decoding_message_size: None,
-                max_encoding_message_size: None,
-            }
-        }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> InterceptedService<Self, F>
-        where
-            F: tonic::service::Interceptor,
-        {
-            InterceptedService::new(Self::new(inner), interceptor)
-        }
-        /// Enable decompressing requests with the given encoding.
-        #[must_use]
-        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
-            self.accept_compression_encodings.enable(encoding);
-            self
-        }
-        /// Compress responses with the given encoding, if the client supports it.
-        #[must_use]
-        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
-            self.send_compression_encodings.enable(encoding);
-            self
-        }
-        /// Limits the maximum size of a decoded message.
-        ///
-        /// Default: `4MB`
-        #[must_use]
-        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
-            self.max_decoding_message_size = Some(limit);
-            self
-        }
-        /// Limits the maximum size of an encoded message.
-        ///
-        /// Default: `usize::MAX`
-        #[must_use]
-        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
-            self.max_encoding_message_size = Some(limit);
-            self
-        }
-    }
-    impl<T, B> tonic::codegen::Service<http::Request<B>> for PairingServiceServer<T>
-    where
-        T: PairingService,
-        B: Body + std::marker::Send + 'static,
-        B::Error: Into<StdError> + std::marker::Send + 'static,
-    {
-        type Response = http::Response<tonic::body::Body>;
-        type Error = std::convert::Infallible;
-        type Future = BoxFuture<Self::Response, Self::Error>;
-        fn poll_ready(
-            &mut self,
-            _cx: &mut Context<'_>,
-        ) -> Poll<std::result::Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
-        }
-        fn call(&mut self, req: http::Request<B>) -> Self::Future {
-            match req.uri().path() {
-                "/amux.v1.PairingService/Pair" => {
-                    #[allow(non_camel_case_types)]
-                    struct PairSvc<T: PairingService>(pub Arc<T>);
-                    impl<
-                        T: PairingService,
-                    > tonic::server::StreamingService<super::PairMessage>
-                    for PairSvc<T> {
-                        type Response = super::PairMessage;
-                        type ResponseStream = T::PairStream;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<tonic::Streaming<super::PairMessage>>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as PairingService>::pair(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = PairSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.streaming(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                _ => {
-                    Box::pin(async move {
-                        let mut response = http::Response::new(
-                            tonic::body::Body::default(),
-                        );
-                        let headers = response.headers_mut();
-                        headers
-                            .insert(
-                                tonic::Status::GRPC_STATUS,
-                                (tonic::Code::Unimplemented as i32).into(),
-                            );
-                        headers
-                            .insert(
-                                http::header::CONTENT_TYPE,
-                                tonic::metadata::GRPC_CONTENT_TYPE,
-                            );
-                        Ok(response)
-                    })
-                }
-            }
-        }
-    }
-    impl<T> Clone for PairingServiceServer<T> {
-        fn clone(&self) -> Self {
-            let inner = self.inner.clone();
-            Self {
-                inner,
-                accept_compression_encodings: self.accept_compression_encodings,
-                send_compression_encodings: self.send_compression_encodings,
-                max_decoding_message_size: self.max_decoding_message_size,
-                max_encoding_message_size: self.max_encoding_message_size,
-            }
-        }
-    }
-    /// Generated gRPC service name
-    pub const SERVICE_NAME: &str = "amux.v1.PairingService";
-    impl<T> tonic::server::NamedService for PairingServiceServer<T> {
-        const NAME: &'static str = SERVICE_NAME;
     }
 }
 /// A person's prompt as the provider reflected it. Text and attachments are
@@ -4134,6 +3721,563 @@ impl FormAction {
         }
     }
 }
+/// Hosts and agent rows: the current set, CaughtUp, then deltas. A listing is
+/// this stream read to CaughtUp.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct InventoryEvent {
+    #[prost(oneof = "inventory_event::Of", tags = "1, 2, 3, 4, 5, 6")]
+    pub of: ::core::option::Option<inventory_event::Of>,
+}
+/// Nested message and enum types in `InventoryEvent`.
+pub mod inventory_event {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Of {
+        #[prost(message, tag = "1")]
+        Host(super::HostEntry),
+        #[prost(message, tag = "2")]
+        HostRemoved(super::HostRemoved),
+        #[prost(message, tag = "3")]
+        Agent(super::Agent),
+        #[prost(message, tag = "4")]
+        AgentRemoved(super::AgentRemoved),
+        #[prost(message, tag = "5")]
+        CaughtUp(super::CaughtUp),
+        /// The stream fell behind and closes after this; the client resubscribes
+        /// at once and reconciles against the fresh listing.
+        #[prost(message, tag = "6")]
+        Lagged(super::Lagged),
+    }
+}
+impl ::prost::Name for InventoryEvent {
+    const NAME: &'static str = "InventoryEvent";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.InventoryEvent".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.InventoryEvent".into()
+    }
+}
+/// One host set: every trusted host is in every snapshot whatever its
+/// presence; candidates come and go with discovery. HostRemoved only on
+/// untrust, or when a candidate disappears.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct HostEntry {
+    /// The host as it announced itself in its handshake; a paired host's name
+    /// is the one this machine's trust entry keeps for it.
+    #[prost(message, optional, tag = "1")]
+    pub host: ::core::option::Option<Host>,
+    /// Bumped only after an unclean reboot of that host.
+    #[prost(uint64, tag = "2")]
+    pub generation: u64,
+    /// What each provider offers on the host, once the host has asked it.
+    #[prost(message, repeated, tag = "3")]
+    pub providers: ::prost::alloc::vec::Vec<ProviderOnHost>,
+    #[prost(oneof = "host_entry::Standing", tags = "4, 5")]
+    pub standing: ::core::option::Option<host_entry::Standing>,
+}
+/// Nested message and enum types in `HostEntry`.
+pub mod host_entry {
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Standing {
+        /// Paired with this machine, or this machine itself.
+        #[prost(message, tag = "4")]
+        Trusted(super::Trusted),
+        /// Found by discovery, never paired.
+        #[prost(message, tag = "5")]
+        Candidate(super::Candidate),
+    }
+}
+impl ::prost::Name for HostEntry {
+    const NAME: &'static str = "HostEntry";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.HostEntry".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.HostEntry".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Trusted {
+    /// Whether this machine's copy of the host's inventory has caught up on a
+    /// live stream from it: its agents are as the host lists them now, not as
+    /// they were remembered. Cleared when the host is lost; a client that
+    /// reads every trusted host current has reconciled with its fleet.
+    #[prost(bool, tag = "4")]
+    pub current: bool,
+    /// How the host reads from the daemon that lists it, from the outcome of
+    /// opening a channel to it. A host whose route comes up keeps the reach it
+    /// had until the first channel attempt on that route concludes.
+    #[prost(oneof = "trusted::Reach", tags = "1, 2, 3")]
+    pub reach: ::core::option::Option<trusted::Reach>,
+}
+/// Nested message and enum types in `Trusted`.
+pub mod trusted {
+    /// How the host reads from the daemon that lists it, from the outcome of
+    /// opening a channel to it. A host whose route comes up keeps the reach it
+    /// had until the first channel attempt on that route concludes.
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Reach {
+        /// A channel to the host opened on a route still listed, of this kind;
+        /// unspecified for this machine itself.
+        #[prost(enumeration = "super::RouteKind", tag = "1")]
+        Online(i32),
+        /// The relay refused the channel because the account's plan carries no
+        /// connection between hosts: upgrading reaches this host.
+        #[prost(message, tag = "2")]
+        Away(super::Empty),
+        /// Anything else: no route, or a channel that failed for any reason but
+        /// the plan (no route at the relay, rate limited, shutting down, revoked,
+        /// TLS or identity failure, timeout, link gone).
+        #[prost(message, tag = "3")]
+        Offline(super::Offline),
+    }
+}
+impl ::prost::Name for Trusted {
+    const NAME: &'static str = "Trusted";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Trusted".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Trusted".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Offline {
+    /// The outcome of the daemon's last failed dial attempt at this host,
+    /// cleared when a route comes up.
+    #[prost(string, optional, tag = "1")]
+    pub last_dial_error: ::core::option::Option<::prost::alloc::string::String>,
+    /// The host closed its link saying it no longer trusts this machine;
+    /// cleared when it links to this machine again.
+    #[prost(bool, tag = "2")]
+    pub revoked: bool,
+}
+impl ::prost::Name for Offline {
+    const NAME: &'static str = "Offline";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Offline".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Offline".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Candidate {
+    /// Where discovery found it; what pairing dials.
+    #[prost(string, repeated, tag = "1")]
+    pub addrs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+impl ::prost::Name for Candidate {
+    const NAME: &'static str = "Candidate";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Candidate".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Candidate".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ProviderOnHost {
+    #[prost(enumeration = "Provider", tag = "1")]
+    pub provider: i32,
+    /// The hash GetCatalogue answers with for this provider.
+    #[prost(bytes = "vec", optional, tag = "2")]
+    pub catalogue: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+    #[prost(bool, tag = "3")]
+    pub signed_in: bool,
+}
+impl ::prost::Name for ProviderOnHost {
+    const NAME: &'static str = "ProviderOnHost";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ProviderOnHost".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.ProviderOnHost".into()
+    }
+}
+/// A spawn named a host that more than one trusted host answers to.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AmbiguousHostName {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    pub candidates: ::prost::alloc::vec::Vec<HostEntry>,
+}
+impl ::prost::Name for AmbiguousHostName {
+    const NAME: &'static str = "AmbiguousHostName";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.AmbiguousHostName".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.AmbiguousHostName".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct HostRemoved {
+    #[prost(bytes = "vec", tag = "1")]
+    pub host_id: ::prost::alloc::vec::Vec<u8>,
+}
+impl ::prost::Name for HostRemoved {
+    const NAME: &'static str = "HostRemoved";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.HostRemoved".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.HostRemoved".into()
+    }
+}
+/// The inventory row: lifecycle from the daemon; phase, working_on,
+/// phase_since_ms, git and background_jobs copied from the snapshot
+/// envelope, never a snapshot.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Agent {
+    #[prost(bytes = "vec", tag = "1")]
+    pub agent_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub host_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(enumeration = "Kind", tag = "3")]
+    pub kind: i32,
+    /// Every agent has one: the one it was given, else one the daemon chose.
+    #[prost(string, tag = "4")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag = "5")]
+    pub cwd: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "6")]
+    pub parent: ::core::option::Option<AgentRef>,
+    #[prost(int64, tag = "7")]
+    pub created_at_ms: i64,
+    #[prost(enumeration = "Lifecycle", tag = "8")]
+    pub lifecycle: i32,
+    #[prost(enumeration = "ExitCause", tag = "9")]
+    pub exit_cause: i32,
+    /// The cause's own words, when it has any.
+    #[prost(string, optional, tag = "10")]
+    pub exit_detail: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(enumeration = "Phase", tag = "11")]
+    pub phase: i32,
+    #[prost(string, optional, tag = "12")]
+    pub working_on: ::core::option::Option<::prost::alloc::string::String>,
+    /// The snapshot's phase_since_ms: when the agent entered its phase, on the
+    /// clock of the host where it runs.
+    #[prost(int64, tag = "13")]
+    pub phase_since_ms: i64,
+    #[prost(uint32, tag = "14")]
+    pub incarnation: u32,
+    /// The snapshot's git facts; absent outside a repository.
+    #[prost(message, optional, tag = "15")]
+    pub git: ::core::option::Option<Git>,
+    /// Live agents below this one, on every host the agent's host knows of:
+    /// what a stop or delete would cut. Best effort; a host out of reach may
+    /// be undercounted.
+    #[prost(uint32, tag = "16")]
+    pub descendants: u32,
+    /// The snapshot's count of jobs the provider runs in the background.
+    #[prost(uint32, tag = "17")]
+    pub background_jobs: u32,
+}
+impl ::prost::Name for Agent {
+    const NAME: &'static str = "Agent";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Agent".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Agent".into()
+    }
+}
+/// ResolveAgent found more than one agent by that name.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AmbiguousAgentName {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    pub candidates: ::prost::alloc::vec::Vec<Agent>,
+}
+impl ::prost::Name for AmbiguousAgentName {
+    const NAME: &'static str = "AmbiguousAgentName";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.AmbiguousAgentName".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.AmbiguousAgentName".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AgentRemoved {
+    #[prost(bytes = "vec", tag = "1")]
+    pub host_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub agent_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(enumeration = "RemovalReason", tag = "3")]
+    pub reason: i32,
+}
+impl ::prost::Name for AgentRemoved {
+    const NAME: &'static str = "AgentRemoved";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.AgentRemoved".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.AgentRemoved".into()
+    }
+}
+/// A host by id, or as a person names it, resolved against this host and
+/// the trusted ones: exact first, then ignoring case. AmbiguousHostName
+/// when more than one answers.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct HostRef {
+    #[prost(oneof = "host_ref::Of", tags = "1, 2")]
+    pub of: ::core::option::Option<host_ref::Of>,
+}
+/// Nested message and enum types in `HostRef`.
+pub mod host_ref {
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Of {
+        #[prost(bytes, tag = "1")]
+        HostId(::prost::alloc::vec::Vec<u8>),
+        #[prost(string, tag = "2")]
+        Name(::prost::alloc::string::String),
+    }
+}
+impl ::prost::Name for HostRef {
+    const NAME: &'static str = "HostRef";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.HostRef".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.HostRef".into()
+    }
+}
+/// How this machine reaches a host, or how a pairing peer was reached. No
+/// value for "no route": the host reads offline.
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum RouteKind {
+    Unspecified = 0,
+    Direct = 1,
+    Relay = 2,
+    Ssh = 3,
+}
+impl RouteKind {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "ROUTE_KIND_UNSPECIFIED",
+            Self::Direct => "ROUTE_KIND_DIRECT",
+            Self::Relay => "ROUTE_KIND_RELAY",
+            Self::Ssh => "ROUTE_KIND_SSH",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "ROUTE_KIND_UNSPECIFIED" => Some(Self::Unspecified),
+            "ROUTE_KIND_DIRECT" => Some(Self::Direct),
+            "ROUTE_KIND_RELAY" => Some(Self::Relay),
+            "ROUTE_KIND_SSH" => Some(Self::Ssh),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Lifecycle {
+    Unspecified = 0,
+    Live = 1,
+    Exited = 2,
+}
+impl Lifecycle {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "LIFECYCLE_UNSPECIFIED",
+            Self::Live => "LIFECYCLE_LIVE",
+            Self::Exited => "LIFECYCLE_EXITED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "LIFECYCLE_UNSPECIFIED" => Some(Self::Unspecified),
+            "LIFECYCLE_LIVE" => Some(Self::Live),
+            "LIFECYCLE_EXITED" => Some(Self::Exited),
+            _ => None,
+        }
+    }
+}
+/// Why the row left this daemon's view, which is not always deletion at
+/// the origin: a host that stops listing an agent, or that this machine
+/// stops trusting, takes its rows with it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum RemovalReason {
+    Unspecified = 0,
+    Deleted = 1,
+    Retention = 2,
+    NoLongerListed = 3,
+    HostUntrusted = 4,
+}
+impl RemovalReason {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "REMOVAL_REASON_UNSPECIFIED",
+            Self::Deleted => "REMOVAL_REASON_DELETED",
+            Self::Retention => "REMOVAL_REASON_RETENTION",
+            Self::NoLongerListed => "REMOVAL_REASON_NO_LONGER_LISTED",
+            Self::HostUntrusted => "REMOVAL_REASON_HOST_UNTRUSTED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "REMOVAL_REASON_UNSPECIFIED" => Some(Self::Unspecified),
+            "REMOVAL_REASON_DELETED" => Some(Self::Deleted),
+            "REMOVAL_REASON_RETENTION" => Some(Self::Retention),
+            "REMOVAL_REASON_NO_LONGER_LISTED" => Some(Self::NoLongerListed),
+            "REMOVAL_REASON_HOST_UNTRUSTED" => Some(Self::HostUntrusted),
+            _ => None,
+        }
+    }
+}
+/// Which provider's program a host runs: the vocabulary amux uses to ask a
+/// host what it offers with no agent running. Distinct from Kind, which is
+/// the interpreter.
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Provider {
+    Unspecified = 0,
+    Claude = 1,
+    Codex = 2,
+}
+impl Provider {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "PROVIDER_UNSPECIFIED",
+            Self::Claude => "PROVIDER_CLAUDE",
+            Self::Codex => "PROVIDER_CODEX",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "PROVIDER_UNSPECIFIED" => Some(Self::Unspecified),
+            "PROVIDER_CLAUDE" => Some(Self::Claude),
+            "PROVIDER_CODEX" => Some(Self::Codex),
+            _ => None,
+        }
+    }
+}
+/// Assembles the host-side parts of a dump bundle into the reports
+/// directory: the agents' journal tails, store slices and agent parts, all
+/// redacted.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DumpRequest {
+    /// Empty means every agent of the profile.
+    #[prost(bytes = "vec", repeated, tag = "1")]
+    pub agent_ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+    #[prost(string, tag = "2")]
+    pub reason: ::prost::alloc::string::String,
+    /// Produced on an invariant violation or panic rather than on request.
+    #[prost(bool, tag = "3")]
+    pub automatic: bool,
+    /// The asking client's open sessions, each an encoded
+    /// amux.dump.ClientSessionHistory: the session as its trace began and every
+    /// message since, the client stage of a replay. Opaque here because only the
+    /// build that wrote it reads it; a daemon that cannot decode one leaves it
+    /// out of the bundle and says so. Unredacted as the client holds it; the
+    /// daemon redacts each through its agent's kind before it writes it into the
+    /// bundle, and passes none on to another host.
+    #[prost(bytes = "vec", repeated, tag = "4")]
+    pub sessions: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+}
+impl ::prost::Name for DumpRequest {
+    const NAME: &'static str = "DumpRequest";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.DumpRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.DumpRequest".into()
+    }
+}
+/// Where the bundle was written, for a caller on the same machine.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DumpResponse {
+    #[prost(string, tag = "1")]
+    pub report_path: ::prost::alloc::string::String,
+}
+impl ::prost::Name for DumpResponse {
+    const NAME: &'static str = "DumpResponse";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.DumpResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.DumpResponse".into()
+    }
+}
+/// The agent process's part of a dump: its facts ring and checkpoint,
+/// already redacted.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DumpPart {
+    #[prost(bytes = "vec", tag = "1")]
+    pub dump_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, repeated, tag = "2")]
+    pub files: ::prost::alloc::vec::Vec<DumpFile>,
+}
+impl ::prost::Name for DumpPart {
+    const NAME: &'static str = "DumpPart";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.DumpPart".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.DumpPart".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DumpFile {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "2")]
+    pub contents: ::prost::alloc::vec::Vec<u8>,
+}
+impl ::prost::Name for DumpFile {
+    const NAME: &'static str = "DumpFile";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.DumpFile".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.DumpFile".into()
+    }
+}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ClaudeCreateConfig {
     /// Extra provider arguments exactly as the person gave them.
@@ -5582,342 +5726,6 @@ impl Decision {
         }
     }
 }
-/// Hosts and agent rows: the current set, CaughtUp, then deltas. A listing is
-/// this stream read to CaughtUp.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct InventoryEvent {
-    #[prost(oneof = "inventory_event::Of", tags = "1, 2, 3, 4, 5, 6")]
-    pub of: ::core::option::Option<inventory_event::Of>,
-}
-/// Nested message and enum types in `InventoryEvent`.
-pub mod inventory_event {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Of {
-        #[prost(message, tag = "1")]
-        Host(super::HostEntry),
-        #[prost(message, tag = "2")]
-        HostRemoved(super::HostRemoved),
-        #[prost(message, tag = "3")]
-        Agent(super::Agent),
-        #[prost(message, tag = "4")]
-        AgentRemoved(super::AgentRemoved),
-        #[prost(message, tag = "5")]
-        CaughtUp(super::CaughtUp),
-        /// The stream fell behind and closes after this; the client resubscribes
-        /// at once and reconciles against the fresh listing.
-        #[prost(message, tag = "6")]
-        Lagged(super::Lagged),
-    }
-}
-impl ::prost::Name for InventoryEvent {
-    const NAME: &'static str = "InventoryEvent";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.InventoryEvent".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.InventoryEvent".into()
-    }
-}
-/// One host set: every trusted host is in every snapshot whatever its
-/// presence; candidates come and go with discovery. HostRemoved only on
-/// untrust, or when a candidate disappears.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct HostEntry {
-    /// The host as it announced itself in its handshake; a paired host's name
-    /// is the one this machine's trust entry keeps for it.
-    #[prost(message, optional, tag = "1")]
-    pub host: ::core::option::Option<Host>,
-    /// Bumped only after an unclean reboot of that host.
-    #[prost(uint64, tag = "2")]
-    pub generation: u64,
-    /// What each provider offers on the host, once the host has asked it.
-    #[prost(message, repeated, tag = "3")]
-    pub providers: ::prost::alloc::vec::Vec<ProviderOnHost>,
-    #[prost(oneof = "host_entry::Standing", tags = "4, 5")]
-    pub standing: ::core::option::Option<host_entry::Standing>,
-}
-/// Nested message and enum types in `HostEntry`.
-pub mod host_entry {
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
-    pub enum Standing {
-        /// Paired with this machine, or this machine itself.
-        #[prost(message, tag = "4")]
-        Trusted(super::Trusted),
-        /// Found by discovery, never paired.
-        #[prost(message, tag = "5")]
-        Candidate(super::Candidate),
-    }
-}
-impl ::prost::Name for HostEntry {
-    const NAME: &'static str = "HostEntry";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.HostEntry".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.HostEntry".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Trusted {
-    /// Whether this machine's copy of the host's inventory has caught up on a
-    /// live stream from it: its agents are as the host lists them now, not as
-    /// they were remembered. Cleared when the host is lost; a client that
-    /// reads every trusted host current has reconciled with its fleet.
-    #[prost(bool, tag = "4")]
-    pub current: bool,
-    /// How the host reads from the daemon that lists it, from the outcome of
-    /// opening a channel to it. A host whose route comes up keeps the reach it
-    /// had until the first channel attempt on that route concludes.
-    #[prost(oneof = "trusted::Reach", tags = "1, 2, 3")]
-    pub reach: ::core::option::Option<trusted::Reach>,
-}
-/// Nested message and enum types in `Trusted`.
-pub mod trusted {
-    /// How the host reads from the daemon that lists it, from the outcome of
-    /// opening a channel to it. A host whose route comes up keeps the reach it
-    /// had until the first channel attempt on that route concludes.
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
-    pub enum Reach {
-        /// A channel to the host opened on a route still listed, of this kind;
-        /// unspecified for this machine itself.
-        #[prost(enumeration = "super::RouteKind", tag = "1")]
-        Online(i32),
-        /// The relay refused the channel because the account's plan carries no
-        /// connection between hosts: upgrading reaches this host.
-        #[prost(message, tag = "2")]
-        Away(super::Empty),
-        /// Anything else: no route, or a channel that failed for any reason but
-        /// the plan (no route at the relay, rate limited, shutting down, revoked,
-        /// TLS or identity failure, timeout, link gone).
-        #[prost(message, tag = "3")]
-        Offline(super::Offline),
-    }
-}
-impl ::prost::Name for Trusted {
-    const NAME: &'static str = "Trusted";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Trusted".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.Trusted".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Offline {
-    /// The outcome of the daemon's last failed dial attempt at this host,
-    /// cleared when a route comes up.
-    #[prost(string, optional, tag = "1")]
-    pub last_dial_error: ::core::option::Option<::prost::alloc::string::String>,
-    /// The host closed its link saying it no longer trusts this machine;
-    /// cleared when it links to this machine again.
-    #[prost(bool, tag = "2")]
-    pub revoked: bool,
-}
-impl ::prost::Name for Offline {
-    const NAME: &'static str = "Offline";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Offline".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.Offline".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Candidate {
-    /// Where discovery found it; what pairing dials.
-    #[prost(string, repeated, tag = "1")]
-    pub addrs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-}
-impl ::prost::Name for Candidate {
-    const NAME: &'static str = "Candidate";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Candidate".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.Candidate".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ProviderOnHost {
-    #[prost(enumeration = "Provider", tag = "1")]
-    pub provider: i32,
-    /// The hash GetCatalogue answers with for this provider.
-    #[prost(bytes = "vec", optional, tag = "2")]
-    pub catalogue: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
-    #[prost(bool, tag = "3")]
-    pub signed_in: bool,
-}
-impl ::prost::Name for ProviderOnHost {
-    const NAME: &'static str = "ProviderOnHost";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ProviderOnHost".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ProviderOnHost".into()
-    }
-}
-/// A spawn named a host that more than one trusted host answers to.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AmbiguousHostName {
-    #[prost(string, tag = "1")]
-    pub name: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "2")]
-    pub candidates: ::prost::alloc::vec::Vec<HostEntry>,
-}
-impl ::prost::Name for AmbiguousHostName {
-    const NAME: &'static str = "AmbiguousHostName";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.AmbiguousHostName".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.AmbiguousHostName".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct HostRemoved {
-    #[prost(bytes = "vec", tag = "1")]
-    pub host_id: ::prost::alloc::vec::Vec<u8>,
-}
-impl ::prost::Name for HostRemoved {
-    const NAME: &'static str = "HostRemoved";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.HostRemoved".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.HostRemoved".into()
-    }
-}
-/// The inventory row: lifecycle from the daemon; phase, working_on,
-/// phase_since_ms, git and background_jobs copied from the snapshot
-/// envelope, never a snapshot.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Agent {
-    #[prost(bytes = "vec", tag = "1")]
-    pub agent_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes = "vec", tag = "2")]
-    pub host_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(enumeration = "Kind", tag = "3")]
-    pub kind: i32,
-    /// Every agent has one: the one it was given, else one the daemon chose.
-    #[prost(string, tag = "4")]
-    pub name: ::prost::alloc::string::String,
-    #[prost(string, tag = "5")]
-    pub cwd: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "6")]
-    pub parent: ::core::option::Option<AgentRef>,
-    #[prost(int64, tag = "7")]
-    pub created_at_ms: i64,
-    #[prost(enumeration = "Lifecycle", tag = "8")]
-    pub lifecycle: i32,
-    #[prost(enumeration = "ExitCause", tag = "9")]
-    pub exit_cause: i32,
-    /// The cause's own words, when it has any.
-    #[prost(string, optional, tag = "10")]
-    pub exit_detail: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(enumeration = "Phase", tag = "11")]
-    pub phase: i32,
-    #[prost(string, optional, tag = "12")]
-    pub working_on: ::core::option::Option<::prost::alloc::string::String>,
-    /// The snapshot's phase_since_ms: when the agent entered its phase, on the
-    /// clock of the host where it runs.
-    #[prost(int64, tag = "13")]
-    pub phase_since_ms: i64,
-    #[prost(uint32, tag = "14")]
-    pub incarnation: u32,
-    /// The snapshot's git facts; absent outside a repository.
-    #[prost(message, optional, tag = "15")]
-    pub git: ::core::option::Option<Git>,
-    /// Live agents below this one, on every host the agent's host knows of:
-    /// what a stop or delete would cut. Best effort; a host out of reach may
-    /// be undercounted.
-    #[prost(uint32, tag = "16")]
-    pub descendants: u32,
-    /// The snapshot's count of jobs the provider runs in the background.
-    #[prost(uint32, tag = "17")]
-    pub background_jobs: u32,
-}
-impl ::prost::Name for Agent {
-    const NAME: &'static str = "Agent";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Agent".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.Agent".into()
-    }
-}
-/// ResolveAgent found more than one agent by that name.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AmbiguousAgentName {
-    #[prost(string, tag = "1")]
-    pub name: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "2")]
-    pub candidates: ::prost::alloc::vec::Vec<Agent>,
-}
-impl ::prost::Name for AmbiguousAgentName {
-    const NAME: &'static str = "AmbiguousAgentName";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.AmbiguousAgentName".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.AmbiguousAgentName".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct AgentRemoved {
-    #[prost(bytes = "vec", tag = "1")]
-    pub host_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes = "vec", tag = "2")]
-    pub agent_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(enumeration = "RemovalReason", tag = "3")]
-    pub reason: i32,
-}
-impl ::prost::Name for AgentRemoved {
-    const NAME: &'static str = "AgentRemoved";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.AgentRemoved".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.AgentRemoved".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct SubscribeInventoryRequest {}
-impl ::prost::Name for SubscribeInventoryRequest {
-    const NAME: &'static str = "SubscribeInventoryRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.SubscribeInventoryRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.SubscribeInventoryRequest".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ResolveAgentRequest {
-    #[prost(string, tag = "1")]
-    pub name: ::prost::alloc::string::String,
-}
-impl ::prost::Name for ResolveAgentRequest {
-    const NAME: &'static str = "ResolveAgentRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ResolveAgentRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ResolveAgentRequest".into()
-    }
-}
 /// Clients tail; the daemon never accepts a cursor from a client.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SubscribeSessionRequest {
@@ -5934,33 +5742,6 @@ impl ::prost::Name for SubscribeSessionRequest {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.SubscribeSessionRequest".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct PeerSubscribeSessionRequest {
-    #[prost(bytes = "vec", tag = "1")]
-    pub agent_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(oneof = "peer_subscribe_session_request::From", tags = "2, 3")]
-    pub from: ::core::option::Option<peer_subscribe_session_request::From>,
-}
-/// Nested message and enum types in `PeerSubscribeSessionRequest`.
-pub mod peer_subscribe_session_request {
-    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
-    pub enum From {
-        #[prost(uint32, tag = "2")]
-        Tail(u32),
-        #[prost(message, tag = "3")]
-        After(super::After),
-    }
-}
-impl ::prost::Name for PeerSubscribeSessionRequest {
-    const NAME: &'static str = "PeerSubscribeSessionRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.PeerSubscribeSessionRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.PeerSubscribeSessionRequest".into()
     }
 }
 /// The delta if it is at most cap rows and the origin still runs the
@@ -6041,37 +5822,6 @@ impl ::prost::Name for Opening {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.Opening".into()
-    }
-}
-/// "You hold what the origin holds as of now", on every stream. On a session
-/// stream, the origin's revision replay is complete through: a source stores
-/// it as its cursor and clients ignore it.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct CaughtUp {
-    #[prost(uint64, tag = "1")]
-    pub revision: u64,
-}
-impl ::prost::Name for CaughtUp {
-    const NAME: &'static str = "CaughtUp";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.CaughtUp".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.CaughtUp".into()
-    }
-}
-/// The stream closes after this; the client re-tails.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Lagged {}
-impl ::prost::Name for Lagged {
-    const NAME: &'static str = "Lagged";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Lagged".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.Lagged".into()
     }
 }
 /// Forget the transcript; a fresh tail of the block under `generation`, the
@@ -6178,6 +5928,911 @@ impl ::prost::Name for SendInputRequest {
         "type.googleapis.com/amux.v1.SendInputRequest".into()
     }
 }
+/// An agent's unsent draft: its words and the attachments already stored.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Draft {
+    #[prost(string, tag = "1")]
+    pub text: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    pub attachments: ::prost::alloc::vec::Vec<Attachment>,
+}
+impl ::prost::Name for Draft {
+    const NAME: &'static str = "Draft";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Draft".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Draft".into()
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateDraftRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub agent_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "2")]
+    pub draft: ::core::option::Option<Draft>,
+}
+impl ::prost::Name for UpdateDraftRequest {
+    const NAME: &'static str = "UpdateDraftRequest";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.UpdateDraftRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.UpdateDraftRequest".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetDraftRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub agent_id: ::prost::alloc::vec::Vec<u8>,
+}
+impl ::prost::Name for GetDraftRequest {
+    const NAME: &'static str = "GetDraftRequest";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.GetDraftRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.GetDraftRequest".into()
+    }
+}
+/// A client-generated input id, the agent's kind, and that kind's input
+/// message encoded. Daemons forward the bytes untouched; only the agent of
+/// that kind decodes them, so an arm or field this daemon does not know
+/// reaches a newer agent intact. The reply is the interpreter's verdict,
+/// never a handover receipt. The daemon decodes a copy for its analytics and
+/// tolerates a copy it cannot decode.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Input {
+    #[prost(bytes = "vec", tag = "1")]
+    pub input_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(enumeration = "Kind", tag = "2")]
+    pub kind: i32,
+    /// ClaudePtyInput, ClaudeSdkInput or CodexInput, as `kind` names.
+    #[prost(bytes = "vec", tag = "3")]
+    pub body: ::prost::alloc::vec::Vec<u8>,
+}
+impl ::prost::Name for Input {
+    const NAME: &'static str = "Input";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Input".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Input".into()
+    }
+}
+/// A prompt with its client-generated input id, where a whole Input would
+/// admit arms that are not a prompt.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PromptSubmission {
+    #[prost(bytes = "vec", tag = "1")]
+    pub input_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "2")]
+    pub prompt: ::core::option::Option<PromptInput>,
+}
+impl ::prost::Name for PromptSubmission {
+    const NAME: &'static str = "PromptSubmission";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PromptSubmission".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.PromptSubmission".into()
+    }
+}
+/// The interpreter's verdict.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SendInputResponse {
+    #[prost(oneof = "send_input_response::Of", tags = "1, 2")]
+    pub of: ::core::option::Option<send_input_response::Of>,
+}
+/// Nested message and enum types in `SendInputResponse`.
+pub mod send_input_response {
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Of {
+        #[prost(message, tag = "1")]
+        Accepted(super::Accepted),
+        #[prost(message, tag = "2")]
+        Rejected(super::Rejected),
+    }
+}
+impl ::prost::Name for SendInputResponse {
+    const NAME: &'static str = "SendInputResponse";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.SendInputResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.SendInputResponse".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Accepted {
+    #[prost(bool, tag = "1")]
+    pub queued: bool,
+}
+impl ::prost::Name for Accepted {
+    const NAME: &'static str = "Accepted";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Accepted".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Accepted".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Rejected {
+    #[prost(enumeration = "Refusal", tag = "1")]
+    pub refusal: i32,
+    /// The provider's or interpreter's own words, when it has any: terminal
+    /// Claude's sentence about a send-now it cannot do.
+    #[prost(string, optional, tag = "2")]
+    pub detail: ::core::option::Option<::prost::alloc::string::String>,
+}
+impl ::prost::Name for Rejected {
+    const NAME: &'static str = "Rejected";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Rejected".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Rejected".into()
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Refusal {
+    Unspecified = 0,
+    /// The answer's ask is not open.
+    ClosedAsk = 1,
+    /// The withdraw or send-now target is not waiting in the queue.
+    NotQueued = 2,
+    /// This agent version, kind or state cannot take the input.
+    Unsupported = 3,
+    Draining = 4,
+    Exiting = 5,
+    Exited = 6,
+    HostUnreachable = 7,
+    /// Terminal Claude's own view switched to another conversation; this
+    /// agent's conversation is not the one on its screen.
+    ConversationElsewhere = 8,
+    /// The prompt is longer than the agent takes; the detail names the limit.
+    TooLong = 9,
+}
+impl Refusal {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "REFUSAL_UNSPECIFIED",
+            Self::ClosedAsk => "REFUSAL_CLOSED_ASK",
+            Self::NotQueued => "REFUSAL_NOT_QUEUED",
+            Self::Unsupported => "REFUSAL_UNSUPPORTED",
+            Self::Draining => "REFUSAL_DRAINING",
+            Self::Exiting => "REFUSAL_EXITING",
+            Self::Exited => "REFUSAL_EXITED",
+            Self::HostUnreachable => "REFUSAL_HOST_UNREACHABLE",
+            Self::ConversationElsewhere => "REFUSAL_CONVERSATION_ELSEWHERE",
+            Self::TooLong => "REFUSAL_TOO_LONG",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "REFUSAL_UNSPECIFIED" => Some(Self::Unspecified),
+            "REFUSAL_CLOSED_ASK" => Some(Self::ClosedAsk),
+            "REFUSAL_NOT_QUEUED" => Some(Self::NotQueued),
+            "REFUSAL_UNSUPPORTED" => Some(Self::Unsupported),
+            "REFUSAL_DRAINING" => Some(Self::Draining),
+            "REFUSAL_EXITING" => Some(Self::Exiting),
+            "REFUSAL_EXITED" => Some(Self::Exited),
+            "REFUSAL_HOST_UNREACHABLE" => Some(Self::HostUnreachable),
+            "REFUSAL_CONVERSATION_ELSEWHERE" => Some(Self::ConversationElsewhere),
+            "REFUSAL_TOO_LONG" => Some(Self::TooLong),
+            _ => None,
+        }
+    }
+}
+/// Generated client implementations.
+#[cfg(feature = "grpc")]
+pub mod session_service_client {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
+    #[derive(Debug, Clone)]
+    pub struct SessionServiceClient<T> {
+        inner: tonic::client::Grpc<T>,
+    }
+    impl<T> SessionServiceClient<T>
+    where
+        T: tonic::client::GrpcService<tonic::body::Body>,
+        T::Error: Into<StdError>,
+        T::ResponseBody: Body<Data = Bytes> + std::marker::Send + 'static,
+        <T::ResponseBody as Body>::Error: Into<StdError> + std::marker::Send,
+    {
+        pub fn new(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> SessionServiceClient<InterceptedService<T, F>>
+        where
+            F: tonic::service::Interceptor,
+            T::ResponseBody: Default,
+            T: tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+                Response = http::Response<
+                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                >,
+            >,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+        {
+            SessionServiceClient::new(InterceptedService::new(inner, interceptor))
+        }
+        /// Compress requests with the given encoding.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
+            self
+        }
+        /// Enable decompressing responses.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
+        pub async fn subscribe_session(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SubscribeSessionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::SessionEvent>>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.SessionService/SubscribeSession",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.SessionService", "SubscribeSession"));
+            self.inner.server_streaming(req, path, codec).await
+        }
+        pub async fn list_items(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListItemsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListItemsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.SessionService/ListItems",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.SessionService", "ListItems"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_item(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetItemRequest>,
+        ) -> std::result::Result<tonic::Response<super::Item>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.SessionService/GetItem",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.SessionService", "GetItem"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn send_input(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SendInputRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SendInputResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.SessionService/SendInput",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.SessionService", "SendInput"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// The unsent draft of an agent's composer, kept by this machine's daemon
+        /// for its clients so it outlives a client closing. Never synced to other
+        /// machines; an empty draft forgets it.
+        pub async fn update_draft(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UpdateDraftRequest>,
+        ) -> std::result::Result<tonic::Response<super::Draft>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.SessionService/UpdateDraft",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.SessionService", "UpdateDraft"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_draft(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetDraftRequest>,
+        ) -> std::result::Result<tonic::Response<super::Draft>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.SessionService/GetDraft",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.SessionService", "GetDraft"));
+            self.inner.unary(req, path, codec).await
+        }
+    }
+}
+/// Generated server implementations.
+#[cfg(feature = "grpc")]
+pub mod session_service_server {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    /// Generated trait containing gRPC methods that should be implemented for use with SessionServiceServer.
+    #[async_trait]
+    pub trait SessionService: std::marker::Send + std::marker::Sync + 'static {
+        /// Server streaming response type for the SubscribeSession method.
+        type SubscribeSessionStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::SessionEvent, tonic::Status>,
+            >
+            + std::marker::Send
+            + 'static;
+        async fn subscribe_session(
+            &self,
+            request: tonic::Request<super::SubscribeSessionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<Self::SubscribeSessionStream>,
+            tonic::Status,
+        >;
+        async fn list_items(
+            &self,
+            request: tonic::Request<super::ListItemsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListItemsResponse>,
+            tonic::Status,
+        >;
+        async fn get_item(
+            &self,
+            request: tonic::Request<super::GetItemRequest>,
+        ) -> std::result::Result<tonic::Response<super::Item>, tonic::Status>;
+        async fn send_input(
+            &self,
+            request: tonic::Request<super::SendInputRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SendInputResponse>,
+            tonic::Status,
+        >;
+        /// The unsent draft of an agent's composer, kept by this machine's daemon
+        /// for its clients so it outlives a client closing. Never synced to other
+        /// machines; an empty draft forgets it.
+        async fn update_draft(
+            &self,
+            request: tonic::Request<super::UpdateDraftRequest>,
+        ) -> std::result::Result<tonic::Response<super::Draft>, tonic::Status>;
+        async fn get_draft(
+            &self,
+            request: tonic::Request<super::GetDraftRequest>,
+        ) -> std::result::Result<tonic::Response<super::Draft>, tonic::Status>;
+    }
+    #[derive(Debug)]
+    pub struct SessionServiceServer<T> {
+        inner: Arc<T>,
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
+    }
+    impl<T> SessionServiceServer<T> {
+        pub fn new(inner: T) -> Self {
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
+            Self {
+                inner,
+                accept_compression_encodings: Default::default(),
+                send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
+            }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
+        where
+            F: tonic::service::Interceptor,
+        {
+            InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
+    }
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for SessionServiceServer<T>
+    where
+        T: SessionService,
+        B: Body + std::marker::Send + 'static,
+        B::Error: Into<StdError> + std::marker::Send + 'static,
+    {
+        type Response = http::Response<tonic::body::Body>;
+        type Error = std::convert::Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<std::result::Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            match req.uri().path() {
+                "/amux.v1.SessionService/SubscribeSession" => {
+                    #[allow(non_camel_case_types)]
+                    struct SubscribeSessionSvc<T: SessionService>(pub Arc<T>);
+                    impl<
+                        T: SessionService,
+                    > tonic::server::ServerStreamingService<
+                        super::SubscribeSessionRequest,
+                    > for SubscribeSessionSvc<T> {
+                        type Response = super::SessionEvent;
+                        type ResponseStream = T::SubscribeSessionStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SubscribeSessionRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as SessionService>::subscribe_session(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SubscribeSessionSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.SessionService/ListItems" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListItemsSvc<T: SessionService>(pub Arc<T>);
+                    impl<
+                        T: SessionService,
+                    > tonic::server::UnaryService<super::ListItemsRequest>
+                    for ListItemsSvc<T> {
+                        type Response = super::ListItemsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListItemsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as SessionService>::list_items(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListItemsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.SessionService/GetItem" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetItemSvc<T: SessionService>(pub Arc<T>);
+                    impl<
+                        T: SessionService,
+                    > tonic::server::UnaryService<super::GetItemRequest>
+                    for GetItemSvc<T> {
+                        type Response = super::Item;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetItemRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as SessionService>::get_item(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetItemSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.SessionService/SendInput" => {
+                    #[allow(non_camel_case_types)]
+                    struct SendInputSvc<T: SessionService>(pub Arc<T>);
+                    impl<
+                        T: SessionService,
+                    > tonic::server::UnaryService<super::SendInputRequest>
+                    for SendInputSvc<T> {
+                        type Response = super::SendInputResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SendInputRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as SessionService>::send_input(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SendInputSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.SessionService/UpdateDraft" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateDraftSvc<T: SessionService>(pub Arc<T>);
+                    impl<
+                        T: SessionService,
+                    > tonic::server::UnaryService<super::UpdateDraftRequest>
+                    for UpdateDraftSvc<T> {
+                        type Response = super::Draft;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::UpdateDraftRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as SessionService>::update_draft(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = UpdateDraftSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.SessionService/GetDraft" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetDraftSvc<T: SessionService>(pub Arc<T>);
+                    impl<
+                        T: SessionService,
+                    > tonic::server::UnaryService<super::GetDraftRequest>
+                    for GetDraftSvc<T> {
+                        type Response = super::Draft;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetDraftRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as SessionService>::get_draft(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetDraftSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                _ => {
+                    Box::pin(async move {
+                        let mut response = http::Response::new(
+                            tonic::body::Body::default(),
+                        );
+                        let headers = response.headers_mut();
+                        headers
+                            .insert(
+                                tonic::Status::GRPC_STATUS,
+                                (tonic::Code::Unimplemented as i32).into(),
+                            );
+                        headers
+                            .insert(
+                                http::header::CONTENT_TYPE,
+                                tonic::metadata::GRPC_CONTENT_TYPE,
+                            );
+                        Ok(response)
+                    })
+                }
+            }
+        }
+    }
+    impl<T> Clone for SessionServiceServer<T> {
+        fn clone(&self) -> Self {
+            let inner = self.inner.clone();
+            Self {
+                inner,
+                accept_compression_encodings: self.accept_compression_encodings,
+                send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
+            }
+        }
+    }
+    /// Generated gRPC service name
+    pub const SERVICE_NAME: &str = "amux.v1.SessionService";
+    impl<T> tonic::server::NamedService for SessionServiceServer<T> {
+        const NAME: &'static str = SERVICE_NAME;
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SubscribeInventoryRequest {}
+impl ::prost::Name for SubscribeInventoryRequest {
+    const NAME: &'static str = "SubscribeInventoryRequest";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.SubscribeInventoryRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.SubscribeInventoryRequest".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ResolveAgentRequest {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ResolveAgentRequest {
+    const NAME: &'static str = "ResolveAgentRequest";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ResolveAgentRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.ResolveAgentRequest".into()
+    }
+}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateAgentRequest {
     #[prost(bytes = "vec", tag = "1")]
@@ -6229,34 +6884,6 @@ impl ::prost::Name for CreateAgentRequest {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.CreateAgentRequest".into()
-    }
-}
-/// A host by id, or as a person names it, resolved against this host and
-/// the trusted ones: exact first, then ignoring case. AmbiguousHostName
-/// when more than one answers.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct HostRef {
-    #[prost(oneof = "host_ref::Of", tags = "1, 2")]
-    pub of: ::core::option::Option<host_ref::Of>,
-}
-/// Nested message and enum types in `HostRef`.
-pub mod host_ref {
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
-    pub enum Of {
-        #[prost(bytes, tag = "1")]
-        HostId(::prost::alloc::vec::Vec<u8>),
-        #[prost(string, tag = "2")]
-        Name(::prost::alloc::string::String),
-    }
-}
-impl ::prost::Name for HostRef {
-    const NAME: &'static str = "HostRef";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.HostRef".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.HostRef".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -6365,23 +6992,6 @@ impl ::prost::Name for SendMessageRequest {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.SendMessageRequest".into()
-    }
-}
-/// A message a paired host sends for one of its agents or people, its sender
-/// stamped by that host.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PeerSendMessageRequest {
-    #[prost(message, optional, tag = "1")]
-    pub envelope: ::core::option::Option<Envelope>,
-}
-impl ::prost::Name for PeerSendMessageRequest {
-    const NAME: &'static str = "PeerSendMessageRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.PeerSendMessageRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.PeerSendMessageRequest".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -6509,56 +7119,6 @@ impl ::prost::Name for GetCatalogueResponse {
         "type.googleapis.com/amux.v1.GetCatalogueResponse".into()
     }
 }
-/// An agent's unsent draft: its words and the attachments already stored.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Draft {
-    #[prost(string, tag = "1")]
-    pub text: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "2")]
-    pub attachments: ::prost::alloc::vec::Vec<Attachment>,
-}
-impl ::prost::Name for Draft {
-    const NAME: &'static str = "Draft";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Draft".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.Draft".into()
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct UpdateDraftRequest {
-    #[prost(bytes = "vec", tag = "1")]
-    pub agent_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(message, optional, tag = "2")]
-    pub draft: ::core::option::Option<Draft>,
-}
-impl ::prost::Name for UpdateDraftRequest {
-    const NAME: &'static str = "UpdateDraftRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.UpdateDraftRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.UpdateDraftRequest".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct GetDraftRequest {
-    #[prost(bytes = "vec", tag = "1")]
-    pub agent_id: ::prost::alloc::vec::Vec<u8>,
-}
-impl ::prost::Name for GetDraftRequest {
-    const NAME: &'static str = "GetDraftRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.GetDraftRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.GetDraftRequest".into()
-    }
-}
 /// Host-owned discovery; the client chooses a host, never a search root.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListRepositoriesRequest {
@@ -6618,390 +7178,9 @@ impl ::prost::Name for ProjectEntry {
         "type.googleapis.com/amux.v1.ProjectEntry".into()
     }
 }
-/// Assembles the host-side parts of a dump bundle into the reports
-/// directory: the agents' journal tails, store slices and agent parts, all
-/// redacted.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct DumpRequest {
-    /// Empty means every agent of the profile.
-    #[prost(bytes = "vec", repeated, tag = "1")]
-    pub agent_ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
-    #[prost(string, tag = "2")]
-    pub reason: ::prost::alloc::string::String,
-    /// Produced on an invariant violation or panic rather than on request.
-    #[prost(bool, tag = "3")]
-    pub automatic: bool,
-    /// The asking client's open sessions, each an encoded
-    /// amux.dump.ClientSessionHistory: the session as its trace began and every
-    /// message since, the client stage of a replay. Opaque here because only the
-    /// build that wrote it reads it; a daemon that cannot decode one leaves it
-    /// out of the bundle and says so. Unredacted as the client holds it; the
-    /// daemon redacts each through its agent's kind before it writes it into the
-    /// bundle, and passes none on to another host.
-    #[prost(bytes = "vec", repeated, tag = "4")]
-    pub sessions: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
-}
-impl ::prost::Name for DumpRequest {
-    const NAME: &'static str = "DumpRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.DumpRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.DumpRequest".into()
-    }
-}
-/// Where the bundle was written, for a caller on the same machine.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct DumpResponse {
-    #[prost(string, tag = "1")]
-    pub report_path: ::prost::alloc::string::String,
-}
-impl ::prost::Name for DumpResponse {
-    const NAME: &'static str = "DumpResponse";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.DumpResponse".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.DumpResponse".into()
-    }
-}
-/// The agent process's part of a dump: its facts ring and checkpoint,
-/// already redacted.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DumpPart {
-    #[prost(bytes = "vec", tag = "1")]
-    pub dump_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(message, repeated, tag = "2")]
-    pub files: ::prost::alloc::vec::Vec<DumpFile>,
-}
-impl ::prost::Name for DumpPart {
-    const NAME: &'static str = "DumpPart";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.DumpPart".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.DumpPart".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct DumpFile {
-    #[prost(string, tag = "1")]
-    pub name: ::prost::alloc::string::String,
-    #[prost(bytes = "vec", tag = "2")]
-    pub contents: ::prost::alloc::vec::Vec<u8>,
-}
-impl ::prost::Name for DumpFile {
-    const NAME: &'static str = "DumpFile";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.DumpFile".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.DumpFile".into()
-    }
-}
-/// A client-generated input id, the agent's kind, and that kind's input
-/// message encoded. Daemons forward the bytes untouched; only the agent of
-/// that kind decodes them, so an arm or field this daemon does not know
-/// reaches a newer agent intact. The reply is the interpreter's verdict,
-/// never a handover receipt. The daemon decodes a copy for its analytics and
-/// tolerates a copy it cannot decode.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Input {
-    #[prost(bytes = "vec", tag = "1")]
-    pub input_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(enumeration = "Kind", tag = "2")]
-    pub kind: i32,
-    /// ClaudePtyInput, ClaudeSdkInput or CodexInput, as `kind` names.
-    #[prost(bytes = "vec", tag = "3")]
-    pub body: ::prost::alloc::vec::Vec<u8>,
-}
-impl ::prost::Name for Input {
-    const NAME: &'static str = "Input";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Input".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.Input".into()
-    }
-}
-/// A prompt with its client-generated input id, where a whole Input would
-/// admit arms that are not a prompt.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PromptSubmission {
-    #[prost(bytes = "vec", tag = "1")]
-    pub input_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(message, optional, tag = "2")]
-    pub prompt: ::core::option::Option<PromptInput>,
-}
-impl ::prost::Name for PromptSubmission {
-    const NAME: &'static str = "PromptSubmission";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.PromptSubmission".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.PromptSubmission".into()
-    }
-}
-/// The interpreter's verdict.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct SendInputResponse {
-    #[prost(oneof = "send_input_response::Of", tags = "1, 2")]
-    pub of: ::core::option::Option<send_input_response::Of>,
-}
-/// Nested message and enum types in `SendInputResponse`.
-pub mod send_input_response {
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
-    pub enum Of {
-        #[prost(message, tag = "1")]
-        Accepted(super::Accepted),
-        #[prost(message, tag = "2")]
-        Rejected(super::Rejected),
-    }
-}
-impl ::prost::Name for SendInputResponse {
-    const NAME: &'static str = "SendInputResponse";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.SendInputResponse".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.SendInputResponse".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Accepted {
-    #[prost(bool, tag = "1")]
-    pub queued: bool,
-}
-impl ::prost::Name for Accepted {
-    const NAME: &'static str = "Accepted";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Accepted".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.Accepted".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Rejected {
-    #[prost(enumeration = "Refusal", tag = "1")]
-    pub refusal: i32,
-    /// The provider's or interpreter's own words, when it has any: terminal
-    /// Claude's sentence about a send-now it cannot do.
-    #[prost(string, optional, tag = "2")]
-    pub detail: ::core::option::Option<::prost::alloc::string::String>,
-}
-impl ::prost::Name for Rejected {
-    const NAME: &'static str = "Rejected";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Rejected".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.Rejected".into()
-    }
-}
-/// How this machine reaches a host, or how a pairing peer was reached. No
-/// value for "no route": the host reads offline.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum RouteKind {
-    Unspecified = 0,
-    Direct = 1,
-    Relay = 2,
-    Ssh = 3,
-}
-impl RouteKind {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "ROUTE_KIND_UNSPECIFIED",
-            Self::Direct => "ROUTE_KIND_DIRECT",
-            Self::Relay => "ROUTE_KIND_RELAY",
-            Self::Ssh => "ROUTE_KIND_SSH",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "ROUTE_KIND_UNSPECIFIED" => Some(Self::Unspecified),
-            "ROUTE_KIND_DIRECT" => Some(Self::Direct),
-            "ROUTE_KIND_RELAY" => Some(Self::Relay),
-            "ROUTE_KIND_SSH" => Some(Self::Ssh),
-            _ => None,
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum Lifecycle {
-    Unspecified = 0,
-    Live = 1,
-    Exited = 2,
-}
-impl Lifecycle {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "LIFECYCLE_UNSPECIFIED",
-            Self::Live => "LIFECYCLE_LIVE",
-            Self::Exited => "LIFECYCLE_EXITED",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "LIFECYCLE_UNSPECIFIED" => Some(Self::Unspecified),
-            "LIFECYCLE_LIVE" => Some(Self::Live),
-            "LIFECYCLE_EXITED" => Some(Self::Exited),
-            _ => None,
-        }
-    }
-}
-/// Why the row left this daemon's view, which is not always deletion at
-/// the origin: a host that stops listing an agent, or that this machine
-/// stops trusting, takes its rows with it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum RemovalReason {
-    Unspecified = 0,
-    Deleted = 1,
-    Retention = 2,
-    NoLongerListed = 3,
-    HostUntrusted = 4,
-}
-impl RemovalReason {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "REMOVAL_REASON_UNSPECIFIED",
-            Self::Deleted => "REMOVAL_REASON_DELETED",
-            Self::Retention => "REMOVAL_REASON_RETENTION",
-            Self::NoLongerListed => "REMOVAL_REASON_NO_LONGER_LISTED",
-            Self::HostUntrusted => "REMOVAL_REASON_HOST_UNTRUSTED",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "REMOVAL_REASON_UNSPECIFIED" => Some(Self::Unspecified),
-            "REMOVAL_REASON_DELETED" => Some(Self::Deleted),
-            "REMOVAL_REASON_RETENTION" => Some(Self::Retention),
-            "REMOVAL_REASON_NO_LONGER_LISTED" => Some(Self::NoLongerListed),
-            "REMOVAL_REASON_HOST_UNTRUSTED" => Some(Self::HostUntrusted),
-            _ => None,
-        }
-    }
-}
-/// Which provider's program a host runs: the vocabulary amux uses to ask a
-/// host what it offers with no agent running. Distinct from Kind, which is
-/// the interpreter.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum Provider {
-    Unspecified = 0,
-    Claude = 1,
-    Codex = 2,
-}
-impl Provider {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "PROVIDER_UNSPECIFIED",
-            Self::Claude => "PROVIDER_CLAUDE",
-            Self::Codex => "PROVIDER_CODEX",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "PROVIDER_UNSPECIFIED" => Some(Self::Unspecified),
-            "PROVIDER_CLAUDE" => Some(Self::Claude),
-            "PROVIDER_CODEX" => Some(Self::Codex),
-            _ => None,
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum Refusal {
-    Unspecified = 0,
-    /// The answer's ask is not open.
-    ClosedAsk = 1,
-    /// The withdraw or send-now target is not waiting in the queue.
-    NotQueued = 2,
-    /// This agent version, kind or state cannot take the input.
-    Unsupported = 3,
-    Draining = 4,
-    Exiting = 5,
-    Exited = 6,
-    HostUnreachable = 7,
-    /// Terminal Claude's own view switched to another conversation; this
-    /// agent's conversation is not the one on its screen.
-    ConversationElsewhere = 8,
-    /// The prompt is longer than the agent takes; the detail names the limit.
-    TooLong = 9,
-}
-impl Refusal {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "REFUSAL_UNSPECIFIED",
-            Self::ClosedAsk => "REFUSAL_CLOSED_ASK",
-            Self::NotQueued => "REFUSAL_NOT_QUEUED",
-            Self::Unsupported => "REFUSAL_UNSUPPORTED",
-            Self::Draining => "REFUSAL_DRAINING",
-            Self::Exiting => "REFUSAL_EXITING",
-            Self::Exited => "REFUSAL_EXITED",
-            Self::HostUnreachable => "REFUSAL_HOST_UNREACHABLE",
-            Self::ConversationElsewhere => "REFUSAL_CONVERSATION_ELSEWHERE",
-            Self::TooLong => "REFUSAL_TOO_LONG",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "REFUSAL_UNSPECIFIED" => Some(Self::Unspecified),
-            "REFUSAL_CLOSED_ASK" => Some(Self::ClosedAsk),
-            "REFUSAL_NOT_QUEUED" => Some(Self::NotQueued),
-            "REFUSAL_UNSUPPORTED" => Some(Self::Unsupported),
-            "REFUSAL_DRAINING" => Some(Self::Draining),
-            "REFUSAL_EXITING" => Some(Self::Exiting),
-            "REFUSAL_EXITED" => Some(Self::Exited),
-            "REFUSAL_HOST_UNREACHABLE" => Some(Self::HostUnreachable),
-            "REFUSAL_CONVERSATION_ELSEWHERE" => Some(Self::ConversationElsewhere),
-            "REFUSAL_TOO_LONG" => Some(Self::TooLong),
-            _ => None,
-        }
-    }
-}
 /// Generated client implementations.
 #[cfg(feature = "grpc")]
-pub mod client_service_client {
+pub mod agent_service_client {
     #![allow(
         unused_variables,
         dead_code,
@@ -7011,12 +7190,11 @@ pub mod client_service_client {
     )]
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
-    /// The whole client-facing surface.
     #[derive(Debug, Clone)]
-    pub struct ClientServiceClient<T> {
+    pub struct AgentServiceClient<T> {
         inner: tonic::client::Grpc<T>,
     }
-    impl<T> ClientServiceClient<T>
+    impl<T> AgentServiceClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::Body>,
         T::Error: Into<StdError>,
@@ -7034,7 +7212,7 @@ pub mod client_service_client {
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
-        ) -> ClientServiceClient<InterceptedService<T, F>>
+        ) -> AgentServiceClient<InterceptedService<T, F>>
         where
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
@@ -7048,7 +7226,7 @@ pub mod client_service_client {
                 http::Request<tonic::body::Body>,
             >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
         {
-            ClientServiceClient::new(InterceptedService::new(inner, interceptor))
+            AgentServiceClient::new(InterceptedService::new(inner, interceptor))
         }
         /// Compress requests with the given encoding.
         ///
@@ -7098,11 +7276,11 @@ pub mod client_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/SubscribeInventory",
+                "/amux.v1.AgentService/SubscribeInventory",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "SubscribeInventory"));
+                .insert(GrpcMethod::new("amux.v1.AgentService", "SubscribeInventory"));
             self.inner.server_streaming(req, path, codec).await
         }
         /// Fleet-wide name to row: NOT_FOUND, or AmbiguousAgentName with the
@@ -7121,104 +7299,11 @@ pub mod client_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/ResolveAgent",
+                "/amux.v1.AgentService/ResolveAgent",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "ResolveAgent"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn subscribe_session(
-            &mut self,
-            request: impl tonic::IntoRequest<super::SubscribeSessionRequest>,
-        ) -> std::result::Result<
-            tonic::Response<tonic::codec::Streaming<super::SessionEvent>>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/SubscribeSession",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "SubscribeSession"));
-            self.inner.server_streaming(req, path, codec).await
-        }
-        pub async fn list_items(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ListItemsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ListItemsResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/ListItems",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "ListItems"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn get_item(
-            &mut self,
-            request: impl tonic::IntoRequest<super::GetItemRequest>,
-        ) -> std::result::Result<tonic::Response<super::Item>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/GetItem",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "GetItem"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn send_input(
-            &mut self,
-            request: impl tonic::IntoRequest<super::SendInputRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::SendInputResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/SendInput",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "SendInput"));
+                .insert(GrpcMethod::new("amux.v1.AgentService", "ResolveAgent"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn create_agent(
@@ -7235,11 +7320,11 @@ pub mod client_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/CreateAgent",
+                "/amux.v1.AgentService/CreateAgent",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "CreateAgent"));
+                .insert(GrpcMethod::new("amux.v1.AgentService", "CreateAgent"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn rename_agent(
@@ -7256,11 +7341,11 @@ pub mod client_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/RenameAgent",
+                "/amux.v1.AgentService/RenameAgent",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "RenameAgent"));
+                .insert(GrpcMethod::new("amux.v1.AgentService", "RenameAgent"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn stop_agent(
@@ -7280,11 +7365,11 @@ pub mod client_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/StopAgent",
+                "/amux.v1.AgentService/StopAgent",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "StopAgent"));
+                .insert(GrpcMethod::new("amux.v1.AgentService", "StopAgent"));
             self.inner.unary(req, path, codec).await
         }
         /// Spawn the directory again.
@@ -7302,11 +7387,11 @@ pub mod client_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/ResumeAgent",
+                "/amux.v1.AgentService/ResumeAgent",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "ResumeAgent"));
+                .insert(GrpcMethod::new("amux.v1.AgentService", "ResumeAgent"));
             self.inner.unary(req, path, codec).await
         }
         /// Removes the agent for good, stopping it first when it is live. Its
@@ -7325,11 +7410,11 @@ pub mod client_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/DeleteAgent",
+                "/amux.v1.AgentService/DeleteAgent",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "DeleteAgent"));
+                .insert(GrpcMethod::new("amux.v1.AgentService", "DeleteAgent"));
             self.inner.unary(req, path, codec).await
         }
         /// Also called by the tool server with the agent's identity. The daemon
@@ -7351,11 +7436,11 @@ pub mod client_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/SendMessage",
+                "/amux.v1.AgentService/SendMessage",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "SendMessage"));
+                .insert(GrpcMethod::new("amux.v1.AgentService", "SendMessage"));
             self.inner.unary(req, path, codec).await
         }
         /// The only put: written into that agent's directory.
@@ -7373,11 +7458,11 @@ pub mod client_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/PutBlob",
+                "/amux.v1.AgentService/PutBlob",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "PutBlob"));
+                .insert(GrpcMethod::new("amux.v1.AgentService", "PutBlob"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_blob(
@@ -7397,11 +7482,11 @@ pub mod client_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/GetBlob",
+                "/amux.v1.AgentService/GetBlob",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "GetBlob"));
+                .insert(GrpcMethod::new("amux.v1.AgentService", "GetBlob"));
             self.inner.unary(req, path, codec).await
         }
         /// The changed files; with_patch also puts the patch blob on the host.
@@ -7419,11 +7504,11 @@ pub mod client_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/GetDiff",
+                "/amux.v1.AgentService/GetDiff",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "GetDiff"));
+                .insert(GrpcMethod::new("amux.v1.AgentService", "GetDiff"));
             self.inner.unary(req, path, codec).await
         }
         /// What a provider on a host offers with no agent running, read from the
@@ -7445,11 +7530,11 @@ pub mod client_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/GetCatalogue",
+                "/amux.v1.AgentService/GetCatalogue",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "GetCatalogue"));
+                .insert(GrpcMethod::new("amux.v1.AgentService", "GetCatalogue"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn list_repositories(
@@ -7469,85 +7554,18 @@ pub mod client_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/ListRepositories",
+                "/amux.v1.AgentService/ListRepositories",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "ListRepositories"));
-            self.inner.unary(req, path, codec).await
-        }
-        /// The one bundle format.
-        pub async fn dump(
-            &mut self,
-            request: impl tonic::IntoRequest<super::DumpRequest>,
-        ) -> std::result::Result<tonic::Response<super::DumpResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/Dump",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "Dump"));
-            self.inner.unary(req, path, codec).await
-        }
-        /// The unsent draft of an agent's composer, kept by this machine's daemon
-        /// for its clients so it outlives a client closing. Never synced to other
-        /// machines; an empty draft forgets it.
-        pub async fn update_draft(
-            &mut self,
-            request: impl tonic::IntoRequest<super::UpdateDraftRequest>,
-        ) -> std::result::Result<tonic::Response<super::Draft>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/UpdateDraft",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "UpdateDraft"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn get_draft(
-            &mut self,
-            request: impl tonic::IntoRequest<super::GetDraftRequest>,
-        ) -> std::result::Result<tonic::Response<super::Draft>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/GetDraft",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "GetDraft"));
+                .insert(GrpcMethod::new("amux.v1.AgentService", "ListRepositories"));
             self.inner.unary(req, path, codec).await
         }
     }
 }
 /// Generated server implementations.
 #[cfg(feature = "grpc")]
-pub mod client_service_server {
+pub mod agent_service_server {
     #![allow(
         unused_variables,
         dead_code,
@@ -7556,9 +7574,9 @@ pub mod client_service_server {
         clippy::let_unit_value,
     )]
     use tonic::codegen::*;
-    /// Generated trait containing gRPC methods that should be implemented for use with ClientServiceServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with AgentServiceServer.
     #[async_trait]
-    pub trait ClientService: std::marker::Send + std::marker::Sync + 'static {
+    pub trait AgentService: std::marker::Send + std::marker::Sync + 'static {
         /// Server streaming response type for the SubscribeInventory method.
         type SubscribeInventoryStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::InventoryEvent, tonic::Status>,
@@ -7578,37 +7596,6 @@ pub mod client_service_server {
             &self,
             request: tonic::Request<super::ResolveAgentRequest>,
         ) -> std::result::Result<tonic::Response<super::Agent>, tonic::Status>;
-        /// Server streaming response type for the SubscribeSession method.
-        type SubscribeSessionStream: tonic::codegen::tokio_stream::Stream<
-                Item = std::result::Result<super::SessionEvent, tonic::Status>,
-            >
-            + std::marker::Send
-            + 'static;
-        async fn subscribe_session(
-            &self,
-            request: tonic::Request<super::SubscribeSessionRequest>,
-        ) -> std::result::Result<
-            tonic::Response<Self::SubscribeSessionStream>,
-            tonic::Status,
-        >;
-        async fn list_items(
-            &self,
-            request: tonic::Request<super::ListItemsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ListItemsResponse>,
-            tonic::Status,
-        >;
-        async fn get_item(
-            &self,
-            request: tonic::Request<super::GetItemRequest>,
-        ) -> std::result::Result<tonic::Response<super::Item>, tonic::Status>;
-        async fn send_input(
-            &self,
-            request: tonic::Request<super::SendInputRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::SendInputResponse>,
-            tonic::Status,
-        >;
         async fn create_agent(
             &self,
             request: tonic::Request<super::CreateAgentRequest>,
@@ -7674,33 +7661,16 @@ pub mod client_service_server {
             tonic::Response<super::ListRepositoriesResponse>,
             tonic::Status,
         >;
-        /// The one bundle format.
-        async fn dump(
-            &self,
-            request: tonic::Request<super::DumpRequest>,
-        ) -> std::result::Result<tonic::Response<super::DumpResponse>, tonic::Status>;
-        /// The unsent draft of an agent's composer, kept by this machine's daemon
-        /// for its clients so it outlives a client closing. Never synced to other
-        /// machines; an empty draft forgets it.
-        async fn update_draft(
-            &self,
-            request: tonic::Request<super::UpdateDraftRequest>,
-        ) -> std::result::Result<tonic::Response<super::Draft>, tonic::Status>;
-        async fn get_draft(
-            &self,
-            request: tonic::Request<super::GetDraftRequest>,
-        ) -> std::result::Result<tonic::Response<super::Draft>, tonic::Status>;
     }
-    /// The whole client-facing surface.
     #[derive(Debug)]
-    pub struct ClientServiceServer<T> {
+    pub struct AgentServiceServer<T> {
         inner: Arc<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
         max_decoding_message_size: Option<usize>,
         max_encoding_message_size: Option<usize>,
     }
-    impl<T> ClientServiceServer<T> {
+    impl<T> AgentServiceServer<T> {
         pub fn new(inner: T) -> Self {
             Self::from_arc(Arc::new(inner))
         }
@@ -7751,9 +7721,9 @@ pub mod client_service_server {
             self
         }
     }
-    impl<T, B> tonic::codegen::Service<http::Request<B>> for ClientServiceServer<T>
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for AgentServiceServer<T>
     where
-        T: ClientService,
+        T: AgentService,
         B: Body + std::marker::Send + 'static,
         B::Error: Into<StdError> + std::marker::Send + 'static,
     {
@@ -7768,11 +7738,11 @@ pub mod client_service_server {
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             match req.uri().path() {
-                "/amux.v1.ClientService/SubscribeInventory" => {
+                "/amux.v1.AgentService/SubscribeInventory" => {
                     #[allow(non_camel_case_types)]
-                    struct SubscribeInventorySvc<T: ClientService>(pub Arc<T>);
+                    struct SubscribeInventorySvc<T: AgentService>(pub Arc<T>);
                     impl<
-                        T: ClientService,
+                        T: AgentService,
                     > tonic::server::ServerStreamingService<
                         super::SubscribeInventoryRequest,
                     > for SubscribeInventorySvc<T> {
@@ -7788,7 +7758,7 @@ pub mod client_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ClientService>::subscribe_inventory(&inner, request)
+                                <T as AgentService>::subscribe_inventory(&inner, request)
                                     .await
                             };
                             Box::pin(fut)
@@ -7816,11 +7786,11 @@ pub mod client_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ClientService/ResolveAgent" => {
+                "/amux.v1.AgentService/ResolveAgent" => {
                     #[allow(non_camel_case_types)]
-                    struct ResolveAgentSvc<T: ClientService>(pub Arc<T>);
+                    struct ResolveAgentSvc<T: AgentService>(pub Arc<T>);
                     impl<
-                        T: ClientService,
+                        T: AgentService,
                     > tonic::server::UnaryService<super::ResolveAgentRequest>
                     for ResolveAgentSvc<T> {
                         type Response = super::Agent;
@@ -7834,7 +7804,7 @@ pub mod client_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ClientService>::resolve_agent(&inner, request).await
+                                <T as AgentService>::resolve_agent(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -7861,194 +7831,11 @@ pub mod client_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ClientService/SubscribeSession" => {
+                "/amux.v1.AgentService/CreateAgent" => {
                     #[allow(non_camel_case_types)]
-                    struct SubscribeSessionSvc<T: ClientService>(pub Arc<T>);
+                    struct CreateAgentSvc<T: AgentService>(pub Arc<T>);
                     impl<
-                        T: ClientService,
-                    > tonic::server::ServerStreamingService<
-                        super::SubscribeSessionRequest,
-                    > for SubscribeSessionSvc<T> {
-                        type Response = super::SessionEvent;
-                        type ResponseStream = T::SubscribeSessionStream;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::SubscribeSessionRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ClientService>::subscribe_session(&inner, request)
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = SubscribeSessionSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.server_streaming(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.ClientService/ListItems" => {
-                    #[allow(non_camel_case_types)]
-                    struct ListItemsSvc<T: ClientService>(pub Arc<T>);
-                    impl<
-                        T: ClientService,
-                    > tonic::server::UnaryService<super::ListItemsRequest>
-                    for ListItemsSvc<T> {
-                        type Response = super::ListItemsResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ListItemsRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ClientService>::list_items(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = ListItemsSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.ClientService/GetItem" => {
-                    #[allow(non_camel_case_types)]
-                    struct GetItemSvc<T: ClientService>(pub Arc<T>);
-                    impl<
-                        T: ClientService,
-                    > tonic::server::UnaryService<super::GetItemRequest>
-                    for GetItemSvc<T> {
-                        type Response = super::Item;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::GetItemRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ClientService>::get_item(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = GetItemSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.ClientService/SendInput" => {
-                    #[allow(non_camel_case_types)]
-                    struct SendInputSvc<T: ClientService>(pub Arc<T>);
-                    impl<
-                        T: ClientService,
-                    > tonic::server::UnaryService<super::SendInputRequest>
-                    for SendInputSvc<T> {
-                        type Response = super::SendInputResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::SendInputRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ClientService>::send_input(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = SendInputSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.ClientService/CreateAgent" => {
-                    #[allow(non_camel_case_types)]
-                    struct CreateAgentSvc<T: ClientService>(pub Arc<T>);
-                    impl<
-                        T: ClientService,
+                        T: AgentService,
                     > tonic::server::UnaryService<super::CreateAgentRequest>
                     for CreateAgentSvc<T> {
                         type Response = super::Agent;
@@ -8062,7 +7849,7 @@ pub mod client_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ClientService>::create_agent(&inner, request).await
+                                <T as AgentService>::create_agent(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -8089,11 +7876,11 @@ pub mod client_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ClientService/RenameAgent" => {
+                "/amux.v1.AgentService/RenameAgent" => {
                     #[allow(non_camel_case_types)]
-                    struct RenameAgentSvc<T: ClientService>(pub Arc<T>);
+                    struct RenameAgentSvc<T: AgentService>(pub Arc<T>);
                     impl<
-                        T: ClientService,
+                        T: AgentService,
                     > tonic::server::UnaryService<super::RenameAgentRequest>
                     for RenameAgentSvc<T> {
                         type Response = super::Agent;
@@ -8107,7 +7894,7 @@ pub mod client_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ClientService>::rename_agent(&inner, request).await
+                                <T as AgentService>::rename_agent(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -8134,11 +7921,11 @@ pub mod client_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ClientService/StopAgent" => {
+                "/amux.v1.AgentService/StopAgent" => {
                     #[allow(non_camel_case_types)]
-                    struct StopAgentSvc<T: ClientService>(pub Arc<T>);
+                    struct StopAgentSvc<T: AgentService>(pub Arc<T>);
                     impl<
-                        T: ClientService,
+                        T: AgentService,
                     > tonic::server::UnaryService<super::StopAgentRequest>
                     for StopAgentSvc<T> {
                         type Response = super::StopAgentResponse;
@@ -8152,7 +7939,7 @@ pub mod client_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ClientService>::stop_agent(&inner, request).await
+                                <T as AgentService>::stop_agent(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -8179,11 +7966,11 @@ pub mod client_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ClientService/ResumeAgent" => {
+                "/amux.v1.AgentService/ResumeAgent" => {
                     #[allow(non_camel_case_types)]
-                    struct ResumeAgentSvc<T: ClientService>(pub Arc<T>);
+                    struct ResumeAgentSvc<T: AgentService>(pub Arc<T>);
                     impl<
-                        T: ClientService,
+                        T: AgentService,
                     > tonic::server::UnaryService<super::ResumeAgentRequest>
                     for ResumeAgentSvc<T> {
                         type Response = super::Agent;
@@ -8197,7 +7984,7 @@ pub mod client_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ClientService>::resume_agent(&inner, request).await
+                                <T as AgentService>::resume_agent(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -8224,11 +8011,11 @@ pub mod client_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ClientService/DeleteAgent" => {
+                "/amux.v1.AgentService/DeleteAgent" => {
                     #[allow(non_camel_case_types)]
-                    struct DeleteAgentSvc<T: ClientService>(pub Arc<T>);
+                    struct DeleteAgentSvc<T: AgentService>(pub Arc<T>);
                     impl<
-                        T: ClientService,
+                        T: AgentService,
                     > tonic::server::UnaryService<super::DeleteAgentRequest>
                     for DeleteAgentSvc<T> {
                         type Response = super::Empty;
@@ -8242,7 +8029,7 @@ pub mod client_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ClientService>::delete_agent(&inner, request).await
+                                <T as AgentService>::delete_agent(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -8269,11 +8056,11 @@ pub mod client_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ClientService/SendMessage" => {
+                "/amux.v1.AgentService/SendMessage" => {
                     #[allow(non_camel_case_types)]
-                    struct SendMessageSvc<T: ClientService>(pub Arc<T>);
+                    struct SendMessageSvc<T: AgentService>(pub Arc<T>);
                     impl<
-                        T: ClientService,
+                        T: AgentService,
                     > tonic::server::UnaryService<super::SendMessageRequest>
                     for SendMessageSvc<T> {
                         type Response = super::SendMessageResponse;
@@ -8287,7 +8074,7 @@ pub mod client_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ClientService>::send_message(&inner, request).await
+                                <T as AgentService>::send_message(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -8314,11 +8101,11 @@ pub mod client_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ClientService/PutBlob" => {
+                "/amux.v1.AgentService/PutBlob" => {
                     #[allow(non_camel_case_types)]
-                    struct PutBlobSvc<T: ClientService>(pub Arc<T>);
+                    struct PutBlobSvc<T: AgentService>(pub Arc<T>);
                     impl<
-                        T: ClientService,
+                        T: AgentService,
                     > tonic::server::UnaryService<super::PutBlobRequest>
                     for PutBlobSvc<T> {
                         type Response = super::BlobRef;
@@ -8332,7 +8119,7 @@ pub mod client_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ClientService>::put_blob(&inner, request).await
+                                <T as AgentService>::put_blob(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -8359,11 +8146,11 @@ pub mod client_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ClientService/GetBlob" => {
+                "/amux.v1.AgentService/GetBlob" => {
                     #[allow(non_camel_case_types)]
-                    struct GetBlobSvc<T: ClientService>(pub Arc<T>);
+                    struct GetBlobSvc<T: AgentService>(pub Arc<T>);
                     impl<
-                        T: ClientService,
+                        T: AgentService,
                     > tonic::server::UnaryService<super::GetBlobRequest>
                     for GetBlobSvc<T> {
                         type Response = super::GetBlobResponse;
@@ -8377,7 +8164,7 @@ pub mod client_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ClientService>::get_blob(&inner, request).await
+                                <T as AgentService>::get_blob(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -8404,11 +8191,11 @@ pub mod client_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ClientService/GetDiff" => {
+                "/amux.v1.AgentService/GetDiff" => {
                     #[allow(non_camel_case_types)]
-                    struct GetDiffSvc<T: ClientService>(pub Arc<T>);
+                    struct GetDiffSvc<T: AgentService>(pub Arc<T>);
                     impl<
-                        T: ClientService,
+                        T: AgentService,
                     > tonic::server::UnaryService<super::GetDiffRequest>
                     for GetDiffSvc<T> {
                         type Response = super::Diff;
@@ -8422,7 +8209,7 @@ pub mod client_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ClientService>::get_diff(&inner, request).await
+                                <T as AgentService>::get_diff(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -8449,11 +8236,11 @@ pub mod client_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ClientService/GetCatalogue" => {
+                "/amux.v1.AgentService/GetCatalogue" => {
                     #[allow(non_camel_case_types)]
-                    struct GetCatalogueSvc<T: ClientService>(pub Arc<T>);
+                    struct GetCatalogueSvc<T: AgentService>(pub Arc<T>);
                     impl<
-                        T: ClientService,
+                        T: AgentService,
                     > tonic::server::UnaryService<super::GetCatalogueRequest>
                     for GetCatalogueSvc<T> {
                         type Response = super::GetCatalogueResponse;
@@ -8467,7 +8254,7 @@ pub mod client_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ClientService>::get_catalogue(&inner, request).await
+                                <T as AgentService>::get_catalogue(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -8494,11 +8281,11 @@ pub mod client_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.ClientService/ListRepositories" => {
+                "/amux.v1.AgentService/ListRepositories" => {
                     #[allow(non_camel_case_types)]
-                    struct ListRepositoriesSvc<T: ClientService>(pub Arc<T>);
+                    struct ListRepositoriesSvc<T: AgentService>(pub Arc<T>);
                     impl<
-                        T: ClientService,
+                        T: AgentService,
                     > tonic::server::UnaryService<super::ListRepositoriesRequest>
                     for ListRepositoriesSvc<T> {
                         type Response = super::ListRepositoriesResponse;
@@ -8512,7 +8299,7 @@ pub mod client_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ClientService>::list_repositories(&inner, request)
+                                <T as AgentService>::list_repositories(&inner, request)
                                     .await
                             };
                             Box::pin(fut)
@@ -8525,140 +8312,6 @@ pub mod client_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ListRepositoriesSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.ClientService/Dump" => {
-                    #[allow(non_camel_case_types)]
-                    struct DumpSvc<T: ClientService>(pub Arc<T>);
-                    impl<
-                        T: ClientService,
-                    > tonic::server::UnaryService<super::DumpRequest> for DumpSvc<T> {
-                        type Response = super::DumpResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::DumpRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ClientService>::dump(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = DumpSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.ClientService/UpdateDraft" => {
-                    #[allow(non_camel_case_types)]
-                    struct UpdateDraftSvc<T: ClientService>(pub Arc<T>);
-                    impl<
-                        T: ClientService,
-                    > tonic::server::UnaryService<super::UpdateDraftRequest>
-                    for UpdateDraftSvc<T> {
-                        type Response = super::Draft;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::UpdateDraftRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ClientService>::update_draft(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = UpdateDraftSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.ClientService/GetDraft" => {
-                    #[allow(non_camel_case_types)]
-                    struct GetDraftSvc<T: ClientService>(pub Arc<T>);
-                    impl<
-                        T: ClientService,
-                    > tonic::server::UnaryService<super::GetDraftRequest>
-                    for GetDraftSvc<T> {
-                        type Response = super::Draft;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::GetDraftRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ClientService>::get_draft(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = GetDraftSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -8696,7 +8349,7 @@ pub mod client_service_server {
             }
         }
     }
-    impl<T> Clone for ClientServiceServer<T> {
+    impl<T> Clone for AgentServiceServer<T> {
         fn clone(&self) -> Self {
             let inner = self.inner.clone();
             Self {
@@ -8709,14 +8362,58 @@ pub mod client_service_server {
         }
     }
     /// Generated gRPC service name
-    pub const SERVICE_NAME: &str = "amux.v1.ClientService";
-    impl<T> tonic::server::NamedService for ClientServiceServer<T> {
+    pub const SERVICE_NAME: &str = "amux.v1.AgentService";
+    impl<T> tonic::server::NamedService for AgentServiceServer<T> {
         const NAME: &'static str = SERVICE_NAME;
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PeerSubscribeSessionRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub agent_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(oneof = "peer_subscribe_session_request::From", tags = "2, 3")]
+    pub from: ::core::option::Option<peer_subscribe_session_request::From>,
+}
+/// Nested message and enum types in `PeerSubscribeSessionRequest`.
+pub mod peer_subscribe_session_request {
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum From {
+        #[prost(uint32, tag = "2")]
+        Tail(u32),
+        #[prost(message, tag = "3")]
+        After(super::After),
+    }
+}
+impl ::prost::Name for PeerSubscribeSessionRequest {
+    const NAME: &'static str = "PeerSubscribeSessionRequest";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PeerSubscribeSessionRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.PeerSubscribeSessionRequest".into()
+    }
+}
+/// A message a paired host sends for one of its agents or people, its sender
+/// stamped by that host.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PeerSendMessageRequest {
+    #[prost(message, optional, tag = "1")]
+    pub envelope: ::core::option::Option<Envelope>,
+}
+impl ::prost::Name for PeerSendMessageRequest {
+    const NAME: &'static str = "PeerSendMessageRequest";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PeerSendMessageRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.PeerSendMessageRequest".into()
     }
 }
 /// Generated client implementations.
 #[cfg(feature = "grpc")]
-pub mod peer_service_client {
+pub mod peer_agent_service_client {
     #![allow(
         unused_variables,
         dead_code,
@@ -8726,19 +8423,11 @@ pub mod peer_service_client {
     )]
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
-    /// Daemon to daemon, over the link's application streams. Replication is a
-    /// daemon being a client of its peer. The peer service answers only for
-    /// this host's own agents and never passes a call on, so no two hosts can
-    /// bounce a call between them: its inventory stream carries this host's
-    /// entry and this host's agents; every call that names an agent
-    /// (SubscribeSession, FetchHistory, GetItem, SendInput, the rename, stop,
-    /// resume and delete calls, PutBlob, GetBlob and GetDiff) refuses an agent
-    /// owned elsewhere with NOT_FOUND.
     #[derive(Debug, Clone)]
-    pub struct PeerServiceClient<T> {
+    pub struct PeerAgentServiceClient<T> {
         inner: tonic::client::Grpc<T>,
     }
-    impl<T> PeerServiceClient<T>
+    impl<T> PeerAgentServiceClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::Body>,
         T::Error: Into<StdError>,
@@ -8756,7 +8445,7 @@ pub mod peer_service_client {
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
-        ) -> PeerServiceClient<InterceptedService<T, F>>
+        ) -> PeerAgentServiceClient<InterceptedService<T, F>>
         where
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
@@ -8770,7 +8459,7 @@ pub mod peer_service_client {
                 http::Request<tonic::body::Body>,
             >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
         {
-            PeerServiceClient::new(InterceptedService::new(inner, interceptor))
+            PeerAgentServiceClient::new(InterceptedService::new(inner, interceptor))
         }
         /// Compress requests with the given encoding.
         ///
@@ -8820,107 +8509,14 @@ pub mod peer_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.PeerService/SubscribeInventory",
+                "/amux.v1.PeerAgentService/SubscribeInventory",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.PeerService", "SubscribeInventory"));
+                .insert(
+                    GrpcMethod::new("amux.v1.PeerAgentService", "SubscribeInventory"),
+                );
             self.inner.server_streaming(req, path, codec).await
-        }
-        /// A peer source sends `after` toward its origin once it holds a cursor,
-        /// else `tail`.
-        pub async fn subscribe_session(
-            &mut self,
-            request: impl tonic::IntoRequest<super::PeerSubscribeSessionRequest>,
-        ) -> std::result::Result<
-            tonic::Response<tonic::codec::Streaming<super::SessionEvent>>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.PeerService/SubscribeSession",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.PeerService", "SubscribeSession"));
-            self.inner.server_streaming(req, path, codec).await
-        }
-        pub async fn list_items(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ListItemsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ListItemsResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.PeerService/ListItems",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.PeerService", "ListItems"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn get_item(
-            &mut self,
-            request: impl tonic::IntoRequest<super::GetItemRequest>,
-        ) -> std::result::Result<tonic::Response<super::Item>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.PeerService/GetItem",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.PeerService", "GetItem"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn send_input(
-            &mut self,
-            request: impl tonic::IntoRequest<super::SendInputRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::SendInputResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.PeerService/SendInput",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.PeerService", "SendInput"));
-            self.inner.unary(req, path, codec).await
         }
         pub async fn create_agent(
             &mut self,
@@ -8936,11 +8532,11 @@ pub mod peer_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.PeerService/CreateAgent",
+                "/amux.v1.PeerAgentService/CreateAgent",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.PeerService", "CreateAgent"));
+                .insert(GrpcMethod::new("amux.v1.PeerAgentService", "CreateAgent"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn rename_agent(
@@ -8957,11 +8553,11 @@ pub mod peer_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.PeerService/RenameAgent",
+                "/amux.v1.PeerAgentService/RenameAgent",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.PeerService", "RenameAgent"));
+                .insert(GrpcMethod::new("amux.v1.PeerAgentService", "RenameAgent"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn stop_agent(
@@ -8981,11 +8577,11 @@ pub mod peer_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.PeerService/StopAgent",
+                "/amux.v1.PeerAgentService/StopAgent",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.PeerService", "StopAgent"));
+                .insert(GrpcMethod::new("amux.v1.PeerAgentService", "StopAgent"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn resume_agent(
@@ -9002,11 +8598,11 @@ pub mod peer_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.PeerService/ResumeAgent",
+                "/amux.v1.PeerAgentService/ResumeAgent",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.PeerService", "ResumeAgent"));
+                .insert(GrpcMethod::new("amux.v1.PeerAgentService", "ResumeAgent"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn delete_agent(
@@ -9023,11 +8619,11 @@ pub mod peer_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.PeerService/DeleteAgent",
+                "/amux.v1.PeerAgentService/DeleteAgent",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.PeerService", "DeleteAgent"));
+                .insert(GrpcMethod::new("amux.v1.PeerAgentService", "DeleteAgent"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn send_message(
@@ -9047,11 +8643,11 @@ pub mod peer_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.PeerService/SendMessage",
+                "/amux.v1.PeerAgentService/SendMessage",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.PeerService", "SendMessage"));
+                .insert(GrpcMethod::new("amux.v1.PeerAgentService", "SendMessage"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn put_blob(
@@ -9068,11 +8664,11 @@ pub mod peer_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.PeerService/PutBlob",
+                "/amux.v1.PeerAgentService/PutBlob",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.PeerService", "PutBlob"));
+                .insert(GrpcMethod::new("amux.v1.PeerAgentService", "PutBlob"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_blob(
@@ -9092,11 +8688,11 @@ pub mod peer_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.PeerService/GetBlob",
+                "/amux.v1.PeerAgentService/GetBlob",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.PeerService", "GetBlob"));
+                .insert(GrpcMethod::new("amux.v1.PeerAgentService", "GetBlob"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_diff(
@@ -9113,11 +8709,11 @@ pub mod peer_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.PeerService/GetDiff",
+                "/amux.v1.PeerAgentService/GetDiff",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.PeerService", "GetDiff"));
+                .insert(GrpcMethod::new("amux.v1.PeerAgentService", "GetDiff"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_catalogue(
@@ -9137,11 +8733,11 @@ pub mod peer_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.PeerService/GetCatalogue",
+                "/amux.v1.PeerAgentService/GetCatalogue",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.PeerService", "GetCatalogue"));
+                .insert(GrpcMethod::new("amux.v1.PeerAgentService", "GetCatalogue"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn list_repositories(
@@ -9161,11 +8757,11 @@ pub mod peer_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.PeerService/ListRepositories",
+                "/amux.v1.PeerAgentService/ListRepositories",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.PeerService", "ListRepositories"));
+                .insert(GrpcMethod::new("amux.v1.PeerAgentService", "ListRepositories"));
             self.inner.unary(req, path, codec).await
         }
         /// The host-side parts of the caller's dump for agents this host runs,
@@ -9183,16 +8779,19 @@ pub mod peer_service_client {
                     )
                 })?;
             let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static("/amux.v1.PeerService/Dump");
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.PeerAgentService/Dump",
+            );
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new("amux.v1.PeerService", "Dump"));
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.PeerAgentService", "Dump"));
             self.inner.unary(req, path, codec).await
         }
     }
 }
 /// Generated server implementations.
 #[cfg(feature = "grpc")]
-pub mod peer_service_server {
+pub mod peer_agent_service_server {
     #![allow(
         unused_variables,
         dead_code,
@@ -9201,9 +8800,9 @@ pub mod peer_service_server {
         clippy::let_unit_value,
     )]
     use tonic::codegen::*;
-    /// Generated trait containing gRPC methods that should be implemented for use with PeerServiceServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with PeerAgentServiceServer.
     #[async_trait]
-    pub trait PeerService: std::marker::Send + std::marker::Sync + 'static {
+    pub trait PeerAgentService: std::marker::Send + std::marker::Sync + 'static {
         /// Server streaming response type for the SubscribeInventory method.
         type SubscribeInventoryStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::InventoryEvent, tonic::Status>,
@@ -9215,39 +8814,6 @@ pub mod peer_service_server {
             request: tonic::Request<super::SubscribeInventoryRequest>,
         ) -> std::result::Result<
             tonic::Response<Self::SubscribeInventoryStream>,
-            tonic::Status,
-        >;
-        /// Server streaming response type for the SubscribeSession method.
-        type SubscribeSessionStream: tonic::codegen::tokio_stream::Stream<
-                Item = std::result::Result<super::SessionEvent, tonic::Status>,
-            >
-            + std::marker::Send
-            + 'static;
-        /// A peer source sends `after` toward its origin once it holds a cursor,
-        /// else `tail`.
-        async fn subscribe_session(
-            &self,
-            request: tonic::Request<super::PeerSubscribeSessionRequest>,
-        ) -> std::result::Result<
-            tonic::Response<Self::SubscribeSessionStream>,
-            tonic::Status,
-        >;
-        async fn list_items(
-            &self,
-            request: tonic::Request<super::ListItemsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ListItemsResponse>,
-            tonic::Status,
-        >;
-        async fn get_item(
-            &self,
-            request: tonic::Request<super::GetItemRequest>,
-        ) -> std::result::Result<tonic::Response<super::Item>, tonic::Status>;
-        async fn send_input(
-            &self,
-            request: tonic::Request<super::SendInputRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::SendInputResponse>,
             tonic::Status,
         >;
         async fn create_agent(
@@ -9313,23 +8879,15 @@ pub mod peer_service_server {
             request: tonic::Request<super::DumpRequest>,
         ) -> std::result::Result<tonic::Response<super::DumpPart>, tonic::Status>;
     }
-    /// Daemon to daemon, over the link's application streams. Replication is a
-    /// daemon being a client of its peer. The peer service answers only for
-    /// this host's own agents and never passes a call on, so no two hosts can
-    /// bounce a call between them: its inventory stream carries this host's
-    /// entry and this host's agents; every call that names an agent
-    /// (SubscribeSession, FetchHistory, GetItem, SendInput, the rename, stop,
-    /// resume and delete calls, PutBlob, GetBlob and GetDiff) refuses an agent
-    /// owned elsewhere with NOT_FOUND.
     #[derive(Debug)]
-    pub struct PeerServiceServer<T> {
+    pub struct PeerAgentServiceServer<T> {
         inner: Arc<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
         max_decoding_message_size: Option<usize>,
         max_encoding_message_size: Option<usize>,
     }
-    impl<T> PeerServiceServer<T> {
+    impl<T> PeerAgentServiceServer<T> {
         pub fn new(inner: T) -> Self {
             Self::from_arc(Arc::new(inner))
         }
@@ -9380,9 +8938,9 @@ pub mod peer_service_server {
             self
         }
     }
-    impl<T, B> tonic::codegen::Service<http::Request<B>> for PeerServiceServer<T>
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for PeerAgentServiceServer<T>
     where
-        T: PeerService,
+        T: PeerAgentService,
         B: Body + std::marker::Send + 'static,
         B::Error: Into<StdError> + std::marker::Send + 'static,
     {
@@ -9397,11 +8955,11 @@ pub mod peer_service_server {
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             match req.uri().path() {
-                "/amux.v1.PeerService/SubscribeInventory" => {
+                "/amux.v1.PeerAgentService/SubscribeInventory" => {
                     #[allow(non_camel_case_types)]
-                    struct SubscribeInventorySvc<T: PeerService>(pub Arc<T>);
+                    struct SubscribeInventorySvc<T: PeerAgentService>(pub Arc<T>);
                     impl<
-                        T: PeerService,
+                        T: PeerAgentService,
                     > tonic::server::ServerStreamingService<
                         super::SubscribeInventoryRequest,
                     > for SubscribeInventorySvc<T> {
@@ -9417,7 +8975,10 @@ pub mod peer_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as PeerService>::subscribe_inventory(&inner, request)
+                                <T as PeerAgentService>::subscribe_inventory(
+                                        &inner,
+                                        request,
+                                    )
                                     .await
                             };
                             Box::pin(fut)
@@ -9445,193 +9006,11 @@ pub mod peer_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.PeerService/SubscribeSession" => {
+                "/amux.v1.PeerAgentService/CreateAgent" => {
                     #[allow(non_camel_case_types)]
-                    struct SubscribeSessionSvc<T: PeerService>(pub Arc<T>);
+                    struct CreateAgentSvc<T: PeerAgentService>(pub Arc<T>);
                     impl<
-                        T: PeerService,
-                    > tonic::server::ServerStreamingService<
-                        super::PeerSubscribeSessionRequest,
-                    > for SubscribeSessionSvc<T> {
-                        type Response = super::SessionEvent;
-                        type ResponseStream = T::SubscribeSessionStream;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::PeerSubscribeSessionRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as PeerService>::subscribe_session(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = SubscribeSessionSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.server_streaming(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.PeerService/ListItems" => {
-                    #[allow(non_camel_case_types)]
-                    struct ListItemsSvc<T: PeerService>(pub Arc<T>);
-                    impl<
-                        T: PeerService,
-                    > tonic::server::UnaryService<super::ListItemsRequest>
-                    for ListItemsSvc<T> {
-                        type Response = super::ListItemsResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ListItemsRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as PeerService>::list_items(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = ListItemsSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.PeerService/GetItem" => {
-                    #[allow(non_camel_case_types)]
-                    struct GetItemSvc<T: PeerService>(pub Arc<T>);
-                    impl<
-                        T: PeerService,
-                    > tonic::server::UnaryService<super::GetItemRequest>
-                    for GetItemSvc<T> {
-                        type Response = super::Item;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::GetItemRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as PeerService>::get_item(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = GetItemSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.PeerService/SendInput" => {
-                    #[allow(non_camel_case_types)]
-                    struct SendInputSvc<T: PeerService>(pub Arc<T>);
-                    impl<
-                        T: PeerService,
-                    > tonic::server::UnaryService<super::SendInputRequest>
-                    for SendInputSvc<T> {
-                        type Response = super::SendInputResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::SendInputRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as PeerService>::send_input(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = SendInputSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.PeerService/CreateAgent" => {
-                    #[allow(non_camel_case_types)]
-                    struct CreateAgentSvc<T: PeerService>(pub Arc<T>);
-                    impl<
-                        T: PeerService,
+                        T: PeerAgentService,
                     > tonic::server::UnaryService<super::CreateAgentRequest>
                     for CreateAgentSvc<T> {
                         type Response = super::Agent;
@@ -9645,7 +9024,7 @@ pub mod peer_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as PeerService>::create_agent(&inner, request).await
+                                <T as PeerAgentService>::create_agent(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -9672,11 +9051,11 @@ pub mod peer_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.PeerService/RenameAgent" => {
+                "/amux.v1.PeerAgentService/RenameAgent" => {
                     #[allow(non_camel_case_types)]
-                    struct RenameAgentSvc<T: PeerService>(pub Arc<T>);
+                    struct RenameAgentSvc<T: PeerAgentService>(pub Arc<T>);
                     impl<
-                        T: PeerService,
+                        T: PeerAgentService,
                     > tonic::server::UnaryService<super::RenameAgentRequest>
                     for RenameAgentSvc<T> {
                         type Response = super::Agent;
@@ -9690,7 +9069,7 @@ pub mod peer_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as PeerService>::rename_agent(&inner, request).await
+                                <T as PeerAgentService>::rename_agent(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -9717,11 +9096,11 @@ pub mod peer_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.PeerService/StopAgent" => {
+                "/amux.v1.PeerAgentService/StopAgent" => {
                     #[allow(non_camel_case_types)]
-                    struct StopAgentSvc<T: PeerService>(pub Arc<T>);
+                    struct StopAgentSvc<T: PeerAgentService>(pub Arc<T>);
                     impl<
-                        T: PeerService,
+                        T: PeerAgentService,
                     > tonic::server::UnaryService<super::StopAgentRequest>
                     for StopAgentSvc<T> {
                         type Response = super::StopAgentResponse;
@@ -9735,7 +9114,7 @@ pub mod peer_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as PeerService>::stop_agent(&inner, request).await
+                                <T as PeerAgentService>::stop_agent(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -9762,11 +9141,11 @@ pub mod peer_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.PeerService/ResumeAgent" => {
+                "/amux.v1.PeerAgentService/ResumeAgent" => {
                     #[allow(non_camel_case_types)]
-                    struct ResumeAgentSvc<T: PeerService>(pub Arc<T>);
+                    struct ResumeAgentSvc<T: PeerAgentService>(pub Arc<T>);
                     impl<
-                        T: PeerService,
+                        T: PeerAgentService,
                     > tonic::server::UnaryService<super::ResumeAgentRequest>
                     for ResumeAgentSvc<T> {
                         type Response = super::Agent;
@@ -9780,7 +9159,7 @@ pub mod peer_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as PeerService>::resume_agent(&inner, request).await
+                                <T as PeerAgentService>::resume_agent(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -9807,11 +9186,11 @@ pub mod peer_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.PeerService/DeleteAgent" => {
+                "/amux.v1.PeerAgentService/DeleteAgent" => {
                     #[allow(non_camel_case_types)]
-                    struct DeleteAgentSvc<T: PeerService>(pub Arc<T>);
+                    struct DeleteAgentSvc<T: PeerAgentService>(pub Arc<T>);
                     impl<
-                        T: PeerService,
+                        T: PeerAgentService,
                     > tonic::server::UnaryService<super::DeleteAgentRequest>
                     for DeleteAgentSvc<T> {
                         type Response = super::Empty;
@@ -9825,7 +9204,7 @@ pub mod peer_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as PeerService>::delete_agent(&inner, request).await
+                                <T as PeerAgentService>::delete_agent(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -9852,11 +9231,11 @@ pub mod peer_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.PeerService/SendMessage" => {
+                "/amux.v1.PeerAgentService/SendMessage" => {
                     #[allow(non_camel_case_types)]
-                    struct SendMessageSvc<T: PeerService>(pub Arc<T>);
+                    struct SendMessageSvc<T: PeerAgentService>(pub Arc<T>);
                     impl<
-                        T: PeerService,
+                        T: PeerAgentService,
                     > tonic::server::UnaryService<super::PeerSendMessageRequest>
                     for SendMessageSvc<T> {
                         type Response = super::SendMessageResponse;
@@ -9870,7 +9249,7 @@ pub mod peer_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as PeerService>::send_message(&inner, request).await
+                                <T as PeerAgentService>::send_message(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -9897,11 +9276,11 @@ pub mod peer_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.PeerService/PutBlob" => {
+                "/amux.v1.PeerAgentService/PutBlob" => {
                     #[allow(non_camel_case_types)]
-                    struct PutBlobSvc<T: PeerService>(pub Arc<T>);
+                    struct PutBlobSvc<T: PeerAgentService>(pub Arc<T>);
                     impl<
-                        T: PeerService,
+                        T: PeerAgentService,
                     > tonic::server::UnaryService<super::PutBlobRequest>
                     for PutBlobSvc<T> {
                         type Response = super::BlobRef;
@@ -9915,7 +9294,7 @@ pub mod peer_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as PeerService>::put_blob(&inner, request).await
+                                <T as PeerAgentService>::put_blob(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -9942,11 +9321,11 @@ pub mod peer_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.PeerService/GetBlob" => {
+                "/amux.v1.PeerAgentService/GetBlob" => {
                     #[allow(non_camel_case_types)]
-                    struct GetBlobSvc<T: PeerService>(pub Arc<T>);
+                    struct GetBlobSvc<T: PeerAgentService>(pub Arc<T>);
                     impl<
-                        T: PeerService,
+                        T: PeerAgentService,
                     > tonic::server::UnaryService<super::GetBlobRequest>
                     for GetBlobSvc<T> {
                         type Response = super::GetBlobResponse;
@@ -9960,7 +9339,7 @@ pub mod peer_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as PeerService>::get_blob(&inner, request).await
+                                <T as PeerAgentService>::get_blob(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -9987,11 +9366,11 @@ pub mod peer_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.PeerService/GetDiff" => {
+                "/amux.v1.PeerAgentService/GetDiff" => {
                     #[allow(non_camel_case_types)]
-                    struct GetDiffSvc<T: PeerService>(pub Arc<T>);
+                    struct GetDiffSvc<T: PeerAgentService>(pub Arc<T>);
                     impl<
-                        T: PeerService,
+                        T: PeerAgentService,
                     > tonic::server::UnaryService<super::GetDiffRequest>
                     for GetDiffSvc<T> {
                         type Response = super::Diff;
@@ -10005,7 +9384,7 @@ pub mod peer_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as PeerService>::get_diff(&inner, request).await
+                                <T as PeerAgentService>::get_diff(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -10032,11 +9411,11 @@ pub mod peer_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.PeerService/GetCatalogue" => {
+                "/amux.v1.PeerAgentService/GetCatalogue" => {
                     #[allow(non_camel_case_types)]
-                    struct GetCatalogueSvc<T: PeerService>(pub Arc<T>);
+                    struct GetCatalogueSvc<T: PeerAgentService>(pub Arc<T>);
                     impl<
-                        T: PeerService,
+                        T: PeerAgentService,
                     > tonic::server::UnaryService<super::GetCatalogueRequest>
                     for GetCatalogueSvc<T> {
                         type Response = super::GetCatalogueResponse;
@@ -10050,7 +9429,8 @@ pub mod peer_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as PeerService>::get_catalogue(&inner, request).await
+                                <T as PeerAgentService>::get_catalogue(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -10077,11 +9457,11 @@ pub mod peer_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.PeerService/ListRepositories" => {
+                "/amux.v1.PeerAgentService/ListRepositories" => {
                     #[allow(non_camel_case_types)]
-                    struct ListRepositoriesSvc<T: PeerService>(pub Arc<T>);
+                    struct ListRepositoriesSvc<T: PeerAgentService>(pub Arc<T>);
                     impl<
-                        T: PeerService,
+                        T: PeerAgentService,
                     > tonic::server::UnaryService<super::ListRepositoriesRequest>
                     for ListRepositoriesSvc<T> {
                         type Response = super::ListRepositoriesResponse;
@@ -10095,7 +9475,8 @@ pub mod peer_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as PeerService>::list_repositories(&inner, request).await
+                                <T as PeerAgentService>::list_repositories(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -10122,11 +9503,12 @@ pub mod peer_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.PeerService/Dump" => {
+                "/amux.v1.PeerAgentService/Dump" => {
                     #[allow(non_camel_case_types)]
-                    struct DumpSvc<T: PeerService>(pub Arc<T>);
-                    impl<T: PeerService> tonic::server::UnaryService<super::DumpRequest>
-                    for DumpSvc<T> {
+                    struct DumpSvc<T: PeerAgentService>(pub Arc<T>);
+                    impl<
+                        T: PeerAgentService,
+                    > tonic::server::UnaryService<super::DumpRequest> for DumpSvc<T> {
                         type Response = super::DumpPart;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -10138,7 +9520,7 @@ pub mod peer_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as PeerService>::dump(&inner, request).await
+                                <T as PeerAgentService>::dump(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -10187,7 +9569,7 @@ pub mod peer_service_server {
             }
         }
     }
-    impl<T> Clone for PeerServiceServer<T> {
+    impl<T> Clone for PeerAgentServiceServer<T> {
         fn clone(&self) -> Self {
             let inner = self.inner.clone();
             Self {
@@ -10200,9 +9582,623 @@ pub mod peer_service_server {
         }
     }
     /// Generated gRPC service name
-    pub const SERVICE_NAME: &str = "amux.v1.PeerService";
-    impl<T> tonic::server::NamedService for PeerServiceServer<T> {
+    pub const SERVICE_NAME: &str = "amux.v1.PeerAgentService";
+    impl<T> tonic::server::NamedService for PeerAgentServiceServer<T> {
         const NAME: &'static str = SERVICE_NAME;
+    }
+}
+/// Generated client implementations.
+#[cfg(feature = "grpc")]
+pub mod peer_session_service_client {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
+    #[derive(Debug, Clone)]
+    pub struct PeerSessionServiceClient<T> {
+        inner: tonic::client::Grpc<T>,
+    }
+    impl<T> PeerSessionServiceClient<T>
+    where
+        T: tonic::client::GrpcService<tonic::body::Body>,
+        T::Error: Into<StdError>,
+        T::ResponseBody: Body<Data = Bytes> + std::marker::Send + 'static,
+        <T::ResponseBody as Body>::Error: Into<StdError> + std::marker::Send,
+    {
+        pub fn new(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> PeerSessionServiceClient<InterceptedService<T, F>>
+        where
+            F: tonic::service::Interceptor,
+            T::ResponseBody: Default,
+            T: tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+                Response = http::Response<
+                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                >,
+            >,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+        {
+            PeerSessionServiceClient::new(InterceptedService::new(inner, interceptor))
+        }
+        /// Compress requests with the given encoding.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
+            self
+        }
+        /// Enable decompressing responses.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
+        /// A peer source sends `after` toward its origin once it holds a cursor,
+        /// else `tail`.
+        pub async fn subscribe_session(
+            &mut self,
+            request: impl tonic::IntoRequest<super::PeerSubscribeSessionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::SessionEvent>>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.PeerSessionService/SubscribeSession",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("amux.v1.PeerSessionService", "SubscribeSession"),
+                );
+            self.inner.server_streaming(req, path, codec).await
+        }
+        pub async fn list_items(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListItemsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListItemsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.PeerSessionService/ListItems",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.PeerSessionService", "ListItems"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_item(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetItemRequest>,
+        ) -> std::result::Result<tonic::Response<super::Item>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.PeerSessionService/GetItem",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.PeerSessionService", "GetItem"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn send_input(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SendInputRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SendInputResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.PeerSessionService/SendInput",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.PeerSessionService", "SendInput"));
+            self.inner.unary(req, path, codec).await
+        }
+    }
+}
+/// Generated server implementations.
+#[cfg(feature = "grpc")]
+pub mod peer_session_service_server {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    /// Generated trait containing gRPC methods that should be implemented for use with PeerSessionServiceServer.
+    #[async_trait]
+    pub trait PeerSessionService: std::marker::Send + std::marker::Sync + 'static {
+        /// Server streaming response type for the SubscribeSession method.
+        type SubscribeSessionStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::SessionEvent, tonic::Status>,
+            >
+            + std::marker::Send
+            + 'static;
+        /// A peer source sends `after` toward its origin once it holds a cursor,
+        /// else `tail`.
+        async fn subscribe_session(
+            &self,
+            request: tonic::Request<super::PeerSubscribeSessionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<Self::SubscribeSessionStream>,
+            tonic::Status,
+        >;
+        async fn list_items(
+            &self,
+            request: tonic::Request<super::ListItemsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListItemsResponse>,
+            tonic::Status,
+        >;
+        async fn get_item(
+            &self,
+            request: tonic::Request<super::GetItemRequest>,
+        ) -> std::result::Result<tonic::Response<super::Item>, tonic::Status>;
+        async fn send_input(
+            &self,
+            request: tonic::Request<super::SendInputRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SendInputResponse>,
+            tonic::Status,
+        >;
+    }
+    #[derive(Debug)]
+    pub struct PeerSessionServiceServer<T> {
+        inner: Arc<T>,
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
+    }
+    impl<T> PeerSessionServiceServer<T> {
+        pub fn new(inner: T) -> Self {
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
+            Self {
+                inner,
+                accept_compression_encodings: Default::default(),
+                send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
+            }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
+        where
+            F: tonic::service::Interceptor,
+        {
+            InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
+    }
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for PeerSessionServiceServer<T>
+    where
+        T: PeerSessionService,
+        B: Body + std::marker::Send + 'static,
+        B::Error: Into<StdError> + std::marker::Send + 'static,
+    {
+        type Response = http::Response<tonic::body::Body>;
+        type Error = std::convert::Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<std::result::Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            match req.uri().path() {
+                "/amux.v1.PeerSessionService/SubscribeSession" => {
+                    #[allow(non_camel_case_types)]
+                    struct SubscribeSessionSvc<T: PeerSessionService>(pub Arc<T>);
+                    impl<
+                        T: PeerSessionService,
+                    > tonic::server::ServerStreamingService<
+                        super::PeerSubscribeSessionRequest,
+                    > for SubscribeSessionSvc<T> {
+                        type Response = super::SessionEvent;
+                        type ResponseStream = T::SubscribeSessionStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::PeerSubscribeSessionRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as PeerSessionService>::subscribe_session(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SubscribeSessionSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.PeerSessionService/ListItems" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListItemsSvc<T: PeerSessionService>(pub Arc<T>);
+                    impl<
+                        T: PeerSessionService,
+                    > tonic::server::UnaryService<super::ListItemsRequest>
+                    for ListItemsSvc<T> {
+                        type Response = super::ListItemsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListItemsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as PeerSessionService>::list_items(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListItemsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.PeerSessionService/GetItem" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetItemSvc<T: PeerSessionService>(pub Arc<T>);
+                    impl<
+                        T: PeerSessionService,
+                    > tonic::server::UnaryService<super::GetItemRequest>
+                    for GetItemSvc<T> {
+                        type Response = super::Item;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetItemRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as PeerSessionService>::get_item(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetItemSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.PeerSessionService/SendInput" => {
+                    #[allow(non_camel_case_types)]
+                    struct SendInputSvc<T: PeerSessionService>(pub Arc<T>);
+                    impl<
+                        T: PeerSessionService,
+                    > tonic::server::UnaryService<super::SendInputRequest>
+                    for SendInputSvc<T> {
+                        type Response = super::SendInputResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SendInputRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as PeerSessionService>::send_input(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SendInputSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                _ => {
+                    Box::pin(async move {
+                        let mut response = http::Response::new(
+                            tonic::body::Body::default(),
+                        );
+                        let headers = response.headers_mut();
+                        headers
+                            .insert(
+                                tonic::Status::GRPC_STATUS,
+                                (tonic::Code::Unimplemented as i32).into(),
+                            );
+                        headers
+                            .insert(
+                                http::header::CONTENT_TYPE,
+                                tonic::metadata::GRPC_CONTENT_TYPE,
+                            );
+                        Ok(response)
+                    })
+                }
+            }
+        }
+    }
+    impl<T> Clone for PeerSessionServiceServer<T> {
+        fn clone(&self) -> Self {
+            let inner = self.inner.clone();
+            Self {
+                inner,
+                accept_compression_encodings: self.accept_compression_encodings,
+                send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
+            }
+        }
+    }
+    /// Generated gRPC service name
+    pub const SERVICE_NAME: &str = "amux.v1.PeerSessionService";
+    impl<T> tonic::server::NamedService for PeerSessionServiceServer<T> {
+        const NAME: &'static str = SERVICE_NAME;
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetInstallationRequest {}
+impl ::prost::Name for GetInstallationRequest {
+    const NAME: &'static str = "GetInstallationRequest";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.GetInstallationRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.GetInstallationRequest".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Installation {
+    #[prost(string, tag = "1")]
+    pub version: ::prost::alloc::string::String,
+}
+impl ::prost::Name for Installation {
+    const NAME: &'static str = "Installation";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Installation".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Installation".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ShutdownRequest {}
+impl ::prost::Name for ShutdownRequest {
+    const NAME: &'static str = "ShutdownRequest";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ShutdownRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.ShutdownRequest".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ShutdownResponse {}
+impl ::prost::Name for ShutdownResponse {
+    const NAME: &'static str = "ShutdownResponse";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ShutdownResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.ShutdownResponse".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Profile {
+    #[prost(bytes = "vec", tag = "1")]
+    pub id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "2")]
+    pub label: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub email: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub account_name: ::prost::alloc::string::String,
+    #[prost(string, tag = "5")]
+    pub socket_path: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "6")]
+    pub cloud: ::core::option::Option<CloudStanding>,
+    /// The bound account's subject at its service, which stays after a
+    /// sign-out; empty when unbound. What tells two profiles' accounts apart.
+    #[prost(string, tag = "7")]
+    pub account_subject: ::prost::alloc::string::String,
+    /// Where the bound account's profile picture is, as its service said at
+    /// sign-in; empty when it has none or the profile is unbound.
+    #[prost(string, tag = "8")]
+    pub account_picture: ::prost::alloc::string::String,
+}
+impl ::prost::Name for Profile {
+    const NAME: &'static str = "Profile";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Profile".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Profile".into()
     }
 }
 /// A profile's standing with its cloud account: what the person asked for
@@ -10288,39 +10284,6 @@ impl ::prost::Name for RelayConnected {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.RelayConnected".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Profile {
-    #[prost(bytes = "vec", tag = "1")]
-    pub id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(string, tag = "2")]
-    pub label: ::prost::alloc::string::String,
-    #[prost(string, tag = "3")]
-    pub email: ::prost::alloc::string::String,
-    #[prost(string, tag = "4")]
-    pub account_name: ::prost::alloc::string::String,
-    #[prost(string, tag = "5")]
-    pub socket_path: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "6")]
-    pub cloud: ::core::option::Option<CloudStanding>,
-    /// The bound account's subject at its service, which stays after a
-    /// sign-out; empty when unbound. What tells two profiles' accounts apart.
-    #[prost(string, tag = "7")]
-    pub account_subject: ::prost::alloc::string::String,
-    /// Where the bound account's profile picture is, as its service said at
-    /// sign-in; empty when it has none or the profile is unbound.
-    #[prost(string, tag = "8")]
-    pub account_picture: ::prost::alloc::string::String,
-}
-impl ::prost::Name for Profile {
-    const NAME: &'static str = "Profile";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Profile".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.Profile".into()
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -10459,6 +10422,1335 @@ impl ::prost::Name for DeleteProfileRequest {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.DeleteProfileRequest".into()
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Tier {
+    Unspecified = 0,
+    Free = 1,
+    Pro = 2,
+}
+impl Tier {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "TIER_UNSPECIFIED",
+            Self::Free => "TIER_FREE",
+            Self::Pro => "TIER_PRO",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "TIER_UNSPECIFIED" => Some(Self::Unspecified),
+            "TIER_FREE" => Some(Self::Free),
+            "TIER_PRO" => Some(Self::Pro),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum RelayCarrier {
+    Unspecified = 0,
+    Quic = 1,
+    Tcp = 2,
+}
+impl RelayCarrier {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "RELAY_CARRIER_UNSPECIFIED",
+            Self::Quic => "RELAY_CARRIER_QUIC",
+            Self::Tcp => "RELAY_CARRIER_TCP",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "RELAY_CARRIER_UNSPECIFIED" => Some(Self::Unspecified),
+            "RELAY_CARRIER_QUIC" => Some(Self::Quic),
+            "RELAY_CARRIER_TCP" => Some(Self::Tcp),
+            _ => None,
+        }
+    }
+}
+/// Generated client implementations.
+#[cfg(feature = "grpc")]
+pub mod installation_service_client {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
+    /// Local Unix socket and in-process only. Calls are not retried by any
+    /// client; a mutation that loses its reply is re-run by the person.
+    #[derive(Debug, Clone)]
+    pub struct InstallationServiceClient<T> {
+        inner: tonic::client::Grpc<T>,
+    }
+    impl<T> InstallationServiceClient<T>
+    where
+        T: tonic::client::GrpcService<tonic::body::Body>,
+        T::Error: Into<StdError>,
+        T::ResponseBody: Body<Data = Bytes> + std::marker::Send + 'static,
+        <T::ResponseBody as Body>::Error: Into<StdError> + std::marker::Send,
+    {
+        pub fn new(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InstallationServiceClient<InterceptedService<T, F>>
+        where
+            F: tonic::service::Interceptor,
+            T::ResponseBody: Default,
+            T: tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+                Response = http::Response<
+                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                >,
+            >,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+        {
+            InstallationServiceClient::new(InterceptedService::new(inner, interceptor))
+        }
+        /// Compress requests with the given encoding.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
+            self
+        }
+        /// Enable decompressing responses.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
+        pub async fn get_installation(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetInstallationRequest>,
+        ) -> std::result::Result<tonic::Response<super::Installation>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.InstallationService/GetInstallation",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("amux.v1.InstallationService", "GetInstallation"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn shutdown(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ShutdownRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ShutdownResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.InstallationService/Shutdown",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.InstallationService", "Shutdown"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn list_profiles(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListProfilesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListProfilesResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.InstallationService/ListProfiles",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.InstallationService", "ListProfiles"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Snapshot, CaughtUp, then ordered events; ABORTED requires a fresh
+        /// subscription.
+        pub async fn subscribe_profiles(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SubscribeProfilesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::ProfileEvent>>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.InstallationService/SubscribeProfiles",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("amux.v1.InstallationService", "SubscribeProfiles"),
+                );
+            self.inner.server_streaming(req, path, codec).await
+        }
+        pub async fn create_profile(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CreateProfileRequest>,
+        ) -> std::result::Result<tonic::Response<super::Profile>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.InstallationService/CreateProfile",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.InstallationService", "CreateProfile"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Names a profile, or lets the installation pick or create one.
+        pub async fn bind_profile(
+            &mut self,
+            request: impl tonic::IntoRequest<super::BindProfileRequest>,
+        ) -> std::result::Result<tonic::Response<super::Profile>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.InstallationService/BindProfile",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.InstallationService", "BindProfile"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn rename_profile(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RenameProfileRequest>,
+        ) -> std::result::Result<tonic::Response<super::Profile>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.InstallationService/RenameProfile",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.InstallationService", "RenameProfile"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn delete_profile(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteProfileRequest>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.InstallationService/DeleteProfile",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.InstallationService", "DeleteProfile"));
+            self.inner.unary(req, path, codec).await
+        }
+    }
+}
+/// Generated server implementations.
+#[cfg(feature = "grpc")]
+pub mod installation_service_server {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    /// Generated trait containing gRPC methods that should be implemented for use with InstallationServiceServer.
+    #[async_trait]
+    pub trait InstallationService: std::marker::Send + std::marker::Sync + 'static {
+        async fn get_installation(
+            &self,
+            request: tonic::Request<super::GetInstallationRequest>,
+        ) -> std::result::Result<tonic::Response<super::Installation>, tonic::Status>;
+        async fn shutdown(
+            &self,
+            request: tonic::Request<super::ShutdownRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ShutdownResponse>,
+            tonic::Status,
+        >;
+        async fn list_profiles(
+            &self,
+            request: tonic::Request<super::ListProfilesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListProfilesResponse>,
+            tonic::Status,
+        >;
+        /// Server streaming response type for the SubscribeProfiles method.
+        type SubscribeProfilesStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::ProfileEvent, tonic::Status>,
+            >
+            + std::marker::Send
+            + 'static;
+        /// Snapshot, CaughtUp, then ordered events; ABORTED requires a fresh
+        /// subscription.
+        async fn subscribe_profiles(
+            &self,
+            request: tonic::Request<super::SubscribeProfilesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<Self::SubscribeProfilesStream>,
+            tonic::Status,
+        >;
+        async fn create_profile(
+            &self,
+            request: tonic::Request<super::CreateProfileRequest>,
+        ) -> std::result::Result<tonic::Response<super::Profile>, tonic::Status>;
+        /// Names a profile, or lets the installation pick or create one.
+        async fn bind_profile(
+            &self,
+            request: tonic::Request<super::BindProfileRequest>,
+        ) -> std::result::Result<tonic::Response<super::Profile>, tonic::Status>;
+        async fn rename_profile(
+            &self,
+            request: tonic::Request<super::RenameProfileRequest>,
+        ) -> std::result::Result<tonic::Response<super::Profile>, tonic::Status>;
+        async fn delete_profile(
+            &self,
+            request: tonic::Request<super::DeleteProfileRequest>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
+    }
+    /// Local Unix socket and in-process only. Calls are not retried by any
+    /// client; a mutation that loses its reply is re-run by the person.
+    #[derive(Debug)]
+    pub struct InstallationServiceServer<T> {
+        inner: Arc<T>,
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
+    }
+    impl<T> InstallationServiceServer<T> {
+        pub fn new(inner: T) -> Self {
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
+            Self {
+                inner,
+                accept_compression_encodings: Default::default(),
+                send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
+            }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
+        where
+            F: tonic::service::Interceptor,
+        {
+            InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
+    }
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for InstallationServiceServer<T>
+    where
+        T: InstallationService,
+        B: Body + std::marker::Send + 'static,
+        B::Error: Into<StdError> + std::marker::Send + 'static,
+    {
+        type Response = http::Response<tonic::body::Body>;
+        type Error = std::convert::Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<std::result::Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            match req.uri().path() {
+                "/amux.v1.InstallationService/GetInstallation" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetInstallationSvc<T: InstallationService>(pub Arc<T>);
+                    impl<
+                        T: InstallationService,
+                    > tonic::server::UnaryService<super::GetInstallationRequest>
+                    for GetInstallationSvc<T> {
+                        type Response = super::Installation;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetInstallationRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as InstallationService>::get_installation(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetInstallationSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.InstallationService/Shutdown" => {
+                    #[allow(non_camel_case_types)]
+                    struct ShutdownSvc<T: InstallationService>(pub Arc<T>);
+                    impl<
+                        T: InstallationService,
+                    > tonic::server::UnaryService<super::ShutdownRequest>
+                    for ShutdownSvc<T> {
+                        type Response = super::ShutdownResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ShutdownRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as InstallationService>::shutdown(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ShutdownSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.InstallationService/ListProfiles" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListProfilesSvc<T: InstallationService>(pub Arc<T>);
+                    impl<
+                        T: InstallationService,
+                    > tonic::server::UnaryService<super::ListProfilesRequest>
+                    for ListProfilesSvc<T> {
+                        type Response = super::ListProfilesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListProfilesRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as InstallationService>::list_profiles(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListProfilesSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.InstallationService/SubscribeProfiles" => {
+                    #[allow(non_camel_case_types)]
+                    struct SubscribeProfilesSvc<T: InstallationService>(pub Arc<T>);
+                    impl<
+                        T: InstallationService,
+                    > tonic::server::ServerStreamingService<
+                        super::SubscribeProfilesRequest,
+                    > for SubscribeProfilesSvc<T> {
+                        type Response = super::ProfileEvent;
+                        type ResponseStream = T::SubscribeProfilesStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SubscribeProfilesRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as InstallationService>::subscribe_profiles(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SubscribeProfilesSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.InstallationService/CreateProfile" => {
+                    #[allow(non_camel_case_types)]
+                    struct CreateProfileSvc<T: InstallationService>(pub Arc<T>);
+                    impl<
+                        T: InstallationService,
+                    > tonic::server::UnaryService<super::CreateProfileRequest>
+                    for CreateProfileSvc<T> {
+                        type Response = super::Profile;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CreateProfileRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as InstallationService>::create_profile(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CreateProfileSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.InstallationService/BindProfile" => {
+                    #[allow(non_camel_case_types)]
+                    struct BindProfileSvc<T: InstallationService>(pub Arc<T>);
+                    impl<
+                        T: InstallationService,
+                    > tonic::server::UnaryService<super::BindProfileRequest>
+                    for BindProfileSvc<T> {
+                        type Response = super::Profile;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::BindProfileRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as InstallationService>::bind_profile(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = BindProfileSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.InstallationService/RenameProfile" => {
+                    #[allow(non_camel_case_types)]
+                    struct RenameProfileSvc<T: InstallationService>(pub Arc<T>);
+                    impl<
+                        T: InstallationService,
+                    > tonic::server::UnaryService<super::RenameProfileRequest>
+                    for RenameProfileSvc<T> {
+                        type Response = super::Profile;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RenameProfileRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as InstallationService>::rename_profile(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RenameProfileSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.InstallationService/DeleteProfile" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteProfileSvc<T: InstallationService>(pub Arc<T>);
+                    impl<
+                        T: InstallationService,
+                    > tonic::server::UnaryService<super::DeleteProfileRequest>
+                    for DeleteProfileSvc<T> {
+                        type Response = super::Empty;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteProfileRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as InstallationService>::delete_profile(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = DeleteProfileSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                _ => {
+                    Box::pin(async move {
+                        let mut response = http::Response::new(
+                            tonic::body::Body::default(),
+                        );
+                        let headers = response.headers_mut();
+                        headers
+                            .insert(
+                                tonic::Status::GRPC_STATUS,
+                                (tonic::Code::Unimplemented as i32).into(),
+                            );
+                        headers
+                            .insert(
+                                http::header::CONTENT_TYPE,
+                                tonic::metadata::GRPC_CONTENT_TYPE,
+                            );
+                        Ok(response)
+                    })
+                }
+            }
+        }
+    }
+    impl<T> Clone for InstallationServiceServer<T> {
+        fn clone(&self) -> Self {
+            let inner = self.inner.clone();
+            Self {
+                inner,
+                accept_compression_encodings: self.accept_compression_encodings,
+                send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
+            }
+        }
+    }
+    /// Generated gRPC service name
+    pub const SERVICE_NAME: &str = "amux.v1.InstallationService";
+    impl<T> tonic::server::NamedService for InstallationServiceServer<T> {
+        const NAME: &'static str = SERVICE_NAME;
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PairMessage {
+    #[prost(oneof = "pair_message::Body", tags = "1, 2, 3, 4, 5, 6")]
+    pub body: ::core::option::Option<pair_message::Body>,
+}
+/// Nested message and enum types in `PairMessage`.
+pub mod pair_message {
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Body {
+        #[prost(bytes, tag = "1")]
+        Spake2Message(::prost::alloc::vec::Vec<u8>),
+        #[prost(bytes, tag = "2")]
+        KeyConfirmation(::prost::alloc::vec::Vec<u8>),
+        #[prost(bytes, tag = "3")]
+        SealedIdentity(::prost::alloc::vec::Vec<u8>),
+        #[prost(message, tag = "4")]
+        Error(super::PairingError),
+        #[prost(message, tag = "5")]
+        PairingComplete(super::PairingComplete),
+        #[prost(message, tag = "6")]
+        PairingAbandoned(super::PairingAbandoned),
+    }
+}
+impl ::prost::Name for PairMessage {
+    const NAME: &'static str = "PairMessage";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PairMessage".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.PairMessage".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PairingComplete {}
+impl ::prost::Name for PairingComplete {
+    const NAME: &'static str = "PairingComplete";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PairingComplete".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.PairingComplete".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PairingAbandoned {}
+impl ::prost::Name for PairingAbandoned {
+    const NAME: &'static str = "PairingAbandoned";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PairingAbandoned".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.PairingAbandoned".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PairingError {
+    #[prost(enumeration = "pairing_error::Reason", tag = "1")]
+    pub reason: i32,
+    #[prost(string, tag = "2")]
+    pub detail: ::prost::alloc::string::String,
+}
+/// Nested message and enum types in `PairingError`.
+pub mod pairing_error {
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        PartialEq,
+        Eq,
+        Hash,
+        PartialOrd,
+        Ord,
+        ::prost::Enumeration
+    )]
+    #[repr(i32)]
+    pub enum Reason {
+        Unspecified = 0,
+        NotInPairingMode = 1,
+        InvalidPin = 2,
+        ProtocolViolation = 3,
+        Timeout = 4,
+        UserRejected = 5,
+        SelfPairing = 6,
+    }
+    impl Reason {
+        /// String value of the enum field names used in the ProtoBuf definition.
+        ///
+        /// The values are not transformed in any way and thus are considered stable
+        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+        pub fn as_str_name(&self) -> &'static str {
+            match self {
+                Self::Unspecified => "REASON_UNSPECIFIED",
+                Self::NotInPairingMode => "NOT_IN_PAIRING_MODE",
+                Self::InvalidPin => "INVALID_PIN",
+                Self::ProtocolViolation => "PROTOCOL_VIOLATION",
+                Self::Timeout => "TIMEOUT",
+                Self::UserRejected => "USER_REJECTED",
+                Self::SelfPairing => "SELF_PAIRING",
+            }
+        }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "REASON_UNSPECIFIED" => Some(Self::Unspecified),
+                "NOT_IN_PAIRING_MODE" => Some(Self::NotInPairingMode),
+                "INVALID_PIN" => Some(Self::InvalidPin),
+                "PROTOCOL_VIOLATION" => Some(Self::ProtocolViolation),
+                "TIMEOUT" => Some(Self::Timeout),
+                "USER_REJECTED" => Some(Self::UserRejected),
+                "SELF_PAIRING" => Some(Self::SelfPairing),
+                _ => None,
+            }
+        }
+    }
+}
+impl ::prost::Name for PairingError {
+    const NAME: &'static str = "PairingError";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PairingError".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.PairingError".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PairingIdentity {
+    #[prost(bytes = "vec", tag = "1")]
+    pub host_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub pubkey: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "3")]
+    pub name: ::prost::alloc::string::String,
+    /// Authenticated along with the responder identity by SPAKE2 sealing.
+    #[prost(int64, tag = "4")]
+    pub expires_at_ms: i64,
+}
+impl ::prost::Name for PairingIdentity {
+    const NAME: &'static str = "PairingIdentity";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PairingIdentity".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.PairingIdentity".into()
+    }
+}
+/// Generated client implementations.
+#[cfg(feature = "grpc")]
+pub mod pairing_service_client {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
+    #[derive(Debug, Clone)]
+    pub struct PairingServiceClient<T> {
+        inner: tonic::client::Grpc<T>,
+    }
+    impl<T> PairingServiceClient<T>
+    where
+        T: tonic::client::GrpcService<tonic::body::Body>,
+        T::Error: Into<StdError>,
+        T::ResponseBody: Body<Data = Bytes> + std::marker::Send + 'static,
+        <T::ResponseBody as Body>::Error: Into<StdError> + std::marker::Send,
+    {
+        pub fn new(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> PairingServiceClient<InterceptedService<T, F>>
+        where
+            F: tonic::service::Interceptor,
+            T::ResponseBody: Default,
+            T: tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+                Response = http::Response<
+                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                >,
+            >,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+        {
+            PairingServiceClient::new(InterceptedService::new(inner, interceptor))
+        }
+        /// Compress requests with the given encoding.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
+            self
+        }
+        /// Enable decompressing responses.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
+        pub async fn pair(
+            &mut self,
+            request: impl tonic::IntoStreamingRequest<Message = super::PairMessage>,
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::PairMessage>>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.PairingService/Pair",
+            );
+            let mut req = request.into_streaming_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.PairingService", "Pair"));
+            self.inner.streaming(req, path, codec).await
+        }
+    }
+}
+/// Generated server implementations.
+#[cfg(feature = "grpc")]
+pub mod pairing_service_server {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    /// Generated trait containing gRPC methods that should be implemented for use with PairingServiceServer.
+    #[async_trait]
+    pub trait PairingService: std::marker::Send + std::marker::Sync + 'static {
+        /// Server streaming response type for the Pair method.
+        type PairStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::PairMessage, tonic::Status>,
+            >
+            + std::marker::Send
+            + 'static;
+        async fn pair(
+            &self,
+            request: tonic::Request<tonic::Streaming<super::PairMessage>>,
+        ) -> std::result::Result<tonic::Response<Self::PairStream>, tonic::Status>;
+    }
+    #[derive(Debug)]
+    pub struct PairingServiceServer<T> {
+        inner: Arc<T>,
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
+    }
+    impl<T> PairingServiceServer<T> {
+        pub fn new(inner: T) -> Self {
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
+            Self {
+                inner,
+                accept_compression_encodings: Default::default(),
+                send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
+            }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
+        where
+            F: tonic::service::Interceptor,
+        {
+            InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
+    }
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for PairingServiceServer<T>
+    where
+        T: PairingService,
+        B: Body + std::marker::Send + 'static,
+        B::Error: Into<StdError> + std::marker::Send + 'static,
+    {
+        type Response = http::Response<tonic::body::Body>;
+        type Error = std::convert::Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<std::result::Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            match req.uri().path() {
+                "/amux.v1.PairingService/Pair" => {
+                    #[allow(non_camel_case_types)]
+                    struct PairSvc<T: PairingService>(pub Arc<T>);
+                    impl<
+                        T: PairingService,
+                    > tonic::server::StreamingService<super::PairMessage>
+                    for PairSvc<T> {
+                        type Response = super::PairMessage;
+                        type ResponseStream = T::PairStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<tonic::Streaming<super::PairMessage>>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as PairingService>::pair(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = PairSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                _ => {
+                    Box::pin(async move {
+                        let mut response = http::Response::new(
+                            tonic::body::Body::default(),
+                        );
+                        let headers = response.headers_mut();
+                        headers
+                            .insert(
+                                tonic::Status::GRPC_STATUS,
+                                (tonic::Code::Unimplemented as i32).into(),
+                            );
+                        headers
+                            .insert(
+                                http::header::CONTENT_TYPE,
+                                tonic::metadata::GRPC_CONTENT_TYPE,
+                            );
+                        Ok(response)
+                    })
+                }
+            }
+        }
+    }
+    impl<T> Clone for PairingServiceServer<T> {
+        fn clone(&self) -> Self {
+            let inner = self.inner.clone();
+            Self {
+                inner,
+                accept_compression_encodings: self.accept_compression_encodings,
+                send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
+            }
+        }
+    }
+    /// Generated gRPC service name
+    pub const SERVICE_NAME: &str = "amux.v1.PairingService";
+    impl<T> tonic::server::NamedService for PairingServiceServer<T> {
+        const NAME: &'static str = SERVICE_NAME;
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -10774,57 +12066,6 @@ impl ::prost::Name for UnpairRequest {
         "type.googleapis.com/amux.v1.UnpairRequest".into()
     }
 }
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct GetInstallationRequest {}
-impl ::prost::Name for GetInstallationRequest {
-    const NAME: &'static str = "GetInstallationRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.GetInstallationRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.GetInstallationRequest".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Installation {
-    #[prost(string, tag = "1")]
-    pub version: ::prost::alloc::string::String,
-}
-impl ::prost::Name for Installation {
-    const NAME: &'static str = "Installation";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Installation".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.Installation".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ShutdownRequest {}
-impl ::prost::Name for ShutdownRequest {
-    const NAME: &'static str = "ShutdownRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ShutdownRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ShutdownRequest".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ShutdownResponse {}
-impl ::prost::Name for ShutdownResponse {
-    const NAME: &'static str = "ShutdownResponse";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ShutdownResponse".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ShutdownResponse".into()
-    }
-}
 /// An SSH destination; `amux relay` there joins the profile whose id is the
 /// peer's host id.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -10965,731 +12206,6 @@ impl ::prost::Name for ListPeersResponse {
         "type.googleapis.com/amux.v1.ListPeersResponse".into()
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum Tier {
-    Unspecified = 0,
-    Free = 1,
-    Pro = 2,
-}
-impl Tier {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "TIER_UNSPECIFIED",
-            Self::Free => "TIER_FREE",
-            Self::Pro => "TIER_PRO",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "TIER_UNSPECIFIED" => Some(Self::Unspecified),
-            "TIER_FREE" => Some(Self::Free),
-            "TIER_PRO" => Some(Self::Pro),
-            _ => None,
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum RelayCarrier {
-    Unspecified = 0,
-    Quic = 1,
-    Tcp = 2,
-}
-impl RelayCarrier {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "RELAY_CARRIER_UNSPECIFIED",
-            Self::Quic => "RELAY_CARRIER_QUIC",
-            Self::Tcp => "RELAY_CARRIER_TCP",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "RELAY_CARRIER_UNSPECIFIED" => Some(Self::Unspecified),
-            "RELAY_CARRIER_QUIC" => Some(Self::Quic),
-            "RELAY_CARRIER_TCP" => Some(Self::Tcp),
-            _ => None,
-        }
-    }
-}
-/// Generated client implementations.
-#[cfg(feature = "grpc")]
-pub mod profile_service_client {
-    #![allow(
-        unused_variables,
-        dead_code,
-        missing_docs,
-        clippy::wildcard_imports,
-        clippy::let_unit_value,
-    )]
-    use tonic::codegen::*;
-    use tonic::codegen::http::Uri;
-    /// The installation's front door: local Unix socket and in-process only.
-    /// Calls are not retried by any client; a mutation that loses its reply is
-    /// re-run by the person.
-    #[derive(Debug, Clone)]
-    pub struct ProfileServiceClient<T> {
-        inner: tonic::client::Grpc<T>,
-    }
-    impl<T> ProfileServiceClient<T>
-    where
-        T: tonic::client::GrpcService<tonic::body::Body>,
-        T::Error: Into<StdError>,
-        T::ResponseBody: Body<Data = Bytes> + std::marker::Send + 'static,
-        <T::ResponseBody as Body>::Error: Into<StdError> + std::marker::Send,
-    {
-        pub fn new(inner: T) -> Self {
-            let inner = tonic::client::Grpc::new(inner);
-            Self { inner }
-        }
-        pub fn with_origin(inner: T, origin: Uri) -> Self {
-            let inner = tonic::client::Grpc::with_origin(inner, origin);
-            Self { inner }
-        }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> ProfileServiceClient<InterceptedService<T, F>>
-        where
-            F: tonic::service::Interceptor,
-            T::ResponseBody: Default,
-            T: tonic::codegen::Service<
-                http::Request<tonic::body::Body>,
-                Response = http::Response<
-                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
-                >,
-            >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::Body>,
-            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
-        {
-            ProfileServiceClient::new(InterceptedService::new(inner, interceptor))
-        }
-        /// Compress requests with the given encoding.
-        ///
-        /// This requires the server to support it otherwise it might respond with an
-        /// error.
-        #[must_use]
-        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
-            self.inner = self.inner.send_compressed(encoding);
-            self
-        }
-        /// Enable decompressing responses.
-        #[must_use]
-        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
-            self.inner = self.inner.accept_compressed(encoding);
-            self
-        }
-        /// Limits the maximum size of a decoded message.
-        ///
-        /// Default: `4MB`
-        #[must_use]
-        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
-            self.inner = self.inner.max_decoding_message_size(limit);
-            self
-        }
-        /// Limits the maximum size of an encoded message.
-        ///
-        /// Default: `usize::MAX`
-        #[must_use]
-        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
-            self.inner = self.inner.max_encoding_message_size(limit);
-            self
-        }
-        pub async fn list_profiles(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ListProfilesRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ListProfilesResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileService/ListProfiles",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileService", "ListProfiles"));
-            self.inner.unary(req, path, codec).await
-        }
-        /// Snapshot, CaughtUp, then ordered events; ABORTED requires a fresh
-        /// subscription.
-        pub async fn subscribe_profiles(
-            &mut self,
-            request: impl tonic::IntoRequest<super::SubscribeProfilesRequest>,
-        ) -> std::result::Result<
-            tonic::Response<tonic::codec::Streaming<super::ProfileEvent>>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileService/SubscribeProfiles",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileService", "SubscribeProfiles"));
-            self.inner.server_streaming(req, path, codec).await
-        }
-        pub async fn create_profile(
-            &mut self,
-            request: impl tonic::IntoRequest<super::CreateProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::Profile>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileService/CreateProfile",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileService", "CreateProfile"));
-            self.inner.unary(req, path, codec).await
-        }
-        /// Names a profile, or lets the installation pick or create one.
-        pub async fn bind_profile(
-            &mut self,
-            request: impl tonic::IntoRequest<super::BindProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::Profile>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileService/BindProfile",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileService", "BindProfile"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn rename_profile(
-            &mut self,
-            request: impl tonic::IntoRequest<super::RenameProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::Profile>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileService/RenameProfile",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileService", "RenameProfile"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn delete_profile(
-            &mut self,
-            request: impl tonic::IntoRequest<super::DeleteProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileService/DeleteProfile",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileService", "DeleteProfile"));
-            self.inner.unary(req, path, codec).await
-        }
-    }
-}
-/// Generated server implementations.
-#[cfg(feature = "grpc")]
-pub mod profile_service_server {
-    #![allow(
-        unused_variables,
-        dead_code,
-        missing_docs,
-        clippy::wildcard_imports,
-        clippy::let_unit_value,
-    )]
-    use tonic::codegen::*;
-    /// Generated trait containing gRPC methods that should be implemented for use with ProfileServiceServer.
-    #[async_trait]
-    pub trait ProfileService: std::marker::Send + std::marker::Sync + 'static {
-        async fn list_profiles(
-            &self,
-            request: tonic::Request<super::ListProfilesRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ListProfilesResponse>,
-            tonic::Status,
-        >;
-        /// Server streaming response type for the SubscribeProfiles method.
-        type SubscribeProfilesStream: tonic::codegen::tokio_stream::Stream<
-                Item = std::result::Result<super::ProfileEvent, tonic::Status>,
-            >
-            + std::marker::Send
-            + 'static;
-        /// Snapshot, CaughtUp, then ordered events; ABORTED requires a fresh
-        /// subscription.
-        async fn subscribe_profiles(
-            &self,
-            request: tonic::Request<super::SubscribeProfilesRequest>,
-        ) -> std::result::Result<
-            tonic::Response<Self::SubscribeProfilesStream>,
-            tonic::Status,
-        >;
-        async fn create_profile(
-            &self,
-            request: tonic::Request<super::CreateProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::Profile>, tonic::Status>;
-        /// Names a profile, or lets the installation pick or create one.
-        async fn bind_profile(
-            &self,
-            request: tonic::Request<super::BindProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::Profile>, tonic::Status>;
-        async fn rename_profile(
-            &self,
-            request: tonic::Request<super::RenameProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::Profile>, tonic::Status>;
-        async fn delete_profile(
-            &self,
-            request: tonic::Request<super::DeleteProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
-    }
-    /// The installation's front door: local Unix socket and in-process only.
-    /// Calls are not retried by any client; a mutation that loses its reply is
-    /// re-run by the person.
-    #[derive(Debug)]
-    pub struct ProfileServiceServer<T> {
-        inner: Arc<T>,
-        accept_compression_encodings: EnabledCompressionEncodings,
-        send_compression_encodings: EnabledCompressionEncodings,
-        max_decoding_message_size: Option<usize>,
-        max_encoding_message_size: Option<usize>,
-    }
-    impl<T> ProfileServiceServer<T> {
-        pub fn new(inner: T) -> Self {
-            Self::from_arc(Arc::new(inner))
-        }
-        pub fn from_arc(inner: Arc<T>) -> Self {
-            Self {
-                inner,
-                accept_compression_encodings: Default::default(),
-                send_compression_encodings: Default::default(),
-                max_decoding_message_size: None,
-                max_encoding_message_size: None,
-            }
-        }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> InterceptedService<Self, F>
-        where
-            F: tonic::service::Interceptor,
-        {
-            InterceptedService::new(Self::new(inner), interceptor)
-        }
-        /// Enable decompressing requests with the given encoding.
-        #[must_use]
-        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
-            self.accept_compression_encodings.enable(encoding);
-            self
-        }
-        /// Compress responses with the given encoding, if the client supports it.
-        #[must_use]
-        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
-            self.send_compression_encodings.enable(encoding);
-            self
-        }
-        /// Limits the maximum size of a decoded message.
-        ///
-        /// Default: `4MB`
-        #[must_use]
-        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
-            self.max_decoding_message_size = Some(limit);
-            self
-        }
-        /// Limits the maximum size of an encoded message.
-        ///
-        /// Default: `usize::MAX`
-        #[must_use]
-        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
-            self.max_encoding_message_size = Some(limit);
-            self
-        }
-    }
-    impl<T, B> tonic::codegen::Service<http::Request<B>> for ProfileServiceServer<T>
-    where
-        T: ProfileService,
-        B: Body + std::marker::Send + 'static,
-        B::Error: Into<StdError> + std::marker::Send + 'static,
-    {
-        type Response = http::Response<tonic::body::Body>;
-        type Error = std::convert::Infallible;
-        type Future = BoxFuture<Self::Response, Self::Error>;
-        fn poll_ready(
-            &mut self,
-            _cx: &mut Context<'_>,
-        ) -> Poll<std::result::Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
-        }
-        fn call(&mut self, req: http::Request<B>) -> Self::Future {
-            match req.uri().path() {
-                "/amux.v1.ProfileService/ListProfiles" => {
-                    #[allow(non_camel_case_types)]
-                    struct ListProfilesSvc<T: ProfileService>(pub Arc<T>);
-                    impl<
-                        T: ProfileService,
-                    > tonic::server::UnaryService<super::ListProfilesRequest>
-                    for ListProfilesSvc<T> {
-                        type Response = super::ListProfilesResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ListProfilesRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ProfileService>::list_profiles(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = ListProfilesSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.ProfileService/SubscribeProfiles" => {
-                    #[allow(non_camel_case_types)]
-                    struct SubscribeProfilesSvc<T: ProfileService>(pub Arc<T>);
-                    impl<
-                        T: ProfileService,
-                    > tonic::server::ServerStreamingService<
-                        super::SubscribeProfilesRequest,
-                    > for SubscribeProfilesSvc<T> {
-                        type Response = super::ProfileEvent;
-                        type ResponseStream = T::SubscribeProfilesStream;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::SubscribeProfilesRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ProfileService>::subscribe_profiles(&inner, request)
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = SubscribeProfilesSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.server_streaming(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.ProfileService/CreateProfile" => {
-                    #[allow(non_camel_case_types)]
-                    struct CreateProfileSvc<T: ProfileService>(pub Arc<T>);
-                    impl<
-                        T: ProfileService,
-                    > tonic::server::UnaryService<super::CreateProfileRequest>
-                    for CreateProfileSvc<T> {
-                        type Response = super::Profile;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::CreateProfileRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ProfileService>::create_profile(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = CreateProfileSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.ProfileService/BindProfile" => {
-                    #[allow(non_camel_case_types)]
-                    struct BindProfileSvc<T: ProfileService>(pub Arc<T>);
-                    impl<
-                        T: ProfileService,
-                    > tonic::server::UnaryService<super::BindProfileRequest>
-                    for BindProfileSvc<T> {
-                        type Response = super::Profile;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::BindProfileRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ProfileService>::bind_profile(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = BindProfileSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.ProfileService/RenameProfile" => {
-                    #[allow(non_camel_case_types)]
-                    struct RenameProfileSvc<T: ProfileService>(pub Arc<T>);
-                    impl<
-                        T: ProfileService,
-                    > tonic::server::UnaryService<super::RenameProfileRequest>
-                    for RenameProfileSvc<T> {
-                        type Response = super::Profile;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::RenameProfileRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ProfileService>::rename_profile(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = RenameProfileSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.ProfileService/DeleteProfile" => {
-                    #[allow(non_camel_case_types)]
-                    struct DeleteProfileSvc<T: ProfileService>(pub Arc<T>);
-                    impl<
-                        T: ProfileService,
-                    > tonic::server::UnaryService<super::DeleteProfileRequest>
-                    for DeleteProfileSvc<T> {
-                        type Response = super::Empty;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::DeleteProfileRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ProfileService>::delete_profile(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = DeleteProfileSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                _ => {
-                    Box::pin(async move {
-                        let mut response = http::Response::new(
-                            tonic::body::Body::default(),
-                        );
-                        let headers = response.headers_mut();
-                        headers
-                            .insert(
-                                tonic::Status::GRPC_STATUS,
-                                (tonic::Code::Unimplemented as i32).into(),
-                            );
-                        headers
-                            .insert(
-                                http::header::CONTENT_TYPE,
-                                tonic::metadata::GRPC_CONTENT_TYPE,
-                            );
-                        Ok(response)
-                    })
-                }
-            }
-        }
-    }
-    impl<T> Clone for ProfileServiceServer<T> {
-        fn clone(&self) -> Self {
-            let inner = self.inner.clone();
-            Self {
-                inner,
-                accept_compression_encodings: self.accept_compression_encodings,
-                send_compression_encodings: self.send_compression_encodings,
-                max_decoding_message_size: self.max_decoding_message_size,
-                max_encoding_message_size: self.max_encoding_message_size,
-            }
-        }
-    }
-    /// Generated gRPC service name
-    pub const SERVICE_NAME: &str = "amux.v1.ProfileService";
-    impl<T> tonic::server::NamedService for ProfileServiceServer<T> {
-        const NAME: &'static str = SERVICE_NAME;
-    }
-}
 /// Generated client implementations.
 #[cfg(feature = "grpc")]
 pub mod profile_admin_service_client {
@@ -11702,11 +12218,9 @@ pub mod profile_admin_service_client {
     )]
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
-    /// One profile's administration, served on its client socket beside
-    /// `ClientService` and never on an agent's tools socket or a link: its
-    /// account connection, its pairing windows, pairings it begins, and the
-    /// hosts it trusts. The socket names the profile. Not retried, as the front
-    /// door.
+    /// Served on a profile's socket beside AgentService and SessionService, and
+    /// never on an agent's tools socket or a link. The socket names the profile.
+    /// Not retried, as the front door.
     #[derive(Debug, Clone)]
     pub struct ProfileAdminServiceClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -12086,6 +12600,29 @@ pub mod profile_admin_service_client {
                 .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "Unpair"));
             self.inner.unary(req, path, codec).await
         }
+        /// The one bundle format: this host's state, with the parts paired hosts
+        /// hold for the agents they run.
+        pub async fn dump(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DumpRequest>,
+        ) -> std::result::Result<tonic::Response<super::DumpResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.ProfileAdminService/Dump",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "Dump"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -12170,12 +12707,16 @@ pub mod profile_admin_service_server {
             &self,
             request: tonic::Request<super::UnpairRequest>,
         ) -> std::result::Result<tonic::Response<super::Peer>, tonic::Status>;
+        /// The one bundle format: this host's state, with the parts paired hosts
+        /// hold for the agents they run.
+        async fn dump(
+            &self,
+            request: tonic::Request<super::DumpRequest>,
+        ) -> std::result::Result<tonic::Response<super::DumpResponse>, tonic::Status>;
     }
-    /// One profile's administration, served on its client socket beside
-    /// `ClientService` and never on an agent's tools socket or a link: its
-    /// account connection, its pairing windows, pairings it begins, and the
-    /// hosts it trusts. The socket names the profile. Not retried, as the front
-    /// door.
+    /// Served on a profile's socket beside AgentService and SessionService, and
+    /// never on an agent's tools socket or a link. The socket names the profile.
+    /// Not retried, as the front door.
     #[derive(Debug)]
     pub struct ProfileAdminServiceServer<T> {
         inner: Arc<T>,
@@ -12899,6 +13440,50 @@ pub mod profile_admin_service_server {
                     };
                     Box::pin(fut)
                 }
+                "/amux.v1.ProfileAdminService/Dump" => {
+                    #[allow(non_camel_case_types)]
+                    struct DumpSvc<T: ProfileAdminService>(pub Arc<T>);
+                    impl<
+                        T: ProfileAdminService,
+                    > tonic::server::UnaryService<super::DumpRequest> for DumpSvc<T> {
+                        type Response = super::DumpResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DumpRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ProfileAdminService>::dump(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = DumpSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 _ => {
                     Box::pin(async move {
                         let mut response = http::Response::new(
@@ -12936,372 +13521,6 @@ pub mod profile_admin_service_server {
     /// Generated gRPC service name
     pub const SERVICE_NAME: &str = "amux.v1.ProfileAdminService";
     impl<T> tonic::server::NamedService for ProfileAdminServiceServer<T> {
-        const NAME: &'static str = SERVICE_NAME;
-    }
-}
-/// Generated client implementations.
-#[cfg(feature = "grpc")]
-pub mod installation_service_client {
-    #![allow(
-        unused_variables,
-        dead_code,
-        missing_docs,
-        clippy::wildcard_imports,
-        clippy::let_unit_value,
-    )]
-    use tonic::codegen::*;
-    use tonic::codegen::http::Uri;
-    #[derive(Debug, Clone)]
-    pub struct InstallationServiceClient<T> {
-        inner: tonic::client::Grpc<T>,
-    }
-    impl<T> InstallationServiceClient<T>
-    where
-        T: tonic::client::GrpcService<tonic::body::Body>,
-        T::Error: Into<StdError>,
-        T::ResponseBody: Body<Data = Bytes> + std::marker::Send + 'static,
-        <T::ResponseBody as Body>::Error: Into<StdError> + std::marker::Send,
-    {
-        pub fn new(inner: T) -> Self {
-            let inner = tonic::client::Grpc::new(inner);
-            Self { inner }
-        }
-        pub fn with_origin(inner: T, origin: Uri) -> Self {
-            let inner = tonic::client::Grpc::with_origin(inner, origin);
-            Self { inner }
-        }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> InstallationServiceClient<InterceptedService<T, F>>
-        where
-            F: tonic::service::Interceptor,
-            T::ResponseBody: Default,
-            T: tonic::codegen::Service<
-                http::Request<tonic::body::Body>,
-                Response = http::Response<
-                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
-                >,
-            >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::Body>,
-            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
-        {
-            InstallationServiceClient::new(InterceptedService::new(inner, interceptor))
-        }
-        /// Compress requests with the given encoding.
-        ///
-        /// This requires the server to support it otherwise it might respond with an
-        /// error.
-        #[must_use]
-        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
-            self.inner = self.inner.send_compressed(encoding);
-            self
-        }
-        /// Enable decompressing responses.
-        #[must_use]
-        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
-            self.inner = self.inner.accept_compressed(encoding);
-            self
-        }
-        /// Limits the maximum size of a decoded message.
-        ///
-        /// Default: `4MB`
-        #[must_use]
-        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
-            self.inner = self.inner.max_decoding_message_size(limit);
-            self
-        }
-        /// Limits the maximum size of an encoded message.
-        ///
-        /// Default: `usize::MAX`
-        #[must_use]
-        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
-            self.inner = self.inner.max_encoding_message_size(limit);
-            self
-        }
-        pub async fn get_installation(
-            &mut self,
-            request: impl tonic::IntoRequest<super::GetInstallationRequest>,
-        ) -> std::result::Result<tonic::Response<super::Installation>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.InstallationService/GetInstallation",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("amux.v1.InstallationService", "GetInstallation"),
-                );
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn shutdown(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ShutdownRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ShutdownResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.InstallationService/Shutdown",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.InstallationService", "Shutdown"));
-            self.inner.unary(req, path, codec).await
-        }
-    }
-}
-/// Generated server implementations.
-#[cfg(feature = "grpc")]
-pub mod installation_service_server {
-    #![allow(
-        unused_variables,
-        dead_code,
-        missing_docs,
-        clippy::wildcard_imports,
-        clippy::let_unit_value,
-    )]
-    use tonic::codegen::*;
-    /// Generated trait containing gRPC methods that should be implemented for use with InstallationServiceServer.
-    #[async_trait]
-    pub trait InstallationService: std::marker::Send + std::marker::Sync + 'static {
-        async fn get_installation(
-            &self,
-            request: tonic::Request<super::GetInstallationRequest>,
-        ) -> std::result::Result<tonic::Response<super::Installation>, tonic::Status>;
-        async fn shutdown(
-            &self,
-            request: tonic::Request<super::ShutdownRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ShutdownResponse>,
-            tonic::Status,
-        >;
-    }
-    #[derive(Debug)]
-    pub struct InstallationServiceServer<T> {
-        inner: Arc<T>,
-        accept_compression_encodings: EnabledCompressionEncodings,
-        send_compression_encodings: EnabledCompressionEncodings,
-        max_decoding_message_size: Option<usize>,
-        max_encoding_message_size: Option<usize>,
-    }
-    impl<T> InstallationServiceServer<T> {
-        pub fn new(inner: T) -> Self {
-            Self::from_arc(Arc::new(inner))
-        }
-        pub fn from_arc(inner: Arc<T>) -> Self {
-            Self {
-                inner,
-                accept_compression_encodings: Default::default(),
-                send_compression_encodings: Default::default(),
-                max_decoding_message_size: None,
-                max_encoding_message_size: None,
-            }
-        }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> InterceptedService<Self, F>
-        where
-            F: tonic::service::Interceptor,
-        {
-            InterceptedService::new(Self::new(inner), interceptor)
-        }
-        /// Enable decompressing requests with the given encoding.
-        #[must_use]
-        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
-            self.accept_compression_encodings.enable(encoding);
-            self
-        }
-        /// Compress responses with the given encoding, if the client supports it.
-        #[must_use]
-        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
-            self.send_compression_encodings.enable(encoding);
-            self
-        }
-        /// Limits the maximum size of a decoded message.
-        ///
-        /// Default: `4MB`
-        #[must_use]
-        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
-            self.max_decoding_message_size = Some(limit);
-            self
-        }
-        /// Limits the maximum size of an encoded message.
-        ///
-        /// Default: `usize::MAX`
-        #[must_use]
-        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
-            self.max_encoding_message_size = Some(limit);
-            self
-        }
-    }
-    impl<T, B> tonic::codegen::Service<http::Request<B>> for InstallationServiceServer<T>
-    where
-        T: InstallationService,
-        B: Body + std::marker::Send + 'static,
-        B::Error: Into<StdError> + std::marker::Send + 'static,
-    {
-        type Response = http::Response<tonic::body::Body>;
-        type Error = std::convert::Infallible;
-        type Future = BoxFuture<Self::Response, Self::Error>;
-        fn poll_ready(
-            &mut self,
-            _cx: &mut Context<'_>,
-        ) -> Poll<std::result::Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
-        }
-        fn call(&mut self, req: http::Request<B>) -> Self::Future {
-            match req.uri().path() {
-                "/amux.v1.InstallationService/GetInstallation" => {
-                    #[allow(non_camel_case_types)]
-                    struct GetInstallationSvc<T: InstallationService>(pub Arc<T>);
-                    impl<
-                        T: InstallationService,
-                    > tonic::server::UnaryService<super::GetInstallationRequest>
-                    for GetInstallationSvc<T> {
-                        type Response = super::Installation;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::GetInstallationRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as InstallationService>::get_installation(
-                                        &inner,
-                                        request,
-                                    )
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = GetInstallationSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.InstallationService/Shutdown" => {
-                    #[allow(non_camel_case_types)]
-                    struct ShutdownSvc<T: InstallationService>(pub Arc<T>);
-                    impl<
-                        T: InstallationService,
-                    > tonic::server::UnaryService<super::ShutdownRequest>
-                    for ShutdownSvc<T> {
-                        type Response = super::ShutdownResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ShutdownRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as InstallationService>::shutdown(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = ShutdownSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                _ => {
-                    Box::pin(async move {
-                        let mut response = http::Response::new(
-                            tonic::body::Body::default(),
-                        );
-                        let headers = response.headers_mut();
-                        headers
-                            .insert(
-                                tonic::Status::GRPC_STATUS,
-                                (tonic::Code::Unimplemented as i32).into(),
-                            );
-                        headers
-                            .insert(
-                                http::header::CONTENT_TYPE,
-                                tonic::metadata::GRPC_CONTENT_TYPE,
-                            );
-                        Ok(response)
-                    })
-                }
-            }
-        }
-    }
-    impl<T> Clone for InstallationServiceServer<T> {
-        fn clone(&self) -> Self {
-            let inner = self.inner.clone();
-            Self {
-                inner,
-                accept_compression_encodings: self.accept_compression_encodings,
-                send_compression_encodings: self.send_compression_encodings,
-                max_decoding_message_size: self.max_decoding_message_size,
-                max_encoding_message_size: self.max_encoding_message_size,
-            }
-        }
-    }
-    /// Generated gRPC service name
-    pub const SERVICE_NAME: &str = "amux.v1.InstallationService";
-    impl<T> tonic::server::NamedService for InstallationServiceServer<T> {
         const NAME: &'static str = SERVICE_NAME;
     }
 }

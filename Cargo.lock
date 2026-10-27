@@ -2161,6 +2161,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ios-tools"
+version = "0.1.0"
+dependencies = [
+ "app-runtime",
+ "model",
+ "png 0.17.16",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "ui-view",
+ "wire",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6037,23 +6052,16 @@ dependencies = [
 name = "xtask"
 version = "0.1.0"
 dependencies = [
- "app-runtime",
- "model",
- "png 0.17.16",
  "prost",
  "prost-types",
  "protoc-bin-vendored",
  "release",
- "schemars",
  "semver",
- "serde",
  "serde_json",
  "tempfile",
  "toml 0.8.23",
  "tonic-prost-build",
- "ui-view",
  "version-stamp",
- "wire",
 ]
 
 [[package]]

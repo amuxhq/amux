@@ -241,7 +241,7 @@ parent. See [agent tools](AGENT_TOOLS.md) for families.
 ## The control socket
 
 `ctl.sock` carries `CtlFrame` messages
-([`agent.proto`](../crates/wire/proto/amux/v1/agent.proto)), each a varint
+([`agent_process.proto`](../proto/amux/v1/agent_process.proto)), each a varint
 length followed by the encoded message, the same framing the journal uses for
 steps. A frame over 64 MiB is treated as a broken peer. The surface has no
 version integer, and a frame a reader does not know is ignored.

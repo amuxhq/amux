@@ -26,6 +26,7 @@ in
   rust
   cargoNightly
   pkgs.git
+  pkgs.gitleaks
   pkgs.just
   pkgs.python3
   pkgs.tmux

@@ -158,7 +158,7 @@ impl Phases {
             Some("--shipping") => Ok(Self::Shipping),
             Some("--measured") => Ok(Self::Measured),
             Some(other) => Err(format!(
-                "ios-verify takes --gate, --captures, --shipping or --measured, not {other}"
+                "verify takes --gate, --captures, --shipping or --measured, not {other}"
             )
             .into()),
         }
@@ -496,7 +496,7 @@ mod tests {
             .unwrap();
         assert_eq!(selected[journey + 1], "ios accessibility");
         assert!(declared(IOS_JUSTFILE).contains("verify"));
-        assert!(IOS_JUSTFILE.contains("xtask -- ios-verify"));
+        assert!(IOS_JUSTFILE.contains("ios-tools -- verify"));
     }
 
     #[test]

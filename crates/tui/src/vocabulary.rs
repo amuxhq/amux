@@ -940,7 +940,7 @@ fn row_sets() -> Vec<RowSet> {
                     row(RowKind::ToolCall {
                         server: "github".into(),
                         tool: "create_issue".into(),
-                        fact: "jlw/amux".into(),
+                        fact: "ada/amux".into(),
                         state: CallPhase::Running,
                         result: String::new(),
                     }),
@@ -1826,7 +1826,7 @@ fn cards() -> Vec<CardSet> {
                 AskBody::Tool {
                     server: "github".into(),
                     tool: "create_issue".into(),
-                    arguments: "{\n  \"repo\": \"jlw/amux\",\n  \"title\": \"Flicker\"\n}".into(),
+                    arguments: "{\n  \"repo\": \"ada/amux\",\n  \"title\": \"Flicker\"\n}".into(),
                 },
                 vec![
                     choice(ChoiceOutcome::AllowOnce),

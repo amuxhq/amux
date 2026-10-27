@@ -55,9 +55,10 @@ ALLOWED_LOCAL = {
     # shares both without building the daemon.
     "version-stamp": set(),
     "release": set(),
+    "xtask": {"release", "version-stamp"},
     # The Swift mirrors of the view values are generated from their
     # definitions, so the generator reads them.
-    "xtask": {"app-runtime", "model", "release", "ui-view", "version-stamp", "wire"},
+    "ios-tools": {"app-runtime", "model", "ui-view", "wire"},
     # The seam both clients call the local runtime through: the local socket
     # and the shared clock trait come from the agent directory contract.
     "client": {"agent-dir", "wire"},

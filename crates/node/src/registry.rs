@@ -14,6 +14,7 @@ use crate::ProfileId;
 use crate::daemon::{Hosted, Installation};
 use crate::edge::{Cloud, Edge, account};
 use crate::profiles::{self, PROFILE_SOCKET};
+use crate::runtime::ProfileRuntime;
 
 /// How long a profile's removal waits for its store to close before it
 /// removes the profile's files.
@@ -223,6 +224,19 @@ impl Registry {
             .get(&id)
             .map(state)
             .ok_or(ProfileRefusal::NoProfile(id))
+    }
+
+    /// A hosted profile's runtime.
+    pub(crate) fn runtime(&self, id: ProfileId) -> Result<Arc<ProfileRuntime>, ProfileRefusal> {
+        Ok(self
+            .installation()?
+            .hosted
+            .lock()
+            .unwrap()
+            .get(&id)
+            .ok_or(ProfileRefusal::NoProfile(id))?
+            .runtime
+            .clone())
     }
 
     /// A hosted profile's network edge.

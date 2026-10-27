@@ -1,0 +1,26 @@
+#!/bin/sh
+# Install the pre-push credential scan. Every worktree shares one hooks
+# directory, so the installed hook is a shim that runs the pushing worktree's
+# own scripts/hooks/pre-push: each branch pushes under its own version.
+set -eu
+
+hook="$(git rev-parse --git-path hooks)/pre-push"
+marker="Installed by \`just hooks\`"
+if [ -e "$hook" ] && ! grep -q "$marker" "$hook"; then
+  echo "hooks: $hook exists and is not ours; merge it by hand." >&2
+  exit 1
+fi
+
+mkdir -p "$(dirname "$hook")"
+cat > "$hook" <<SHIM
+#!/bin/sh
+# $marker: runs the pushing worktree's own credential scan.
+scan="\$(git rev-parse --show-toplevel)/scripts/hooks/pre-push"
+if [ ! -x "\$scan" ]; then
+  echo "pre-push: \$scan is missing on this branch; merge main, or push with --no-verify." >&2
+  exit 1
+fi
+exec "\$scan" "\$@"
+SHIM
+chmod +x "$hook"
+echo "installed $hook"

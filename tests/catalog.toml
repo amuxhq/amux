@@ -1028,8 +1028,8 @@ cargo = [
 [[suite]]
 name = "ios-verify-boundary"
 contract = "iOS verification runs every stage in order, refuses recipes the justfiles no longer declare, and stops on a failed stage or a skipped journey."
-paths = ["crates/xtask/tests/ios_verify_cli.rs"]
-recipe = "just test-crate xtask"
+paths = ["crates/ios-tools/tests/ios_verify_cli.rs"]
+recipe = "just test-crate ios-tools"
 boundary = "System composition"
 oracle = "Exact command exits, recorded results, and scripted recipe and Xcode process interactions."
 real = ["child processes", "temporary files"]
@@ -1040,9 +1040,28 @@ lane = "tool"
 evidence = ""
 update = ""
 cargo = [
+  { package = "ios-tools", kind = "lib", targets = ["ios_tools"], features = [] },
+  { package = "ios-tools", kind = "bin", targets = ["ios-tools"], features = [] },
+  { package = "ios-tools", targets = ["ios_verify_cli"], features = [] },
+]
+
+[[suite]]
+name = "protocol-and-release-tools"
+contract = "The protocol compatibility check accepts additions and renames but refuses a renumbered, retyped or unreserved field, enum value or method in amux.v1, and a release cut moves only the crates' version lines and reads the workflow's signing key."
+paths = ["crates/xtask/src"]
+recipe = "just test-crate xtask"
+boundary = "System composition"
+oracle = "Exact verdicts over hand-built descriptor sets, and the exact text a cut writes."
+real = []
+substituted = []
+time = "none"
+capabilities = []
+lane = "tool"
+evidence = ""
+update = ""
+cargo = [
   { package = "xtask", kind = "lib", targets = ["xtask"], features = [] },
   { package = "xtask", kind = "bin", targets = ["xtask"], features = [] },
-  { package = "xtask", targets = ["ios_verify_cli"], features = [] },
 ]
 
 [[suite]]
@@ -1179,7 +1198,7 @@ cases = ["scripts/tests/*_test.py", "apps/apple/Tools/*test*.py"]
 [[suite]]
 name = "store-on-ios"
 contract = "Every store test cross-compiles and runs against bundled SQLite on the leased iOS simulator."
-paths = ["scripts/ios-store-test.py", "crates/store/tests"]
+paths = ["apps/apple/Tools/ios-store-test.py", "crates/store/tests"]
 recipe = "just test-store-ios"
 boundary = "Single daemon"
 oracle = "The complete Rust store test suite plus linkage and runtime SQLite identity proof."
@@ -1190,7 +1209,7 @@ capabilities = ["macOS", "Xcode 26.6", "golden iOS simulator"]
 lane = "system"
 evidence = "target/ios/store-test"
 update = ""
-cases = ["scripts/ios-store-test.py"]
+cases = ["apps/apple/Tools/ios-store-test.py"]
 
 [[suite]]
 name = "desktop-performance-qualification"
@@ -1248,7 +1267,7 @@ cases = ["apps/apple/Tools/strings_lint_test.py"]
 [[suite]]
 name = "phone-shipping-scope-audit"
 contract = "The packaged phone framework and app exclude provider, host, debug, and unsupported-platform surfaces."
-paths = ["scripts/ios-scope-audit.py"]
+paths = ["apps/apple/Tools/ios-scope-audit.py"]
 recipe = "just ios scope-audit"
 boundary = "System composition"
 oracle = "Binary symbols, linked libraries, bundle contents, architectures, sizes, and deployment metadata."
@@ -1259,7 +1278,7 @@ capabilities = ["macOS", "Xcode 26.6"]
 lane = "tool"
 evidence = "target/ios/scope-audit"
 update = ""
-cases = ["scripts/ios-scope-audit.py"]
+cases = ["apps/apple/Tools/ios-scope-audit.py"]
 
 [[suite]]
 name = "line-coverage"
@@ -1328,7 +1347,7 @@ cases = ["scripts/qa-live-journey.py"]
 [[suite]]
 name = "phone-component-snapshots"
 contract = "Every catalogued phone component renders to its reviewed image in each declared appearance and size."
-paths = ["apps/apple/AmuxComponentSnapshotTests", "apps/apple/Amux/Debug/ComponentCatalog.swift", "scripts/ios-component-snapshots.py"]
+paths = ["apps/apple/AmuxComponentSnapshotTests", "apps/apple/Amux/Debug/ComponentCatalog.swift", "apps/apple/Tools/ios-component-snapshots.py"]
 recipe = "just ios component-snapshots"
 boundary = "Native presentation"
 oracle = "Image comparison against the reviewed snapshot for each component, appearance and size."
@@ -1344,7 +1363,7 @@ swift = ["AmuxComponentSnapshotTests"]
 [[suite]]
 name = "phone-component-snapshot-sensitivity"
 contract = "The component snapshot comparator rejects a deliberate one-token visual perturbation."
-paths = ["scripts/ios-component-snapshots.py"]
+paths = ["apps/apple/Tools/ios-component-snapshots.py"]
 recipe = "just ios component-snapshots-perturb"
 boundary = "Native presentation"
 oracle = "An intentional pixel change must produce a failing comparison."
@@ -1355,4 +1374,4 @@ capabilities = ["macOS", "Xcode 26.6", "pinned iOS simulator"]
 lane = "fast"
 evidence = "target/ios/component-snapshots"
 update = ""
-cases = ["scripts/ios-component-snapshots.py"]
+cases = ["apps/apple/Tools/ios-component-snapshots.py"]

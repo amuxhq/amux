@@ -397,28 +397,17 @@ family model's and replication's counts aside, below), only which of several
 counterexamples is printed.
 
 The four-core runner column is each model's test binary's time at its CI
-bounds on CI's four-core Linux runner, measured by CI runs
-[39409237111](https://github.com/jordanwebster/amux/actions/runs/39409237111),
-[39427905420](https://github.com/jordanwebster/amux/actions/runs/39427905420),
-[39434678894](https://github.com/jordanwebster/amux/actions/runs/39434678894),
-[39451673041](https://github.com/jordanwebster/amux/actions/runs/39451673041),
-[39459686545](https://github.com/jordanwebster/amux/actions/runs/39459686545)
-and
-[39489610899](https://github.com/jordanwebster/amux/actions/runs/39489610899)
-of nearly the same tree, in that order; a binary holding two machines is timed
+bounds on CI's four-core Linux runner, measured by six CI runs
+of nearly the same tree, in October 2026; a binary holding two machines is timed
 for both. The runner's speed varies between runs by up to two and a half
 times: presence took 288 s in one run and 120 s in the next, the composed
 net 105 s in one and 204 s in the next.
-The family model's first two figures are from runs
-[39185561814](https://github.com/jordanwebster/amux/actions/runs/39185561814)
-and
-[39215214763](https://github.com/jordanwebster/amux/actions/runs/39215214763);
+The family model's first two figures are from two earlier runs;
 its six runs at the bounds that included the parent's spontaneous exit
 spread twofold, and two passed 300 s, so the parent's spontaneous exit
 moved to the nightly bounds; the cut bounds took 0.61 of the time on the
 enrolled Mac, back to back, and the budget is sized to the slowest run
-scaled by that; the first two CI runs at the cut bounds, 39459686545 and
-39489610899, took 178 s and 128 s. Its state count varies by under 1% from run to run
+scaled by that; the first two CI runs at the cut bounds took 178 s and 128 s. Its state count varies by under 1% from run to run
 (218,332 to 219,506 at these bounds), so one of its values is not yet
 printed the same way for the same state. Replication's count varies by a
 few dozen states on several threads (157,539 to 157,789 at these bounds) and

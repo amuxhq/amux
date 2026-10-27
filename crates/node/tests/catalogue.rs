@@ -14,7 +14,7 @@ use sha2::{Digest as _, Sha256};
 use support::synthetic::*;
 use support::*;
 use tonic::Code;
-use wire::client_service_server::ClientService as _;
+use wire::agent_service_server::AgentService as _;
 use wire::{
     BlobRef, Catalogue, GetBlobRequest, GetCatalogueRequest, OfferedModel, Phase, SessionEvent,
     session_event,

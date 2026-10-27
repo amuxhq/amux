@@ -167,12 +167,14 @@ impl EarlyCall {
         Ok(match self {
             EarlyCall::SubscribeInventory => EarlyAnswer::Inventory(
                 client
+                    .agents
                     .subscribe_inventory(wire::SubscribeInventoryRequest {})
                     .await?
                     .into_inner(),
             ),
             EarlyCall::SubscribeSession { session, from } => EarlyAnswer::Session(
                 client
+                    .sessions
                     .subscribe_session(wire::PeerSubscribeSessionRequest {
                         agent_id: session,
                         from: Some(from),
@@ -181,13 +183,13 @@ impl EarlyCall {
                     .into_inner(),
             ),
             EarlyCall::ListItems(request) => {
-                EarlyAnswer::Fetched(client.list_items(request).await?.into_inner())
+                EarlyAnswer::Fetched(client.sessions.list_items(request).await?.into_inner())
             }
             EarlyCall::GetBlob(request) => {
-                EarlyAnswer::Blob(client.get_blob(request).await?.into_inner())
+                EarlyAnswer::Blob(client.agents.get_blob(request).await?.into_inner())
             }
             EarlyCall::GetDiff(request) => {
-                EarlyAnswer::Diff(client.get_diff(request).await?.into_inner())
+                EarlyAnswer::Diff(client.agents.get_diff(request).await?.into_inner())
             }
         })
     }
@@ -1006,13 +1008,23 @@ impl tower::Service<http::Request<tonic::body::Body>> for PeerChannel {
     }
 }
 
-/// A PeerService client on a [`PeerChannel`].
-pub type PeerClient = wire::peer_service_client::PeerServiceClient<PeerChannel>;
+/// The peer services' clients on one [`PeerChannel`].
+#[derive(Clone)]
+pub struct PeerClient {
+    pub agents: wire::peer_agent_service_client::PeerAgentServiceClient<PeerChannel>,
+    pub sessions: wire::peer_session_service_client::PeerSessionServiceClient<PeerChannel>,
+}
 
 pub(crate) fn peer_client(channel: Channel) -> PeerClient {
-    wire::peer_service_client::PeerServiceClient::new(PeerChannel::new(channel))
-        .max_decoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT)
-        .max_encoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT)
+    let channel = PeerChannel::new(channel);
+    PeerClient {
+        agents: wire::peer_agent_service_client::PeerAgentServiceClient::new(channel.clone())
+            .max_decoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT)
+            .max_encoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT),
+        sessions: wire::peer_session_service_client::PeerSessionServiceClient::new(channel)
+            .max_decoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT)
+            .max_encoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT),
+    }
 }
 
 /// A channel over `stream`, ending when `lifetime` is cancelled.
@@ -1193,7 +1205,8 @@ mod tests {
 
         use tokio::sync::watch;
         use tonic::{Request, Response, Status};
-        use wire::peer_service_server::PeerService;
+        use wire::peer_agent_service_server::PeerAgentService;
+        use wire::peer_session_service_server::PeerSessionService;
 
         use super::*;
         use crate::identity::DeviceIdentity;
@@ -1220,9 +1233,8 @@ mod tests {
         }
 
         #[tonic::async_trait]
-        impl PeerService for Answering {
+        impl PeerAgentService for Answering {
             type SubscribeInventoryStream = Events<wire::InventoryEvent>;
-            type SubscribeSessionStream = Events<wire::SessionEvent>;
 
             async fn subscribe_inventory(
                 &self,
@@ -1234,6 +1246,87 @@ mod tests {
                     event,
                 )]))))
             }
+
+            async fn create_agent(
+                &self,
+                _: Request<wire::CreateAgentRequest>,
+            ) -> Answer<wire::Agent> {
+                unanswered()
+            }
+
+            async fn rename_agent(
+                &self,
+                _: Request<wire::RenameAgentRequest>,
+            ) -> Answer<wire::Agent> {
+                unanswered()
+            }
+
+            async fn stop_agent(
+                &self,
+                _: Request<wire::StopAgentRequest>,
+            ) -> Answer<wire::StopAgentResponse> {
+                unanswered()
+            }
+
+            async fn resume_agent(
+                &self,
+                _: Request<wire::ResumeAgentRequest>,
+            ) -> Answer<wire::Agent> {
+                unanswered()
+            }
+
+            async fn delete_agent(
+                &self,
+                _: Request<wire::DeleteAgentRequest>,
+            ) -> Answer<wire::Empty> {
+                unanswered()
+            }
+
+            async fn send_message(
+                &self,
+                _: Request<wire::PeerSendMessageRequest>,
+            ) -> Answer<wire::SendMessageResponse> {
+                unanswered()
+            }
+
+            async fn put_blob(&self, _: Request<wire::PutBlobRequest>) -> Answer<wire::BlobRef> {
+                unanswered()
+            }
+
+            async fn get_blob(
+                &self,
+                _: Request<wire::GetBlobRequest>,
+            ) -> Answer<wire::GetBlobResponse> {
+                unanswered()
+            }
+
+            async fn get_diff(&self, _: Request<wire::GetDiffRequest>) -> Answer<wire::Diff> {
+                unanswered()
+            }
+
+            async fn get_catalogue(
+                &self,
+                _: Request<wire::GetCatalogueRequest>,
+            ) -> Answer<wire::GetCatalogueResponse> {
+                unanswered()
+            }
+
+            async fn list_repositories(
+                &self,
+                _: Request<wire::ListRepositoriesRequest>,
+            ) -> Answer<wire::ListRepositoriesResponse> {
+                unanswered()
+            }
+
+            async fn dump(&self, _: Request<wire::DumpRequest>) -> Answer<wire::DumpPart> {
+                unanswered()
+            }
+        }
+
+        #[tonic::async_trait]
+        impl PeerSessionService for Answering {
+            type SubscribeSessionStream = Events<wire::SessionEvent>;
+
             async fn subscribe_session(
                 &self,
                 _: Request<wire::PeerSubscribeSessionRequest>,
@@ -1244,6 +1337,7 @@ mod tests {
                     event,
                 )]))))
             }
+
             async fn list_items(
                 &self,
                 _: Request<wire::ListItemsRequest>,
@@ -1251,76 +1345,15 @@ mod tests {
                 self.fetches.fetch_add(1, Ordering::SeqCst);
                 Ok(Response::new(wire::ListItemsResponse::default()))
             }
+
             async fn get_item(&self, _: Request<wire::GetItemRequest>) -> Answer<wire::Item> {
                 unanswered()
             }
+
             async fn send_input(
                 &self,
                 _: Request<wire::SendInputRequest>,
             ) -> Answer<wire::SendInputResponse> {
-                unanswered()
-            }
-            async fn create_agent(
-                &self,
-                _: Request<wire::CreateAgentRequest>,
-            ) -> Answer<wire::Agent> {
-                unanswered()
-            }
-            async fn rename_agent(
-                &self,
-                _: Request<wire::RenameAgentRequest>,
-            ) -> Answer<wire::Agent> {
-                unanswered()
-            }
-            async fn stop_agent(
-                &self,
-                _: Request<wire::StopAgentRequest>,
-            ) -> Answer<wire::StopAgentResponse> {
-                unanswered()
-            }
-            async fn resume_agent(
-                &self,
-                _: Request<wire::ResumeAgentRequest>,
-            ) -> Answer<wire::Agent> {
-                unanswered()
-            }
-            async fn delete_agent(
-                &self,
-                _: Request<wire::DeleteAgentRequest>,
-            ) -> Answer<wire::Empty> {
-                unanswered()
-            }
-            async fn send_message(
-                &self,
-                _: Request<wire::PeerSendMessageRequest>,
-            ) -> Answer<wire::SendMessageResponse> {
-                unanswered()
-            }
-            async fn put_blob(&self, _: Request<wire::PutBlobRequest>) -> Answer<wire::BlobRef> {
-                unanswered()
-            }
-            async fn get_blob(
-                &self,
-                _: Request<wire::GetBlobRequest>,
-            ) -> Answer<wire::GetBlobResponse> {
-                unanswered()
-            }
-            async fn get_diff(&self, _: Request<wire::GetDiffRequest>) -> Answer<wire::Diff> {
-                unanswered()
-            }
-            async fn get_catalogue(
-                &self,
-                _: Request<wire::GetCatalogueRequest>,
-            ) -> Answer<wire::GetCatalogueResponse> {
-                unanswered()
-            }
-            async fn list_repositories(
-                &self,
-                _: Request<wire::ListRepositoriesRequest>,
-            ) -> Answer<wire::ListRepositoriesResponse> {
-                unanswered()
-            }
-            async fn dump(&self, _: Request<wire::DumpRequest>) -> Answer<wire::DumpPart> {
                 unanswered()
             }
         }
@@ -1379,7 +1412,8 @@ mod tests {
                 });
                 tokio::spawn(
                     tonic::transport::Server::builder()
-                        .add_service(wire::peer_service_server(answering.clone()))
+                        .add_service(wire::peer_agent_service_server(answering.clone()))
+                        .add_service(wire::peer_session_service_server(answering.clone()))
                         .serve_with_incoming(incoming),
                 );
                 let early = arrived_early.clone();

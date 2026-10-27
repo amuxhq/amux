@@ -5,7 +5,7 @@ import XCTest
 /// only one.
 final class PlaceNamesTests: XCTestCase {
     func testTheLocalSuffixIsDropped() {
-        XCTAssertEqual(PlaceNames.host("Jordans-MacBook-Pro.local"), "Jordans-MacBook-Pro")
+        XCTAssertEqual(PlaceNames.host("Adas-MacBook-Pro.local"), "Adas-MacBook-Pro")
         XCTAssertEqual(PlaceNames.host("studio.LOCAL"), "studio")
         XCTAssertEqual(PlaceNames.host("studio"), "studio")
         XCTAssertEqual(PlaceNames.host(".local"), ".local")

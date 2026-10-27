@@ -5,9 +5,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use anyhow::{Result, anyhow, bail};
-use tonic::transport::Channel;
 use uuid::Uuid;
-use wire::client_service_client::ClientServiceClient;
 use wire::{
     Agent, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
     CreateAgentRequest, DeleteAgentRequest, DumpRequest, HostEntry, Input, Kind, Lifecycle, Phase,
@@ -16,11 +14,12 @@ use wire::{
     codex_input, create_agent_request, inventory_event, send_input_response,
 };
 
-type Client = ClientServiceClient<Channel>;
+type Client = wire::ClientStubs;
 
 /// Every host entry and agent row, read to the inventory's CaughtUp.
 pub async fn inventory(client: &mut Client) -> Result<(Vec<HostEntry>, Vec<Agent>)> {
     let mut stream = client
+        .agents
         .subscribe_inventory(wire::SubscribeInventoryRequest {})
         .await
         .map_err(crate::plain)?
@@ -59,6 +58,7 @@ pub async fn inventory(client: &mut Client) -> Result<(Vec<HostEntry>, Vec<Agent
 /// short id `amux ls` prints, its name, or `name@host`).
 pub async fn resolve(client: &mut Client, reference: &str) -> Result<Agent> {
     client
+        .agents
         .resolve_agent(ResolveAgentRequest {
             name: reference.to_owned(),
         })
@@ -307,6 +307,7 @@ pub async fn create(client: &mut Client, create: Create) -> Result<()> {
         }
     };
     let agent = client
+        .agents
         .create_agent(CreateAgentRequest {
             agent_id: Uuid::new_v4().as_bytes().to_vec(),
             name: create.name,
@@ -330,6 +331,7 @@ pub async fn create(client: &mut Client, create: Create) -> Result<()> {
 pub async fn send(client: &mut Client, reference: &str, text: &str) -> Result<()> {
     let agent = resolve(client, reference).await?;
     let response = client
+        .sessions
         .send_input(SendInputRequest {
             agent_id: agent.agent_id.clone(),
             input: Some(prompt(agent.kind, text)),
@@ -379,6 +381,7 @@ fn refusal_words(name: &str, refusal: Refusal) -> String {
 pub async fn stop(client: &mut Client, reference: &str) -> Result<()> {
     let agent = resolve(client, reference).await?;
     client
+        .agents
         .stop_agent(StopAgentRequest {
             agent_id: agent.agent_id.clone(),
         })
@@ -391,6 +394,7 @@ pub async fn stop(client: &mut Client, reference: &str) -> Result<()> {
 pub async fn delete(client: &mut Client, reference: &str) -> Result<()> {
     let agent = resolve(client, reference).await?;
     client
+        .agents
         .delete_agent(DeleteAgentRequest {
             agent_id: agent.agent_id.clone(),
         })
@@ -403,6 +407,7 @@ pub async fn delete(client: &mut Client, reference: &str) -> Result<()> {
 pub async fn resume(client: &mut Client, reference: &str, text: Option<&str>) -> Result<()> {
     let agent = resolve(client, reference).await?;
     let resumed = client
+        .agents
         .resume_agent(ResumeAgentRequest {
             agent_id: agent.agent_id.clone(),
             initial_prompt: text.map(submission),
@@ -417,6 +422,7 @@ pub async fn resume(client: &mut Client, reference: &str, text: Option<&str>) ->
 pub async fn rename(client: &mut Client, reference: &str, name: &str) -> Result<()> {
     let agent = resolve(client, reference).await?;
     let renamed = client
+        .agents
         .rename_agent(RenameAgentRequest {
             agent_id: agent.agent_id.clone(),
             name: name.to_owned(),
@@ -430,6 +436,7 @@ pub async fn rename(client: &mut Client, reference: &str, name: &str) -> Result<
 
 pub async fn dump(
     client: &mut Client,
+    admin: &mut crate::pairing::Admin,
     references: &[String],
     reason: Option<String>,
 ) -> Result<()> {
@@ -437,7 +444,7 @@ pub async fn dump(
     for reference in references {
         agent_ids.push(resolve(client, reference).await?.agent_id);
     }
-    let response = client
+    let response = admin
         .dump(DumpRequest {
             agent_ids,
             reason: reason.unwrap_or_default(),

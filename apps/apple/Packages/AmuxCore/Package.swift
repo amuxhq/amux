@@ -7,7 +7,7 @@ let package = Package(
     products: [
         .library(name: "AmuxCore", targets: ["AmuxCore"]),
         // The values the Rust bridge hands over, generated from their Rust
-        // definitions by `cargo run -p xtask -- swift-types`.
+        // definitions by `cargo run -p ios-tools -- swift-types`.
         .library(name: "AmuxValues", targets: ["AmuxValues"]),
     ],
     targets: [

@@ -436,7 +436,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("diff") => diff_command(&arguments[1..]),
         _ => {
             eprintln!(
-                "usage: xtask golden diff --expected PNG --actual PNG [--out DIR] \
+                "usage: ios-tools golden diff --expected PNG --actual PNG [--out DIR] \
                  [--simulator NAME] [--tolerance N] [--max-differing N] [--max-delta N] \
                  [--mask X,Y,W,H]..."
             );

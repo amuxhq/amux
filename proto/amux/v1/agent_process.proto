@@ -4,7 +4,8 @@ package amux.v1;
 
 import "amux/v1/chat.proto";
 import "amux/v1/records.proto";
-import "amux/v1/service.proto";
+import "amux/v1/dump.proto";
+import "amux/v1/session_service.proto";
 
 // The agent process's contract with its daemon: the immutable spec file each
 // incarnation starts from, and the frames on the agent directory's ctl.sock

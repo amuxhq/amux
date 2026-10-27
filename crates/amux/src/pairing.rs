@@ -11,16 +11,15 @@ use std::time::Duration;
 use anyhow::{Context as _, Result, anyhow, bail};
 use tonic::transport::Channel;
 use uuid::Uuid;
-use wire::client_service_client::ClientServiceClient;
+use wire::installation_service_client::InstallationServiceClient;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
-use wire::profile_service_client::ProfileServiceClient;
 use wire::{
     BeginPairRequest, BindProfileRequest, Empty, HostEntry, HostRef, PairingIdentity,
     PairingWindow, PendingPair, RouteKind, StartPairingRequest, TrustSshPeerRequest, UnpairRequest,
     begin_pair_request, host_ref, pairing_window, peer_reachability, start_pairing_request,
 };
 
-type Door = ProfileServiceClient<Channel>;
+type Door = InstallationServiceClient<Channel>;
 /// The selected profile's administration, on its own socket.
 pub type Admin = ProfileAdminServiceClient<Channel>;
 
@@ -303,11 +302,7 @@ pub async fn cancel(mut admin: Admin) -> Result<()> {
 
 /// Pairs with a host found nearby or at an address with the PIN its person
 /// reads out, or with a host over SSH.
-pub async fn pair(
-    admin: Admin,
-    client: &mut ClientServiceClient<Channel>,
-    target: Target,
-) -> Result<()> {
+pub async fn pair(admin: Admin, client: &mut wire::ClientStubs, target: Target) -> Result<()> {
     let (host_id, addrs) = match target {
         Target::Ssh(target) => return pair_over_ssh(admin, target).await,
         Target::Addr(addr) => (Vec::new(), vec![addr.to_string()]),
@@ -525,7 +520,7 @@ pub async fn relay(profile: &wire::Profile) -> Result<()> {
 }
 
 /// The trusted hosts and the hosts found nearby that could be paired.
-pub async fn peers(mut admin: Admin, client: &mut ClientServiceClient<Channel>) -> Result<()> {
+pub async fn peers(mut admin: Admin, client: &mut wire::ClientStubs) -> Result<()> {
     let trusted = admin
         .list_peers(wire::ListPeersRequest {})
         .await

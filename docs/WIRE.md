@@ -3,25 +3,30 @@
 *For developers writing a client or changing the amux.v1 service.*
 
 The wire is the protobuf package `amux.v1`, in
-[`crates/wire/proto/amux/v1/`](../crates/wire/proto/amux/v1/), with
+[`proto/amux/v1/`](../proto/amux/v1/), with
 generated Rust committed under `crates/wire/src/generated/`. This page covers
-the client-facing surface: the `ClientService` calls, the records its streams
+the client-facing surface: the `AgentService` and `SessionService` calls, the records their streams
 carry, how inputs are answered, and the discipline that keeps binaries of
 different versions talking. Host-to-host links, pairing and the relay are in
 [the protocol](PROTOCOL.md).
 
 | File | Holds |
 | --- | --- |
-| [`service.proto`](../crates/wire/proto/amux/v1/service.proto) | `ClientService`, `PeerService`, the inventory, their requests, `Input`, and `SendInputResponse` |
-| [`records.proto`](../crates/wire/proto/amux/v1/records.proto) | The kind-neutral records: `Step`, `Item`, `Append`, `Snapshot`, `Kind`, `ExitCause`, agent messages, attachments, blobs, diffs |
-| [`chat.proto`](../crates/wire/proto/amux/v1/chat.proto) | What the kinds share inside a body: item bodies, snapshot pieces, asks, input and answer pieces, the catalogue |
-| [`claude.proto`](../crates/wire/proto/amux/v1/claude.proto), [`codex.proto`](../crates/wire/proto/amux/v1/codex.proto) | The per-kind item, snapshot and input bodies |
-| [`agent.proto`](../crates/wire/proto/amux/v1/agent.proto) | The agent spec and what seeds its queue, and the `ctl.sock` and `pty.sock` frames |
-| [`error.proto`](../crates/wire/proto/amux/v1/error.proto) | `ErrorReason`, the amux reasons an error's `google.rpc.ErrorInfo` names |
-| [`link.proto`](../crates/wire/proto/amux/v1/link.proto), [`pairing.proto`](../crates/wire/proto/amux/v1/pairing.proto) | Host-to-host link control, and pairing |
-| [`front_door.proto`](../crates/wire/proto/amux/v1/front_door.proto) | The profile and installation services |
+| [`agent_service.proto`](../proto/amux/v1/agent_service.proto) | `AgentService` and its requests: the fleet, agents' lifecycle and messages, blobs, diffs, catalogues, repositories |
+| [`session_service.proto`](../proto/amux/v1/session_service.proto) | `SessionService` and its requests: one agent's conversation, `Input` and `SendInputResponse`, the composer's draft |
+| [`peer_service.proto`](../proto/amux/v1/peer_service.proto) | `PeerAgentService` and `PeerSessionService`, and the requests only peers send |
+| [`inventory.proto`](../proto/amux/v1/inventory.proto) | Hosts and agent rows, as the inventory streams them |
+| [`records.proto`](../proto/amux/v1/records.proto) | The kind-neutral records: `Step`, `Item`, `Append`, `Snapshot`, `Kind`, `ExitCause`, agent messages, attachments, blobs, diffs, and the streams' `CaughtUp` and `Lagged` |
+| [`chat.proto`](../proto/amux/v1/chat.proto) | What the kinds share inside a body: item bodies, snapshot pieces, asks, input and answer pieces, the catalogue |
+| [`claude.proto`](../proto/amux/v1/claude.proto), [`codex.proto`](../proto/amux/v1/codex.proto) | The per-kind item, snapshot and input bodies |
+| [`agent_process.proto`](../proto/amux/v1/agent_process.proto) | The agent spec and what seeds its queue, and the `ctl.sock` and `pty.sock` frames |
+| [`error.proto`](../proto/amux/v1/error.proto) | `ErrorReason`, the amux reasons an error's `google.rpc.ErrorInfo` names |
+| [`link.proto`](../proto/amux/v1/link.proto), [`pairing_service.proto`](../proto/amux/v1/pairing_service.proto) | Host-to-host link control, and pairing |
+| [`installation_service.proto`](../proto/amux/v1/installation_service.proto) | `InstallationService`: the installation and its profiles |
+| [`profile_admin_service.proto`](../proto/amux/v1/profile_admin_service.proto) | `ProfileAdminService`: one profile's account, pairing, peers and dump |
+| [`dump.proto`](../proto/amux/v1/dump.proto) | The diagnostic dump's request, answer and parts |
 | [`amux/dump/session.proto`](../crates/wire/proto/amux/dump/session.proto) | `amux.dump`: a client's session history as a dump carries it, outside the wire's promises |
-| [`google/rpc/`](../crates/wire/proto/google/rpc/) | `google.rpc.Status`, `Code` and `ErrorInfo`, vendored from googleapis |
+| [`google/rpc/`](../proto/google/rpc/) | `google.rpc.Status`, `Code` and `ErrorInfo`, vendored from googleapis |
 
 ## Where clients call
 
@@ -31,11 +36,12 @@ client never opens a store and never dials another host.
 
 | Caller | Transport | Service |
 | --- | --- | --- |
-| Terminal client, CLI | gRPC over the profile's local socket (`PROFILE_SOCKET` in [`crates/node/src/profiles.rs`](../crates/node/src/profiles.rs)) | `ClientService` |
-| Phone app | An in-process call into the embedded runtime | `ClientService`, the same implementation |
-| An agent's tool server | gRPC over the agent's `tools.sock`; the socket is the caller's identity | `ClientService`, restricted |
-| A paired host's daemon | An application stream on the link | `PeerService` |
-| Profile and installation management | gRPC over the installation's front-door socket | `ProfileService`, `InstallationService` |
+| Terminal client, CLI, a third-party client | gRPC over the profile's local socket (`PROFILE_SOCKET` in [`crates/node/src/profiles.rs`](../crates/node/src/profiles.rs)) | `AgentService`, `SessionService`, `ProfileAdminService` |
+| Phone app | An in-process call into the embedded runtime | The same services, the same implementation |
+| An agent's tool server | gRPC over the agent's `tools.sock`; the socket is the caller's identity | `AgentService` and `SessionService`, restricted |
+| A paired host's daemon | An application stream on the link | `PeerAgentService`, `PeerSessionService` |
+| Profile and installation management | gRPC over the installation's front-door socket | `InstallationService` |
+| A host pairing with this one | A link stream while a pairing window is open | `PairingService` |
 
 The [`client`](../crates/client/src/lib.rs) crate is the one seam both clients
 use: `GrpcClient` on the desktop and `InProcess` on the phone implement the
@@ -46,13 +52,13 @@ On `tools.sock` the caller is an agent. It may message other agents and send
 input only to its own direct children; input to any other agent is refused
 there with `PERMISSION_DENIED`.
 
-`PeerService` is the daemon-to-daemon service over a link. Replication is a
+`PeerAgentService` and `PeerSessionService` are the daemon-to-daemon services over a link. Replication is a
 daemon being a client of its peer. A call on another host's agent arrives at
 the local runtime, which forwards it one hop to the owning host. The peer
-service answers only for its host's own agents and never passes a call on:
+services answer only for their host's own agents and never passes a call on:
 its inventory stream carries that host's entry and agents, and every call
 that names an agent it only replicates (reads, input, lifecycle, blobs and
-diffs) is `NOT_FOUND`. Three of its messages differ from the client's: `SubscribeSession` takes
+diffs) is `NOT_FOUND`. Three of their messages differ from the client's: `SubscribeSession` takes
 a `PeerSubscribeSessionRequest`, which may carry a cursor; `SendMessage` takes the
 `Envelope` the sending daemon stamped; and `Dump` answers with the host's
 `DumpPart` itself.
@@ -84,19 +90,15 @@ meets often:
 
 ## The calls
 
-`service ClientService` in [`service.proto`](../crates/wire/proto/amux/v1/service.proto):
+`service AgentService` in [`agent_service.proto`](../proto/amux/v1/agent_service.proto):
 
 | Call | Returns | Meaning |
 | --- | --- | --- |
-| `SubscribeInventory(Empty)` | stream of `InventoryEvent` | Hosts and agent rows: the current set, `CaughtUp`, then changes |
+| `SubscribeInventory(SubscribeInventoryRequest)` | stream of `InventoryEvent` | Hosts and agent rows: the current set, `CaughtUp`, then changes |
 | `ResolveAgent(ResolveAgentRequest)` | `Agent` | Fleet-wide reference to row: an id in any form amux prints (with or without dashes, or the short id's eight or more leading hex digits), a name, or `name@host`. Names are unique on a host, so `name@host` picks one; a bare name matching agents on two hosts is ambiguous, and the message offers those forms. Every other call takes an agent id. |
-| `SubscribeSession(SubscribeSessionRequest)` | stream of `SessionEvent` | One agent: opening, snapshot, tail, then live |
-| `ListItems(ListItemsRequest)` | `ListItemsResponse` | A page of older items |
-| `GetItem(GetItemRequest)` | `Item` | One item in full |
-| `SendInput(SendInputRequest)` | `SendInputResponse` | The interpreter's verdict on one input |
 | `CreateAgent(CreateAgentRequest)` | `Agent` | Spawn, optionally with a first prompt (see [Creating and resuming](#creating-and-resuming)). Names are unique on a host, counting exited agents: a given name another agent on the host holds gets the next free suffix (`worker-2`), and the returned `Agent` says the name it got. Without a name the daemon gives a word pair (`quiet-otter`) that no other agent on the host and no branch in the folder's repository has. With `new_worktree` the agent's host first makes a worktree on a branch named after the agent, and the agent starts there |
 | `RenameAgent` | `Agent` | A name outside the rule (lowercase letters, digits and hyphens, starting with a letter or digit, at most 64) is refused `INVALID_ARGUMENT`, as it is for `CreateAgent`; a name another agent on the host holds, exited ones included, is refused `ALREADY_EXISTS` saying so. The agent's branch keeps the name it was made with |
-| `StopAgent(StopAgentRequest)` | `Empty` | Ends the agent now: its running turn is cancelled the provider's own way and it exits, resumable. There is no "stop when done". The terminal, the phone and an agent's stop tool all call it; the interrupt input is what ends only the turn. Its children follow on their own hosts by [the family rule](PROTOCOL.md#the-family-rule) |
+| `StopAgent(StopAgentRequest)` | `StopAgentResponse` | Ends the agent now: its running turn is cancelled the provider's own way and it exits, resumable. There is no "stop when done". The terminal, the phone and an agent's stop tool all call it; the interrupt input is what ends only the turn. Its children follow on their own hosts by [the family rule](PROTOCOL.md#the-family-rule) |
 | `ResumeAgent(ResumeAgentRequest)` | `Agent` | Start the agent's directory again, optionally with a first prompt |
 | `DeleteAgent` | `Empty` | Stops the agent if live and removes it for good. Its children follow on their own hosts by [the family rule](PROTOCOL.md#the-family-rule) |
 | `SendMessage(SendMessageRequest)` | `SendMessageResponse` | Agent messaging: who it is from is the caller, never the request (see [Messages](#messages) and [agent tools](AGENT_TOOLS.md)) |
@@ -105,7 +107,19 @@ meets often:
 | `GetDiff(GetDiffRequest)` | `Diff` | The changed files on the owning host; the patch, stored as a blob, only when asked |
 | `GetCatalogue(GetCatalogueRequest)` | `GetCatalogueResponse` | What a provider on a host offers with no agent running: the encoded `Catalogue` and its hash. An agent's catalogue is a blob, read with `GetBlob` |
 | `ListRepositories` | `ListRepositoriesResponse` | Repositories a host offers to spawn agents in |
-| `Dump(DumpRequest)` | `DumpResponse` | A debug bundle, with the asking client's open chats for the daemon to redact and write in, and where it was written (see [debugging](DEBUGGING.md)) |
+
+`service SessionService` in [`session_service.proto`](../proto/amux/v1/session_service.proto):
+
+| Call | Returns | Meaning |
+| --- | --- | --- |
+| `SubscribeSession(SubscribeSessionRequest)` | stream of `SessionEvent` | One agent: opening, snapshot, tail, then live |
+| `ListItems(ListItemsRequest)` | `ListItemsResponse` | A page of older items |
+| `GetItem(GetItemRequest)` | `Item` | One item in full |
+| `SendInput(SendInputRequest)` | `SendInputResponse` | The interpreter's verdict on one input |
+| `UpdateDraft(UpdateDraftRequest)` | `Draft` | Keeps the unsent draft of an agent's composer on this machine, for its clients; an empty draft forgets it. Never synced to other machines |
+| `GetDraft(GetDraftRequest)` | `Draft` | The draft this machine keeps for an agent |
+
+A debug bundle is `ProfileAdminService.Dump(DumpRequest)`, answered with where it was written; it carries the asking client's open chats for the daemon to redact and write in (see [debugging](DEBUGGING.md)). It is served only on the profile's socket, never on an agent's.
 
 There are no unary list calls: a listing is `SubscribeInventory` read to
 `CaughtUp`. There is no status call: what an agent is working on is a field of
@@ -259,8 +273,8 @@ returns to the fleet.
 ## Records
 
 The records are defined once in
-[`records.proto`](../crates/wire/proto/amux/v1/records.proto), and the bodies
-the kinds share in [`chat.proto`](../crates/wire/proto/amux/v1/chat.proto). The
+[`records.proto`](../proto/amux/v1/records.proto), and the bodies
+the kinds share in [`chat.proto`](../proto/amux/v1/chat.proto). The
 journal frames them, the store keeps them and every stream carries them.
 
 ### The envelope
@@ -784,7 +798,7 @@ both ends of a link must take.
 
 Nothing else carries a version integer:
 
-- **Local clients** call `ClientService` with no handshake. A client may
+- **Local clients** call the client services with no handshake. A client may
   compare its own version with its host's `HostEntry.host.version`; the terminal
   client shows "amux *version* is running · restart to update" when they
   differ.
@@ -797,7 +811,7 @@ Nothing else carries a version integer:
 
 ## Writing a client
 
-A checklist for a client against `ClientService`:
+A checklist for a client against `AgentService` and `SessionService`:
 
 1. Subscribe to the inventory and draw the fleet from `Agent` rows; treat the
    first `CaughtUp` as "the list is complete". On `Lagged`, subscribe again at

@@ -4,7 +4,7 @@
 //! installation services.
 
 /// Protocol version for the native-stream link handshake. It moves only for
-/// a break both ends of a link must take; see the header of `service.proto`.
+/// a break both ends of a link must take; see `proto/amux/v1/README.md` at the repository root.
 pub const PROTOCOL_VERSION: u32 = 1;
 
 pub mod amux {
@@ -57,42 +57,83 @@ pub const ATTACHMENT_SIZE_LIMIT: usize = 64 * 1024 * 1024;
 /// at the attachment limit still fits in one message.
 pub const CHANNEL_MESSAGE_SIZE_LIMIT: usize = ATTACHMENT_SIZE_LIMIT + 1024 * 1024;
 
+/// A sized client and server constructor for each service that carries
+/// attachments: every message may be as large as the largest attachment.
+macro_rules! sized_service {
+    ($client_fn:ident, $server_fn:ident, $client_mod:ident, $client:ident, $server_mod:ident, $server:ident, $service:ident) => {
+        #[cfg(feature = "grpc")]
+        pub fn $client_fn(
+            channel: tonic::transport::Channel,
+        ) -> $client_mod::$client<tonic::transport::Channel> {
+            $client_mod::$client::new(channel)
+                .max_decoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
+                .max_encoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
+        }
+
+        #[cfg(feature = "grpc")]
+        pub fn $server_fn<T>(service: T) -> $server_mod::$server<T>
+        where
+            T: $server_mod::$service,
+        {
+            $server_mod::$server::new(service)
+                .max_decoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
+                .max_encoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
+        }
+    };
+}
+
+sized_service!(
+    agent_service_client,
+    agent_service_server,
+    agent_service_client,
+    AgentServiceClient,
+    agent_service_server,
+    AgentServiceServer,
+    AgentService
+);
+sized_service!(
+    session_service_client,
+    session_service_server,
+    session_service_client,
+    SessionServiceClient,
+    session_service_server,
+    SessionServiceServer,
+    SessionService
+);
+sized_service!(
+    peer_agent_service_client,
+    peer_agent_service_server,
+    peer_agent_service_client,
+    PeerAgentServiceClient,
+    peer_agent_service_server,
+    PeerAgentServiceServer,
+    PeerAgentService
+);
+sized_service!(
+    peer_session_service_client,
+    peer_session_service_server,
+    peer_session_service_client,
+    PeerSessionServiceClient,
+    peer_session_service_server,
+    PeerSessionServiceServer,
+    PeerSessionService
+);
+
+/// The client services' stubs on one profile or tools socket: what a
+/// caller that speaks gRPC directly holds.
 #[cfg(feature = "grpc")]
-pub fn client_service_client(
-    channel: tonic::transport::Channel,
-) -> client_service_client::ClientServiceClient<tonic::transport::Channel> {
-    client_service_client::ClientServiceClient::new(channel)
-        .max_decoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
-        .max_encoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
+#[derive(Clone, Debug)]
+pub struct ClientStubs {
+    pub agents: agent_service_client::AgentServiceClient<tonic::transport::Channel>,
+    pub sessions: session_service_client::SessionServiceClient<tonic::transport::Channel>,
 }
 
 #[cfg(feature = "grpc")]
-pub fn client_service_server<T>(service: T) -> client_service_server::ClientServiceServer<T>
-where
-    T: client_service_server::ClientService,
-{
-    client_service_server::ClientServiceServer::new(service)
-        .max_decoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
-        .max_encoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
-}
-
-#[cfg(feature = "grpc")]
-pub fn peer_service_client(
-    channel: tonic::transport::Channel,
-) -> peer_service_client::PeerServiceClient<tonic::transport::Channel> {
-    peer_service_client::PeerServiceClient::new(channel)
-        .max_decoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
-        .max_encoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
-}
-
-#[cfg(feature = "grpc")]
-pub fn peer_service_server<T>(service: T) -> peer_service_server::PeerServiceServer<T>
-where
-    T: peer_service_server::PeerService,
-{
-    peer_service_server::PeerServiceServer::new(service)
-        .max_decoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
-        .max_encoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
+pub fn client_stubs(channel: tonic::transport::Channel) -> ClientStubs {
+    ClientStubs {
+        agents: agent_service_client(channel.clone()),
+        sessions: session_service_client(channel),
+    }
 }
 
 /// A person's input as its kind's own message: what a client builds and
@@ -417,8 +458,12 @@ mod tests {
             .collect()
     }
 
+    fn set_of(names: &[&str]) -> BTreeSet<String> {
+        names.iter().map(|name| (*name).to_owned()).collect()
+    }
+
     #[test]
-    fn services_are_the_client_peer_pairing_profile_admin_and_installation_surfaces() {
+    fn services_are_the_agent_session_peer_pairing_profile_admin_and_installation_surfaces() {
         let set = descriptor();
         let services = set
             .file
@@ -428,47 +473,47 @@ mod tests {
             .collect::<BTreeSet<_>>();
         assert_eq!(
             services,
-            BTreeSet::from(
-                [
-                    "ClientService",
-                    "InstallationService",
-                    "PairingService",
-                    "PeerService",
-                    "ProfileAdminService",
-                    "ProfileService"
-                ]
-                .map(str::to_owned)
-            )
+            set_of(&[
+                "AgentService",
+                "InstallationService",
+                "PairingService",
+                "PeerAgentService",
+                "PeerSessionService",
+                "ProfileAdminService",
+                "SessionService",
+            ])
         );
 
-        let client = methods(&set, "ClientService");
+        let agents = methods(&set, "AgentService");
         assert_eq!(
-            client,
-            BTreeSet::from(
-                [
-                    "SubscribeInventory",
-                    "ResolveAgent",
-                    "SubscribeSession",
-                    "ListItems",
-                    "GetItem",
-                    "SendInput",
-                    "CreateAgent",
-                    "RenameAgent",
-                    "StopAgent",
-                    "ResumeAgent",
-                    "DeleteAgent",
-                    "SendMessage",
-                    "PutBlob",
-                    "GetBlob",
-                    "GetDiff",
-                    "ListRepositories",
-                    "Dump",
-                    "GetCatalogue",
-                    "UpdateDraft",
-                    "GetDraft",
-                ]
-                .map(str::to_owned)
-            )
+            agents,
+            set_of(&[
+                "SubscribeInventory",
+                "ResolveAgent",
+                "CreateAgent",
+                "RenameAgent",
+                "StopAgent",
+                "ResumeAgent",
+                "DeleteAgent",
+                "SendMessage",
+                "PutBlob",
+                "GetBlob",
+                "GetDiff",
+                "GetCatalogue",
+                "ListRepositories",
+            ])
+        );
+        let sessions = methods(&set, "SessionService");
+        assert_eq!(
+            sessions,
+            set_of(&[
+                "SubscribeSession",
+                "ListItems",
+                "GetItem",
+                "SendInput",
+                "UpdateDraft",
+                "GetDraft",
+            ])
         );
 
         // The peer surface is the client surface minus name resolution and
@@ -476,16 +521,28 @@ mod tests {
         // same request and response messages. A peer's Dump answers for the
         // agents the called host runs, so a dump taken elsewhere holds their
         // host-side parts.
-        let mut peer_expected = client.clone();
-        peer_expected.remove("ResolveAgent");
-        peer_expected.remove("UpdateDraft");
-        peer_expected.remove("GetDraft");
-        assert_eq!(methods(&set, "PeerService"), peer_expected);
+        let mut peer_agents = agents.clone();
+        peer_agents.remove("ResolveAgent");
+        peer_agents.insert("Dump".to_owned());
+        assert_eq!(methods(&set, "PeerAgentService"), peer_agents);
+        let mut peer_sessions = sessions.clone();
+        peer_sessions.remove("UpdateDraft");
+        peer_sessions.remove("GetDraft");
+        assert_eq!(methods(&set, "PeerSessionService"), peer_sessions);
 
-        let installation = methods(&set, "InstallationService");
+        assert!(methods(&set, "ProfileAdminService").contains("Dump"));
         assert_eq!(
-            installation,
-            BTreeSet::from(["GetInstallation", "Shutdown"].map(str::to_owned))
+            methods(&set, "InstallationService"),
+            set_of(&[
+                "GetInstallation",
+                "Shutdown",
+                "ListProfiles",
+                "SubscribeProfiles",
+                "CreateProfile",
+                "BindProfile",
+                "RenameProfile",
+                "DeleteProfile",
+            ])
         );
     }
 

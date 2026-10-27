@@ -64,7 +64,7 @@ test-store *ARGS:
 # Cross-compile every store test target and run it on the leased, booted iOS
 # simulator, after proving the SQLite suite's binary carries SQLite itself.
 test-store-ios:
-    scripts/with iphone -- {{bounded}} 2300 scripts/python -B scripts/ios-store-test.py
+    scripts/with iphone -- {{bounded}} 2300 scripts/python -B apps/apple/Tools/ios-store-test.py
 
 # Exercise the pure store-backed reducer lifecycle and recorded UI specs.
 test-ui *ARGS:
@@ -135,6 +135,10 @@ deploy VERSION *ARGS:
 # The release signing key.
 release-key *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 600 cargo run --locked -q -p xtask -- release key "$@"
+
+# Install the pre-push credential scan (scripts/hooks/pre-push) for every worktree.
+hooks:
+    scripts/hooks/install
 
 # Check the provider-free graph used by embedded clients.
 embedded-check:
@@ -258,6 +262,11 @@ tests-list:
 tests-check:
     {{bounded}} 120 scripts/python -B scripts/tests-catalog.py check
 
+# The unit tests of the repository's own scripts. Pure Python; nothing is
+# built. The phone's scripts have theirs in `just ios script-tests`.
+script-tests:
+    {{bounded}} 120 scripts/py -m unittest discover -s scripts/tests -p '*_test.py' -t scripts/tests
+
 # List every parked property of the protocol models, with its reason, and fail
 # while any remains: the landing gate for decisions still waiting.
 parked-check:
@@ -314,7 +323,7 @@ no-update-flags:
     scripts/no-update-flags.sh
 
 # Run the same task sequence exercised across continuous-integration jobs.
-ci: no-update-flags check lint fmt-check codegen-check proto-compat dependency-policy cores-check typed-provider-check docs-check tests-check test contracts-check doctest release-check embedded-check embedded-test mobile-check
+ci: no-update-flags check lint fmt-check codegen-check proto-compat dependency-policy cores-check typed-provider-check docs-check tests-check script-tests test contracts-check doctest release-check embedded-check embedded-test mobile-check
 
 # Run the live provider compatibility lane for one kind (claude_pty,
 # claude_sdk or codex) and scenario (initialize, respond, decide, interrupt,

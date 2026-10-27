@@ -2,12 +2,12 @@
 
 use anyhow::Result;
 use tonic::transport::Channel;
-use wire::profile_service_client::ProfileServiceClient;
+use wire::installation_service_client::InstallationServiceClient;
 use wire::{CreateProfileRequest, DeleteProfileRequest, RenameProfileRequest};
 
 use crate::connect;
 
-type Profiles = ProfileServiceClient<Channel>;
+type Profiles = InstallationServiceClient<Channel>;
 
 pub async fn list(profiles: &mut Profiles) -> Result<()> {
     let listed = profiles

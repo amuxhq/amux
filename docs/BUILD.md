@@ -27,13 +27,19 @@ Other tools a full checkout uses:
   3.9.
 - Xcode and XcodeGen build the iPhone app (see [the iPhone app](IOS.md)).
 - `tmux` drives the terminal journeys.
+- [`gitleaks`](https://github.com/gitleaks/gitleaks) scans what a push
+  would publish for credentials. `just hooks` installs that scan as the
+  pre-push hook, for every worktree at once; it reads `.gitleaks.toml`, and
+  `.gitleaksignore` lists the test keys committed on purpose. The repository
+  is public, so the scan runs before a push rather than in CI, which would
+  only see a leak after it was published.
 
 ### The Nix dev shell
 
 On a machine with [Nix](https://nixos.org/download/) and flakes enabled,
 `nix develop` at the root opens a shell with everything above except Xcode:
 the toolchain `rust-toolchain.toml` pins, the formatting nightly, `just`,
-`tmux`, Python, `git` and, on Linux, a C compiler. `nix develop -c just test`
+`tmux`, Python, `git`, `gitleaks` and, on Linux, a C compiler. `nix develop -c just test`
 runs one recipe in it. [`nix/toolchain.nix`](../nix/toolchain.nix) is the
 list, and `flake.lock` pins every tool in it, so two machines on the same
 revision get the same tools. `nix profile install .#toolchain` installs the
@@ -123,7 +129,7 @@ The recipes a build or change usually needs:
 Generated code is committed, and a check fails when it is stale.
 
 **Protobuf.** The schemas live under
-[`crates/wire/proto/amux/v1`](../crates/wire/proto/amux/v1). The generated
+[`proto/amux/v1`](../proto/amux/v1). The generated
 Rust (`amux.v1.rs`) and descriptor set (`amux.v1.bin`) are committed under
 [`crates/wire/src/generated`](../crates/wire/src/generated). After changing a
 schema:
@@ -141,8 +147,8 @@ renamed; [the wire](WIRE.md#compatibility) has the rules.
 
 **Swift value types.** The Swift mirrors of the view values the phone reads,
 `apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values.swift`, are generated
-from the Rust definitions by `cargo run -p xtask -- swift-types`. A unit test
-in the `xtask` crate, run by `just test`, fails when the committed file
+from the Rust definitions by `cargo run -p ios-tools -- swift-types`. A unit test
+in the `ios-tools` crate, run by `just test`, fails when the committed file
 differs from what the generator writes.
 
 ## Worktrees

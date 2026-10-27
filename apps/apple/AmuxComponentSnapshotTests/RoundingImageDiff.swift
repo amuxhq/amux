@@ -14,7 +14,7 @@ enum RoundingImageDiff {
     /// held: a mark gone missing moves its pixels far, and a colour that
     /// drifted moves thousands of them. Never a percentage of arbitrary
     /// mismatching pixels, which grows with the picture. The whole-screen
-    /// comparison holds the same numbers in `xtask`'s `golden::ALLOWANCE`.
+    /// comparison holds the same numbers in `ios-tools`'s `golden::ALLOWANCE`.
     static let strayPixels = 64
     static let strayCeiling = 8
 

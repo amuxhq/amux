@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[1]
-ROOT = SCRIPTS.parent
+ROOT = SCRIPTS.parents[2]
 sys.path.insert(0, str(SCRIPTS))
 specification = importlib.util.spec_from_file_location("ios_unit", SCRIPTS / "ios-unit.py")
 recipe = importlib.util.module_from_spec(specification)

@@ -1,4 +1,4 @@
-//! The client service over a local socket: one profile's socket for
+//! The client services, AgentService and SessionService, over a local socket: one profile's socket for
 //! clients, and each agent's tools socket for its MCP server, where the
 //! socket is the caller's identity.
 //!
@@ -17,13 +17,14 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::task::JoinHandle;
 use tonic::{Code, Request, Response, Status};
 use uuid::Uuid;
-use wire::client_service_server::ClientService;
+use wire::agent_service_server::AgentService;
 use wire::profile_admin_service_server::ProfileAdminServiceServer;
+use wire::session_service_server::SessionService;
 use wire::{
-    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, DumpRequest, DumpResponse, Empty,
-    ErrorCode, GetBlobRequest, GetBlobResponse, GetDiffRequest, GetItemRequest, InventoryEvent,
-    Item, ListItemsRequest, ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse,
-    PutBlobRequest, RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest, SendInputRequest,
+    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, Empty, ErrorCode, GetBlobRequest,
+    GetBlobResponse, GetDiffRequest, GetItemRequest, InventoryEvent, Item, ListItemsRequest,
+    ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse, PutBlobRequest,
+    RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest, SendInputRequest,
     SendInputResponse, SendMessageRequest, SendMessageResponse, SessionEvent, StopAgentRequest,
     SubscribeSessionRequest,
 };
@@ -55,7 +56,7 @@ pub(crate) fn wire_error(code: ErrorCode, message: impl Into<String>) -> wire::E
     }
 }
 
-/// The client service for one profile. `caller` is set on an agent's
+/// The client services for one profile. `caller` is set on an agent's
 /// tools socket: that agent is the parent of what it spawns and the sender
 /// of what it sends.
 #[derive(Clone)]
@@ -241,9 +242,8 @@ fn host_id(bytes: &[u8]) -> Result<crate::HostId, Status> {
 type EventStream<T> = Pin<Box<dyn Stream<Item = Result<T, Status>> + Send>>;
 
 #[tonic::async_trait]
-impl ClientService for ClientApi {
+impl AgentService for ClientApi {
     type SubscribeInventoryStream = EventStream<InventoryEvent>;
-    type SubscribeSessionStream = EventStream<SessionEvent>;
 
     async fn subscribe_inventory(
         &self,
@@ -276,90 +276,6 @@ impl ClientService for ClientApi {
             .await
             .map(Response::new)
             .map_err(|error| status(error.to_wire()))
-    }
-
-    async fn subscribe_session(
-        &self,
-        request: Request<SubscribeSessionRequest>,
-    ) -> Result<Response<Self::SubscribeSessionStream>, Status> {
-        let request = request.into_inner();
-        let subscription = self
-            .runtime()?
-            .subscribe_session(&request.agent_id, request.tail)
-            .await
-            .map_err(|error| status(error.to_wire()))?;
-        let stream = futures_util::stream::unfold(subscription, |mut subscription| async move {
-            let event = subscription.next().await?;
-            Some((Ok(SessionEvent::clone(&event)), subscription))
-        });
-        Ok(Response::new(Box::pin(stream)))
-    }
-
-    async fn list_items(
-        &self,
-        request: Request<ListItemsRequest>,
-    ) -> Result<Response<ListItemsResponse>, Status> {
-        self.runtime()?
-            .list_items(&request.into_inner())
-            .await
-            .map(Response::new)
-            .map_err(|error| status(error.to_wire()))
-    }
-
-    async fn get_item(&self, request: Request<GetItemRequest>) -> Result<Response<Item>, Status> {
-        self.runtime()?
-            .get_item(&request.into_inner())
-            .await
-            .map(Response::new)
-            .map_err(|error| status(error.to_wire()))
-    }
-
-    async fn send_input(
-        &self,
-        request: Request<SendInputRequest>,
-    ) -> Result<Response<SendInputResponse>, Status> {
-        let request = request.into_inner();
-        let runtime = self.runtime()?;
-        self.lineage(
-            &runtime,
-            &request.agent_id,
-            "an agent sends input only to its own children",
-        )
-        .await?;
-        let shape = request.input.as_ref().and_then(InputShape::of);
-        if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
-            let forwarded = runtime.on_peer(host, request).await;
-            return match forwarded {
-                Ok(verdict) => {
-                    let on = analytics::On::PairedHost(host);
-                    self.record_input(&runtime, shape, on, telemetry::accepted(&verdict));
-                    Ok(Response::new(verdict))
-                }
-                // Never left: definitely not sent. A send that went out and
-                // lost its answer comes back aborted, which the sender
-                // settles at its next catch-up.
-                Err(ForwardError::NotSent { .. }) => Ok(Response::new(crate::relay::rejected(
-                    wire::Refusal::HostUnreachable,
-                ))),
-                // Never left either, and the lapse is why: the refusal
-                // says so, so a client holds it like any unreachable send
-                // and words the reason.
-                Err(error @ ForwardError::Lapsed { .. }) => Ok(Response::new(SendInputResponse {
-                    of: Some(wire::send_input_response::Of::Rejected(wire::Rejected {
-                        refusal: wire::Refusal::HostUnreachable as i32,
-                        detail: Some(error.to_string()),
-                    })),
-                })),
-                Err(error) => Err(status(error.to_wire())),
-            };
-        }
-        let verdict = runtime
-            .send_input(&request)
-            .await
-            .map_err(|error| status(error.to_wire()))?;
-        let on = analytics::On::ThisHost;
-        self.record_input(&runtime, shape, on, telemetry::accepted(&verdict));
-        Ok(Response::new(verdict))
     }
 
     async fn create_agent(
@@ -604,6 +520,95 @@ impl ClientService for ClientApi {
                 .await,
         ))
     }
+}
+
+#[tonic::async_trait]
+impl SessionService for ClientApi {
+    type SubscribeSessionStream = EventStream<SessionEvent>;
+
+    async fn subscribe_session(
+        &self,
+        request: Request<SubscribeSessionRequest>,
+    ) -> Result<Response<Self::SubscribeSessionStream>, Status> {
+        let request = request.into_inner();
+        let subscription = self
+            .runtime()?
+            .subscribe_session(&request.agent_id, request.tail)
+            .await
+            .map_err(|error| status(error.to_wire()))?;
+        let stream = futures_util::stream::unfold(subscription, |mut subscription| async move {
+            let event = subscription.next().await?;
+            Some((Ok(SessionEvent::clone(&event)), subscription))
+        });
+        Ok(Response::new(Box::pin(stream)))
+    }
+
+    async fn list_items(
+        &self,
+        request: Request<ListItemsRequest>,
+    ) -> Result<Response<ListItemsResponse>, Status> {
+        self.runtime()?
+            .list_items(&request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(|error| status(error.to_wire()))
+    }
+
+    async fn get_item(&self, request: Request<GetItemRequest>) -> Result<Response<Item>, Status> {
+        self.runtime()?
+            .get_item(&request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(|error| status(error.to_wire()))
+    }
+
+    async fn send_input(
+        &self,
+        request: Request<SendInputRequest>,
+    ) -> Result<Response<SendInputResponse>, Status> {
+        let request = request.into_inner();
+        let runtime = self.runtime()?;
+        self.lineage(
+            &runtime,
+            &request.agent_id,
+            "an agent sends input only to its own children",
+        )
+        .await?;
+        let shape = request.input.as_ref().and_then(InputShape::of);
+        if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
+            let forwarded = runtime.on_peer(host, request).await;
+            return match forwarded {
+                Ok(verdict) => {
+                    let on = analytics::On::PairedHost(host);
+                    self.record_input(&runtime, shape, on, telemetry::accepted(&verdict));
+                    Ok(Response::new(verdict))
+                }
+                // Never left: definitely not sent. A send that went out and
+                // lost its answer comes back aborted, which the sender
+                // settles at its next catch-up.
+                Err(ForwardError::NotSent { .. }) => Ok(Response::new(crate::relay::rejected(
+                    wire::Refusal::HostUnreachable,
+                ))),
+                // Never left either, and the lapse is why: the refusal
+                // says so, so a client holds it like any unreachable send
+                // and words the reason.
+                Err(error @ ForwardError::Lapsed { .. }) => Ok(Response::new(SendInputResponse {
+                    of: Some(wire::send_input_response::Of::Rejected(wire::Rejected {
+                        refusal: wire::Refusal::HostUnreachable as i32,
+                        detail: Some(error.to_string()),
+                    })),
+                })),
+                Err(error) => Err(status(error.to_wire())),
+            };
+        }
+        let verdict = runtime
+            .send_input(&request)
+            .await
+            .map_err(|error| status(error.to_wire()))?;
+        let on = analytics::On::ThisHost;
+        self.record_input(&runtime, shape, on, telemetry::accepted(&verdict));
+        Ok(Response::new(verdict))
+    }
 
     async fn update_draft(
         &self,
@@ -637,18 +642,6 @@ impl ClientService for ClientApi {
         Ok(Response::new(
             self.runtime()?.draft(&request.agent_id).await,
         ))
-    }
-
-    async fn dump(&self, request: Request<DumpRequest>) -> Result<Response<DumpResponse>, Status> {
-        // A local caller reads the bundle where it was written.
-        let path = self
-            .runtime()?
-            .dump(request.into_inner())
-            .await
-            .map_err(|error| status(error.to_wire()))?;
-        Ok(Response::new(DumpResponse {
-            report_path: path.to_string_lossy().into_owned(),
-        }))
     }
 }
 
@@ -702,7 +695,7 @@ pub(crate) fn incoming(
     })
 }
 
-/// Serves the client service on a listener, with the profile's
+/// Serves the client services on a listener, with the profile's
 /// administration on the profile's own socket, until the task is aborted,
 /// which drops the listener and removes its socket, and closes every
 /// connection it accepted.
@@ -718,7 +711,8 @@ pub(crate) fn serve_client(
         // "no longer running" by a dead runtime instead of redialling the
         // socket, where a restarted runtime may already be listening.
         let served = tonic::transport::Server::builder()
-            .add_service(wire::client_service_server(api))
+            .add_service(wire::agent_service_server(api.clone()))
+            .add_service(wire::session_service_server(api))
             .add_optional_service(admin)
             .serve_with_incoming_shutdown(incoming(listener), std::future::pending::<()>())
             .await;

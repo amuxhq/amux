@@ -17,7 +17,8 @@ use store::AgentKey;
 use support::synthetic::*;
 use support::*;
 use tonic::{Code, Request};
-use wire::client_service_server::ClientService as _;
+use wire::agent_service_server::AgentService as _;
+use wire::session_service_server::SessionService as _;
 use wire::{
     AgentRef, ClaudeSdkInput, Input, Lifecycle, PromptInput, SendInputRequest, SendInputResponse,
     SendMessageRequest, claude_sdk_input, send_input_response, sender,

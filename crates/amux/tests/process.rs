@@ -21,8 +21,7 @@ use provider_fakes::{SCRIPT_ENV, Script, Step};
 use tokio::io::AsyncBufReadExt as _;
 use tokio::process::{Child, Command};
 use tonic::transport::{Channel, Endpoint};
-use wire::client_service_client::ClientServiceClient;
-use wire::profile_service_client::ProfileServiceClient;
+use wire::installation_service_client::InstallationServiceClient;
 use wire::{SubscribeSessionRequest, session_event};
 /// How long agents outlive their daemon. Long enough to restart a daemon
 /// under them in a test, short enough to wait out when a test wants them
@@ -184,9 +183,9 @@ impl Install {
     }
 
     /// The first profile's client service.
-    async fn client(&self) -> ClientServiceClient<Channel> {
+    async fn client(&self) -> wire::ClientStubs {
         let door = self.front_door().await.expect("a daemon answers");
-        let profile = ProfileServiceClient::new(door)
+        let profile = InstallationServiceClient::new(door)
             .list_profiles(wire::ListProfilesRequest {})
             .await
             .unwrap()
@@ -195,7 +194,7 @@ impl Install {
             .into_iter()
             .next()
             .expect("a profile");
-        wire::client_service_client(channel(Path::new(&profile.socket_path)).await.unwrap())
+        wire::client_stubs(channel(Path::new(&profile.socket_path)).await.unwrap())
     }
 
     fn agent_dir(&self, id: &[u8]) -> PathBuf {
@@ -244,8 +243,9 @@ async fn channel(path: &Path) -> std::io::Result<Channel> {
 
 /// An agent's chat as a client opening it reads it: every item's key and
 /// text, in order, read to CaughtUp.
-async fn chat(client: &mut ClientServiceClient<Channel>, agent: &[u8]) -> Vec<(String, String)> {
+async fn chat(client: &mut wire::ClientStubs, agent: &[u8]) -> Vec<(String, String)> {
     let mut stream = client
+        .sessions
         .subscribe_session(SubscribeSessionRequest {
             agent_id: agent.to_vec(),
             tail: 1000,

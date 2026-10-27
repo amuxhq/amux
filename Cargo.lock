@@ -126,11 +126,12 @@ dependencies = [
  "release",
  "serde",
  "serde_json",
- "serde_yaml",
  "settings",
  "store",
  "tempfile",
  "tokio",
+ "toml 0.8.23",
+ "toml_edit",
  "tonic",
  "tower",
  "tracing",
@@ -4276,8 +4277,8 @@ dependencies = [
  "gethostname",
  "libc",
  "serde",
- "serde_yaml",
  "thiserror 2.0.20",
+ "toml 0.8.23",
 ]
 
 [[package]]

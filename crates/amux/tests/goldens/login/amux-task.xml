@@ -21,7 +21,7 @@
   <Actions Context="Author">
     <Exec>
       <Command>/Users/someone/.amux/bin/amux</Command>
-      <Arguments>--config &quot;/Users/someone/Library/Application Support/amux/config &amp; more.yaml&quot; supervise</Arguments>
+      <Arguments>--config &quot;/Users/someone/Library/Application Support/amux/config &amp; more.toml&quot; supervise</Arguments>
     </Exec>
   </Actions>
 </Task>

@@ -7,23 +7,25 @@
 //! updater, and it runs in the foreground under whatever service manager
 //! started it.
 //!
-//! The configuration is the file `--config` (or `AMUX_CONFIG`) names:
+//! The configuration is the TOML file `--config` (or `AMUX_CONFIG`) names;
+//! a key it does not know is refused:
 //!
-//! ```yaml
-//! host_name: s1.amux.sh   # the name connection tokens are minted for
-//! tcp_port: 9001          # the TLS listener; tokens name this port
-//! udp_port: 9001          # the QUIC listener; the TCP port when absent
-//! cloud_url: https://amux.sh
-//! reports_dir: /var/lib/amux-relay/reports  # beside this file when absent
+//! ```toml
+//! host_name = "s1.amux.sh"   # the name connection tokens are minted for
+//! tcp_port = 9001            # the TLS listener; tokens name this port
+//! udp_port = 9001            # the QUIC listener; the TCP port when absent
+//! cloud_url = "https://amux.sh"
+//! tls_cert = "/etc/amux-relay/tls/fullchain.pem"
+//! tls_key = "/etc/amux-relay/tls/privkey.pem"
+//! state_dir = "/var/lib/amux-relay"
 //! ```
 //!
-//! The certificate and key are PEM files named by `AMUX_TLS_CERT` and
-//! `AMUX_TLS_KEY`, or by `tls_cert` and `tls_key` in the file. The session
-//! tickets the relay issues are kept in `tickets` beside the certificate.
-//! Other keys an older relay configuration carried are ignored. A dump the relay's core
-//! asks for (a broken invariant, a step over its budget) is a text file in
-//! `reports_dir`; the default is `reports` in the configuration file's
-//! directory.
+//! Relative paths are resolved beside the file. `state_dir` holds the
+//! session tickets the relay issues (`tickets/`) and the dumps its core asks
+//! for (`reports/`, the newest kept); it defaults to the directory systemd
+//! names in `STATE_DIRECTORY`, else the file's own. The relay logs to
+//! standard error, where its service manager keeps and rotates it;
+//! `AMUX_LOG` names a file instead.
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -38,11 +40,12 @@ use serde::Deserialize;
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 /// How long link-close notices get to reach hosts before the listeners go.
 const CLOSE_FLUSH: Duration = Duration::from_millis(500);
-const CERT_ENV: &str = "AMUX_TLS_CERT";
-const KEY_ENV: &str = "AMUX_TLS_KEY";
 const LOG_ENV: &str = "AMUX_LOG";
+/// Where systemd tells a unit with `StateDirectory=` its state lives.
+const STATE_DIRECTORY_ENV: &str = "STATE_DIRECTORY";
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RelayConfig {
     host_name: String,
     tcp_port: u16,
@@ -50,16 +53,14 @@ struct RelayConfig {
     udp_port: Option<u16>,
     #[serde(default = "default_cloud_url")]
     cloud_url: String,
+    tls_cert: PathBuf,
+    tls_key: PathBuf,
     #[serde(default)]
-    tls_cert: Option<PathBuf>,
-    #[serde(default)]
-    tls_key: Option<PathBuf>,
-    #[serde(default)]
-    reports_dir: Option<PathBuf>,
+    state_dir: Option<PathBuf>,
 }
 
 fn default_cloud_url() -> String {
-    "https://amux.sh".into()
+    settings::DEFAULT_CLOUD_URL.into()
 }
 
 fn config_path(path: Option<&Path>) -> Result<PathBuf> {
@@ -68,27 +69,8 @@ fn config_path(path: Option<&Path>) -> Result<PathBuf> {
     })
 }
 
-fn pem_path(env: &str, configured: Option<&Path>, what: &str) -> Result<PathBuf> {
-    std::env::var_os(env)
-        .map(PathBuf::from)
-        .or_else(|| configured.map(Path::to_owned))
-        .ok_or_else(|| anyhow!("the relay needs its TLS {what}: set {env}"))
-}
-
 fn read_pem(path: &Path, what: &str) -> Result<Vec<u8>> {
     std::fs::read(path).with_context(|| format!("reading the TLS {what} {}", path.display()))
-}
-
-/// The log file: `AMUX_LOG`, else the per-user state directory.
-fn log_path() -> PathBuf {
-    if let Some(path) = std::env::var_os(LOG_ENV) {
-        return PathBuf::from(path);
-    }
-    let state = std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")))
-        .unwrap_or_else(std::env::temp_dir);
-    state.join("amux").join("amux.log")
 }
 
 pub fn run(config: Option<&Path>) -> Result<()> {
@@ -96,22 +78,27 @@ pub fn run(config: Option<&Path>) -> Result<()> {
     let text =
         std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
     let config: RelayConfig =
-        serde_yaml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+        toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
     if config.host_name.is_empty() {
         bail!("{}: host_name must name the relay", path.display());
     }
-    let cert_path = pem_path(CERT_ENV, config.tls_cert.as_deref(), "certificate")?;
-    let cert = read_pem(&cert_path, "certificate")?;
-    let key = read_pem(&pem_path(KEY_ENV, config.tls_key.as_deref(), "key")?, "key")?;
-    crate::server::log_to(&log_path())?;
-    // The session tickets the relay issued live beside its certificate,
-    // so a restarted relay still resumes the hosts that held them. A
-    // directory the relay cannot write costs each host one full handshake
-    // after a restart, not the relay.
-    let tickets_dir = cert_path
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join(node::TICKETS_DIR);
+    let base = path.parent().unwrap_or_else(|| Path::new("."));
+    let cert = read_pem(&base.join(&config.tls_cert), "certificate")?;
+    let key = read_pem(&base.join(&config.tls_key), "key")?;
+    match std::env::var_os(LOG_ENV) {
+        Some(file) => crate::server::log_to(Path::new(&file))?,
+        None => crate::server::log_to_stderr(),
+    }
+    let state = state_dir(
+        base,
+        config.state_dir.as_deref(),
+        std::env::var_os(STATE_DIRECTORY_ENV).as_deref(),
+    );
+    // The session tickets the relay issued outlive it, so a restarted relay
+    // still resumes the hosts that held them. A directory the relay cannot
+    // write costs each host one full handshake after a restart, not the
+    // relay.
+    let tickets_dir = state.join(node::TICKETS_DIR);
     let tickets =
         node::SessionTickets::open(&tickets_dir, node::RELAY_TICKETS).unwrap_or_else(|error| {
             tracing::warn!(
@@ -121,25 +108,27 @@ pub fn run(config: Option<&Path>) -> Result<()> {
             );
             node::SessionTickets::in_memory(node::RELAY_TICKETS)
         });
-    let reports = reports_dir(&path, config.reports_dir.as_deref());
+    let reports = state.join(node::REPORTS);
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
     runtime.block_on(serve(config, reports, cert, key, tickets))
 }
 
-/// Where the relay writes the dumps its core asks for: the configured
-/// directory, else `reports` beside the configuration file.
-fn reports_dir(config: &Path, configured: Option<&Path>) -> PathBuf {
-    configured.map_or_else(
-        || {
-            config
-                .parent()
-                .unwrap_or_else(|| Path::new("."))
-                .join("reports")
-        },
-        Path::to_owned,
-    )
+/// Where the relay keeps its tickets and reports: the configured directory
+/// (resolved beside the configuration), else the one systemd names, else
+/// the configuration's own directory.
+fn state_dir(base: &Path, configured: Option<&Path>, systemd: Option<&std::ffi::OsStr>) -> PathBuf {
+    match (configured, systemd) {
+        (Some(dir), _) => base.join(dir),
+        // systemd lists one directory per StateDirectory= entry,
+        // colon-separated; the relay names one.
+        (None, Some(dirs)) => dirs
+            .to_str()
+            .and_then(|dirs| dirs.split(':').next())
+            .map_or_else(|| PathBuf::from(dirs), PathBuf::from),
+        (None, None) => base.to_owned(),
+    }
 }
 
 async fn serve(
@@ -198,13 +187,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dumps_go_beside_the_configuration_unless_it_names_a_directory() {
-        let config = Path::new("/etc/amux/relay.yaml");
+    fn state_goes_where_the_configuration_says_else_where_systemd_says() {
+        let base = Path::new("/etc/amux-relay");
+        let systemd = std::ffi::OsStr::new("/var/lib/amux-relay");
+        assert_eq!(state_dir(base, None, None), base);
         assert_eq!(
-            reports_dir(config, None),
-            Path::new("/etc/amux").join("reports")
+            state_dir(base, None, Some(systemd)),
+            Path::new("/var/lib/amux-relay")
         );
-        let named = Path::new("/var/lib/amux-relay/reports");
-        assert_eq!(reports_dir(config, Some(named)), named);
+        assert_eq!(
+            state_dir(base, Some(Path::new("state")), Some(systemd)),
+            base.join("state")
+        );
+        assert_eq!(
+            state_dir(base, Some(Path::new("/srv/relay")), None),
+            Path::new("/srv/relay")
+        );
+    }
+
+    #[test]
+    fn a_key_the_relay_does_not_know_is_refused() {
+        let text = "host_name = \"r\"\ntcp_port = 1\ntls_cert = \"c\"\ntls_key = \"k\"\n";
+        assert!(toml::from_str::<RelayConfig>(text).is_ok());
+        let old = format!("{text}reports_dir = \"/r\"\n");
+        assert!(toml::from_str::<RelayConfig>(&old).is_err());
     }
 }

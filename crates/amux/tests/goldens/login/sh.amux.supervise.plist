@@ -8,7 +8,7 @@
 	<array>
 		<string>/Users/someone/.amux/bin/amux</string>
 		<string>--config</string>
-		<string>/Users/someone/Library/Application Support/amux/config &amp; more.yaml</string>
+		<string>/Users/someone/Library/Application Support/amux/config &amp; more.toml</string>
 		<string>supervise</string>
 	</array>
 	<key>EnvironmentVariables</key>

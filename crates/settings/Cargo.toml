@@ -9,7 +9,7 @@ publish = false
 [dependencies]
 gethostname = { workspace = true }
 serde = { workspace = true }
-serde_yaml = { workspace = true }
+toml = { workspace = true }
 thiserror = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]

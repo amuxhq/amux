@@ -754,14 +754,14 @@ async fn a_starting_supervisor_deletes_a_prev_that_is_the_binary() {
 async fn the_amux_daemon_exits_when_its_supervisor_dies() {
     let root = tempfile::tempdir().unwrap();
     let data = root.path().join("data");
-    let config = root.path().join("installation.yaml");
+    let config = root.path().join("config.toml");
     let socket = root.path().join("amux.sock");
     std::fs::write(
         &config,
         format!(
-            "root: {}\nfront_door_socket: {}\nsupervisor: on\nupdates: manual\n",
-            data.display(),
-            socket.display()
+            "root = {:?}\nfront_door_socket = {:?}\nsupervisor = true\nupdates = \"manual\"\n",
+            data.display().to_string(),
+            socket.display().to_string()
         ),
     )
     .unwrap();

@@ -376,10 +376,7 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
         {
             return setup::telemetry(
                 config_path.as_deref(),
-                state.map(|state| match state {
-                    OnOff::On => settings::Switch::On,
-                    OnOff::Off => settings::Switch::Off,
-                }),
+                state.map(|state| matches!(state, OnOff::On)),
             );
         }
         let config = connect::load_config(config_path.as_deref())?;

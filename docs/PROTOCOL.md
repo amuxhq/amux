@@ -675,7 +675,7 @@ It serves no sockets: the app calls the profile `Registry`, each profile's
 ordinary peer to the desktops it pairs with.
 
 A client that finds nothing on the front door does not start a daemon itself.
-Under a supervisor (`supervisor: on`) it starts `amux supervise` if none is
+Under a supervisor (`supervisor = true`, the default) it starts `amux supervise` if none is
 running, which starts the daemon; otherwise it says the daemon belongs to the
 service manager and waits for it.
 

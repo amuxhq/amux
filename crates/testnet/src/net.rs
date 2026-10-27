@@ -1654,10 +1654,10 @@ impl Net {
         let profile = node::create_profile(&data_dir)?;
         let host_id = profile;
         let front_door = dir.join("door.sock");
-        let config = dir.join("installation.yaml");
+        let config = dir.join("config.toml");
         std::fs::write(
             &config,
-            self.installation_yaml(decl, &dir, &data_dir, &front_door)?,
+            self.installation_toml(decl, &dir, &data_dir, &front_door)?,
         )?;
         if let Some(script) = &decl.script {
             self.write_script(&format!("{}.host", decl.name), script.clone())?;
@@ -1734,52 +1734,54 @@ impl Net {
 
     /// The host's installation config: what the terminal client and the
     /// CLI read on any host, and what a process host's daemon runs by.
-    fn installation_yaml(
+    fn installation_toml(
         &self,
         decl: &HostDecl,
         dir: &Path,
         data_dir: &Path,
         front_door: &Path,
     ) -> Result<String, NetError> {
-        let mut yaml = format!(
-            "root: {}\nfront_door_socket: {}\nhost_name: {}\n",
-            data_dir.display(),
-            front_door.display(),
+        let quoted = |path: &Path| format!("{:?}", path.display().to_string());
+        // Only a supervised process host runs under a supervisor; a client
+        // of an in-process host must never start one.
+        let supervised = decl.runs_as_process() && decl.supervised;
+        let mut text = format!(
+            "root = {}\nfront_door_socket = {}\nhost_name = {:?}\nsupervisor = {supervised}\n\
+             updates = \"manual\"\nkeep_awake = false\ntelemetry = false\n",
+            quoted(data_dir),
+            quoted(front_door),
             decl.name,
         );
-        if decl.provider == Provider::Real {
-            // A person's own defaults for a new agent, so one made from the
-            // terminal client starts on the small models; any client may
-            // still choose another.
-            yaml.push_str(
-                &format!(
-                    "new_agent:\n  claude: {{model: {SMALL_CLAUDE}, effort: medium, permission: default}}\n  \
-                     codex: {{model: {SMALL_CODEX}, effort: medium, permission: default}}\n",
-                ),
-            );
-        }
         if decl.runs_as_process() {
+            text.push_str(&format!("releases_url = {:?}\n", self.feed_url()));
+            if !decl.repositories.is_empty() {
+                text.push_str(&format!(
+                    "repository_roots = [{}]\n",
+                    quoted(&dir.join(REPOSITORIES))
+                ));
+            }
             let scope = decl
                 .scope
                 .clone()
                 .unwrap_or_else(|| self.topology.scope.clone());
-            yaml.push_str(&format!(
-                "keep_awake: off\ntelemetry: off\nsupervisor: {}\nupdates: manual\n\
-                 releases_url: {}\ndiscovery:\n  scope: {scope:?}\nagent:\n  grace_secs: {AGENT_GRACE_SECS}\n  drain_secs: 5\n",
-                if decl.supervised { "on" } else { "off" },
-                self.feed_url(),
+            text.push_str(&format!(
+                "[discovery]\nscope = {scope:?}\n\
+                 [agent]\ngrace_secs = {AGENT_GRACE_SECS}\ndrain_secs = 5\n"
             ));
             if let Some(mib) = self.facts_ring_mib {
-                yaml.push_str(&format!("  facts_ring_mib: {mib}\n"));
-            }
-            if !decl.repositories.is_empty() {
-                yaml.push_str(&format!(
-                    "repository_roots:\n  - {}\n",
-                    dir.join(REPOSITORIES).display()
-                ));
+                text.push_str(&format!("facts_ring_mib = {mib}\n"));
             }
         }
-        Ok(yaml)
+        if decl.provider == Provider::Real {
+            // A person's own defaults for a new agent, so one made from the
+            // terminal client starts on the small models; any client may
+            // still choose another.
+            text.push_str(&format!(
+                "[new_agent.claude]\nmodel = \"{SMALL_CLAUDE}\"\neffort = \"medium\"\npermission = \"default\"\n\
+                 [new_agent.codex]\nmodel = \"{SMALL_CODEX}\"\neffort = \"medium\"\npermission = \"default\"\n",
+            ));
+        }
+        Ok(text)
     }
 
     async fn start_host(&mut self, name: &str) -> Result<(), NetError> {

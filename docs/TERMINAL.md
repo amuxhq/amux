@@ -299,24 +299,32 @@ ones, and Codex settings that match no named permission read custom; the phone's
 phone's settings sheet offers every model, effort, permission and mode the agent offers.
 
 The terminal's appearance, its leader key and how new agents start come from the installation config file
-(`~/.config/amux/config.yaml` unless `--config` or `AMUX_CONFIG` names another), read by
+(`~/.config/amux/config.toml` unless `--config` or `AMUX_CONFIG` names another), read by
 [`crates/settings`](../crates/settings/src/lib.rs):
 
-```yaml
-keybinds:
-  leader: ctrl+a      # ctrl+<a-z>
-ui:
-  theme: terminal     # terminal, dark, light, or a path to a YAML theme file
-  color: auto         # auto, truecolor or ansi
-  chat_in: amux       # amux, or terminal: chat in each agent's own terminal
-new_agent:
-  claude: { model: opus, effort: high, permission: default }
-  codex: { model: gpt-6.1-sol, effort: medium, permission: default }
+```toml
+[ui]
+theme = "terminal"    # terminal, dark, light, or a path to a base16 or base24 YAML theme file
+color = "auto"        # auto, truecolor or ansi
+chat_in = "amux"      # amux, or terminal: chat in each agent's own terminal
+
+[keybinds]
+leader = "ctrl+a"     # ctrl+<a-z>
+
+[new_agent.claude]
+model = "opus"
+effort = "high"
+permission = "default"
+
+[new_agent.codex]
+model = "gpt-6.1-sol"
+effort = "medium"
+permission = "default"
 ```
 
-`theme: terminal` asks the terminal for its own colours at startup and derives the palette from them, falling back
+`theme = "terminal"` asks the terminal for its own colours at startup and derives the palette from them, falling back
 to the shipped dark palette when the terminal does not answer. A theme file's path is resolved beside the config
-file; its `tokens:` may name any semantic token directly (`attention: "#5f87d7"`). `color: auto` reads `COLORTERM`
+file (YAML, as base16 and base24 schemes are published); its `tokens:` may name any semantic token directly (`attention: "#5f87d7"`). `color = "auto"` reads `COLORTERM`
 and `TERM` to choose truecolor or ANSI, and `NO_COLOR` turns colour off.
 
 ## Keys
@@ -501,7 +509,7 @@ by its name, `name@host` where agents on two hosts share a name, its id, or the 
 | `amux config telemetry [on\|off]` | Turns the usage events amux sends on or off; with no value, says whether they are on and where they go. See [what amux sends](ANALYTICS.md). |
 | `amux server start` | Starts amux detached from the terminal: the supervisor where the install has one, the daemon otherwise. With `--cloud` it runs the cloud relay in the foreground instead. |
 | `amux server stop` | Stops amux cleanly, the supervisor first where one runs; agents keep running. |
-| `amux supervise` | Runs the daemon under a supervisor that restarts it and, under `updates: auto`, installs releases. See [SUPERVISOR.md](SUPERVISOR.md). |
+| `amux supervise` | Runs the daemon under a supervisor that restarts it and, under `updates = "auto"`, installs releases. See [SUPERVISOR.md](SUPERVISOR.md). |
 
 Hidden subcommands exist for amux's own processes rather than for people: `daemon` (the daemon in the
 foreground), `agent <dir>` (the agent process), `mcp <dir>` (the tool server an agent's provider launches),

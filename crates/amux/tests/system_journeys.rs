@@ -185,7 +185,7 @@ async fn survive_daemon() {
         let root = desk.keep();
         say(format!(
             "-- kept running for other clients: AMUX_CONFIG={} (install under {})",
-            root.join("installation.yaml").display(),
+            root.join("config.toml").display(),
             root.display()
         ));
         return;

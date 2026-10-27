@@ -229,11 +229,13 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
     let udp_port = if quic { port } else { free_port() };
     let cloud = Cloud::serve(port).await;
     // The deployment's configuration and command line, word for word.
-    let config = dir.path().join("config.yaml");
+    let config = dir.path().join("config.toml");
     std::fs::write(
         &config,
         format!(
-            "host_name: {RELAY_HOST}\ntcp_port: {port}\nudp_port: {udp_port}\ncloud_url: {}\n",
+            "host_name = \"{RELAY_HOST}\"\ntcp_port = {port}\nudp_port = {udp_port}\n\
+             cloud_url = \"{}\"\ntls_cert = \"fullchain.pem\"\ntls_key = \"privkey.pem\"\n\
+             state_dir = \"state\"\n",
             cloud.url()
         ),
     )
@@ -241,9 +243,8 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
     let mut relay = tokio::process::Command::new(amux_binary())
         .args(["server", "start", "--cloud", "--foreground"])
         .env("AMUX_CONFIG", &config)
-        .env("AMUX_TLS_CERT", &cert_path)
-        .env("AMUX_TLS_KEY", &key_path)
         .env("AMUX_LOG", dir.path().join("relay.log"))
+        .env_remove("STATE_DIRECTORY")
         .env("HOME", dir.path())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

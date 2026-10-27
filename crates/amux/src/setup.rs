@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context as _, Result, bail};
 use node::supervisor::login::LoginItem;
 use node::supervisor::{Files, Request, ask};
-use settings::{Channel, InstallationConfig, Switch};
+use settings::{Channel, InstallationConfig};
 
 use crate::connect;
 use crate::server::running_supervisor;
@@ -29,7 +29,7 @@ pub async fn init(
     login_item: Option<bool>,
     dry_run: bool,
 ) -> Result<()> {
-    if config.supervisor == Switch::Off {
+    if !config.supervisor {
         println!(
             "This install has no supervisor: the service manager that runs `amux daemon` \
              starts it at boot, so there is no login item to add."
@@ -216,7 +216,7 @@ fn words(words: &[&str]) -> Vec<String> {
 /// `retry`, a build rolled back here too), and waits for a build it
 /// installs to answer, or for the supervisor to roll it back.
 pub async fn update(config: &InstallationConfig, retry: bool) -> Result<()> {
-    if config.supervisor == Switch::Off {
+    if !config.supervisor {
         println!(
             "This install has no supervisor, so updates are deploys: install the new build \
              the way this host's amux was installed."
@@ -312,7 +312,7 @@ pub fn set_channel(config_path: Option<&Path>, channel: Channel) -> Result<()> {
         Channel::Stable => "stable",
         Channel::Preview => "preview",
     };
-    set_key(config_path, "channel", name)?;
+    set_key(config_path, "channel", name.into())?;
     println!(
         "Channel: {name}. The supervisor follows it from its next check; `amux update` checks now."
     );
@@ -324,20 +324,16 @@ pub fn set_channel(config_path: Option<&Path>, channel: Channel) -> Result<()> {
 /// before every upload, so off takes effect at once and on resumes a daemon
 /// that started with it on; a daemon that started with it off has no
 /// uploader and starts sending when it next starts.
-pub fn telemetry(config_path: Option<&Path>, state: Option<Switch>) -> Result<()> {
+pub fn telemetry(config_path: Option<&Path>, state: Option<bool>) -> Result<()> {
     if let Some(state) = state {
-        let name = match state {
-            Switch::On => "on",
-            Switch::Off => "off",
-        };
-        set_key(config_path, "telemetry", name)?;
+        set_key(config_path, "telemetry", state.into())?;
     }
     let config = crate::connect::load_config(config_path)?;
     let destination = analytics::Endpoint::resolve(node::release::is_published())
         .map(|endpoint| endpoint.describe(settings::DEFAULT_CLOUD_URL));
     let line = match (config.telemetry, destination) {
-        (Switch::Off, _) => "Telemetry: off. amux sends no product analytics.".to_owned(),
-        (Switch::On, _) if analytics::do_not_track() => {
+        (false, _) => "Telemetry: off. amux sends no product analytics.".to_owned(),
+        (true, _) if analytics::do_not_track() => {
             // This command sees its own shell's environment, not the
             // daemon's: one started at login never sees a variable set in a
             // shell profile, so only the setting is sure to reach it.
@@ -346,40 +342,37 @@ pub fn telemetry(config_path: Option<&Path>, state: Option<Switch>) -> Result<()
              `amux config telemetry off` turns telemetry off for every daemon."
                 .to_owned()
         }
-        (Switch::On, None) => {
+        (true, None) => {
             "Telemetry: on, but this is a development build, which sends nothing.".to_owned()
         }
-        (Switch::On, Some(destination)) => format!(
+        (true, Some(destination)) => format!(
             "Telemetry: on. Usage events go to {destination}, then to PostHog in the EU. \
              `amux config telemetry off` stops them."
         ),
     };
     println!("{line}");
-    if state == Some(Switch::On) {
+    if state == Some(true) {
         println!("A daemon that started with telemetry off starts sending when it next starts.");
     }
     Ok(())
 }
 
 /// Sets one top-level key in the installation's config file, keeping the
-/// rest as it is, and checks that the file still reads.
-fn set_key(config_path: Option<&Path>, key: &str, value: &str) -> Result<()> {
+/// rest as it is, comments and layout included, and checks that the file
+/// still reads.
+fn set_key(config_path: Option<&Path>, key: &str, value: toml_edit::Value) -> Result<()> {
     let path = config_path
         .map(Path::to_owned)
         .unwrap_or_else(InstallationConfig::default_path);
-    let mut yaml = match std::fs::read_to_string(&path) {
-        Ok(text) => serde_yaml::from_str::<serde_yaml::Value>(&text)
+    let mut document = match std::fs::read_to_string(&path) {
+        Ok(text) => text
+            .parse::<toml_edit::DocumentMut>()
             .with_context(|| format!("reading {}", path.display()))?,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => serde_yaml::Value::Null,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => toml_edit::DocumentMut::new(),
         Err(error) => return Err(error).with_context(|| format!("reading {}", path.display())),
     };
-    if yaml.is_null() {
-        yaml = serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
-    }
-    yaml.as_mapping_mut()
-        .with_context(|| format!("{} is not a mapping of settings", path.display()))?
-        .insert(key.into(), value.into());
-    let text = serde_yaml::to_string(&yaml)?;
+    document[key] = toml_edit::value(value);
+    let text = document.to_string();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating {}", parent.display()))?;

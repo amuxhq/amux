@@ -5,18 +5,20 @@ bin = ["target/debug"]
 commands = ["amux"]
 
 [env]
-AMUX_CONFIG = "{{root()}}/.wt/amux/installation.yaml"
+AMUX_CONFIG = "{{root()}}/.wt/amux/config.toml"
 AMUX_LOG = "{{root()}}/.wt/amux/amux.log"
 
-[files.".wt/amux/installation.yaml"]
+[files.".wt/amux/config.toml"]
 marker = "#"
 content = """
-host_name: {{name_short()}}
-root: {{root()}}/.wt/amux
-front_door_socket: {{root()}}/.wt/amux/amux.sock
-keep_awake: off
-discovery:
-  scope: {{name()}}
+host_name = "{{name_short()}}"
+root = "{{root()}}/.wt/amux"
+front_door_socket = "{{root()}}/.wt/amux/amux.sock"
+supervisor = false
+keep_awake = false
+
+[discovery]
+scope = "{{name()}}"
 """
 
 [hooks]

@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, bail};
 use node::{Launch, NoopSender, StartOptions};
-use settings::{InstallationConfig, Switch};
+use settings::InstallationConfig;
 use tracing_subscriber::EnvFilter;
 
 use crate::connect;
@@ -54,16 +54,25 @@ pub(crate) fn log_to(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// What agents start with: this binary as the canonical install path and
-/// the installation's agent and retention settings.
+/// Logs to standard error, for a process whose service manager keeps and
+/// rotates what it writes there.
+pub(crate) fn log_to_stderr() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
+        .with_ansi(false)
+        .with_writer(std::io::stderr)
+        .init();
+}
+
+/// What agents start with: this binary as the canonical install path, the
+/// installation's agent settings and where it looks for repositories.
 fn launch(config: &InstallationConfig) -> Result<Launch> {
     let install_path = std::env::current_exe().context("finding the amux binary")?;
     Ok(Launch {
         install_path,
         agent: config.agent,
-        own_budget_bytes: config.retention.own_budget_mib << 20,
-        replica_budget_bytes: config.retention.replica_rows_mib << 20,
-        replica_blob_budget_bytes: config.retention.replica_blobs_mib << 20,
         repository_roots: config.repository_roots.clone(),
         ..Launch::default()
     })
@@ -126,7 +135,7 @@ pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>
 /// build or one `AMUX_ANALYTICS_URL` points somewhere sends, only while the
 /// installation's `telemetry` setting is on, and never under `DO_NOT_TRACK`.
 fn telemetry(config: &InstallationConfig) -> node::Telemetry {
-    if config.telemetry == Switch::Off {
+    if !config.telemetry {
         return node::Telemetry::Off;
     }
     let Some(endpoint) = analytics::Endpoint::resolve(node::release::is_published()) else {
@@ -139,7 +148,7 @@ fn telemetry(config: &InstallationConfig) -> node::Telemetry {
         .clone()
         .unwrap_or_else(InstallationConfig::default_path);
     let gate = Arc::new(move || match InstallationConfig::from_file(&path) {
-        Ok(config) => config.telemetry == Switch::On,
+        Ok(config) => config.telemetry,
         Err(settings::ConfigError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
             true
         }
@@ -160,7 +169,7 @@ fn telemetry(config: &InstallationConfig) -> node::Telemetry {
 /// relays use.
 fn edge_options(config: &InstallationConfig) -> node::EdgeOptions {
     node::EdgeOptions {
-        host_name: config.host_name.clone(),
+        host_name: config.host_name(),
         kinds: node::local_kinds(),
         lan: Some(node::LanOptions::default()),
         discovery: Some(node::mdns_discovery()),
@@ -209,7 +218,7 @@ pub async fn start(config: &InstallationConfig, config_path: Option<&Path>) -> R
         println!("The amux daemon is already running.");
         return Ok(());
     }
-    let (mut child, said) = if config.supervisor == Switch::On {
+    let (mut child, said) = if config.supervisor {
         if running_supervisor(&config.root)?.is_some() {
             println!("amux supervise is running; waiting for its daemon.");
             (None, config.root.join(SUPERVISOR_LOG))

@@ -194,7 +194,7 @@ host, refreshing what each provider offers (models, commands) runs the real prov
 ## Process and supervised hosts
 
 A process host is a real `amux` daemon in its own process, with its own installation config under the net's
-root (`keep_awake: off`, `telemetry: off`, `updates: manual`, the net's discovery scope and release feed). The
+root (`keep_awake = false`, `telemetry = false`, `updates = "manual"`, the net's discovery scope and release feed). The
 net starts it with `amux server start` and stops it with `amux server stop`, as a person's CLI would, and kills
 it with SIGKILL on the process that holds its installation lock. Its agents keep running through a kill, in their
 grace, and the next daemon adopts them. The net reaches it as a client does, over its front door and profile
@@ -477,7 +477,7 @@ empty net. With `RUST_LOG` set, the daemons' tracing goes to standard error.
   "hosts": [
     {"name": "desk", "host_id": "…", "profile": "…",
      "front_door": "/tmp/testnetAbc123/desk/door.sock",
-     "config": "/tmp/testnetAbc123/desk/installation.yaml",
+     "config": "/tmp/testnetAbc123/desk/config.toml",
      "dir": "/tmp/testnetAbc123/desk", "process": false, "supervised": false,
      "provider": "fake", "up": true, "lan_port": 53990}
   ],
@@ -488,7 +488,7 @@ empty net. With `RUST_LOG` set, the daemons' tracing goes to standard error.
 ```
 
 Each host lives under `<root>/<name>/`: its installation in `data/`, its agents' working directory in `work/`,
-and `door.sock` and `installation.yaml` beside them. A host's `config` is that installation config, so the real terminal client runs against it
+and `door.sock` and `config.toml` beside them. A host's `config` is that installation config, so the real terminal client runs against it
 with `amux --config <config>`. `cloud_url` and `relay_tcp` appear only when the topology declares a relay:
 `cloud_url` is the account-service stand-in, where `refresh-<account>` is the login for a declared account, and
 `relay_tcp` is the relay's plain TCP carrier for a client outside the net. `lan_port` appears for a host with a LAN

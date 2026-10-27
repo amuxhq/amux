@@ -43,7 +43,7 @@ fn the_login_units_match_their_goldens() {
     let item = LoginItem {
         binary: Path::new("/Users/someone/.amux/bin/amux"),
         config: Some(Path::new(
-            "/Users/someone/Library/Application Support/amux/config & more.yaml",
+            "/Users/someone/Library/Application Support/amux/config & more.toml",
         )),
         path: "/opt/homebrew/bin:/usr/bin:/bin",
         log: Path::new("/Users/someone/.amux/supervisor.log"),
@@ -83,20 +83,19 @@ impl Install {
         let root = tempfile::tempdir().unwrap();
         let data = root.path().join("data");
         let socket = root.path().join("amux.sock");
-        let config = root.path().join("installation.yaml");
-        let supervisor = if supervisor { "on" } else { "off" };
+        let config = root.path().join("config.toml");
         // Tests do not keep the machine awake unless they say so.
         let keep_awake = if extra.contains("keep_awake") {
             ""
         } else {
-            "keep_awake: off\n"
+            "keep_awake = false\n"
         };
         std::fs::write(
             &config,
             format!(
-                "root: {}\nfront_door_socket: {}\nsupervisor: {supervisor}\nupdates: manual\n{keep_awake}{extra}",
-                data.display(),
-                socket.display(),
+                "root = {:?}\nfront_door_socket = {:?}\nsupervisor = {supervisor}\nupdates = \"manual\"\n{keep_awake}{extra}",
+                data.display().to_string(),
+                socket.display().to_string(),
             ),
         )
         .unwrap();
@@ -306,7 +305,7 @@ async fn the_supervisor_holds_the_sleep_assertion_under_keep_awake() {
             .collect()
     }
 
-    let awake = Install::new(true, "keep_awake: on\n");
+    let awake = Install::new(true, "keep_awake = true\n");
     awake.amux(&["server", "start"]);
     let pid = awake.supervisor_pid().unwrap();
     let held = assertions_of(pid);
@@ -325,7 +324,7 @@ async fn the_supervisor_holds_the_sleep_assertion_under_keep_awake() {
         "released with the supervisor"
     );
 
-    let asleep = Install::new(true, "keep_awake: off\n");
+    let asleep = Install::new(true, "keep_awake = false\n");
     asleep.amux(&["server", "start"]);
     let pid = asleep.supervisor_pid().unwrap();
     assert!(assertions_of(pid).is_empty());
@@ -377,13 +376,22 @@ fn init_writes_a_login_item_that_runs_amux_supervise() {
 
 #[test]
 fn config_channel_sets_the_channel_and_keeps_the_rest() {
-    let install = Install::new(true, "host_name: desk\n");
+    let install = Install::new(
+        true,
+        "# the desk in the study\nhost_name = \"desk\"\n\n[ui]\ncolor = \"ansi\" # for tmux\n",
+    );
     let output = install.amux(&["config", "channel", "preview"]);
     assert!(stdout(&output).contains("Channel: preview."));
     let config = settings::InstallationConfig::from_file(&install.config).unwrap();
     assert_eq!(config.channel, settings::Channel::Preview);
-    assert_eq!(config.host_name, "desk");
+    assert_eq!(config.host_name(), "desk");
+    assert_eq!(config.ui.color, settings::ColorSetting::Ansi);
     assert!(config.manifest_url().ends_with("/preview.json"));
+    let text = std::fs::read_to_string(&install.config).unwrap();
+    assert!(
+        text.contains("# the desk in the study") && text.contains("# for tmux"),
+        "{text}"
+    );
 
     install.amux(&["config", "channel", "stable"]);
     let config = settings::InstallationConfig::from_file(&install.config).unwrap();
@@ -423,7 +431,7 @@ async fn update_retry_installs_the_channel_build_now_even_one_rolled_back_here()
 
     let install = Install::with_binary(
         true,
-        &format!("releases_url: {}\n", channel.url()),
+        &format!("releases_url = \"{}\"\n", channel.url()),
         installed.clone(),
     );
     install.amux(&["server", "start"]);
@@ -468,7 +476,7 @@ async fn update_reports_a_build_that_never_started_and_then_leaves_it_alone() {
 
     let install = Install::with_binary(
         true,
-        &format!("releases_url: {}\n", channel.url()),
+        &format!("releases_url = \"{}\"\n", channel.url()),
         installed.clone(),
     );
     install.amux(&["server", "start"]);

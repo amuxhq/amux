@@ -162,6 +162,19 @@ pub struct Launch {
     pub cores: Option<crate::Cores>,
 }
 
+/// The bytes of stored rows a profile keeps for the agents this host runs;
+/// an agent's directory and blobs go with its row. Basis: a generous multiple
+/// of the largest transcripts seen so far, pending measurement against
+/// typical sizes.
+pub const OWN_BUDGET_BYTES: u64 = 2048 << 20;
+/// The bytes of rows replicated from other hosts a runtime keeps. Basis: the
+/// bound the old client cache had.
+pub const REPLICA_BUDGET_BYTES: u64 = 256 << 20;
+/// The bytes of blobs fetched from other hosts a runtime keeps, evicted
+/// least recently read first. Basis: twice the row budget, since images
+/// dominate what is fetched; to be measured.
+pub const REPLICA_BLOB_BUDGET_BYTES: u64 = 512 << 20;
+
 impl Default for Launch {
     fn default() -> Self {
         Self {
@@ -180,14 +193,13 @@ impl Default for Launch {
             inventory_capacity: 1024,
             delivery_retry_ms: 30_000,
             push_retry_ms: 60_000,
-            own_budget_bytes: settings::RetentionSettings::default().own_budget_mib << 20,
+            own_budget_bytes: OWN_BUDGET_BYTES,
             // A few MiB: a small overrun costs a small trim.
             retention_chunk_bytes: 4 << 20,
             tail_rows: TAIL_ROWS,
             retention_interval_ms: 10 * 60_000,
-            replica_budget_bytes: settings::RetentionSettings::default().replica_rows_mib << 20,
-            replica_blob_budget_bytes: settings::RetentionSettings::default().replica_blobs_mib
-                << 20,
+            replica_budget_bytes: REPLICA_BUDGET_BYTES,
+            replica_blob_budget_bytes: REPLICA_BLOB_BUDGET_BYTES,
             source_backoff_ms: 1_000,
             source_backoff_max_ms: 30_000,
             repository_roots: Vec::new(),

@@ -75,15 +75,15 @@ impl Desk {
         .unwrap();
         let data = root.path().join("data");
         let socket = root.path().join("amux.sock");
-        let config = root.path().join("installation.yaml");
+        let config = root.path().join("config.toml");
         std::fs::write(
             &config,
             format!(
-                "root: {}\nfront_door_socket: {}\nsupervisor: {supervisor}\nupdates: manual\nkeep_awake: off\n\
-                 releases_url: {releases_url}\nagent:\n  grace_secs: {grace_secs}\n  drain_secs: 5\n",
-                data.display(),
-                socket.display(),
-                supervisor = if supervised { "on" } else { "off" },
+                "root = {:?}\nfront_door_socket = {:?}\nsupervisor = {supervised}\nupdates = \"manual\"\n\
+                 keep_awake = false\nreleases_url = {releases_url:?}\n\
+                 [agent]\ngrace_secs = {grace_secs}\ndrain_secs = 5\n",
+                data.display().to_string(),
+                socket.display().to_string(),
             ),
         )
         .unwrap();

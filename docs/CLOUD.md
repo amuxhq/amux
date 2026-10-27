@@ -269,6 +269,31 @@ endpoint it is given, but no amux.sh endpoint is wired to it, and the app
 does not register for remote notifications. The `push-wake` journey hands a
 payload to the app directly.
 
+## Running the relay
+
+The relay is `amux server start --cloud --foreground`, run by a service
+manager. It reads one TOML file, named by `--config` or `AMUX_CONFIG`, and
+refuses a key it does not know:
+
+```toml
+host_name = "s1.amux.sh"    # the name credentials are minted for
+tcp_port = 9001             # the TLS listener; credentials name this port
+udp_port = 9001             # the QUIC listener; the TCP port when absent
+cloud_url = "https://amux.sh"
+tls_cert = "/etc/amux-relay/tls/fullchain.pem"
+tls_key = "/etc/amux-relay/tls/privkey.pem"
+state_dir = "/var/lib/amux-relay"
+```
+
+Relative paths are resolved beside the file. `state_dir` holds the session
+tickets the relay issues (`tickets/`), so a restarted relay still resumes the
+hosts that held them, and the dumps its core asks for (`reports/`). It
+defaults to the directory systemd names in `STATE_DIRECTORY` (a unit with
+`StateDirectory=`), else the file's own directory. The relay logs to
+standard error for its service manager to keep and rotate (`journalctl -u`
+under systemd); `AMUX_LOG` names a file instead, and `RUST_LOG` sets the
+level. It keeps no host id between runs.
+
 ## Where each value lives
 
 **In this repository, committed and public.** None of it is a secret, and all

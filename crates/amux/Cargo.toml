@@ -30,7 +30,8 @@ node = { workspace = true }
 qrcode = { workspace = true }
 quinn = { workspace = true }
 serde = { workspace = true }
-serde_yaml = { workspace = true }
+toml = { workspace = true }
+toml_edit = { workspace = true }
 settings = { workspace = true }
 store = { workspace = true }
 tokio = { workspace = true }

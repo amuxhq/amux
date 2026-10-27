@@ -172,13 +172,12 @@ with the directory it sits in:
 - An own agent's blobs go when the agent is deleted (`DeleteAgent`; its
   children follow by the family rule), or when own retention removes the agent: exited
   agents are removed whole, least recently active first, when the profile's
-  own rows pass `retention.own_budget_mib`.
+  own rows pass their budget (`OWN_BUDGET_BYTES`, 2 GiB).
 - A patch written by `GetDiff` goes into the requesting agent's directory and
   lives with that agent whether or not a review is ever sent.
 - A replica's directory, blobs included, goes when its host stops listing the
   agent or is untrusted. Replica blob files also have a byte budget of their
-  own, independent of rows, `retention.replica_blobs_mib` (512 MiB by
-  default), evicted least recently read first: a replica blob can always be
+  own, independent of rows, `REPLICA_BLOB_BUDGET_BYTES` (512 MiB), evicted least recently read first: a replica blob can always be
   fetched again from its origin. The one exception is the catalogue a
   replica's current snapshot names, which is never evicted, so the agent's
   picker keeps what it offers while its origin is away; once a newer

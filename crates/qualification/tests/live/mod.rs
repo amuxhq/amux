@@ -485,15 +485,16 @@ impl Install {
         if keep {
             eprintln!("keeping the installation at {}", path.display());
         }
-        let config = path.join("installation.yaml");
+        let config = path.join("config.toml");
         let socket = path.join("amux.sock");
         std::fs::create_dir_all(path.join("project")).map_err(|error| error.to_string())?;
         std::fs::write(
             &config,
             format!(
-                "root: {}\nfront_door_socket: {}\nhost_name: live\nagent:\n  grace_secs: 10\n  drain_secs: 5\ndiscovery:\n  scope: amux-live-{}\n",
-                path.join("data").display(),
-                socket.display(),
+                "root = {:?}\nfront_door_socket = {:?}\nhost_name = \"live\"\nsupervisor = false\n\
+                 [agent]\ngrace_secs = 10\ndrain_secs = 5\n[discovery]\nscope = \"amux-live-{}\"\n",
+                path.join("data").display().to_string(),
+                socket.display().to_string(),
                 uuid::Uuid::new_v4().simple(),
             ),
         )

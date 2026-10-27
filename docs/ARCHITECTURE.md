@@ -135,7 +135,7 @@ On a desktop, four kinds of process run, each with one job:
 
 | Process | Started as | Job |
 |---|---|---|
-| **supervisor** | `amux supervise`, by the login item or `amux server start` | Parent of the daemon: restarts it whenever it exits and, under `updates: auto`, installs releases. See [the supervisor](SUPERVISOR.md). |
+| **supervisor** | `amux supervise`, by the login item or `amux server start` | Parent of the daemon: restarts it whenever it exits and, under `updates = "auto"`, installs releases. See [the supervisor](SUPERVISOR.md). |
 | **daemon** | `amux daemon`, by the supervisor (or by a service manager on a host without one) | The installation: every profile runtime, their stores, network edges and client sockets. |
 | **agent process** | `amux agent <dir>`, by the daemon, detached into its own process group | One agent: holds its directory's lock, runs the provider child and the interpreter, writes the journal. See [the agent process](AGENT_PROCESS.md). |
 | **provider child** | by the agent process | `claude` on a pseudo-terminal, `claude` speaking stream-JSON on stdio, or `codex app-server` on stdio. |

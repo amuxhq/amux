@@ -11,20 +11,16 @@ is set and the basis here.
 Only a few values are in the configuration file; the rest are build constants
 or fields of `node::Launch`, the struct the daemon starts agents and runs its
 background work with. The installation configuration is
-`$XDG_CONFIG_HOME/amux/config.yaml` (by default `~/.config/amux/config.yaml`),
+`$XDG_CONFIG_HOME/amux/config.toml` (by default `~/.config/amux/config.toml`),
 parsed as `settings::InstallationConfig` in
 [`crates/settings/src/lib.rs`](../crates/settings/src/lib.rs). The keys this
 page names are:
 
-```yaml
-retention:
-  own_budget_mib: 2048      # own agents' rows, per profile
-  replica_rows_mib: 256     # rows replicated from paired hosts, per runtime
-  replica_blobs_mib: 512    # blob files fetched from paired hosts, per runtime
-agent:
-  grace_secs: 300           # how long an agent outlives its daemon
-  drain_secs: 300           # how long an orphaned ask is held while draining
-  facts_ring_mib: 4         # the interpreter's facts ring, both segments together
+```toml
+[agent]
+grace_secs = 300        # how long an agent outlives its daemon
+drain_secs = 300        # how long an orphaned ask is held while draining
+facts_ring_mib = 4      # the interpreter's facts ring, both segments together
 ```
 
 Agent settings are copied into each agent's `spec.<n>` at spawn and resume, so
@@ -43,9 +39,9 @@ embedded runtime reads no configuration file and runs with the defaults.
 | Fan-out queue capacity | daemon | 1,024 live events per stream on an agent (four ingest batches); 1,024 per inventory stream | Reasoned from the batch: a batch's records are answered in one burst by the step that commits it, so a reader's slack is counted in batches. Four batches absorb a reader whose task woke late by design; a stalled one is closed with `Lagged` and re-tails. The flood workload's ingest-lag budget (p99 under 250 ms) is stated as one queue's worth of work; that metric has no recorded baseline yet. | `FANOUT_CAPACITY` (`Launch.fanout_capacity`) and `Launch.inventory_capacity` in [`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs); not a configuration key |
 | Push notification delay | daemon | 30 s | Reasoned: tens of seconds, long enough that an answer from the desktop removes the notification before it is sent. | `Launch.notify_delay_ms` in [`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs) (see note 2) |
 | Own retention trim chunk | daemon | 4 MiB | Reasoned: a few MiB from the largest live agent per round, so a small overrun costs a small trim. | `Launch.retention_chunk_bytes` in [`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs) |
-| Own retention budget per profile | daemon config | 2,048 MiB | A generous multiple of the largest transcripts seen so far. Not measured against typical transcript sizes. Counts row bytes (`store::item_bytes`), not blob files, which go with their agent's directory. | `retention.own_budget_mib` (`RetentionSettings`) → `Launch.own_budget_bytes` |
-| Replica budget per runtime (rows) | runtime config | 256 MiB | A round starting bound. Not measured. | `retention.replica_rows_mib` → `Launch.replica_budget_bytes` |
-| Replica blob budget per runtime (files) | runtime config | 512 MiB, least recently read first | Reasoned: twice the row budget, since images dominate what is fetched. Not measured. | `retention.replica_blobs_mib` → `Launch.replica_blob_budget_bytes`; eviction in `store::BlobLru` ([`crates/store/src/blobs.rs`](../crates/store/src/blobs.rs)) |
+| Own retention budget per profile | daemon | 2,048 MiB | A generous multiple of the largest transcripts seen so far. Not measured against typical transcript sizes. Counts row bytes (`store::item_bytes`), not blob files, which go with their agent's directory. | `OWN_BUDGET_BYTES` → `Launch.own_budget_bytes`, in [`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs) |
+| Replica budget per runtime (rows) | daemon | 256 MiB | A round starting bound. Not measured. | `REPLICA_BUDGET_BYTES` → `Launch.replica_budget_bytes` |
+| Replica blob budget per runtime (files) | daemon | 512 MiB, least recently read first | Reasoned: twice the row budget, since images dominate what is fetched. Not measured. | `REPLICA_BLOB_BUDGET_BYTES` → `Launch.replica_blob_budget_bytes`; eviction in `store::BlobLru` ([`crates/store/src/blobs.rs`](../crates/store/src/blobs.rs)) |
 | Latency budget, input to its reflection on screen | whole design | A few ms locally | By construction: one control-socket hop for the verdict, one commit, one fan-out. No workload measures it end to end yet (see note 3). | No single constant; the path is `ProfileRuntime::relay` in [`crates/node/src/relay.rs`](../crates/node/src/relay.rs) and `ProfileRuntime::ingest` in [`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs) |
 | Update check interval | supervisor | 1 hour | Reasoned: a corrective release reaches every host within the hour. | `Params.check_interval` in [`crates/node/src/supervisor/mod.rs`](../crates/node/src/supervisor/mod.rs); build constant |
 | Rollback threshold K | supervisor | 3 starts that never activate | A guess to be revised when failed starts in the field say otherwise. | `Params.rollback_after` |

@@ -2,7 +2,7 @@
 Description=amux supervisor: runs the amux daemon and restarts it
 
 [Service]
-ExecStart=/Users/someone/.amux/bin/amux --config "/Users/someone/Library/Application Support/amux/config & more.yaml" supervise
+ExecStart=/Users/someone/.amux/bin/amux --config "/Users/someone/Library/Application Support/amux/config & more.toml" supervise
 Environment=PATH=/opt/homebrew/bin:/usr/bin:/bin
 Restart=on-failure
 KillMode=process

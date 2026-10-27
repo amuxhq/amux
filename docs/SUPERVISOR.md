@@ -25,27 +25,28 @@ independent:
 
 | Key | Values | Default | Meaning |
 | --- | --- | --- | --- |
-| `supervisor` | `on`, `off` | `off` | Whether the daemon runs under `amux supervise`. The install decides this, not the person. |
-| `updates` | `auto`, `manual` | `auto` with a supervisor, `manual` without | Whether the supervisor installs releases on its own hourly check. |
-| `channel` | `stable`, `preview` | `stable` | Which release manifest the supervisor follows. |
-| `keep_awake` | `on`, `off` | `on` | Whether the supervisor holds the sleep assertion. |
+| `supervisor` | `true`, `false` | `true` | Whether the daemon runs under `amux supervise`. A host whose service manager runs `amux daemon` directly sets it `false`. |
+| `updates` | `"auto"`, `"manual"` | `auto` with a supervisor, `manual` without | Whether the supervisor installs releases on its own hourly check. |
+| `channel` | `"stable"`, `"preview"` | `stable` | Which release manifest the supervisor follows. |
+| `keep_awake` | `true`, `false` | `true` | Whether the supervisor holds the sleep assertion. |
 | `releases_url` | URL | `https://amux.sh/releases` | Where the channel manifests live. |
 
 The four cells of `supervisor` × `updates`:
 
-| | `updates: auto` | `updates: manual` |
+| | `updates = "auto"` | `updates = "manual"` |
 | --- | --- | --- |
-| `supervisor: on` | The desktop case: crash restarts and automatic updates. | Crash restarts; releases install only when someone runs `amux update`. |
-| `supervisor: off` | Rejected when the config is read: only a supervisor installs releases. | A deployed host whose service manager runs `amux daemon` directly, such as the relay under systemd. Updates are deploys. |
+| `supervisor = true` | The desktop case: crash restarts and automatic updates. | Crash restarts; releases install only when someone runs `amux update`. |
+| `supervisor = false` | Rejected when the config is read: only a supervisor installs releases. | A deployed host whose service manager runs `amux daemon` directly, such as the relay under systemd. Updates are deploys. |
 
 Every behaviour on this page keys off `supervisor`, never off `updates`. The
 daemon itself does not read either value to decide how it was started: it
 knows it is supervised only because a supervisor handed it the activation pipe
 (see [Activation](#activation)).
 
-A desktop install is expected to write `supervisor: on`. This repository ships
-no installer that writes it, so set it by hand in the installation config
-(`~/.config/amux/config.yaml` by default). The settings live in
+A desktop install needs no config file at all: the defaults are a supervisor
+with automatic updates. A host that runs `amux daemon` under its own service
+manager writes `supervisor = false` in the installation config
+(`~/.config/amux/config.toml` by default). The settings live in
 [`crates/settings/src/lib.rs`](../crates/settings/src/lib.rs) as
 `InstallationConfig`.
 
@@ -61,7 +62,7 @@ Nothing ever starts a daemon beside a supervisor.
   supervisor if the install has one and none is running, then waits for the
   daemon. Without a supervisor it starts nothing: the daemon belongs to
   whatever service manager runs it, and the CLI says so while it waits.
-- `amux supervise` refuses to run when the config says `supervisor: off`.
+- `amux supervise` refuses to run when the config says `supervisor = false`.
 - A second supervisor on the same data directory fails at once: the first
   holds `<data_dir>/supervisor.lock`, which also records its pid.
 
@@ -83,7 +84,7 @@ is what a step test of the supervisor core is written from by hand.
 `amux init --login-item yes` or `--login-item no` answers without asking;
 without a terminal and without the flag it asks nothing and adds nothing. On
 yes it writes a login item that runs `amux supervise` and registers it with
-the platform's service manager. An install with `supervisor: off` gets no
+the platform's service manager. An install with `supervisor = false` gets no
 login item: its service manager already starts the daemon at boot.
 
 Every login item follows the same three rules:
@@ -202,7 +203,7 @@ Each channel is one manifest at `<releases_url>/<channel>.json`:
 describes the manifest's format, how releases are signed, and what is and is
 not set up for publishing them.
 
-**When a check runs.** Under `updates: auto` the supervisor checks every hour.
+**When a check runs.** Under `updates = "auto"` the supervisor checks every hour.
 `amux update` asks for a check now, over the control socket, under either
 `updates` value. A check runs only while the daemon is activated and no update
 is in progress; otherwise `amux update` is told to try again shortly. The
@@ -317,7 +318,7 @@ it never restarts the daemon to update itself.
 
 ## Keep-awake
 
-Under `keep_awake: on`, the default, the supervisor holds a sleep assertion for
+Under `keep_awake = true`, the default, the supervisor holds a sleep assertion for
 its whole lifetime, so a phone can start an agent on the machine while nobody
 is at it, whether or not any agent is working. Neither the daemon nor any agent
 holds one, so the assertion survives daemon restarts and the gap during an
@@ -334,7 +335,7 @@ in with the lid open**. Whether the assertion holds a Mac awake with the lid
 closed on AC power has not been measured. `pmset disablesleep` is the owner's
 setting to make; amux never changes it. A failure to take an assertion is
 logged and leaves the machine free to sleep, which is no worse than
-`keep_awake: off`.
+`keep_awake = false`.
 
 ## Tests
 

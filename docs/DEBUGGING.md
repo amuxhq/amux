@@ -23,8 +23,8 @@ page says where things are on disk, how to take and read a dump, and how to narr
 
 ## Where things are
 
-The installation root is `root:` in the installation config (`$XDG_CONFIG_HOME/amux/config.yaml`, normally
-`~/.config/amux/config.yaml`, or the file `--config` or `AMUX_CONFIG` names). It defaults to
+The installation root is `root` in the installation config (`$XDG_CONFIG_HOME/amux/config.toml`, normally
+`~/.config/amux/config.toml`, or the file `--config` or `AMUX_CONFIG` names). It defaults to
 `$XDG_DATA_HOME/amux`, normally `~/.local/share/amux`.
 
 ```text
@@ -125,8 +125,8 @@ stderr (`the agent core: `) and asks its daemon for a dump of it over the contro
 the daemon's own parts for the core's. The relay and the supervisor log the same kind of reason (`the relay core: `,
 `the supervisor core: `) and write a text file beside it: the reason, the core's state when the driver's window began,
 every input stepped since (at least the last 256) and the state now. The supervisor writes
-`<data_dir>/reports/supervisor-<unix ms>-<id>.txt`; a relay writes `relay-<unix ms>-<id>.txt` into its configuration's
-`reports_dir` (by default `reports` beside the configuration file), and a daemon's own relay core into the
+`<data_dir>/reports/supervisor-<unix ms>-<id>.txt`; a relay writes `relay-<unix ms>-<id>.txt` into `reports/` under its
+`state_dir` (see [running the relay](CLOUD.md#running-the-relay)), and a daemon's own relay core into the
 installation's `reports/`. Neither core is a replay stage and nothing replays these files: they are what a person
 turns into a step test of that core by hand. Each process reports one per kind of reason (one per broken invariant,
 one for steps over budget) every ten minutes, and the daemon writes one agent-asked bundle per kind in the same

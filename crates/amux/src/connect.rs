@@ -5,7 +5,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, anyhow, bail};
-use settings::{InstallationConfig, Switch};
+use settings::InstallationConfig;
 use tonic::transport::{Channel, Endpoint};
 use wire::client_service_client::ClientServiceClient;
 use wire::installation_service_client::InstallationServiceClient;
@@ -61,7 +61,7 @@ pub async fn front_door(config: &InstallationConfig) -> Result<Channel> {
     }
     let path = config.front_door_socket.display();
     match config.supervisor {
-        Switch::Off => eprintln!(
+        false => eprintln!(
             "No amux daemon is answering on {path}. This install has no supervisor, so the \
              daemon belongs to the service manager that runs it; waiting for it to start \
              (`amux server start` starts one by hand)."
@@ -69,7 +69,7 @@ pub async fn front_door(config: &InstallationConfig) -> Result<Channel> {
         // The install has a supervisor: start it when none runs, and it
         // starts the daemon. Never the daemon itself, which would run
         // beside the supervisor.
-        Switch::On => {
+        true => {
             if crate::server::running_supervisor(&config.root)?.is_none() {
                 crate::server::spawn_supervisor(config, None)?;
                 eprintln!("Starting amux supervise; waiting for its daemon on {path}.");

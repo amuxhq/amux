@@ -110,6 +110,7 @@ pub fn create(name: &str, spec: wire::AgentSpec) -> ClientRequest {
         given: Some(name.to_owned()),
         branches: Default::default(),
         new_worktree: false,
+        recent: None,
         spec,
     }))
 }

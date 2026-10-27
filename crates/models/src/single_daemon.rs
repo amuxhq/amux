@@ -28,9 +28,9 @@
 //! the agent as early data, which the driver holds until the core has
 //! decided the identity the link's ticket names; anyone holding those
 //! packets may replay them on a connection of its own; and this host may
-//! remove the peer's pin, which the driver reads from the drive at every
-//! start; the removal is the core's trust change, written by the driver,
-//! after which the driver closes the peer's link. A fresh handshake from a peer
+//! remove the peer's pin, which the store holds: the removal is the core's
+//! trust change, synced to the drive in the step that makes it, after
+//! which the driver closes the peer's link. A fresh handshake from a peer
 //! whose pin was removed fails its pin check before the core hears of it,
 //! so after the removal only a resumed link can reach the core.
 
@@ -44,10 +44,10 @@ use daemon_core::generation::{LastRun, at_start};
 use daemon_core::payload::{
     CarrierKind, ClientRequest, JobResult, PeerRequest, PublicKey, Response,
 };
-use daemon_core::trust::{TrustChange, TrustStore};
+use daemon_core::trust::{TrustChange, TrustChanged, TrustStore};
 use daemon_core::{
     AgentId, CallId, Checkpoint, Daemon, DumpReason, HostId, Input, Job, JobId, LinkId, Output,
-    Route, StartOptions, StepBudget, TimerId,
+    Route, ShellWork, StartOptions, StepBudget, TimerId,
 };
 use store::{AgentKey, AgentRow, Dump, Sqlite};
 use wire::{Item, Step, session_event};
@@ -79,18 +79,9 @@ const REPLAY_LINK: LinkId = LinkId(2);
 const EARLY_CALL: CallId = CallId(1 << 32);
 const REPLAYED_CALL: CallId = CallId((1 << 32) + 1);
 
-/// The trust store as the drive holds it: the peer pinned, or not.
-fn trust(pinned: bool) -> TrustStore {
-    if pinned {
-        TrustStore::of_hosts([PEER])
-    } else {
-        TrustStore::default()
-    }
-}
-
 /// The key the peer's tickets name: the one this host pinned for it.
 fn peer_key() -> PublicKey {
-    let store = trust(true);
+    let store = TrustStore::of_hosts([PEER]);
     let key = store
         .pubkey_for_host(uuid::Uuid::from_bytes(PEER.0))
         .expect("the peer is pinned");
@@ -250,8 +241,9 @@ struct Run {
     calls: u64,
     /// The peer's resumed link is up and the core took it.
     peer_up: bool,
-    /// The driver is writing the trust store for the core.
-    trust_job: Option<JobId>,
+    /// The core published a store without the peer; the driver has yet
+    /// to close the peer's link.
+    revoking: bool,
 }
 
 /// How much of the bounds a path has used.
@@ -309,7 +301,7 @@ pub struct State {
     dumped: Option<String>,
     /// The ring's replay came out other than the live daemon.
     diverged: Option<String>,
-    /// The drive's trust store pins the peer.
+    /// The store pins the peer.
     pinned: bool,
     /// The core answered an early read of the peer's.
     early_answered: bool,
@@ -437,9 +429,9 @@ pub enum Action {
     PeerResumes,
     /// Someone asks this host to remove the peer's pin.
     Unpin,
-    /// The driver's write of the trust store without the peer is on the
-    /// drive; the driver closes the peer's link as revoked.
-    TrustWritten,
+    /// The driver, told the peer is no longer trusted, closes its link as
+    /// revoked.
+    Revoke,
     /// The world's doing: the daemon's process dies at a step; the machine
     /// loses power, taking the store and the journal back to what the drive
     /// has; the drive refuses the commit of the next nudge; or the peer's
@@ -457,6 +449,7 @@ impl Machine for SingleDaemon {
         store
             .put_agent(&AgentRow::new(agent(), wire::Kind::Codex, "/src"))
             .expect("the store takes its agent");
+        TrustStore::of_hosts([PEER]).write_for_test(&mut store);
         let store = store.dump().expect("the store dumps");
         State {
             durable: store.clone(),
@@ -543,8 +536,8 @@ impl Machine for SingleDaemon {
         if self.unpin && s.used.unpins == 0 {
             out.push(Action::Unpin);
         }
-        if run.trust_job.is_some() {
-            out.push(Action::TrustWritten);
+        if run.revoking {
+            out.push(Action::Revoke);
         }
         if s.used.downs < self.downs {
             out.push(Action::Fault(Fault::Crash(DAEMON)));
@@ -651,9 +644,7 @@ impl Machine for SingleDaemon {
             }
             Action::Start => {
                 start(&mut next);
-                // The driver reads the trust store from the drive.
-                let store = trust(next.pinned);
-                self.step(&mut next, Input::TrustRead { store }, false);
+                self.step(&mut next, Input::Started, false);
             }
             Action::PeerResumes => {
                 next.used.resumes += 1;
@@ -686,13 +677,9 @@ impl Machine for SingleDaemon {
                 let remove = Input::ChangeTrust(TrustChange::Remove { host });
                 self.step(&mut next, remove, false);
             }
-            Action::TrustWritten => {
-                next.pinned = false;
+            Action::Revoke => {
                 let run = next.run.as_mut().expect("a running daemon");
-                let job = run.trust_job.take().expect("a trust write under way");
-                let result = JobResult::Done;
-                self.step(&mut next, Input::JobDone { job, result }, false);
-                let run = next.run.as_mut().expect("a running daemon");
+                run.revoking = false;
                 if std::mem::take(&mut run.peer_up) {
                     let reason = wire::LinkCloseReason::UserRevoked;
                     let down = Input::LinkDown {
@@ -964,10 +951,17 @@ impl SingleDaemon {
                     id,
                     op: Job::CheckpointWal,
                 } => run.job = Some(*id),
-                Output::Job {
-                    id,
-                    op: Job::Fsync { .. },
-                } => run.trust_job = Some(*id),
+                Output::Shell(ShellWork::Trust {
+                    changed: Some((PEER, TrustChanged::Removed(_))),
+                    ..
+                }) => {
+                    // The removal was synced in the step that made it, and
+                    // every commit before it with it.
+                    next.pinned = false;
+                    next.durable = next.store.clone();
+                    next.durable_cursor = next.cursor;
+                    run.revoking = true;
+                }
                 Output::Checkpoint { state } => {
                     run.landing = true;
                     // The driver's ring starts again at this checkpoint.
@@ -1068,7 +1062,7 @@ fn start(next: &mut State) {
         subscriber: None,
         calls: 0,
         peer_up: false,
-        trust_job: None,
+        revoking: false,
     });
     next.unfinished = true;
     next.owed = false;

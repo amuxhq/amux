@@ -320,7 +320,7 @@ impl Installation {
                 gate,
             } => {
                 let installation_id = match crate::install::installation_id(&self.data_dir) {
-                    Ok((id, _)) => id,
+                    Ok(id) => id,
                     Err(error) => {
                         tracing::warn!(%error, "no installation id; recording no analytics");
                         return None;

@@ -438,8 +438,6 @@ pub struct ProfileRuntime {
     pub(crate) replica_blobs: Mutex<Option<store::BlobLru>>,
     /// The host set as the core last published it on the inventory.
     pub(crate) hosts: Mutex<Vec<wire::HostEntry>>,
-    /// The directories this profile's agents were started in.
-    recent: Arc<Mutex<crate::repositories::Recent>>,
     analytics: analytics::Analytics,
     /// Turns ended since the last check-in.
     turns: crate::telemetry::Turns,
@@ -676,8 +674,6 @@ impl ProfileRuntime {
             generation,
             agents: dir.join(AGENTS),
             replicas: dir.join(crate::install::REPLICAS),
-            drafts: dir.join(crate::drafts::DRAFTS_FILE),
-            trust: crate::trust::trust_path(&dir),
             budget: launch.step_budget,
         };
         let mut core = None;
@@ -715,7 +711,6 @@ impl ProfileRuntime {
             replicas: Mutex::new(crate::replicas::Replicas::default()),
             replica_blobs: Mutex::new(None),
             hosts: Mutex::new(Vec::new()),
-            recent: Arc::new(Mutex::new(crate::repositories::Recent::load(&dir))),
             offers: crate::offers::Offers::load(&dir),
             dir,
             analytics,
@@ -1033,23 +1028,21 @@ impl ProfileRuntime {
                 base_branch: None,
             },
         );
-        let chosen = request.cwd.clone();
+        let recent = Path::new(&request.cwd)
+            .canonicalize()
+            .ok()
+            .and_then(|path| path.to_str().map(str::to_owned));
         let create = daemon_core::Create {
             agent: core_agent(id),
             cwd: request.cwd,
             given,
             branches: branches.into_iter().collect(),
             new_worktree: request.new_worktree,
+            recent,
             spec,
         };
-        let created = self
-            .registry_row(id, ClientRequest::CreateAgent(Box::new(create)))
-            .await?;
-        self.recent
-            .lock()
-            .unwrap()
-            .record(Path::new(&chosen), self.clock.now_ms());
-        Ok(created)
+        self.registry_row(id, ClientRequest::CreateAgent(Box::new(create)))
+            .await
     }
 
     /// Where this host offers to start an agent: see
@@ -1060,9 +1053,18 @@ impl ProfileRuntime {
         limit: u32,
     ) -> wire::ListRepositoriesResponse {
         let roots = self.launch().repository_roots;
-        let recent = self.recent.clone();
+        let recent = self
+            .driver()
+            .read(|store| store.recent_directories())
+            .await
+            .and_then(|read| {
+                read.inspect_err(
+                    |error| tracing::warn!(%error, "cannot read the recent directories"),
+                )
+                .ok()
+            })
+            .unwrap_or_default();
         tokio::task::spawn_blocking(move || {
-            let recent = recent.lock().unwrap();
             crate::repositories::list(&roots, &recent, query.as_deref(), limit)
         })
         .await

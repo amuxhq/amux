@@ -30,7 +30,9 @@ pub trait Redactor {
 
 /// Redacts the store file at `path`, which nothing else has open: the
 /// rows' names, directories, texts, details, snapshots, git states, item
-/// bodies and attachments, the owed reports' and notifications' texts.
+/// bodies and attachments, the owed reports' and notifications' texts, the
+/// paired hosts' names and SSH destinations, the drafts and the recent
+/// directories.
 /// The file is left in rollback mode, with no WAL beside it. Returns each
 /// row's agent with its ingest cursor, the journal offset its commits
 /// reach.
@@ -76,6 +78,7 @@ pub fn redact_file(
             )?;
         }
     }
+    hosts_drafts_and_directories(&tx, redactor)?;
     tx.commit()?;
     conn.execute_batch("VACUUM")?;
     let mut read = conn.prepare("SELECT origin_host, agent_id, ingest_cursor FROM agents")?;
@@ -88,6 +91,52 @@ pub fn redact_file(
         })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(cursors)
+}
+
+fn hosts_drafts_and_directories(
+    tx: &rusqlite::Transaction<'_>,
+    redactor: &dyn Redactor,
+) -> Result<(), StoreError> {
+    let mut read = tx.prepare("SELECT host_id, name, ssh FROM trusted_hosts")?;
+    let hosts = read
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+        .collect::<Result<Vec<(Vec<u8>, String, Option<String>)>, _>>()?;
+    for (host, name, ssh) in hosts {
+        tx.execute(
+            "UPDATE trusted_hosts SET name = ?2, ssh = ?3 WHERE host_id = ?1",
+            params![
+                host,
+                redactor.text(&name),
+                ssh.map(|ssh| redactor.text(&ssh))
+            ],
+        )?;
+    }
+    let mut read = tx.prepare("SELECT agent_id, draft FROM drafts")?;
+    let drafts = read
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<Vec<(Vec<u8>, Vec<u8>)>, _>>()?;
+    for (agent, draft) in drafts {
+        tx.execute(
+            "UPDATE drafts SET draft = ?2 WHERE agent_id = ?1",
+            params![agent, redactor.message("amux.v1.Draft", &draft)],
+        )?;
+    }
+    // A path is its own key, so the redacted rows replace the originals;
+    // two paths that redact alike keep the more recent use.
+    let mut read = tx.prepare("SELECT path, last_used_ms FROM recent_directories")?;
+    let directories = read
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<Vec<(String, i64)>, _>>()?;
+    tx.execute("DELETE FROM recent_directories", [])?;
+    for (path, used) in directories {
+        tx.execute(
+            "INSERT INTO recent_directories (path, last_used_ms) VALUES (?1, ?2) \
+             ON CONFLICT (path) DO UPDATE SET \
+             last_used_ms = max(last_used_ms, excluded.last_used_ms)",
+            params![redactor.text(&path), used],
+        )?;
+    }
+    Ok(())
 }
 
 fn agents(tx: &rusqlite::Transaction<'_>, redactor: &dyn Redactor) -> Result<(), StoreError> {

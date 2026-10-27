@@ -369,6 +369,7 @@ mod tests {
                 given: None,
                 branches: BTreeSet::new(),
                 new_worktree: false,
+                recent: None,
                 spec: wire::AgentSpec {
                     agent_id: agent.0.to_vec(),
                     kind: wire::Kind::Codex as i32,

@@ -94,11 +94,9 @@ pub enum Input {
     HostForgotten {
         host: HostId,
     },
-    /// The trust file as the driver read it at start: the hosts this
-    /// profile trusts and the keys it pins for them.
-    TrustRead {
-        store: crate::trust::TrustStore,
-    },
+    /// The driver started the core: the first input it steps, which
+    /// publishes the paired hosts the store holds.
+    Started,
     /// A change of the trust store nobody waits on: what a peer said of
     /// itself, or the address it answered at.
     ChangeTrust(crate::trust::TrustChange),
@@ -224,11 +222,6 @@ pub enum Input {
     Entropy([u8; 32]),
     /// The settings the profile runs under now.
     Configure(Settings),
-    /// The drafts file as the driver read it at start.
-    Drafts {
-        #[serde(with = "codec::drafts::list")]
-        drafts: Vec<(Vec<u8>, Vec<u8>)>,
-    },
     /// What the profile's shell changed outside a step, for the core's
     /// subscribers. Each kind goes as the write behind it moves into the
     /// core.
@@ -258,7 +251,7 @@ impl Input {
             Input::PlanChanged => "PlanChanged",
             Input::TryAgain { .. } => "TryAgain",
             Input::HostForgotten { .. } => "HostForgotten",
-            Input::TrustRead { .. } => "TrustRead",
+            Input::Started => "Started",
             Input::ChangeTrust(_) => "ChangeTrust",
             Input::Policy(_) => "Policy",
             Input::PeerCall { .. } => "PeerCall",
@@ -287,7 +280,6 @@ impl Input {
             Input::JobDone { .. } => "JobDone",
             Input::Entropy(_) => "Entropy",
             Input::Configure(_) => "Configure",
-            Input::Drafts { .. } => "Drafts",
             Input::FromShell(_) => "FromShell",
             Input::LinkCarried { .. } => "LinkCarried",
         }
@@ -922,9 +914,7 @@ mod tests {
             Input::Timer {
                 id: TimerId::Source(HostId([1; 16]), AgentId([2; 16])),
             },
-            Input::TrustRead {
-                store: crate::trust::TrustStore::of_hosts([HostId([1; 16])]),
-            },
+            Input::Started,
             Input::Policy(SourcePolicy::OnDemand),
             Input::FromShell(FromShell::Session {
                 agent: agent.clone(),
@@ -945,6 +935,7 @@ mod tests {
                     given: None,
                     branches: ["main".to_owned()].into(),
                     new_worktree: true,
+                    recent: None,
                     spec: wire::AgentSpec {
                         name: "lead".into(),
                         ..Default::default()

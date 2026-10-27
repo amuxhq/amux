@@ -52,15 +52,6 @@ impl<T: prost::Message + prost::Name> Serialize for Encoded<'_, T> {
     }
 }
 
-/// An already encoded message of type `T`, as its marked hex.
-struct EncodedAs<'a, T>(&'a [u8], std::marker::PhantomData<T>);
-
-impl<T: prost::Name> Serialize for EncodedAs<'_, T> {
-    fn serialize<S: Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
-        write_opaque(Opaque::Message(T::PACKAGE, T::NAME), &hex(self.0), to)
-    }
-}
-
 /// An id's hex, marked to be kept as it is.
 struct Id(String);
 
@@ -295,63 +286,5 @@ pub(crate) mod last_used {
                 ))
             })
             .collect()
-    }
-}
-
-/// Each agent's composer draft, encoded, by agent id: written as the id's
-/// hex and the draft's, so a dump redacts the draft as the message it is.
-pub(crate) mod drafts {
-    use std::collections::BTreeMap;
-    use std::marker::PhantomData;
-
-    use super::*;
-
-    type Line = (String, String);
-
-    fn line<'a>((agent, draft): (&'a Vec<u8>, &'a Vec<u8>)) -> (Id, EncodedAs<'a, wire::Draft>) {
-        (Id(hex(agent)), EncodedAs(draft, PhantomData))
-    }
-
-    fn read<'de, D: Deserializer<'de>>(from: D) -> Result<crate::drafts::DraftList, D::Error> {
-        Vec::<Line>::deserialize(from)?
-            .iter()
-            .map(|(agent, draft)| Ok((unhex::<D::Error>(agent)?, unhex::<D::Error>(draft)?)))
-            .collect()
-    }
-
-    /// The core's map of drafts.
-    pub(crate) mod map {
-        use super::*;
-
-        pub(crate) fn serialize<S: Serializer>(
-            drafts: &BTreeMap<Vec<u8>, Vec<u8>>,
-            to: S,
-        ) -> Result<S::Ok, S::Error> {
-            to.collect_seq(drafts.iter().map(line))
-        }
-
-        pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
-            from: D,
-        ) -> Result<BTreeMap<Vec<u8>, Vec<u8>>, D::Error> {
-            Ok(read(from)?.into_iter().collect())
-        }
-    }
-
-    /// The drafts as the file holds them, in its order.
-    pub(crate) mod list {
-        use super::*;
-
-        pub(crate) fn serialize<S: Serializer>(
-            drafts: &[(Vec<u8>, Vec<u8>)],
-            to: S,
-        ) -> Result<S::Ok, S::Error> {
-            to.collect_seq(drafts.iter().map(|(agent, draft)| line((agent, draft))))
-        }
-
-        pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
-            from: D,
-        ) -> Result<crate::drafts::DraftList, D::Error> {
-            read(from)
-        }
     }
 }

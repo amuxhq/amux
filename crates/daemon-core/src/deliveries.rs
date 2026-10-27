@@ -1072,6 +1072,18 @@ mod tests {
             .collect()
     }
 
+    /// The child's report owed to `parent`, over the child's row, which
+    /// names the parent: an exited incarnation that owes nothing more.
+    fn owe_report(daemon: &mut Daemon, parent: AgentKey) {
+        let mut child = AgentRow::new(daemon.own_key(CHILD), 1, "/src");
+        child.parent = Some(parent.clone());
+        child.incarnation = 1;
+        child.lifecycle = wire::Lifecycle::Exited as i32;
+        child.owes_report = false;
+        daemon.store.put_agent(&child).unwrap();
+        daemon.store.put_delivery(&report_to(parent)).unwrap();
+    }
+
     fn report_to(parent: AgentKey) -> Delivery {
         Delivery {
             child_id: CHILD.0.to_vec(),
@@ -1239,7 +1251,7 @@ mod tests {
                 row
             })
             .unwrap();
-        daemon.store.put_delivery(&report_to(parent)).unwrap();
+        owe_report(&mut daemon, parent);
         step(
             &mut daemon,
             Input::AgentHello {
@@ -1316,13 +1328,11 @@ mod tests {
                 row
             })
             .unwrap();
-        daemon.store.put_delivery(&report_to(parent)).unwrap();
-        step(
-            &mut daemon,
-            Input::TrustRead {
-                store: crate::trust::TrustStore::of_hosts(vec![FAR]),
-            },
-        );
+        owe_report(&mut daemon, parent);
+        {
+            daemon.trust_for_test(crate::trust::TrustStore::of_hosts(vec![FAR]));
+            step(&mut daemon, Input::Started)
+        };
         let out = step(&mut daemon, Input::Swept);
         assert!(
             out.iter().any(|output| matches!(

@@ -1400,7 +1400,7 @@ async fn table(runtime: &ProfileRuntime, named: &Named) -> Vec<String> {
         } else {
             "exited"
         };
-        let activity = match row.last_activity_ms {
+        let activity = match row.last_activity_ms() {
             Some(at) if at < 1_000_000 => format!("t={at}"),
             Some(_) => "recent".to_owned(),
             None => "-".to_owned(),

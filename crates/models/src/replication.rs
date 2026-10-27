@@ -356,7 +356,9 @@ impl Machine for Replication {
             .commit(&agent(), &[(1, first)], CLOCK)
             .expect("the origin commits");
         origin.set_marker(&agent(), Some(Marker::CaughtUp));
-        let replica = Sqlite::open_in_memory(REPLICA.0).expect("a replica opens");
+        TrustStore::of_hosts([REPLICA]).write_for_test(&mut origin);
+        let mut replica = Sqlite::open_in_memory(REPLICA.0).expect("a replica opens");
+        TrustStore::of_hosts([ORIGIN]).write_for_test(&mut replica);
         let (origin, _) = Held::of(Daemon::new(origin, options(1)));
         let (replica, _) = Held::of(Daemon::new(replica, options(1)));
         let mut s = State {
@@ -388,12 +390,10 @@ impl Machine for Replication {
                 next: &mut s,
             };
             t.origin(Input::Configure(self.settings()));
-            t.origin_trusts();
+            t.origin(Input::Started);
             t.resumed();
             t.replica(Input::Configure(self.settings()));
-            t.replica(Input::TrustRead {
-                store: daemon_core::trust::TrustStore::of_hosts(vec![ORIGIN]),
-            });
+            t.replica(Input::Started);
             t.replica(Input::LinkUp {
                 link: LINK,
                 peer: ORIGIN,
@@ -617,7 +617,7 @@ impl Transition<'_> {
                     Daemon::new(store, options(generation))
                 });
                 self.origin(Input::Configure(self.model.settings()));
-                self.origin_trusts();
+                self.origin(Input::Started);
                 // The replica's driver resumes the link the reboot dropped,
                 // and what it asks next rides it as early data.
                 self.next.accepted = false;
@@ -891,13 +891,6 @@ impl Transition<'_> {
         }
         self.dumps(&out);
         out
-    }
-
-    /// The origin's driver reads its trust store, which pins the replica.
-    fn origin_trusts(&mut self) {
-        self.origin(Input::TrustRead {
-            store: TrustStore::of_hosts([REPLICA]),
-        });
     }
 
     /// The origin's driver reports the replica's resumed link, its ticket

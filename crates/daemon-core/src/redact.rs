@@ -505,12 +505,15 @@ mod tests {
         bytes.windows(PLANTED.len()).any(|window| window == PLANTED)
     }
 
-    fn draft(text: &str) -> Vec<u8> {
-        wire::Draft {
-            text: text.to_owned(),
+    fn own(name: &str) -> wire::HostEntry {
+        wire::HostEntry {
+            host: Some(wire::Host {
+                host_id: vec![7; 16],
+                name: name.to_owned(),
+                ..Default::default()
+            }),
             ..Default::default()
         }
-        .encode_to_vec()
     }
 
     #[test]
@@ -523,11 +526,8 @@ mod tests {
                 ..StartOptions::default()
             },
         );
-        let agent = vec![7; 16];
         daemon.step(
-            Input::Drafts {
-                drafts: vec![(agent.clone(), draft("the key is PLANTED"))],
-            },
+            Input::OwnHost(Box::new(own("the desk PLANTED"))),
             &mut Vec::new(),
         );
         let checkpoint = daemon.checkpoint();
@@ -537,19 +537,19 @@ mod tests {
         let redacted = checkpoint.redacted(&redactor).expect("it redacts");
         assert!(!holds(&redacted.state), "the planted word is gone");
         assert!(
-            redactor.names.borrow().contains("amux.v1.Draft"),
-            "the draft went through as its message: {:?}",
+            redactor.names.borrow().contains("amux.v1.HostEntry"),
+            "the host's entry went through as its message: {:?}",
             redactor.names.borrow()
         );
         let store = Sqlite::open_in_memory(*b"own-host-0000000").expect("a store opens");
         let restored = Daemon::restore(redacted, store).expect("the redacted checkpoint restores");
         let again = restored.checkpoint().state;
-        let kept = hex(&draft("the key is REMOVED"));
+        let kept = hex(&own("the desk REMOVED").encode_to_vec());
         assert!(
             again
                 .windows(kept.len())
                 .any(|window| window == kept.as_bytes()),
-            "the restored core holds the redacted draft"
+            "the restored core holds the redacted entry"
         );
     }
 

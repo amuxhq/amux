@@ -902,7 +902,7 @@ impl Daemon {
         // removed by retention there; one whose host is untrusted is not.
         // Its draft goes too.
         if reason == RemovalReason::NoLongerListed {
-            self.forget_draft(&key.agent, out);
+            self.forget_draft(&key.agent);
         }
         out.push(Output::Shell(ShellWork::ReplicaDropped {
             agent: key.clone(),
@@ -1801,12 +1801,10 @@ mod tests {
     /// the inventory call it made.
     fn following(daemon: &mut Daemon) -> CallId {
         assert_eq!(
-            step(
-                daemon,
-                Input::TrustRead {
-                    store: crate::trust::TrustStore::of_hosts(vec![HostId(PEER)])
-                }
-            )
+            {
+                daemon.trust_for_test(crate::trust::TrustStore::of_hosts(vec![HostId(PEER)]));
+                step(daemon, Input::Started)
+            }
             .iter()
             .filter(|output| matches!(output, Output::ArmTimer { .. }))
             .count(),
@@ -1906,6 +1904,7 @@ mod tests {
             given: Some("child".into()),
             branches: BTreeSet::new(),
             new_worktree,
+            recent: None,
             spec: wire::AgentSpec {
                 agent_id: FAR_CHILD.0.to_vec(),
                 kind: wire::Kind::Codex as i32,
@@ -2317,12 +2316,10 @@ mod tests {
             .store
             .put_agent(&from_wire(&listed(wire::Lifecycle::Live)))
             .unwrap();
-        step(
-            &mut daemon,
-            Input::TrustRead {
-                store: crate::trust::TrustStore::of_hosts(vec![HostId(PEER)]),
-            },
-        );
+        {
+            daemon.trust_for_test(crate::trust::TrustStore::of_hosts(vec![HostId(PEER)]));
+            step(&mut daemon, Input::Started)
+        };
         let flight = daemon.first_flight();
         step(
             &mut daemon,

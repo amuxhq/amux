@@ -1,10 +1,9 @@
 {"Input":{"Tick":{"now_ms":1792443483157}}}
 {"Input":{"OwnHost":"0a1b0a106f43630407b346f6a914cd8602099ff91a05302e382e3028011001220408002001"}}
 {"Input":{"Configure":{"notify_delay_ms":30000,"push_retry_ms":60000,"checkpoint_interval_ms":60000,"tail_rows":200,"source_backoff_ms":1000,"source_backoff_max_ms":30000,"start_deadline_ms":20000,"stop_deadline_ms":15000,"delivery_retry_ms":30000,"reply_patience_ms":30000}}}
-{"Input":{"Drafts":{"drafts":[]}}}
 {"Input":{"Tick":{"now_ms":1792443483162}}}
 {"Input":{"Entropy":[170,59,122,35,61,214,250,130,190,221,199,100,126,0,251,227,58,127,34,67,87,219,10,181,73,61,85,209,97,124,119,88]}}
-{"Input":{"TrustRead":{"store":{"entries":{},"replacement_pending":[]}}}}
+{"Input":"Started"}
 {"Input":{"Tick":{"now_ms":1792443483163}}}
 {"Input":"Swept"}
 {"Input":{"Tick":{"now_ms":1792443483172}}}

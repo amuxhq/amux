@@ -359,12 +359,10 @@ mod tests {
     }
 
     fn trust(daemon: &mut Daemon, hosts: Vec<HostId>) -> Vec<Output> {
-        step(
-            daemon,
-            Input::TrustRead {
-                store: crate::trust::TrustStore::of_hosts(hosts),
-            },
-        )
+        {
+            daemon.trust_for_test(crate::trust::TrustStore::of_hosts(hosts));
+            step(daemon, Input::Started)
+        }
     }
 
     fn forward_refused(

@@ -177,7 +177,7 @@ impl Daemon {
     }
 
     /// A link came up. A resumed one whose ticket names a key not pinned
-    /// for its peer, or a peer whose removal is being written, is refused, and is never taken up: no route lists it,
+    /// for its peer is refused, and is never taken up: no route lists it,
     /// so nothing the peer sent early is served.
     pub(crate) fn link_up(
         &mut self,
@@ -190,9 +190,7 @@ impl Daemon {
         if let Some(key) = resumed {
             let host = Uuid::from_bytes(peer.0);
             let pinned = self.trust().pubkey_for_host(host);
-            // A removal being written is as good as written: its end may be
-            // held behind a checkpoint while the drive already says so.
-            if pinned != Some(key.0.as_slice()) || self.trust_removing(host) {
+            if pinned != Some(key.0.as_slice()) {
                 out.push(Output::RefuseResumed { link });
                 return;
             }
@@ -784,7 +782,10 @@ mod tests {
             .pubkey_for_host(Uuid::from_bytes(PEER.0))
             .expect("the peer is pinned")
             .to_vec();
-        step(&mut daemon, Input::TrustRead { store });
+        {
+            daemon.trust_for_test(store);
+            step(&mut daemon, Input::Started)
+        };
         (daemon, PublicKey(key))
     }
 
@@ -827,53 +828,13 @@ mod tests {
 
         // A host whose pin was removed is refused with its old key.
         let (mut daemon, key) = trusting();
-        step(
-            &mut daemon,
-            Input::TrustRead {
-                store: crate::trust::TrustStore::default(),
-            },
-        );
+        {
+            daemon.trust_for_test(crate::trust::TrustStore::default());
+            step(&mut daemon, Input::Started)
+        };
         assert_eq!(
             resumed(&mut daemon, PEER, key),
             vec![Output::RefuseResumed { link: LINK }]
-        );
-    }
-
-    #[test]
-    fn a_resumed_link_is_refused_while_its_peers_removal_is_written() {
-        let (mut daemon, key) = trusting();
-        let host = Uuid::from_bytes(PEER.0);
-        let out = step(
-            &mut daemon,
-            Input::ChangeTrust(crate::trust::TrustChange::Remove { host }),
-        );
-        let job = out
-            .iter()
-            .find_map(|output| match output {
-                Output::Job {
-                    id,
-                    op: Job::Fsync { .. },
-                } => Some(*id),
-                _ => None,
-            })
-            .expect("the removal is written");
-        assert_eq!(
-            resumed(&mut daemon, PEER, key.clone()),
-            vec![Output::RefuseResumed { link: LINK }]
-        );
-
-        // A removal that could not be written leaves the peer trusted.
-        step(
-            &mut daemon,
-            Input::JobDone {
-                job,
-                result: crate::payload::JobResult::Failed("the drive is full".into()),
-            },
-        );
-        let out = resumed(&mut daemon, PEER, key);
-        assert!(
-            !out.contains(&Output::RefuseResumed { link: LINK }),
-            "{out:?}"
         );
     }
 
@@ -1055,32 +1016,21 @@ mod tests {
                 },
             },
         );
-        let Some((job, bytes)) = out.iter().find_map(|output| match output {
-            Output::Job {
-                id,
-                op: Job::Fsync { bytes, .. },
-            } => Some((*id, bytes.clone())),
-            _ => None,
-        }) else {
-            panic!("the list is written with the trust: {out:?}");
-        };
-        let store = crate::trust::TrustStore::from_file(&bytes).expect("the trust file reads");
         let host = Uuid::from_bytes(PEER.0);
-        assert_eq!(store.entry(host).map(|entry| &entry.listed), Some(&list));
-        step(
-            &mut daemon,
-            Input::JobDone {
-                job,
-                result: crate::payload::JobResult::Done,
-            },
+        let held = crate::trust::TrustStore::load(daemon.store());
+        assert_eq!(
+            held.entry(host).map(|entry| &entry.listed),
+            Some(&list),
+            "{out:?}"
         );
         assert_eq!(
             daemon.trust().entry(host).map(|entry| &entry.listed),
             Some(&list)
         );
 
-        let mut restarted = self::daemon();
-        step(&mut restarted, Input::TrustRead { store });
+        let store = store::Sqlite::restore(&daemon.store().dump().unwrap()).unwrap();
+        let mut restarted = Daemon::new(store, daemon.options.clone());
+        step(&mut restarted, Input::Started);
         assert_eq!(restarted.peer_addresses().get(&PEER), Some(&list));
     }
 

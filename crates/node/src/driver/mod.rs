@@ -239,13 +239,8 @@ impl Driver {
         let outgoing = Outgoing::default();
         let window = Arc::new(pairing::PairWindow::default());
         let pairings = Arc::new(pairing::Carriers::default());
-        // A trust file that does not read is never written over: the core
-        // is not told of it, and the edge refuses to start.
-        let read = crate::trust::load_or_create_in(&dir)
-            .inspect_err(|error| tracing::warn!(%error, "the trust file does not read"))
-            .ok();
-        let trust = Arc::new(std::sync::RwLock::new(read.clone().unwrap_or_default()));
         let daemon = Daemon::new(store, options);
+        let trust = Arc::new(std::sync::RwLock::new(daemon.trust().clone()));
         // The ring's first checkpoint is the core as it starts, beside a
         // main file holding every commit so far.
         let store_at_checkpoint = Sqlite::checkpoint_wal(&dir.join(STORE))
@@ -272,17 +267,11 @@ impl Driver {
             reports: reports.clone(),
             channel_reply: None,
             resumed_reply: None,
-            // The drafts and the trust the profile's files hold, and fresh
-            // randomness, are the first things the core is told.
-            again: [
-                Input::Drafts {
-                    drafts: crate::drafts::load(&dir),
-                },
-                Input::Entropy(entropy()),
-            ]
-            .into_iter()
-            .chain(read.map(|store| Input::TrustRead { store }))
-            .collect(),
+            // Fresh randomness, then that it has started, are the first
+            // things the core is told.
+            again: [Input::Entropy(entropy()), Input::Started]
+                .into_iter()
+                .collect(),
             inputs: inputs.downgrade(),
             runtime,
             calls: calls.clone(),
@@ -1314,7 +1303,7 @@ impl CoreThread {
             ShellWork::Trust { store, changed } => {
                 *self.trust.write().unwrap() = *store;
                 if let Some((host, changed)) = changed {
-                    self.trust_changed(uuid::Uuid::from_bytes(host.0), changed);
+                    self.trust_changed(runtime.dir(), uuid::Uuid::from_bytes(host.0), changed);
                 }
             }
             ShellWork::ReplacementEnded { host } => {
@@ -1325,12 +1314,34 @@ impl CoreThread {
         }
     }
 
-    /// What follows a trust change on the drive, on the connections.
-    fn trust_changed(&self, host: uuid::Uuid, changed: daemon_core::trust::TrustChanged) {
+    /// What follows a trust change on the drive: on the connections, and
+    /// for a host forgotten, the tickets and tokens it gave this profile's
+    /// dials, which nothing would dial it with again.
+    fn trust_changed(
+        &self,
+        profile: &Path,
+        host: uuid::Uuid,
+        changed: daemon_core::trust::TrustChanged,
+    ) {
         use daemon_core::trust::{PairingUpdate, TrustChanged};
 
-        let TrustChanged::Paired(update) = changed else {
-            return;
+        let update = match changed {
+            TrustChanged::Paired(update) => update,
+            TrustChanged::Removed(_) => {
+                for kept in [crate::CLIENT_TICKETS_DIR, crate::CLIENT_TOKENS_DIR] {
+                    let path = profile.join(kept).join(host.to_string());
+                    let removed = match std::fs::metadata(&path) {
+                        Ok(meta) if meta.is_dir() => std::fs::remove_dir_all(&path),
+                        Ok(_) => std::fs::remove_file(&path),
+                        Err(_) => Ok(()),
+                    };
+                    if let Err(error) = removed {
+                        tracing::warn!(%error, path = %path.display(), "cannot remove a forgotten host's file");
+                    }
+                }
+                return;
+            }
+            _ => return,
         };
         let Some(connections) = self.connections() else {
             return;

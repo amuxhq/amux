@@ -446,8 +446,8 @@ by `MESSAGE_SIZE_LIMIT` (16 MiB). The complete control vocabulary is:
 
 A host keeps what each trusted peer listed, tagged by where it came from:
 listed over a direct link, over a forwarded one, or the peer's public address,
-which only the relay's observation gave. The profile's trust file keeps the
-list beside the address the peer last answered at.
+which only the relay's observation gave. The profile's store keeps the list
+beside the address the peer last answered at.
 
 A runtime instance id is 16 random bytes a host's runtime draws when it
 starts and keeps until it stops; it is not an agent's incarnation, which

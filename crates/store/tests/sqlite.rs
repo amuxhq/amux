@@ -18,7 +18,7 @@ const CLOCK: CommitClock = CommitClock {
 /// The hash of every migration shipped. From the first release on a
 /// shipped migration is never edited; append a new one and pin its hash
 /// here instead.
-const SHIPPED: &[&str] = &["04fe18826d580593678887f5103745a65dd7d9496c0a813a3678eb09e78d2e76"];
+const SHIPPED: &[&str] = &["4c959f7e9a4542f0f0d2602c9efe77cf7a53a19c207f7b5759182721969a4a70"];
 
 /// What stores written before the release schema recorded: seven
 /// migrations, whose first differs from this build's.
@@ -218,6 +218,25 @@ fn a_file_that_is_not_a_profile_store_is_refused() {
 }
 
 #[test]
+fn a_store_of_amux_with_no_recorded_history_is_refused_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("store.sqlite");
+    let conn = Connection::open(&path).unwrap();
+    conn.pragma_update(None, "journal_mode", "WAL").unwrap();
+    conn.execute_batch("CREATE TABLE agents (x); INSERT INTO agents VALUES (1);")
+        .unwrap();
+    conn.pragma_update(None, "application_id", 0x616d_7578)
+        .unwrap();
+    drop(conn);
+    let before = std::fs::read(&path).unwrap();
+    assert!(matches!(
+        Sqlite::open(&path, OWN),
+        Err(OpenError::OtherHistory { id: 0, .. })
+    ));
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+}
+
+#[test]
 fn the_unique_position_index_trips_on_a_second_key_at_one_position() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = open(&dir);
@@ -404,7 +423,8 @@ fn a_passive_checkpoint_that_cannot_take_the_checkpoint_lock_fails_as_busy() {
 /// The store the first release's schema wrote, with rows in every table:
 /// an own agent with a parent, items with an attachment and an input id, a
 /// needs-you snapshot and its notification, a replica taken by a reset, a
-/// peer's generation, and both kinds of delivery. Written once and never
+/// peer's generation, both kinds of delivery, the peer's pairing, a draft
+/// and a recent directory. Written once and never
 /// rewritten, so every later build opens a store as the release left it.
 const FIRST_RELEASE_STORE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -501,6 +521,22 @@ fn the_first_release_store_opens_reads_and_takes_writes() {
     );
     assert_eq!(store.host_generation(PEER).unwrap(), Some(3));
     assert_eq!(store.deliveries().unwrap(), first_release_deliveries());
+    let trusted = store.trusted_hosts().unwrap();
+    assert_eq!(trusted.len(), 1);
+    assert_eq!(
+        (trusted[0].host_id.as_slice(), trusted[0].name.as_str()),
+        (PEER, "desk")
+    );
+    assert_eq!(trusted[0].ssh.as_deref(), Some("desk.local"));
+    assert_eq!(trusted[0].direct, r#"["192.0.2.7:4433"]"#);
+    assert_eq!(
+        store.draft(&own.agent).unwrap().as_deref(),
+        Some(&b"\x0a\x0ehalf a thought"[..])
+    );
+    assert_eq!(
+        store.recent_directories().unwrap(),
+        [("/src/app".to_owned(), 1_700_000_000_000)]
+    );
 
     store.commit(&own, &[(65, step(&["k3"]))], CLOCK).unwrap();
     assert_eq!(store.get(&own, "k3").unwrap().unwrap().text, "text of k3");
@@ -567,4 +603,103 @@ fn a_rewritten_row_keeps_a_column_a_later_migration_added() {
     };
     assert_eq!(later("deliveries"), vec![7]);
     assert_eq!(later("notifications"), vec![7]);
+}
+
+fn trusted(host: &[u8], name: &str) -> store::TrustedHost {
+    store::TrustedHost {
+        host_id: host.to_vec(),
+        pubkey: vec![7; 32],
+        name: name.into(),
+        paired_at_ms: 1_700_000_000_000,
+        on_account: false,
+        signed_in: None,
+        platform: 0,
+        ssh: Some("desk.example".into()),
+        direct: "[]".into(),
+        listed: "[]".into(),
+    }
+}
+
+#[test]
+fn a_paired_host_is_kept_rewritten_and_forgotten_with_its_generation() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = open(&dir);
+    let desk = b"desk-host".as_slice();
+    store
+        .put_trusted_host(&trusted(desk, "desk"), store::Durability::Synced)
+        .unwrap();
+    store.record_host_generation(desk, 3).unwrap();
+    let mut renamed = trusted(desk, "study desk");
+    renamed.signed_in = Some(true);
+    renamed.platform = 2;
+    store
+        .put_trusted_host(&renamed, store::Durability::Normal)
+        .unwrap();
+    drop(store);
+
+    let mut store = open(&dir);
+    assert_eq!(store.trusted_hosts().unwrap(), vec![renamed]);
+    assert_eq!(store.host_generation(desk).unwrap(), Some(3));
+    store
+        .remove_trusted_host(desk, store::Durability::Synced)
+        .unwrap();
+    assert!(store.trusted_hosts().unwrap().is_empty());
+    assert_eq!(store.host_generation(desk).unwrap(), None);
+    assert!(matches!(
+        store.put_trusted_host(&trusted(OWN, "me"), store::Durability::Normal),
+        Err(StoreError::OwnHost)
+    ));
+}
+
+#[test]
+fn a_synced_write_leaves_the_store_unsynced_after_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = open(&dir);
+    store
+        .put_trusted_host(&trusted(b"desk-host", "desk"), store::Durability::Synced)
+        .unwrap();
+    let synchronous: i64 = store
+        .connection()
+        .query_row("PRAGMA synchronous", [], |row| row.get(0))
+        .unwrap();
+    let fullfsync: i64 = store
+        .connection()
+        .query_row("PRAGMA fullfsync", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!((synchronous, fullfsync), (1, 0), "NORMAL and no fullfsync");
+}
+
+#[test]
+fn drafts_are_kept_per_agent_and_forgotten() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = open(&dir);
+    store.put_draft(b"a1", b"first").unwrap();
+    store.put_draft(b"a1", b"second").unwrap();
+    store.put_draft(b"a2", b"other").unwrap();
+    assert_eq!(store.draft(b"a1").unwrap().as_deref(), Some(&b"second"[..]));
+    assert!(store.delete_draft(b"a1").unwrap());
+    assert!(!store.delete_draft(b"a1").unwrap());
+    assert_eq!(store.draft(b"a1").unwrap(), None);
+    assert_eq!(store.draft(b"a2").unwrap().as_deref(), Some(&b"other"[..]));
+}
+
+#[test]
+fn recent_directories_keep_the_latest_use_and_the_newest_two_hundred() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = open(&dir);
+    store.record_recent_directory("/src/a", 20).unwrap();
+    store.record_recent_directory("/src/b", 10).unwrap();
+    store.record_recent_directory("/src/a", 5).unwrap();
+    assert_eq!(
+        store.recent_directories().unwrap(),
+        vec![("/src/a".to_owned(), 20), ("/src/b".to_owned(), 10)]
+    );
+    for n in 0..store::RECENT_DIRECTORIES as i64 {
+        store
+            .record_recent_directory(&format!("/many/{n}"), 100 + n)
+            .unwrap();
+    }
+    let kept = store.recent_directories().unwrap();
+    assert_eq!(kept.len(), store::RECENT_DIRECTORIES);
+    assert!(kept.iter().all(|(path, _)| path.starts_with("/many/")));
 }

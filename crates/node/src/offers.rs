@@ -239,7 +239,7 @@ impl ProfileRuntime {
         };
         let path = copy_path(self.dir(), provider);
         let bytes = offer.encode_to_vec();
-        tokio::task::spawn_blocking(move || write_copy(&path, &bytes))
+        tokio::task::spawn_blocking(move || crate::install::write_cache(&path, &bytes))
             .await
             .map_err(|error| CatalogueError::Write(io::Error::other(error)))?
             .map_err(CatalogueError::Write)?;
@@ -391,11 +391,4 @@ async fn provider_version(command: &str, launch: &Launch) -> Option<String> {
         .status
         .success()
         .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
-}
-
-/// Through a temporary file, so a reader never sees half a copy.
-fn write_copy(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let temporary = path.with_extension("tmp");
-    std::fs::write(&temporary, bytes)?;
-    std::fs::rename(&temporary, path)
 }

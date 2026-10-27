@@ -17,7 +17,7 @@
   ],
   "automatic": false,
   "core": {
-    "inputs": 38,
+    "inputs": 37,
     "reads": 7,
     "schema": 1
   },

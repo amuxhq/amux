@@ -271,8 +271,8 @@ a live stream.
 
 After a restart both are rebuilt: agent handles from the directories on
 disk and the store's rows, call queues from clients reconnecting. The core
-starts from the store, the drafts file, the trust store, the settings and
-the generation; its newest checkpoint, at the head of its input ring beside
+starts from the store (which holds its paired hosts and drafts too), the
+settings and the generation; its newest checkpoint, at the head of its input ring beside
 the store, is what a dump and a replay start from.
 
 ## The agent directory is the contract
@@ -324,11 +324,11 @@ The rest of the installation:
   profiles/<profile_id>/      one per profile; its id is its host id
     profile                   what it is called and when it was made
     device.key                this profile's key; it never leaves the machine
-    trust.json                the hosts this profile has paired with
     account                   the account binding and its credential, when bound
     sock                      the client socket, owner-only
     link.sock                 where `amux relay` hands in a peer's link over SSH
-    store.sqlite              agents, items, hosts, deliveries, notifications; written only by this profile runtime
+    store.sqlite              agents, items, paired hosts, drafts, recent directories, deliveries,
+                              notifications; written only by this profile runtime
     agents/<agent_id>/        as above
     replicas/<host_id>/agents/<agent_id>/blobs/<sha256>
                               bytes fetched for a peer's agent, deleted with its rows

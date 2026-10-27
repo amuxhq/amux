@@ -17,17 +17,14 @@ fn daemon(trusted: &[HostId]) -> Daemon {
     let mut daemon = Daemon::new(
         Sqlite::open_in_memory(OWN).expect("a store opens"),
         StartOptions {
-            trust: "/profile/trust.json".into(),
             budget: StepBudget::UNLIMITED,
             ..StartOptions::default()
         },
     );
-    step(
-        &mut daemon,
-        Input::TrustRead {
-            store: TrustStore::of_hosts(trusted.iter().copied()),
-        },
-    );
+    {
+        daemon.trust_for_test(TrustStore::of_hosts(trusted.iter().copied()));
+        step(&mut daemon, Input::Started)
+    };
     daemon
 }
 
@@ -140,18 +137,16 @@ fn channel(daemon: &mut Daemon, link: u64, peer: HostId) -> ChannelId {
     channel
 }
 
-fn written_or_none(out: &[Output]) -> Option<JobId> {
-    out.iter().find_map(|output| match output {
-        Output::Job {
-            id,
-            op: Job::Fsync { .. } | Job::TeardownHost { .. },
-        } => Some(*id),
-        _ => None,
-    })
-}
-
-fn written(out: &[Output]) -> JobId {
-    written_or_none(out).unwrap_or_else(|| panic!("expected a trust job, got {out:?}"))
+fn teardown(out: &[Output]) -> JobId {
+    out.iter()
+        .find_map(|output| match output {
+            Output::Job {
+                id,
+                op: Job::TeardownHost { .. },
+            } => Some(*id),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("expected a teardown, got {out:?}"))
 }
 
 fn pair(id: HostId, pubkey: Vec<u8>) -> TrustChange {
@@ -217,7 +212,7 @@ fn a_hosts_key_replacement_holds_nothing_of_it_until_the_new_key_is_written() {
             request: ClientRequest::ChangeTrust(pair(DESK, vec![8; 32])),
         },
     );
-    let teardown = written(&out);
+    let teardown = self::teardown(&out);
     assert!(daemon.routing.catalogue.said(DESK).is_none());
     // What arrives meanwhile, on a link or a neighbor's word, is not held.
     linked(&mut daemon, 2, DESK, CarrierKind::Direct, &[]);
@@ -225,17 +220,10 @@ fn a_hosts_key_replacement_holds_nothing_of_it_until_the_new_key_is_written() {
     assert!(daemon.routing.catalogue.said(DESK).is_none());
     assert!(daemon.routing.catalogue.relays_to(DESK).is_empty());
 
-    let write = written(&step(
-        &mut daemon,
-        Input::JobDone {
-            job: teardown,
-            result: JobResult::Done,
-        },
-    ));
     step(
         &mut daemon,
         Input::JobDone {
-            job: write,
+            job: teardown,
             result: JobResult::Done,
         },
     );
@@ -284,7 +272,7 @@ fn a_trusted_host_the_relay_claims_is_remembered_as_on_the_account() {
             resumed: None,
         },
     );
-    let out = step(
+    step(
         &mut daemon,
         Input::LinkControl {
             link: LinkId(2),
@@ -293,14 +281,6 @@ fn a_trusted_host_the_relay_claims_is_remembered_as_on_the_account() {
                     host: Some(host(DESK)),
                 })),
             },
-        },
-    );
-    let write = written(&out);
-    step(
-        &mut daemon,
-        Input::JobDone {
-            job: write,
-            result: JobResult::Done,
         },
     );
     assert!(reachable(&daemon));

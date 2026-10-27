@@ -56,7 +56,7 @@ pub struct Push {
     pub agent_id: Vec<u8>,
     /// The revision of the snapshot that turned the agent to needs_you.
     pub revision: u64,
-    pub name: Option<String>,
+    pub name: String,
     pub working_on: Option<String>,
     /// The agent's newest item's text when it turned.
     pub text: String,

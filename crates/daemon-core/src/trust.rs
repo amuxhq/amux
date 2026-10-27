@@ -1,14 +1,16 @@
 //! The hosts this profile trusts: each paired host's pinned key, its name,
 //! how it was last reached and what it last said of itself.
 //!
-//! The core holds the trust store and is its only writer. A change is
-//! staged on a copy, written whole to the trust file by one
-//! [`Job::Fsync`] at a time, and only then becomes the store the core
-//! serves and the shell's handshakes read: a crash before the write leaves
-//! the trust the drive held, and a change the drive refused never shows.
-//! Changes queue behind the one under way, so a later change is never
-//! written under an earlier one. The driver reads the file at start and
-//! hands it over as [`Input::TrustRead`](crate::Input::TrustRead).
+//! The core holds the trust store and is its only writer. The store's
+//! `trusted_hosts` table holds it; the core keeps a copy it serves and
+//! publishes to the shell's handshakes. A change commits in the step that
+//! makes it, before the copy changes, so a change the store refused never
+//! shows. Pairing, unpairing and a pairing undone commit synced, so a
+//! machine that loses power the moment after still holds them; the facts a
+//! host keeps telling (its addresses, whether it is signed in) commit as
+//! the store's other rows do. A change asked for while the store's WAL is
+//! being moved into its main file waits, with any behind it, until the
+//! move is done.
 //!
 //! Replacing a host's key closes everything opened under the old one
 //! first: the old key stops being trusted at once, the driver tears the
@@ -17,15 +19,17 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::net::SocketAddr;
+use std::time::Instant;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use store::{Durability, Sqlite, TrustedHost};
 use uuid::Uuid;
 
 use crate::Daemon;
 use crate::ids::{CallId, HostId, JobId, PairingId};
 use crate::io::{Job, Output, ShellWork};
-use crate::payload::{CallError, JobResult, PeerAddress, Response, Status};
+use crate::payload::{CallError, PeerAddress, Response, Status};
 use crate::serve::answered;
 
 /// The length of an Ed25519 public key, the only key a host pins.
@@ -41,7 +45,7 @@ pub enum Reachability {
 }
 
 /// What the profile knows of one paired host.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TrustEntry {
     pub pubkey: Vec<u8>,
     pub name: String,
@@ -64,94 +68,6 @@ pub struct TrustEntry {
     /// Every address the peer last listed for itself, with where each came
     /// from. The address it last answered at is its `Direct` reachability.
     pub listed: Vec<PeerAddress>,
-}
-
-/// The trust file's shapes, which are JSON's: an entry that leaves out
-/// what it does not know. The checkpoint's format cannot skip a field, so
-/// it gets the plain shape.
-mod forms {
-    use super::*;
-
-    #[derive(Serialize, Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct FileEntry {
-        pubkey: Vec<u8>,
-        name: String,
-        paired_at: DateTime<Utc>,
-        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-        on_account: bool,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        direct: Vec<SocketAddr>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        ssh: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        signed_in: Option<bool>,
-        #[serde(default, skip_serializing_if = "unspecified")]
-        platform: wire::Platform,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        listed: Vec<PeerAddress>,
-    }
-
-    #[derive(Serialize, Deserialize)]
-    struct PlainEntry {
-        pubkey: Vec<u8>,
-        name: String,
-        paired_at: DateTime<Utc>,
-        on_account: bool,
-        direct: Vec<SocketAddr>,
-        ssh: Option<String>,
-        signed_in: Option<bool>,
-        platform: wire::Platform,
-        listed: Vec<PeerAddress>,
-    }
-
-    fn unspecified(platform: &wire::Platform) -> bool {
-        *platform == wire::Platform::Unspecified
-    }
-
-    macro_rules! entry {
-        ($from:ident => $to:ident) => {
-            impl From<$from> for $to {
-                fn from(entry: $from) -> $to {
-                    $to {
-                        pubkey: entry.pubkey,
-                        name: entry.name,
-                        paired_at: entry.paired_at,
-                        on_account: entry.on_account,
-                        direct: entry.direct,
-                        ssh: entry.ssh,
-                        signed_in: entry.signed_in,
-                        platform: entry.platform,
-                        listed: entry.listed,
-                    }
-                }
-            }
-        };
-    }
-    entry!(TrustEntry => FileEntry);
-    entry!(FileEntry => TrustEntry);
-    entry!(TrustEntry => PlainEntry);
-    entry!(PlainEntry => TrustEntry);
-
-    impl Serialize for TrustEntry {
-        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-            if serializer.is_human_readable() {
-                FileEntry::from(self.clone()).serialize(serializer)
-            } else {
-                PlainEntry::from(self.clone()).serialize(serializer)
-            }
-        }
-    }
-
-    impl<'de> Deserialize<'de> for TrustEntry {
-        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-            if deserializer.is_human_readable() {
-                FileEntry::deserialize(deserializer).map(TrustEntry::from)
-            } else {
-                PlainEntry::deserialize(deserializer).map(TrustEntry::from)
-            }
-        }
-    }
 }
 
 /// The paired hosts by id, and the hosts whose key is being replaced:
@@ -182,10 +98,8 @@ pub enum TrustError {
     DuplicatePubkey(Uuid),
     /// The host is not paired.
     NotTrusted(Uuid),
-    /// The trust file could not be written, in the driver's words.
+    /// The store refused the change, in its words.
     Write(String),
-    /// The trust file does not decode.
-    Corrupt(String),
 }
 
 impl std::fmt::Display for TrustError {
@@ -200,7 +114,6 @@ impl std::fmt::Display for TrustError {
             }
             TrustError::NotTrusted(host) => write!(f, "peer {host} is not trusted"),
             TrustError::Write(error) => write!(f, "cannot save the trust store: {error}"),
-            TrustError::Corrupt(error) => write!(f, "cannot read the trust store: {error}"),
         }
     }
 }
@@ -218,23 +131,47 @@ fn validate_pubkey(pubkey: &[u8]) -> Result<(), TrustError> {
 }
 
 impl TrustStore {
-    /// The store a trust file holds; a pinned key of the wrong length
-    /// refuses the whole file.
-    pub fn from_file(bytes: &[u8]) -> Result<TrustStore, TrustError> {
-        let entries: BTreeMap<Uuid, TrustEntry> = serde_json::from_slice(bytes)
-            .map_err(|error| TrustError::Corrupt(error.to_string()))?;
-        let store = TrustStore {
+    /// The paired hosts the profile store holds. A row that does not read
+    /// (which only a hand-edited store could hold) is left out and logged,
+    /// so one bad row never stops the profile.
+    pub fn load(store: &Sqlite) -> TrustStore {
+        let rows = store.trusted_hosts().unwrap_or_else(|error| {
+            tracing::error!(%error, "cannot read the paired hosts");
+            Vec::new()
+        });
+        let entries = rows
+            .into_iter()
+            .filter_map(|row| match TrustEntry::from_row(&row) {
+                Ok(entry) => Some(entry),
+                Err(error) => {
+                    tracing::error!(%error, "a paired host's row does not read; leaving it out");
+                    None
+                }
+            })
+            .collect();
+        TrustStore {
             entries,
             replacement_pending: BTreeSet::new(),
-        };
-        store.validate()?;
-        Ok(store)
+        }
     }
 
-    /// The trust file's bytes for this store.
-    pub fn to_file(&self) -> Result<Vec<u8>, TrustError> {
-        self.validate()?;
-        Ok(serde_json::to_vec_pretty(&self.entries).expect("trust entries serialize"))
+    /// The store's row for `host_id`, or `None` when it is not paired.
+    fn row(&self, host_id: Uuid) -> Option<TrustedHost> {
+        self.entries
+            .get(&host_id)
+            .map(|entry| entry.to_row(host_id))
+    }
+
+    /// Writes this store's trust into `store`, for tests and checkers that
+    /// start a core with hosts already paired.
+    #[doc(hidden)]
+    pub fn write_for_test(&self, store: &mut Sqlite) {
+        for host in self.entries.keys() {
+            let row = self.row(*host).expect("the entry is held");
+            store
+                .put_trusted_host(&row, Durability::Normal)
+                .expect("the store takes the paired host");
+        }
     }
 
     /// A store trusting each of `hosts` under a key made from its id, for
@@ -453,16 +390,42 @@ impl TrustStore {
             (*candidate_host_id != host_id && entry.pubkey == pubkey).then_some(*candidate_host_id)
         })
     }
-
-    fn validate(&self) -> Result<(), TrustError> {
-        for entry in self.entries.values() {
-            validate_pubkey(&entry.pubkey)?;
-        }
-        Ok(())
-    }
 }
 
 impl TrustEntry {
+    fn to_row(&self, host_id: Uuid) -> TrustedHost {
+        TrustedHost {
+            host_id: host_id.as_bytes().to_vec(),
+            pubkey: self.pubkey.clone(),
+            name: self.name.clone(),
+            paired_at_ms: self.paired_at.timestamp_millis(),
+            on_account: self.on_account,
+            signed_in: self.signed_in,
+            platform: self.platform as i32,
+            ssh: self.ssh.clone(),
+            direct: serde_json::to_string(&self.direct).expect("addresses serialize"),
+            listed: serde_json::to_string(&self.listed).expect("addresses serialize"),
+        }
+    }
+
+    fn from_row(row: &TrustedHost) -> Result<(Uuid, TrustEntry), String> {
+        let host = Uuid::from_slice(&row.host_id).map_err(|error| error.to_string())?;
+        validate_pubkey(&row.pubkey).map_err(|error| error.to_string())?;
+        let entry = TrustEntry {
+            pubkey: row.pubkey.clone(),
+            name: row.name.clone(),
+            paired_at: DateTime::<Utc>::from_timestamp_millis(row.paired_at_ms)
+                .unwrap_or(DateTime::<Utc>::UNIX_EPOCH),
+            on_account: row.on_account,
+            direct: serde_json::from_str(&row.direct).map_err(|error| error.to_string())?,
+            ssh: row.ssh.clone(),
+            signed_in: row.signed_in,
+            platform: wire::Platform::try_from(row.platform).unwrap_or_default(),
+            listed: serde_json::from_str(&row.listed).map_err(|error| error.to_string())?,
+        };
+        Ok((host, entry))
+    }
+
     /// A host just paired, reached as `reachability`.
     fn paired(
         pubkey: Vec<u8>,
@@ -555,7 +518,7 @@ impl TrustChange {
     }
 }
 
-/// What a change did, once it is on the drive.
+/// What a change did, once the store holds it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TrustChanged {
     /// A pairing's commit, and what it did to the store.
@@ -589,58 +552,107 @@ struct Queued {
     waiter: Option<Waiter>,
 }
 
+/// A key replacement waiting for the host's connections under the old key
+/// to close.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-enum Stage {
-    /// The host's connections under its old key are closing.
-    TearingDown,
-    /// The staged store is being written.
-    Writing,
-}
-
-/// The change under way.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-struct Changing {
+struct Replacing {
     queued: Queued,
     job: JobId,
-    stage: Stage,
-    staged: TrustStore,
-    changed: TrustChanged,
 }
 
-/// The trust store as the drive holds it, the change under way and the
-/// changes waiting behind it.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// The paired hosts as the store holds them, a key replacement under way
+/// and the changes waiting behind it. The paired hosts are the store's, so
+/// a checkpoint leaves them out and a restored core reads them from the
+/// store it was taken beside; which keys are being replaced it keeps.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct Trust {
     store: TrustStore,
-    changing: Option<Changing>,
+    replacing: Option<Replacing>,
     queue: VecDeque<Queued>,
 }
 
+/// What a checkpoint keeps of [`Trust`].
+#[derive(Serialize, Deserialize)]
+struct TrustCheckpoint {
+    replacement_pending: BTreeSet<Uuid>,
+    replacing: Option<Replacing>,
+    queue: VecDeque<Queued>,
+}
+
+impl Serialize for Trust {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        TrustCheckpoint {
+            replacement_pending: self.store.replacement_pending.clone(),
+            replacing: self.replacing.clone(),
+            queue: self.queue.clone(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Trust {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let checkpoint = TrustCheckpoint::deserialize(deserializer)?;
+        Ok(Trust {
+            store: TrustStore {
+                entries: BTreeMap::new(),
+                replacement_pending: checkpoint.replacement_pending,
+            },
+            replacing: checkpoint.replacing,
+            queue: checkpoint.queue,
+        })
+    }
+}
+
 impl Trust {
+    /// The trust `store` holds, nothing being changed.
+    pub(crate) fn load(store: &Sqlite) -> Trust {
+        Trust {
+            store: TrustStore::load(store),
+            ..Trust::default()
+        }
+    }
+
+    /// A checkpoint's trust, its paired hosts read again from `store`.
+    pub(crate) fn restored(mut self, store: &Sqlite) -> Trust {
+        self.store.entries = TrustStore::load(store).entries;
+        self
+    }
+
     pub fn store(&self) -> &TrustStore {
         &self.store
     }
 
     pub(crate) fn jobs(&self, out: &mut Vec<JobId>) {
-        out.extend(self.changing.as_ref().map(|changing| changing.job));
+        out.extend(self.replacing.as_ref().map(|replacing| replacing.job));
     }
 
     pub(crate) fn canonical(&self, ids: &crate::fingerprint::Ids) -> Trust {
         let mut trust = self.clone();
-        if let Some(changing) = &mut trust.changing {
-            changing.job = ids.jobs.get(changing.job);
+        if let Some(replacing) = &mut trust.replacing {
+            replacing.job = ids.jobs.get(replacing.job);
         }
         trust
     }
 }
 
 impl Daemon {
-    /// The trust file as the driver read it at start: the store the drive
-    /// holds, so nothing of it is written again.
-    pub(crate) fn trust_read(&mut self, store: TrustStore, out: &mut Vec<Output>) {
-        self.trust.store = store;
+    /// The core is starting: its paired hosts are what the store holds.
+    pub(crate) fn trust_started(&mut self, out: &mut Vec<Output>) {
         self.remember_addresses();
         self.trust_published(None, out);
+    }
+
+    /// Puts `store` in the profile store and serves it, for tests and
+    /// checkers that start a core with hosts already paired; the next
+    /// [`Input::Started`](crate::Input::Started) publishes it.
+    #[doc(hidden)]
+    pub fn trust_for_test(&mut self, store: TrustStore) {
+        store.write_for_test(&mut self.store);
+        // Written beneath the core, as a store that already held them: no
+        // step of its committed them.
+        self.changes = self.store.changes();
+        self.trust.store = store;
     }
 
     /// The trust store the core serves.
@@ -648,15 +660,7 @@ impl Daemon {
         &self.trust.store
     }
 
-    /// Whether the removal of `host` is being written.
-    pub(crate) fn trust_removing(&self, host: Uuid) -> bool {
-        self.trust.changing.as_ref().is_some_and(|changing| {
-            changing.stage == Stage::Writing
-                && changing.queued.change == TrustChange::Remove { host }
-        })
-    }
-
-    /// A change asked for by a call, answered once it is on the drive.
+    /// A change asked for by a call, answered once the store holds it.
     pub(crate) fn change_trust_call(
         &mut self,
         call: CallId,
@@ -666,7 +670,7 @@ impl Daemon {
         self.change_trust(change, Some(Waiter::Call(call)), out);
     }
 
-    /// Queues `change` behind the one under way, or starts it.
+    /// Queues `change` behind any waiting, and starts what may start.
     pub(crate) fn change_trust(
         &mut self,
         change: TrustChange,
@@ -677,8 +681,14 @@ impl Daemon {
         self.next_trust_change(out);
     }
 
-    fn next_trust_change(&mut self, out: &mut Vec<Output>) {
-        while self.trust.changing.is_none()
+    /// Makes the changes waiting, in order, until one must wait: for a key
+    /// replacement's teardown, or for the WAL to finish moving into the
+    /// main file (no commit may land while it moves, nor in the step that
+    /// serialized the core beside it).
+    pub(crate) fn next_trust_change(&mut self, out: &mut Vec<Output>) {
+        while self.trust.replacing.is_none()
+            && !self.checkpoints.holding()
+            && !self.touched.serialized
             && let Some(queued) = self.trust.queue.pop_front()
         {
             self.start_trust_change(queued, out);
@@ -760,11 +770,11 @@ impl Daemon {
                 return;
             }
         };
-        let job = self.pending.mint();
         if changed == TrustChanged::Paired(PairingUpdate::PubkeyReplacementRequired) {
             // The old key stops being trusted now, before anything opened
             // under it is closed.
             let host = queued.change.host();
+            let job = self.pending.mint();
             self.trust.store.replacement_pending.insert(host);
             self.begin_replacement(HostId(*host.as_bytes()));
             self.trust_published(None, out);
@@ -774,128 +784,101 @@ impl Daemon {
                     host: HostId(*host.as_bytes()),
                 },
             });
-            self.trust.changing = Some(Changing {
-                queued,
-                job,
-                stage: Stage::TearingDown,
-                staged,
-                changed,
-            });
+            self.trust.replacing = Some(Replacing { queued, job });
             return;
         }
-        self.write_trust(queued, job, staged, changed, out);
+        self.commit_trust(queued, staged, changed, out);
     }
 
-    fn write_trust(
+    /// Commits the host the change is about as `staged` holds it, then
+    /// serves `staged`; a commit the store refuses ends the change with
+    /// nothing changed.
+    fn commit_trust(
         &mut self,
         queued: Queued,
-        job: JobId,
         staged: TrustStore,
         changed: TrustChanged,
         out: &mut Vec<Output>,
     ) {
-        let bytes = match staged.to_file() {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                self.trust_change_ended(queued.waiter, Err(error), out);
-                return;
+        let host = queued.change.host();
+        // Whether the host is trusted at all, and under which key, is what
+        // must outlive the machine losing power; what it last said of
+        // itself it says again.
+        let durability = match queued.change {
+            TrustChange::Pair { .. } | TrustChange::Remove { .. } | TrustChange::Restore { .. } => {
+                Durability::Synced
             }
+            _ => Durability::Normal,
         };
-        out.push(Output::Job {
-            id: job,
-            op: Job::Fsync {
-                path: self.options.trust.clone(),
-                bytes,
-            },
-        });
-        self.trust.changing = Some(Changing {
-            queued,
-            job,
-            stage: Stage::Writing,
-            staged,
-            changed,
-        });
+        // The sync waits on the drive, which the step's budget, kept for
+        // work a step should not be doing, leaves out: the one other
+        // reading of the clock a step makes.
+        let started = Instant::now();
+        let written = match staged.row(host) {
+            Some(row) => self.store.put_trusted_host(&row, durability),
+            None => self.store.remove_trusted_host(host.as_bytes(), durability),
+        };
+        if durability == Durability::Synced {
+            self.touched.synced_micros += started.elapsed().as_micros() as u64;
+        }
+        if let Err(error) = written {
+            let error = error.to_string();
+            tracing::warn!(%error, %host, "cannot save the trust store");
+            if self.trust.store.replacement_pending.contains(&host) {
+                self.end_replacement(host, out);
+            }
+            self.trust_change_ended(queued.waiter, Err(TrustError::Write(error)), out);
+            return;
+        }
+        self.trust.store = staged;
+        self.trust_published(Some((host, changed.clone())), out);
+        let id = HostId(*host.as_bytes());
+        if let TrustChanged::Paired(_) | TrustChanged::Removed(_) = &changed {
+            self.trust_committed(id, out);
+        }
+        if changed == TrustChanged::Paired(PairingUpdate::ReplacedPubkey) {
+            self.finish_replacement(id);
+        }
+        self.trust_change_ended(queued.waiter, Ok(changed), out);
     }
 
-    /// A job of the trust change under way finished; returns whether `job`
-    /// was one.
-    pub(crate) fn trust_job_done(
-        &mut self,
-        job: JobId,
-        result: &JobResult,
-        out: &mut Vec<Output>,
-    ) -> bool {
+    /// A key replacement's teardown finished; returns whether `job` was
+    /// one. Whatever the teardown said, nothing of the old key is trusted
+    /// any more: the replacement is written on.
+    pub(crate) fn trust_job_done(&mut self, job: JobId, out: &mut Vec<Output>) -> bool {
         if self
             .trust
-            .changing
+            .replacing
             .as_ref()
-            .is_none_or(|changing| changing.job != job)
+            .is_none_or(|replacing| replacing.job != job)
         {
             return false;
         }
-        let Changing {
-            queued,
-            stage,
-            staged,
-            changed,
-            ..
-        } = self.trust.changing.take().expect("a change is under way");
+        let Replacing { queued, .. } = self.trust.replacing.take().expect("a replacement");
         let host = queued.change.host();
-        match (stage, result) {
-            (Stage::TearingDown, _) => {
-                // Whatever the teardown said, nothing of the old key is
-                // trusted any more: the replacement is written on.
-                let TrustChange::Pair {
-                    pubkey,
-                    name,
-                    reachability,
-                    ..
-                } = &queued.change
-                else {
-                    unreachable!("only a pairing replaces a key");
-                };
-                let paired_at = DateTime::<Utc>::from_timestamp_millis(self.timers.now_ms as i64)
-                    .unwrap_or(DateTime::<Utc>::UNIX_EPOCH);
-                let mut replaced = self.trust.store.clone();
-                match replaced.replace_paired_peer_after_teardown(
-                    host,
-                    pubkey.clone(),
-                    name.clone(),
-                    reachability.clone(),
-                    paired_at,
-                ) {
-                    Ok(update) => {
-                        let job = self.pending.mint();
-                        self.write_trust(queued, job, replaced, TrustChanged::Paired(update), out);
-                    }
-                    Err(error) => {
-                        self.end_replacement(host, out);
-                        self.trust_change_ended(queued.waiter, Err(error), out);
-                    }
-                }
-            }
-            (Stage::Writing, JobResult::Done) => {
-                self.trust.store = staged;
-                self.trust_published(Some((host, changed.clone())), out);
-                let id = HostId(*host.as_bytes());
-                if let TrustChanged::Paired(_) | TrustChanged::Removed(_) = &changed {
-                    self.trust_committed(id, out);
-                }
-                if changed == TrustChanged::Paired(PairingUpdate::ReplacedPubkey) {
-                    self.finish_replacement(id);
-                }
-                self.trust_change_ended(queued.waiter, Ok(changed), out);
-            }
-            (Stage::Writing, result) => {
-                let error = match result {
-                    JobResult::Failed(error) => error.clone(),
-                    other => format!("{other:?}"),
-                };
-                tracing::warn!(%error, %host, "cannot save the trust store");
-                if self.trust.store.replacement_pending.contains(&host) {
-                    self.end_replacement(host, out);
-                }
-                self.trust_change_ended(queued.waiter, Err(TrustError::Write(error)), out);
+        let TrustChange::Pair {
+            pubkey,
+            name,
+            reachability,
+            ..
+        } = &queued.change
+        else {
+            unreachable!("only a pairing replaces a key");
+        };
+        let paired_at = DateTime::<Utc>::from_timestamp_millis(self.timers.now_ms as i64)
+            .unwrap_or(DateTime::<Utc>::UNIX_EPOCH);
+        let mut replaced = self.trust.store.clone();
+        match replaced.replace_paired_peer_after_teardown(
+            host,
+            pubkey.clone(),
+            name.clone(),
+            reachability.clone(),
+            paired_at,
+        ) {
+            Ok(update) => self.commit_trust(queued, replaced, TrustChanged::Paired(update), out),
+            Err(error) => {
+                self.end_replacement(host, out);
+                self.trust_change_ended(queued.waiter, Err(error), out);
             }
         }
         self.next_trust_change(out);

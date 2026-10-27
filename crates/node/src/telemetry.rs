@@ -178,7 +178,9 @@ pub(crate) fn last_check_in(profile_dir: &Path) -> Option<i64> {
 }
 
 pub(crate) fn mark_checked_in(profile_dir: &Path, at_ms: i64) {
-    if let Err(error) = std::fs::write(profile_dir.join(CHECKED_IN), at_ms.to_string()) {
+    if let Err(error) =
+        crate::install::write_cache(&profile_dir.join(CHECKED_IN), at_ms.to_string().as_bytes())
+    {
         tracing::debug!(%error, "could not record the check-in");
     }
 }

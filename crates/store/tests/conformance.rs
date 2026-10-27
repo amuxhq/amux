@@ -285,7 +285,7 @@ fn snapshots_copy_their_envelope_onto_the_row() {
     let row = store.agent(&agent).unwrap().unwrap();
     assert_eq!(row.phase, Phase::Working as i32);
     assert_eq!(row.working_on.as_deref(), Some("fixing the build"));
-    assert_eq!(row.last_activity_ms, Some(777));
+    assert_eq!(row.last_activity_ms(), Some(777));
     assert_eq!(row.phase_since_ms, Some(700));
     assert_eq!(row.git, Some(git));
     assert_eq!(row.background_jobs, 2);
@@ -481,15 +481,11 @@ fn turning_to_needs_you_inserts_one_notification_and_leaving_removes_it() {
     assert_eq!(notifications[0].due_at_ms, 31_000);
     assert_eq!(
         (
-            notifications[0].name.as_deref(),
+            notifications[0].name.as_str(),
             notifications[0].working_on.as_deref(),
             notifications[0].text.as_str()
         ),
-        (
-            Some("worker"),
-            Some("deploying"),
-            "May I run the migration?"
-        )
+        ("worker", Some("deploying"), "May I run the migration?")
     );
     store
         .commit(&agent, &[(4, snap(Phase::Working))], CLOCK)
@@ -1085,7 +1081,7 @@ fn an_inventory_put_keeps_a_replicas_last_activity() {
     listed.phase_since_ms = Some(4_500);
     store.put_agent(&listed).unwrap();
     let row = store.agent(&agent).unwrap().unwrap();
-    assert_eq!(row.last_activity_ms, Some(4_000));
+    assert_eq!(row.last_activity_ms(), Some(4_000));
     assert_eq!(
         (row.phase, row.phase_since_ms),
         (Phase::Working as i32, Some(4_500))

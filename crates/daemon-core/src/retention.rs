@@ -143,7 +143,7 @@ impl Daemon {
         {
             self.journal_readers.remove(&own);
         }
-        self.forget_draft(&agent.agent, out);
+        self.forget_draft(&agent.agent);
         if let Err(error) = self.parent_changed(agent, ParentSays::Deleted, out) {
             tracing::warn!(%error, "following a removed parent failed");
         }

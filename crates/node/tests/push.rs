@@ -148,17 +148,12 @@ async fn a_needs_you_push_is_sent_once_due_and_cancelled_by_an_answer_exit_or_de
     let push = rig.pushes.sent().remove(0);
     assert_eq!(
         (
-            push.name.as_deref(),
+            push.name.as_str(),
             push.working_on.as_deref(),
             push.text.as_str(),
             push.revision
         ),
-        (
-            Some("deployer"),
-            Some("the task"),
-            "May I run the migration?",
-            2
-        ),
+        ("deployer", Some("the task"), "May I run the migration?", 2),
         "envelope fields only"
     );
     assert_eq!(push.agent_id, agent.id.as_bytes().to_vec());
@@ -172,7 +167,7 @@ async fn a_needs_you_push_is_sent_once_due_and_cancelled_by_an_answer_exit_or_de
     .unwrap();
     rig.note(format!(
         "due: handed to the no-op sender ({:?}, working on {:?}: {:?}); outbox {:?}",
-        push.name.as_deref().unwrap_or_default(),
+        push.name.as_str(),
         push.working_on.as_deref().unwrap_or_default(),
         push.text,
         rig.rows().await

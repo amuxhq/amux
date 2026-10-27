@@ -39,7 +39,6 @@ CREATE TABLE agents (
   working_on          TEXT,              -- copied from the newest snapshot
   phase_since_ms      INTEGER,           -- copied from the newest snapshot
   git                 BLOB,              -- amux.v1.Git, copied from the newest snapshot
-  last_activity_ms    INTEGER,           -- the newest snapshot's at_ms, never commit time
   snapshot            BLOB,              -- amux.v1.Snapshot, body opaque; carries its revision
   ingest_cursor       INTEGER NOT NULL DEFAULT 0, -- own rows: the journal offset committed through
   next_revision       INTEGER NOT NULL DEFAULT 1, -- own rows: the next revision to mint
@@ -60,9 +59,7 @@ CREATE TABLE deliveries (
   child_id            BLOB    NOT NULL,  -- the own agent whose turn or incarnation ended
   incarnation         INTEGER NOT NULL,  -- the child's incarnation that ended it
   turn_id             INTEGER NOT NULL,  -- the turn that ended; 0 for an exit report
-  parent_host         BLOB    NOT NULL,  -- the parent the report is owed to
-  parent_id           BLOB    NOT NULL,
-  parent_incarnation  INTEGER NOT NULL,  -- 0 until the parent's row is held, then stamped
+  parent_incarnation  INTEGER NOT NULL,  -- the parent's, as the child's row names it; 0 until its row is held, then stamped
   exited              INTEGER NOT NULL,  -- 1: the incarnation exited without a turn end; 0: a turn ended
   text                TEXT,              -- turn: the child's last message
   exit_cause          INTEGER,           -- exit: amux.v1.ExitCause, how the incarnation ended
@@ -78,7 +75,7 @@ CREATE TABLE notifications (
   agent_id            BLOB    NOT NULL,  -- the own agent that needs the person
   revision            INTEGER NOT NULL,  -- the snapshot's revision that turned to needs-you
   due_at_ms           INTEGER NOT NULL,  -- sent no earlier, so an answer at the desk cancels it
-  name                TEXT,              -- the agent's name when it turned
+  name                TEXT    NOT NULL,  -- the agent's name when it turned
   working_on          TEXT,              -- the snapshot's working_on
   text                TEXT    NOT NULL DEFAULT '', -- the newest item's text: usually the question
   PRIMARY KEY (agent_id, revision)
@@ -90,6 +87,35 @@ CREATE TABLE hosts (
   host_id             BLOB    PRIMARY KEY, -- a paired host, never this one
   generation          INTEGER NOT NULL   -- the generation its inventory last reported
 ) STRICT;
+
+-- The hosts this profile is paired with: each one's pinned key, its name,
+-- how it was last reached and what it last said of itself.
+CREATE TABLE trusted_hosts (
+  host_id             BLOB    PRIMARY KEY, -- a paired host, never this one
+  pubkey              BLOB    NOT NULL,  -- its pinned Ed25519 key
+  name                TEXT    NOT NULL,  -- what it is called here
+  paired_at_ms        INTEGER NOT NULL,
+  on_account          INTEGER NOT NULL,  -- the account's relay reaches it
+  signed_in           INTEGER,           -- NULL: the host never said
+  platform            INTEGER NOT NULL,  -- amux.v1.Platform, last it said one
+  ssh                 TEXT,              -- the SSH destination it paired at, when it paired that way
+  direct              TEXT    NOT NULL,  -- JSON: the addresses it last answered at directly
+  listed              TEXT    NOT NULL   -- JSON: every address it last listed, with where each came from
+) STRICT;
+
+-- An unsent draft per agent, kept for this machine's clients.
+CREATE TABLE drafts (
+  agent_id            BLOB    PRIMARY KEY,
+  draft               BLOB    NOT NULL   -- amux.v1.Draft
+) STRICT;
+
+-- The directories agents were started in, newest first, outliving the
+-- agents that used them.
+CREATE TABLE recent_directories (
+  path                TEXT    PRIMARY KEY,
+  last_used_ms        INTEGER NOT NULL
+) STRICT;
+CREATE INDEX recent_directories_by_use ON recent_directories (last_used_ms);
 
 -- Items: full state per key, newest revision only.
 CREATE TABLE items (

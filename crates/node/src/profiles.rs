@@ -2,8 +2,10 @@
 //! directory each, named by the profile's id, which is also its host id,
 //! the one its paired machines know it by. Each is a complete amux with
 //! its own key, store and agents. A `profile` file in the directory says
-//! what people call it and when it was made; a directory without one is a
-//! profile a crash left half-made, and goes at the next start.
+//! what people call it and when it was made. A profile is made under a
+//! dotted name and renamed into place whole, so a directory named by an id
+//! without a profile file is one a crash left half removed, and goes at the
+//! next listing.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -20,16 +22,13 @@ pub type ProfileId = Uuid;
 pub const PROFILE_SOCKET: &str = "sock";
 /// The file in a profile's directory that says what it is called.
 pub const PROFILE_FILE: &str = "profile";
-/// Where builds before the profile file listed the profiles. Its
-/// directories have no profile file, and their stores know the machine by
-/// a host id apart from the profile's, so they are neither half-made nor
-/// readable as they stand: such an installation is refused, not tidied.
-const OLD_REGISTRY: &str = "registry";
 
 /// One profile as its directory describes it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProfileEntry {
+    /// The directory's name; the file does not repeat it.
+    #[serde(skip)]
     pub id: ProfileId,
     /// What people call it; unique within the installation.
     pub label: String,
@@ -43,20 +42,10 @@ pub fn profile_dir(data_dir: &Path, profile: ProfileId) -> PathBuf {
     data_dir.join(PROFILES).join(profile.to_string())
 }
 
-/// Every profile the installation hosts, oldest first. A directory under
-/// `profiles/` with no profile file is one a crash left half-made, or half
-/// removed, and is removed here.
+/// Every profile the installation hosts, oldest first. A directory named
+/// by an id with no profile file is one a crash left half removed, and is
+/// removed here; one still being made has a dotted name and is not read.
 pub fn list(data_dir: &Path) -> io::Result<Vec<ProfileEntry>> {
-    if data_dir.join(OLD_REGISTRY).exists() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "{} was made by an older amux whose profiles this build cannot read; \
-                 remove it to start afresh",
-                data_dir.display()
-            ),
-        ));
-    }
     let entries = match std::fs::read_dir(data_dir.join(PROFILES)) {
         Ok(entries) => entries,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -95,8 +84,12 @@ fn read_entry(dir: &Path) -> io::Result<ProfileEntry> {
 
 /// Writes what the profile is called, durably, over what it said before.
 pub(crate) fn write_entry(data_dir: &Path, entry: &ProfileEntry) -> io::Result<()> {
+    write_entry_in(&profile_dir(data_dir, entry.id), entry)
+}
+
+fn write_entry_in(dir: &Path, entry: &ProfileEntry) -> io::Result<()> {
     let bytes = serde_json::to_vec_pretty(entry).map_err(io::Error::other)?;
-    write_durably(&profile_dir(data_dir, entry.id).join(PROFILE_FILE), &bytes)
+    write_durably(&dir.join(PROFILE_FILE), &bytes)
 }
 
 /// A label no profile has yet: `wanted`, or `wanted-2`, `wanted-3`…
@@ -111,9 +104,10 @@ fn free_label(profiles: &[ProfileEntry], wanted: &str) -> String {
         .expect("some suffix is free")
 }
 
-/// Creates a profile under a fresh id: its directory, then its profile
-/// file last, so a crash leaves no half-made profile listed. The label is
-/// made unique.
+/// Creates a profile under a fresh id, built under a dotted name no
+/// listing reads and renamed into place with its profile file, so neither
+/// a crash nor a listing meanwhile sees half a profile. The label is made
+/// unique.
 pub fn create_profile(data_dir: &Path) -> io::Result<ProfileId> {
     create_labelled(data_dir, "default").map(|entry| entry.id)
 }
@@ -131,7 +125,13 @@ pub fn create_profile_as(data_dir: &Path, id: ProfileId) -> io::Result<ProfileId
 fn create_as(data_dir: &Path, id: ProfileId, label: &str) -> io::Result<ProfileEntry> {
     let profiles = list(data_dir)?;
     let dir = profile_dir(data_dir, id);
-    private_dir(&dir.join(AGENTS))?;
+    // What a crash left of an earlier try under this id.
+    let staging = data_dir.join(PROFILES).join(format!(".{id}"));
+    match std::fs::remove_dir_all(&staging) {
+        Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error),
+        _ => {}
+    }
+    private_dir(&staging.join(AGENTS))?;
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |since| since.as_millis() as i64);
@@ -147,7 +147,9 @@ fn create_as(data_dir: &Path, id: ProfileId, label: &str) -> io::Result<ProfileE
             .map(|entry| entry.created_ms.saturating_add(1))
             .fold(now_ms, i64::max),
     };
-    write_entry(data_dir, &entry)?;
+    write_entry_in(&staging, &entry)?;
+    std::fs::rename(&staging, &dir)?;
+    crate::install::sync_dir(&data_dir.join(PROFILES))?;
     Ok(entry)
 }
 
@@ -197,7 +199,7 @@ mod tests {
     }
 
     #[test]
-    fn a_directory_without_a_profile_file_is_a_half_made_profile_and_goes() {
+    fn a_directory_without_a_profile_file_is_a_half_removed_profile_and_goes() {
         let data_dir = tempfile::tempdir().unwrap();
         let kept = create_labelled(data_dir.path(), "kept").unwrap();
         let half = profile_dir(data_dir.path(), Uuid::new_v4());
@@ -207,13 +209,26 @@ mod tests {
     }
 
     #[test]
-    fn an_installation_from_before_the_profile_file_is_refused_and_left_alone() {
+    fn a_profile_being_made_is_not_listed_or_removed() {
         let data_dir = tempfile::tempdir().unwrap();
-        let old = profile_dir(data_dir.path(), Uuid::new_v4());
-        private_dir(&old.join(AGENTS)).unwrap();
-        std::fs::write(data_dir.path().join(OLD_REGISTRY), b"{}").unwrap();
-        let refused = list(data_dir.path()).unwrap_err();
-        assert_eq!(refused.kind(), io::ErrorKind::InvalidData);
-        assert!(old.exists(), "its profiles stay for the person to remove");
+        let kept = create_labelled(data_dir.path(), "kept").unwrap();
+        let making = data_dir
+            .path()
+            .join(PROFILES)
+            .join(format!(".{}", Uuid::new_v4()));
+        private_dir(&making.join(AGENTS)).unwrap();
+        assert_eq!(list(data_dir.path()).unwrap(), vec![kept]);
+        assert!(making.exists());
+    }
+
+    #[test]
+    fn the_profile_file_names_no_id_its_directory_does() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let made = create_labelled(data_dir.path(), "kept").unwrap();
+        let file =
+            std::fs::read_to_string(profile_dir(data_dir.path(), made.id).join(PROFILE_FILE))
+                .unwrap();
+        assert!(!file.contains(&made.id.to_string()), "{file}");
+        assert_eq!(list(data_dir.path()).unwrap()[0].id, made.id);
     }
 }

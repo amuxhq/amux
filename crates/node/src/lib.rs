@@ -17,7 +17,6 @@ mod connection;
 mod daemon;
 pub mod discovery;
 mod dispatcher;
-mod drafts;
 mod driver;
 mod dump;
 mod edge;

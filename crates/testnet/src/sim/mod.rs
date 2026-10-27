@@ -388,6 +388,7 @@ impl SimNet {
             given: Some(decl.name.clone()),
             branches: Default::default(),
             new_worktree: false,
+            recent: None,
             spec,
         };
         match &decl.journal {

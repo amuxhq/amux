@@ -42,20 +42,6 @@ pub const QUIC_ALPN: &[u8] = b"amux/2";
 pub enum IdentityError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("JSON error: {0}")]
-    Json(#[from] serde_json::Error),
-    #[error("failed to parse {path}: {source}")]
-    JsonFile {
-        path: PathBuf,
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("{field} must be {expected} bytes, got {actual}")]
-    InvalidLength {
-        field: &'static str,
-        expected: usize,
-        actual: usize,
-    },
     #[error("failed to generate Ed25519 device key")]
     KeyGeneration,
     #[error("invalid Ed25519 PKCS#8 v1 device key")]
@@ -64,10 +50,6 @@ pub enum IdentityError {
     InvalidDeviceCertificate,
     #[error("TLS config error: {0}")]
     TlsConfig(String),
-    #[error("failed to parse {path}: {reason}")]
-    TrustFile { path: PathBuf, reason: String },
-    #[error("{0}")]
-    Trust(daemon_core::trust::TrustError),
     #[error("trust store lock is poisoned")]
     TrustStorePoisoned,
 }
@@ -562,7 +544,6 @@ fn identity_in(data_dir: &Path) -> Result<DeviceIdentity, IdentityError> {
 
 #[cfg(all(test, unix))]
 fn ensure_device_files_in(data_dir: &Path) -> Result<DeviceIdentity, IdentityError> {
-    crate::trust::load_or_create_in(data_dir)?;
     identity_in(data_dir)
 }
 

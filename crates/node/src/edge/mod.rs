@@ -324,11 +324,10 @@ impl Edge {
         let mut identity = crate::identity::load_or_create_device_identity_in(dir, host)?;
         identity.liveness = options.liveness;
         // The core holds the trust store; the edge reads it as the core
-        // publishes it. A trust file that does not read stops the edge.
-        let read = crate::trust::load_or_create_in(dir)?;
+        // publishes it.
         let (trust, pair_mode): (SharedTrustStore, _) = match runtime.upgrade() {
             Some(runtime) => (runtime.driver().trust(), runtime.driver().pair_window()),
-            None => (Arc::new(std::sync::RwLock::new(read)), Arc::default()),
+            None => (Arc::default(), Arc::default()),
         };
         let account = Account::open(dir).map_err(EdgeError::Account)?;
         let own = runtime.clone();
@@ -411,7 +410,7 @@ impl Edge {
                 .map_err(EdgeError::Lan)?
                 .keeping(dir);
                 let addr = endpoint.local_addr().map_err(EdgeError::Lan)?;
-                let _ = crate::install::write_durably(
+                let _ = crate::install::write_cache(
                     &dir.join(LAN_PORT_FILE),
                     addr.port().to_string().as_bytes(),
                 );

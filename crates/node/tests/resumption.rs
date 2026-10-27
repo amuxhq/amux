@@ -256,6 +256,28 @@ async fn a_host_resumed_with_a_ticket_for_a_key_no_longer_pinned_is_refused_as_r
     linked.stop().await;
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn unpairing_a_host_removes_the_tickets_and_tokens_it_gave() {
+    let linked = Linked::new().await;
+    let desk = linked.desk_edge().host_id();
+    let kept = |dir: &str| linked.laptop.profile_dir().join(dir).join(desk.to_string());
+    assert!(tickets_beneath(&kept(node::CLIENT_TICKETS_DIR)) > 0);
+
+    linked
+        .laptop_edge
+        .unpair(
+            wire::HostRef {
+                of: Some(wire::host_ref::Of::HostId(desk.as_bytes().to_vec())),
+            },
+            String::new(),
+        )
+        .await
+        .unwrap();
+    assert!(!kept(node::CLIENT_TICKETS_DIR).exists());
+    assert!(!kept(node::CLIENT_TOKENS_DIR).exists());
+    linked.stop().await;
+}
+
 /// How many ticket files are anywhere beneath `dir`.
 fn tickets_beneath(dir: &std::path::Path) -> usize {
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -374,14 +396,16 @@ async fn first_flight_on_every_path_reaches_the_host_once() {
     })
     .await
     .unwrap();
-    let trust_file = laptop.profile_dir().join("trust.json");
     until("the laptop to remember where the desk answered", || {
-        let trust = std::fs::read_to_string(&trust_file).unwrap_or_default();
+        let direct = laptop
+            .trusted_host(desk_id)
+            .map(|row| row.direct)
+            .unwrap_or_default();
         async move {
-            if trust.contains(&format!("127.0.0.1:{port}")) {
+            if direct.contains(&format!("127.0.0.1:{port}")) {
                 Ok(())
             } else {
-                Err(trust)
+                Err(direct)
             }
         }
     })
@@ -392,12 +416,10 @@ async fn first_flight_on_every_path_reaches_the_host_once() {
 
     // The desk lists both its addresses, as its Hello says them: the
     // laptop's first flight goes to each.
-    let mut trust: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&trust_file).unwrap()).unwrap();
-    let direct = &mut trust[desk_id.to_string()]["direct"];
-    assert!(direct.is_array(), "the desk is remembered at an address");
-    *direct = serde_json::json!([format!("127.0.0.1:{port}"), format!("[::1]:{port}")]);
-    std::fs::write(&trust_file, serde_json::to_vec_pretty(&trust).unwrap()).unwrap();
+    laptop.edit_trusted_host(desk_id, |row| {
+        row.direct =
+            serde_json::json!([format!("127.0.0.1:{port}"), format!("[::1]:{port}")]).to_string();
+    });
 
     let mark = captured().lock().unwrap().len();
     let mut options = laptop.options("boot-1", quiet_launch());
@@ -455,13 +477,10 @@ async fn a_first_flight_with_no_ticket_to_an_address_that_never_answers_gives_up
     // answers none, and has never linked to the desk, so holds no ticket
     // for it: its dial there goes through a whole handshake.
     let silent = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-    let trust_file = laptop.profile_dir().join("trust.json");
-    let mut trust: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&trust_file).unwrap()).unwrap();
-    let desk = &mut trust[desk_id.to_string()];
-    desk["direct"] = serde_json::json!([silent.local_addr().unwrap().to_string()]);
-    desk.as_object_mut().unwrap().remove("on_account");
-    std::fs::write(&trust_file, serde_json::to_vec_pretty(&trust).unwrap()).unwrap();
+    laptop.edit_trusted_host(desk_id, |row| {
+        row.direct = serde_json::json!([silent.local_addr().unwrap().to_string()]).to_string();
+        row.on_account = false;
+    });
     let mut options = laptop.options("boot-1", quiet_launch());
     options.edge = lan(None);
     let laptop_daemon = node::start(options, None).await.unwrap();

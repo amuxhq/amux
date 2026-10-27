@@ -34,16 +34,13 @@ pub(crate) struct AccountRecord {
     pub(crate) name: Option<String>,
     pub(crate) email: Option<String>,
     /// The profile picture's URL, as the service said at sign-in.
-    #[serde(default)]
     pub(crate) picture: Option<String>,
     pub(crate) bound_at_ms: i64,
     /// Absent after a sign-out.
     pub(crate) refresh_token: Option<String>,
-    #[serde(default)]
     pub(crate) paused: bool,
     /// The OAuth client the refresh token was issued to, which is the only
     /// one it refreshes under: the CLI's, or the phone's.
-    #[serde(default = "cli_client")]
     pub(crate) client_id: String,
 }
 
@@ -124,19 +121,10 @@ impl Account {
             .map(|record| record.service.clone())
     }
 
-    fn write(&self, record: Option<AccountRecord>) -> io::Result<()> {
-        match &record {
-            Some(record) => {
-                let bytes = serde_json::to_vec_pretty(record).map_err(io::Error::other)?;
-                atomic_replace_private(&self.path, &bytes).map_err(io::Error::other)?;
-            }
-            None => match std::fs::remove_file(&self.path) {
-                Ok(()) => {}
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error),
-            },
-        }
-        *self.record.lock().unwrap() = record;
+    fn write(&self, record: AccountRecord) -> io::Result<()> {
+        let bytes = serde_json::to_vec_pretty(&record).map_err(io::Error::other)?;
+        atomic_replace_private(&self.path, &bytes).map_err(io::Error::other)?;
+        *self.record.lock().unwrap() = Some(record);
         if let Some(changed) = self.changed.get() {
             changed();
         }
@@ -152,7 +140,7 @@ impl Account {
     pub(crate) async fn bind(&self, record: AccountRecord, access: AccessToken) -> io::Result<()> {
         let _change = self.changes.lock().await;
         self.forget_relay_token()?;
-        self.write(Some(record))?;
+        self.write(record)?;
         *self.access.lock().unwrap() = Some(access);
         Ok(())
     }
@@ -161,12 +149,13 @@ impl Account {
     /// finishes first.
     pub(crate) async fn sign_out(&self) -> io::Result<()> {
         let _change = self.changes.lock().await;
-        let record = self.record().map(|record| AccountRecord {
-            refresh_token: None,
-            ..record
-        });
         self.forget_relay_token()?;
-        self.write(record)?;
+        if let Some(record) = self.record() {
+            self.write(AccountRecord {
+                refresh_token: None,
+                ..record
+            })?;
+        }
         *self.access.lock().unwrap() = None;
         Ok(())
     }
@@ -186,7 +175,7 @@ impl Account {
         let record = self
             .record()
             .ok_or_else(|| io::Error::other("the profile is not bound to an account"))?;
-        self.write(Some(AccountRecord { paused, ..record }))
+        self.write(AccountRecord { paused, ..record })
     }
 
     /// The access token, refreshed first if it is missing or about to
@@ -228,10 +217,10 @@ impl Account {
         {
             // Written before the access token is used: a refresh token the
             // service rotated is the only one that works from now on.
-            self.write(Some(AccountRecord {
+            self.write(AccountRecord {
                 refresh_token: Some(rotated),
                 ..current
-            }))
+            })
             .map_err(|error| AuthError::Provider(error.to_string()))?;
         }
         *self.access.lock().unwrap() = Some(access.clone());

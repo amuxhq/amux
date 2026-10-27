@@ -1,9 +1,8 @@
 {"Input":{"Tick":{"now_ms":1792486993569}}}
 {"Input":{"OwnHost":"0a1b0a1017607d06dd3a4325b85b80847cd15d371a05302e382e3028011001220408002001"}}
 {"Input":{"Configure":{"notify_delay_ms":30000,"push_retry_ms":60000,"checkpoint_interval_ms":60000,"tail_rows":200,"source_backoff_ms":1000,"source_backoff_max_ms":30000,"start_deadline_ms":20000,"stop_deadline_ms":15000,"delivery_retry_ms":30000,"reply_patience_ms":30000}}}
-{"Input":{"Drafts":{"drafts":[]}}}
 {"Input":{"Entropy":[248,247,199,136,225,79,88,180,123,255,0,61,252,169,134,223,97,254,243,181,41,252,103,83,239,113,194,39,205,90,158,12]}}
-{"Input":{"TrustRead":{"store":{"entries":{},"replacement_pending":[]}}}}
+{"Input":"Started"}
 {"Input":"Swept"}
 {"Input":{"Retain":{"own_budget_bytes":2147483648,"chunk_bytes":4194304,"replica_budget_bytes":268435456,"last_used":[]}}}
 {"Input":{"OwnHost":"0a280a1017607d06dd3a4325b85b80847cd15d3712046465736b1a05302e382e302205120301020328011001220408002001"}}

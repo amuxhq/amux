@@ -1465,8 +1465,6 @@ impl Transition<'_> {
             generation,
             agents: agents.clone(),
             replicas: home.join("replicas"),
-            drafts: home.join("drafts"),
-            trust: home.join("trust.json"),
             budget: StepBudget::UNLIMITED,
         };
         let entry = wire::HostEntry {
@@ -1505,12 +1503,8 @@ impl Transition<'_> {
                 step(daemon, Input::Tick { now_ms: now });
                 step(daemon, Input::Configure(settings));
                 step(daemon, Input::Entropy(entropy));
-                step(
-                    daemon,
-                    Input::TrustRead {
-                        store: daemon_core::trust::TrustStore::of_hosts(trusted),
-                    },
-                );
+                daemon.trust_for_test(daemon_core::trust::TrustStore::of_hosts(trusted));
+                step(daemon, Input::Started);
                 step(daemon, Input::OwnHost(Box::new(entry)));
                 let live: Vec<AgentId> = daemon
                     .store()
@@ -2532,6 +2526,7 @@ fn peer_create(
         given: request.name,
         branches: BTreeSet::new(),
         new_worktree: request.new_worktree,
+        recent: None,
         spec,
     })))
 }

@@ -2,7 +2,6 @@ use store::Sqlite;
 
 use super::*;
 use crate::payload::{ClientRequest, JobResult};
-use crate::trust::TrustStore;
 use crate::{Input, Job, StartOptions, StepBudget};
 
 const OFFERER: u8 = 1;
@@ -31,7 +30,6 @@ impl Host {
         let daemon = Daemon::new(
             store,
             StartOptions {
-                trust: "/profile/trust.json".into(),
                 budget: StepBudget::UNLIMITED,
                 ..StartOptions::default()
             },
@@ -42,9 +40,7 @@ impl Host {
         };
         host.step(Input::Tick { now_ms: 1_000_000 });
         host.step(Input::Entropy([host_seed(host.id()); 32]));
-        host.step(Input::TrustRead {
-            store: TrustStore::default(),
-        });
+        host.step(Input::Started);
         host.out.clear();
         host
     }
@@ -369,11 +365,25 @@ fn a_conversation_past_its_deadline_ends_and_frees_its_attempt() {
     assert!(window.in_flight.is_empty() && window.failed == 0);
 }
 
-/// The window closing while the joiner's key is written undoes the
-/// pairing it was for.
+/// The window closing while the joiner's key waits to be written (here
+/// behind the teardown of the key it replaces) undoes the pairing it was
+/// for, and the key it replaced is trusted again.
 #[test]
 fn a_commit_that_lands_after_the_window_closed_is_undone() {
     let (mut offerer, mut joiner) = (Host::new(OFFERER), Host::new(JOINER));
+    let old_key = vec![99; 32];
+    let mut old = crate::trust::TrustStore::default();
+    old.upsert_paired_peer(
+        Uuid::from_bytes([JOINER; 16]),
+        old_key.clone(),
+        "the joiner's old key".into(),
+        None,
+        chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+    )
+    .unwrap();
+    offerer.daemon.trust_for_test(old);
+    offerer.step(Input::Started);
+    offerer.take();
     let secret = offerer.open_window(WindowMethod::Pin, 5 * MINUTE);
     offerer.respond();
     joiner.initiate(&secret);
@@ -384,8 +394,8 @@ fn a_commit_that_lands_after_the_window_closed_is_undone() {
             token: pending_token(&said).unwrap(),
         },
     );
-    // Hold the offerer's trust write: carry the joiner's sealed identity
-    // by hand and keep the job.
+    // Carry the joiner's sealed identity by hand and keep the teardown the
+    // offerer's trust change waits on.
     let sealed = joiner
         .take()
         .into_iter()
@@ -402,22 +412,40 @@ fn a_commit_that_lands_after_the_window_closed_is_undone() {
         },
         &mut out,
     );
-    let write = out
+    let teardown = out
         .iter()
         .find_map(|output| match output {
-            Output::Job { id, .. } => Some(*id),
+            Output::Job {
+                id,
+                op: Job::TeardownHost { .. },
+            } => Some(*id),
             _ => None,
         })
-        .expect("the joiner's key is being written");
+        .expect("the old key's connections are torn down first");
     offerer.call(2, ClientRequest::CancelPairing);
     offerer.take();
     offerer.step(Input::JobDone {
-        job: write,
+        job: teardown,
         result: JobResult::Done,
     });
     let out = offerer.take();
     assert_eq!(failure(&out), Some(PairFailure::invalid_pin()));
-    assert!(!offerer.trusts(JOINER), "the commit is undone");
+    let kept = |daemon: &Daemon| {
+        daemon
+            .trust()
+            .pubkey_for_host(Uuid::from_bytes([JOINER; 16]))
+            .map(<[u8]>::to_vec)
+    };
+    assert_eq!(
+        kept(&offerer.daemon),
+        Some(old_key.clone()),
+        "the commit is undone"
+    );
+    let held = crate::trust::TrustStore::load(offerer.daemon.store());
+    assert_eq!(
+        held.pubkey_for_host(Uuid::from_bytes([JOINER; 16])),
+        Some(old_key.as_slice())
+    );
 }
 
 #[test]
@@ -472,13 +500,12 @@ fn an_ssh_pairing_commits_through_the_same_trust_writes() {
         },
     );
     let out = joiner.take();
-    assert!(out.iter().any(|output| matches!(
-        output,
-        Output::Job {
-            op: Job::Fsync { .. },
-            ..
-        }
-    )));
+    assert!(
+        crate::trust::TrustStore::load(joiner.daemon.store())
+            .entry(Uuid::from_bytes([OFFERER; 16]))
+            .is_some(),
+        "the store holds the pairing"
+    );
     assert_eq!(
         joiner
             .daemon

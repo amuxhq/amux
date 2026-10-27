@@ -31,12 +31,12 @@ pub const REPLICAS: &str = "replicas";
 pub const INSTALLATION_ID: &str = "installation_id";
 
 /// The installation's id, minted at its first start: what counts an install,
-/// apart from the host ids of its profiles. True when this call minted it.
-pub(crate) fn installation_id(data_dir: &Path) -> io::Result<(uuid::Uuid, bool)> {
+/// apart from the host ids of its profiles.
+pub(crate) fn installation_id(data_dir: &Path) -> io::Result<uuid::Uuid> {
     let path = data_dir.join(INSTALLATION_ID);
     match fs::read_to_string(&path) {
         Ok(text) => match text.trim().parse() {
-            Ok(id) => return Ok((id, false)),
+            Ok(id) => return Ok(id),
             // Unreadable is as good as missing: the id only counts installs.
             Err(_) => tracing::warn!(path = %path.display(), "minting a new installation id"),
         },
@@ -45,7 +45,7 @@ pub(crate) fn installation_id(data_dir: &Path) -> io::Result<(uuid::Uuid, bool)>
     }
     let id = uuid::Uuid::new_v4();
     write_durably(&path, id.to_string().as_bytes())?;
-    Ok((id, true))
+    Ok(id)
 }
 
 /// The installation's exclusive lock, held for the daemon's lifetime. The
@@ -118,17 +118,7 @@ pub fn private_dir(path: &Path) -> io::Result<()> {
 /// the old file or the new one, and the new one is on disk before this
 /// returns: a temporary file, fsync, rename, fsync of the directory.
 pub fn write_durably(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let dir = path
-        .parent()
-        .ok_or_else(|| io::Error::other("a durable file needs a parent directory"))?;
-    let name = path
-        .file_name()
-        .ok_or_else(|| io::Error::other("a durable file needs a name"))?;
-    let temp = dir.join(format!(
-        ".{}.{}.tmp",
-        name.to_string_lossy(),
-        std::process::id()
-    ));
+    let (dir, temp) = temp_beside(path)?;
     {
         let mut file = File::create(&temp)?;
         file.write_all(bytes)?;
@@ -136,6 +126,34 @@ pub fn write_durably(path: &Path, bytes: &[u8]) -> io::Result<()> {
     }
     fs::rename(&temp, path)?;
     sync_dir(dir)
+}
+
+/// Replaces `path` with `bytes` so that a reader sees the old file or the
+/// new one, never half of one, without waiting for the drive: for a file
+/// whose loss to a power cut costs only a recomputation or a stale hint.
+pub fn write_cache(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let (_, temp) = temp_beside(path)?;
+    fs::write(&temp, bytes)?;
+    fs::rename(&temp, path).inspect_err(|_| {
+        let _ = fs::remove_file(&temp);
+    })
+}
+
+/// The directory `path` is in, and a temporary name beside it that no
+/// other process writing the same file uses.
+fn temp_beside(path: &Path) -> io::Result<(&Path, std::path::PathBuf)> {
+    let dir = path
+        .parent()
+        .ok_or_else(|| io::Error::other("a file written whole needs a parent directory"))?;
+    let name = path
+        .file_name()
+        .ok_or_else(|| io::Error::other("a file written whole needs a name"))?;
+    let temp = dir.join(format!(
+        ".{}.{}.tmp",
+        name.to_string_lossy(),
+        std::process::id()
+    ));
+    Ok((dir, temp))
 }
 
 /// Makes a rename in `dir` durable.

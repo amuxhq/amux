@@ -47,7 +47,6 @@ pub mod trust;
 pub use blobs::Blobs;
 pub use checkpoints::Checkpoints;
 pub use deliveries::{Deliveries, DrainReport, delivery_envelope_id};
-pub use drafts::Drafts;
 pub use families::{Create, Ended, FamilyState, Refusal, Resume};
 pub use fingerprint::Fingerprint;
 pub use ids::{AccountId, AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId};
@@ -89,7 +88,6 @@ pub struct Daemon {
     checkpoints: Checkpoints,
     notifications: Notifications,
     blobs: Blobs,
-    drafts: Drafts,
     deliveries: Deliveries,
     timers: Timers,
     pending: Pending,
@@ -115,10 +113,6 @@ pub struct StartOptions {
     /// The directory holding each paired host's replicas' files, by host
     /// and then by agent.
     pub replicas: PathBuf,
-    /// The file this machine's clients' drafts are kept in.
-    pub drafts: PathBuf,
-    /// The profile's trust file.
-    pub trust: PathBuf,
     /// How long one step may take before it is reported with a dump.
     pub budget: StepBudget,
 }
@@ -128,6 +122,7 @@ impl Daemon {
     pub fn new(store: Sqlite, options: StartOptions) -> Self {
         Self {
             changes: store.changes(),
+            trust: trust::Trust::load(&store),
             store,
             options,
             routing: RoutingState::default(),
@@ -136,14 +131,12 @@ impl Daemon {
             sources: Sources::default(),
             families: FamilyState::default(),
             pairing: PairingState::default(),
-            trust: trust::Trust::default(),
             answers: Answers::default(),
             journals: Journals::default(),
             journal_readers: BTreeMap::new(),
             checkpoints: Checkpoints::default(),
             notifications: Notifications::default(),
             blobs: Blobs::default(),
-            drafts: Drafts::default(),
             deliveries: Deliveries::default(),
             timers: Timers::default(),
             pending: Pending::default(),
@@ -185,7 +178,9 @@ impl Daemon {
                 reason: DumpReason::Violation(violation),
             });
         }
-        let micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
+        let micros = u64::try_from(started.elapsed().as_micros())
+            .unwrap_or(u64::MAX)
+            .saturating_sub(self.touched.synced_micros);
         if micros > self.options.budget.micros {
             tracing::warn!(
                 micros,
@@ -225,8 +220,7 @@ impl Daemon {
             Input::JobDone { job, result } => {
                 if !self.push_done(job, &result, out)
                     && !self.blob_done(job, &result, out)
-                    && !self.drafts_written(job, &result, out)
-                    && !self.trust_job_done(job, &result, out)
+                    && !self.trust_job_done(job, out)
                 {
                     self.registry_job(job, result, out);
                 }
@@ -277,7 +271,6 @@ impl Daemon {
                 id: TimerId::Source(host, agent),
             } => self.source_due(host, agent, out),
             Input::Configure(settings) => self.settings = settings,
-            Input::Drafts { drafts } => self.drafts_read(drafts),
             Input::FromShell(change) => self.shell_changed(change, out),
             Input::LinkUp {
                 link,
@@ -310,7 +303,7 @@ impl Daemon {
                 self.try_again(host, out);
                 self.sources_try_again(host, out);
             }
-            Input::TrustRead { store } => self.trust_read(store, out),
+            Input::Started => self.trust_started(out),
             Input::ChangeTrust(change) => self.change_trust(change, None, out),
             Input::Policy(policy) => self.set_policy(policy, out),
             Input::HostForgotten { host } => {
@@ -493,7 +486,6 @@ impl Daemon {
             &self.checkpoints,
             &self.notifications,
             &self.blobs,
-            &self.drafts,
             &self.deliveries,
             &self.timers,
             &self.pending,
@@ -520,13 +512,13 @@ impl Daemon {
             checkpoints,
             notifications,
             blobs,
-            drafts,
             deliveries,
             timers,
             pending,
             settings,
             options,
         ) = checkpoint_parts(&checkpoint)?;
+        let trust = trust.restored(&store);
         Ok(Daemon {
             routing,
             presence,
@@ -540,7 +532,6 @@ impl Daemon {
             checkpoints,
             notifications,
             blobs,
-            drafts,
             deliveries,
             timers,
             pending,
@@ -671,6 +662,9 @@ struct Touched {
     serialized: bool,
     /// The store committed while the WAL was being moved.
     committed_while_held: bool,
+    /// How long the step waited on the drive for a synced write, which its
+    /// budget leaves out.
+    synced_micros: u64,
 }
 
 impl Touched {
@@ -755,7 +749,6 @@ type Parts = (
     Checkpoints,
     Notifications,
     Blobs,
-    Drafts,
     Deliveries,
     Timers,
     Pending,

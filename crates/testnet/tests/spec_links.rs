@@ -1929,15 +1929,20 @@ fn ever_carried_by(net: &Net, host: &str, peer: &str, path: PathKind) -> bool {
 }
 
 /// The addresses `host` keeps for `peer` that the relay saw `peer` at, as
-/// its trust file lists them.
+/// its store lists them.
 fn observed_addresses(net: &Net, host: &str, peer: &str) -> Vec<String> {
     let info = net.host(host).unwrap();
-    let trust = node::profile_dir(&info.data_dir, info.profile).join("trust.json");
-    let trust: serde_json::Value = std::fs::read(trust)
+    let path = node::profile_dir(&info.data_dir, info.profile).join(node::STORE);
+    let peer = host_id(net, peer);
+    let listed: serde_json::Value = store::Sqlite::open(&path, [0; 16])
         .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .and_then(|store| store.trusted_hosts().ok())
+        .into_iter()
+        .flatten()
+        .find(|row| row.host_id == peer.as_bytes())
+        .and_then(|row| serde_json::from_str(&row.listed).ok())
         .unwrap_or_default();
-    trust[host_id(net, peer).to_string()]["listed"]
+    listed
         .as_array()
         .into_iter()
         .flatten()

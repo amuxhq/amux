@@ -185,7 +185,15 @@ impl Provider {
         events: mpsc::Sender<ProviderEvent>,
     ) -> Result<Self, ProviderError> {
         let (session, resume) = claude_session(spec, dir)?;
-        let (args, settings) = claude_launch(spec, dir, false)?;
+        let (args, settings, withheld) = claude_launch(spec, dir, false)?;
+        if withheld {
+            let _ = events
+                .send(ProviderEvent::Fact(Fact {
+                    channel: Channel::Agent,
+                    payload: interpret::claude_pty::tools_withheld_fact(),
+                }))
+                .await;
+        }
         let mut command = tokio::process::Command::new(&spec.provider_command);
         command
             .args(&args)
@@ -579,7 +587,15 @@ impl Provider {
             }))
             .await;
         let private = dir.join(dir::PRIVATE);
-        let (mut args, settings) = claude_launch(spec, dir, true)?;
+        let (mut args, settings, withheld) = claude_launch(spec, dir, true)?;
+        if withheld {
+            let _ = events
+                .send(ProviderEvent::Fact(Fact {
+                    channel: Channel::Agent,
+                    payload: interpret::claude_pty::tools_withheld_fact(),
+                }))
+                .await;
+        }
         args.extend([
             if resume { "--resume" } else { "--session-id" }.to_owned(),
             session.clone(),
@@ -1242,15 +1258,30 @@ fn closed() -> io::Error {
 
 /// Claude's launch arguments from the spec, less any `--settings`, plus
 /// amux's tool server, and the one settings value the agent passes
-/// instead: the user's settings with the agent's merged over them. Every
+/// instead: the user's settings with the agent's merged over them; and
+/// whether amux's tool server was left out because the organization
+/// manages Claude's MCP servers, so Claude would refuse to start with it. Every
 /// Claude accepts messages from other sessions at once, so a
 /// bypass-permissions agent does not hold an agent message behind an
 /// approval nobody is there to give, and runs amux's own tools without
 /// asking; terminal Claude also reports its hook events to the agent
 /// through the hook binary at the install path.
-fn claude_launch(spec: &AgentSpec, dir: &Path, hooks: bool) -> io::Result<(Vec<String>, String)> {
+fn claude_launch(
+    spec: &AgentSpec,
+    dir: &Path,
+    hooks: bool,
+) -> io::Result<(Vec<String>, String, bool)> {
     let mut args = spec.provider_args.clone();
-    let tools = tool_server(spec, dir);
+    let managed_folder = spec
+        .provider_env
+        .get(claude::launch::MANAGED_SETTINGS_PATH_ENV)
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os(claude::launch::MANAGED_SETTINGS_PATH_ENV).map(PathBuf::from));
+    let mut tools = tool_server(spec, dir);
+    let withheld = tools.is_some() && claude::launch::managed_mcp(managed_folder.as_deref());
+    if withheld {
+        tools = None;
+    }
     if let Some((command, server_args)) = &tools {
         args.extend([
             "--mcp-config".to_owned(),
@@ -1294,7 +1325,7 @@ fn claude_launch(spec: &AgentSpec, dir: &Path, hooks: bool) -> io::Result<(Vec<S
         ..Default::default()
     };
     let settings = claude::launch::merged_settings(user, &managed).into_value();
-    Ok((args, settings.to_string()))
+    Ok((args, settings.to_string(), withheld))
 }
 
 /// An absolute path as Claude's permission rules name it: Claude matches
@@ -1722,7 +1753,7 @@ mod tests {
             cwd: std::env::temp_dir().to_string_lossy().into_owned(),
             ..Default::default()
         };
-        let (_, settings) = super::claude_launch(&spec, &dir, false).unwrap();
+        let (_, settings, _) = super::claude_launch(&spec, &dir, false).unwrap();
         let settings: serde_json::Value = serde_json::from_str(&settings).unwrap();
         let rule = format!("Read(/{}/**)", super::rule_path(&dir.join("blobs")));
         assert!(

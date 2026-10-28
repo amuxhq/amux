@@ -290,6 +290,10 @@ pub(crate) enum AgentFact {
     /// Claude's first screen is its folder-trust dialog; sent before
     /// [`AgentFact::Ready`].
     TrustDialog,
+    /// The agent launched Claude without amux's tool server, which an
+    /// organization's managed MCP config forbids. Headless Claude's
+    /// interpreter reads this one too.
+    ToolsWithheld,
 }
 
 impl AgentFact {
@@ -322,6 +326,12 @@ pub fn ready_fact() -> Vec<u8> {
 /// The fact that Claude's first screen is its folder-trust dialog.
 pub fn trust_dialog_fact() -> Vec<u8> {
     AgentFact::TrustDialog.encode()
+}
+
+/// The fact, for either Claude kind, that Claude was launched without
+/// amux's tool server because the organization manages its MCP servers.
+pub fn tools_withheld_fact() -> Vec<u8> {
+    AgentFact::ToolsWithheld.encode()
 }
 
 /// What the interpreter knows about the Claude process and its session.
@@ -361,6 +371,9 @@ struct Provider {
     /// that is not this agent's.
     #[serde(default)]
     switched_away: bool,
+    /// Launched without amux's tool server, by organization policy.
+    #[serde(default)]
+    tools_withheld: bool,
     /// What the host's Claude offers, from the spec: a terminal offers
     /// nothing a program can read.
     #[serde(with = "serde_pb::opt_msg")]
@@ -726,6 +739,10 @@ impl State {
             permission: self.provider.permission_mode.clone(),
             provider_session: self.provider.session.clone(),
             background_jobs: Some(self.shared.jobs()),
+            servers: self
+                .provider
+                .tools_withheld
+                .then(|| crate::claude_common::amux_tools_withheld(unknown::tool_server_health())),
             running_calls: self
                 .running
                 .iter()

@@ -603,6 +603,16 @@ for Claude, `--config mcp_servers.amux.…` for Codex), and only when the
 spec's configuration has an install path. It speaks newline-delimited
 JSON-RPC over stdio.
 
+Where an organization manages Claude's MCP servers (a `managed-mcp.json` in
+the managed-settings folder: `/Library/Application Support/ClaudeCode`,
+`/etc/claude-code` or `C:\Program Files\ClaudeCode`, or the folder
+`CLAUDE_CODE_MANAGED_SETTINGS_PATH` names), Claude refuses a server added on
+its command line and does not start. The agent then launches Claude, either
+kind, without amux's tool server and tells its interpreter so on the agent
+channel; the agent's tool-server health lists `amux` as failed, saying the
+organization's policy turned amux's tools off. The host's catalogue ask
+leaves out `--strict-mcp-config` there for the same reason.
+
 The fleet tools (agents, hosts, send, spawn, stop) dial the daemon at
 `<dir>/tools.sock`, a socket the daemon listens on for this agent alone, so
 the daemon knows who is calling from the connection and nothing in a request

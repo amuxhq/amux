@@ -7,6 +7,30 @@ use anyhow::{Context, Result};
 use serde_json::Value;
 use uuid::Uuid;
 
+/// The variable naming the folder Claude reads an organization's managed
+/// settings from, in place of the platform's own.
+pub const MANAGED_SETTINGS_PATH_ENV: &str = "CLAUDE_CODE_MANAGED_SETTINGS_PATH";
+
+/// Whether an organization manages Claude's MCP servers: a
+/// `managed-mcp.json` in the managed-settings folder, the one `folder`
+/// names (from [`MANAGED_SETTINGS_PATH_ENV`]) or else the platform's.
+/// Claude then refuses `--strict-mcp-config` and any server added on its
+/// command line, and does not start.
+pub fn managed_mcp(folder: Option<&Path>) -> bool {
+    let platform = if cfg!(target_os = "macos") {
+        Some(Path::new("/Library/Application Support/ClaudeCode"))
+    } else if cfg!(windows) {
+        Some(Path::new(r"C:\Program Files\ClaudeCode"))
+    } else if cfg!(unix) {
+        Some(Path::new("/etc/claude-code"))
+    } else {
+        None
+    };
+    folder
+        .or(platform)
+        .is_some_and(|folder| folder.join("managed-mcp.json").exists())
+}
+
 /// Claude variables inherited from a parent Claude session that must not
 /// reach a newly hosted session.
 pub const CHILD_SESSION_ENV_SCRUB: &[&str] = &[

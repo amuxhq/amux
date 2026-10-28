@@ -13,10 +13,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
     Ask, Attachment, BackgroundJob, BlobRef, ClaudeGrant, ClaudeUsage, DecisionOutcome, EditInput,
-    Limit, NotebookCell, NotebookEditMode, OfferedCommand, OfferedModel, OfferedPermission,
-    PatchHunk, Question, QuestionAsk, QuestionOption, Replacement, ScopeChoice, ScopeDestination,
-    ShellInput, TaskList, TaskListEntry, TaskListStatus, ToolCall, ToolClass, ToolInput, ToolState,
-    UsageState, attachment, codex_grant, tool_decision, tool_input,
+    HealthState, Limit, NotebookCell, NotebookEditMode, OfferedCommand, OfferedModel,
+    OfferedPermission, PatchHunk, Question, QuestionAsk, QuestionOption, Replacement, ScopeChoice,
+    ScopeDestination, ShellInput, TaskList, TaskListEntry, TaskListStatus, ToolCall, ToolClass,
+    ToolInput, ToolServer, ToolServerHealth, ToolServerStatus, ToolState, UsageState, attachment,
+    codex_grant, tool_decision, tool_input,
 };
 
 use crate::Effect;
@@ -1635,6 +1636,22 @@ pub(crate) fn describe_model_name(name: Option<&str>) -> String {
     name.map_or("?".to_owned(), |name| {
         serde_json::Value::String(name.to_owned()).to_string()
     })
+}
+
+/// Tool-server health with amux's own server listed as off: where an
+/// organization manages Claude's MCP servers, Claude takes none added on
+/// its command line, so the agent launched it without amux's, and the
+/// person reads why amux's tools are missing.
+pub(crate) fn amux_tools_withheld(mut health: ToolServerHealth) -> ToolServerHealth {
+    health.servers.push(ToolServer {
+        name: crate::AMUX_TOOL_SERVER.to_owned(),
+        status: ToolServerStatus::Failed as i32,
+        error:
+            "Your organization's MCP policy allows no other tool servers, so amux's tools are off."
+                .to_owned(),
+    });
+    health.state = HealthState::Degraded as i32;
+    health
 }
 
 #[cfg(test)]

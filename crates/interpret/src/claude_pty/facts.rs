@@ -193,6 +193,10 @@ impl State {
             AgentFact::Ready if self.trust_ask().is_some() => return,
             AgentFact::Ready => return self.shared.provider_started(),
             AgentFact::TrustDialog => return self.trust_dialog(emit),
+            AgentFact::ToolsWithheld => {
+                self.provider.tools_withheld = true;
+                return;
+            }
         };
         let provider = &mut self.provider;
         provider.version = (!version.is_empty()).then_some(version);

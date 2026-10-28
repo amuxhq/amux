@@ -279,6 +279,9 @@ pub struct State {
     usage: Option<ClaudeUsage>,
     #[serde(with = "serde_pb::opt_msg")]
     servers: Option<ToolServerHealth>,
+    /// Launched without amux's tool server, by organization policy.
+    #[serde(default)]
+    tools_withheld: bool,
     #[serde(with = "serde_pb::opt_msg")]
     sign_in: Option<SignIn>,
     /// Claude's background jobs; the shared part publishes them.
@@ -389,6 +392,7 @@ impl State {
             context_breakdown: Vec::new(),
             usage: None,
             servers: None,
+            tools_withheld: false,
             sign_in: None,
             jobs: Jobs::default(),
             slash: None,
@@ -459,11 +463,17 @@ impl State {
                 .map(|(id, task)| task.to_wire(id))
                 .collect(),
             usage: Some(self.usage.clone().unwrap_or_else(unknown::claude_usage)),
-            servers: Some(
-                self.servers
+            servers: Some({
+                let servers = self
+                    .servers
                     .clone()
-                    .unwrap_or_else(unknown::tool_server_health),
-            ),
+                    .unwrap_or_else(unknown::tool_server_health);
+                if self.tools_withheld {
+                    crate::claude_common::amux_tools_withheld(servers)
+                } else {
+                    servers
+                }
+            }),
             sign_in: Some(self.sign_in.clone().unwrap_or_else(unknown::sign_in)),
             background_jobs: Some(self.shared.jobs()),
             provider_session: self.session.clone(),

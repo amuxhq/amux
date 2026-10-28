@@ -74,6 +74,14 @@ impl State {
     }
 
     pub(super) fn fact(&mut self, emit: &mut Emit, fact: Fact) {
+        if fact.channel == Channel::Agent {
+            if let Ok(crate::claude_pty::AgentFact::ToolsWithheld) =
+                serde_json::from_slice(&fact.payload)
+            {
+                self.tools_withheld = true;
+            }
+            return;
+        }
         if fact.channel != Channel::Stream {
             return;
         }

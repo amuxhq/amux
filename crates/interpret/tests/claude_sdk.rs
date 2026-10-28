@@ -1557,3 +1557,109 @@ fn a_prompt_goes_in_while_a_background_subagent_works() {
         sent.effects
     );
 }
+
+fn tool_states(stepped: &interpret::Stepped) -> Vec<(String, wire::ToolState)> {
+    use prost::Message as _;
+    stepped
+        .step
+        .items
+        .iter()
+        .filter_map(
+            |item| match wire::ClaudeSdkItem::decode(&item.body[..]).ok()?.kind? {
+                wire::claude_sdk_item::Kind::Tool(tool) => Some((item.key.clone(), tool.state())),
+                _ => None,
+            },
+        )
+        .collect()
+}
+
+/// A subagent Claude runs in the background outlives the turn that
+/// started it: the turn's result leaves its calls and the ask it raised
+/// open, its calls still finish, and its asks close when its task ends.
+#[test]
+fn a_background_subagents_calls_and_asks_outlive_the_turn() {
+    let mut state = idle_on_root();
+    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        text: "count in the background".into(),
+        ..Default::default()
+    });
+    ClaudeSdk::step(&mut state, sdk_input(b"p1", prompt));
+    let root = |uuid: &str, content: Value| {
+        stream(json!({
+            "type": "assistant", "uuid": uuid, "session_id": "s", "parent_tool_use_id": null,
+            "message": {
+                "id": format!("msg-{uuid}"), "type": "message", "role": "assistant",
+                "model": "claude-root", "content": content,
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+            },
+        }))
+    };
+    for event in [
+        root(
+            "ra1",
+            json!([{"type": "tool_use", "id": "toolu_agent", "name": "Agent",
+                "input": {"description": "count", "prompt": "Count.", "subagent_type": "general-purpose", "run_in_background": true}}]),
+        ),
+        stream(json!({
+            "type": "system", "subtype": "task_started", "uuid": "t1", "session_id": "s",
+            "task_id": "a1", "task_type": "local_agent", "tool_use_id": "toolu_agent",
+            "description": "count", "is_backgrounded": true,
+        })),
+        subagent_assistant(
+            "sa1",
+            json!([{"type": "tool_use", "id": "toolu_child", "name": "Bash", "input": {"command": "ls"}}]),
+        ),
+        stream(json!({
+            "type": "control_request", "request_id": "req-1",
+            "request": {
+                "subtype": "can_use_tool", "tool_name": "Bash", "input": {"command": "rm -r build"},
+                "tool_use_id": "toolu_ask", "agent_id": "a1",
+            },
+        })),
+    ] {
+        ClaudeSdk::step(&mut state, event);
+    }
+    let ended = ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "result", "subtype": "success", "uuid": "r1", "session_id": "s",
+            "is_error": false, "duration_ms": 10, "num_turns": 1, "result": "launched",
+        })),
+    );
+    let (_, snapshot) = sdk_snapshot(&ended).expect("a snapshot");
+    assert_eq!(snapshot.asks.len(), 1, "the subagent's ask stays open");
+    assert!(
+        tool_states(&ended)
+            .iter()
+            .all(|(_, state)| *state != wire::ToolState::Cancelled),
+        "{:?}",
+        tool_states(&ended)
+    );
+    let finished = ClaudeSdk::step(
+        &mut state,
+        subagent(json!({
+            "type": "user", "uuid": "su1",
+            "message": {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "toolu_child", "content": "a b c", "is_error": false},
+            ]},
+        })),
+    );
+    assert_eq!(
+        tool_states(&finished),
+        [("toolu_child".to_owned(), wire::ToolState::Succeeded)],
+        "a call the subagent made before the turn ended still finishes"
+    );
+    let notified = ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "system", "subtype": "task_notification", "uuid": "n1", "session_id": "s",
+            "task_id": "a1", "tool_use_id": "toolu_agent", "status": "completed",
+            "summary": "counted", "output_file": "",
+        })),
+    );
+    let (_, snapshot) = sdk_snapshot(&notified).expect("a snapshot");
+    assert!(
+        snapshot.asks.is_empty(),
+        "its asks close when its task ends"
+    );
+}

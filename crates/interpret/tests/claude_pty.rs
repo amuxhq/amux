@@ -1456,3 +1456,125 @@ fn a_prompt_waits_behind_a_typed_prompt_claude_has_not_recorded() {
         "the second goes once the turn ends"
     );
 }
+
+/// The ask a background subagent raised, with the main turn stopped and
+/// that subagent still listed as running.
+fn a_background_subagents_open_ask() -> interpret::claude_pty::State {
+    let common = serde_json::json!({
+        "session_id": "s1", "transcript_path": "/claude/projects/w/s1.jsonl", "cwd": "/w",
+        "prompt_id": "p1", "permission_mode": "acceptEdits",
+    });
+    let with = |extra: serde_json::Value| {
+        let mut value = common.clone();
+        value
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        hook(value)
+    };
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        ..Default::default()
+    };
+    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let command = serde_json::json!({"command": "sleep 60", "description": "Sleep"});
+    let agent = serde_json::json!({"description": "Sleep", "prompt": "Sleep.", "subagent_type": "general-purpose"});
+    for event in [
+        with(
+            serde_json::json!({"hook_event_name": "SessionStart", "source": "startup", "model": "claude-haiku-5-5"}),
+        ),
+        with(
+            serde_json::json!({"hook_event_name": "UserPromptSubmit", "prompt": "Use a subagent to sleep."}),
+        ),
+        with(
+            serde_json::json!({"hook_event_name": "PreToolUse", "tool_name": "Agent", "tool_use_id": "toolu_agent", "tool_input": agent}),
+        ),
+        with(
+            serde_json::json!({"hook_event_name": "PostToolUse", "tool_name": "Agent", "tool_use_id": "toolu_agent",
+            "tool_input": agent, "tool_response": {"isAsync": true, "status": "async_launched", "agentId": "a7aebc"}}),
+        ),
+        with(
+            serde_json::json!({"hook_event_name": "PreToolUse", "agent_id": "a7aebc", "agent_type": "general-purpose",
+            "tool_name": "Bash", "tool_input": command, "tool_use_id": "toolu_bash"}),
+        ),
+        with(
+            serde_json::json!({"hook_event_name": "PermissionRequest", "agent_id": "a7aebc", "agent_type": "general-purpose",
+            "tool_name": "Bash", "tool_input": command}),
+        ),
+        with(
+            serde_json::json!({"hook_event_name": "Stop", "stop_hook_active": false,
+            "last_assistant_message": "Started.",
+            "background_tasks": [{"id": "a7aebc", "type": "subagent", "status": "running", "description": "Sleep", "agent_type": "general-purpose"}]}),
+        ),
+    ] {
+        ClaudePty::step(&mut state, event);
+    }
+    state
+}
+
+fn user_row(uuid: &str, content: &str, extra: serde_json::Value) -> serde_json::Value {
+    let mut row = serde_json::json!({
+        "type": "user", "uuid": uuid, "timestamp": "2026-10-12T08:00:06.000Z", "sessionId": "s1",
+        "isSidechain": false, "userType": "external",
+        "message": {"role": "user", "content": content},
+    });
+    row.as_object_mut()
+        .unwrap()
+        .extend(extra.as_object().unwrap().clone());
+    row
+}
+
+/// Four facts end the main thread's work in the terminal: its turn's
+/// duration row, another task's notification, an interruption and a
+/// prompt typed outside amux. None of them ends a subagent still running
+/// in the background, so none closes the ask it raised; its own stop does.
+#[test]
+fn a_background_subagents_ask_survives_every_end_of_the_main_threads_work() {
+    use prost::Message as _;
+    let open_asks = |stepped: &interpret::Stepped| {
+        stepped.step.snapshot.as_ref().map(|snapshot| {
+            wire::ClaudePtySnapshot::decode(snapshot.body.as_slice())
+                .unwrap()
+                .asks
+                .len()
+        })
+    };
+    let notified = user_row(
+        "n1",
+        "<task-notification><task-id>other</task-id><status>completed</status><summary>done</summary></task-notification>",
+        serde_json::json!({"origin": {"kind": "task-notification"}}),
+    );
+    let closing: Vec<_> = [
+        ("the turn's duration row", turn_duration_row("d1")),
+        ("another task's notification", notified),
+        (
+            "an interruption",
+            user_row("i1", "[Request interrupted by user]", serde_json::json!({})),
+        ),
+        (
+            "a prompt typed outside amux",
+            user_row("t1", "and another thing", serde_json::json!({})),
+        ),
+    ]
+    .into_iter()
+    .filter(|(_, row)| {
+        let mut state = a_background_subagents_open_ask();
+        open_asks(&ClaudePty::step(&mut state, transcript_row(row.clone()))) == Some(0)
+    })
+    .map(|(what, _)| what)
+    .collect();
+    assert!(
+        closing.is_empty(),
+        "these closed the subagent's ask: {closing:?}"
+    );
+    let mut state = a_background_subagents_open_ask();
+    let stopped = ClaudePty::step(
+        &mut state,
+        hook(serde_json::json!({
+            "session_id": "s1", "transcript_path": "/claude/projects/w/s1.jsonl", "cwd": "/w",
+            "hook_event_name": "SubagentStop", "agent_id": "a7aebc", "agent_type": "general-purpose",
+            "stop_hook_active": false,
+        })),
+    );
+    assert_eq!(open_asks(&stopped), Some(0), "its own stop closes it");
+}

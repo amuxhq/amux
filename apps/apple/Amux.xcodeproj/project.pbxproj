@@ -2404,14 +2404,14 @@
 				"AMUX_DRIVING_SLICE[sdk=iphoneos*]" = "ios-arm64";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 36;
+				CURRENT_PROJECT_VERSION = 37;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = Amux/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.32;
+				MARKETING_VERSION = 1.0.33;
 				OTHER_LDFLAGS = "-Wl,-force_load,$(SRCROOT)/../../target/ios/AmuxAppDebugTools.xcframework/$(AMUX_DRIVING_SLICE)/libamux_app.a";
 				PRODUCT_BUNDLE_IDENTIFIER = sh.amux.app;
 				SDKROOT = iphoneos;
@@ -2431,14 +2431,14 @@
 				"AMUX_DRIVING_SLICE[sdk=iphoneos*]" = "ios-arm64";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 36;
+				CURRENT_PROJECT_VERSION = 37;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = Amux/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.32;
+				MARKETING_VERSION = 1.0.33;
 				OTHER_LDFLAGS = "-Wl,-force_load,$(SRCROOT)/../../target/ios/AmuxAppDebugTools.xcframework/$(AMUX_DRIVING_SLICE)/libamux_app.a";
 				PRODUCT_BUNDLE_IDENTIFIER = sh.amux.app;
 				SDKROOT = iphoneos;
@@ -2478,7 +2478,7 @@
 				"AMUX_DRIVING_SLICE[sdk=iphoneos*]" = "ios-arm64";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 36;
+				CURRENT_PROJECT_VERSION = 37;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				EXCLUDED_SOURCE_FILE_NAMES = "$(SRCROOT)/Amux/Debug/* $(SRCROOT)/Packages/AmuxTestSupport/Sources/AmuxTestSupport/* $(SRCROOT)/Packages/AmuxTestSupport/Sources/AmuxTestSupport/Resources/*";
 				INFOPLIST_FILE = Amux/Info.plist;
@@ -2486,7 +2486,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.32;
+				MARKETING_VERSION = 1.0.33;
 				OTHER_LDFLAGS = "-Wl,-no_exported_symbols";
 				PRODUCT_BUNDLE_IDENTIFIER = sh.amux.app;
 				SDKROOT = iphoneos;

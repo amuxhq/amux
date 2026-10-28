@@ -25,8 +25,9 @@ pub use context::{
     Channel, Context, DO_NOT_TRACK_ENV, Endpoint, Platform, URL_ENV, do_not_track, events_url,
 };
 pub use event::{
-    Ask, By, CheckIn, Client, Counts, Event, Interval, Kind, Method, On, PairingFailure,
-    PaywallFrom, Recorded, RelayCarrier, Role, Route, SignInFailure, Tier, Token,
+    Ask, By, CheckCause, CheckCore, CheckId, CheckIn, Client, Counts, Event, Interval, Kind,
+    Method, On, PairingFailure, PaywallFrom, Recorded, RelayCarrier, Role, Route, SignInFailure,
+    Tier, Token,
 };
 pub use upload::{
     Accounts, Flusher, Gate, Http, MAX_EVENTS_PER_REQUEST, Params, Posted, Transport, Upload,
@@ -228,6 +229,10 @@ mod tests {
             ("relay_refused", json!({})),
             ("paywall_viewed", json!({"from": "hosts"})),
             ("purchase_started", json!({"interval": "yearly"})),
+            (
+                "check_failed",
+                json!({"core": "daemon", "check": "daemon.generation_fell", "cause": "invariant", "held_back": 3}),
+            ),
         ];
         assert_eq!(examples, expected);
     }

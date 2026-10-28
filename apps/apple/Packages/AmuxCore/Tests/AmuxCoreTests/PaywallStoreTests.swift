@@ -94,11 +94,6 @@ private final class OneCloud: CloudService, @unchecked Sendable {
     ) async throws(CloudError) -> DeletionOutcome {
         throw .unauthenticated
     }
-    func uploadReport(
-        _ id: AccountId, bundle: ReportBundle
-    ) async throws(CloudError) -> ReportReceipt {
-        throw .unauthenticated
-    }
 }
 
 @MainActor

@@ -15,33 +15,44 @@ use std::collections::HashMap;
 /// What a dump is for, as far as the limit tells dumps apart.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum DumpKind {
-    /// A cheap invariant failed: the invariant, as the sentence it checks.
-    /// A core names its own; a driver limiting what another process asked
-    /// for has the sentence that process sent.
+    /// A cheap invariant failed: the check's id. A core names its own; a
+    /// driver limiting what another process asked for has the id that
+    /// process sent.
     Violation(Cow<'static, str>),
     /// A step took longer than its budget, however far over.
     OverBudget,
 }
 
 impl DumpLimit {
-    /// The reason a dump a core asked for at `now_ms` is written with, or
-    /// `None` when the limit holds it back: a provider stuck in a loop, or
-    /// a busy relay, meets the same broken invariant with every event.
-    /// `whose` names the core ("the daemon core: ") in front of the reason
-    /// in its own words.
+    /// The dump a core asked for at `now_ms`, or `None` when the limit
+    /// holds it back: a provider stuck in a loop, or a busy relay, meets the
+    /// same broken invariant with every event. `whose` names the core ("the
+    /// daemon core: ") in front of the reason in its own words.
     pub fn reason(
         &mut self,
         whose: &str,
         reason: &crate::DumpReason,
         now_ms: u64,
-    ) -> Option<String> {
+    ) -> Option<Admitted> {
         let kind = match reason {
-            crate::DumpReason::Violation(broken) => DumpKind::Violation(broken.invariant.into()),
+            crate::DumpReason::Violation(broken) => DumpKind::Violation(broken.invariant.id.into()),
             crate::DumpReason::OverBudget { .. } => DumpKind::OverBudget,
         };
-        let suppressed = self.admit(kind, now_ms)?;
-        Some(with_suppressed(format!("{whose}{reason}"), suppressed))
+        let held_back = self.admit(kind, now_ms)?;
+        Some(Admitted {
+            reason: with_suppressed(format!("{whose}{reason}"), held_back),
+            held_back,
+        })
     }
+}
+
+/// A dump the limit let through.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Admitted {
+    /// What the dump is written with, saying how many were held back.
+    pub reason: String,
+    /// How many of its kind the limit held back since the last one.
+    pub held_back: u64,
 }
 
 /// The dumps a driver has written, by kind, and those it held back since.
@@ -115,7 +126,7 @@ pub fn with_suppressed(reason: String, suppressed: u64) -> String {
 mod tests {
     use super::*;
 
-    const BROKE: DumpKind = DumpKind::Violation(Cow::Borrowed("the generation only ever rises"));
+    const BROKE: DumpKind = DumpKind::Violation(Cow::Borrowed("test.generation_rises"));
 
     #[test]
     fn one_dump_per_kind_in_an_interval_and_the_next_counts_the_rest() {

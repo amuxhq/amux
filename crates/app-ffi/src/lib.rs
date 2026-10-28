@@ -1248,6 +1248,20 @@ pub unsafe extern "C" fn amux_runtime_set_telemetry(runtime: *const AmuxRuntime,
     });
 }
 
+/// The app's automatic-reports setting changed.
+///
+/// # Safety
+/// `runtime` is from `amux_runtime_start`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_runtime_set_auto_reports(runtime: *const AmuxRuntime, on: bool) {
+    guard((), || {
+        // SAFETY: the caller's contract.
+        if let Some(runtime) = unsafe { live_runtime(runtime) } {
+            runtime.embedded().set_auto_reports(on);
+        }
+    });
+}
+
 /// Records what only the app sees, a `UsageEvent` as JSON, on the profile it
 /// concerns, or on every profile when `profile` is null or not hosted.
 ///
@@ -1334,7 +1348,9 @@ pub unsafe extern "C" fn amux_profile_fleet_id(profile: *const AmuxProfile) -> u
 }
 
 /// Writes a dump of the profile with the fleet's and every open chat's
-/// part; the ticket answers `{"Ok": "<bundle directory>"}` or `{"Err": ..}`.
+/// part: for a person's report, what reproduces this device's screen;
+/// otherwise everything the device holds. The ticket answers
+/// `{"Ok": "<bundle directory>"}` or `{"Err": ..}`.
 ///
 /// # Safety
 /// `profile` is from `amux_profile_open`; `reason` is a NUL-terminated
@@ -1343,6 +1359,7 @@ pub unsafe extern "C" fn amux_profile_fleet_id(profile: *const AmuxProfile) -> u
 pub unsafe extern "C" fn amux_profile_dump(
     profile: *const AmuxProfile,
     reason: *const c_char,
+    for_report: bool,
 ) -> u64 {
     guard(0, || {
         // SAFETY: the caller's contract.
@@ -1352,7 +1369,54 @@ pub unsafe extern "C" fn amux_profile_dump(
         // SAFETY: the caller's contract.
         let reason = unsafe { text(reason) }.unwrap_or_default().to_owned();
         let app = profile.app.clone();
-        profile.act(async move { Answered::from(app.dump(&reason).await) })
+        profile.act(async move { Answered::from(app.dump(&reason, for_report).await) })
+    })
+}
+
+/// Writes a person's report around the dump at `dump_path` (empty when
+/// none was taken; a report's own directory to send it again), with its
+/// `report.json`, the frozen frame as PNG and the view-state trace (null
+/// when there is none), and sends it to the account
+/// the profile is signed in to. The ticket answers `{"Ok": ReportSent}` or
+/// `{"Err": ..}`.
+///
+/// # Safety
+/// `profile` is from `amux_profile_open`; `dump_path` and `header` are
+/// NUL-terminated strings or null; `frame` is null or `len` readable bytes;
+/// `trace` is null or a NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_profile_submit_report(
+    profile: *const AmuxProfile,
+    dump_path: *const c_char,
+    header: *const c_char,
+    frame: *const u8,
+    len: usize,
+    trace: *const c_char,
+) -> u64 {
+    guard(0, || {
+        // SAFETY: the caller's contract.
+        let Some(profile) = (unsafe { live_profile(profile) }) else {
+            return 0;
+        };
+        // SAFETY: the caller's contract.
+        let dump_path = unsafe { text(dump_path) }.unwrap_or_default().to_owned();
+        // SAFETY: the caller's contract.
+        let header = unsafe { text(header) }
+            .unwrap_or_default()
+            .as_bytes()
+            .to_vec();
+        let frame = if frame.is_null() {
+            Vec::new()
+        } else {
+            // SAFETY: the caller's contract.
+            unsafe { std::slice::from_raw_parts(frame, len) }.to_vec()
+        };
+        // SAFETY: the caller's contract.
+        let trace = unsafe { text(trace) }.map(str::to_owned);
+        let app = profile.app.clone();
+        profile.act(async move {
+            Answered::from(app.submit_report(dump_path, header, frame, trace).await)
+        })
     })
 }
 

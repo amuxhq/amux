@@ -285,7 +285,10 @@ system may suspend the app. The paywall opening and a purchase starting are
 seen only by the app, which records them on the account on screen
 (`RuntimeCoordinator.record`). **Share Usage** in **Settings** turns it off; the
 choice is kept in the app's defaults and handed to the runtime at start and
-on every change. Only the App Store build sends.
+on every change. Only the App Store build sends. **Send Automatic Reports**
+beside it, off by default, is handed over the same way: with it on, the
+runtime sends the dump one of amux's checks takes to the account on screen
+([sending reports](DEBUGGING.md#sending-reports)).
 
 A "needs you" notification's payload names a host and an agent under its
 `amux` key (`PushPayload`). When one wakes the app in the background,
@@ -333,17 +336,21 @@ over it; the person can mark rectangles and write a note. There is no shake
 gesture. The offer and the report are drawn over whichever surface is on
 top, a sheet included: the app hands them down as `ReportLayers`, every
 surface that can be on top carries `surface()`, and the last of those to
-appear draws them. A report is a bundle (`ReportAssembly`): `report.json` at
-`schema_version` 2 declares each part present or absent with a reason,
-beside the frozen `frame.png`, the view-state `trace.jsonl` and the
-profile's dump under `dump/`, which carries the tail of the installation's
-`runtime.log` redacted; the `log` part is declared absent for that reason. Only a build with the driving tools records the trace, so a
-Release report declares it absent. The build stamps its checkout revision
-into the app, and each report carries it as `git_sha`.
+appear draws them. The app takes the profile's `report` dump the moment the
+frame freezes, and on Send hands the runtime what only it has
+(`ReportAssembly`): a `report.json` declaring the frame and the trace present
+or absent with a reason, the frozen `frame.png` and the view-state
+`trace.jsonl`. The runtime writes them beside the dump and uploads the report
+(`Profile.submitReport`), as it does the terminal's; the dump carries the tail
+of the installation's `runtime.log` redacted. Only a build with the driving
+tools records the trace, so a Release report declares it absent. The build
+stamps its checkout revision into the app, and each report carries it as
+`git_sha`.
 
 A report is sent to the account on screen; with nobody signed in, Send is
-unavailable. A failed upload keeps the same bytes, creation time and stamp
-for Retry. Captured reports are read with [the debugging guide](DEBUGGING.md).
+unavailable. A failed send keeps the same bytes and creation time, and Retry
+names the report the runtime kept so the same one goes again. Captured
+reports are read with [the debugging guide](DEBUGGING.md).
 
 ## Building
 

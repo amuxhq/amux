@@ -102,6 +102,11 @@ public final class RuntimeCoordinator {
     public var shareUsage = true {
         didSet { if shareUsage != oldValue { runtime?.setTelemetry(shareUsage) } }
     }
+    /// Whether the dumps amux's own checks take are sent to the account, as
+    /// the person set it; off unless they turned it on.
+    public var autoReports = false {
+        didSet { if autoReports != oldValue { runtime?.setAutoReports(autoReports) } }
+    }
     /// Whether somebody is in front of the app, as the app last said.
     @ObservationIgnored public private(set) var active = true
     @ObservationIgnored private var found: [FoundHost] = []
@@ -159,7 +164,7 @@ public final class RuntimeCoordinator {
         guard runtime == nil, starting == nil else { return }
         let directory = directory
         let config = StartConfig(
-            dataDir: directory.path, deviceName: deviceName,
+            dataDir: directory.path, deviceName: deviceName, autoReports: autoReports,
             discoveryScope: options.discoveryScope, lan: true, lanBind: options.lanBind,
             logPath: directory.appendingPathComponent("runtime.log").path,
             relayQuic: options.relayQUIC, relayRoot: options.relayRoot,
@@ -199,6 +204,7 @@ public final class RuntimeCoordinator {
             storeFailure = nil
             // The setting may have moved while the runtime was starting.
             runtime.setTelemetry(shareUsage)
+            runtime.setAutoReports(autoReports)
             if active { feed(runtime, .foreground) }
             networkWatch.start { [weak self] in
                 Task { @MainActor in self?.networkChanged() }

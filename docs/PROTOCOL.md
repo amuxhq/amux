@@ -714,7 +714,8 @@ windows (`StartPairing`, `GetPairingStatus`, `CancelPairing`); runs the
 initiator's side of pairing (`BeginPair`, `ConfirmPair`, `AbandonPair`);
 reports this device's identity; records a peer an SSH exchange
 authenticated (`TrustSshPeer`); lists, describes and unpairs peers; and
-writes the profile's debug report (`Dump`, [chapter 8](#chapter-8-diagnostics)). The
+writes the profile's debug report and sends a person's report (`Dump`,
+`SubmitReport`, [chapter 8](#chapter-8-diagnostics)). The
 implementation is `crates/node/src/profile_admin.rs`.
 
 None of this is reachable from a link or from an agent's tools socket. No
@@ -831,8 +832,6 @@ differ from the client services in these ways:
 - `SendMessage` takes the `Envelope` the calling host's daemon stamped, and
   takes its sender as given.
 - `ListRepositories` answers for this host only.
-- `PeerAgentService.Dump` answers with this host's part of the caller's
-  report, a `DumpPart`, since the caller is on another machine.
 - There is no `ResolveAgent`, and no drafts: a draft stays on the machine it
   was typed on.
 
@@ -940,14 +939,15 @@ local sockets carry no version at all.
 ## Chapter 8: Diagnostics
 
 `ProfileAdminService.Dump` on the profile socket writes a debug report on this host (rows, store
-slices, journal tails and each agent process's own redacted part) and answers
-with its path. For an agent another host runs, the report holds only this
-host's row and store slice, and asks that host for its side through
-`PeerAgentService.Dump`; the answer is that host's own bundle as one `DumpPart`,
-and a host that cannot be reached is named in the
-report's manifest. Diagnostics use the ordinary calls; they create no extra
-link messages or authority path. [Debugging](DEBUGGING.md) covers reading a
-report.
+slices, journal tails and each agent process's own redacted part, as much as
+the request's `scope` asks for) and answers with its path. For an agent
+another host runs, the report holds only this host's row and store slice: no
+host asks another for its side. `ProfileAdminService.SubmitReport` writes a
+person's report around a dump the client took, with the client's
+`report.json` and frame, and sends it to the profile's account service,
+answering where it is kept and the receipt or why it was not sent.
+Diagnostics use the ordinary calls; they create no link messages or
+authority path. [Debugging](DEBUGGING.md) covers reading a report.
 
 ## Chapter 9: Blob routing
 

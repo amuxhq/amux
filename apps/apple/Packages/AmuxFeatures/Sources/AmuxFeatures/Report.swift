@@ -206,13 +206,13 @@ public struct ReportScreen: View {
                     Explain("Sign in to send reports. They go to your amux account.")
                         .identified("report.signed-out")
                 }
-                frame.disabled(model.uploadBundle != nil)
+                frame.disabled(model.sealed != nil)
                 guidance("Drag a box around anything wrong. Each box takes a note.")
                 if !model.draft.marks.isEmpty {
-                    marks.disabled(model.uploadBundle != nil)
+                    marks.disabled(model.sealed != nil)
                 }
                 if case .failed(let why) = model.sending { refusal(why) }
-                note.disabled(model.uploadBundle != nil)
+                note.disabled(model.sealed != nil)
                 guidance("Includes this screen and the available session and host records.")
             }
             .padding(.horizontal, design.metrics.gutter)

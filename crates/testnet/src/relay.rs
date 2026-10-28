@@ -73,6 +73,30 @@ struct CloudState {
     ahead: Duration,
     /// How long credentials minted from now on live, when not the default.
     ttl: Option<Duration>,
+    /// Every report handed to the account service, in order, the refused
+    /// ones too.
+    reports: Vec<Received>,
+    /// Why the account service turns reports down from now on, if it does.
+    refusing: Option<String>,
+}
+
+/// A report handed to the account service: whose, each multipart section
+/// by the file it carries, and why it was refused if it was.
+#[derive(Clone, Debug)]
+pub struct Received {
+    pub account: String,
+    pub files: Vec<(String, Vec<u8>)>,
+    pub refused: Option<String>,
+}
+
+impl Received {
+    /// The file `name` carried, if the report had one.
+    pub fn file(&self, name: &str) -> Option<&[u8]> {
+        self.files
+            .iter()
+            .find(|(carried, _)| carried == name)
+            .map(|(_, bytes)| bytes.as_slice())
+    }
 }
 
 struct Cloud {
@@ -218,6 +242,17 @@ impl Relay {
     /// account service names it.
     pub fn quic_root_pem(&self) -> &str {
         &self.quic_root_pem
+    }
+
+    /// Every report handed to the account service, in order.
+    pub fn reports(&self) -> Vec<Received> {
+        self.cloud.state.lock().unwrap().reports.clone()
+    }
+
+    /// Turns reports down from now on with `reason`, as the real service
+    /// does one it cannot take; `None` takes them again.
+    pub fn refuse_reports(&self, reason: Option<String>) {
+        self.cloud.state.lock().unwrap().refusing = reason;
     }
 
     /// The refresh token a person signing in as `account` hands the daemon.
@@ -403,6 +438,41 @@ impl LinkTokenAuthenticator for Presented {
     }
 }
 
+/// A `multipart/form-data` body's sections, by the name each carries.
+fn sections(content_type: &str, body: &[u8]) -> Vec<(String, Vec<u8>)> {
+    let Some(boundary) = content_type.split("boundary=").nth(1) else {
+        return Vec::new();
+    };
+    let delimiter = format!("--{boundary}");
+    let find = |from: usize, needle: &[u8]| {
+        body[from..]
+            .windows(needle.len())
+            .position(|window| window == needle)
+            .map(|at| from + at)
+    };
+    let mut out = Vec::new();
+    let mut at = 0;
+    while let Some(start) = find(at, delimiter.as_bytes()) {
+        let headers = start + delimiter.len() + 2;
+        let Some(blank) = find(headers, b"\r\n\r\n") else {
+            break;
+        };
+        let Some(end) = find(blank + 4, format!("\r\n{delimiter}").as_bytes()) else {
+            break;
+        };
+        let head = String::from_utf8_lossy(&body[headers..blank]);
+        let name = head
+            .split("name=\"")
+            .nth(1)
+            .and_then(|rest| rest.split('"').next())
+            .unwrap_or_default()
+            .to_owned();
+        out.push((name, body[blank + 4..end].to_vec()));
+        at = end + 2;
+    }
+    out
+}
+
 async fn serve_cloud(listener: tokio::net::TcpListener, cloud: Arc<Cloud>) {
     loop {
         let Ok((stream, _)) = listener.accept().await else {
@@ -431,6 +501,12 @@ impl Cloud {
             .and_then(|value| value.strip_prefix("Bearer "))
             .and_then(|token| token.strip_prefix("access-"))
             .map(str::to_owned);
+        let content_type = request
+            .headers()
+            .get(hyper::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
         let body = request
             .into_body()
             .collect()
@@ -480,6 +556,34 @@ impl Cloud {
                 Some(account) => json(serde_json::json!({
                     "data": {"me": {"access": self.access(&account)}},
                 })),
+                None => status(401, serde_json::json!({})),
+            },
+            // A report bundle, kept as its sections; the receipt is the
+            // real service's.
+            "/api/reports" => match bearer.filter(|account| self.signed_in(account)) {
+                Some(account) => {
+                    let mut state = self.state.lock().unwrap();
+                    let refused = state.refusing.clone();
+                    state.reports.push(Received {
+                        account,
+                        files: sections(&content_type, &body),
+                        refused: refused.clone(),
+                    });
+                    let taken = state.reports.iter().filter(|r| r.refused.is_none()).count();
+                    match refused {
+                        Some(reason) => status(
+                            422,
+                            serde_json::json!({ "error": "invalid_report", "reason": reason }),
+                        ),
+                        None => status(
+                            201,
+                            serde_json::json!({
+                                "id": format!("report-{taken}"),
+                                "received_at": "2026-10-27T10:00:00Z",
+                            }),
+                        ),
+                    }
+                }
                 None => status(401, serde_json::json!({})),
             },
             _ => status(404, serde_json::json!({})),

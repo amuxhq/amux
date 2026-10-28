@@ -54,6 +54,15 @@ final class Composition {
         }
     }
     private static let shareUsageKey = "shareUsage"
+    /// Whether the dumps amux's own checks take go to the account on their
+    /// own. Off until somebody turns it on: they carry the chats.
+    var autoReports = UserDefaults.standard.bool(forKey: Composition.autoReportsKey) {
+        didSet {
+            UserDefaults.standard.set(autoReports, forKey: Self.autoReportsKey)
+            runtime.autoReports = autoReports
+        }
+    }
+    private static let autoReportsKey = "autoReports"
     /// Notifications as iOS has them, read at launch and whenever the app
     /// comes back to the front, since they are changed in the system's
     /// settings. None in a build that does not offer them.
@@ -151,7 +160,7 @@ final class Composition {
         let dump: () -> Task<Result<URL, PartAbsent>, Never>? = { [weak runtime] in
             guard let running = runtime?.profile else { return nil }
             return Task {
-                switch await running.dump(reason: "report") {
+                switch await running.dump(reason: "report", forReport: true) {
                 case .success(let directory): .success(URL(fileURLWithPath: directory))
                 case .failure(let why): .failure(PartAbsent(why.description))
                 }
@@ -176,6 +185,7 @@ final class Composition {
         runtime.accountChanged = { [weak router] in router?.leaveAccount() }
         router.loads(with: self)
         runtime.shareUsage = shareUsage
+        runtime.autoReports = autoReports
         // Starting the runtime reads this phone's own store before it dials,
         // so the first frame has rows and needs no network.
         runtime.start()
@@ -279,6 +289,8 @@ final class Composition {
             appearance = wanted
         case .shareUsage(let on):
             shareUsage = on
+        case .autoReports(let on):
+            autoReports = on
         case .turnOnNotifications:
             askForNotifications()
         case .notNowNotifications:

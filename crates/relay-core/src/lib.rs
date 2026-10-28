@@ -36,7 +36,7 @@ use std::hash::{Hash, Hasher};
 use std::time::Instant;
 
 use daemon_core::payload::ForwardRefusal;
-use daemon_core::{DumpReason, HostId, LinkId, StepBudget, Violation};
+use daemon_core::{Check, DumpReason, HostId, LinkId, StepBudget, Violation};
 
 /// An account, by the id its tokens carry. A daemon's links are all one
 /// account's.
@@ -163,15 +163,35 @@ pub enum Output {
 
 /// The invariants [`Relay::check_step_invariants`] asserts, as the
 /// sentences a violation names.
-pub const TOLD_ONLY_OF_ITS_NEIGHBORS: &str =
-    "a link that is up is told only of other hosts on its own account";
-pub const FORWARDS_ONLY_PAID_PAIRS: &str = "packets flow between two links only while both are up, on one account and paid, or both pinned";
-pub const NOTHING_BEFORE_ADMISSION: &str =
-    "nothing is forwarded for a link not yet admitted, held packets included";
-pub const LAPSE_TELLS_BOTH: &str =
-    "a lapse or expiry removes every pair through the link and tells both ends";
-pub const ASKS_ONLY_FREE_LINKS: &str =
-    "a link asked for a fresh credential is up on the free plan, on the account of a paid link";
+pub const TOLD_ONLY_OF_ITS_NEIGHBORS: Check = Check {
+    id: "relay.told_only_of_its_neighbors",
+    sentence: "a link that is up is told only of other hosts on its own account",
+};
+pub const FORWARDS_ONLY_PAID_PAIRS: Check = Check {
+    id: "relay.forwards_only_paid_pairs",
+    sentence: "packets flow between two links only while both are up, on one account and paid, or both pinned",
+};
+pub const NOTHING_BEFORE_ADMISSION: Check = Check {
+    id: "relay.nothing_before_admission",
+    sentence: "nothing is forwarded for a link not yet admitted, held packets included",
+};
+pub const LAPSE_TELLS_BOTH: Check = Check {
+    id: "relay.lapse_tells_both",
+    sentence: "a lapse or expiry removes every pair through the link and tells both ends",
+};
+pub const ASKS_ONLY_FREE_LINKS: Check = Check {
+    id: "relay.asks_only_free_links",
+    sentence: "a link asked for a fresh credential is up on the free plan, on the account of a paid link",
+};
+
+/// Every check the relay core makes at the end of a step.
+pub const CHECKS: &[Check] = &[
+    TOLD_ONLY_OF_ITS_NEIGHBORS,
+    FORWARDS_ONLY_PAID_PAIRS,
+    NOTHING_BEFORE_ADMISSION,
+    LAPSE_TELLS_BOTH,
+    ASKS_ONLY_FREE_LINKS,
+];
 
 /// One link that is up.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -1024,7 +1044,7 @@ mod tests {
         );
     }
 
-    fn violation(out: &[Output]) -> Option<&'static str> {
+    fn violation(out: &[Output]) -> Option<Check> {
         out.iter().find_map(|output| match output {
             Output::Dump {
                 reason: DumpReason::Violation(violation),

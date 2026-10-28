@@ -1,8 +1,8 @@
 //! The events a device may send, and the JSON each becomes.
 //!
-//! Every field is an enum, a number, a bool, a version or a host id: there
-//! is no string a caller could fill with a name, a path or a prompt, so the
-//! type is the allowlist of what can leave the machine.
+//! Every field is an enum, a number, a bool, a version, a host id or a
+//! check id: there is no string a caller could fill with a name, a path or a
+//! prompt, so the type is the allowlist of what can leave the machine.
 
 use std::collections::BTreeMap;
 use std::time::SystemTime;
@@ -170,6 +170,51 @@ tokens! {
     }
 }
 
+tokens! {
+    /// Which part of amux a check that broke belongs to.
+    CheckCore {
+        Daemon => "daemon",
+        Agent => "agent",
+        Relay => "relay",
+        Path => "path",
+        /// A client's check of the chat transcript it holds.
+        Transcript => "transcript",
+    }
+}
+
+tokens! {
+    /// How a check broke.
+    CheckCause {
+        /// One of the core's invariants failed at the end of a step.
+        Invariant => "invariant",
+        /// A step took longer than the core's budget.
+        OverBudget => "over_budget",
+    }
+}
+
+/// The id of one of amux's own checks, such as `daemon.generation_fell`:
+/// lowercase letters, digits, `_` and `.`, at most 64 bytes, with a `.`
+/// between the core and the check. The shape is all [`CheckId::new`]
+/// accepts, so nothing but a code-chosen name fits.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct CheckId(String);
+
+impl CheckId {
+    pub fn new(id: &str) -> Option<Self> {
+        let shaped = !id.is_empty()
+            && id.len() <= 64
+            && id.contains('.')
+            && id
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'.');
+        shaped.then(|| Self(id.to_owned()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// Where an act happened: on this host, or on a paired host, which is then
 /// named so a person's hosts can be joined without an account.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -309,11 +354,20 @@ pub enum Event {
     PurchaseStarted {
         interval: Interval,
     },
+    /// One of amux's checks broke: a core's invariant failed or a step ran
+    /// over its budget, or a client's transcript failed its check. Sent at
+    /// most once per check every ten minutes; `held_back` counts the rest.
+    CheckFailed {
+        core: CheckCore,
+        check: CheckId,
+        cause: CheckCause,
+        held_back: u32,
+    },
 }
 
 impl Event {
     /// How many variants there are; [`Event::ordinal`] numbers them.
-    pub const COUNT: usize = 18;
+    pub const COUNT: usize = 19;
 
     pub fn name(&self) -> &'static str {
         match self {
@@ -335,6 +389,7 @@ impl Event {
             Event::RelayRefused => "relay_refused",
             Event::PaywallViewed { .. } => "paywall_viewed",
             Event::PurchaseStarted { .. } => "purchase_started",
+            Event::CheckFailed { .. } => "check_failed",
         }
     }
 
@@ -361,6 +416,7 @@ impl Event {
             Event::RelayRefused => 15,
             Event::PaywallViewed { .. } => 16,
             Event::PurchaseStarted { .. } => 17,
+            Event::CheckFailed { .. } => 18,
         }
     }
 
@@ -436,6 +492,17 @@ impl Event {
             Event::SignInFailed { reason } => put("reason", token(*reason)),
             Event::PaywallViewed { from } => put("from", token(*from)),
             Event::PurchaseStarted { interval } => put("interval", token(*interval)),
+            Event::CheckFailed {
+                core,
+                check,
+                cause,
+                held_back,
+            } => {
+                put("core", token(*core));
+                put("check", json!(check.as_str()));
+                put("cause", token(*cause));
+                put("held_back", json!(held_back));
+            }
         }
         out
     }
@@ -514,6 +581,12 @@ impl Event {
             },
             Event::PurchaseStarted {
                 interval: Interval::Yearly,
+            },
+            Event::CheckFailed {
+                core: CheckCore::Daemon,
+                check: CheckId::new("daemon.generation_fell").expect("a check id"),
+                cause: CheckCause::Invariant,
+                held_back: 3,
             },
         ]
     }

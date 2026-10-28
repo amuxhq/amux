@@ -518,19 +518,18 @@ mod tests {
 
         // The peer surface is the client surface minus name resolution and
         // drafts (a draft stays on the machine it was typed on), over the
-        // same request and response messages. A peer's Dump answers for the
-        // agents the called host runs, so a dump taken elsewhere holds their
-        // host-side parts.
+        // same request and response messages. No host asks another for its
+        // side of a dump.
         let mut peer_agents = agents.clone();
         peer_agents.remove("ResolveAgent");
-        peer_agents.insert("Dump".to_owned());
         assert_eq!(methods(&set, "PeerAgentService"), peer_agents);
         let mut peer_sessions = sessions.clone();
         peer_sessions.remove("UpdateDraft");
         peer_sessions.remove("GetDraft");
         assert_eq!(methods(&set, "PeerSessionService"), peer_sessions);
 
-        assert!(methods(&set, "ProfileAdminService").contains("Dump"));
+        let admin = methods(&set, "ProfileAdminService");
+        assert!(admin.contains("Dump") && admin.contains("SubmitReport"));
         assert_eq!(
             methods(&set, "InstallationService"),
             set_of(&[

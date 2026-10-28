@@ -637,7 +637,7 @@ impl<I: Interpreter> Agent<I> {
             && !decided.deadline_passed
         {
             return Err(Violation {
-                invariant: "an agent exits only at a turn end or a drain deadline",
+                invariant: EXIT_OUTSIDE_TURN_END,
                 detail: format!("{:?} decided while a turn ran", decided.cause),
             });
         }
@@ -648,7 +648,7 @@ impl<I: Interpreter> Agent<I> {
             .find(|id| self.pending.queued.contains(*id))
         {
             return Err(Violation {
-                invariant: "the pending set never holds an input the journal recorded as taken",
+                invariant: TAKEN_STILL_PENDING,
                 detail: format!(
                     "input {} is taken and still queued",
                     interpret::to_hex(taken)
@@ -660,7 +660,7 @@ impl<I: Interpreter> Agent<I> {
                 && self.turn.phase == Phase::NeedsYou;
             if !orphanable {
                 return Err(Violation {
-                    invariant: "a drain deadline waits only on an ask left open while draining for a lost daemon",
+                    invariant: DEADLINE_WITHOUT_ORPHAN,
                     detail: format!(
                         "deadline {} armed in {:?} at phase {:?}",
                         ask.until, self.mode, self.turn.phase
@@ -1201,7 +1201,27 @@ fn sender_id(envelope: &wire::Envelope) -> &[u8] {
     }
 }
 
-pub use core_ring::{DumpReason, StepBudget, Violation};
+pub const EXIT_OUTSIDE_TURN_END: Check = Check {
+    id: "agent.exit_outside_turn_end",
+    sentence: "an agent exits only at a turn end or a drain deadline",
+};
+pub const TAKEN_STILL_PENDING: Check = Check {
+    id: "agent.taken_still_pending",
+    sentence: "the pending set never holds an input the journal recorded as taken",
+};
+pub const DEADLINE_WITHOUT_ORPHAN: Check = Check {
+    id: "agent.deadline_without_orphan",
+    sentence: "a drain deadline waits only on an ask left open while draining for a lost daemon",
+};
+
+/// Every check the agent core makes at the end of a step.
+pub const CHECKS: &[Check] = &[
+    EXIT_OUTSIDE_TURN_END,
+    TAKEN_STILL_PENDING,
+    DEADLINE_WITHOUT_ORPHAN,
+];
+
+pub use core_ring::{Check, DumpReason, StepBudget, Violation};
 
 /// The core's state as of one step, serialized, under the layout it was
 /// written with.

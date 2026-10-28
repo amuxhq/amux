@@ -141,6 +141,8 @@ pub struct EmbeddedRuntime {
     clock: Arc<dyn Clock>,
     /// The app's telemetry setting, read before every upload.
     telemetry: Arc<AtomicBool>,
+    /// The app's automatic-reports setting, read before every dump is sent.
+    auto_reports: Arc<AtomicBool>,
     analytics: Option<analytics::Flusher>,
 }
 
@@ -211,6 +213,7 @@ impl EmbeddedRuntime {
             liveness: Default::default(),
         };
         let telemetry = Arc::new(AtomicBool::new(config.telemetry));
+        let auto_reports = Arc::new(AtomicBool::new(config.auto_reports));
         let analytics = match overrides.recording {
             Some(sink) => node::Telemetry::Record(sink),
             None => match analytics::Endpoint::resolve(overrides.published) {
@@ -240,6 +243,10 @@ impl EmbeddedRuntime {
             front_door: None,
             edge,
             analytics,
+            auto_reports: node::AutoReports::new({
+                let auto_reports = auto_reports.clone();
+                Arc::new(move || auto_reports.load(Ordering::SeqCst))
+            }),
         };
         let daemon = node::start(options, None).await?;
         Ok(EmbeddedRuntime {
@@ -249,6 +256,7 @@ impl EmbeddedRuntime {
             daemon: Mutex::new(Some(daemon)),
             clock,
             telemetry,
+            auto_reports,
         })
     }
 
@@ -267,6 +275,12 @@ impl EmbeddedRuntime {
     /// going, on lets it go again.
     pub fn set_telemetry(&self, on: bool) {
         self.telemetry.store(on, Ordering::SeqCst);
+    }
+
+    /// The app's automatic-reports setting changed; the next dump a check
+    /// asks for reads it.
+    pub fn set_auto_reports(&self, on: bool) {
+        self.auto_reports.store(on, Ordering::SeqCst);
     }
 
     /// The app came to the front: counted for every profile, at most once

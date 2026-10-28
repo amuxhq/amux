@@ -34,7 +34,6 @@ public protocol CloudService: Sendable {
     /// would be a second place for that to change.
     func recordPurchase(_ id: AccountId, signedTransaction: String) async throws(CloudError)
     func requestDeletion(_ id: AccountId, confirmedEmail: String) async throws(CloudError) -> DeletionOutcome
-    func uploadReport(_ id: AccountId, bundle: ReportBundle) async throws(CloudError) -> ReportReceipt
 }
 
 /// What a sign-in leaves for the runtime: the service that issued the
@@ -172,48 +171,4 @@ public enum EntitlementSource: String, Sendable, Equatable, Codable {
 public enum DeletionOutcome: Sendable, Equatable, Codable {
     case deleted
     case blockedByRenewal(source: EntitlementSource, manageURL: URL)
-}
-
-/// A report as assembled for upload. Every part declares itself present or
-/// states why it is missing, so a report with a hole in it is still readable
-/// as a report rather than as a bug in the reporter.
-public struct ReportBundle: Sendable, Equatable, Codable {
-    /// Every part, `report.json` first. What somebody wrote about the report
-    /// is inside that file rather than beside it: the header is what declares
-    /// the note, the rectangles and which other parts are here at all, and a
-    /// note carried separately would be a second place for it to live.
-    public var parts: [ReportPart]
-
-    public init(parts: [ReportPart]) {
-        self.parts = parts
-    }
-
-    /// One part by the name it is filed under.
-    public func part(_ name: String) -> ReportPart? {
-        parts.first { $0.name == name }
-    }
-}
-
-public struct ReportPart: Sendable, Equatable, Codable {
-    public var name: String
-    public var data: Data?
-    public var absenceReason: String?
-
-    public init(name: String, data: Data? = nil, absenceReason: String? = nil) {
-        self.name = name
-        self.data = data
-        self.absenceReason = absenceReason
-    }
-
-    public var present: Bool { data != nil }
-}
-
-public struct ReportReceipt: Sendable, Equatable, Codable {
-    public var id: String
-    public var receivedAt: Date
-
-    public init(id: String, receivedAt: Date) {
-        self.id = id
-        self.receivedAt = receivedAt
-    }
 }

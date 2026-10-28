@@ -128,6 +128,14 @@ pub trait Client: Send + Sync + 'static {
         request: ListRepositoriesRequest,
     ) -> Result<ListRepositoriesResponse, RpcError>;
     async fn dump(&self, request: DumpRequest) -> Result<DumpResponse, RpcError>;
+    /// Writes a person's report around a dump and sends it on when the
+    /// profile is signed in.
+    async fn submit_report(
+        &self,
+        _request: wire::SubmitReportRequest,
+    ) -> Result<wire::SubmitReportResponse, RpcError> {
+        Err(unimplemented("submit_report"))
+    }
     /// Keeps an agent's unsent draft on this machine; an empty one forgets
     /// it. A client that keeps none of its own answers Unimplemented.
     async fn update_draft(
@@ -244,6 +252,13 @@ macro_rules! client_impl {
 
             async fn dump(&self, request: DumpRequest) -> Result<DumpResponse, RpcError> {
                 Ok($call!(self, admin, dump, request).await?.into_inner())
+            }
+
+            async fn submit_report(
+                &self,
+                request: wire::SubmitReportRequest,
+            ) -> Result<wire::SubmitReportResponse, RpcError> {
+                Ok($call!(self, admin, submit_report, request).await?.into_inner())
             }
 
             async fn update_draft(

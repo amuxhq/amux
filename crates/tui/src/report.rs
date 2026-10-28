@@ -1,10 +1,11 @@
 //! Report a Problem: the screen frozen as it was at the key, rectangles
-//! dragged over it with the mouse, a note on each and one overall, and a
-//! bundle written into the installation's reports directory.
+//! dragged over it with the mouse, a note on each and one overall, handed
+//! to the daemon, which writes the bundle into its reports directory and
+//! sends it to the profile's account when it is signed in to one.
 //!
 //! The bundle is the phone's layout with a terminal's frame: `report.json`
-//! declares every part present or absent with a reason and carries the
-//! note and the marks, measured in cells; `frame.txt` is the frozen screen
+//! carries the note and the marks, measured in cells, and declares the
+//! parts present or absent with a reason; `frame.txt` is the frozen screen
 //! as text to read, and `frame.json` the same cells with their colours and
 //! styles, from which a picture can be drawn later (`amux-shot frame`)
 //! without a font in this binary; `dump/` is the profile's dump with this
@@ -13,9 +14,11 @@
 //! is in the dump), draws no picture itself and records no view trace, and
 //! says so.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use client::Client;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::Frame as Paint;
 use ratatui::buffer::Buffer;
@@ -30,9 +33,6 @@ use crate::chat::composer::editor_lines;
 use crate::editor::Editor;
 use crate::text::{self, push};
 use crate::theme::Theme;
-
-/// The layout version this client writes, the phone's.
-const SCHEMA_VERSION: u32 = 2;
 
 /// A rectangle over the frozen frame, in cells, with what is wrong there.
 #[derive(Clone, Debug, PartialEq)]
@@ -217,7 +217,7 @@ impl Report {
         let keys = if self.marking.is_some() {
             "enter keep the note   esc no note"
         } else {
-            "enter save   esc cancel   drag to mark"
+            "enter send   esc cancel   drag to mark"
         };
         let mut hint = Line::from(Span::raw("  "));
         push(&mut hint, keys, theme.muted(), width);
@@ -235,53 +235,26 @@ impl Report {
         }
     }
 
-    /// Writes the bundle under `reports`, once the dump has finished, and
-    /// returns its directory.
-    pub async fn save(
+    /// Hands the report to the daemon once the dump has finished: it
+    /// writes the bundle into its reports directory and sends it on when
+    /// the profile is signed in, and says where it went.
+    pub async fn submit(
         mut self,
-        reports: Option<PathBuf>,
+        client: Arc<dyn Client>,
         build: String,
-    ) -> Result<PathBuf, String> {
+    ) -> Result<wire::SubmitReportResponse, String> {
         let dump = match self.dump.take() {
             Some(task) => task
                 .await
                 .unwrap_or_else(|error| Err(format!("the dump stopped: {error}"))),
             None => Err("no dump was started".to_owned()),
         };
-        let reports = reports
-            .or_else(|| {
-                dump.as_ref()
-                    .ok()
-                    .and_then(|path| path.parent().map(Path::to_path_buf))
-            })
-            .ok_or("no reports directory is known, and the dump did not say where it went")?;
-        let stamp = format!(
-            "{}-{:05}",
-            self.at.timestamp_millis(),
-            self.at.timestamp_subsec_nanos() % 100_000
-        );
-        let dir = reports.join(format!("report-{stamp}"));
-        private_dir(&dir).map_err(|error| format!("creating {}: {error}", dir.display()))?;
-        let dump_part = match &dump {
-            Ok(path) => match std::fs::rename(path, dir.join("dump")) {
-                Ok(()) => json!("present"),
-                Err(error) => absent(format!(
-                    "the dump at {} could not be moved in: {error}",
-                    path.display()
-                )),
-            },
-            Err(why) => absent(why.clone()),
-        };
-        let header = json!({
-            "schema_version": SCHEMA_VERSION,
+        let mut header = json!({
             "build": build,
-            "git_sha": "",
             "created_at": self.at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-            "stamp": stamp,
-            "kind": "bug",
-            "status": "open",
-            "detail": null,
             "note": self.note.text().trim(),
+            // Marks and the viewport are in cells: a terminal frame has no
+            // pixels.
             "marks": self.marks.iter().map(|mark| json!({
                 "x": mark.area.x,
                 "y": mark.area.y,
@@ -290,26 +263,39 @@ impl Report {
                 "note": mark.note,
             })).collect::<Vec<_>>(),
             "viewport": [self.frozen.area.width, self.frozen.area.height],
-            "image_frame": null,
             "parts": {
                 "frame": "present",
-                "frame_png": absent("a terminal frame is cells; frame.json holds them with their colours"),
                 "trace": absent("the terminal records no view trace; its runtime's order of events is in the dump"),
-                "dump": dump_part,
-                "log": absent("the terminal client keeps no log of its own; the daemon's is in the dump"),
             },
-            "replay": "unchecked",
         });
-        let text = serde_json::to_string_pretty(&header).map_err(|error| error.to_string())?;
-        private_file(&dir.join("report.json"), text.as_bytes())
-            .map_err(|error| format!("writing report.json: {error}"))?;
-        private_file(&dir.join("frame.txt"), frame_text(&self.frozen).as_bytes())
-            .map_err(|error| format!("writing frame.txt: {error}"))?;
-        let cells = serde_json::to_string(&frame_cells(&self.frozen, self.theme))
+        // The daemon declares a dump it holds; why there is none is this
+        // client's to say.
+        if let Err(why) = &dump {
+            header["parts"]["dump"] = absent(why.clone());
+        }
+        let file = |name: &str, contents: Vec<u8>| wire::DumpFile {
+            name: name.to_owned(),
+            contents,
+        };
+        let cells = serde_json::to_vec(&frame_cells(&self.frozen, self.theme))
             .map_err(|error| error.to_string())?;
-        private_file(&dir.join("frame.json"), cells.as_bytes())
-            .map_err(|error| format!("writing frame.json: {error}"))?;
-        Ok(dir)
+        let request = wire::SubmitReportRequest {
+            dump_path: dump
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            files: vec![
+                file(
+                    "report.json",
+                    serde_json::to_vec_pretty(&header).map_err(|error| error.to_string())?,
+                ),
+                file("frame.txt", frame_text(&self.frozen).into_bytes()),
+                file("frame.json", cells),
+            ],
+        };
+        client
+            .submit_report(request)
+            .await
+            .map_err(|error| format!("the daemon could not take the report: {error}"))
     }
 }
 
@@ -455,30 +441,6 @@ fn color_name(color: Color) -> String {
         Color::LightCyan => ansi(14),
         Color::White => ansi(15),
     }
-}
-
-/// Reports can hold prompts, code and paths: only this user reads them.
-fn private_dir(dir: &Path) -> std::io::Result<()> {
-    let mut builder = std::fs::DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
-    }
-    builder.create(dir)
-}
-
-fn private_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    options.open(path)?.write_all(bytes)
 }
 
 #[cfg(test)]

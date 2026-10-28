@@ -74,7 +74,6 @@ final class DoorTests: XCTestCase {
                 path: "/tmp/report", note: "the badge counted twice",
                 marks: [ReportMark(x: 12, y: 40.5, width: 96, height: 24, note: "here")]),
             .screenshot,
-            .uploaded(path: "/tmp/uploaded"),
             .holdBackground,
             .awaitBackground(seconds: 10),
             .push(path: "/tmp/needs-you.apns"),

@@ -120,6 +120,11 @@ enum Command {
         /// What looks wrong, kept with the dump.
         #[arg(long)]
         reason: Option<String>,
+        /// Send the dump to the amux account this profile is signed in to,
+        /// as a report. It holds what agents were told and said, redacted of
+        /// secrets.
+        #[arg(long)]
+        send: bool,
     },
     /// Pair with another host, or open this one for pairing.
     ///
@@ -571,10 +576,14 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                         verbs::rename(&mut client, &agent, &name).await
                     }
                     Command::Rm { agent } => verbs::delete(&mut client, &agent).await,
-                    Command::Dump { agents, reason } => {
+                    Command::Dump {
+                        agents,
+                        reason,
+                        send,
+                    } => {
                         let selected = connect::profile(&config, profile).await?;
                         let mut admin = connect::admin_of(&selected).await?;
-                        verbs::dump(&mut client, &mut admin, &agents, reason).await
+                        verbs::dump(&mut client, &mut admin, &agents, reason, send).await
                     }
                     _ => unreachable!("dispatched above"),
                 }

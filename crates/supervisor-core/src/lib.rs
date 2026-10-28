@@ -522,7 +522,7 @@ impl Supervisor {
         let Installed { path, prev } = &self.installed;
         if !path.proven && !prev.as_ref().is_some_and(|prev| prev.proven) {
             return Err(Violation {
-                invariant: "there is always an installed binary that can start",
+                invariant: NO_STARTABLE_BINARY,
                 detail: format!(
                     "the binary at the path ({:?}) has not served and prev is {:?}",
                     path.version, prev
@@ -536,13 +536,13 @@ impl Supervisor {
             .count();
         if serving > 1 {
             return Err(Violation {
-                invariant: "at most one daemon is in the serving phase",
+                invariant: TWO_SERVING,
                 detail: format!("{serving} daemons serve: {:?}", self.daemons),
             });
         }
         if self.touched.spawned && self.daemons.len() > 1 {
             return Err(Violation {
-                invariant: "no daemon starts while another lives",
+                invariant: STARTED_BESIDE_ANOTHER,
                 detail: format!("{:?}", self.daemons),
             });
         }
@@ -1000,7 +1000,23 @@ pub fn skipped(skip: Skip, target: &str, running: &Version) -> String {
     }
 }
 
-pub use core_ring::{DumpReason, StepBudget, Violation};
+pub const NO_STARTABLE_BINARY: Check = Check {
+    id: "supervisor.no_startable_binary",
+    sentence: "there is always an installed binary that can start",
+};
+pub const TWO_SERVING: Check = Check {
+    id: "supervisor.two_serving",
+    sentence: "at most one daemon is in the serving phase",
+};
+pub const STARTED_BESIDE_ANOTHER: Check = Check {
+    id: "supervisor.started_beside_another",
+    sentence: "no daemon starts while another lives",
+};
+
+/// Every check the supervisor core makes at the end of a step.
+pub const CHECKS: &[Check] = &[NO_STARTABLE_BINARY, TWO_SERVING, STARTED_BESIDE_ANOTHER];
+
+pub use core_ring::{Check, DumpReason, StepBudget, Violation};
 
 #[cfg(test)]
 mod tests;

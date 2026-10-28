@@ -286,7 +286,8 @@ the review attachment and how the agent receives it.
 
 `b` on home, or the leader then `b` in a chat, freezes the screen and opens a report over it: drag with the mouse
 over anything that looks wrong to mark it, write a note on each mark and one overall, and Enter writes the report
-into the installation's `reports/` directory and says where; Esc leaves without writing. [DEBUGGING.md](DEBUGGING.md#a-report-from-the-terminal)
+into the installation's `reports/` directory and sends it to the profile's amux account, saying where the copy is
+and, when it could not go, why; Esc leaves without writing. [DEBUGGING.md](DEBUGGING.md#a-report-from-the-terminal)
 lists what the report holds.
 
 ### Settings
@@ -503,7 +504,7 @@ these; the entries amux and service managers run are hidden from it and listed a
 | `amux resume <agent> [text…]` | Starts a stopped agent again, with an optional first prompt. |
 | `amux rename <agent> <name>` | Renames an agent. |
 | `amux rm <agent>` | Deletes an agent and its history; its children follow on their own hosts, a host that is away once it is back. |
-| `amux dump [agents…]` | Writes a debug bundle for the named agents, or all of them, with an optional `--reason`, and prints its path. See [DEBUGGING.md](DEBUGGING.md). |
+| `amux dump [agents…]` | Writes a debug bundle for the named agents, or all of them, with an optional `--reason`, and prints its path; `--send` also sends it to the profile's amux account. See [DEBUGGING.md](DEBUGGING.md). |
 | `amux pair [target]` | Pairs with another host found nearby by name, an address, or `user@host` over SSH. With no target this host opens pairing mode and shows a PIN with what the phone and another computer do with it, or with `--qr` a QR code for the phone's camera. |
 | `amux hosts` | Lists the paired hosts and the hosts found nearby. |
 | `amux unpair <host>` | Stops trusting a paired host, asking first unless `--force`. |

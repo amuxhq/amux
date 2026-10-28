@@ -18,11 +18,11 @@ use wire::peer_agent_service_server::PeerAgentService;
 use wire::peer_session_service_server::PeerSessionService;
 use wire::session_service_server::SessionService;
 use wire::{
-    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, DumpPart, DumpRequest, Empty,
-    GetBlobRequest, GetBlobResponse, GetDiffRequest, GetItemRequest, InventoryEvent, Item,
-    ListItemsRequest, ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse,
-    PeerSubscribeSessionRequest, PutBlobRequest, RenameAgentRequest, ResumeAgentRequest,
-    SendInputRequest, SendInputResponse, SendMessageResponse, SessionEvent, StopAgentRequest,
+    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, Empty, GetBlobRequest, GetBlobResponse,
+    GetDiffRequest, GetItemRequest, InventoryEvent, Item, ListItemsRequest, ListItemsResponse,
+    ListRepositoriesRequest, ListRepositoriesResponse, PeerSubscribeSessionRequest, PutBlobRequest,
+    RenameAgentRequest, ResumeAgentRequest, SendInputRequest, SendInputResponse,
+    SendMessageResponse, SessionEvent, StopAgentRequest,
 };
 
 use crate::HostId;
@@ -217,17 +217,6 @@ impl PeerAgentService for PeerApi {
     ) -> Result<Response<ListRepositoriesResponse>, Status> {
         caller(&request)?;
         self.client.list_repositories(request).await
-    }
-
-    /// A paired host's dump asks for this host's side of the agents it
-    /// runs: the bundle travels in the answer.
-    async fn dump(&self, request: Request<DumpRequest>) -> Result<Response<DumpPart>, Status> {
-        caller(&request)?;
-        self.runtime()?
-            .dump_for_peer(request.into_inner())
-            .await
-            .map(Response::new)
-            .map_err(|error| status(error.to_wire()))
     }
 }
 

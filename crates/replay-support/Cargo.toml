@@ -26,3 +26,4 @@ ui-state.workspace = true
 ui-view.workspace = true
 unicode-width = "0.2"
 wire.workspace = true
+zstd.workspace = true

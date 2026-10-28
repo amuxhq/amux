@@ -37,7 +37,6 @@ private struct OneDeletion: CloudService, @unchecked Sendable {
         throw .unauthenticated
     }
 
-
     func requestDeletion(
         _ id: AccountId, confirmedEmail: String
     ) async throws(CloudError) -> DeletionOutcome {
@@ -48,11 +47,6 @@ private struct OneDeletion: CloudService, @unchecked Sendable {
         }
     }
 
-    func uploadReport(
-        _ id: AccountId, bundle: ReportBundle
-    ) async throws(CloudError) -> ReportReceipt {
-        throw .unauthenticated
-    }
 }
 
 @MainActor

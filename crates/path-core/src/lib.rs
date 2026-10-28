@@ -44,7 +44,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::time::Instant;
 
 pub use daemon_core::payload::Source;
-pub use daemon_core::{DumpReason, LinkId, StepBudget, Violation};
+pub use daemon_core::{Check, DumpReason, LinkId, StepBudget, Violation};
 use serde::{Deserialize, Serialize};
 
 /// How long the link stays on a path that keeps working before it may move
@@ -168,11 +168,30 @@ pub enum Output {
 
 /// The invariants [`Paths::check_step_invariants`] asserts, as the
 /// sentences a violation names. The path model judges the same sentences.
-pub const CARRIES_ONLY_ANSWERED: &str = "a path carries the link only after a probe on it was answered, the first flight's copies aside";
-pub const NO_CROSS_NETWORK_AFTER_LAPSE: &str =
-    "after a lapse no packet goes on a path across networks";
-pub const NO_SWING: &str = "the link never leaves a working path for another within the hold-down";
-pub const RELAY_READY_WHILE_DIRECT: &str = "the relay path stays ready while the link is direct";
+pub const CARRIES_ONLY_ANSWERED: Check = Check {
+    id: "path.carries_only_answered",
+    sentence: "a path carries the link only after a probe on it was answered, the first flight's copies aside",
+};
+pub const NO_CROSS_NETWORK_AFTER_LAPSE: Check = Check {
+    id: "path.no_cross_network_after_lapse",
+    sentence: "after a lapse no packet goes on a path across networks",
+};
+pub const NO_SWING: Check = Check {
+    id: "path.no_swing",
+    sentence: "the link never leaves a working path for another within the hold-down",
+};
+pub const RELAY_READY_WHILE_DIRECT: Check = Check {
+    id: "path.relay_ready_while_direct",
+    sentence: "the relay path stays ready while the link is direct",
+};
+
+/// Every check the path machine makes at the end of a step.
+pub const CHECKS: &[Check] = &[
+    CARRIES_ONLY_ANSWERED,
+    NO_CROSS_NETWORK_AFTER_LAPSE,
+    NO_SWING,
+    RELAY_READY_WHILE_DIRECT,
+];
 
 /// What a path is, apart from its kind: a punched path and a direct one to
 /// the same address are the same path, which becomes direct once the peer
@@ -1191,7 +1210,7 @@ mod tests {
         assert_eq!(postcard::from_bytes::<Paths>(&bytes).unwrap(), paths);
     }
 
-    fn violation(paths: &Paths) -> Option<&'static str> {
+    fn violation(paths: &Paths) -> Option<Check> {
         paths.check_step_invariants().err().map(|v| v.invariant)
     }
 

@@ -56,6 +56,7 @@ fn config(dir: &std::path::Path) -> StartConfig {
         relay_root: None,
         tail: 50,
         telemetry: true,
+        auto_reports: false,
     }
 }
 

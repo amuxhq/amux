@@ -225,6 +225,7 @@ impl Phone {
             relay_root: None,
             tail: 50,
             telemetry: true,
+            auto_reports: false,
         };
         let overrides = EdgeOverrides {
             lan_bind: ([127, 0, 0, 1], 0).into(),
@@ -718,7 +719,7 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     // A dump carries the fleet and the open chat.
     let reason = c("asked for in a test");
     // SAFETY: the runtime is live; the string lives for the call.
-    phone.started(unsafe { amux_profile_dump(phone.profile, reason.as_ptr()) });
+    phone.started(unsafe { amux_profile_dump(phone.profile, reason.as_ptr(), false) });
     let dumped = phone.result();
     let bundle = std::path::PathBuf::from(dumped["Ok"].as_str().expect("a bundle"));
     assert!(bundle.join("client/fleet/state.txt").is_file());
@@ -777,10 +778,10 @@ fn nothing_closed_is_handed_over_while_its_acts_are_in_flight() {
         assert_eq!(moved, 0, "a closed chat was handed over");
     }
 
-    // And a dump waits on it too, holding the fleet past its close.
-    let reason = c("closing under an act");
-    // SAFETY: the profile is open; the string lives for the call.
-    phone.started(unsafe { amux_profile_dump(closing, reason.as_ptr()) });
+    // And a stop waits on it too, holding the fleet past its close.
+    let stop = c(&json!("Stop").to_string());
+    // SAFETY: the profile is open; the strings live for the call.
+    phone.started(unsafe { amux_profile_agent_act(closing, agent.as_ptr(), stop.as_ptr()) });
     settle(&phone, closing_fleet);
     // SAFETY: from `amux_profile_open`, not used again.
     unsafe { amux_profile_close(closing) };

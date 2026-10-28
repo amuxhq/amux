@@ -488,24 +488,55 @@ pub async fn dump(
     admin: &mut crate::pairing::Admin,
     references: &[String],
     reason: Option<String>,
+    send: bool,
 ) -> Result<()> {
     let mut agent_ids = Vec::new();
     for reference in references {
         agent_ids.push(resolve(client, reference).await?.agent_id);
     }
+    let reason = reason.unwrap_or_default();
     let response = admin
         .dump(DumpRequest {
             agent_ids,
-            reason: reason.unwrap_or_default(),
+            reason: reason.clone(),
             automatic: false,
             // The command line holds no session open.
             sessions: Vec::new(),
+            ..DumpRequest::default()
         })
         .await
         .map_err(crate::plain)?
         .into_inner();
-    println!("{}", response.report_path);
-    Ok(())
+    if !send {
+        println!("{}", response.report_path);
+        return Ok(());
+    }
+    let header = serde_json::json!({
+        "build": node::release::version(),
+        "note": reason,
+        "parts": {
+            "frame": {"absent": {"reason": "sent from the command line, which has no screen"}},
+            "trace": {"absent": {"reason": "sent from the command line, which has no screen"}},
+        },
+    });
+    let sent = admin
+        .submit_report(wire::SubmitReportRequest {
+            dump_path: response.report_path,
+            files: vec![wire::DumpFile {
+                name: "report.json".to_owned(),
+                contents: serde_json::to_vec_pretty(&header)?,
+            }],
+        })
+        .await
+        .map_err(crate::plain)?
+        .into_inner();
+    println!("{}", sent.report_path);
+    if sent.not_sent.is_empty() {
+        eprintln!("Sent as report {}.", sent.id);
+        Ok(())
+    } else {
+        anyhow::bail!("not sent: {}", sent.not_sent)
+    }
 }
 
 #[cfg(test)]

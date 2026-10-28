@@ -336,7 +336,7 @@ fn two_daemons_serving_is_a_violation() {
     run.core.step(Input::Tick { now_ms: 9_000 }, &mut out);
     assert!(
         matches!(dumps(&out).as_slice(), [DumpReason::Violation(violation)]
-            if violation.invariant == "at most one daemon is in the serving phase"),
+            if violation.invariant == crate::TWO_SERVING),
         "{out:?}"
     );
 }
@@ -349,7 +349,7 @@ fn no_binary_that_can_start_is_a_violation() {
     run.core.step(Input::Tick { now_ms: 9_999_999 }, &mut out);
     assert!(
         matches!(dumps(&out).as_slice(), [DumpReason::Violation(violation)]
-            if violation.invariant == "there is always an installed binary that can start"),
+            if violation.invariant == crate::NO_STARTABLE_BINARY),
         "{out:?}"
     );
 }

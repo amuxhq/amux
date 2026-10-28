@@ -96,17 +96,26 @@ struct Asks {
 impl Asks {
     /// Asks the connected daemon for a dump once it has the Hello, or keeps
     /// the ask until it does.
-    fn ask(&mut self, daemon: Option<&Daemon>, reason: String, invariant: String) {
+    /// `check` is `None` for a step over its budget.
+    fn ask(
+        &mut self,
+        daemon: Option<&Daemon>,
+        admitted: core_ring::Admitted,
+        check: Option<agent_core::Check>,
+    ) {
         let frame = CtlFrame {
             of: Some(ctl_frame::Of::DumpAsked(wire::DumpAsked {
-                reason,
-                invariant: invariant.clone(),
+                reason: admitted.reason,
+                invariant: check.map_or_else(String::new, |check| check.sentence.to_owned()),
+                check: check.map_or_else(String::new, |check| check.id.to_owned()),
+                held_back: u32::try_from(admitted.held_back).unwrap_or(u32::MAX),
             })),
         };
         match daemon {
             Some(daemon) if daemon.greeted && daemon.frames.send(frame.clone()).is_ok() => {}
             _ => {
-                self.waiting.insert(invariant, frame);
+                let kind = check.map_or_else(String::new, |check| check.id.to_owned());
+                self.waiting.insert(kind, frame);
             }
         }
     }
@@ -569,13 +578,10 @@ impl<I: Interpreter> Driver<I> {
                 }
                 Output::Dump { reason } => {
                     let now = now_ms(self.clock.as_ref());
-                    if let Some(said) = limited_dump_reason(&mut self.dumps, &reason, now) {
-                        eprintln!("amux agent: {said}");
-                        let invariant = match &reason {
-                            DumpReason::Violation(violation) => violation.invariant.to_owned(),
-                            DumpReason::OverBudget { .. } => String::new(),
-                        };
-                        self.asks.ask(self.daemon.as_ref(), said, invariant);
+                    if let Some(admitted) = limited_dump_reason(&mut self.dumps, &reason, now) {
+                        eprintln!("amux agent: {}", admitted.reason);
+                        self.asks
+                            .ask(self.daemon.as_ref(), admitted, reason.check());
                     }
                     Ok(())
                 }
@@ -622,10 +628,14 @@ fn write_failed(why: String) -> Input {
     Input::WriteFailed { why }
 }
 
-/// The reason to report for a dump the core asked for at `now_ms`, or
-/// `None` when the limit holds it back: a provider stuck in a loop meets
-/// the same broken invariant with every event.
-fn limited_dump_reason(limit: &mut DumpLimit, reason: &DumpReason, now_ms: u64) -> Option<String> {
+/// The dump the core asked for at `now_ms`, with how many like it were
+/// held back, or `None` when the limit holds it back: a provider stuck in
+/// a loop meets the same broken invariant with every event.
+fn limited_dump_reason(
+    limit: &mut DumpLimit,
+    reason: &DumpReason,
+    now_ms: u64,
+) -> Option<core_ring::Admitted> {
     limit.reason(AGENT_CORE_DUMP, reason, now_ms)
 }
 
@@ -688,6 +698,13 @@ mod tests {
         )
     }
 
+    fn admitted(reason: &str, held_back: u64) -> core_ring::Admitted {
+        core_ring::Admitted {
+            reason: reason.to_owned(),
+            held_back,
+        }
+    }
+
     fn asked(frame: CtlFrame) -> wire::DumpAsked {
         match frame.of {
             Some(ctl_frame::Of::DumpAsked(asked)) => asked,
@@ -702,15 +719,26 @@ mod tests {
     fn an_admitted_dump_is_asked_of_the_daemon_or_waits_for_its_hello() {
         let mut asks = Asks::default();
         let (connected, mut sent) = daemon();
-        asks.ask(Some(&connected), "the agent core: one".into(), "one".into());
+        const ONE: agent_core::Check = agent_core::EXIT_OUTSIDE_TURN_END;
+        const TWO: agent_core::Check = agent_core::TAKEN_STILL_PENDING;
+        asks.ask(
+            Some(&connected),
+            admitted("the agent core: one", 3),
+            Some(ONE),
+        );
         let first = asked(sent.try_recv().expect("asked at once"));
         assert_eq!(
-            (first.reason.as_str(), first.invariant.as_str()),
-            ("the agent core: one", "one")
+            (
+                first.reason.as_str(),
+                first.invariant.as_str(),
+                first.check.as_str(),
+                first.held_back
+            ),
+            ("the agent core: one", ONE.sentence, ONE.id, 3)
         );
 
-        asks.ask(None, "the agent core: two, older".into(), "two".into());
-        asks.ask(None, "the agent core: two".into(), "two".into());
+        asks.ask(None, admitted("the agent core: two, older", 0), Some(TWO));
+        asks.ask(None, admitted("the agent core: two", 0), Some(TWO));
         assert!(sent.try_recv().is_err(), "nothing goes with no daemon");
         // A daemon that has dialled in but not yet been sent the Hello
         // reads the Hello first.
@@ -718,21 +746,21 @@ mod tests {
         next.greeted = false;
         asks.ask(
             Some(&next),
-            "the agent core: a slow step".into(),
-            String::new(),
+            admitted("the agent core: a slow step", 0),
+            None,
         );
         assert!(sent.try_recv().is_err(), "nothing goes before the Hello");
         next.greeted = true;
         asks.hello_sent(&next);
         let mut waited: Vec<_> = std::iter::from_fn(|| sent.try_recv().ok().map(asked))
-            .map(|asked| (asked.invariant, asked.reason))
+            .map(|asked| (asked.check, asked.reason))
             .collect();
         waited.sort();
         assert_eq!(
             waited,
             [
                 (String::new(), "the agent core: a slow step".to_owned()),
-                ("two".to_owned(), "the agent core: two".to_owned()),
+                (TWO.id.to_owned(), "the agent core: two".to_owned()),
             ]
         );
         asks.hello_sent(&next);
@@ -742,19 +770,23 @@ mod tests {
     #[test]
     fn a_violation_the_agent_core_repeats_is_reported_once_per_interval() {
         let broke = DumpReason::Violation(agent_core::Violation {
-            invariant: "one open ask at most",
+            invariant: agent_core::EXIT_OUTSIDE_TURN_END,
             detail: "two asks open".into(),
         });
         let mut limit = DumpLimit::default();
-        let first = limited_dump_reason(&mut limit, &broke, 0).unwrap();
+        let first = limited_dump_reason(&mut limit, &broke, 0).unwrap().reason;
         assert!(first.starts_with(AGENT_CORE_DUMP), "{first}");
         for at in [1, DumpLimit::INTERVAL_MS - 1] {
             assert_eq!(limited_dump_reason(&mut limit, &broke, at), None);
         }
         let second = limited_dump_reason(&mut limit, &broke, DumpLimit::INTERVAL_MS).unwrap();
+        assert_eq!(second.held_back, 2);
         assert!(
-            second.ends_with("(2 more like it were not dumped since the last)"),
-            "{second}"
+            second
+                .reason
+                .ends_with("(2 more like it were not dumped since the last)"),
+            "{}",
+            second.reason
         );
     }
 }

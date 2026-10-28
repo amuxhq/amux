@@ -23,6 +23,7 @@ fn config(dir: &std::path::Path) -> StartConfig {
         relay_root: None,
         tail: 50,
         telemetry: true,
+        auto_reports: false,
     }
 }
 
@@ -101,7 +102,7 @@ async fn a_phone_dump_carries_the_runtimes_log_redacted() {
     let profile = only_profile(&embedded).await;
     let app = app(&embedded, profile).await;
 
-    let bundle = app.dump("from the phone").await.unwrap();
+    let bundle = app.dump("from the phone", false).await.unwrap();
     let carried = std::fs::read_to_string(bundle.join(node::DAEMON_LOG)).unwrap();
     assert!(carried.contains("a relay call failed"), "{carried}");
     assert!(!carried.contains(KEY), "{carried}");

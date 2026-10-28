@@ -3912,6 +3912,7 @@ dependencies = [
  "ui-view",
  "unicode-width 0.2.2",
  "wire",
+ "zstd",
 ]
 
 [[package]]
@@ -4831,10 +4832,12 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tui",
+ "ui-runtime",
  "ui-state",
  "unicode-width 0.2.2",
  "uuid",
  "wire",
+ "zstd",
 ]
 
 [[package]]

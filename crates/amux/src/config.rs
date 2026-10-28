@@ -219,6 +219,11 @@ fn note(key: &str) -> Option<&'static str> {
             "A running daemon stops sending at once; one that started with telemetry off \
              starts sending when it next starts.",
         ),
+        "auto_reports" => Some(
+            "A running daemon follows it from its next dump. Reports go to the account each \
+             profile is signed in to, and hold what agents were told and said, redacted of \
+             secrets.",
+        ),
         "supervisor" | "updates" | "root" | "front_door_socket" | "host_name" => {
             Some("amux uses it from its next start: `amux server stop`, then any amux command.")
         }

@@ -464,6 +464,6 @@ public final class StoreBundle {
     /// Writes a dump of this account's profile and answers its directory.
     public func dump(reason: String) async -> Result<URL, RuntimeFailure> {
         guard let profile else { return .failure(RuntimeFailure("nothing is running")) }
-        return await profile.dump(reason: reason).map { URL(fileURLWithPath: $0) }
+        return await profile.dump(reason: reason, forReport: false).map { URL(fileURLWithPath: $0) }
     }
 }

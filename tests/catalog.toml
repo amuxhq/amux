@@ -795,9 +795,9 @@ cargo = [{ package = "testnet", targets = ["ctl"], features = [] }]
 
 [[suite]]
 name = "many-daemon-protocol-spec"
-contract = "Production daemons enforce pairing, trust, discovery, routing, relay carriers, credential refresh, revocation and account isolation, reconcile the inventory, keep each replica one contiguous block, carry agent families and their deliveries across hosts, and count pairings and forwarded prompts once on the right host."
-paths = ["crates/testnet/tests/spec_analytics.rs", "crates/testnet/tests/spec_edge.rs", "crates/testnet/tests/spec_families.rs", "crates/testnet/tests/spec_inventory.rs", "crates/testnet/tests/spec_network.rs", "crates/testnet/tests/spec_replication.rs", "crates/testnet/tests/support"]
-recipe = "just test -- --test spec_analytics --test spec_edge --test spec_families --test spec_inventory --test spec_network --test spec_replication"
+contract = "Production daemons enforce pairing, trust, discovery, routing, relay carriers, credential refresh, revocation and account isolation, reconcile the inventory, keep each replica one contiguous block, carry agent families and their deliveries across hosts, and count pairings and forwarded prompts once on the right host, and send a person's report or a check's dump to the profile's account only when signed in and allowed."
+paths = ["crates/testnet/tests/spec_analytics.rs", "crates/testnet/tests/spec_edge.rs", "crates/testnet/tests/spec_families.rs", "crates/testnet/tests/spec_inventory.rs", "crates/testnet/tests/spec_network.rs", "crates/testnet/tests/spec_replication.rs", "crates/testnet/tests/spec_reports.rs", "crates/testnet/tests/support"]
+recipe = "just test -- --test spec_analytics --test spec_edge --test spec_families --test spec_inventory --test spec_network --test spec_replication --test spec_reports"
 modes = ["real"]
 boundary = "Many daemons"
 oracle = "Typed topology observations, protocol events, refusals, replica markers and state dumps at bounded deadlines."
@@ -808,7 +808,7 @@ capabilities = ["loopback network", "desktop"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [{ package = "testnet", targets = ["spec_analytics", "spec_edge", "spec_families", "spec_inventory", "spec_network", "spec_replication"], features = [] }]
+cargo = [{ package = "testnet", targets = ["spec_analytics", "spec_edge", "spec_families", "spec_inventory", "spec_network", "spec_replication", "spec_reports"], features = [] }]
 
 [[suite]]
 name = "claude-pty-live-compatibility"

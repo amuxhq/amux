@@ -17,7 +17,6 @@ public struct ScriptedCloudState: Codable, Sendable, Equatable {
     public var deletion: DeletionOutcome
     /// What the account service does with a signed purchase handed to it.
     public var purchase: PurchaseRecording
-    public var upload: UploadOutcome
     /// How long every answer takes. Zero is instant.
     public var latency: Duration
 
@@ -38,7 +37,6 @@ public struct ScriptedCloudState: Codable, Sendable, Equatable {
         relayPort: Int = 443,
         deletion: DeletionOutcome = .deleted,
         purchase: PurchaseRecording = .accepted,
-        upload: UploadOutcome = .accepted(id: "report-1"),
         latency: Duration = .zero
     ) {
         self.signIn = signIn
@@ -48,7 +46,6 @@ public struct ScriptedCloudState: Codable, Sendable, Equatable {
         self.relayPort = relayPort
         self.deletion = deletion
         self.purchase = purchase
-        self.upload = upload
         self.latency = latency
     }
 
@@ -91,12 +88,6 @@ public struct ScriptedCloudState: Codable, Sendable, Equatable {
         case refused(String)
         case offline
     }
-
-    public enum UploadOutcome: Codable, Sendable, Equatable {
-        case accepted(id: String)
-        case refused(String)
-        case offline
-    }
 }
 
 /// One call a screen made, in the order it made it.
@@ -110,7 +101,6 @@ public enum CloudCall: Sendable, Equatable {
     case entitlement(AccountId)
     case recordPurchase(AccountId)
     case requestDeletion(AccountId, confirmedEmail: String)
-    case uploadReport(AccountId, parts: [String])
 }
 
 /// The cloud, scripted. It answers exactly what the state says and records
@@ -120,27 +110,16 @@ public final class ScriptedCloudService: CloudService, @unchecked Sendable {
     private let lock = NSLock()
     private var state: ScriptedCloudState
     private var recorded: [CloudCall] = []
-    private var uploads: [ReportBundle] = []
 
     public init(state: ScriptedCloudState = ScriptedCloudState()) {
         self.state = state
     }
 
-    /// The moment a scripted receipt or lapse is stamped with, fixed so a
+    /// The moment a scripted lapse is stamped with, fixed so a
     /// capture of one reads the same every run.
     public static let now = Date(timeIntervalSince1970: 1_764_580_800)
 
     public var calls: [CloudCall] { lock.withLock { recorded } }
-
-    /// Every report bundle this was handed, in order, whether it then accepted
-    /// it or refused it.
-    ///
-    /// Kept whole rather than as the names of its parts, because what a driver
-    /// asks about a report afterwards is what it declared: which parts are
-    /// there, and the reason beside each one that is not. A refused upload is
-    /// here too — the retry has to be the same bundle, and only the bundles
-    /// themselves can say whether it was.
-    public var uploaded: [ReportBundle] { lock.withLock { uploads } }
 
     public var scripted: ScriptedCloudState {
         get { lock.withLock { state } }
@@ -148,10 +127,7 @@ public final class ScriptedCloudService: CloudService, @unchecked Sendable {
     }
 
     public func reset() {
-        lock.withLock {
-            recorded = []
-            uploads = []
-        }
+        lock.withLock { recorded = [] }
     }
 
     private func record(_ call: CloudCall) -> ScriptedCloudState {
@@ -242,23 +218,6 @@ public final class ScriptedCloudService: CloudService, @unchecked Sendable {
         await wait(state)
         return state.deletion
     }
-
-    public func uploadReport(
-        _ id: AccountId, bundle: ReportBundle
-    ) async throws(CloudError) -> ReportReceipt {
-        let state = lock.withLock {
-            recorded.append(.uploadReport(id, parts: bundle.parts.map(\.name)))
-            uploads.append(bundle)
-            return self.state
-        }
-        await wait(state)
-        switch state.upload {
-        case .accepted(let receipt):
-            return ReportReceipt(id: receipt, receivedAt: ScriptedCloudService.now)
-        case .refused(let reason): throw CloudError.refused(reason)
-        case .offline: throw CloudError.network("offline")
-        }
-    }
 }
 
 /// A sign-in presenter that answers with the callback the cloud would have
@@ -322,16 +281,6 @@ public struct CloudScript: Codable, Sendable, Equatable {
     /// Why the account service would not take the purchase, where it would
     /// not. Its own field so a driver changes one outcome at a time.
     public var purchaseReason = "amux.sh could not accept that purchase"
-    /// What becomes of a report handed over: `accepted`, `refused` or
-    /// `offline`.
-    public var upload = "accepted"
-    /// Why the report was turned down, where it was. Its own field rather than
-    /// `reason`, so a driver can leave a refused sign-in scripted and change
-    /// only what happens to a report.
-    public var uploadReason = "amux.sh could not take this report"
-    /// What an accepted report is filed under, which is what the screen shows
-    /// the person afterwards.
-    public var receipt = "report-1"
     /// Where a blocked deletion says the billing can be stopped.
     public var manageURL = "https://apps.apple.com/account/subscriptions"
     /// How long every answer takes, so a screen that is only on show while a
@@ -364,9 +313,6 @@ public struct CloudScript: Codable, Sendable, Equatable {
         recordPurchase = try said(.recordPurchase, recordPurchase)
         purchaseReason = try said(.purchaseReason, purchaseReason)
         manageURL = try said(.manageURL, manageURL)
-        upload = try said(.upload, upload)
-        uploadReason = try said(.uploadReason, uploadReason)
-        receipt = try said(.receipt, receipt)
         latencyMillis = try fields.decodeIfPresent(Int.self, forKey: .latencyMillis)
             ?? latencyMillis
     }
@@ -376,7 +322,7 @@ public struct CloudScript: Codable, Sendable, Equatable {
         ScriptedCloudState(
             signIn: outcome, entitlement: entitled, token: token,
             relayHost: relayHost, relayPort: relayPort, deletion: deleting,
-            purchase: recording, upload: uploading, latency: .milliseconds(latencyMillis))
+            purchase: recording, latency: .milliseconds(latencyMillis))
     }
 
     private var who: SignedInAccount {
@@ -417,14 +363,6 @@ public struct CloudScript: Codable, Sendable, Equatable {
         case "refused": .refused(purchaseReason)
         case "network": .offline
         default: .accepted
-        }
-    }
-
-    private var uploading: ScriptedCloudState.UploadOutcome {
-        switch upload {
-        case "refused": .refused(uploadReason)
-        case "offline": .offline
-        default: .accepted(id: receipt)
         }
     }
 

@@ -86,8 +86,7 @@ fn every_section_of_the_fixture_prints() {
 }
 
 /// What the committed bundle lacks: a daemon log, a client's part, an
-/// agent part's errors, another host's row and slice, and a facts line the
-/// redactor could not keep.
+/// agent part's errors, and a facts line the redactor could not keep.
 #[test]
 fn the_rest_of_a_bundle_prints_and_an_unreadable_fact_hides_nothing() {
     let dir = tempfile::tempdir().unwrap();
@@ -97,9 +96,6 @@ fn the_rest_of_a_bundle_prints_and_an_unreadable_fact_hides_nothing() {
     std::fs::create_dir_all(dir.path().join("client/fleet")).unwrap();
     std::fs::write(dir.path().join("client/fleet/state.txt"), "fleet open\n").unwrap();
     std::fs::write(agent.join("part/dump-errors"), "checkpoint 3: gone\n").unwrap();
-    std::fs::create_dir_all(agent.join("host")).unwrap();
-    std::fs::copy(agent.join("row.pb"), agent.join("host/row.pb")).unwrap();
-    std::fs::copy(agent.join("store.pb"), agent.join("host/store.pb")).unwrap();
     let facts = agent.join("part/facts/0000000000");
     let mut lines = std::fs::read_to_string(&facts).unwrap();
     lines = lines.replacen("{\"event\":\"git\"}", "{\"event\":\"unreadable\"}", 1);
@@ -108,8 +104,6 @@ fn the_rest_of_a_bundle_prints_and_an_unreadable_fact_hides_nothing() {
     let text = show::show(dir.path(), Some("worker")).expect("the bundle prints");
     for expected in [
         "-- part dump-errors (19 bytes) --\ncheckpoint 3: gone\n",
-        &format!("-- host row --\nagent_id {AGENT}\n"),
-        "-- host store (8 rows) --\norder=1 revision=6 ",
         "== other files (2) ==\n",
         "-- client/fleet/state.txt (11 bytes) --\nfleet open\n",
         "-- daemon.log (28000 bytes) --\ntext, not printed: ",

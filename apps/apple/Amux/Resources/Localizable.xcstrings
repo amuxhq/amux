@@ -1837,6 +1837,18 @@
         }
       }
     },
+    "amux is not running on this phone yet. Try again in a moment." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/Reporting.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "amux is not running on this phone yet. Try again in a moment."
+          }
+        }
+      }
+    },
     "An account lets this phone reach your hosts from anywhere." : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignIn.swift.",
       "extractionState" : "manual",
@@ -5901,6 +5913,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Send answers"
+          }
+        }
+      }
+    },
+    "Send Automatic Reports" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Accounts.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send Automatic Reports"
+          }
+        }
+      }
+    },
+    "Send Automatic Reports, When amux catches its own bug, send what it saw, chats included" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Accounts.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send Automatic Reports, When amux catches its own bug, send what it saw, chats included"
           }
         }
       }
@@ -10341,6 +10377,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Save"
+          }
+        }
+      }
+    },
+    "When amux catches its own bug, send what it saw, chats included" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Accounts.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When amux catches its own bug, send what it saw, chats included"
           }
         }
       }

@@ -100,6 +100,9 @@ pub struct NetOptions {
     /// What every host does with product analytics: nothing, unless a
     /// test hands a sink to record into.
     pub analytics: Option<node::Telemetry>,
+    /// Whether every host sends the dumps a check asks for to the account
+    /// its profile is signed in to.
+    pub auto_reports: bool,
     /// The size of each agent's facts ring, where it differs from the
     /// product's: a ring large enough not to rotate holds an agent's whole
     /// life for a dump.
@@ -357,6 +360,7 @@ pub struct Net {
     edge_hook: Option<EdgeHook>,
     launch_hook: Option<LaunchHook>,
     analytics: Option<node::Telemetry>,
+    auto_reports: bool,
     hosts: BTreeMap<String, Host>,
     links: BTreeMap<(String, String), Link>,
     agents: BTreeMap<String, NetAgent>,
@@ -431,6 +435,7 @@ impl Net {
             edge_hook: options.edge,
             launch_hook: options.launch,
             analytics: options.analytics,
+            auto_reports: options.auto_reports,
             hosts: BTreeMap::new(),
             links: BTreeMap::new(),
             agents: BTreeMap::new(),
@@ -1910,6 +1915,11 @@ impl Net {
             front_door: Some(host.info.front_door.clone()),
             edge,
             analytics: self.analytics.clone().unwrap_or(node::Telemetry::Off),
+            auto_reports: if self.auto_reports {
+                node::AutoReports::new(Arc::new(|| true))
+            } else {
+                node::AutoReports::off()
+            },
         };
         let daemon = node::start(options, None)
             .await

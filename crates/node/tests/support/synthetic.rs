@@ -372,9 +372,16 @@ impl SyntheticAgent {
     /// Asks the daemon for a dump as an agent's core does: for a broken
     /// invariant, or for a step over its budget when `invariant` is empty.
     pub async fn ask_for_dump(&self, reason: &str, invariant: &str) {
+        let check = if invariant.is_empty() {
+            ""
+        } else {
+            "agent.test"
+        };
         self.send(ctl_frame::Of::DumpAsked(wire::DumpAsked {
             reason: reason.to_owned(),
             invariant: invariant.to_owned(),
+            check: check.to_owned(),
+            held_back: 0,
         }))
         .await;
     }

@@ -1951,7 +1951,7 @@ fn report_a_problem(journey: &mut TerminalJourney) -> Proved {
     journey.keys(&pane, &["C-a", "b"])?;
     journey.wait_terms(
         &pane,
-        &["Report a problem", "What went wrong?", "enter save"],
+        &["Report a problem", "What went wrong?", "enter send"],
     )?;
     // A drag over the reply, as the terminal reports a mouse: press, move,
     // let go, in cells counted from one.
@@ -1978,7 +1978,9 @@ fn report_a_problem(journey: &mut TerminalJourney) -> Proved {
     journey.wait_terms(&pane, &["▎ The reply claims work it did not do."])?;
     journey.frame(&pane, "report")?;
     journey.keys(&pane, &["Enter"])?;
-    journey.wait_terms(&pane, &["report saved in"])?;
+    // The laptop is signed in to no account, so the report is kept and the
+    // client says why it did not go.
+    journey.wait_terms(&pane, &["report saved in", "not sent"])?;
     let reports = journey.ready.root.join("laptop/data/reports");
     let bundles: Vec<PathBuf> = std::fs::read_dir(&reports)
         .map_err(|error| format!("{}: {error}", reports.display()))?
@@ -2010,14 +2012,15 @@ fn report_a_problem(journey: &mut TerminalJourney) -> Proved {
     {
         return Err(format!("report.json declares {header}"));
     }
-    for part in ["frame_png", "trace", "log"] {
-        let reason = &header["parts"][part]["absent"]["reason"];
-        if reason.is_null() || *reason == "" {
-            return Err(format!(
-                "{part} is not declared absent with a reason: {}",
-                header["parts"]
-            ));
-        }
+    if header["schema_version"] != 3 || header["kind"] != "report" {
+        return Err(format!("report.json is not a schema 3 report: {header}"));
+    }
+    let reason = &header["parts"]["trace"]["absent"]["reason"];
+    if reason.is_null() || *reason == "" {
+        return Err(format!(
+            "the trace is not declared absent with a reason: {}",
+            header["parts"]
+        ));
     }
     let frame =
         std::fs::read_to_string(bundle.join("frame.txt")).map_err(|error| error.to_string())?;
@@ -2089,6 +2092,7 @@ fn report_a_problem(journey: &mut TerminalJourney) -> Proved {
         "the dump is whole: its manifest, the agents' rows and this client's parts".to_owned(),
         "the parts not captured are declared absent with their reasons, and only this user can read the report"
             .to_owned(),
+        "signed in to no account, the client said the report was kept and not sent".to_owned(),
         "the client exited 0".to_owned(),
     ])
 }

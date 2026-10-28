@@ -50,7 +50,6 @@ public struct CloudEndpoint: Sendable, Equatable {
     var purchases: URL { base.appending(path: "api/purchases") }
     var account: URL { base.appending(path: "api/account") }
     var stripePortal: URL { base.appending(path: "api/billing/stripe/portal") }
-    var reports: URL { base.appending(path: "api/reports") }
 }
 
 /// How a request actually leaves the phone.
@@ -321,52 +320,6 @@ public actor AmuxCloudService: CloudService {
         return url
     }
 
-    // MARK: - Reports
-
-    public func uploadReport(
-        _ id: AccountId, bundle: ReportBundle
-    ) async throws(CloudError) -> ReportReceipt {
-        let boundary = "amux.\(UUID().uuidString)"
-        var body = Data()
-        func part(_ name: String, filename: String?, type: String, bytes: Data) {
-            body.append(Data("--\(boundary)\r\n".utf8))
-            let disposition = filename.map { "; filename=\"\($0)\"" } ?? ""
-            body.append(Data(
-                "Content-Disposition: form-data; name=\"\(name)\"\(disposition)\r\n".utf8))
-            body.append(Data("Content-Type: \(type)\r\n\r\n".utf8))
-            body.append(bytes)
-            body.append(Data("\r\n".utf8))
-        }
-        // One section per file, each named after the file it carries. The
-        // account service reads the sections by those names and refuses a
-        // bundle whose files and whose declarations disagree, so a part that
-        // is absent is left out here rather than sent empty — `report.json`
-        // has already said why it is not coming.
-        for piece in bundle.parts {
-            guard let bytes = piece.data else { continue }
-            part(piece.name, filename: piece.name, type: contentType(of: piece.name), bytes: bytes)
-        }
-        body.append(Data("--\(boundary)--\r\n".utf8))
-        var request = URLRequest(url: endpoint.reports)
-        request.httpMethod = "POST"
-        request.setValue(
-            "multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.httpBody = body
-        let receipt: Receipt = try await ask(request, as: Receipt.self, for: id)
-        return ReportReceipt(id: receipt.id, receivedAt: receipt.receivedAt ?? now())
-    }
-
-    /// What each part is, said plainly, so a bundle read back by a person is
-    /// readable rather than five downloads.
-    private func contentType(of name: String) -> String {
-        switch name {
-        case "report.json": "application/json"
-        case "frame.png": "image/png"
-        case "trace.jsonl": "application/x-ndjson"
-        default: "application/octet-stream"
-        }
-    }
-
     // MARK: - Tokens
 
     /// The access token to knock with, refreshed when it is about to expire.
@@ -540,11 +493,6 @@ private struct Blocked: Decodable {
 
 private struct SessionURL: Decodable {
     let url: String
-}
-
-private struct Receipt: Decodable {
-    let id: String
-    let receivedAt: Date?
 }
 
 private struct GraphQLAnswer<Payload: Decodable>: Decodable {

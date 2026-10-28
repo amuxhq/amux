@@ -133,6 +133,19 @@ pub enum Control {
     /// A gate in front of the relay's QUIC carrier, for a client outside
     /// the net to dial in the relay's place; answers its address.
     RelayGate {},
+    /// The account service turns reports down with `reason` from now on;
+    /// none takes them again.
+    RefuseReports {
+        #[serde(default)]
+        reason: Option<String>,
+    },
+    /// Every report handed to the account service: whose, whether it was
+    /// refused, its `report.json`, its files and the files packed in its
+    /// dump. Each one's files are written under `dir/<n>/` when given.
+    Reports {
+        #[serde(default)]
+        dir: Option<PathBuf>,
+    },
     /// What that gate does to every datagram from now on.
     RelayFaults {
         #[serde(default)]
@@ -298,6 +311,8 @@ pub const CAPABILITIES: &[(&str, &str)] = &[
     ("LanFaults", "Net::set_lan_faults"),
     ("RelayGate", "Net::relay_gate"),
     ("RelayFaults", "Net::set_relay_faults"),
+    ("RefuseReports", "Relay::refuse_reports"),
+    ("Reports", "Relay::reports"),
     ("NetFaults", "Net::set_net_faults"),
     ("BlockUdp", "Net::block_udp"),
     ("SetRouter", "Net::set_router"),
@@ -361,6 +376,8 @@ impl Control {
             Self::LanFaults { .. } => "LanFaults",
             Self::RelayGate {} => "RelayGate",
             Self::RelayFaults { .. } => "RelayFaults",
+            Self::RefuseReports { .. } => "RefuseReports",
+            Self::Reports { .. } => "Reports",
             Self::NetFaults { .. } => "NetFaults",
             Self::BlockUdp { .. } => "BlockUdp",
             Self::SetRouter { .. } => "SetRouter",
@@ -860,6 +877,34 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
             ),
         )?),
         Control::RelayGate {} => json!({ "addr": net.relay_gate().await?.to_string() }),
+        Control::RefuseReports { reason } => {
+            net.relay()?.refuse_reports(reason);
+            json!({})
+        }
+        Control::Reports { dir } => {
+            let reports = net.relay()?.reports();
+            let mut listed = Vec::new();
+            for (n, report) in reports.iter().enumerate() {
+                if let Some(dir) = &dir {
+                    let dir = dir.join((n + 1).to_string());
+                    std::fs::create_dir_all(&dir)?;
+                    for (name, bytes) in &report.files {
+                        std::fs::write(dir.join(name), bytes)?;
+                    }
+                }
+                let header = report
+                    .file("report.json")
+                    .map(|bytes| serde_json::from_slice::<Value>(bytes).unwrap_or_default());
+                listed.push(json!({
+                    "account": report.account,
+                    "refused": report.refused,
+                    "files": report.files.iter().map(|(name, _)| name).collect::<Vec<_>>(),
+                    "report_json": header,
+                    "dump_files": report.file(node::DUMP_ARCHIVE).map(packed_files),
+                }));
+            }
+            json!({ "reports": listed })
+        }
         Control::RelayFaults {
             delay_ms,
             loss_percent,
@@ -1191,6 +1236,16 @@ fn attachment(attachment: &wire::Attachment) -> Value {
         }
         None => json!({ "kind": "none" }),
     }
+}
+
+/// The names of the files a report's packed dump holds.
+fn packed_files(archive: &[u8]) -> Vec<String> {
+    use prost::Message as _;
+    zstd::stream::decode_all(archive)
+        .ok()
+        .and_then(|packed| wire::DumpPart::decode(packed.as_slice()).ok())
+        .map(|part| part.files.into_iter().map(|file| file.name).collect())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

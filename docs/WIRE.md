@@ -58,10 +58,9 @@ the local runtime, which forwards it one hop to the owning host. The peer
 services answer only for their host's own agents and never passes a call on:
 its inventory stream carries that host's entry and agents, and every call
 that names an agent it only replicates (reads, input, lifecycle, blobs and
-diffs) is `NOT_FOUND`. Three of their messages differ from the client's: `SubscribeSession` takes
-a `PeerSubscribeSessionRequest`, which may carry a cursor; `SendMessage` takes the
-`Envelope` the sending daemon stamped; and `Dump` answers with the host's
-`DumpPart` itself.
+diffs) is `NOT_FOUND`. Two of their messages differ from the client's: `SubscribeSession` takes
+a `PeerSubscribeSessionRequest`, which may carry a cursor, and `SendMessage` takes the
+`Envelope` the sending daemon stamped.
 
 ### Errors
 
@@ -119,7 +118,7 @@ meets often:
 | `UpdateDraft(UpdateDraftRequest)` | `Draft` | Keeps the unsent draft of an agent's composer on this machine, for its clients; an empty draft forgets it. Never synced to other machines |
 | `GetDraft(GetDraftRequest)` | `Draft` | The draft this machine keeps for an agent |
 
-A debug bundle is `ProfileAdminService.Dump(DumpRequest)`, answered with where it was written; it carries the asking client's open chats for the daemon to redact and write in (see [debugging](DEBUGGING.md)). It is served only on the profile's socket, never on an agent's.
+A debug bundle is `ProfileAdminService.Dump(DumpRequest)`, answered with where it was written; it carries the asking client's open chats for the daemon to redact and write in, and the `scope` of what it holds (see [debugging](DEBUGGING.md)). `SubmitReport(SubmitReportRequest)` writes a person's report around such a bundle and sends it to the profile's account. Both are served only on the profile's socket, never on an agent's.
 
 There are no unary list calls: a listing is `SubscribeInventory` read to
 `CaughtUp`. There is no status call: what an agent is working on is a field of

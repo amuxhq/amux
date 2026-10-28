@@ -67,6 +67,8 @@ public enum ShellAction: Equatable, Sendable {
     case wear(Appearance?)
     /// Turn sending amux.sh usage events on or off.
     case shareUsage(Bool)
+    /// Turn sending the dumps amux's own checks take on or off.
+    case autoReports(Bool)
     /// Ask iOS to show a notification when an agent needs you.
     case turnOnNotifications
     /// Put the home's offer of notifications away for good.
@@ -134,6 +136,8 @@ public struct Shell: View {
     private let appearance: Appearance?
     /// Whether this phone sends amux.sh usage events.
     private let shareUsage: Bool
+    /// Whether the dumps amux's own checks take are sent to the account.
+    private let autoReports: Bool
     /// Notifications as iOS has them, or none while this build offers none.
     private let notifications: NotificationsSetting?
     /// Whether the home offers notifications above its list.
@@ -154,6 +158,7 @@ public struct Shell: View {
         removal: RemovalStore = RemovalStore(),
         appearance: Appearance? = nil,
         shareUsage: Bool = true,
+        autoReports: Bool = false,
         notifications: NotificationsSetting? = nil,
         offerNotifications: Bool = false,
         report: @escaping @MainActor () -> Void = {},
@@ -162,6 +167,7 @@ public struct Shell: View {
         Design.app.dressNavigationBars()
         self.appearance = appearance
         self.shareUsage = shareUsage
+        self.autoReports = autoReports
         self.notifications = notifications
         self.offerNotifications = offerNotifications
         self.deletion = deletion
@@ -256,7 +262,8 @@ public struct Shell: View {
             YouTabRoot(
                 router: self.router, accounts: accounts, stores: stores,
                 deletion: deletion, removal: removal, appearance: appearance,
-                shareUsage: shareUsage, notifications: notifications, report: report,
+                shareUsage: shareUsage, autoReports: autoReports,
+                notifications: notifications, report: report,
                 actions: actions)
                 .navigationDestination(for: Route.self) { page($0) }
         }
@@ -923,6 +930,7 @@ private struct YouTabRoot: View {
     let removal: RemovalStore
     let appearance: Appearance?
     let shareUsage: Bool
+    let autoReports: Bool
     let notifications: NotificationsSetting?
     /// Freezes the screen behind this page and opens the report on it.
     let report: @MainActor () -> Void
@@ -966,7 +974,7 @@ private struct YouTabRoot: View {
     private var you: some View {
         YouScreen(
             accounts: accounts, appearance: appearance, shareUsage: shareUsage,
-            notifications: notifications,
+            autoReports: autoReports, notifications: notifications,
             // This phone's own name and key, read off the machine store:
             // absent until a connection has said what this device's identity
             // is, rather than guessed at.
@@ -984,6 +992,7 @@ private struct YouTabRoot: View {
             case .subscription: actions(.subscribe)
             case .appearance(let wanted): actions(.wear(wanted))
             case .shareUsage(let on): actions(.shareUsage(on))
+            case .autoReports(let on): actions(.autoReports(on))
             case .notifications: actions(.notificationSettings)
             case .delete(let id): actions(.deleteAccount(id))
             // Reaching a person happens on the web, where the people are.

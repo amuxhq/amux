@@ -214,7 +214,8 @@ public struct AgentsHome: View {
         // Nothing else reaches this screen: the rest of an account's actions
         // live under You, where there is room to state what they do.
         case .signOut, .remove, .confirmRemoval, .cancelRemoval, .delete, .subscription,
-             .appearance, .shareUsage, .notifications, .support, .report, .exportDump:
+             .appearance, .shareUsage, .autoReports, .notifications, .support, .report,
+             .exportDump:
             break
         }
     }

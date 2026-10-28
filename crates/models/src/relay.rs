@@ -728,15 +728,23 @@ impl Machine for RelayModel {
 
     fn properties(&self) -> Vec<Property<Self>> {
         vec![
-            Property::always(FORWARDS_ONLY_PAID_PAIRS, |model: &RelayModel, s: &State| {
-                s.table.iter().all(|pair| s.unfit(model, *pair).is_none())
+            Property::always(
+                FORWARDS_ONLY_PAID_PAIRS.sentence,
+                |model: &RelayModel, s: &State| {
+                    s.table.iter().all(|pair| s.unfit(model, *pair).is_none())
+                },
+            ),
+            Property::always(NOTHING_BEFORE_ADMISSION.sentence, |_, s: &State| {
+                s.early.is_none()
             }),
-            Property::always(NOTHING_BEFORE_ADMISSION, |_, s: &State| s.early.is_none()),
-            Property::eventually(LAPSE_TELLS_BOTH, |model: &RelayModel, s: &State| {
-                s.rested
-                    && s.owed.is_empty()
-                    && s.table.iter().all(|pair| s.unfit(model, *pair).is_none())
-            }),
+            Property::eventually(
+                LAPSE_TELLS_BOTH.sentence,
+                |model: &RelayModel, s: &State| {
+                    s.rested
+                        && s.owed.is_empty()
+                        && s.table.iter().all(|pair| s.unfit(model, *pair).is_none())
+                },
+            ),
             Property::always(
                 "a link is only told of other hosts on its own account, and only once admitted",
                 |_, s: &State| s.foreign.is_none(),
@@ -744,7 +752,9 @@ impl Machine for RelayModel {
             Property::always("the relay core never asks for a dump", |_, s: &State| {
                 s.dumped.is_none()
             }),
-            Property::always(ASKS_ONLY_FREE_LINKS, |_, s: &State| s.misasked.is_none()),
+            Property::always(ASKS_ONLY_FREE_LINKS.sentence, |_, s: &State| {
+                s.misasked.is_none()
+            }),
             Property::always(
                 "a link presenting a paid plan asks every free link of its account for a fresh credential",
                 |_, s: &State| s.unasked.is_none(),

@@ -152,7 +152,6 @@ peer_rpc! {
         => PeerReply::Catalogue(catalogue) => catalogue;
     wire::ListRepositoriesRequest => ListRepositories, wire::ListRepositoriesResponse
         => PeerReply::Repositories(repositories) => repositories;
-    wire::DumpRequest => Dump, wire::DumpPart => PeerReply::Dump(part) => part;
     wire::ListItemsRequest => ListItems, wire::ListItemsResponse => PeerReply::Fetched(page) => page;
     wire::GetItemRequest => GetItem, wire::Item => PeerReply::Item(item) => item;
 }
@@ -438,7 +437,6 @@ async fn dispatch(
             client.agents.list_repositories(request).await,
             PeerReply::Repositories,
         ),
-        PeerRequest::Dump(request) => unary(client.agents.dump(request).await, PeerReply::Dump),
         // Streams are opened by the replica's source, not forwarded.
         PeerRequest::SubscribeSession(_) | PeerRequest::SubscribeInventory => Err(
             Status::unimplemented("a stream is not made as a forwarded call"),

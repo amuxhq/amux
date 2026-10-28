@@ -36,6 +36,10 @@ pub struct PathDriver {
     /// Woken when a machine asks for an earlier tick.
     wake: Arc<Notify>,
     epoch: Instant,
+    /// The checks the machines broke, counted once per kind in each
+    /// interval: a machine meets the same broken check with every event.
+    dumps: Mutex<core_ring::DumpLimit>,
+    analytics: analytics::Analytics,
 }
 
 struct State {
@@ -76,6 +80,7 @@ impl PathDriver {
     pub(crate) fn start(
         socket: Arc<LinkSocket>,
         core: Option<CoreLinks>,
+        analytics: analytics::Analytics,
     ) -> (Arc<Self>, JoinHandle<()>) {
         let events = socket.path_events();
         let answers = socket.probe_answers();
@@ -91,6 +96,8 @@ impl PathDriver {
             }),
             wake: Arc::new(Notify::new()),
             epoch: Instant::now(),
+            dumps: Mutex::new(core_ring::DumpLimit::default()),
+            analytics,
         });
         let task = tokio::spawn(run(
             Arc::downgrade(&driver),
@@ -459,6 +466,21 @@ impl PathDriver {
                     }
                     Output::Dump { reason } => {
                         tracing::error!(%peer, %reason, "a path machine failed a check");
+                        let now_ms = self.epoch.elapsed().as_millis() as u64;
+                        let check = reason.check().map_or("", |check| check.id);
+                        let admitted =
+                            self.dumps
+                                .lock()
+                                .unwrap()
+                                .reason("a path machine: ", &reason, now_ms);
+                        if let Some(admitted) = admitted {
+                            crate::reports::check_failed(
+                                &self.analytics,
+                                crate::reports::Core::Path,
+                                check,
+                                admitted.held_back,
+                            );
+                        }
                     }
                 }
             }
@@ -796,8 +818,10 @@ mod tests {
         assert!(desk_socket.name(server.remote_address(), laptop));
 
         let relay = forwarder([(laptop, laptop_addr), (desk, lan)]).await;
-        let (laptop_paths, laptop_task) = PathDriver::start(laptop_socket.clone(), None);
-        let (desk_paths, desk_task) = PathDriver::start(desk_socket.clone(), None);
+        let (laptop_paths, laptop_task) =
+            PathDriver::start(laptop_socket.clone(), None, analytics::Analytics::off());
+        let (desk_paths, desk_task) =
+            PathDriver::start(desk_socket.clone(), None, analytics::Analytics::off());
         for socket in [&laptop_socket, &desk_socket]
             .into_iter()
             .filter(|_| relayed)

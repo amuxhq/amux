@@ -87,6 +87,7 @@ private struct ComposedShell: View {
                 removal: composition.removal,
                 appearance: composition.appearance,
                 shareUsage: composition.shareUsage,
+                autoReports: composition.autoReports,
                 notifications: composition.notifications,
                 offerNotifications: composition.offerNotifications,
                 report: { composition.beginReport() },

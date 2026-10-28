@@ -49,7 +49,7 @@ the client `cli` with the device flow and the same scopes.
 | `/api/purchases` | POST | app | A purchase the App Store signed, below. |
 | `/api/account` | DELETE | app | Deletes the account. `409` while a subscription is still set to renew. |
 | `/api/billing/stripe/portal` | POST | app | A one-time link to stop a web subscription, asked for only when a deletion is blocked, because the link expires. |
-| `/api/reports` | POST | app | A report bundle, below. |
+| `/api/reports` | POST | profile runtime | A report bundle, below. |
 | `/api/events` | POST | profile runtime | Usage events, batched per host, with the account's bearer when the profile is signed in to this service and none otherwise. `202` on success; the runtime retries `408`, `429` and `5xx` twice and drops anything else. The body and every event are in [what amux sends](ANALYTICS.md). |
 | `/.well-known/openid-configuration/jwks` | GET | relay | The keys relay credentials are signed with. |
 
@@ -246,21 +246,31 @@ page on amux.sh when no link comes back.
 
 ## Uploading a report
 
-Reporting is in every build. `POST /api/reports` takes `multipart/form-data`,
-one section per file, each section's `name` and `filename` being the file it
-carries: `report.json`, `frame.png`, `trace.jsonl`, `log.txt`, or a file of
-the profile's dump under `dump/`.
+Reporting is in every build. A profile's runtime (the daemon, or the app's
+embedded runtime) uploads every report: a person's from the terminal or the
+phone, `amux dump --send`, and a check's dump when automatic reports are on
+(see [sending reports](DEBUGGING.md#sending-reports)). `POST /api/reports`
+takes `multipart/form-data`, one section per file, each section's `name` and
+`filename` being the file it carries: `report.json`, the frame (`frame.png`,
+or `frame.txt` and `frame.json`), `trace.jsonl`, and `dump.pb.zst`, the
+profile's dump packed as one `wire.DumpPart` and compressed with zstd.
 
-`report.json` is required and uses `schema_version: 2`. Its `parts` declares
-the frame, trace, dump and log as present or absent with a reason. Present
-parts are sent as their sections; absent ones are left out, with their reasons
-in `report.json`. The declaration and the uploaded files must agree, or the
-service refuses the bundle.
+`report.json` is required and uses `schema_version: 3`. Its `kind` is
+`report` for one a person sent and `automatic` for a check's dump, which
+names the check's id in `check` (two or more dot-separated lowercase words)
+and carries no frame. Its `parts` declares the frame, trace and dump as
+present or absent with a reason. Present parts are sent as their sections;
+absent ones are left out, with their reasons in `report.json`. The
+declaration and the uploaded files must agree, or the service refuses the
+bundle. The service keeps each report's kind, check and build beside it, so
+reports group by check and build.
 
-A successful upload returns a JSON receipt; the app reads its `id` and, when
-present, `receivedAt`. Any refusal (`401`, `413` for a bundle over the size
-limit, `422` for a `report.json` that fails validation) keeps the report, with
-the same bytes and stamp, for Retry.
+A successful upload returns `201` with a JSON receipt, `id` and
+`received_at`. The runtime retries `408`, `429`, `5xx` and an unanswered
+request twice; any other refusal (`401`, `413` for a bundle over the 25 MiB
+limit, `422` for a `report.json` that fails validation, with its `reason`)
+leaves the report in `reports/` and is said to the client in the service's
+words.
 
 ## Push notifications
 

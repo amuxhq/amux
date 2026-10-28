@@ -32,6 +32,9 @@ use crate::trace::{DriverEvent, DriverTrace, Ring, TraceEvent};
 
 /// Prefixes the reason of a dump a chat's transcript asked for.
 pub const TRANSCRIPT_DUMP: &str = "the client's transcript: ";
+/// The check a transcript that fails its own check broke, as dumps and
+/// usage events name it.
+pub const TRANSCRIPT_CHECK: &str = "transcript.window";
 use crate::{Backoff, inputs};
 
 /// What became of a send.
@@ -299,6 +302,8 @@ impl Inner {
             reason: format!("{TRANSCRIPT_DUMP}{why}"),
             automatic: true,
             sessions: vec![cut.history(&self.agent_id).encode_to_vec()],
+            scope: wire::DumpScope::Transcript.into(),
+            check: TRANSCRIPT_CHECK.to_owned(),
         };
         let inner = self.clone();
         tokio::spawn(async move {

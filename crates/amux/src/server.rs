@@ -102,6 +102,7 @@ pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>
             front_door: Some(config.front_door_socket.clone()),
             edge: edge_options(config),
             analytics: telemetry(config),
+            auto_reports: auto_reports(config),
         };
         let pipe = pipe
             .map(node::InheritedPipe::into_pipe)
@@ -164,6 +165,19 @@ fn telemetry(config: &InstallationConfig) -> node::Telemetry {
         },
         gate,
     }
+}
+
+/// Whether the dumps a check asks for are sent on: read again before every
+/// one, so `amux config set auto_reports` reaches a running daemon. A file
+/// that no longer reads sends nothing.
+fn auto_reports(config: &InstallationConfig) -> node::AutoReports {
+    let path = config
+        .path
+        .clone()
+        .unwrap_or_else(InstallationConfig::default_path);
+    node::AutoReports::new(Arc::new(move || {
+        InstallationConfig::from_file(&path).is_ok_and(|config| config.auto_reports)
+    }))
 }
 
 /// What each profile serves on the network: a LAN listener, discovery in

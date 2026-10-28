@@ -7,13 +7,14 @@ you.appearance.light | Light | not chosen | 205,197,51,46
 you.appearance.dark | Dark | not chosen | 256,197,49,46
 you.appearance.system | System | chosen | 305,197,65,46
 you.shareUsage |  | on | 16,245,370,55
-you.notifications | Notifications | Off | 16,300,370,46
+you.autoReports |  | off | 16,300,370,71
+you.notifications | Notifications | Off | 16,372,370,46
 you.name | <volatile>
 you.fingerprint | <volatile>
-you.support | Contact Support |  | 16,516,370,46
-you.report | Report a Problem |  | 16,562,370,46
-you.dump | Export Diagnostics |  | 16,609,370,46
-you.help.caption |  |  | 16,662,310,32
+you.support | Contact Support |  | 16,587,370,46
+you.report | Report a Problem |  | 16,634,370,46
+you.dump | Export Diagnostics |  | 16,680,370,46
+you.help.caption |  |  | 16,733,310,32
 you.close | Close |  | 326,4,56,36
 sign-in |  | ready | 0,132,402,708
 sign-in.title |  | Sign in | 16,140,80,32

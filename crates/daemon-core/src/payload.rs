@@ -327,7 +327,6 @@ pub enum PeerRequest {
     GetDiff(#[serde(with = "codec::message")] wire::GetDiffRequest),
     GetCatalogue(#[serde(with = "codec::message")] wire::GetCatalogueRequest),
     ListRepositories(#[serde(with = "codec::message")] wire::ListRepositoriesRequest),
-    Dump(#[serde(with = "codec::message")] wire::DumpRequest),
 }
 
 /// A peer's whole reply to one of its unary calls.
@@ -346,7 +345,6 @@ pub enum PeerReply {
     Diff(#[serde(with = "codec::message")] wire::Diff),
     Catalogue(#[serde(with = "codec::message")] wire::GetCatalogueResponse),
     Repositories(#[serde(with = "codec::message")] wire::ListRepositoriesResponse),
-    Dump(#[serde(with = "codec::message")] wire::DumpPart),
 }
 
 /// How a call this host made of a peer came back: its whole reply, one

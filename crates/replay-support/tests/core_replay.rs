@@ -226,7 +226,8 @@ fn a_dump_the_core_asked_for_replays_to_its_failing_step_and_names_the_invariant
         serde_json::from_slice(&std::fs::read(dir.join("manifest.json")).unwrap()).unwrap();
     let reason = manifest["reason"].as_str().unwrap();
     assert!(
-        reason.starts_with("the daemon core: ") && reason.contains(daemon_core::GENERATION_FELL),
+        reason.starts_with("the daemon core: ")
+            && reason.contains(daemon_core::GENERATION_FELL.sentence),
         "{reason}"
     );
     assert_eq!(manifest["automatic"], true);
@@ -253,7 +254,7 @@ fn a_dump_the_core_asked_for_replays_to_its_failing_step_and_names_the_invariant
         "{input:?}"
     );
     assert_eq!(failing.step, 4, "{failing}");
-    assert_eq!(failing.property, daemon_core::GENERATION_FELL);
+    assert_eq!(failing.property, daemon_core::GENERATION_FELL.sentence);
     assert!(
         failing.detail.contains("generation 1 after one under 2"),
         "{failing}"
@@ -285,7 +286,10 @@ fn dump_replay_exits_non_zero_naming_the_step_and_the_property() {
         .find(|line| line.starts_with("daemon core"))
         .expect("a line for the core");
     assert!(core.contains("FAILS") && core.contains("step 4"), "{core}");
-    assert!(core.contains(daemon_core::GENERATION_FELL), "{core}");
+    assert!(
+        core.contains(daemon_core::GENERATION_FELL.sentence),
+        "{core}"
+    );
 }
 
 #[test]

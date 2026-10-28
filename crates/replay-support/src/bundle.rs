@@ -14,17 +14,23 @@
 //! its `checkpoint`, the `inputs` since and the `store.sqlite` as of that
 //! checkpoint; and each session the asking client had open, under
 //! `client/sessions/<id>/`: its `checkpoint` and the `events` since, which
-//! the manifest names.
+//! the manifest names. Which of these a bundle carries is its scope's, as
+//! its manifest says; a part it does not carry is absent from the replay.
+//!
+//! A bundle opens from its directory, from a person's report holding it,
+//! or from the `dump.pb.zst` a report was uploaded with.
 
 use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use interpret::Interpreter;
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
 use interpret::ring::Entry;
+use prost::Message as _;
 use ui_state::{Msg, SessionState};
 use ui_view::{ChatOptions, Row};
 use wire::dump::{ClientSession, ClientSessionEvents, ClientTraced};
@@ -74,7 +80,9 @@ pub struct AgentDump {
     /// The inventory row.
     pub row: Agent,
     /// The store slice: the snapshot and the newest rows, oldest first.
-    pub store: Step,
+    /// None when the dump's scope carries no slice of this agent: the
+    /// core's dump has only its row, for the journal the core reads.
+    pub store: Option<Step>,
     /// Every whole frame of the journal segments carried, in order.
     pub journal: Vec<Step>,
     /// The facts ring's segments, oldest first; empty for an agent that had
@@ -111,7 +119,11 @@ pub struct ClientHistory {
 
 #[derive(Clone, Debug)]
 pub struct Bundle {
+    /// Where the bundle's files are: the directory named, the `dump/` of a
+    /// person's report, or where an uploaded archive was unpacked.
     pub dir: PathBuf,
+    /// An unpacked archive's directory, removed with the last clone.
+    _unpacked: Option<Arc<tempfile::TempDir>>,
     pub agents: Vec<AgentDump>,
     /// None for a bundle taken without the core's part: from a peer, or
     /// when the core could not be had, as its manifest says.
@@ -181,8 +193,61 @@ fn journal_frames(path: &Path) -> Result<Vec<Step>, BundleError> {
     Ok(frames)
 }
 
+/// Where a bundle's files are, given what was named: a dump's directory
+/// as written, a person's report (its `dump/`, or the `dump.pb.zst` it was
+/// sent with), or a `dump.pb.zst` downloaded on its own, unpacked into a
+/// directory that lasts as long as the returned guard.
+pub fn locate(named: &Path) -> Result<(PathBuf, Option<Arc<tempfile::TempDir>>), BundleError> {
+    let archive = if named.is_file() {
+        named.to_owned()
+    } else if named.join(DUMP_DIR).is_dir() {
+        return Ok((named.join(DUMP_DIR), None));
+    } else if named.join(ARCHIVE).is_file() {
+        named.join(ARCHIVE)
+    } else {
+        return Ok((named.to_owned(), None));
+    };
+    let unreadable = |error: String| BundleError::Decode {
+        path: archive.clone(),
+        what: "a packed dump",
+        error,
+    };
+    let packed = zstd::stream::decode_all(read(&archive)?.as_slice())
+        .map_err(|error| unreadable(error.to_string()))?;
+    let part =
+        wire::DumpPart::decode(packed.as_slice()).map_err(|error| unreadable(error.to_string()))?;
+    let unpacked = tempfile::tempdir().map_err(|error| BundleError::Read {
+        path: archive.clone(),
+        error,
+    })?;
+    for file in part.files {
+        let relative = Path::new(&file.name);
+        if file.name.is_empty()
+            || !relative
+                .components()
+                .all(|component| matches!(component, std::path::Component::Normal(_)))
+        {
+            return Err(unreadable(format!("a file named {:?}", file.name)));
+        }
+        let path = unpacked.path().join(relative);
+        let written = path
+            .parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|()| std::fs::write(&path, &file.contents));
+        written.map_err(|error| BundleError::Read { path, error })?;
+    }
+    Ok((unpacked.path().to_owned(), Some(Arc::new(unpacked))))
+}
+
+/// A person's report keeps its dump here, and sends it packed as this.
+const DUMP_DIR: &str = "dump";
+const ARCHIVE: &str = "dump.pb.zst";
+
 impl Bundle {
-    pub fn open(dir: &Path) -> Result<Bundle, BundleError> {
+    /// The bundle `named` holds; see [`locate`].
+    pub fn open(named: &Path) -> Result<Bundle, BundleError> {
+        let (dir, unpacked) = locate(named)?;
+        let dir = dir.as_path();
         let agents_dir = dir.join("agents");
         let mut ids: Vec<String> = std::fs::read_dir(&agents_dir)
             .map_err(|error| BundleError::Read {
@@ -222,9 +287,14 @@ impl Bundle {
                     entries: core_ring::inputs(&read(&path)?),
                 });
             }
+            let store = at.join("store.pb");
             agents.push(AgentDump {
                 row: decode(&at.join("row.pb"), "wire.Agent")?,
-                store: decode(&at.join("store.pb"), "wire.Step")?,
+                store: if store.is_file() {
+                    Some(decode(&store, "wire.Step")?)
+                } else {
+                    None
+                },
                 journal,
                 facts,
                 id,
@@ -242,6 +312,7 @@ impl Bundle {
         };
         Ok(Bundle {
             dir: dir.to_owned(),
+            _unpacked: unpacked,
             agents,
             core,
             clients: clients(dir)?,
@@ -351,11 +422,14 @@ impl AgentDump {
     pub fn opening(&self) -> Vec<session_event::Of> {
         let mut events = Vec::new();
         let mut revision = 0;
-        if let Some(snapshot) = &self.store.snapshot {
+        let Some(store) = &self.store else {
+            return Vec::new();
+        };
+        if let Some(snapshot) = &store.snapshot {
             revision = snapshot.revision;
             events.push(session_event::Of::Snapshot(snapshot.clone()));
         }
-        for item in &self.store.items {
+        for item in &store.items {
             revision = revision.max(item.revision);
             events.push(session_event::Of::Item(item.clone()));
         }

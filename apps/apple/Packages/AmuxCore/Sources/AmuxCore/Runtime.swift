@@ -219,6 +219,12 @@ public final class Runtime: @unchecked Sendable {
         call(()) { amux_runtime_set_telemetry($0, on) }
     }
 
+    /// Whether a dump one of amux's checks takes is sent to the profile's
+    /// account on its own, as the person set it.
+    public func setAutoReports(_ on: Bool) {
+        call(()) { amux_runtime_set_auto_reports($0, on) }
+    }
+
     /// Records what only the app sees, on the profile it concerns, or on
     /// every profile when nil.
     public func record(_ event: UsageEvent, profile: String?) {
@@ -422,10 +428,34 @@ public final class Profile: @unchecked Sendable {
     }
 
     /// Writes a dump of this profile with the fleet's and every open chat's
-    /// part, and answers the bundle's directory.
-    public func dump(reason: String) async -> Result<String, RuntimeFailure> {
+    /// part, and answers the bundle's directory. For a report it is the
+    /// narrower dump that reproduces what the screen showed; otherwise all
+    /// this phone holds.
+    public func dump(reason: String, forReport: Bool) async -> Result<String, RuntimeFailure> {
         await act(String.self) { live in
-            reason.withCString { amux_profile_dump(live, $0) }
+            reason.withCString { amux_profile_dump(live, $0, forReport) }
+        }
+    }
+
+    /// Writes a person's report around the dump `upload` names and sends it
+    /// to the profile's account; answers where it is kept, and the receipt
+    /// or why it was not sent.
+    public func submitReport(_ upload: ReportUpload) async -> Result<ReportSent, RuntimeFailure> {
+        let header = String(decoding: upload.header, as: UTF8.self)
+        let (path, frame, trace) = (upload.path, upload.frame, upload.trace)
+        return await act(ReportSent.self) { live in
+            path.withCString { path in
+                header.withCString { header in
+                    Bridge.optional(trace) { trace in
+                        frame.withUnsafeBytes { bytes in
+                            amux_profile_submit_report(
+                                live, path, header,
+                                bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count,
+                                trace)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -774,3 +804,5 @@ public enum Bridge {
         }
     }
 }
+
+extension Profile: ReportSubmitting {}

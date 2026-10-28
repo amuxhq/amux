@@ -21,6 +21,8 @@ public enum AccountsAction: Equatable, Sendable {
     case appearance(Appearance?)
     /// Turn sending amux.sh usage events on or off.
     case shareUsage(Bool)
+    /// Turn sending the dumps amux's own checks take on or off.
+    case autoReports(Bool)
     /// The Notifications row: ask iOS for them, or go to the system's
     /// settings, the only place they are turned off or back on once asked.
     case notifications
@@ -179,6 +181,7 @@ public struct YouScreen: View {
     private let accounts: AccountRegistry
     private let appearance: Appearance?
     private let shareUsage: Bool
+    private let autoReports: Bool
     /// None while this build offers no notifications.
     private let notifications: NotificationsSetting?
     private let identity: Identity?
@@ -190,6 +193,7 @@ public struct YouScreen: View {
         accounts: AccountRegistry,
         appearance: Appearance? = nil,
         shareUsage: Bool = true,
+        autoReports: Bool = false,
         notifications: NotificationsSetting? = nil,
         identity: Identity? = nil,
         removing: AccountId? = nil,
@@ -198,6 +202,7 @@ public struct YouScreen: View {
         self.accounts = accounts
         self.appearance = appearance
         self.shareUsage = shareUsage
+        self.autoReports = autoReports
         self.notifications = notifications
         self.identity = identity
         self.removing = removing
@@ -341,6 +346,8 @@ public struct YouScreen: View {
                 appearanceRow
                 rule(inset: 14)
                 shareUsageRow
+                rule(inset: 14)
+                autoReportsRow
                 if let notifications {
                     rule(inset: 14)
                     notificationsRow(notifications)
@@ -414,22 +421,43 @@ public struct YouScreen: View {
     /// A switch, not a page: what it sends is described on amux.sh, and the
     /// caption says what it is in a line.
     private var shareUsageRow: some View {
-        let isOn = Binding(get: { shareUsage }, set: { actions(.shareUsage($0)) })
-        return Toggle(isOn: isOn) {
+        switchRow(
+            String(localized: "Share Usage"),
+            caption: String(localized: "Counts and choices, never what you type"),
+            spoken: String(localized: "Share Usage, Counts and choices, never what you type"),
+            isOn: Binding(get: { shareUsage }, set: { actions(.shareUsage($0)) }),
+            id: "you.shareUsage")
+    }
+
+    /// Off unless somebody turns it on: unlike usage, what a check's dump
+    /// carries includes the chats, and the caption says so.
+    private var autoReportsRow: some View {
+        switchRow(
+            String(localized: "Send Automatic Reports"),
+            caption: String(localized: "When amux catches its own bug, send what it saw, chats included"),
+            spoken: String(localized: "Send Automatic Reports, When amux catches its own bug, send what it saw, chats included"),
+            isOn: Binding(get: { autoReports }, set: { actions(.autoReports($0)) }),
+            id: "you.autoReports")
+    }
+
+    private func switchRow(
+        _ title: String, caption: String, spoken: String, isOn: Binding<Bool>, id: String
+    ) -> some View {
+        Toggle(isOn: isOn) {
             VStack(alignment: .leading, spacing: 1) {
-                Text("Share Usage")
+                Text(title)
                     .designFont(.body, design)
                     .foregroundStyle(design.ink.color)
-                Text("Counts and choices, never what you type")
+                Text(caption)
                     .designFont(.caption, design)
                     .foregroundStyle(design.inkMuted.color)
             }
         }
         .tint(design.accent.color)
-        .oneSwitch(String(localized: "Share Usage, Counts and choices, never what you type"), isOn: isOn)
+        .oneSwitch(spoken, isOn: isOn)
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
-        .identified("you.shareUsage", value: shareUsage ? "on" : "off")
+        .identified(id, value: isOn.wrappedValue ? "on" : "off")
     }
 
     /// What iOS says, and a press that goes where it can be changed: the

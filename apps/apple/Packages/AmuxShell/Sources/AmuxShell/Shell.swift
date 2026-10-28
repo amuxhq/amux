@@ -409,6 +409,8 @@ private struct ChatPage: View {
     @State private var failure: String?
     @State private var picking: AttachChoice?
     @State private var photo: PhotosPickerItem?
+    /// Photos attached from this page, so each takes its own name.
+    @State private var photos = 0
     @State private var speech = SpeechDictation()
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
@@ -527,15 +529,11 @@ private struct ChatPage: View {
         }
     }
 
-    /// A photo as JPEG, the one image type every agent kind reads.
     private func attach(photo item: PhotosPickerItem) async {
         guard let data = try? await item.loadTransferable(type: Data.self) else { return }
-        #if canImport(UIKit)
-        let jpeg = UIImage(data: data)?.jpegData(compressionQuality: 0.85) ?? data
-        #else
-        let jpeg = data
-        #endif
-        model?.attach(jpeg, name: "photo.jpg", mime: "image/jpeg", image: true)
+        photos += 1
+        let picked = PickedAttachment.photo(data, types: item.supportedContentTypes, index: photos)
+        model?.attach(picked.data, name: picked.name, mime: picked.mime, image: picked.image)
     }
 
     private func attach(file url: URL) {
@@ -547,11 +545,8 @@ private struct ChatPage: View {
             return
         }
         guard let data = try? Data(contentsOf: url) else { return }
-        let type = UTType(filenameExtension: url.pathExtension)
-        model?.attach(
-            data, name: url.lastPathComponent,
-            mime: type?.preferredMIMEType ?? "application/octet-stream",
-            image: type?.conforms(to: .image) ?? false)
+        let picked = PickedAttachment.file(data, name: url.lastPathComponent)
+        model?.attach(picked.data, name: picked.name, mime: picked.mime, image: picked.image)
     }
 }
 

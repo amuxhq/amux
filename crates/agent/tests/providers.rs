@@ -1467,3 +1467,71 @@ async fn a_headless_agent_under_a_managed_mcp_config_runs_and_says_its_tools_are
 fn a_terminal_agent_under_a_managed_mcp_config_runs_and_says_its_tools_are_off() {
     terminal_test(under_managed_mcp(Kind::ClaudePty));
 }
+
+/// Headless Claude gets an image block only for bytes it reads natively,
+/// typed by the bytes rather than the label; anything else goes as the
+/// file its element names.
+#[tokio::test(flavor = "multi_thread")]
+async fn headless_claude_gets_an_image_block_typed_by_its_bytes_and_anything_else_as_a_file() {
+    use sha2::Digest as _;
+
+    let agent = Agent::start(Setup {
+        steps: vec![
+            Step::Text {
+                chunks: vec!["seen".into()],
+            },
+            Step::TurnEnd,
+        ],
+        ..Setup::sdk()
+    })
+    .await;
+    let store = |bytes: &[u8], name: &str, mime: &str| {
+        let hash = sha2::Sha256::digest(bytes).to_vec();
+        let blob = agent.dir.join(agent::BLOBS).join(interpret::to_hex(&hash));
+        std::fs::create_dir_all(blob.parent().unwrap()).unwrap();
+        std::fs::write(&blob, bytes).unwrap();
+        wire::Attachment {
+            of: Some(wire::attachment::Of::Image(wire::BlobRef {
+                hash,
+                name: name.into(),
+                mime: mime.into(),
+                size: bytes.len() as u64,
+            })),
+        }
+    };
+    // A PNG the phone labelled JPEG, and an SVG labelled an image.
+    let png = store(b"\x89PNG\r\n\x1a\n a square", "photo.jpg", "image/jpeg");
+    let svg = store(
+        b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+        "logo.svg",
+        "image/svg+xml",
+    );
+    let input = wire::Input::new(
+        b"p1".to_vec(),
+        wire::ClaudeSdkInput {
+            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+                text: format!("{0} and {0}", attachments::PLACEHOLDER),
+                attachments: vec![png, svg],
+            })),
+        },
+    );
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    assert_eq!(daemon.input(input).await, Verdict::Accepted);
+    agent
+        .wait("the turn ends", |log| log.turn_ends() == 1)
+        .await;
+    let sent = agent
+        .provider_input()
+        .into_iter()
+        .find(|line| line["type"] == "user")
+        .expect("the prompt reached Claude");
+    let images: Vec<&serde_json::Value> = sent["message"]["content"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|block| block["type"] == "image")
+        .collect();
+    assert_eq!(images.len(), 1, "{sent}");
+    assert_eq!(images[0]["source"]["media_type"], "image/png");
+}

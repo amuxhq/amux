@@ -1668,6 +1668,42 @@ mod tests {
         );
     }
 
+    /// Codex gets a local image only for bytes it reads natively: an SVG
+    /// labelled an image goes as the file its element names.
+    #[test]
+    fn codex_gets_a_local_image_only_for_bytes_it_reads() {
+        let blobs = tempfile::tempdir().unwrap();
+        let image = |hash: u8, bytes: &[u8], name: &str, mime: &str| {
+            std::fs::write(blobs.path().join(interpret::to_hex(&[hash; 32])), bytes).unwrap();
+            wire::Attachment {
+                of: Some(wire::attachment::Of::Image(wire::BlobRef {
+                    hash: vec![hash; 32],
+                    name: name.into(),
+                    mime: mime.into(),
+                    size: bytes.len() as u64,
+                })),
+            }
+        };
+        let attachments = [
+            image(0xab, b"GIF89a a frame", "wave.gif", "image/gif"),
+            image(0xcd, b"<svg/>", "logo.svg", "image/svg+xml"),
+        ];
+        let request = br#"{"id":"amux-1","method":"turn/start","params":{"threadId":"t1","input":[{"type":"text","text":"look","text_elements":[]}]}}"#;
+        let written = super::codex_turn_input(request, &attachments, blobs.path()).unwrap();
+        let written: serde_json::Value = serde_json::from_slice(&written).unwrap();
+        let images: Vec<&str> = written["params"]["input"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|input| input["type"] == "localImage")
+            .map(|input| input["path"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            images,
+            [blobs.path().join("ab".repeat(32)).display().to_string()]
+        );
+    }
+
     /// Codex is told each attached image's name, as it is told each file's:
     /// a bare local image by its hash path leaves the model calling them
     /// "Image #1", "Image #2", so it cannot answer which file is which.

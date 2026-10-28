@@ -988,6 +988,27 @@ fn a_steered_prompt_reads_sending_into_this_turn_until_its_reflection() {
     );
 }
 
+/// A pasted file is an image only if its bytes are one both providers read
+/// natively, typed by the bytes: a PNG with no extension is a PNG, and a
+/// file named `.png` that is not one is a file.
+#[test]
+fn a_pasted_file_is_an_image_by_its_bytes() {
+    let state = chat(replies(1, 3));
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    let dir = tempfile::tempdir().unwrap();
+    let mut pasted = |name: &str, bytes: &[u8]| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, bytes).unwrap();
+        match view.paste(ClipboardContent::Path(path)).unwrap() {
+            Some(ChatEffect::Attach { mime, .. }) => mime,
+            other => panic!("{other:?}"),
+        }
+    };
+    assert_eq!(pasted("screenshot", b"\x89PNG\r\n\x1a\n"), "image/png");
+    assert!(!pasted("fake.png", b"not a picture").starts_with("image/"));
+    let _ = state;
+}
+
 #[test]
 fn ctrl_v_attaches_a_file_through_put_blob() {
     let state = chat(replies(1, 3));
@@ -998,14 +1019,14 @@ fn ctrl_v_attaches_a_file_through_put_blob() {
     );
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("shot.png");
-    std::fs::write(&path, b"png bytes").unwrap();
+    std::fs::write(&path, b"\x89PNG\r\n\x1a\n").unwrap();
     let effect = view.paste(ClipboardContent::Path(path)).unwrap();
     assert_eq!(
         effect,
         Some(ChatEffect::Attach {
             name: "shot.png".into(),
             mime: "image/png".into(),
-            bytes: b"png bytes".to_vec()
+            bytes: b"\x89PNG\r\n\x1a\n".to_vec()
         })
     );
     typed(&mut view, &state, "see ");

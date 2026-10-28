@@ -1330,3 +1330,230 @@ fn a_reset_adopts_and_saves_the_next_inits_session() {
         );
     }
 }
+
+/// Headless Claude, running `claude-root`, idle after its first init.
+fn idle_on_root() -> State {
+    let mut state = started();
+    ClaudeSdk::step(
+        &mut state,
+        stream(
+            json!({"type": "system", "subtype": "init", "uuid": "i1", "session_id": "s", "model": "claude-root"}),
+        ),
+    );
+    state
+}
+
+/// A frame from the subagent that `toolu_agent` started.
+fn subagent(mut frame: Value) -> Event {
+    frame["parent_tool_use_id"] = json!("toolu_agent");
+    frame["session_id"] = json!("s");
+    stream(frame)
+}
+
+fn subagent_assistant(uuid: &str, content: Value) -> Event {
+    subagent(json!({
+        "type": "assistant",
+        "uuid": uuid,
+        "message": {
+            "id": format!("msg-{uuid}"), "type": "message", "role": "assistant",
+            "model": "claude-sub", "content": content,
+            "usage": {"input_tokens": 1432, "output_tokens": 5},
+        },
+    }))
+}
+
+fn sdk_snapshot(stepped: &interpret::Stepped) -> Option<(wire::Phase, wire::ClaudeSdkSnapshot)> {
+    use prost::Message as _;
+    stepped.step.snapshot.as_ref().map(|snapshot| {
+        (
+            snapshot.phase(),
+            wire::ClaudeSdkSnapshot::decode(&snapshot.body[..]).unwrap(),
+        )
+    })
+}
+
+fn item_kinds(stepped: &interpret::Stepped) -> Vec<(String, String, String)> {
+    use prost::Message as _;
+    stepped
+        .step
+        .items
+        .iter()
+        .map(|item| {
+            let kind = wire::ClaudeSdkItem::decode(&item.body[..])
+                .ok()
+                .and_then(|body| body.kind);
+            let parent = match &kind {
+                Some(wire::claude_sdk_item::Kind::Tool(tool)) => tool.parent_key.clone(),
+                _ => String::new(),
+            };
+            let name = kind
+                .map(|kind| {
+                    format!("{kind:?}")
+                        .split('(')
+                        .next()
+                        .unwrap_or_default()
+                        .to_owned()
+                })
+                .unwrap_or_default();
+            (item.key.clone(), name, parent)
+        })
+        .collect()
+}
+
+/// A subagent's frames are its own: they start no turn, set no model or
+/// context, and draw nothing at the top level, not its text, thinking,
+/// error or interruption; its tool calls hang under the call that started
+/// it.
+#[test]
+fn a_subagents_frames_leave_the_main_thread_alone() {
+    let mut state = idle_on_root();
+    let frames = [
+        subagent(json!({
+            "type": "stream_event", "uuid": "se1",
+            "event": {"type": "message_start", "message": {
+                "id": "msg-sub-stream", "type": "message", "role": "assistant", "model": "claude-sub",
+                "content": [], "usage": {"input_tokens": 999},
+            }},
+        })),
+        subagent_assistant(
+            "sa1",
+            json!([
+                {"type": "thinking", "thinking": "the subagent thinks", "signature": ""},
+                {"type": "text", "text": "ONE TWO THREE"},
+                {"type": "tool_use", "id": "toolu_child", "name": "Bash", "input": {"command": "ls"}},
+            ]),
+        ),
+        subagent(json!({
+            "type": "assistant", "uuid": "sa2", "error": "authentication_failed",
+            "message": {
+                "id": "msg-sa2", "type": "message", "role": "assistant", "model": "claude-sub",
+                "content": [{"type": "text", "text": "Invalid API key"}],
+                "usage": {"input_tokens": 0, "output_tokens": 0},
+            },
+        })),
+    ];
+    for frame in frames {
+        let stepped = ClaudeSdk::step(&mut state, frame);
+        if let Some((phase, snapshot)) = sdk_snapshot(&stepped) {
+            assert_ne!(phase, wire::Phase::Working, "no turn starts");
+            assert_eq!(snapshot.model.as_deref(), Some("claude-root"));
+            assert_ne!(
+                snapshot.context.as_ref().map(|meter| meter.used_tokens),
+                Some(1432)
+            );
+            assert_ne!(
+                snapshot.context.as_ref().map(|meter| meter.used_tokens),
+                Some(999)
+            );
+            assert_ne!(
+                snapshot.sign_in.as_ref().map(|sign_in| sign_in.state()),
+                Some(wire::SignInState::Failed)
+            );
+        }
+        for (key, kind, parent) in item_kinds(&stepped) {
+            assert!(
+                kind == "Tool" && parent == "toolu_agent",
+                "only the subagent's tool calls, under its call: {key} {kind} parent={parent:?}"
+            );
+        }
+    }
+}
+
+/// A subagent's interruption marker is not the person's: the turn that
+/// is running ends as it ends.
+#[test]
+fn a_subagents_interruption_does_not_mark_the_turn() {
+    let mut state = idle_on_root();
+    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        text: "go".into(),
+        ..Default::default()
+    });
+    ClaudeSdk::step(&mut state, sdk_input(b"p1", prompt));
+    ClaudeSdk::step(
+        &mut state,
+        subagent(json!({
+            "type": "user", "uuid": "su1",
+            "message": {"role": "user", "content": [{"type": "text", "text": "[Request interrupted by user]"}]},
+        })),
+    );
+    let ended = ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "result", "subtype": "success", "uuid": "r1", "session_id": "s",
+            "is_error": false, "duration_ms": 10, "num_turns": 1, "result": "done",
+        })),
+    );
+    use prost::Message as _;
+    let outcomes: Vec<_> = ended
+        .step
+        .items
+        .iter()
+        .filter_map(
+            |item| match wire::ClaudeSdkItem::decode(&item.body[..]).ok()?.kind? {
+                wire::claude_sdk_item::Kind::Turn(turn) => Some(turn.outcome()),
+                _ => None,
+            },
+        )
+        .collect();
+    assert_eq!(outcomes, [wire::TurnOutcome::Completed]);
+}
+
+/// Claude names the subagent that asks: its call hangs under the call that
+/// started that subagent even before its own frame arrives.
+#[test]
+fn a_subagents_ask_hangs_under_its_task() {
+    let mut state = idle_on_root();
+    ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "system", "subtype": "task_started", "uuid": "t1", "session_id": "s",
+            "task_id": "a1", "task_type": "local_agent", "tool_use_id": "toolu_agent",
+            "description": "count", "is_backgrounded": true,
+        })),
+    );
+    let asked = ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "control_request", "request_id": "req-1",
+            "request": {
+                "subtype": "can_use_tool", "tool_name": "Bash", "input": {"command": "ls"},
+                "tool_use_id": "toolu_child", "agent_id": "a1",
+            },
+        })),
+    );
+    let child: Vec<_> = item_kinds(&asked)
+        .into_iter()
+        .filter(|(key, ..)| key == "toolu_child")
+        .collect();
+    assert!(!child.is_empty(), "{:?}", item_kinds(&asked));
+    assert!(
+        child.iter().all(|(_, _, parent)| parent == "toolu_agent"),
+        "{child:?}"
+    );
+}
+
+/// A subagent working in the background holds no turn open, so the
+/// person's prompt goes to Claude at once.
+#[test]
+fn a_prompt_goes_in_while_a_background_subagent_works() {
+    let mut state = idle_on_root();
+    ClaudeSdk::step(
+        &mut state,
+        subagent_assistant(
+            "sa1",
+            json!([{"type": "tool_use", "id": "toolu_child", "name": "Bash", "input": {"command": "ls"}}]),
+        ),
+    );
+    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        text: "meanwhile".into(),
+        ..Default::default()
+    });
+    let sent = ClaudeSdk::step(&mut state, sdk_input(b"p1", prompt));
+    assert!(
+        sent.effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::UserMessage { .. })),
+        "{:?}",
+        sent.effects
+    );
+}

@@ -1791,3 +1791,84 @@ fn a_flagged_ask_offers_no_scope_and_says_it_defaults_to_no() {
     assert!(permission.scopes.is_empty(), "{:?}", permission.scopes);
     assert!(permission.default_to_no);
 }
+
+/// Whether encoded wire bytes hold a terminal escape or a C1 control.
+fn holds_terminal_codes(bytes: &[u8]) -> bool {
+    bytes.windows(2).any(|pair| {
+        matches!(
+            pair,
+            [0x1b, b'[' | b']' | b'(' | b'7' | b'8'] | [0xc2, 0x80..=0x9f]
+        )
+    }) || bytes.contains(&0x07)
+}
+
+/// Claude's text that becomes a wire field reaches no client with its
+/// terminal escapes or other control characters: the status word, a
+/// fallback's and a refusal's words, a command's output, an ask's reason,
+/// description and title, a denial's note and a tool server's message.
+#[test]
+fn claudes_text_reaches_the_wire_without_terminal_codes() {
+    let red = |text: &str| {
+        format!("\u{1b}[31m{text}\u{1b}[0m\u{1b}]8;;https://x\u{7}link\u{1b}]8;;\u{7}\u{9b}1m")
+    };
+    let mut state = idle_on_root();
+    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        text: "/cost".into(),
+        ..Default::default()
+    });
+    ClaudeSdk::step(&mut state, sdk_input(b"p1", prompt));
+    let facts = [
+        json!({"type": "system", "subtype": "status", "status": red("thinking"), "uuid": "st1", "session_id": "s"}),
+        json!({"type": "system", "subtype": "model_refusal_fallback", "trigger": "refusal", "direction": "down",
+            "original_model": "a", "fallback_model": "b", "request_id": null,
+            "api_refusal_explanation": red("switched"), "content": "x", "uuid": "f1", "session_id": "s"}),
+        json!({"type": "system", "subtype": "model_refusal_no_fallback", "original_model": "a", "request_id": null,
+            "content": red("refused"), "uuid": "f2", "session_id": "s"}),
+        json!({"type": "system", "subtype": "local_command_output", "content": red("ok"), "uuid": "lc1", "session_id": "s"}),
+        json!({"type": "assistant", "uuid": "m1", "session_id": "s", "parent_tool_use_id": null, "message": {
+            "id": "m1", "type": "message", "role": "assistant", "model": "claude-root",
+            "content": [{"type": "tool_use", "id": "t9", "name": "Bash", "input": {"command": "ls"}}],
+            "usage": {"input_tokens": 1, "output_tokens": 1}}}),
+        json!({"type": "system", "subtype": "permission_denied", "tool_name": "Bash", "tool_use_id": "t9",
+            "decision_reason": red("denied"), "message": "m", "uuid": "pd1", "session_id": "s"}),
+        json!({"type": "control_request", "request_id": "req-1", "request": {
+            "subtype": "can_use_tool", "tool_name": "Bash", "input": {"command": "rm x"}, "tool_use_id": "t1",
+            "decision_reason": red("reason"), "description": red("description"), "title": red("title")}}),
+        json!({"type": "control_request", "request_id": "req-2", "request": {
+            "subtype": "elicitation", "mcp_server_name": "github", "message": red("Sign in"),
+            "mode": "url", "url": "https://github.com/login/device", "elicitation_id": "el-1"}}),
+    ];
+    let mut coded = Vec::new();
+    for fact in facts {
+        let what = fact["subtype"]
+            .as_str()
+            .or(fact["request"]["subtype"].as_str())
+            .unwrap_or("assistant")
+            .to_owned();
+        let stepped = ClaudeSdk::step(&mut state, stream(fact));
+        let snapshot = stepped
+            .step
+            .snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.body.clone());
+        if stepped
+            .step
+            .items
+            .iter()
+            .map(|item| item.body.as_slice())
+            .chain(snapshot.as_deref())
+            .any(holds_terminal_codes)
+            || stepped
+                .step
+                .items
+                .iter()
+                .any(|item| holds_terminal_codes(item.text.as_bytes()))
+        {
+            coded.push(what);
+        }
+    }
+    assert!(
+        coded.is_empty(),
+        "terminal codes reached the wire from {coded:?}"
+    );
+}

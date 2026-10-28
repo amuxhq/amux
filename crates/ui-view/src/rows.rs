@@ -440,6 +440,9 @@ pub enum PermissionGrant {
     },
     /// Codex: approvals like this one, for the rest of the session.
     Session,
+    /// Codex: calls like this one, saved in the person's Codex config for
+    /// every project.
+    Always,
     /// Codex: commands starting with these words.
     CommandPrefix { words: Vec<String> },
     /// Codex: network access to these hosts.
@@ -629,6 +632,7 @@ fn decision_view(
         }
         Some(wire::tool_decision::Granted::Codex(grant)) => match &grant.of {
             Some(wire::codex_grant::Of::Session(_)) => Some(PermissionGrant::Session),
+            Some(wire::codex_grant::Of::Always(_)) => Some(PermissionGrant::Always),
             Some(wire::codex_grant::Of::CommandPrefix(prefix)) => {
                 Some(PermissionGrant::CommandPrefix {
                     words: crate::ask::shown_prefix(&prefix.words),

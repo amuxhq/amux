@@ -801,6 +801,7 @@ pub(crate) fn describe_grant(granted: Option<&tool_decision::Granted>) -> String
         }
         Some(tool_decision::Granted::Codex(grant)) => match &grant.of {
             Some(codex_grant::Of::Session(_)) => " grant=session".into(),
+            Some(codex_grant::Of::Always(_)) => " grant=always".into(),
             Some(codex_grant::Of::CommandPrefix(prefix)) => {
                 format!(" grant=prefix{}", words(&prefix.words))
             }

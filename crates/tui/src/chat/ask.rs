@@ -148,6 +148,7 @@ pub(crate) fn grant_words(granted: &PermissionGrant) -> String {
             }
         }
         PermissionGrant::Session => "allowed for this session".into(),
+        PermissionGrant::Always => "always allowed in every project".into(),
         PermissionGrant::CommandPrefix { words } => {
             format!("allowed commands starting with {}", words.join(" "))
         }

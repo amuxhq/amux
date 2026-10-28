@@ -1804,7 +1804,7 @@ impl ::prost::Name for ClaudeGrant {
 /// What Codex allows from now on.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CodexGrant {
-    #[prost(oneof = "codex_grant::Of", tags = "1, 2, 3")]
+    #[prost(oneof = "codex_grant::Of", tags = "1, 2, 3, 4")]
     pub of: ::core::option::Option<codex_grant::Of>,
 }
 /// Nested message and enum types in `CodexGrant`.
@@ -1820,6 +1820,10 @@ pub mod codex_grant {
         /// Network access to these hosts.
         #[prost(message, tag = "3")]
         NetworkHosts(super::NetworkHosts),
+        /// Calls like this one, saved in the person's Codex config: every
+        /// session from now on.
+        #[prost(message, tag = "4")]
+        Always(super::Empty),
     }
 }
 impl ::prost::Name for CodexGrant {

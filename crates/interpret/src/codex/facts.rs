@@ -1112,10 +1112,12 @@ impl State {
         let meta = params.meta.unwrap_or_default();
         let server = params.server_name;
         let approval = meta.codex_approval_kind.as_deref() == Some("mcp_tool_call");
-        let session = meta
-            .persist
-            .as_ref()
-            .is_some_and(|persist| persist.offers("session"));
+        let offers = |scope: &str| {
+            meta.persist
+                .as_ref()
+                .is_some_and(|persist| persist.offers(scope))
+        };
+        let (session, always) = (offers("session"), offers("always"));
         if approval && server == AMUX_TOOL_SERVER {
             // amux's own tools never ask, as the Claude launch settings
             // pre-approve them: the call is approved at once, for the rest
@@ -1138,6 +1140,12 @@ impl State {
                 offered.push((
                     Decision::ApproveSession,
                     elicitation_response(ElicitationAction::Accept, no_content(), Some("session")),
+                ));
+            }
+            if always {
+                offered.push((
+                    Decision::ApproveAlways,
+                    elicitation_response(ElicitationAction::Accept, no_content(), Some("always")),
                 ));
             }
             offered.push((

@@ -223,6 +223,7 @@ public enum ChatWords {
                 String(localized: "always \(scope(destination))")
             }
         case .session: String(localized: "this session")
+        case .always: String(localized: "always, in every project")
         case .commandPrefix(let words):
             String(localized: "commands starting with \(words.joined(separator: " "))")
         case .networkHosts(let hosts):

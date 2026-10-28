@@ -669,6 +669,12 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
         .iter()
         .filter_map(|d| CodexDecision::try_from(*d).ok())
         .collect();
+    // Codex saves "always" on a tool server's call in the person's config:
+    // that tool, in every project.
+    let always: Vec<String> = match &ask.body {
+        Some(codex_ask::Body::McpTool(tool)) => vec![tool.tool.clone()],
+        _ => vec![],
+    };
     // `files`: what approving for the session covers, when it covers
     // only these files (a patch's) rather than everything like this ask.
     let decision_choices = |similar: Vec<String>, hosts: Vec<String>, files: Vec<String>| {
@@ -695,7 +701,14 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
                     },
                     CodexDecision::Deny => ChoiceOutcome::Deny { stops: false },
                     CodexDecision::Abort => ChoiceOutcome::DenyAndStop,
-                    CodexDecision::Unspecified | CodexDecision::ApproveAlways => return None,
+                    CodexDecision::ApproveAlways => ChoiceOutcome::AllowAlways {
+                        subjects: always.clone(),
+                        directories: vec![],
+                        mode: String::new(),
+                        mode_name: String::new(),
+                        scope: Scope::User,
+                    },
+                    CodexDecision::Unspecified => return None,
                 };
                 Some(choice(
                     outcome,

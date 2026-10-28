@@ -1,3 +1,7 @@
+2026-10-28 — **A Codex tool server's approval offers Codex's "always".** Codex offers `persist: always` on an MCP tool call's approval, which it saves in the person's Codex config, but amux offered only once and for the session. The new `DECISION_APPROVE_ALWAYS` is offered when Codex offers it and answered with `persist: always`; the card words it as "always … in every project" and the decision row records the new `always` grant. The recorded tool-server form shows Codex offering it.
+
+Tests: `cargo test -p interpret --test codex an_mcp_approval_answered_always_persists_it`, `an_approval_offering_one_lifetime_as_a_string_is_read` and `cargo test -p ui-view --test views codexs_always_on_a_tool_call_reads_as_every_project` pass; goldens recorded again.
+
 2026-10-28 — **A late `turn/start` or `review/start` answer no longer reopens a Codex turn that already ended.** Codex writes a turn's completion and the answer to the request that started it from separate tasks, so the answer can come last; amux then recorded the ended turn as running again. amux now remembers the last turn Codex said ended and ignores an answer naming it. No recording shows this order yet; the test reproduces it from authored facts.
 
 Tests: `cargo test -p interpret --test codex a_late_turn_start_answer_does_not_reopen_an_ended_turn` passes.

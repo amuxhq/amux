@@ -2064,8 +2064,10 @@ fn granted(decision: Decision, response: &ClientResponse) -> Option<CodexGrant> 
         },
         _ => None,
     };
-    of.or_else(|| {
-        (decision == Decision::ApproveSession).then_some(codex_grant::Of::Session(wire::Empty {}))
+    of.or_else(|| match decision {
+        Decision::ApproveSession => Some(codex_grant::Of::Session(wire::Empty {})),
+        Decision::ApproveAlways => Some(codex_grant::Of::Always(wire::Empty {})),
+        _ => None,
     })
     .map(|of| CodexGrant { of: Some(of) })
 }

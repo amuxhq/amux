@@ -224,6 +224,9 @@ message CodexGrant {
     CommandPrefix command_prefix = 2;
     // Network access to these hosts.
     NetworkHosts network_hosts = 3;
+    // Calls like this one, saved in the person's Codex config: every
+    // session from now on.
+    Empty always = 4;
   }
 }
 

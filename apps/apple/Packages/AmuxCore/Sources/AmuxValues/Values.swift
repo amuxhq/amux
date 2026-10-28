@@ -4433,6 +4433,9 @@ public enum PermissionGrant: Codable, Hashable, Sendable {
     case claude(subjects: [String], directories: [String], mode: String, modeName: String, destination: Scope)
     /// Codex: approvals like this one, for the rest of the session.
     case session
+    /// Codex: calls like this one, saved in the person's Codex config for
+    /// every project.
+    case always
     /// Codex: commands starting with these words.
     case commandPrefix(words: [String])
     /// Codex: network access to these hosts.
@@ -4466,6 +4469,7 @@ public enum PermissionGrant: Codable, Hashable, Sendable {
         {
             switch _name {
             case "Session": self = .session
+            case "Always": self = .always
             default:
                 throw DecodingError.dataCorruptedError(
                     in: _single, debugDescription: "no PermissionGrant is named \(_name)")
@@ -4515,6 +4519,9 @@ public enum PermissionGrant: Codable, Hashable, Sendable {
         case .session:
             var _container = encoder.singleValueContainer()
             try _container.encode("Session")
+        case .always:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Always")
         case .commandPrefix(let words):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: CommandPrefixKeys.self, forKey: .commandPrefix)

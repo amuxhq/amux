@@ -1160,6 +1160,119 @@ async fn a_headless_session_that_never_began_is_started_not_resumed() {
     assert_eq!(agent.exit().await, ExitCause::Stopped);
 }
 
+/// A `/clear` gives headless Claude a new session, which the next
+/// incarnation resumes: the conversation after the clear, not before it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_headless_clear_is_the_session_the_next_incarnation_resumes() {
+    let agent = Agent::start(Setup {
+        steps: vec![
+            Step::Text {
+                chunks: vec!["after the clear".into()],
+            },
+            Step::TurnEnd,
+            Step::Text {
+                chunks: vec!["still after it".into()],
+            },
+            Step::TurnEnd,
+        ],
+        ..Setup::sdk()
+    })
+    .await;
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    let before = agent.provider_session();
+    assert_eq!(daemon.prompt(b"p1", "/clear").await, Verdict::Accepted);
+    agent
+        .wait("the clear ends", |log| log.turn_ends() == 1)
+        .await;
+    assert_eq!(daemon.prompt(b"p2", "one").await, Verdict::Accepted);
+    agent
+        .wait("the turn ends", |log| log.turn_ends() == 2)
+        .await;
+    let after = agent.provider_session();
+    assert_ne!(after, before, "the cleared session is saved");
+    let sent: Vec<String> = agent
+        .provider_input()
+        .iter()
+        .filter(|line| line["type"] == "user")
+        .map(|line| line["session_id"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    assert_eq!(
+        sent.last(),
+        Some(&after),
+        "a prompt names the session it goes to"
+    );
+    daemon.stop().await;
+    assert_eq!(agent.exit().await, ExitCause::Stopped);
+
+    agent.resume();
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    assert_eq!(daemon.prompt(b"p3", "two").await, Verdict::Accepted);
+    agent
+        .wait("the resumed turn ends", |log| log.turn_ends() == 3)
+        .await;
+    assert!(agent.log().has_text("still after it"));
+    assert_eq!(
+        agent.provider_session(),
+        after,
+        "the cleared session resumed"
+    );
+    assert!(
+        agent.log().boundaries().iter().all(|kind| kind != "FORKED"),
+        "{:?}",
+        agent.log().boundaries()
+    );
+    daemon.stop().await;
+    assert_eq!(agent.exit().await, ExitCause::Stopped);
+}
+
+/// A session file holding no conversation (a Claude stopped before it
+/// saved its first prompt leaves only metadata) cannot be resumed, and
+/// Claude refuses a new session under its id: the next incarnation starts
+/// a new session, under a new id it saves.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_file_with_no_conversation_is_replaced_by_a_new_session() {
+    let agent = Agent::start(Setup {
+        steps: vec![
+            Step::Text {
+                chunks: vec!["a new session".into()],
+            },
+            Step::TurnEnd,
+        ],
+        ..Setup::sdk()
+    })
+    .await;
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    let session = agent.provider_session();
+    daemon.kill().await;
+    assert_eq!(agent.exit().await, ExitCause::Killed);
+    let file = provider_fakes::playback::transcript_path(
+        &agent.claude_config(),
+        &std::fs::canonicalize(agent.work()).unwrap(),
+        &session,
+    );
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(
+        &file,
+        format!("{{\"type\":\"last-prompt\",\"sessionId\":\"{session}\"}}\n"),
+    )
+    .unwrap();
+
+    agent.resume();
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    assert_eq!(daemon.prompt(b"p1", "say hello").await, Verdict::Accepted);
+    agent
+        .wait("the turn ends", |log| log.turn_ends() == 1)
+        .await;
+    assert!(agent.log().has_text("a new session"));
+    assert_ne!(agent.provider_session(), session, "a new session id, saved");
+    daemon.stop().await;
+    assert_eq!(agent.exit().await, ExitCause::Stopped);
+}
+
 /// Headless Claude that ran a turn began its session: the next incarnation
 /// resumes it (Claude refuses to start a session under an id it has).
 #[tokio::test(flavor = "multi_thread")]

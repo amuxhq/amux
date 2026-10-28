@@ -392,6 +392,11 @@ impl Agent {
         *self.task.lock().unwrap() = Some(task);
     }
 
+    /// Claude's own directory for this agent's provider.
+    pub fn claude_config(&self) -> PathBuf {
+        self._root.path().join("claude")
+    }
+
     pub fn provider_session(&self) -> String {
         std::fs::read_to_string(self.dir.join(agent::PRIVATE).join("provider-session")).unwrap()
     }

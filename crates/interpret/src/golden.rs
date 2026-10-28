@@ -1703,6 +1703,7 @@ fn render_effect(effect: &Effect, catalogue: Option<&[u8]>) -> String {
         Effect::Exit { cause } => format!("exit {}", Value::String(cause.clone())),
         Effect::Terminal(input) => format!("terminal {input}"),
         Effect::FollowTranscript { path } => format!("follow {}", Value::String(path.clone())),
+        Effect::ProviderSession { id } => format!("session {}", Value::String(id.clone())),
         Effect::UserMessage {
             uuid,
             text,

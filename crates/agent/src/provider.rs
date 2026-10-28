@@ -702,6 +702,7 @@ impl Provider {
                 let request = codex_turn_input(&request, &attachments, &self.dir.join(dir::BLOBS))?;
                 self.write_line(&request).await
             }
+            Effect::ProviderSession { .. } => Ok(()),
             Effect::FollowTranscript { path } => {
                 let path = PathBuf::from(path);
                 // A transcript is named by its session. A new one (a

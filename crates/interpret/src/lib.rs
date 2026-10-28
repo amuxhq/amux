@@ -241,6 +241,9 @@ pub enum Effect {
     /// Claude in a terminal: a session started on this transcript file;
     /// the agent process tails it from now on.
     FollowTranscript { path: String },
+    /// Headless Claude: the provider's session is now `id`, which the next
+    /// incarnation resumes and later user messages name.
+    ProviderSession { id: String },
     /// Codex: a `turn/start`, `turn/steer` or `thread/inject_items`
     /// request whose input carries attachments. The agent process appends
     /// each attachment as a Codex input item (an image blob by its path in

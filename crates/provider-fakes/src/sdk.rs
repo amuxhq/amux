@@ -244,12 +244,13 @@ impl Engine {
     }
 
     async fn run(mut self) -> i32 {
-        // Claude resumes only a session whose transcript it wrote.
+        // Claude resumes only a session whose transcript holds a
+        // conversation.
         if let Some(session) = self
             .args
             .resume
             .as_ref()
-            .filter(|_| !self.transcript().exists())
+            .filter(|_| !self.has_conversation())
         {
             eprintln!("No conversation found with session ID: {session}");
             return 1;
@@ -544,14 +545,25 @@ impl Engine {
         )
     }
 
-    /// Claude writes a session's transcript once its first turn begins; a
-    /// row naming the session is all a later `--resume` looks for.
+    /// Whether this session's transcript has a user or assistant row, as
+    /// Claude's resume asks.
+    fn has_conversation(&self) -> bool {
+        std::fs::read_to_string(self.transcript()).is_ok_and(|rows| {
+            rows.lines().any(|row| {
+                serde_json::from_str::<Value>(row)
+                    .is_ok_and(|row| row["type"] == "user" || row["type"] == "assistant")
+            })
+        })
+    }
+
+    /// Claude writes a session's transcript once its first turn begins,
+    /// with the prompt's row.
     fn begin_transcript(&self) {
         let path = self.transcript();
         if path.exists() {
             return;
         }
-        let row = json!({ "type": "summary", "sessionId": self.session, "cwd": self.cwd });
+        let row = json!({ "type": "user", "sessionId": self.session, "cwd": self.cwd });
         let written = path
             .parent()
             .map_or(Ok(()), std::fs::create_dir_all)
@@ -616,74 +628,97 @@ impl Engine {
             self.lifecycle(&uuid, "started").await;
             self.running = Some(uuid);
         }
+        // `/clear` runs no model turn: Claude announces the reset with an id
+        // it makes up, then starts a new session under another and reports
+        // that one in its init.
+        let clear = first.message["content"] == "/clear";
+        if clear {
+            let frame = json!({
+                "type": "conversation_reset",
+                "new_conversation_id": uuid(),
+                "uuid": uuid(),
+                "session_id": self.session,
+                "trigger": "clear",
+            });
+            self.send(frame).await;
+            self.session = uuid();
+        }
         let init = self.init_frame();
         self.send(init).await;
-        self.begin_transcript();
-        self.replay(&first).await;
+        if !clear {
+            self.begin_transcript();
+            self.replay(&first).await;
+        }
         let mut calls = 0;
-        let exit = loop {
-            self.drain().await;
-            if self.cut.is_some() {
-                break None;
-            }
-            let Some(step) = crate::script::next_step(&mut self.steps) else {
-                break None;
-            };
-            match step {
-                Step::Text { chunks } => self.text(&request, &message, &chunks).await,
-                Step::Thinking { text } => {
-                    let block = json!({ "type": "thinking", "thinking": text, "signature": "" });
-                    let frame = self.assistant(&request, &message, block);
-                    self.send(frame).await;
-                }
-                Step::Tool(tool) => {
-                    calls += 1;
-                    let (id, input) = self.tool_use(&request, &message, &tool).await;
-                    if input["run_in_background"] == json!(true) {
-                        self.launch(&id, &tool, &input).await;
-                    } else {
-                        self.run_tool(&tool).await;
-                        let outcome = self.outcome(&tool, &input).await;
-                        self.tool_result(&id, &tool, &input, outcome).await;
-                    }
-                    self.fold().await;
-                    request = self.ids.next("req_fake");
-                    message = self.ids.next("msg_fake");
-                    self.blocks = 0;
-                }
-                Step::Ask(ask) => {
-                    calls += 1;
-                    self.ask(&request, &message, ask).await;
-                    if self.cut.is_none() {
-                        self.fold().await;
-                    }
-                    request = self.ids.next("req_fake");
-                    message = self.ids.next("msg_fake");
-                    self.blocks = 0;
-                }
-                Step::WaitFor { path } => {
-                    while !path.exists() && self.cut.is_none() {
-                        self.pump().await;
-                    }
-                }
-                Step::Spawn { command } => crate::script::spawn_detached(&command),
-                Step::Pause { ms } => {
-                    let until = tokio::time::Instant::now() + std::time::Duration::from_millis(ms);
-                    while tokio::time::Instant::now() < until && self.cut.is_none() {
-                        self.pump().await;
-                    }
-                }
-                Step::TurnEnd => break None,
-                Step::Exit { code } => break Some(code),
-                Step::Usage(usage) => self.rate_limit(&usage).await,
-                Step::AuthFailed { message } => {
-                    self.auth_retries().await;
-                    let frame = self.auth_error(&request, &message);
-                    self.send(frame).await;
-                    self.auth_failed = Some(message);
+        let exit = if clear {
+            None
+        } else {
+            loop {
+                self.drain().await;
+                if self.cut.is_some() {
                     break None;
                 }
-                Step::Repeat { .. } => unreachable!("next_step unrolls repeats"),
+                let Some(step) = crate::script::next_step(&mut self.steps) else {
+                    break None;
+                };
+                match step {
+                    Step::Text { chunks } => self.text(&request, &message, &chunks).await,
+                    Step::Thinking { text } => {
+                        let block =
+                            json!({ "type": "thinking", "thinking": text, "signature": "" });
+                        let frame = self.assistant(&request, &message, block);
+                        self.send(frame).await;
+                    }
+                    Step::Tool(tool) => {
+                        calls += 1;
+                        let (id, input) = self.tool_use(&request, &message, &tool).await;
+                        if input["run_in_background"] == json!(true) {
+                            self.launch(&id, &tool, &input).await;
+                        } else {
+                            self.run_tool(&tool).await;
+                            let outcome = self.outcome(&tool, &input).await;
+                            self.tool_result(&id, &tool, &input, outcome).await;
+                        }
+                        self.fold().await;
+                        request = self.ids.next("req_fake");
+                        message = self.ids.next("msg_fake");
+                        self.blocks = 0;
+                    }
+                    Step::Ask(ask) => {
+                        calls += 1;
+                        self.ask(&request, &message, ask).await;
+                        if self.cut.is_none() {
+                            self.fold().await;
+                        }
+                        request = self.ids.next("req_fake");
+                        message = self.ids.next("msg_fake");
+                        self.blocks = 0;
+                    }
+                    Step::WaitFor { path } => {
+                        while !path.exists() && self.cut.is_none() {
+                            self.pump().await;
+                        }
+                    }
+                    Step::Spawn { command } => crate::script::spawn_detached(&command),
+                    Step::Pause { ms } => {
+                        let until =
+                            tokio::time::Instant::now() + std::time::Duration::from_millis(ms);
+                        while tokio::time::Instant::now() < until && self.cut.is_none() {
+                            self.pump().await;
+                        }
+                    }
+                    Step::TurnEnd => break None,
+                    Step::Exit { code } => break Some(code),
+                    Step::Usage(usage) => self.rate_limit(&usage).await,
+                    Step::AuthFailed { message } => {
+                        self.auth_retries().await;
+                        let frame = self.auth_error(&request, &message);
+                        self.send(frame).await;
+                        self.auth_failed = Some(message);
+                        break None;
+                    }
+                    Step::Repeat { .. } => unreachable!("next_step unrolls repeats"),
+                }
             }
         };
         if let Some(code) = exit {

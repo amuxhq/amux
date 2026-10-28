@@ -245,8 +245,12 @@ targets:
       # the two together name the same pictures.
       - path: Goldens/manifest.json
         buildPhase: resources
+      # Grouped here by name: the list lives outside apps/apple, and left to
+      # itself XcodeGen names the group above it after the checkout's folder,
+      # so each worktree would write a different project file.
       - path: ../../tests/stories.json
         buildPhase: resources
+        group: AmuxComponentSnapshotTests
     dependencies:
       - target: Amux
       - package: SnapshotTesting

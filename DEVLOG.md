@@ -1,3 +1,7 @@
+2026-10-28 — **The Xcode project comes out the same from every checkout.** The component snapshot bundle takes the shared storybook list from `tests/stories.json`, outside `apps/apple`, and XcodeGen named the group it made for that folder after the checkout's own folder: the committed project said `storybook`, the worktree it was generated in, and the main checkout wrote `amux`. `just ios release` regenerates the project before it checks the tree is clean, so it refused to release from any checkout but one. The list now sits in the bundle's own group by name.
+
+Tests: two copies of `apps/apple` in folders with different names generate identical project files; `just ios release --preflight` finds a clean tree.
+
 2026-10-28 — **The relay's TLS fallback test always puts QUIC on another port.** It asked the free-port probe twice, once for the port tokens name and once for the relay's QUIC listener, and the probe lets a port go as soon as it finds it, so the second answer could be the first; on Linux CI the relay then listened for QUIC where the token pointed and the daemon linked over QUIC, not TLS. The QUIC port is now asked for until it differs.
 
 Tests: `cargo test -p amux --test relay` passes.

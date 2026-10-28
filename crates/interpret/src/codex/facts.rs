@@ -12,7 +12,7 @@ use codex_protocol::items::{
 };
 use codex_protocol::server::{
     AccountReadResponse, AutoApprovalReview, BackgroundTerminalsResponse, CommandApprovalParams,
-    CommandDecision, Decision as Offered, ElicitationParams, ErrorNotification,
+    CommandDecision, Decision as Offered, DeprecationNotice, ElicitationParams, ErrorNotification,
     McpServerStatusUpdated, Model, ModelListResponse, SkillsListResponse, ThreadResponse,
     TurnStartResponse,
 };
@@ -27,7 +27,7 @@ use serde_json::Value;
 use wire::{
     AccessGrant, ApiError, BackgroundJob, CodexAsk, CodexUsage, CodexUsageWindow, CommandApproval,
     Decision, DecisionOutcome, FileChangeApproval, FormAsk, Limit, LinkAsk, McpToolApproval,
-    ModelSwitch, OfferedCommand, OfferedModel, Question, QuestionAsk, QuestionOption,
+    OfferedCommand, OfferedModel, Question, QuestionAsk, QuestionOption,
     ReviewerVerdict, SignIn, SignInState, TaskListStatus, ToolClass, ToolDecision, ToolServer,
     ToolServerHealth, ToolServerStatus, ToolState, Turn, TurnOutcome, UsageMeter, UsageState, Work,
     codex_ask, codex_item, work,
@@ -1380,23 +1380,10 @@ impl State {
             ServerNotification::McpServerStatusUpdated(updated) => {
                 self.server_status(emit, updated)
             }
-            ServerNotification::ModelRerouted(rerouted) => {
-                let key = self.local_key("reroute");
-                self.emit_item(
-                    emit,
-                    ItemDraft {
-                        key,
-                        body: item_body(codex_item::Kind::Reroute(ModelSwitch {
-                            from: rerouted.from_model,
-                            to: rerouted.to_model.clone(),
-                            reason: rerouted.reason,
-                        })),
-                        complete: true,
-                        ..Default::default()
-                    },
-                );
-                self.model = Some(rerouted.to_model);
-            }
+            // A reroute covers one request and Codex keeps the chosen model
+            // for the next; it also sends a warning saying so, with a link,
+            // which is what the person sees.
+            ServerNotification::ModelRerouted(_) => {}
             ServerNotification::Error(error) => self.api_error(emit, error),
             ServerNotification::AutoApprovalReviewStarted(review) => {
                 self.review(emit, review, false)
@@ -1435,40 +1422,48 @@ impl State {
             | ServerNotification::ThreadGoalCleared(_)
             | ServerNotification::ThreadReadStateChanged(_)
             | ServerNotification::TurnModerationMetadata(_)
-            | ServerNotification::DeprecationNotice(_)
             | ServerNotification::RemoteControlStatusChanged(_)
-            | ServerNotification::GuardianWarning(_)
-            | ServerNotification::Warning(_)
             | ServerNotification::FileChangeOutputDelta(_)
             | ServerNotification::TerminalInteraction(_) => {}
             ServerNotification::SkillsChanged(_) => self.skills_changed(emit),
             // Configuration Codex found and did not apply: the person
             // wants to know, in Codex's words.
             ServerNotification::ConfigWarning(warning) => {
-                let words = match some_of(warning.details.as_deref()) {
-                    Some(details) => format!("{}\n{details}", warning.summary),
-                    None => warning.summary,
-                };
-                let key = self.local_key("warning");
-                self.emit_item(
-                    emit,
-                    ItemDraft {
-                        key,
-                        text: words.clone(),
-                        body: item_body(codex_item::Kind::Error(ApiError {
-                            error_kind: "configWarning".into(),
-                            message: words,
-                            ..Default::default()
-                        })),
-                        complete: true,
-                        ..Default::default()
-                    },
-                );
+                self.warning(emit, "configWarning", notice_words(warning))
+            }
+            // Codex's own app shows each of these as a warning line.
+            ServerNotification::DeprecationNotice(notice) => {
+                self.warning(emit, "deprecationNotice", notice_words(notice))
+            }
+            ServerNotification::Warning(warning) => {
+                self.warning(emit, "warning", warning.message)
+            }
+            ServerNotification::GuardianWarning(warning) => {
+                self.warning(emit, "guardianWarning", warning.message)
             }
             other @ ServerNotification::ThreadClosed(_) => {
                 self.unrecognized(emit, other.method(), "a notification amux does not read")
             }
         }
+    }
+
+    /// A warning row in Codex's words, under the kind Codex sent it as.
+    fn warning(&mut self, emit: &mut Emit, kind: &str, words: String) {
+        let key = self.local_key("warning");
+        self.emit_item(
+            emit,
+            ItemDraft {
+                key,
+                text: words.clone(),
+                body: item_body(codex_item::Kind::Error(ApiError {
+                    error_kind: kind.into(),
+                    message: words,
+                    ..Default::default()
+                })),
+                complete: true,
+                ..Default::default()
+            },
+        );
     }
 
     /// A reasoning summary's part, started or extended.
@@ -2488,4 +2483,12 @@ fn dynamic_work(call: &DynamicToolCallItem) -> wire::McpToolCall {
 /// A decoded part of a message as the JSON Codex wrote.
 fn as_written(value: &impl serde::Serialize) -> Value {
     serde_json::to_value(value).expect("protocol types serialize")
+}
+
+/// A notice's summary, then its details on their own lines when it has any.
+fn notice_words(notice: DeprecationNotice) -> String {
+    match some_of(notice.details.as_deref()) {
+        Some(details) => format!("{}\n{details}", notice.summary),
+        None => notice.summary,
+    }
 }

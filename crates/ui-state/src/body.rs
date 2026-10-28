@@ -105,7 +105,7 @@ impl ItemBody {
                 Codex::Boundary(_) => ItemClass::Boundary,
                 Codex::AgentMessage(_) => ItemClass::AgentMessage,
                 Codex::McpStartup(_) | Codex::TurnDiff(_) => ItemClass::Silent,
-                Codex::Reroute(_) | Codex::Unrecognized(_) | Codex::Verdict(_) => ItemClass::Other,
+                Codex::Unrecognized(_) | Codex::Verdict(_) => ItemClass::Other,
                 Codex::Ask(_) | Codex::Plan(_) => ItemClass::Ask,
             },
             ItemBody::Undecodable => ItemClass::Other,

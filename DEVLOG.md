@@ -1,3 +1,7 @@
+2026-10-28 — **A Codex model reroute no longer becomes the agent's model, and Codex's warnings are drawn.** `model/rerouted` covers one request, and Codex keeps the chosen model for the next, but amux saved the fallback as the agent's model, carrying it into the next incarnation and into the thread a `/clear` starts. amux also drew its own reroute row while dropping the warning Codex sends with it, which carries the link to apply for access and is all Codex's own app shows. The reroute now changes nothing and draws no row; `warning`, `guardianWarning` and `deprecationNotice` are drawn like config warnings, in Codex's words. The Codex item's `reroute` arm is gone from the schema.
+
+Tests: `cargo test -p interpret --test codex a_reroute_leaves_the_chosen_model_and_shows_codexs_warning` passes; the Codex interpreter and view goldens are recorded again with the warning rows.
+
 2026-10-28 — **The Codex usage meter shows the `codex` limit only.** Codex reports each of its rate limits under its own `limitId`, and amux kept whichever update came last, so another limit could move the meter or block the agent. Updates naming another limit are now ignored; one without an id is the `codex` limit, as in Codex's own app.
 
 Tests: `cargo test -p interpret --test codex the_usage_meter_reads_the_codex_limit_only` passes.

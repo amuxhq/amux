@@ -189,7 +189,9 @@ id = "C24"
 item = "Model switched"
 claude_pty = { mark = "none" }
 claude_sdk = { mark = "full", carriers = ["item:model_switch"], golden = [" model_switch "] }
-codex = { mark = "full", carriers = ["item:reroute"], golden = [" reroute "] }
+# Codex keeps the chosen model and says it routed one request elsewhere in a
+# warning, which is all its own app shows.
+codex = { mark = "partial", carriers = ["item:error"], golden = [" warning ", "routed to"] }
 
 [[row]]
 id = "C25"

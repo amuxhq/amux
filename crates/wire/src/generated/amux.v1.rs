@@ -5061,7 +5061,7 @@ impl ::prost::Name for CodexCreateConfig {
 pub struct CodexItem {
     #[prost(
         oneof = "codex_item::Kind",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17"
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17"
     )]
     pub kind: ::core::option::Option<codex_item::Kind>,
 }
@@ -5091,8 +5091,6 @@ pub mod codex_item {
         AgentMessage(super::AgentMessage),
         #[prost(message, tag = "10")]
         Error(super::ApiError),
-        #[prost(message, tag = "11")]
-        Reroute(super::ModelSwitch),
         #[prost(message, tag = "12")]
         Unrecognized(super::Unrecognized),
         /// Working notes, marked apart from the final answer.

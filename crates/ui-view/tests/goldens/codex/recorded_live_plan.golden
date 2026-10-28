@@ -5,135 +5,137 @@
 ## 18 recorded 17: input 0x202d91dee4c248dcbd7377bbaa80e7ed
   row    2 prompt:202d91dee4c248dcbd7377bbaa80e7ed Prompt { text: [Text("Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 25 recorded 24: fact Rpc method=deprecationNotice
+  row    3 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
 ## 38 recorded 37: fact Rpc method=item/started
-  row    3 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [], streaming: true, working_note: true }
+  row    4 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [], streaming: true, working_note: true }
 ## 40 recorded 39: fact Rpc method=item/agentMessage/delta
-  row    3 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I")], streaming: true, working_note: true }
+  row    4 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I")], streaming: true, working_note: true }
 ## 41 recorded 40: fact Rpc method=item/agentMessage/delta
-  row    3 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll")], streaming: true, working_note: true }
+  row    4 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll")], streaming: true, working_note: true }
 ## 42 recorded 41: fact Rpc method=item/agentMessage/delta
-  row    3 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check")], streaming: true, working_note: true }
+  row    4 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check")], streaming: true, working_note: true }
 ## 43 recorded 42: fact Rpc method=item/agentMessage/delta
-  row    3 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README")], streaming: true, working_note: true }
+  row    4 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README")], streaming: true, working_note: true }
 ## 45 recorded 44: fact Rpc method=item/agentMessage/delta
-  row    3 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md")], streaming: true, working_note: true }
+  row    4 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md")], streaming: true, working_note: true }
 ## 46 recorded 45: fact Rpc method=item/agentMessage/delta
-  row    3 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and")], streaming: true, working_note: true }
+  row    4 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and")], streaming: true, working_note: true }
 ## 48 recorded 47: fact Rpc method=item/agentMessage/delta
-  row    3 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present")], streaming: true, working_note: true }
+  row    4 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present")], streaming: true, working_note: true }
 ## 50 recorded 49: fact Rpc method=item/agentMessage/delta
-  row    3 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present the")], streaming: true, working_note: true }
+  row    4 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present the")], streaming: true, working_note: true }
 ## 52 recorded 51: fact Rpc method=item/agentMessage/delta
-  row    3 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present the one")], streaming: true, working_note: true }
+  row    4 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present the one")], streaming: true, working_note: true }
 ## 54 recorded 53: fact Rpc method=item/agentMessage/delta
-  row    3 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present the one-step")], streaming: true, working_note: true }
+  row    4 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present the one-step")], streaming: true, working_note: true }
 ## 56 recorded 55: fact Rpc method=item/agentMessage/delta
-  row    3 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present the one-step plan")], streaming: true, working_note: true }
+  row    4 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present the one-step plan")], streaming: true, working_note: true }
 ## 58 recorded 57: fact Rpc method=item/agentMessage/delta
-  row    3 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present the one-step plan for")], streaming: true, working_note: true }
+  row    4 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present the one-step plan for")], streaming: true, working_note: true }
 ## 60 recorded 59: fact Rpc method=item/agentMessage/delta
-  row    3 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present the one-step plan for approval")], streaming: true, working_note: true }
+  row    4 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present the one-step plan for approval")], streaming: true, working_note: true }
 ## 62 recorded 61: fact Rpc method=item/agentMessage/delta
-  row    3 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present the one-step plan for approval.")], streaming: true, working_note: true }
+  row    4 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present the one-step plan for approval.")], streaming: true, working_note: true }
 ## 64 recorded 63: fact Rpc method=item/completed
-  row    3 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present the one-step plan for approval.")], streaming: false, working_note: true }
+  row    4 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present the one-step plan for approval.")], streaming: false, working_note: true }
 ## 66 recorded 65: fact Rpc method=item/started
-  row    4 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "cat README.md", state: Running, result: "" } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row    5 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "cat README.md", state: Running, result: "" } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "exec-727c560d-d90d-46a1-b4eb-707329c9d3c3" }) queue=[] underway=[] refused=[]
 ## 67 recorded 66: fact Rpc method=item/completed
-  row    4 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "cat README.md", state: Succeeded, result: "" } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row    5 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "cat README.md", state: Succeeded, result: "" } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 75 recorded 74: fact Rpc method=item/started
-  row    4 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "cat README.md", state: Succeeded, result: "" } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
+  row    5 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "cat README.md", state: Succeeded, result: "" } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 77 recorded 76: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 79 recorded 78: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 81 recorded 80: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 83 recorded 82: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 85 recorded 84: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 87 recorded 86: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 89 recorded 88: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line,", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line,", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 91 recorded 90: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 93 recorded 92: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 95 recorded 94: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`,", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`,", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 97 recorded 96: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 98 recorded 97: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 100 recorded 99: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 102 recorded 101: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`,", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`,", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 104 recorded 103: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 106 recorded 105: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 108 recorded 107: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 110 recorded 109: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 111 recorded 110: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 113 recorded 112: fact Rpc method=item/completed
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n", verdict: Open, mode: "", mode_name: "", note: None, writing: false })
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n", verdict: Open, mode: "", mode_name: "", note: None, writing: false })
 ## 119 recorded 118: fact Rpc method=turn/completed
-  row    4 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "cat README.md", state: Succeeded, result: "" } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
-  row    6 turn:1 TurnEnd { duration_ms: Some(5631), failed: false }
+  row    5 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "cat README.md", state: Succeeded, result: "" } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row    7 turn:1 TurnEnd { duration_ms: Some(5631), failed: false }
   ask plan:01a11479-9d93-7370-983a-6db72e75ab63-plan -> "01a11479-9d93-7370-983a-6db72e75ab63-plan" 1/1 Open
     choices ApprovePlan { mode: "", mode_name: "" }*, SendBack+note
     body Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 121 recorded 120: input 0x089f0b3764f54cb0b1856c9c12b19fff
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n", verdict: Approved, mode: "", mode_name: "", note: None, writing: false })
-  row    7 prompt:089f0b3764f54cb0b1856c9c12b19fff Prompt { text: [Text("Implement the plan.")], steered: false }
+  row    6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n", verdict: Approved, mode: "", mode_name: "", note: None, writing: false })
+  row    8 prompt:089f0b3764f54cb0b1856c9c12b19fff Prompt { text: [Text("Implement the plan.")], steered: false }
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 133 recorded 132: fact Rpc method=item/started
-  row    8 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [], streaming: true, working_note: true }
+  row    9 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [], streaming: true, working_note: true }
 ## 135 recorded 134: fact Rpc method=item/agentMessage/delta
-  row    8 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I")], streaming: true, working_note: true }
+  row    9 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I")], streaming: true, working_note: true }
 ## 137 recorded 136: fact Rpc method=item/agentMessage/delta
-  row    8 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll")], streaming: true, working_note: true }
+  row    9 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll")], streaming: true, working_note: true }
 ## 138 recorded 137: fact Rpc method=item/agentMessage/delta
-  row    8 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace")], streaming: true, working_note: true }
+  row    9 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace")], streaming: true, working_note: true }
 ## 139 recorded 138: fact Rpc method=item/agentMessage/delta
-  row    8 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the")], streaming: true, working_note: true }
+  row    9 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the")], streaming: true, working_note: true }
 ## 140 recorded 139: fact Rpc method=item/agentMessage/delta
-  row    8 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line")], streaming: true, working_note: true }
+  row    9 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line")], streaming: true, working_note: true }
 ## 142 recorded 141: fact Rpc method=item/agentMessage/delta
-  row    8 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with")], streaming: true, working_note: true }
+  row    9 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with")], streaming: true, working_note: true }
 ## 144 recorded 143: fact Rpc method=item/agentMessage/delta
-  row    8 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `")], streaming: true, working_note: true }
+  row    9 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `")], streaming: true, working_note: true }
 ## 146 recorded 145: fact Rpc method=item/agentMessage/delta
-  row    8 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED")], streaming: true, working_note: true }
+  row    9 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED")], streaming: true, working_note: true }
 ## 147 recorded 146: fact Rpc method=item/agentMessage/delta
-  row    8 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED`")], streaming: true, working_note: true }
+  row    9 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED`")], streaming: true, working_note: true }
 ## 148 recorded 147: fact Rpc method=item/agentMessage/delta
-  row    8 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED` and")], streaming: true, working_note: true }
+  row    9 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED` and")], streaming: true, working_note: true }
 ## 150 recorded 149: fact Rpc method=item/agentMessage/delta
-  row    8 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED` and verify")], streaming: true, working_note: true }
+  row    9 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED` and verify")], streaming: true, working_note: true }
 ## 151 recorded 150: fact Rpc method=item/agentMessage/delta
-  row    8 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED` and verify the")], streaming: true, working_note: true }
+  row    9 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED` and verify the")], streaming: true, working_note: true }
 ## 152 recorded 151: fact Rpc method=item/agentMessage/delta
-  row    8 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED` and verify the file")], streaming: true, working_note: true }
+  row    9 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED` and verify the file")], streaming: true, working_note: true }
 ## 154 recorded 153: fact Rpc method=item/agentMessage/delta
-  row    8 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED` and verify the file contents")], streaming: true, working_note: true }
+  row    9 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED` and verify the file contents")], streaming: true, working_note: true }
 ## 156 recorded 155: fact Rpc method=item/agentMessage/delta
-  row    8 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED` and verify the file contents.")], streaming: true, working_note: true }
+  row    9 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED` and verify the file contents.")], streaming: true, working_note: true }
 ## 158 recorded 157: fact Rpc method=item/completed
-  row    8 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED` and verify the file contents.")], streaming: false, working_note: true }
+  row    9 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED` and verify the file contents.")], streaming: false, working_note: true }
 ## 161 recorded 160: fact Rpc method=item/started
-  row    9 exec-1ce5edf9-a814-458c-a852-ef3356c960e7 Command { command: "printf 'UPDATED\\n' > README.md", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-1ce5edf9-a814-458c-a852-ef3356c960e7 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents:…
+  row   10 exec-1ce5edf9-a814-458c-a852-ef3356c960e7 Command { command: "printf 'UPDATED\\n' > README.md", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-1ce5edf9-a814-458c-a852-ef3356c960e7 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents:…
   composer Send activity=Some(Running { key: "exec-1ce5edf9-a814-458c-a852-ef3356c960e7" }) queue=[] underway=[] refused=[]
 ## 163 recorded 162: fact Rpc method=item/commandExecution/requestApproval
   ask 0 -> "exec-1ce5edf9-a814-458c-a852-ef3356c960e7" 1/1 Open
@@ -141,75 +143,76 @@
     body Command { command: "printf 'UPDATED\\n' > README.md", cwd: "<MACHINE_PATH>", reason: "Allow updating README.md to UPDATED?", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 165 recorded 164: input stdin-10
-  row    9 exec-1ce5edf9-a814-458c-a852-ef3356c960e7 Command { command: "printf 'UPDATED\\n' > README.md", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-1ce5edf9-a814-458c-a852-ef3356c960e7 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents:…
+  row   10 exec-1ce5edf9-a814-458c-a852-ef3356c960e7 Command { command: "printf 'UPDATED\\n' > README.md", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-1ce5edf9-a814-458c-a852-ef3356c960e7 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents:…
   ask none
   composer Send activity=Some(Running { key: "exec-1ce5edf9-a814-458c-a852-ef3356c960e7" }) queue=[] underway=[] refused=[]
 ## 170 recorded 169: fact Rpc method=item/completed
-  row    9 exec-1ce5edf9-a814-458c-a852-ef3356c960e7 Command { command: "printf 'UPDATED\\n' > README.md", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-1ce5edf9-a814-458c-a852-ef3356c960e7 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, su…
+  row   10 exec-1ce5edf9-a814-458c-a852-ef3356c960e7 Command { command: "printf 'UPDATED\\n' > README.md", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-1ce5edf9-a814-458c-a852-ef3356c960e7 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, su…
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 175 recorded 174: fact Rpc method=item/started
-  row    9 exec-1ce5edf9-a814-458c-a852-ef3356c960e7 Command { command: "printf 'UPDATED\\n' > README.md", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=1 live] decision=Decision { outcome: Allowed, granted: None, note: …
-  row   10 exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 Explore { verb: Read, subject: "cat README.md", state: Running, result: "" } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=0 live RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row   10 exec-1ce5edf9-a814-458c-a852-ef3356c960e7 Command { command: "printf 'UPDATED\\n' > README.md", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=1 live] decision=Decision { outcome: Allowed, granted: None, note: …
+  row   11 exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 Explore { verb: Read, subject: "cat README.md", state: Running, result: "" } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=0 live RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4" }) queue=[] underway=[] refused=[]
 ## 177 recorded 176: fact Rpc method=item/completed
-  row   10 exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 Explore { verb: Read, subject: "cat README.md", state: Succeeded, result: "" } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=0 live RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row   11 exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 Explore { verb: Read, subject: "cat README.md", state: Succeeded, result: "" } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=0 live RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 182 recorded 181: fact Rpc method=item/started
-  row    9 exec-1ce5edf9-a814-458c-a852-ef3356c960e7 Command { command: "printf 'UPDATED\\n' > README.md", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=1] decision=Decision { outcome: Allowed, granted: None, note: None,…
-  row   10 exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 Explore { verb: Read, subject: "cat README.md", state: Succeeded, result: "" } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=0 RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
-  row   11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [], streaming: true, working_note: false }
+  row   10 exec-1ce5edf9-a814-458c-a852-ef3356c960e7 Command { command: "printf 'UPDATED\\n' > README.md", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=1] decision=Decision { outcome: Allowed, granted: None, note: None,…
+  row   11 exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 Explore { verb: Read, subject: "cat README.md", state: Succeeded, result: "" } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=0 RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row   12 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [], streaming: true, working_note: false }
 ## 184 recorded 183: fact Rpc method=item/agentMessage/delta
-  row   11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated")], streaming: true, working_note: false }
+  row   12 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated")], streaming: true, working_note: false }
 ## 186 recorded 185: fact Rpc method=item/agentMessage/delta
-  row   11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README")], streaming: true, working_note: false }
+  row   12 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README")], streaming: true, working_note: false }
 ## 188 recorded 187: fact Rpc method=item/agentMessage/delta
-  row   11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md")], streaming: true, working_note: false }
+  row   12 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md")], streaming: true, working_note: false }
 ## 190 recorded 189: fact Rpc method=item/agentMessage/delta
-  row   11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to")], streaming: true, working_note: false }
+  row   12 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to")], streaming: true, working_note: false }
 ## 192 recorded 191: fact Rpc method=item/agentMessage/delta
-  row   11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `")], streaming: true, working_note: false }
+  row   12 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `")], streaming: true, working_note: false }
 ## 194 recorded 193: fact Rpc method=item/agentMessage/delta
-  row   11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED")], streaming: true, working_note: false }
+  row   12 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED")], streaming: true, working_note: false }
 ## 196 recorded 195: fact Rpc method=item/agentMessage/delta
-  row   11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`,")], streaming: true, working_note: false }
+  row   12 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`,")], streaming: true, working_note: false }
 ## 198 recorded 197: fact Rpc method=item/agentMessage/delta
-  row   11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving")], streaming: true, working_note: false }
+  row   12 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving")], streaming: true, working_note: false }
 ## 200 recorded 199: fact Rpc method=item/agentMessage/delta
-  row   11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the")], streaming: true, working_note: false }
+  row   12 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the")], streaming: true, working_note: false }
 ## 202 recorded 201: fact Rpc method=item/agentMessage/delta
-  row   11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the trailing")], streaming: true, working_note: false }
+  row   12 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the trailing")], streaming: true, working_note: false }
 ## 204 recorded 203: fact Rpc method=item/agentMessage/delta
-  row   11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the trailing newline")], streaming: true, working_note: false }
+  row   12 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the trailing newline")], streaming: true, working_note: false }
 ## 206 recorded 205: fact Rpc method=item/agentMessage/delta
-  row   11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the trailing newline.")], streaming: true, working_note: false }
+  row   12 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the trailing newline.")], streaming: true, working_note: false }
 ## 207 recorded 206: fact Rpc method=item/agentMessage/delta
-  row   11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the trailing newline. Verified")], streaming: true, working_note: false }
+  row   12 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the trailing newline. Verified")], streaming: true, working_note: false }
 ## 208 recorded 207: fact Rpc method=item/agentMessage/delta
-  row   11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the trailing newline. Verified the")], streaming: true, working_note: false }
+  row   12 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the trailing newline. Verified the")], streaming: true, working_note: false }
 ## 210 recorded 209: fact Rpc method=item/agentMessage/delta
-  row   11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the trailing newline. Verified the contents")], streaming: true, working_note: false }
+  row   12 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the trailing newline. Verified the contents")], streaming: true, working_note: false }
 ## 212 recorded 211: fact Rpc method=item/agentMessage/delta
-  row   11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the trailing newline. Verified the contents.")], streaming: true, working_note: false }
+  row   12 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the trailing newline. Verified the contents.")], streaming: true, working_note: false }
 ## 214 recorded 213: fact Rpc method=item/completed
-  row   11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the trailing newline. Verified the contents.")], streaming: false, working_note: false }
+  row   12 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the trailing newline. Verified the contents.")], streaming: false, working_note: false }
 ## 220 recorded 219: fact Rpc method=turn/completed
-  row    9 exec-1ce5edf9-a814-458c-a852-ef3356c960e7 Command { command: "printf 'UPDATED\\n' > README.md", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=1] decision=Decision { outcome: Allowed, granted: None, note: None,…
-  row   10 exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 Explore { verb: Read, subject: "cat README.md", state: Succeeded, result: "" } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=0 RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
-  row   12 turn:2 TurnEnd { duration_ms: Some(6676), failed: false }
+  row   10 exec-1ce5edf9-a814-458c-a852-ef3356c960e7 Command { command: "printf 'UPDATED\\n' > README.md", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=1] decision=Decision { outcome: Allowed, granted: None, note: None,…
+  row   11 exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 Explore { verb: Read, subject: "cat README.md", state: Succeeded, result: "" } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=0 RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row   13 turn:2 TurnEnd { duration_ms: Some(6676), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:202d91dee4c248dcbd7377bbaa80e7ed Prompt { text: [Text("Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval.")], steered: false }
-     3 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present the one-step plan for approval.")], streaming: false, working_note: true }
-     4 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "cat README.md", state: Succeeded, result: "" } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
-     5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n", verdict: Approved, mode: "", mode_name: "", note: None, writing: false })
-     6 turn:1 TurnEnd { duration_ms: Some(5631), failed: false }
-     7 prompt:089f0b3764f54cb0b1856c9c12b19fff Prompt { text: [Text("Implement the plan.")], steered: false }
-     8 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED` and verify the file contents.")], streaming: false, working_note: true }
-     9 exec-1ce5edf9-a814-458c-a852-ef3356c960e7 Command { command: "printf 'UPDATED\\n' > README.md", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=1] decision=Decision { outcome: Allowed, granted: None, note: None,…
-    10 exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 Explore { verb: Read, subject: "cat README.md", state: Succeeded, result: "" } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=0 RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
-    11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the trailing newline. Verified the contents.")], streaming: false, working_note: false }
-    12 turn:2 TurnEnd { duration_ms: Some(6676), failed: false }
+     3 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
+     4 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present the one-step plan for approval.")], streaming: false, working_note: true }
+     5 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "cat README.md", state: Succeeded, result: "" } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+     6 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n", verdict: Approved, mode: "", mode_name: "", note: None, writing: false })
+     7 turn:1 TurnEnd { duration_ms: Some(5631), failed: false }
+     8 prompt:089f0b3764f54cb0b1856c9c12b19fff Prompt { text: [Text("Implement the plan.")], steered: false }
+     9 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED` and verify the file contents.")], streaming: false, working_note: true }
+    10 exec-1ce5edf9-a814-458c-a852-ef3356c960e7 Command { command: "printf 'UPDATED\\n' > README.md", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=1] decision=Decision { outcome: Allowed, granted: None, note: None,…
+    11 exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 Explore { verb: Read, subject: "cat README.md", state: Succeeded, result: "" } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=0 RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+    12 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the trailing newline. Verified the contents.")], streaming: false, working_note: false }
+    13 turn:2 TurnEnd { duration_ms: Some(6676), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 19506, window_tokens: Some(258400), percent: Some(7), near_full: false }) sign-in None
 == settings

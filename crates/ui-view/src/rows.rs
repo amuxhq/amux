@@ -757,7 +757,6 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             Codex::Boundary(b) => plain(boundary(b)),
             Codex::AgentMessage(m) => plain(agent_message(held, m)),
             Codex::Error(e) => error(e),
-            Codex::Reroute(m) => plain(model_switch(m)),
             Codex::Unrecognized(u) => plain(unrecognized(u)),
             Codex::Verdict(v) => plain(RowKind::AutoReview {
                 status: v.status(),

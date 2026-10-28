@@ -2000,16 +2000,6 @@ fn describe_item(body: &[u8]) -> ItemView {
                 error.max_attempts,
             ),
         ),
-        Some(Kind::Reroute(switch)) => (
-            "reroute",
-            true,
-            format!(
-                "{} -> {} {}",
-                switch.from,
-                switch.to,
-                Value::String(switch.reason)
-            ),
-        ),
         Some(Kind::Unrecognized(unrecognized)) => (
             "unrecognized",
             true,

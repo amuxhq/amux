@@ -31,7 +31,6 @@ message CodexItem {
     Boundary boundary = 8;
     AgentMessage agent_message = 9;
     ApiError error = 10;
-    ModelSwitch reroute = 11;
     Unrecognized unrecognized = 12;
     // Working notes, marked apart from the final answer.
     Text working_note = 13;

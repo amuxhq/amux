@@ -5,20 +5,23 @@
 ## 17 recorded 16: input 0xff822a81aa6d4fa3821574e670bd8c3d
   row    2 prompt:ff822a81aa6d4fa3821574e670bd8c3d Prompt { text: [Text("Reply with the single word pong and nothing else. Do not plan anything.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 27 recorded 26: fact Rpc method=deprecationNotice
+  row    3 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
 ## 40 recorded 39: fact Rpc method=item/started
-  row    3 msg_07968efaa2c25d91016ac5c009ac4c819198cbf64bca95be6f Prose { text: [], streaming: true, working_note: false }
+  row    4 msg_07968efaa2c25d91016ac5c009ac4c819198cbf64bca95be6f Prose { text: [], streaming: true, working_note: false }
 ## 42 recorded 41: fact Rpc method=item/agentMessage/delta
-  row    3 msg_07968efaa2c25d91016ac5c009ac4c819198cbf64bca95be6f Prose { text: [Text("pong")], streaming: true, working_note: false }
+  row    4 msg_07968efaa2c25d91016ac5c009ac4c819198cbf64bca95be6f Prose { text: [Text("pong")], streaming: true, working_note: false }
 ## 44 recorded 43: fact Rpc method=item/completed
-  row    3 msg_07968efaa2c25d91016ac5c009ac4c819198cbf64bca95be6f Prose { text: [Text("pong")], streaming: false, working_note: false }
+  row    4 msg_07968efaa2c25d91016ac5c009ac4c819198cbf64bca95be6f Prose { text: [Text("pong")], streaming: false, working_note: false }
 ## 50 recorded 49: fact Rpc method=turn/completed
-  row    4 turn:1 TurnEnd { duration_ms: Some(3798), failed: false }
+  row    5 turn:1 TurnEnd { duration_ms: Some(3798), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:ff822a81aa6d4fa3821574e670bd8c3d Prompt { text: [Text("Reply with the single word pong and nothing else. Do not plan anything.")], steered: false }
-     3 msg_07968efaa2c25d91016ac5c009ac4c819198cbf64bca95be6f Prose { text: [Text("pong")], streaming: false, working_note: false }
-     4 turn:1 TurnEnd { duration_ms: Some(3798), failed: false }
+     3 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
+     4 msg_07968efaa2c25d91016ac5c009ac4c819198cbf64bca95be6f Prose { text: [Text("pong")], streaming: false, working_note: false }
+     5 turn:1 TurnEnd { duration_ms: Some(3798), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 18016, window_tokens: Some(258400), percent: Some(6), near_full: false }) sign-in None
 == settings

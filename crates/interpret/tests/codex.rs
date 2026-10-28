@@ -1769,19 +1769,16 @@ impl Driven {
 #[test]
 fn a_reroute_leaves_the_chosen_model_and_shows_codexs_warning() {
     let mut agent = Driven::started();
-    agent.rpc(json!({"method": "model/rerouted", "params": {
+    let rerouted = agent.rpc(json!({"method": "model/rerouted", "params": {
         "threadId": "t1", "turnId": "turn-1", "fromModel": "m", "toModel": "fallback",
         "reason": "highRiskCyberActivity"}}));
+    assert!(
+        rerouted.step.items.is_empty(),
+        "the reroute drew a row of its own beside Codex's warning"
+    );
     agent.rpc(json!({"method": "warning", "params": {
         "threadId": "t1", "message": "Your request was routed to fallback. Apply for access at https://example.com"}}));
     assert_eq!(agent.snapshot.model.as_deref(), Some("m"));
-    assert!(
-        !agent
-            .bodies()
-            .iter()
-            .any(|kind| matches!(kind, wire::codex_item::Kind::Reroute(_))),
-        "the reroute drew a row of its own beside Codex's warning"
-    );
     assert!(
         agent.items.iter().any(|item| item.text.contains("routed to fallback")),
         "Codex's warning was not drawn"

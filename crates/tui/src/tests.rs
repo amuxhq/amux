@@ -635,6 +635,42 @@ fn a_denial_takes_a_note_that_goes_back_to_the_agent() {
     assert_eq!(deny.note, "use cargo clean");
 }
 
+/// An ask Claude says must not be approved by a stray key opens on its
+/// refusal and takes no digit: a 1 answers nothing, and Enter refuses.
+#[test]
+fn an_ask_that_defaults_to_no_opens_on_deny_and_takes_no_digit() {
+    let (state, at) = fixtures::frame_where(Kind::ClaudeSdk, "flagged_ask", |state| {
+        ask_card(state).is_some()
+    });
+    let mut view = ChatView::new(b"agent".to_vec(), at, false);
+    assert!(
+        view.key(&state, key(KeyCode::Char('1')), theme())
+            .is_empty(),
+        "a digit answers nothing"
+    );
+    let effects = view.key(&state, key(KeyCode::Enter), theme());
+    let [ChatEffect::Answer(input)] = effects.as_slice() else {
+        panic!("{effects:?}");
+    };
+    let Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
+        of: Some(wire::claude_sdk_input::Of::Answer(answer)),
+    })) = input.decode_body()
+    else {
+        panic!("{input:?}");
+    };
+    assert!(
+        matches!(
+            answer.of,
+            Some(wire::claude_answer::Of::Permission(
+                wire::PermissionAnswer {
+                    of: Some(wire::permission_answer::Of::Deny(_)),
+                }
+            ))
+        ),
+        "{answer:?}"
+    );
+}
+
 /// docs/TERMINAL.md: when the agent waits on you "the ask takes over the
 /// composer's box ... the draft waits behind it and comes back after".
 #[test]
@@ -2170,6 +2206,7 @@ fn a_paste_into_a_secret_answer_shows_as_bullets() {
         question_skip: true,
         question_reply: true,
         stops_turn: true,
+        default_to_no: false,
         state: CardState::Open,
     };
     let mut ask = crate::chat::ask::AskUi::default();
@@ -3881,6 +3918,7 @@ fn two_questions() -> ui_view::AskCard {
         question_skip: true,
         question_reply: true,
         stops_turn: true,
+        default_to_no: false,
         state: CardState::Open,
     }
 }

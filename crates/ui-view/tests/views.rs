@@ -2945,6 +2945,7 @@ fn a_forms_answer_carries_the_checked_values() {
             question_skip: false,
             question_reply: false,
             stops_turn: true,
+            default_to_no: false,
             state: ui_view::CardState::Open,
         }
     };

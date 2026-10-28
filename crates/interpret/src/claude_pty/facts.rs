@@ -1705,6 +1705,7 @@ fn permission_ask(
             description: String::new(),
             deny_stops: true,
             deny_can_stop: false,
+            default_to_no: false,
             server: server.to_owned(),
         }),
         shape,

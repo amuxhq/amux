@@ -3144,6 +3144,7 @@ mod tests {
             question_skip: false,
             question_reply: false,
             stops_turn: true,
+            default_to_no: false,
             state: CardState::Open,
         }
     }

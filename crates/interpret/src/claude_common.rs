@@ -1312,6 +1312,9 @@ pub(crate) fn describe_asks(asks: &[Ask]) -> String {
                             .deny_can_stop
                             .then(|| " deny-can-stop".to_owned()),
                         permission.deny_stops.then(|| " deny-stops".to_owned()),
+                        permission
+                            .default_to_no
+                            .then(|| " default-to-no".to_owned()),
                     ]
                     .into_iter()
                     .flatten()

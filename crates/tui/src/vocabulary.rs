@@ -1731,6 +1731,7 @@ fn card(body: AskBody, mut choices: Vec<Choice>) -> AskCard {
         question_skip: true,
         question_reply: true,
         stops_turn: true,
+        default_to_no: false,
         state: CardState::Open,
     }
 }
@@ -2052,6 +2053,7 @@ fn cards() -> Vec<CardSet> {
             AskCard {
                 kind: wire::Kind::Codex,
                 stops_turn: false,
+                default_to_no: false,
                 ..card(
                     AskBody::Plan {
                         title: None,

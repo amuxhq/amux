@@ -2298,6 +2298,11 @@ pub struct PermissionAsk {
     pub deny_can_stop: bool,
     #[prost(string, tag = "8")]
     pub server: ::prost::alloc::string::String,
+    /// The ask must not be approved by one stray keystroke: a keyboard view
+    /// opens it on deny and takes no digit shortcut, and nothing pre-selects
+    /// approve.
+    #[prost(bool, tag = "9")]
+    pub default_to_no: bool,
 }
 impl ::prost::Name for PermissionAsk {
     const NAME: &'static str = "PermissionAsk";

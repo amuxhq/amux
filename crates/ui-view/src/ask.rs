@@ -41,6 +41,10 @@ pub struct AskCard {
     /// Stopping interrupts a running turn. Codex proposes a plan as its
     /// turn ends, so with its plan open there is no turn to stop.
     pub stops_turn: bool,
+    /// Approving must be deliberate: a keyboard view opens the card on its
+    /// refusal and takes no digit shortcut, and nothing pre-selects
+    /// approve.
+    pub default_to_no: bool,
     pub state: CardState,
 }
 
@@ -265,6 +269,7 @@ pub fn ask_card(state: &SessionState) -> Option<AskCard> {
                 ..
             })
         ),
+        default_to_no: false,
         state: card_state,
     })
 }

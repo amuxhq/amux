@@ -465,6 +465,10 @@ message PermissionAsk {
   // Deny can be sent with or without stopping the turn.
   bool deny_can_stop = 7;
   string server = 8;
+  // The ask must not be approved by one stray keystroke: a keyboard view
+  // opens it on deny and takes no digit shortcut, and nothing pre-selects
+  // approve.
+  bool default_to_no = 9;
 }
 
 // One scope the provider offered; answers name its index.

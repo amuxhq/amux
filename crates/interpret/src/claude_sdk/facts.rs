@@ -1386,6 +1386,7 @@ impl State {
                             .unwrap_or_default(),
                         deny_stops: false,
                         deny_can_stop: true,
+                        default_to_no: false,
                         server: server.clone(),
                     }),
                     AskShape::Permission,

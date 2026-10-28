@@ -33,6 +33,7 @@ goldens! {
     amuxs_own_tools_draw_a_message_or_nothing => "amux_tools",
     lifecycle_events_write_boundaries_and_interrupt => "lifecycle",
     permission_asks_keep_scopes_reason_and_description => "asks",
+    a_flagged_ask_offers_no_always_and_defaults_to_no => "flagged_ask",
     questions_and_plan_verdicts_are_asks => "verdicts",
     plans_are_items_with_their_verdict => "plans",
     a_stopped_question_is_dismissed => "question_stopped",
@@ -1757,4 +1758,36 @@ fn a_task_notifications_result_naming_amuxs_message_ends_the_turn() {
         ),
     );
     assert_eq!(turn_outcomes(&ended), [wire::TurnOutcome::Completed]);
+}
+
+/// Claude marks an ask that must offer no persistent rule and must not be
+/// approved by a stray key: amux offers no scope, though Claude sent a
+/// suggestion, and carries the second mark to the clients.
+#[test]
+fn a_flagged_ask_offers_no_scope_and_says_it_defaults_to_no() {
+    let mut state = idle_on_root();
+    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        text: "clean".into(),
+        ..Default::default()
+    });
+    ClaudeSdk::step(&mut state, sdk_input(b"p1", prompt));
+    let asked = ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "control_request", "request_id": "req-1",
+            "request": {
+                "subtype": "can_use_tool", "tool_name": "Bash", "input": {"command": "rm -rf target"},
+                "tool_use_id": "t1",
+                "permission_suggestions": [{"type": "addRules", "behavior": "allow", "destination": "localSettings",
+                    "rules": [{"toolName": "Bash", "ruleContent": "rm -rf target"}]}],
+                "suppress_always_allow_rule": true, "default_to_no": true,
+            },
+        })),
+    );
+    let (_, snapshot) = sdk_snapshot(&asked).expect("a snapshot");
+    let Some(wire::ask::Body::Permission(permission)) = &snapshot.asks[0].body else {
+        panic!("{:?}", snapshot.asks);
+    };
+    assert!(permission.scopes.is_empty(), "{:?}", permission.scopes);
+    assert!(permission.default_to_no);
 }

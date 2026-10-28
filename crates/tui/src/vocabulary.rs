@@ -2380,6 +2380,7 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
             used_percent,
             resets_at_ms: Some(resets_at_ms),
             state: state as i32,
+            used_unknown: false,
         })
     };
     use wire::UsageState::{NearLimit, Ok};

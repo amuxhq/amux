@@ -479,7 +479,7 @@ enum ComponentCatalog {
             composer("strip-claude-sdk", height: 220, frame: ScriptedChat.frame(), strip: ScriptedChat.strip(
                 context: ContextView(usedTokens: 30_513, nearFull: false, percent: 16, windowTokens: 200_000),
                 model: "claude-opus-5-5", effort: "low", mode: "plan",
-                usage: UsageView(blocked: false, windows: [UsageWindowView(label: .fiveHour, usedPercent: 83, state: .nearLimit, resetsAtMs: nil)], credits: nil),
+                usage: UsageView(blocked: false, windows: [UsageWindowView(label: .fiveHour, state: .nearLimit, resetsAtMs: nil, usedPercent: 83)], credits: nil),
                 failedServers: [ServerView(name: "claude.ai Google Drive", error: "", needsAuth: true)],
                 background: 3)),
             composer("strip-codex", height: 220, frame: ScriptedChat.frame(), strip: ScriptedChat.strip(
@@ -518,7 +518,7 @@ enum ComponentCatalog {
                 $0.attach(F.writtenReview())
             },
             composer("strip-trouble", height: 220, frame: ScriptedChat.frame(), strip: ScriptedChat.strip(
-                model: "gpt-5", usage: UsageView(blocked: false, windows: [UsageWindowView(label: .fiveHour, usedPercent: 91, state: .nearLimit, resetsAtMs: nil)], credits: nil),
+                model: "gpt-5", usage: UsageView(blocked: false, windows: [UsageWindowView(label: .fiveHour, state: .nearLimit, resetsAtMs: nil, usedPercent: 91)], credits: nil),
                 failedServers: [ServerView(name: "github", error: "exited", needsAuth: false)])),
             composer("sign-in", height: 240, frame: ScriptedChat.frame(), strip: ScriptedChat.strip(signIn: F.expiredSignIn)),
             // The settings card once per provider kind, from the settings
@@ -542,7 +542,7 @@ enum ComponentCatalog {
                 model.type("Why does this fail? " + (1...14).map { "error[E0308]: mismatched types at line \($0)" }.joined(separator: "\n"))
             },
             composer("usage-blocked", height: 200, frame: ScriptedChat.frame(), strip: ScriptedChat.strip(
-                usage: UsageView(blocked: true, windows: [UsageWindowView(label: .weekly(model: nil), usedPercent: 100, state: .blocked, resetsAtMs: nil)], credits: nil))),
+                usage: UsageView(blocked: true, windows: [UsageWindowView(label: .weekly(model: nil), state: .blocked, resetsAtMs: nil, usedPercent: 100)], credits: nil))),
         ]
     }()
 
@@ -998,9 +998,9 @@ enum CatalogFixtures {
         let ms = Int64(now.timeIntervalSince1970 * 1_000)
         var strip = ScriptedChat.strip(
             usage: UsageView(blocked: false, windows: [
-                UsageWindowView(label: .fiveHour, usedPercent: 91, state: .nearLimit, resetsAtMs: nil),
-                UsageWindowView(label: .weekly(model: nil), usedPercent: 40, state: .ok, resetsAtMs: ms + 4 * 86_400_000),
-                UsageWindowView(label: .weekly(model: "Fable"), usedPercent: 84, state: .nearLimit, resetsAtMs: ms + 4 * 86_400_000),
+                UsageWindowView(label: .fiveHour, state: .nearLimit, resetsAtMs: nil, usedPercent: 91),
+                UsageWindowView(label: .weekly(model: nil), state: .ok, resetsAtMs: ms + 4 * 86_400_000, usedPercent: 40),
+                UsageWindowView(label: .weekly(model: "Fable"), state: .nearLimit, resetsAtMs: ms + 4 * 86_400_000, usedPercent: 84),
             ], credits: nil),
             failedServers: [ServerView(name: "github", error: "The token expired.", needsAuth: true)],
             git: git, changes: changes)

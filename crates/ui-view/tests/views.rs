@@ -692,6 +692,7 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
         used_percent: 91.0,
         resets_at_ms: Some(5),
         state: wire::UsageState::NearLimit as i32,
+        used_unknown: false,
     });
     let claude_usage = wire::ClaudeUsage {
         state: wire::UsageState::NearLimit as i32,
@@ -2334,6 +2335,7 @@ fn each_row_says_what_its_state_calls_for() {
                 used_percent,
                 resets_at_ms: Some(resets_at_ms),
                 state: state as i32,
+                used_unknown: false,
             }),
         }
     };

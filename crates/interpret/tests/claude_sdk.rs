@@ -1913,3 +1913,49 @@ fn a_plan_approval_switches_to_never_ask_where_claude_offers_it() {
     };
     assert_eq!(plan.switch_permission, "bypassPermissions");
 }
+
+/// Claude can name a window without saying how much of it is used. A window
+/// seen before keeps the use and reset it was last given; a window first
+/// named that way reads unknown rather than empty.
+#[test]
+fn a_window_reported_without_its_use_keeps_what_was_held_or_reads_unknown() {
+    let mut state = idle_on_root();
+    let report = |info: Value| {
+        stream(
+            json!({"type": "rate_limit_event", "uuid": "rl", "session_id": "s", "rate_limit_info": info}),
+        )
+    };
+    ClaudeSdk::step(
+        &mut state,
+        report(
+            json!({"status": "allowed", "rateLimitType": "seven_day_opus",
+            "utilization": 0.9, "resetsAt": 1_800_000_000}),
+        ),
+    );
+    ClaudeSdk::step(
+        &mut state,
+        report(json!({"status": "allowed_warning", "rateLimitType": "seven_day_opus"})),
+    );
+    let stepped = ClaudeSdk::step(
+        &mut state,
+        report(json!({"status": "rejected", "rateLimitType": "overage"})),
+    );
+    let (_, snapshot) = sdk_snapshot(&stepped).expect("a snapshot");
+    let usage = snapshot.usage.expect("usage");
+    let meter = |name: &str| {
+        usage
+            .windows
+            .iter()
+            .find(|window| window.provider_name == name)
+            .and_then(|window| window.meter.clone())
+            .unwrap_or_else(|| panic!("no {name} window in {usage:?}"))
+    };
+    let held = meter("seven_day_opus");
+    assert_eq!(held.used_percent, 90.0);
+    assert!(!held.used_unknown);
+    assert_eq!(held.resets_at_ms, Some(1_800_000_000_000));
+    assert_eq!(held.state(), wire::UsageState::NearLimit);
+    let new = meter("overage");
+    assert!(new.used_unknown, "{new:?}");
+    assert_eq!(new.state(), wire::UsageState::Blocked);
+}

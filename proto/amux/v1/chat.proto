@@ -660,6 +660,9 @@ message UsageMeter {
   // This window's own state: a person can reach the weekly limit before
   // the five-hour one.
   UsageState state = 3;
+  // The provider has named this window without saying how much of it is
+  // used, so `used_percent` means nothing.
+  bool used_unknown = 4;
 }
 
 // A usage window's length, the same for every provider.

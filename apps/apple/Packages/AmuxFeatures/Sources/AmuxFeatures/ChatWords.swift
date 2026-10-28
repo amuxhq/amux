@@ -501,7 +501,7 @@ public enum ChatWords {
         }
         if let usage = overview.usageNearLimit, !usage.blocked {
             let near = usage.windows
-                .map { "\(usageLabel($0.label)) \(Int($0.usedPercent.rounded()))%" }
+                .map { "\(usageLabel($0.label)) \(Int(($0.usedPercent ?? 0).rounded()))%" }
                 .joined(separator: " · ")
             parts.append((
                 near.isEmpty
@@ -520,7 +520,7 @@ public enum ChatWords {
     /// say which. Sending stays open: the provider may still take a prompt.
     public static func limitReached(_ usage: UsageView, now: Date) -> String {
         let window = usage.windows.first { $0.state == .blocked }
-            ?? usage.windows.max { $0.usedPercent < $1.usedPercent }
+            ?? usage.windows.max { ($0.usedPercent ?? 0) < ($1.usedPercent ?? 0) }
         guard let window else { return String(localized: "Usage limit reached") }
         let reached = String(localized: "\(usageLabel(window.label)) reached")
         guard let at = window.resetsAtMs, Date(milliseconds: at) > now else { return reached }
@@ -618,7 +618,7 @@ public enum ChatWords {
 
     /// How full a usage window is: "91% used".
     public static func used(_ window: UsageWindowView) -> String {
-        String(localized: "\(Int(window.usedPercent.rounded()))% used")
+        String(localized: "\(Int((window.usedPercent ?? 0).rounded()))% used")
     }
 
     /// A usage window's state and when it resets: "near · resets 16:07".

@@ -2700,6 +2700,10 @@ pub struct UsageMeter {
     /// the five-hour one.
     #[prost(enumeration = "UsageState", tag = "3")]
     pub state: i32,
+    /// The provider has named this window without saying how much of it is
+    /// used, so `used_percent` means nothing.
+    #[prost(bool, tag = "4")]
+    pub used_unknown: bool,
 }
 impl ::prost::Name for UsageMeter {
     const NAME: &'static str = "UsageMeter";

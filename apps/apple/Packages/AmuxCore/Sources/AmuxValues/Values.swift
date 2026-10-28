@@ -6519,26 +6519,26 @@ public struct UsageView: Codable, Hashable, Sendable {
     }
 }
 
-/// One rate-limit window: which limit it is, how much of it is used, when
-/// it resets, and its own state.
+/// One rate-limit window: which limit it is, how much of it is used (none
+/// when the provider has not said), when it resets, and its own state.
 public struct UsageWindowView: Codable, Hashable, Sendable {
     public var label: UsageLabel
-    public var usedPercent: Double
     public var state: UsageState
     public var resetsAtMs: Int64?
+    public var usedPercent: Double?
 
-    public init(label: UsageLabel, usedPercent: Double, state: UsageState, resetsAtMs: Int64?) {
+    public init(label: UsageLabel, state: UsageState, resetsAtMs: Int64?, usedPercent: Double?) {
         self.label = label
-        self.usedPercent = usedPercent
         self.state = state
         self.resetsAtMs = resetsAtMs
+        self.usedPercent = usedPercent
     }
 
     private enum CodingKeys: String, CodingKey {
         case label
-        case usedPercent = "used_percent"
         case state
         case resetsAtMs = "resets_at_ms"
+        case usedPercent = "used_percent"
     }
 }
 

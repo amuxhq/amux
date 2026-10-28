@@ -199,8 +199,8 @@ final class ChatWordsTests: XCTestCase {
         let now = Date(milliseconds: 1_800_000_000_000)
         let nowMs: Int64 = 1_800_000_000_000
         let usage = UsageView(blocked: true, windows: [
-            UsageWindowView(label: .fiveHour, usedPercent: 100, state: .blocked, resetsAtMs: nowMs + 7_200_000),
-            UsageWindowView(label: .weekly(model: nil), usedPercent: 64, state: .ok, resetsAtMs: nowMs + 259_200_000),
+            UsageWindowView(label: .fiveHour, state: .blocked, resetsAtMs: nowMs + 7_200_000, usedPercent: 100),
+            UsageWindowView(label: .weekly(model: nil), state: .ok, resetsAtMs: nowMs + 259_200_000, usedPercent: 64),
         ], credits: nil)
         let reached = ChatWords.limitReached(usage, now: now)
         XCTAssertTrue(reached.hasPrefix("5-hour limit reached · resets "), reached)
@@ -212,6 +212,21 @@ final class ChatWordsTests: XCTestCase {
         XCTAssertEqual(ChatWords.limitReached(past, now: now), "5-hour limit reached", "a reset already past is not promised")
         XCTAssertEqual(
             ChatWords.limitReached(UsageView(blocked: true, windows: [], credits: nil), now: now), "Usage limit reached")
+    }
+
+    func testAWindowOfUnknownUseReadsADashAndIsNeverTheFullest() {
+        let now = Date(milliseconds: 1_800_000_000_000)
+        let known = UsageWindowView(label: .fiveHour, state: .nearLimit, resetsAtMs: nil, usedPercent: 60)
+        let unknown = UsageWindowView(label: .named("overage"), state: .unknown, resetsAtMs: nil, usedPercent: nil)
+        XCTAssertEqual(ChatWords.used(unknown), "—")
+        XCTAssertEqual(
+            ChatWords.limitReached(UsageView(blocked: true, windows: [unknown, known], credits: nil), now: now),
+            "5-hour limit reached")
+        let near = UsageView(blocked: false, windows: [known, unknown], credits: nil)
+        let overview = Overview(jobs: [], failedServers: [], changes: nil, tasks: nil, usageNearLimit: near)
+        XCTAssertEqual(
+            ChatWords.strip(context: nil, overview: overview, now: now).first?.text,
+            "Near the usage limit · 5-hour limit 60%")
     }
 
     func testSigningInIsAskedForOnTheAgentsHost() {

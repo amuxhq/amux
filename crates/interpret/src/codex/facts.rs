@@ -2699,6 +2699,7 @@ fn codex_usage(limits: &RateLimitSnapshot) -> CodexUsage {
                     used_percent: used,
                     resets_at_ms: window.resets_at.map(|at| at * 1000),
                     state: window_state(used) as i32,
+                    used_unknown: false,
                 }),
             }
         })

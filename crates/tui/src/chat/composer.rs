@@ -79,10 +79,11 @@ pub fn edge_row(
         .as_ref()
         .filter(|usage| typing && !usage.blocked)
         .and_then(|usage| {
-            usage
-                .windows
-                .iter()
-                .max_by(|a, b| a.used_percent.total_cmp(&b.used_percent))
+            usage.windows.iter().max_by(|a, b| {
+                a.used_percent
+                    .unwrap_or_default()
+                    .total_cmp(&b.used_percent.unwrap_or_default())
+            })
         })
         .map(|window| usage_words(window, now_ms, theme));
     if groups.is_empty() && usage.is_none() {
@@ -143,7 +144,10 @@ fn usage_words(
     let name = limit_name(&window.label);
     let mut spans = vec![
         (name, theme.muted()),
-        (format!(" {:.0}% used", window.used_percent), theme.text()),
+        (
+            format!(" {:.0}% used", window.used_percent.unwrap_or_default()),
+            theme.text(),
+        ),
     ];
     if let Some(at) = window.resets_at_ms.filter(|at| *at > now_ms) {
         spans.push((format!(" · resets {}", resets(at, now_ms)), theme.faint()));
@@ -177,10 +181,11 @@ pub fn limit_reached(overview: &Overview, now_ms: i64) -> Option<String> {
         .iter()
         .find(|window| window.state == wire::UsageState::Blocked)
         .or_else(|| {
-            usage
-                .windows
-                .iter()
-                .max_by(|a, b| a.used_percent.total_cmp(&b.used_percent))
+            usage.windows.iter().max_by(|a, b| {
+                a.used_percent
+                    .unwrap_or_default()
+                    .total_cmp(&b.used_percent.unwrap_or_default())
+            })
         })
     else {
         return Some("Usage limit reached".to_owned());

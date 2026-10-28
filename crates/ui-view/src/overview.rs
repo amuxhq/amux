@@ -78,12 +78,12 @@ pub struct UsageView {
     pub credits: Option<String>,
 }
 
-/// One rate-limit window: which limit it is, how much of it is used, when
-/// it resets, and its own state.
+/// One rate-limit window: which limit it is, how much of it is used (none
+/// when the provider has not said), when it resets, and its own state.
 #[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 pub struct UsageWindowView {
     pub label: UsageLabel,
-    pub used_percent: f64,
+    pub used_percent: Option<f64>,
     pub resets_at_ms: Option<i64>,
     pub state: UsageState,
 }
@@ -309,7 +309,7 @@ pub fn usage_windows(usage: &Usage) -> Vec<UsageWindowView> {
         let meter = meter.unwrap_or_default();
         UsageWindowView {
             label,
-            used_percent: meter.used_percent,
+            used_percent: Some(meter.used_percent),
             resets_at_ms: meter.resets_at_ms,
             state: meter.state(),
         }

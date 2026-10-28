@@ -3608,6 +3608,7 @@ fn the_overview_lists_jobs_files_by_folder_and_usage_windows() {
             used_percent,
             resets_at_ms: None,
             state: state as i32,
+            used_unknown: false,
         })
     };
     let body = wire::ClaudeSdkSnapshot {
@@ -3681,6 +3682,49 @@ fn the_overview_lists_jobs_files_by_folder_and_usage_windows() {
         "{screen}"
     );
     assert_eq!(pane[at("Fable weekly limit") + 1], "fine");
+}
+
+/// A window whose use the provider did not give reads "—" in the overview,
+/// and never stands for the limit reached: the composer's edge names the
+/// fullest window whose use is known.
+#[test]
+fn a_window_of_unknown_use_reads_a_dash_and_is_never_the_fullest() {
+    let window =
+        |limit: wire::Limit, name: &str, used_percent, used_unknown| wire::ClaudeUsageWindow {
+            limit: limit as i32,
+            provider_name: name.into(),
+            meter: Some(wire::UsageMeter {
+                used_percent,
+                used_unknown,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+    let body = wire::ClaudeSdkSnapshot {
+        usage: Some(wire::ClaudeUsage {
+            state: wire::UsageState::Blocked as i32,
+            windows: vec![
+                window(wire::Limit::FiveHour, "five_hour", 60.0, false),
+                window(wire::Limit::Unspecified, "overage", 99.0, true),
+            ],
+        }),
+        ..Default::default()
+    }
+    .encode_to_vec();
+    let mut state = chat_in_git(replies(1, 2), Some("main"));
+    state.update(snapshot(Phase::Idle, body, vec![]));
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    view.open_pane();
+    let (buffer, _) = draw(&mut view, &state, 5 * 60_000, 140, 40, theme());
+    let screen = text(&buffer);
+    let overage = screen
+        .lines()
+        .filter_map(|line| line.split_once('│').map(|(_, pane)| pane.trim()))
+        .find(|line| line.starts_with("overage limit"))
+        .unwrap_or_else(|| panic!("no overage window in the pane:\n{screen}"));
+    assert!(overage.ends_with('—'), "{screen}");
+    assert!(!screen.contains("99%"), "{screen}");
+    assert!(screen.contains("5-hour limit reached"), "{screen}");
 }
 
 /// A background command reads as code; the provider's own subagent or

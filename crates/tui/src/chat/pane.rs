@@ -407,7 +407,7 @@ pub fn pane_lines(
                         UsageState::Ok => (Some("fine"), theme.muted()),
                         UsageState::Unknown => (None, theme.muted()),
                     };
-                    let used = format!("{:.0}% used", window.used_percent);
+                    let used = format!("{:.0}% used", window.used_percent.unwrap_or_default());
                     let mut line = Line::default();
                     let room = inner.saturating_sub(text::str_width(&used) + 2);
                     push(

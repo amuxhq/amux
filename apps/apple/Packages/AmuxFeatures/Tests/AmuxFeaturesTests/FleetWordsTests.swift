@@ -87,14 +87,14 @@ final class FleetWordsTests: XCTestCase {
 
     func testTheOverviewWordsUsageAndChanges() {
         let near = UsageWindowView(
-            label: .weekly(model: "Fable"), usedPercent: 83.6, state: .nearLimit,
-            resetsAtMs: nowMs + 4 * 86_400_000)
+            label: .weekly(model: "Fable"), state: .nearLimit,
+            resetsAtMs: nowMs + 4 * 86_400_000, usedPercent: 83.6)
         XCTAssertEqual(ChatWords.usageLabel(near.label), "Fable weekly limit")
         XCTAssertEqual(ChatWords.used(near), "84% used")
         XCTAssertEqual(
             ChatWords.usageDetail(near, now: now),
             "near · resets \(now.addingTimeInterval(4 * 86_400).formatted(.dateTime.weekday(.abbreviated)))")
-        let unknown = UsageWindowView(label: .fiveHour, usedPercent: 10, state: .unknown, resetsAtMs: nil)
+        let unknown = UsageWindowView(label: .fiveHour, state: .unknown, resetsAtMs: nil, usedPercent: 10)
         XCTAssertNil(ChatWords.usageDetail(unknown, now: now))
         XCTAssertEqual(ChatWords.comparison(.uncommitted, base: "main"), "Uncommitted")
         XCTAssertEqual(ChatWords.comparison(.onBranch, base: "main"), "vs main")

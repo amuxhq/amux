@@ -5065,7 +5065,7 @@ impl ::prost::Name for CodexCreateConfig {
 pub struct CodexItem {
     #[prost(
         oneof = "codex_item::Kind",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17"
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18, 19"
     )]
     pub kind: ::core::option::Option<codex_item::Kind>,
 }
@@ -5111,6 +5111,15 @@ pub mod codex_item {
         /// The plan Codex proposed in plan mode.
         #[prost(message, tag = "17")]
         Plan(super::Plan),
+        /// A line from a command amux runs for Codex, as Codex's own app prints
+        /// it ("Code review started: current changes"); the line is the envelope
+        /// text.
+        #[prost(message, tag = "18")]
+        CommandOutput(super::SlashOutput),
+        /// Codex holding the turn's answer for a slower safety check; the
+        /// envelope text is Codex's words.
+        #[prost(message, tag = "19")]
+        SafetyCheck(super::SafetyCheck),
     }
 }
 impl ::prost::Name for CodexItem {
@@ -5121,6 +5130,22 @@ impl ::prost::Name for CodexItem {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.CodexItem".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SafetyCheck {
+    /// The check is still running.
+    #[prost(bool, tag = "1")]
+    pub running: bool,
+}
+impl ::prost::Name for SafetyCheck {
+    const NAME: &'static str = "SafetyCheck";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.SafetyCheck".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.SafetyCheck".into()
     }
 }
 /// The summary is kept beside the full text, which is the envelope text.

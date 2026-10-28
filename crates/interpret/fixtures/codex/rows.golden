@@ -56,7 +56,7 @@ item diff:turn-1 turn_diff final at=1800000000000 text="" patch="diff --git a/le
 ## 26 fact {"channel":"rpc","json":{"method":"thread/tokenUsage/updated","params":{"threadId":"t1","tokenUsage":{"last":{"totalTokens":48000},"modelContextWindow":258400,"total":{"totalTokens":90000}},"turnId":"turn-1"}}}
 snapshot WORKING queue=[] working_on="Splitting the lexer" at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=48000/258400 plan=[1:TASK_LIST_STATUS_COMPLETED:"Read the parser",2:TASK_LIST_STATUS_IN_PROGRESS:"Split the lexer",3:TASK_LIST_STATUS_PENDING:"Run the tests"] usage=blocked 5h:100%(blocked) 7d:40%(ok) credits=0 servers=HEALTH_STATE_DEGRADED[docs:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 27 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"id":"rv-1","review":"current changes","type":"enteredReviewMode"},"threadId":"t1","turnId":"turn-1"}}}
-item rv-1 unrecognized final at=1800000000000 text="" enteredReviewMode "an item amux does not read"
+item rv-1 command_output final at=1800000000000 text="Code review started: current changes" review
 ## 28 fact {"channel":"rpc","json":{"method":"thread/started","params":{"thread":{"cliVersion":"0.157.0","id":"child-thread"},"threadId":"t1"}}}
 ## 29 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"child-thread","turn":{"id":"child-turn"}}}}
 ## 30 fact {"channel":"rpc","json":{"method":"item/somethingNew","params":{"itemId":"x","threadId":"t1"}}}

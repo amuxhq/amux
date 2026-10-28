@@ -147,6 +147,8 @@ public enum ActivityKind: Codable, Hashable, Sendable {
     case running(key: String)
     /// The agent waits on its subagents.
     case subagents(count: UInt32)
+    /// The provider holds the answer for a slower safety check.
+    case safetyCheck
     case retrying(attempt: UInt32, maxAttempts: UInt32, retryAtMs: Int64?)
 
     private enum Tag: String, CodingKey {
@@ -177,6 +179,7 @@ public enum ActivityKind: Codable, Hashable, Sendable {
             case "Compacting": self = .compacting
             case "Working": self = .working
             case "Thinking": self = .thinking
+            case "SafetyCheck": self = .safetyCheck
             default:
                 throw DecodingError.dataCorruptedError(
                     in: _single, debugDescription: "no ActivityKind is named \(_name)")
@@ -230,6 +233,9 @@ public enum ActivityKind: Codable, Hashable, Sendable {
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: SubagentsKeys.self, forKey: .subagents)
             try _fields.encode(count, forKey: .count)
+        case .safetyCheck:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("SafetyCheck")
         case .retrying(let attempt, let maxAttempts, let retryAtMs):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: RetryingKeys.self, forKey: .retrying)

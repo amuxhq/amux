@@ -3299,6 +3299,7 @@ pub(crate) fn activity_words(kind: &ActivityKind) -> String {
             if *count == 1 { "" } else { "s" }
         ),
         ActivityKind::Compacting => "Compacting".to_owned(),
+        ActivityKind::SafetyCheck => "Running safety checks".to_owned(),
         ActivityKind::Retrying { attempt, .. } => format!("Retrying · attempt {attempt}"),
         ActivityKind::Working | ActivityKind::Running { .. } => "Working".to_owned(),
     }

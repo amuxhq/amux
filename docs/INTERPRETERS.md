@@ -735,11 +735,28 @@ answer.
   are appends to their open items.
 - **Other notices.** A web search that opens a page or looks within one
   carries the page's address, as the step's text too, since Codex says
-  nothing else about it. `configWarning` (configuration Codex found and did
-  not apply) is an error item of kind `configWarning` in Codex's words. A
+  nothing else about it. Codex's warnings are error items of the kind Codex
+  sent them as, in Codex's words, as its own app shows them: `configWarning`
+  (configuration Codex found and did not apply), `deprecationNotice`,
+  `warning` (among them the one that says a request was routed to another
+  model; `model/rerouted` itself changes nothing, since a reroute covers one
+  request), `guardianWarning` (except an approved review's, which repeats
+  its verdict row), `model/verification`'s cybersecurity check (in Codex's
+  fixed words) and `autoApprovalReview/strictReviewRequired`.
+  `model/safetyBuffering/updated` is a safety-check item, hidden, which makes
+  the turn's activity "Running safety checks" while the check runs. A
+  review's `enteredReviewMode` and `exitedReviewMode` items are command-output
+  lines ("Code review started: …", "Code review finished"). A
   goal's progress (`thread/goal/updated`) draws nothing, like its clearing,
   and neither does a turn's moderation verdict (`turn/moderationMetadata`)
   or which turn Codex's own app last showed (`thread/readState/changed`).
+  Hook runs (`hook/started`, `hook/completed`) and hook-prompt items draw
+  nothing: a hook's effect reaches the conversation itself (a blocked call's
+  output names the hook), as for Claude. Nor do sub-agent activity, sleep
+  and function-call-output items. The notifications amux never draws
+  (`DROPPED_NOTIFICATIONS`: hooks, tool-call progress, patch updates, app
+  and environment changes, and the rest) are opted out of at `initialize`
+  (`optOutNotificationMethods`) and dropped should Codex send them anyway.
 - **Agent messages** go to Codex with `thread/inject_items`. Codex reports
   nothing about an injected item, so the interpreter writes the agent-message
   item itself, at acceptance. A probe of codex-cli 0.157.0 settled when the

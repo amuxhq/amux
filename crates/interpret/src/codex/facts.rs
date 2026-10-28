@@ -35,7 +35,7 @@ use wire::{
 };
 
 use super::{
-    AskMeta, FRESH_THREAD_REQUEST, InjectConsumption, Proposed, RESUME_REQUEST, Request, State,
+    AskMeta, DROPPED_NOTIFICATIONS, FRESH_THREAD_REQUEST, InjectConsumption, Proposed, RESUME_REQUEST, Request, State,
     Streamed, WorkState, ask_key, client_message_id, elicitation_response, item_body, work_ask,
     work_complete,
 };
@@ -337,6 +337,9 @@ impl State {
                 if let (Some(ours), Some(theirs)) = (self.thread_id.as_deref(), unknown.thread_id())
                     && ours != theirs
                 {
+                    return;
+                }
+                if DROPPED_NOTIFICATIONS.contains(&method) {
                     return;
                 }
                 self.unrecognized(emit, method, "a notification amux does not read");
@@ -1580,9 +1583,35 @@ impl State {
                 self.warning(emit, "deprecationNotice", notice_words(notice))
             }
             ServerNotification::Warning(warning) => self.warning(emit, "warning", warning.message),
+            // An approved review's warning repeats its verdict row, so
+            // Codex's own app leaves it out too.
+            ServerNotification::GuardianWarning(warning)
+                if warning
+                    .message
+                    .starts_with("Automatic approval review approved (") => {}
             ServerNotification::GuardianWarning(warning) => {
                 self.warning(emit, "guardianWarning", warning.message)
             }
+            // Codex's own app shows only this check, in these words.
+            ServerNotification::ModelVerification(verified) => {
+                if verified
+                    .verifications
+                    .iter()
+                    .any(|check| check == "trustedAccessForCyber")
+                {
+                    self.warning(emit, "modelVerification", CYBER_CHECKS.to_owned());
+                }
+            }
+            ServerNotification::StrictReviewRequired(_) => self.warning(
+                emit,
+                "strictReviewRequired",
+                "This request requires additional safety checks, some tool calls might take extra time"
+                    .to_owned(),
+            ),
+            ServerNotification::SafetyBufferingUpdated(update) => {
+                self.safety_check(emit, &update.turn_id, update.show_buffering_ui)
+            }
+            ServerNotification::HookStarted(_) | ServerNotification::HookCompleted(_) => {}
             // Codex closes a thread only once no client is subscribed, so
             // the agent's own thread closing means it is gone; the next
             // incarnation resumes it.
@@ -1590,6 +1619,40 @@ impl State {
                 cause: "Codex closed the agent's thread".into(),
             }),
         }
+    }
+
+    /// A line Codex's own app prints for a command amux runs for it.
+    fn review_line(&mut self, emit: &mut Emit, key: String, at_ms: Option<i64>, line: String) {
+        self.emit_item(
+            emit,
+            ItemDraft {
+                key,
+                text: line,
+                body: item_body(codex_item::Kind::CommandOutput(wire::SlashOutput {
+                    command: "review".into(),
+                    args: String::new(),
+                })),
+                at_ms,
+                complete: true,
+                ..Default::default()
+            },
+        );
+    }
+
+    /// Codex holding the turn's answer for a slower safety check: the turn's
+    /// status while it runs.
+    fn safety_check(&mut self, emit: &mut Emit, turn: &str, running: bool) {
+        self.emit_item(
+            emit,
+            ItemDraft {
+                key: format!("safety:{turn}"),
+                text: "Our systems are thinking a bit more about this request before responding."
+                    .into(),
+                body: item_body(codex_item::Kind::SafetyCheck(wire::SafetyCheck { running })),
+                complete: !running,
+                ..Default::default()
+            },
+        );
     }
 
     /// A warning row in Codex's words, under the kind Codex sent it as.
@@ -1863,6 +1926,24 @@ impl State {
             | ThreadItem::CollabAgentToolCall(_) => {
                 self.work_item(emit, &id, item, turn, at_ms, ended_at_ms, completed)
             }
+            // Codex's own app prints a review's start and end as lines of
+            // their own; the review's findings arrive as an agent message.
+            ThreadItem::EnteredReviewMode(review) => self.review_line(
+                emit,
+                id,
+                at_ms,
+                format!("Code review started: {}", review.review),
+            ),
+            ThreadItem::ExitedReviewMode(_) => {
+                self.review_line(emit, id, at_ms, "Code review finished".to_owned())
+            }
+            // Read for what they carry elsewhere: a hook's prompt reaches the
+            // conversation, a child's activity its own subagent row; a sleep
+            // or a raw call output shows nothing in Codex's own app.
+            ThreadItem::HookPrompt(_)
+            | ThreadItem::SubAgentActivity(_)
+            | ThreadItem::Sleep(_)
+            | ThreadItem::FunctionCallOutput(_) => {}
             other => {
                 let other = other.kind().to_owned();
                 self.emit_item(
@@ -2653,3 +2734,6 @@ fn notice_words(notice: DeprecationNotice) -> String {
         None => notice.summary,
     }
 }
+
+/// Codex's words for its cybersecurity checks, as its own app shows them.
+const CYBER_CHECKS: &str = "Your conversations have multiple flags for possible cybersecurity risk. Responses may take longer because extra safety checks are on. To get authorized for security work, join the Trusted Access for Cyber program: https://chatgpt.com/cyber";

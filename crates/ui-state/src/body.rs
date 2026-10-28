@@ -92,6 +92,9 @@ impl ItemBody {
             },
             ItemBody::Codex(kind) => match kind {
                 Codex::Prompt(_) => ItemClass::Prompt,
+                Codex::SafetyCheck(check) if check.running => ItemClass::SafetyCheck,
+                Codex::SafetyCheck(_) => ItemClass::Silent,
+                Codex::CommandOutput(_) => ItemClass::Other,
                 Codex::Steer(_) => ItemClass::Steer,
                 Codex::Message(text) | Codex::WorkingNote(text) => ItemClass::Prose {
                     complete: text.complete,
@@ -134,6 +137,8 @@ pub enum ItemClass {
     },
     Error,
     Compacting,
+    /// The provider holds the answer for a slower safety check.
+    SafetyCheck,
     Boundary,
     AgentMessage,
     /// An ask that is the work, or a plan put to the person. It is a

@@ -70,6 +70,9 @@ pub struct ClientInfo {
 pub struct Capabilities {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub experimental_api: Option<bool>,
+    /// Notifications the server is not to send this client.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub opt_out_notification_methods: Vec<String>,
     #[serde(flatten)]
     pub extra: Extra,
 }

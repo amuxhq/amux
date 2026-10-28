@@ -468,6 +468,10 @@ impl Provider {
                     },
                     capabilities: Some(Capabilities {
                         experimental_api: Some(true),
+                        opt_out_notification_methods: interpret::codex::DROPPED_NOTIFICATIONS
+                            .iter()
+                            .map(|method| (*method).to_owned())
+                            .collect(),
                         extra: Default::default(),
                     }),
                     extra: Default::default(),

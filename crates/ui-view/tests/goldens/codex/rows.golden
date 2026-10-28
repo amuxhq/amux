@@ -35,7 +35,7 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 27 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"id":"rv-1","review":"current changes","type":"enteredReviewMode"},"threadId":"t1","turnId":"turn-1"}}}
   row    7 cmd-1 Command { command: "cargo watch", state: Running, exit_code: None, output_head: ["[watching]"], more_lines: 0, output_trimmed: false, output_tail: ["[watching]"], duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
-  row    9 rv-1 Unrecognized { what: "enteredReviewMode", summary: "an item amux does not read" }
+  row    9 rv-1 SlashOutput { command: "review", args: "", output: "Code review started: current changes" }
 ## 30 fact {"channel":"rpc","json":{"method":"item/somethingNew","params":{"itemId":"x","threadId":"t1"}}}
   row   10 unrecognized:3 Unrecognized { what: "item/somethingNew", summary: "a notification amux does not read" }
 ## 31 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"id":"msg-1","phase":"final_answer","text":"","type":"agentMessage"},"startedAtMs":null,"threadId":"t1","turnId":"turn-1"}}}
@@ -72,7 +72,7 @@
      6 note-1 Prose { text: [Text("Splitting the lexer out first.")], streaming: false, working_note: true }
      7 cmd-1 Background { command: "cargo watch", running: false, duration_ms: Some(9000) } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
      8 diff:turn-1 Hidden collapsed
-     9 rv-1 Unrecognized { what: "enteredReviewMode", summary: "an item amux does not read" }
+     9 rv-1 SlashOutput { command: "review", args: "", output: "Code review started: current changes" }
     10 unrecognized:3 Unrecognized { what: "item/somethingNew", summary: "a notification amux does not read" }
     11 msg-1 Prose { text: [Text("The lexer is split.")], streaming: false, working_note: false }
     12 turn:1 TurnEnd { duration_ms: Some(4000), failed: false }

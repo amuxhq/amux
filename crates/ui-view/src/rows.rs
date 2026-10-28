@@ -732,6 +732,8 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             Sdk::Ask(ask) => plain(ask_row(ask)),
         },
         ItemBody::Codex(kind) => match kind {
+            Codex::CommandOutput(s) => plain(slash(held, s)),
+            Codex::SafetyCheck(_) => plain(RowKind::Hidden),
             Codex::Prompt(_) => plain(RowKind::Prompt {
                 text: text(),
                 steered: false,

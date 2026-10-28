@@ -47,8 +47,6 @@ item msg_0f339e74503e57f8016ab72f06e49487d2bd368a73fabdac32 working_note final a
 item exec-b283e140-65f5-4684-9498-73e4c2de1ce0 work open at=1790390025311 text="" command "touch reviewed.txt" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING
 ## 49 recorded 48: fact Rpc method=item/autoApprovalReview/started
 item review:1db1dab2-2fed-4674-872a-20952bdfa1db verdict final at=1790390025310 text="" IN_PROGRESS:inProgress risk=- on=exec-b283e140-65f5-4684-9498-73e4c2de1ce0 ""
-## 51 recorded 50: fact Rpc method=guardianWarning
-item warning:2 error final at=1790390027323 text="Automatic approval review approved (risk: low, authorization: high): The user explicitly authorized the exact touch command, which only creates or updates a single workspace file." guardianWarning "Automatic approval review approved (risk: low, authorization: high): The user ex…" retry=false 0/0
 ## 52 recorded 51: fact Rpc method=item/autoApprovalReview/completed
 item review:1db1dab2-2fed-4674-872a-20952bdfa1db verdict final at=1790390025310 text="" APPROVED:approved risk=low on=exec-b283e140-65f5-4684-9498-73e4c2de1ce0 "The user explicitly authorized the exact touch command, whic…"
 item exec-b283e140-65f5-4684-9498-73e4c2de1ce0 work open at=1790390025311 text="" command "touch reviewed.txt" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING decision=DECISION_OUTCOME_AUTO_APPROVED

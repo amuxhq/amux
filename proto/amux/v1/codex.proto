@@ -41,7 +41,19 @@ message CodexItem {
     AskItem ask = 16;
     // The plan Codex proposed in plan mode.
     Plan plan = 17;
+    // A line from a command amux runs for Codex, as Codex's own app prints
+    // it ("Code review started: current changes"); the line is the envelope
+    // text.
+    SlashOutput command_output = 18;
+    // Codex holding the turn's answer for a slower safety check; the
+    // envelope text is Codex's words.
+    SafetyCheck safety_check = 19;
   }
+}
+
+message SafetyCheck {
+  // The check is still running.
+  bool running = 1;
 }
 
 // The summary is kept beside the full text, which is the envelope text.

@@ -355,6 +355,7 @@ fn the_handshake_encodes_to_the_bytes_amux_writes() {
             },
             capabilities: Some(codex_protocol::client::Capabilities {
                 experimental_api: Some(true),
+                opt_out_notification_methods: Vec::new(),
                 extra: Extra::new(),
             }),
             extra: Extra::new(),

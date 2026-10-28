@@ -362,6 +362,7 @@ public enum ChatWords {
                 ? String(localized: "1 subagent working")
                 : String(localized: "\(count) subagents working"), nil, nil)
         case .compacting: return (String(localized: "Compacting"), nil, nil)
+        case .safetyCheck: return (String(localized: "Running safety checks"), nil, nil)
         case .retrying(let attempt, let most, _):
             return (most > 0
                 ? String(localized: "Retrying · attempt \(attempt) of \(most)")

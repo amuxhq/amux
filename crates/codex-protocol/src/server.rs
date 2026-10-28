@@ -49,6 +49,11 @@ method_enum! {
         "item/autoApprovalReview/completed" => AutoApprovalReviewCompleted(AutoApprovalReview),
         "serverRequest/resolved" => ServerRequestResolved(ServerRequestResolved),
         "model/rerouted" => ModelRerouted(ModelRerouted),
+        "model/verification" => ModelVerification(ModelVerification),
+        "model/safetyBuffering/updated" => SafetyBufferingUpdated(SafetyBufferingUpdated),
+        "autoApprovalReview/strictReviewRequired" => StrictReviewRequired(ThreadOnly),
+        "hook/started" => HookStarted(ThreadOnly),
+        "hook/completed" => HookCompleted(ThreadOnly),
         "account/updated" => AccountUpdated(AccountUpdated),
         "account/rateLimits/updated" => AccountRateLimitsUpdated(AccountRateLimitsUpdated),
         "account/login/completed" => AccountLoginCompleted(AccountLoginCompleted),
@@ -96,6 +101,11 @@ impl ServerNotification {
             }
             Self::ServerRequestResolved(n) => Some(&n.thread_id),
             Self::ModelRerouted(n) => Some(&n.thread_id),
+            Self::ModelVerification(n) => Some(&n.thread_id),
+            Self::SafetyBufferingUpdated(n) => Some(&n.thread_id),
+            Self::StrictReviewRequired(n) | Self::HookStarted(n) | Self::HookCompleted(n) => {
+                Some(&n.thread_id)
+            }
             Self::McpServerStatusUpdated(n) => n.thread_id.as_deref(),
             Self::AccountUpdated(_)
             | Self::AccountRateLimitsUpdated(_)
@@ -106,6 +116,30 @@ impl ServerNotification {
             | Self::ConfigWarning(_) => None,
         }
     }
+}
+
+/// Checks Codex ran on the model's answers to this thread; it names them,
+/// as `trustedAccessForCyber`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelVerification {
+    pub thread_id: String,
+    #[serde(default)]
+    pub verifications: Vec<String>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+/// Codex holds a turn's answer for a slower safety check while
+/// `show_buffering_ui` is true.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SafetyBufferingUpdated {
+    pub thread_id: String,
+    pub turn_id: String,
+    pub show_buffering_ui: bool,
+    #[serde(flatten)]
+    pub extra: Extra,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

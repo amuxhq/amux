@@ -149,6 +149,30 @@ pub const PROMPT_CHARS_MOST: usize = 1 << 20;
 /// agent process records for its next incarnation to resume.
 pub const CLEAR_REQUEST: &str = "amux-clear-";
 
+/// Notifications amux never draws: the agent asks Codex not to send them at
+/// `initialize`, and the interpreter drops them should an older Codex send
+/// them anyway. A hook's effect on the turn reaches the conversation itself
+/// (a blocked call's output names the hook), as it does for Claude.
+pub const DROPPED_NOTIFICATIONS: &[&str] = &[
+    "hook/started",
+    "hook/completed",
+    "item/mcpToolCall/progress",
+    "item/fileChange/patchUpdated",
+    "app/list/updated",
+    "thread/queue/changed",
+    "thread/environment/connected",
+    "thread/environment/disconnected",
+    "thread/attachment/updated",
+    "thread/prediction/updated",
+    "account/gatewayOAuth/changed",
+    "mcpServer/oauthLogin/completed",
+    "mcpServer/event/stream/notification",
+    "modelProvider/authRecoveryStarted",
+    "modelProvider/authRecoveryCompleted",
+    "windows/worldWritableWarning",
+    "windowsSandbox/setupCompleted",
+];
+
 /// The agent process's handshake request that starts the agent's first
 /// thread.
 pub const THREAD_REQUEST: &str = "agent-thread";
@@ -1970,6 +1994,12 @@ fn describe_item(body: &[u8]) -> ItemView {
         Some(Kind::Prompt(_)) => ("prompt", true, String::new()),
         Some(Kind::Message(text)) => ("message", text.complete, String::new()),
         Some(Kind::Plan(plan)) => ("plan", plan.complete, crate::shared::describe_plan(&plan)),
+        Some(Kind::CommandOutput(output)) => ("command_output", true, output.command),
+        Some(Kind::SafetyCheck(check)) => (
+            "safety_check",
+            !check.running,
+            format!("running={}", check.running),
+        ),
         Some(Kind::WorkingNote(text)) => ("working_note", text.complete, String::new()),
         Some(Kind::Reasoning(reasoning)) => (
             "reasoning",

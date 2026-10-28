@@ -6,10 +6,10 @@
 //! rewrites them) and asks the hosts, through the net's door, what they
 //! recorded. Results land in `target/journeys/`.
 
+mod accessibility;
 mod common;
 mod device;
 mod frame;
-mod goldens;
 mod perf;
 mod phone;
 mod phone_stories;
@@ -49,39 +49,6 @@ enum Suite {
         #[arg(long, conflicts_with = "stories")]
         native: bool,
         stories: Vec<String>,
-    },
-    /// The phone's whole screens, reached the way a person reaches them,
-    /// compared with apps/apple/Goldens in light and dark, every frosted
-    /// surface drawn flat.
-    Goldens {
-        /// Photograph only the screens named; the way through every other
-        /// screen is still taken, so each is reached in the same state.
-        #[arg(long, value_name = "ID")]
-        only: Vec<String>,
-        /// Rewrite every golden that differs and leave the rest alone.
-        #[arg(long, conflicts_with = "perturb")]
-        update: bool,
-        /// Move one design colour token (or, named `needs-you-dot`, take
-        /// that one small mark away) before anything is drawn, and fail
-        /// unless every photograph comes back different with a difference
-        /// image.
-        #[arg(long, value_name = "TOKEN")]
-        perturb: Option<String>,
-        /// Take the same way with the flag off and write every screen, glass
-        /// and all, to DIR for a person to look at; nothing is compared.
-        #[arg(long, value_name = "DIR", conflicts_with_all = ["update", "perturb"])]
-        review: Option<PathBuf>,
-    },
-    /// The golden run with something changed on purpose, once per change,
-    /// each required to notice: a suite nobody has seen fail is not
-    /// evidence that it would.
-    GoldensPerturb {
-        #[arg(long, value_name = "ID", default_values = ["fleet"])]
-        only: Vec<String>,
-        /// A design colour token, and the one small mark a driving build can
-        /// hide.
-        #[arg(long = "perturb", value_name = "TOKEN", default_values = ["accent", "needs-you-dot"])]
-        changes: Vec<String>,
     },
     /// Every control on the app's live pages audited by a UI test for a
     /// name VoiceOver can read and at least 44 pt to hit.
@@ -150,14 +117,7 @@ pub fn main(arguments: Vec<String>) -> ExitCode {
         Suite::Terminal { story } if story == "all" => terminal_stories::run_all(),
         Suite::Terminal { story } => terminal_stories::run(&story),
         Suite::Phone { native, stories } => phone_stories::run(native, stories),
-        Suite::Goldens {
-            only,
-            update,
-            perturb,
-            review,
-        } => goldens::run(only, update, perturb, review),
-        Suite::GoldensPerturb { only, changes } => goldens::perturb(only, changes),
-        Suite::Accessibility => goldens::accessibility(),
+        Suite::Accessibility => accessibility::run(),
         Suite::Perf {
             describe,
             only,

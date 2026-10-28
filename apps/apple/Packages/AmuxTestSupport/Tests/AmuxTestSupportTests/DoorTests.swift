@@ -42,8 +42,6 @@ final class DoorTests: XCTestCase {
             .dynamicType("accessibility3"),
             .assist(motion: true, transparency: true),
             .states,
-            .perturb(token: "accent"),
-            .perturb(token: nil),
             .designVariant("context-band"),
             .designVariant(nil),
             .settle,
@@ -141,10 +139,6 @@ final class DoorTests: XCTestCase {
         XCTAssertEqual(try wire(.awaitReconciled(seconds: 90))["seconds"] as? Double, 90)
         XCTAssertEqual(try wire(.awaitOffline(seconds: 30))["kind"] as? String, "awaitOffline")
         XCTAssertEqual(try wire(.bridge)["kind"] as? String, "bridge")
-        XCTAssertEqual(try wire(.perturb(token: "accent"))["token"] as? String, "accent")
-        // Nothing named puts the design back, and is sent as an absent field
-        // rather than a null, like every other request the door takes.
-        XCTAssertNil(try wire(.perturb(token: nil))["token"])
         let report = try wire(.report(
             path: "/tmp/report", note: "the badge counted twice",
             marks: [ReportMark(x: 12, y: 40.5, width: 96, height: 24, note: "here")]))

@@ -12,10 +12,12 @@ final class ComponentSnapshotTests: XCTestCase {
         ("dark", .dark, .dark),
     ]
 
-    /// The golden manifest's components are exactly this catalogue, each
-    /// with a sentence saying what it shows, so the index a reviewer reads
-    /// is never missing a picture or naming one that is gone.
-    func testTheManifestSaysWhatEveryComponentShows() throws {
+    /// Every catalogue example says what it shows exactly once: a story in
+    /// the storybook list both clients are held to (`tests/stories.json`),
+    /// any other example in the golden manifest's components. So the index a
+    /// reviewer reads is never missing a picture or naming one that is gone,
+    /// and every story the list gives the phone is drawn.
+    func testEveryExampleIsAStoryOrADescribedComponent() throws {
         let catalogIDs = ComponentCatalog.examples.map(\.id)
         XCTAssertFalse(catalogIDs.contains(where: \.isEmpty), "Component catalog IDs must not be empty")
         XCTAssertEqual(
@@ -24,31 +26,53 @@ final class ComponentSnapshotTests: XCTestCase {
             "Component catalog IDs must be unique"
         )
 
-        let manifest = try XCTUnwrap(
-            Bundle(for: Self.self).url(forResource: "manifest", withExtension: "json"),
-            "Goldens/manifest.json was not copied into the component snapshot test bundle"
-        )
-        let object = try JSONSerialization.jsonObject(with: Data(contentsOf: manifest))
-        let root = try XCTUnwrap(object as? [String: Any])
-        let components = try XCTUnwrap(root["components"] as? [[String: Any]])
-        var described: [String] = []
-        for component in components {
-            let id = try XCTUnwrap(component["id"] as? String, "a component without an id")
-            let shows = component["shows"] as? String ?? ""
-            XCTAssertFalse(
-                shows.trimmingCharacters(in: .whitespaces).isEmpty,
-                "\(id) does not say what it shows"
-            )
-            described.append(id)
-        }
+        let components = try Self.described(
+            "manifest", list: "components", key: "id",
+            missing: "Goldens/manifest.json was not copied into the component snapshot test bundle")
+        let stories = try Self.described(
+            "stories", list: "stories", key: "name",
+            missing: "tests/stories.json was not copied into the component snapshot test bundle"
+        ) { story in (story["clients"] as? [String] ?? []).contains("phone") }
         XCTAssertEqual(
-            Set(described).subtracting(catalogIDs).sorted(), [],
+            Set(components).intersection(stories).sorted(), [],
+            "A story says what it shows in tests/stories.json, not in the manifest's components too"
+        )
+        XCTAssertEqual(
+            Set(stories).subtracting(catalogIDs).sorted(), [],
+            "tests/stories.json gives the phone stories the catalogue does not draw"
+        )
+        XCTAssertEqual(
+            Set(components).subtracting(catalogIDs).sorted(), [],
             "The manifest describes components the catalogue no longer draws"
         )
         XCTAssertEqual(
-            Set(catalogIDs).subtracting(described).sorted(), [],
-            "The catalogue draws components the manifest does not describe"
+            Set(catalogIDs).subtracting(Set(components).union(stories)).sorted(), [],
+            "The catalogue draws examples that are neither a story nor a described component"
         )
+    }
+
+    /// The names one list of a bundled JSON file gives, each checked to say
+    /// what it shows.
+    private static func described(
+        _ resource: String, list: String, key: String, missing: String,
+        where included: ([String: Any]) -> Bool = { _ in true }
+    ) throws -> [String] {
+        let url = try XCTUnwrap(
+            Bundle(for: Self.self).url(forResource: resource, withExtension: "json"), missing)
+        let object = try JSONSerialization.jsonObject(with: Data(contentsOf: url))
+        let root = try XCTUnwrap(object as? [String: Any])
+        let entries = try XCTUnwrap(root[list] as? [[String: Any]], "\(resource).json has no \(list)")
+        var names: [String] = []
+        for entry in entries where included(entry) {
+            let name = try XCTUnwrap(entry[key] as? String, "an entry of \(resource).json without a \(key)")
+            let shows = entry["shows"] as? String ?? ""
+            XCTAssertFalse(
+                shows.trimmingCharacters(in: .whitespaces).isEmpty,
+                "\(name) does not say what it shows"
+            )
+            names.append(name)
+        }
+        return names
     }
 
     func testComponents() async throws {

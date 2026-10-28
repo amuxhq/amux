@@ -546,10 +546,10 @@ only with all of its callers:
 | What | Where | Run |
 |---|---|---|
 | Behaviour: keys, effects, layout, paging, asks, the queue, home, the review page | `crates/tui/src/tests.rs` | `just test-tui` |
-| Component goldens in light and dark: every row kind as the feed draws it, each ask in its box, the queue, the composer's states, the review page | `crates/tui/tests/golden.rs`, `crates/tui/tests/golden/` | `just test-tui`; rewrite with `UPDATE_GOLDENS=1 just test-tui` |
+| Component goldens in light and dark: every row kind as the feed draws it, each ask in its box, the queue, the composer's states and the row above it, the sign-in box, the review page | `crates/tui/tests/golden.rs`, `crates/tui/tests/golden/` | `just test-tui`; rewrite with `UPDATE_GOLDENS=1 just test-tui` |
 | Whole frames from served hosts: home at several widths and with every standing, the hosts window, chats mid-call, an ask this client cannot answer, and a chat through a rewind | `crates/tui/tests/frames.rs` | `just test-tui` |
 | PNG renderings of the components | [`crates/shot`](../crates/shot/README.md) | `just shot -- render vocabulary --out DIR` |
-| The storybook: every named whole screen draws at every size in both palettes | `crates/shot/src/stories.rs` | `just test-crate shot` |
+| The storybook: exactly the terminal stories of `tests/stories.json`, in its order, each drawing at every size in both palettes | `crates/shot/src/stories.rs` | `just test-crate shot` |
 | Raw attach, the CLI and the binary against real daemons | `crates/amux/tests/` | `just test-crate amux` |
 | Journeys through the real terminal client: deciding asks and plans, the queue, sending, the composer's states, starting and managing agents, attachments and review, reaching hosts, recovering, reporting a problem | `journeys/`, `crates/testnet/src/journey` | `just journey terminal <name>` |
 
@@ -557,15 +557,23 @@ only with all of its callers:
 
 ## Storybook
 
-The storybook is this client's named whole screens, each drawn from data by the real views: home empty, busy
-and filtered, the hosts window, both new-agent composers, chats at work, finished, failed and interrupted,
-every kind of ask, the overview and the review page. Chats replay the recorded provider fixtures, so a screen
-shows what a real agent said. Stories live in `crates/shot/src/stories.rs`, in the order a person meets them,
-and a test draws every one at every size in both palettes.
+The storybook is this client's whole screens, each drawn from data by the real views. A story is one whole
+screen a person reaches, in one state that changes how the screen is put together: the agent list first run,
+busy, filtered and narrowed to nothing, with the stop, delete and rename windows; the hosts window; the new-agent
+composers and the folder picker; a chat loading, at work, finished, asking, proposing a plan, with prompts
+queued, with its host away, exited, signed out, with the overview open and with a setting being changed; the
+review page; and reporting a problem. One piece in one variant, such as a row kind, an ask card or a message
+inside an otherwise identical screen, is a component golden instead (above).
+
+The list of stories is `tests/stories.json`, which the phone's storybook is held to as well: each entry names
+a story, says what it shows and which clients draw it, and says why when a client has no such screen. The
+terminal's stories are drawn in `crates/shot/src/stories.rs` in the list's order and under its names, and take
+what they show from it; a test fails when the two differ, and another draws every story at every size in both
+palettes. Chats replay the recorded provider fixtures, so a screen shows what a real agent said.
 
 ```sh
 just storybook                         # step through them in this terminal
-just storybook --story ask.question    # open on one
+just storybook --story chat.asking     # open on one
 just storybook capture --out target/stories [--only chat.]
 ```
 
@@ -573,7 +581,7 @@ In the storybook, ← → step, ↑ ↓ jump to the first story of the previous 
 by name or by what it shows. `t` cycles the palette: this terminal's own colours, as the client draws by
 default, then the shipped dark and light. `s` cycles the size: this terminal's, then 80x24, 110x34 and 60x24,
 framed in the middle. It opens where it was left, and it rebuilds itself when a source file of `tui`,
-`ui-view`, `ui-state` or `shot` changes, coming back on the same story; a failed build says so on the bottom
+`ui-view`, `ui-state` or `shot`, or `tests/stories.json`, changes, coming back on the same story; a failed build says so on the bottom
 line and leaves its log in `target/storybook/build.log`.
 
 `capture` draws each story at 80x24, 110x34 and 60x24 in dark and light, as text and PNG, with an `index.md`

@@ -1599,19 +1599,27 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
         },
         None,
     )?;
-    let deadline = Instant::now() + Duration::from_secs(15);
-    while Instant::now() < deadline {
+    // A restored drive has no running processes, so the rebuilt chat reads
+    // the agent exited: it swaps in under the rows on screen, which never
+    // leave in between.
+    let deadline = Instant::now() + Duration::from_secs(60);
+    loop {
         let drawn = journey.elements()?;
         if !(labelled(&drawn, FIRST) && labelled(&drawn, THIRD)) {
             return Err("rows left the screen during the Reset".to_owned());
+        }
+        if labelled(&drawn, "Exited") {
+            break;
+        }
+        if Instant::now() > deadline {
+            return Err("the rebuilt chat never swapped in under the open chat".to_owned());
         }
         std::thread::sleep(Duration::from_millis(50));
     }
     journey
         .record
         .actions
-        .push("the rows stayed on screen through the Reset".to_owned());
-    // A restored drive has no running processes: the agent reads exited.
+        .push("the rows stayed on screen until the rebuilt chat swapped in".to_owned());
     reopen(journey, &keeper, |drawn| {
         labelled(drawn, THIRD) && labelled(drawn, "Exited")
     })?;
@@ -1622,7 +1630,7 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
         "when the desk came back the missed turn appeared once, and only then did the chat read current".to_owned(),
         "the kept draft reached the desk once and was answered".to_owned(),
         control,
-        "rows stayed on screen through the desk's rewind and Reset, and the chat reads the agent exited".to_owned(),
+        "rows stayed on screen through the desk's rewind and Reset until the rebuilt chat swapped in, reading the agent exited".to_owned(),
     ])
 }
 
@@ -2244,6 +2252,26 @@ fn accessibility(journey: &mut PhoneJourney) -> Proved {
     // enough to move more than the comparison allows; the desk's record of
     // the call is checked above.
     journey.screen("settled", &["chat.row.turn-end", "chat.row.command"])?;
+
+    // Hosts and Settings at the same size: every control whole across the
+    // screen, and the Appearance control's choices clear of one another.
+    leave_chat(journey)?;
+    journey.tab("Hosts")?;
+    let row = format!("hosts.row.{}", journey.host_id("desk"));
+    let hosts = journey.wait_for(&[&row])?;
+    across_the_screen(&hosts, "hosts.")?;
+    journey.screen("hosts", &[])?;
+    journey.settings()?;
+    let choices = [
+        "you.appearance.light",
+        "you.appearance.dark",
+        "you.appearance.system",
+    ];
+    let settings = journey.wait_for(&choices)?;
+    across_the_screen(&settings, "you.")?;
+    apart(&settings, &choices)?;
+    let control = negative_control(apart(&settings, &["you.appearance", choices[0]]))?;
+    journey.screen("you", &[])?;
     Ok(vec![
         format!("the app says it draws at {ACCESSIBLE_SIZE}"),
         "at that size the desk was paired on the keypad and the agent's chat opened".to_owned(),
@@ -2252,7 +2280,60 @@ fn accessibility(journey: &mut PhoneJourney) -> Proved {
             quoted(PROMPT)
         ),
         "the provider received exactly one allow".to_owned(),
+        "at that size every control on Hosts and Settings lies whole across the screen, and the Appearance choices are clear of one another".to_owned(),
+        control,
     ])
+}
+
+/// An element's rectangle as its left, top, right and bottom edges, in
+/// points; None when it reports no frame.
+fn rectangle(drawn: &Drawn, name: &str) -> Option<[f64; 4]> {
+    let frame = drawn.field(name, "frame");
+    let (x, y) = (frame["x"].as_f64()?, frame["y"].as_f64()?);
+    Some([
+        x,
+        y,
+        x + frame["width"].as_f64()?,
+        y + frame["height"].as_f64()?,
+    ])
+}
+
+/// No element named under `prefix` reaches past either side of the screen,
+/// as a control pushed off the edge by large text would. The screen is the
+/// shell's width.
+fn across_the_screen(drawn: &Drawn, prefix: &str) -> Result<(), String> {
+    let width = rectangle(drawn, "shell").ok_or("the shell reports no frame")?[2];
+    let cut: Vec<String> = drawn
+        .names()
+        .filter(|name| name.starts_with(prefix))
+        .filter_map(|name| {
+            let [left, _, right, _] = rectangle(drawn, name)?;
+            (left < -0.5 || right > width + 0.5).then(|| format!("{name} at {left}..{right}"))
+        })
+        .collect();
+    if cut.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("past the {width} pt screen: {}", cut.join(", ")))
+    }
+}
+
+/// None of the named elements is drawn over another, beyond the point
+/// their shared edges round to.
+fn apart(drawn: &Drawn, names: &[&str]) -> Result<(), String> {
+    for (at, first) in names.iter().enumerate() {
+        for second in &names[at + 1..] {
+            let (Some(a), Some(b)) = (rectangle(drawn, first), rectangle(drawn, second)) else {
+                return Err(format!("{first} or {second} reports no frame"));
+            };
+            let across = a[2].min(b[2]) - a[0].max(b[0]);
+            let down = a[3].min(b[3]) - a[1].max(b[1]);
+            if across > 1.0 && down > 1.0 {
+                return Err(format!("{first} is drawn over {second}"));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn local_network(journey: &mut PhoneJourney) -> Proved {
@@ -2941,9 +3022,12 @@ mod tests {
                 let step = text(&claim["step"]);
                 let (story, screen) = step.split_once('/').expect("story/screen");
                 assert!(STORIES.iter().any(|(name, _)| *name == story), "{step}");
-                // A step is a screen the story photographs.
+                // A step is a screen the story compares.
                 assert!(
-                    goldens.join(story).join(format!("{screen}.png")).exists(),
+                    goldens
+                        .join(story)
+                        .join(format!("{screen}.elements.txt"))
+                        .exists(),
                     "{step}"
                 );
                 if !carriers.iter().any(|carrier| carrier == story) {

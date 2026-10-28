@@ -240,9 +240,12 @@ targets:
     platform: iOS
     sources:
       - AmuxComponentSnapshotTests
-      # The golden manifest describes every component this bundle renders;
-      # the suite checks the two name the same pictures.
+      # The storybook list says what each story shows and the golden
+      # manifest every other component this bundle renders; the suite checks
+      # the two together name the same pictures.
       - path: Goldens/manifest.json
+        buildPhase: resources
+      - path: ../../tests/stories.json
         buildPhase: resources
     dependencies:
       - target: Amux

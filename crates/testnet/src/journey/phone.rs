@@ -3,15 +3,16 @@
 //! its door, the net's discovery scope, a loopback direct-link listener and,
 //! when the net has one, the served relay. It then acts only as a person
 //! would, through door verbs a person's action maps to: tap, type, paste,
-//! pair by the link or code the machine printed, and appearance. It judges
+//! and pair by the link or code the machine printed. It judges
 //! by what the hosts recorded (the served net's Chat, Inventory and
-//! ProviderInput verbs) and by compared screens: the simulator's display PNG
-//! against `journeys/goldens/phone/<story>/<label>.png` with `ios-tools golden
-//! diff` under the pinned simulator's system-chrome masks, and the door's
-//! element geometry against `<label>.elements.txt`. Stories supply the acts
-//! and the assertions; `UPDATE_JOURNEY_GOLDENS=1` rewrites the goldens that
-//! differ. The whole-screen goldens, the accessibility audit and the
-//! performance suite drive the app through the same driver.
+//! ProviderInput verbs) and by compared screens: the door's element geometry
+//! against `journeys/goldens/phone/<story>/<label>.elements.txt`. Each
+//! compared screen is photographed too, into the run's `actual/` beside its
+//! geometry, for a person to look at; no picture is compared, since a
+//! simulator's display depends on the Mac drawing it. Stories supply the acts
+//! and the assertions; `UPDATE_JOURNEY_GOLDENS=1` rewrites the geometry that
+//! differs. The accessibility audit and the performance suite drive the app
+//! through the same driver.
 
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -32,13 +33,11 @@ use crate::ctl::session::pin_in;
 use crate::door::{Control, Readiness};
 
 pub(crate) const BUNDLE_ID: &str = "sh.amux.app";
-/// The pinned simulator whose system-chrome masks every comparison uses.
+/// The pinned simulator kind every phone journey runs on.
 const SIMULATOR: &str = "golden";
-/// The golden simulator draws three pixels to the point.
-const SCALE: f64 = 3.0;
 /// A surface a view reports under a name ending here holds text that moves
-/// with the run (an age, a scratch path); its rectangle is masked in the
-/// pixel diff and its words are left out of the geometry.
+/// with the run (an age, a scratch path); its words are left out of the
+/// geometry.
 const VOLATILE: &str = ".volatile";
 /// This phone's own name and key, which change with the leased simulator
 /// and every fresh install.
@@ -49,12 +48,6 @@ const OWN_IDENTITY: [&str; 2] = ["you.name", "you.fingerprint"];
 /// wait for it on the lock.
 pub(crate) const SCRATCH_DIR: &str = "/tmp/amux-phone-journey";
 const SCRATCH_LOCK: &str = "/tmp/amux-phone-journey.lock";
-/// How far either side of a volatile surface its mask reaches, at least:
-/// its words are as wide as they are in this run, and an age that read
-/// "39s" when the golden was taken is wider than one reading "1m" now. The
-/// reach grows with the line's height, as a character's width does with
-/// the text size.
-const VOLATILE_SLACK: f64 = 8.0;
 /// How far a line with masked words may move sideways or change width:
 /// "Worked 9s" is narrower than "Worked 12s", and trailing text moves its
 /// left edge.
@@ -243,70 +236,6 @@ fn on_screen(identifier: &str, screen: Option<&str>) -> bool {
 
 fn number(value: &Value) -> f64 {
     value.as_f64().unwrap_or_default()
-}
-
-/// Pixel rectangles, as `ios-tools golden diff --mask` reads them, of every
-/// surface a view declared volatile and every element a story named so (a
-/// key fingerprint made fresh each run, a countdown), on the page the door
-/// says is on screen.
-fn volatile_masks(elements: &[Value], named: &[&str], screen: Option<&str>) -> Vec<String> {
-    elements
-        .iter()
-        .filter(|element| {
-            let name = identifier(element);
-            is_volatile(name, named) && on_screen(name, screen)
-        })
-        .map(|element| {
-            let frame = &element["frame"];
-            let (x, y) = (number(&frame["x"]), number(&frame["y"]));
-            let (width, height) = (number(&frame["width"]), number(&frame["height"]));
-            let slack = VOLATILE_SLACK.max(height);
-            let left = (((x - slack) * SCALE) as i64).max(0);
-            let top = ((y * SCALE) as i64).max(0);
-            let wide = ((x + width + slack) * SCALE + 0.999) as i64 - left;
-            let tall = ((y + height) * SCALE + 0.999) as i64 - top;
-            format!("{left},{top},{wide},{tall}")
-        })
-        .collect()
-}
-
-/// The volatile surfaces of a screen the app froze, where the report draws
-/// its picture of that screen (`report.frame`, the whole display shrunk to
-/// fit). They are pixels in a picture there, not elements, so the picture
-/// of an age moves with the run as the age itself does.
-fn pictured(elements: &[Value], frozen: &[Value], display: (u32, u32)) -> Vec<Value> {
-    let Some(frame) = elements
-        .iter()
-        .find(|element| identifier(element) == "report.frame")
-        .map(|element| &element["frame"])
-    else {
-        return Vec::new();
-    };
-    let shrink = number(&frame["width"]) / (f64::from(display.0) / SCALE);
-    frozen
-        .iter()
-        .map(|element| {
-            let inner = &element["frame"];
-            json!({
-                "identifier": format!("report.frame:{}{VOLATILE}", identifier(element)),
-                "frame": {
-                    "x": number(&frame["x"]) + number(&inner["x"]) * shrink,
-                    "y": number(&frame["y"]) + number(&inner["y"]) * shrink,
-                    "width": number(&inner["width"]) * shrink,
-                    "height": number(&inner["height"]) * shrink,
-                },
-            })
-        })
-        .collect()
-}
-
-fn png_size(png: &Path) -> Result<(u32, u32), String> {
-    let bytes = std::fs::read(png).map_err(|error| format!("{}: {error}", png.display()))?;
-    let header = bytes.get(16..24).ok_or("not a PNG")?;
-    let read = |at: usize| {
-        u32::from_be_bytes([header[at], header[at + 1], header[at + 2], header[at + 3]])
-    };
-    Ok((read(0), read(4)))
 }
 
 /// Every id the net made this run, as the name it was declared by; any
@@ -663,17 +592,16 @@ pub(crate) struct PhoneJourney {
     /// simulator.
     pub phone: Option<Phone>,
     pub output: PathBuf,
-    /// Where this run's screens are compared, and whether a screen that no
-    /// longer matches is rewritten there instead.
+    /// Where this run's screens' element geometry is compared, and whether
+    /// geometry that no longer matches is rewritten there instead.
     goldens: PathBuf,
     pub update: bool,
     /// Whether every launch turns the app's reduce-transparency setting on,
     /// so each frosted surface is drawn flat. The render server finishes
     /// glass after the app has drawn, on its own schedule, and a photograph
     /// at any fixed moment shows one stage or another of that work; drawn
-    /// flat, the same screens repeat pixel for pixel. A run that measures
-    /// the app as it ships, or photographs glass for a person to look at,
-    /// turns this off before it launches.
+    /// flat, a journey's pictures show each screen finished. A run that
+    /// measures the app as it ships turns this off before it launches.
     pub flat: bool,
     /// The build installed: the debug app, or the optimised one the
     /// performance suite measures.
@@ -686,9 +614,6 @@ pub(crate) struct PhoneJourney {
     process: Option<Child>,
     pub ready: Readiness,
     pub record: Record,
-    /// The volatile surfaces on screen when the system last photographed
-    /// the app, masked again wherever a report shows that photograph.
-    frozen: Vec<Value>,
     /// The app's door's port: on this Mac's loopback for a simulator, on
     /// the phone's link address for a phone.
     pub port: u16,
@@ -812,7 +737,6 @@ impl PhoneJourney {
             process: Some(process),
             ready,
             record,
-            frozen: Vec::new(),
             port: 0,
             pid: 0,
             through: None,
@@ -1235,19 +1159,8 @@ impl PhoneJourney {
         Ok(self.app(json!({"kind": "query"}))?["state"].take())
     }
 
-    /// The system photographs the app, as a person's screenshot does. What
-    /// on screen moves with the run is remembered, for a report that shows
-    /// the photograph.
+    /// The system photographs the app, as a person's screenshot does.
     pub(crate) fn system_screenshot(&mut self) -> Result<(), String> {
-        let state = self.query()?;
-        let screen = state["screen"].as_str();
-        self.frozen = uncovered(elements_of(&state))
-            .into_iter()
-            .filter(|element| {
-                let name = identifier(element);
-                is_volatile(name, &OWN_IDENTITY) && on_screen(name, screen)
-            })
-            .collect();
         self.app(json!({"kind": "screenshot"}))?;
         self.record
             .actions
@@ -1344,12 +1257,6 @@ impl PhoneJourney {
         Ok(())
     }
 
-    pub(crate) fn appearance(&mut self, appearance: &str) -> Result<(), String> {
-        self.app(json!({"kind": "appearance", "appearance": appearance}))?;
-        self.record.actions.push(format!("appearance {appearance}"));
-        Ok(())
-    }
-
     /// The item a person reads as `label` in a menu the app presented, once
     /// the menu is drawn.
     pub(crate) fn choose(&mut self, label: &str) -> Result<(), String> {
@@ -1416,27 +1323,12 @@ impl PhoneJourney {
     // --- screens ---------------------------------------------------------
 
     /// What the phone shows now, compared with its reviewed golden: the
-    /// display's pixels and the door's element geometry, with `volatile`
-    /// elements masked.
+    /// door's element geometry, with `volatile` elements' words left out.
+    /// The display is photographed beside it for a person to look at and is
+    /// never compared. With updating on, geometry that differs is rewritten
+    /// instead; geometry that matches is left alone, so a near match never
+    /// churns.
     pub(crate) fn screen(&mut self, label: &str, volatile: &[&str]) -> Result<(), String> {
-        match self.compare(label, volatile, None)? {
-            Some(differs) => Err(differs),
-            None => Ok(()),
-        }
-    }
-
-    /// What differs between the phone now and the golden `label`, or None
-    /// when nothing does. The element geometry is read from `geometry_label`
-    /// when several pictures share one layout (the same screen in light and
-    /// dark). With updating on, a golden that differs is rewritten and
-    /// nothing is reported; one that matches is left alone, so a masked
-    /// region never churns.
-    pub(crate) fn compare(
-        &mut self,
-        label: &str,
-        volatile: &[&str],
-        geometry_label: Option<&str>,
-    ) -> Result<Option<String>, String> {
         self.app(json!({"kind": "settle"}))?;
         let state = self.query()?;
         let screen = state["screen"].as_str();
@@ -1448,8 +1340,7 @@ impl PhoneJourney {
             .collect();
         let actual = self.output.join("actual");
         std::fs::create_dir_all(&actual).map_err(|error| error.to_string())?;
-        let png = actual.join(format!("{label}.png"));
-        self.steady_display(&png)?;
+        self.steady_display(&actual.join(format!("{label}.png")))?;
         let named: Vec<&str> = volatile.iter().copied().chain(OWN_IDENTITY).collect();
         let mut ids: BTreeMap<String, String> = self
             .ready
@@ -1464,111 +1355,47 @@ impl PhoneJourney {
                 .map(|agent| (agent.id.to_string(), agent.name.clone())),
         );
         let drawn = geometry(&elements, &named, &ids);
-        let geometry_label = geometry_label.unwrap_or(label);
-        std::fs::write(
-            actual.join(format!("{geometry_label}.elements.txt")),
-            &drawn,
-        )
-        .map_err(|error| error.to_string())?;
-        // A volatile surface is masked where it stood before the photograph
-        // and after it: an age crossing into another digit while the display
-        // settles (9s to 19s) grows past the frame read first.
-        let after = self.query()?;
-        let mut masks = volatile_masks(&elements, &named, screen);
-        masks.extend(volatile_masks(
-            &uncovered(elements_of(&after)),
-            &named,
-            after["screen"].as_str(),
-        ));
-        masks.extend(volatile_masks(
-            &pictured(&elements, &self.frozen, png_size(&png)?),
-            &named,
-            None,
-        ));
+        std::fs::write(actual.join(format!("{label}.elements.txt")), &drawn)
+            .map_err(|error| error.to_string())?;
         self.record.actions.push(format!("captured {label}"));
         if self.update && std::env::var_os("CI").is_some() {
             return Err("rewriting goldens is refused in CI".to_owned());
         }
-        let golden_png = self.goldens.join(format!("{label}.png"));
-        let expected = self.goldens.join(format!("{geometry_label}.elements.txt"));
-        let differs = self.differs(&png, &golden_png, &expected, &drawn, &masks, label)?;
+        let expected = self.goldens.join(format!("{label}.elements.txt"));
+        let differs = if !expected.exists() {
+            Some(format!(
+                "missing golden {}; review a rewritten one",
+                expected.display()
+            ))
+        } else {
+            let approved = std::fs::read_to_string(&expected).map_err(|error| error.to_string())?;
+            (!same_geometry(&approved, &drawn)).then(|| {
+                format!(
+                    "geometry differs: {}\n{}",
+                    expected.display(),
+                    line_diff(&approved, &drawn)
+                )
+            })
+        };
         match differs {
             Some(differs) if self.update => {
                 std::fs::create_dir_all(&self.goldens).map_err(|error| error.to_string())?;
-                std::fs::copy(&png, &golden_png).map_err(|error| error.to_string())?;
                 std::fs::write(&expected, &drawn).map_err(|error| error.to_string())?;
                 self.record.actions.push(format!(
                     "rewrote {label}: {}",
                     differs.lines().next().unwrap_or_default()
                 ));
-                Ok(None)
+                Ok(())
             }
-            differs => Ok(differs),
+            Some(differs) => Err(differs),
+            None => Ok(()),
         }
     }
 
-    fn differs(
-        &mut self,
-        png: &Path,
-        golden_png: &Path,
-        expected: &Path,
-        drawn: &str,
-        masks: &[String],
-        label: &str,
-    ) -> Result<Option<String>, String> {
-        if !expected.exists() || !golden_png.exists() {
-            return Ok(Some(format!(
-                "missing golden {}; review a rewritten one",
-                golden_png.display()
-            )));
-        }
-        let approved = std::fs::read_to_string(expected).map_err(|error| error.to_string())?;
-        if !same_geometry(&approved, drawn) {
-            return Ok(Some(format!(
-                "geometry differs: {}\n{}",
-                expected.display(),
-                line_diff(&approved, drawn)
-            )));
-        }
-        let out = self.output.join("diff").join(label);
-        let tools = std::env::current_exe()
-            .map_err(|error| error.to_string())?
-            .with_file_name("ios-tools");
-        let mut command = Command::new(tools);
-        command
-            .args(["golden", "diff", "--expected"])
-            .arg(golden_png)
-            .arg("--actual")
-            .arg(png)
-            .arg("--out")
-            .arg(&out)
-            .args(["--simulator", SIMULATOR])
-            .args(masks.iter().flat_map(|mask| ["--mask", mask.as_str()]))
-            .current_dir(root());
-        match run_within(command, Duration::from_secs(600)) {
-            Err(said) => Ok(Some(format!(
-                "screen {label} differs: {said}; expected, actual and diff are under {}",
-                out.display()
-            ))),
-            Ok(verdict) => {
-                // A match that spent some of the comparison's allowance for
-                // stray pixels says how much, so the allowance can be judged
-                // from the runs.
-                let verdict = verdict.trim();
-                if verdict != "same" {
-                    println!("AMUX_PICTURE_STRAYS screen={label} {verdict}");
-                    self.record
-                        .actions
-                        .push(format!("compared {label}: {verdict}"));
-                }
-                Ok(None)
-            }
-        }
-    }
-
-    /// The display once two photographs a moment apart agree: a transition
-    /// or the glass settling behind it is over.
-    pub(crate) fn steady_display(&self, png: &Path) -> Result<(), String> {
+    /// The display once two photographs a moment apart agree, so a picture
+    /// for a person is not caught mid-transition; or, for a screen that never
+    /// holds still, whatever the last photograph caught.
+    fn steady_display(&self, png: &Path) -> Result<(), String> {
         let mut previous = Vec::new();
         for _ in 0..20 {
             simctl(
@@ -1588,10 +1415,7 @@ impl PhoneJourney {
             previous = taken;
             std::thread::sleep(Duration::from_millis(300));
         }
-        Err(format!(
-            "the display never held still for {}",
-            png.file_stem().unwrap_or_default().to_string_lossy()
-        ))
+        Ok(())
     }
 
     // --- the end ---------------------------------------------------------
@@ -1912,66 +1736,11 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn volatile_surfaces_and_named_elements_are_masked_in_pixels() {
-        let elements = [
-            element(
-                &format!("home.row.{AGENT}"),
-                [0.0, 100.0, 390.0, 60.0],
-                None,
-            ),
-            element(
-                &format!("home.row.{AGENT}.age.volatile"),
-                [340.2, 104.0, 30.5, 14.0],
-                None,
-            ),
-            element("pair-confirm.fingerprint", [16.0, 300.0, 358.0, 40.0], None),
-        ];
-        assert_eq!(
-            volatile_masks(&elements, &["pair-confirm.fingerprint"], None),
-            ["978,312,177,42", "0,900,1242,120"]
-        );
-        assert_eq!(volatile_masks(&elements, &[], None), ["978,312,177,42"]);
-    }
-
-    #[test]
-    fn a_larger_text_size_masks_further_either_side() {
-        // "1m" now, where the golden's "39s" reached about 16 points further left.
-        let large = [element(
-            &format!("home.row.{AGENT}.age.volatile"),
-            [330.0, 104.0, 30.0, 36.0],
-            None,
-        )];
-        assert_eq!(volatile_masks(&large, &[], None), ["882,312,306,108"]);
-    }
-
-    #[test]
-    fn a_tab_behind_a_pushed_page_masks_nothing() {
-        let elements = [
-            element("hosts.fact.identity", [0.0, 10.0, 1.0, 1.0], None),
-            element("chat.row.turn-end", [0.0, 20.0, 1.0, 1.0], None),
-        ];
-        let named = ["hosts.fact.identity", "chat.row.turn-end"];
-        assert_eq!(
-            volatile_masks(&elements, &named, Some("chat")),
-            ["0,60,27,3"]
-        );
-        assert_eq!(volatile_masks(&elements, &named, Some("hosts")).len(), 2);
-    }
-
-    #[test]
-    fn a_reported_photograph_masks_what_moved_on_the_frozen_screen() {
-        let frozen = [element(
-            &format!("home.row.{AGENT}.age.volatile"),
-            [300.0, 160.0, 40.0, 20.0],
-            None,
-        )];
-        // The whole 400-point display, drawn at half size from (100, 50).
-        let drawn = [element("report.frame", [100.0, 50.0, 200.0, 437.0], None)];
-        assert_eq!(
-            volatile_masks(&pictured(&drawn, &frozen, (1200, 2622)), &[], None),
-            ["720,390,120,30"]
-        );
-        assert!(pictured(&[], &frozen, (1200, 2622)).is_empty());
+    fn a_tab_behind_a_pushed_page_is_not_on_screen() {
+        assert!(!on_screen("hosts.fact.identity", Some("chat")));
+        assert!(on_screen("chat.row.turn-end", Some("chat")));
+        assert!(on_screen("hosts.fact.identity", Some("hosts")));
+        assert!(on_screen("hosts.fact.identity", None));
     }
 
     #[test]

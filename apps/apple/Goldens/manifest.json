@@ -1,32 +1,4 @@
 {
-  "simulators": {
-    "golden": {
-      "system_chrome": [
-        {
-          "what": "status bar clock: SpringBoard draws 9:41 in the style the app's scene asks for, and applies a change of style late enough on a loaded runner to be photographed in the old colour",
-          "x": 150,
-          "y": 56,
-          "width": 140,
-          "height": 80
-        },
-        {
-          "what": "status bar indicators: signal, Wi-Fi and battery, drawn by SpringBoard in the same lagging style as the clock",
-          "x": 840,
-          "y": 56,
-          "width": 290,
-          "height": 80
-        },
-        {
-          "what": "home indicator: SpringBoard's bar, 144 by 5 points, 8 points above the bottom edge, at 3x with three pixels of margin; drawn at launch and withdrawn once backboardd reports attention lost, which a loaded GitHub runner never does",
-          "x": 384,
-          "y": 2580,
-          "width": 438,
-          "height": 21
-        }
-      ]
-    }
-  },
-  "topology": "journeys/topologies/phone-goldens.json",
   "components": [
     {
       "id": "row.prompt",
@@ -353,10 +325,6 @@
       "shows": "A Codex command approval at accessibility3: its session and similar-commands rows wrapping, and its buttons whole."
     },
     {
-      "id": "ask.question-large-text",
-      "shows": "A question at accessibility5: the question, every option and Something else clear of each other, with Skip and Reply instead whole."
-    },
-    {
       "id": "ask.plan-large-text",
       "shows": "A plan decision at accessibility3: the permission switch wrapping and Approve and Send back whole, one above the other."
     },
@@ -375,6 +343,10 @@
     {
       "id": "composer.draft",
       "shows": "The composer with a draft and an attached image."
+    },
+    {
+      "id": "composer.attachments-large-text",
+      "shows": "A draft holding two files at an accessibility text size: each name wraps rather than losing its extension, its size under it, each remove mark a thumb's target."
     },
     {
       "id": "composer.working",
@@ -489,36 +461,12 @@
       "shows": "A spent usage window named above a composer that still sends."
     },
     {
-      "id": "chat.conversation",
-      "shows": "A whole chat: rows, composer and strip."
-    },
-    {
-      "id": "chat.working",
-      "shows": "A turn under way: its run's newest three steps under how many came before, the newest running."
-    },
-    {
       "id": "chat.run-open",
       "shows": "A finished run opened: the line that folds it again, then every step on its own row."
     },
     {
-      "id": "chat.conversation-large-text",
-      "shows": "A chat at accessibility3: the header pill held at the largest ordinary size, and the step rows stacking verb, subject and counts."
-    },
-    {
-      "id": "chat.asking",
-      "shows": "A whole chat with a permission ask open over the composer."
-    },
-    {
       "id": "chat.detached",
       "shows": "A whole chat out of reach, its tail from the phone's own store."
-    },
-    {
-      "id": "chat.loading",
-      "shows": "A chat opening with nothing held yet."
-    },
-    {
-      "id": "chat.away",
-      "shows": "A chat whose host is away, with nothing held."
     },
     {
       "id": "chat.new-activity",
@@ -541,10 +489,6 @@
       "shows": "The same header counting everything on the agent's branch against main."
     },
     {
-      "id": "chat.plan",
-      "shows": "A Codex plan read whole under its heading, the decision standing in the composer's place."
-    },
-    {
       "id": "chat.landing",
       "shows": "A prompt sent to an idle agent, drawn at the feed's end where it will stand, reading sending."
     },
@@ -553,36 +497,12 @@
       "shows": "The same prompt waiting for the agent's host while the link is down."
     },
     {
-      "id": "overview.uncommitted",
-      "shows": "A chat's overview: two background jobs, the uncommitted changes listed by folder, a tool server that needs signing in and three usage windows."
-    },
-    {
-      "id": "chat.rename",
-      "shows": "Renaming the agent from its chat."
-    },
-    {
-      "id": "chat.stop",
-      "shows": "Stopping an idle agent from its chat: the plain confirm."
-    },
-    {
       "id": "chat.stop-cuts",
       "shows": "Stopping a working agent with background jobs and a child: the confirm names the turn, the jobs and the subagents the stop cuts."
     },
     {
-      "id": "chat.delete",
-      "shows": "Deleting an exited agent from its chat."
-    },
-    {
       "id": "chat.delete-family",
       "shows": "Deleting an exited agent that started others: the card counts the subagents deleted with it."
-    },
-    {
-      "id": "chat.settings",
-      "shows": "A chat with the settings card open."
-    },
-    {
-      "id": "review.page",
-      "shows": "The review page with a comment written on a diff."
     },
     {
       "id": "review.selection",
@@ -601,48 +521,12 @@
       "shows": "Editing a comment already written, with the way to delete it."
     },
     {
-      "id": "hosts.list",
-      "shows": "Every paired machine in one list, reachable first, each saying how it is reached, with one found and not paired offered above."
-    },
-    {
-      "id": "hosts.empty",
-      "shows": "No machine paired or found."
-    },
-    {
-      "id": "host.page",
-      "shows": "One machine's page: how it is reached, what it runs, its addresses and key."
-    },
-    {
       "id": "host.revoked",
       "shows": "A machine that no longer trusts this phone, with Pair Again."
     },
     {
-      "id": "pair.code-empty",
-      "shows": "Pairing with the laptop found on this network: an empty keypad and where to get the code."
-    },
-    {
       "id": "pair.code-typing",
       "shows": "Three digits of the code typed."
-    },
-    {
-      "id": "pair.code-checking",
-      "shows": "All six digits typed and the code being checked."
-    },
-    {
-      "id": "pair.code-refused",
-      "shows": "A code that did not work, with the keypad ready for another."
-    },
-    {
-      "id": "pair.code-subscribe",
-      "shows": "A code that reached a machine only the relay can carry, on the free plan."
-    },
-    {
-      "id": "pair.confirm",
-      "shows": "The machine's own name and key, waiting for Pair or Not Now."
-    },
-    {
-      "id": "pair.trusted",
-      "shows": "The pairing done."
     },
     {
       "id": "pair.link-checking",
@@ -653,28 +537,12 @@
       "shows": "An invitation link that did not work."
     },
     {
-      "id": "pair.needs-account",
-      "shows": "An invitation naming a machine only the relay can reach, on a phone with no account."
-    },
-    {
       "id": "settings.two-accounts",
       "shows": "Settings with two accounts, the selected one's relay and actions, this phone and help."
     },
     {
-      "id": "settings.signed-out",
-      "shows": "Settings on a phone with no account signed in."
-    },
-    {
       "id": "settings.notifications",
       "shows": "Settings with notifications on, as a build that offers them shows the row."
-    },
-    {
-      "id": "settings.delete",
-      "shows": "Asking before an account is deleted, with the address typed to confirm."
-    },
-    {
-      "id": "settings.sign-in",
-      "shows": "Signing in: what an account adds, and continuing on amux.sh."
     },
     {
       "id": "settings.sign-in-waiting",
@@ -687,10 +555,6 @@
     {
       "id": "settings.sign-in-mismatched",
       "shows": "Signing back in as a different account than the one asked for."
-    },
-    {
-      "id": "settings.paywall",
-      "shows": "Subscribing: the plans, the one chosen, and restoring a purchase."
     },
     {
       "id": "settings.paywall-confirming",
@@ -709,28 +573,12 @@
       "shows": "A chat on its way, before its first frame."
     },
     {
-      "id": "chat.not-opened",
-      "shows": "A chat that could not be opened, and why."
-    },
-    {
       "id": "review.reading",
       "shows": "The review page while the host reads the changes."
     },
     {
-      "id": "review.no-changes",
-      "shows": "The review page for an agent with nothing changed."
-    },
-    {
       "id": "review.not-read",
       "shows": "The review page when the host could not be asked for the changes."
-    },
-    {
-      "id": "fleet.no-matches",
-      "shows": "The agent list filtered down to nothing."
-    },
-    {
-      "id": "hosts.network-refused",
-      "shows": "Hosts with nothing found because this phone was refused the local network."
     },
     {
       "id": "new-agent.refused",
@@ -753,10 +601,6 @@
       "shows": "A deletion amux.sh did not answer."
     },
     {
-      "id": "report.ready",
-      "shows": "A report over a frozen agent list, nothing written yet."
-    },
-    {
       "id": "report.marked",
       "shows": "Two boxes drawn on the frozen frame, one with its note, and a note about the whole thing."
     },
@@ -773,18 +617,6 @@
       "shows": "A report amux.sh did not answer, its reason in red and Retry in Send's place."
     },
     {
-      "id": "report.sent",
-      "shows": "A sent report and the reference to quote."
-    },
-    {
-      "id": "new-agent.claude",
-      "shows": "Starting a Claude agent: the host, a recent directory, the name, the model and permission, and a new worktree."
-    },
-    {
-      "id": "new-agent.browsing",
-      "shows": "Choosing the directory a new agent starts in: recent ones, the host's repositories, and a typed path."
-    },
-    {
       "id": "new-agent.codex",
       "shows": "Starting a Codex agent from the host's catalogue: model, effort, permission and mode picked, a new worktree on."
     },
@@ -793,56 +625,20 @@
       "shows": "Starting a Claude agent on a host where Claude is not signed in."
     },
     {
-      "id": "new-agent.large-text",
-      "shows": "New Agent at accessibility3: the back link above the title, every field's value under its label, and the last row clear of the Start bar."
-    },
-    {
-      "id": "fleet.busy",
-      "shows": "The agent list with agents in every state on four machines: two that need you, three working (one heading a family), two idle, and two stopped agents folded away."
-    },
-    {
       "id": "fleet.stopped-open",
       "shows": "The same list with the stopped agents unfolded."
-    },
-    {
-      "id": "fleet.away",
-      "shows": "The same list with one machine away, so its agents read as out of reach."
-    },
-    {
-      "id": "fleet.no-agents",
-      "shows": "A phone paired with a machine that runs no agents yet."
     },
     {
       "id": "fleet.notifications-offer",
       "shows": "The busy fleet offering notifications above its list, with a close mark to put the offer away."
     },
     {
-      "id": "fleet.first-run",
-      "shows": "A phone paired with nothing, with one machine found on its network."
-    },
-    {
       "id": "fleet.first-run-two-found",
       "shows": "Nothing paired yet, with two machines found on this network."
     },
     {
-      "id": "fleet.first-run-looking",
-      "shows": "Nothing paired and nothing found yet: still looking, and the two steps on the computer."
-    },
-    {
-      "id": "fleet.first-run-refused",
-      "shows": "Nothing paired on a phone refused the local network."
-    },
-    {
-      "id": "fleet.first-run-signed-out",
-      "shows": "Nothing paired on a phone with no account, offering to sign in under pairing."
-    },
-    {
       "id": "fleet.first-run-signed-out-found",
       "shows": "Nothing paired on a phone with no account, with one machine found on its network."
-    },
-    {
-      "id": "fleet.busy-large-text",
-      "shows": "The busy list at the largest accessibility text size."
     },
     {
       "id": "fleet.two-accounts",
@@ -853,94 +649,8 @@
       "shows": "The busy list for an account with a profile picture: the picture fills the account disc."
     },
     {
-      "id": "fleet.signed-out",
-      "shows": "The busy list on a phone with no account: a hollow person where the account disc would be."
-    },
-    {
       "id": "fleet.chat-open",
       "shows": "The whole app with an agent's chat pushed over the list: no tab bar under the composer."
-    },
-    {
-      "id": "fleet.chat-exited",
-      "shows": "The whole app with a chat open on an agent that exited while its daemon was away: the long exit reason truncates in the title pill, and the bar keeps the way back."
-    },
-    {
-      "id": "fleet.settings-open",
-      "shows": "The whole app with the settings sheet raised from the account disc."
-    }
-  ],
-  "screens": [
-    {
-      "id": "pairing",
-      "shows": "The pairing confirmation after typing the six digits the desk printed: the desk's own name and key before anything is trusted."
-    },
-    {
-      "id": "hosts",
-      "shows": "The hosts tab with the paired desk, reached and trusted."
-    },
-    {
-      "id": "fleet",
-      "shows": "The fleet: an agent asking a question first, then the rest by most recent activity."
-    },
-    {
-      "id": "chat-turn",
-      "shows": "A claude_sdk chat after a turn with an exploration step, its header and its composer."
-    },
-    {
-      "id": "claude-sdk-ask-question",
-      "shows": "A claude_sdk chat with its question ask open, the options stated as answers."
-    },
-    {
-      "id": "ask-escape",
-      "shows": "A terminal Claude chat whose tool server opened a dialog the phone cannot answer, with the way out of it."
-    },
-    {
-      "id": "composer-chips",
-      "shows": "A chat's draft holding two files at an accessibility text size: each name wraps rather than losing its extension, its size under it, each remove mark a thumb's target."
-    },
-    {
-      "id": "large-text",
-      "shows": "The screens read most, at the accessibility3 text size: nothing overprints, no word is cut, and every control stays on the screen.",
-      "frames": [
-        {
-          "name": "fleet",
-          "shows": "Agents home: its header, the account and New Agent buttons beside the title, and each row's name and second line wrapping."
-        },
-        {
-          "name": "hosts",
-          "shows": "Hosts: this phone's identity row with its label above its value, and the paired desk."
-        },
-        {
-          "name": "you",
-          "shows": "You: the phone's rows and the Appearance control with every choice whole."
-        },
-        {
-          "name": "new-agent",
-          "shows": "New Agent: the back link above the title, and the Start bar clear of the Model and Permission rows."
-        },
-        {
-          "name": "chat",
-          "shows": "A chat after a turn: the header pill, the feed's step rows keeping their file names, and the composer's model chip."
-        },
-        {
-          "name": "question",
-          "shows": "A docked question card taller than the room it has: the question and options scroll under the pinned Skip, Send and Reply instead."
-        }
-      ]
-    },
-    {
-      "id": "origin-rewind",
-      "shows": "A chat through its host losing power back to a checkpoint: the phone's replica is Reset and the rebuilt chat swaps in under the rows on screen.",
-      "frames": [
-        {
-          "name": "before",
-          "shows": "The chat with a turn after the checkpoint, the agent live."
-        },
-        {
-          "name": "after",
-          "shows": "The same rows after the swap, the agent exited and its composer offering Resume."
-        }
-      ]
     }
   ]
 }

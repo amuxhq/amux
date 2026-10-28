@@ -1,0 +1,9 @@
+  2 tool servers need sign-in    1 tool server failed to start    ctrl+o
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ › Message fixer                                                                              │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+--- styles
+..wwwwwwwwwwwwwwwwwwwwwwwwwww????xxxxxxxxxxxxxxxxxxxxxxxxxxxxx??????????............................
+..mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..
+..mmmmmmmmmmmmmmmmm..............................................................................m..
+..mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..

@@ -6,7 +6,7 @@ TestNet (`crates/testnet`) starts a declared network of amux hosts, breaks it in
 consequences. The same network runs inside a Rust test, where the test holds a `Net` and calls its verbs, or in
 its own process as `testnet serve`, where a driver sends the same verbs over a control socket. `testnet ctl`
 drives a served net one shell command at a time, for a person or an agent exploring by hand. Terminal and phone
-journeys, the phone's goldens, the flood performance workload and [QA](QA.md) all run on it. How it fits among
+journeys, the phone's accessibility audit, the flood performance workload and [QA](QA.md) all run on it. How it fits among
 the other suites is on [Testing](TESTING.md).
 
 ## What is real

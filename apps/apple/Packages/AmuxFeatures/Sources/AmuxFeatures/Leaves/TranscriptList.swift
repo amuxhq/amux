@@ -18,7 +18,6 @@ struct TranscriptList: View {
     @Environment(\.photographed) private var photographed
     @Environment(\.reducesMotion) private var reducesMotion
     @Environment(\.reducesTransparency) private var reducesTransparency
-    @Environment(\.hidesNeedsYouDot) private var hidesNeedsYouDot
     @Environment(\.reportsIdentifiedElements) private var reportsElements
     @Environment(\.reportedIdentifierPrefix) private var reportedPrefix
     @Environment(\.reportsIdentifiedElementGeometry) private var reportsGeometry
@@ -39,7 +38,7 @@ struct TranscriptList: View {
                 model: model, items: items, notices: notices, landings: landings,
                 environment: CellEnvironment(
                     design: design, photographed: photographed, reducesMotion: reducesMotion,
-                    reducesTransparency: reducesTransparency, hidesNeedsYouDot: hidesNeedsYouDot,
+                    reducesTransparency: reducesTransparency,
                     reportsElements: reportsElements, reportedPrefix: reportedPrefix,
                     reportsGeometry: reportsGeometry, dynamicTypeSize: dynamicTypeSize),
                 revision: model.revision, toNewest: model.toNewest,
@@ -74,7 +73,6 @@ struct CellEnvironment: Equatable {
     var photographed: Bool
     var reducesMotion: Bool
     var reducesTransparency: Bool
-    var hidesNeedsYouDot: Bool
     var reportsElements: Bool
     var reportedPrefix: String?
     var reportsGeometry: Bool
@@ -92,7 +90,6 @@ private extension View {
             .environment(\.photographed, environment.photographed)
             .environment(\.reducesMotion, environment.reducesMotion)
             .environment(\.reducesTransparency, environment.reducesTransparency)
-            .environment(\.hidesNeedsYouDot, environment.hidesNeedsYouDot)
             .environment(\.reportsIdentifiedElements, environment.reportsElements)
             .environment(\.reportedIdentifierPrefix, environment.reportedPrefix)
             .environment(\.reportsIdentifiedElementGeometry, environment.reportsGeometry)

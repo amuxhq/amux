@@ -39,7 +39,7 @@
 - [Chat vocabulary](CHAT_VOCABULARY.md) — the client contract: the places a chat has, its rows and asks, and
   what interpreters and views must cover.
 - [Terminal client](TERMINAL.md) — screens, keys, the leader, raw attach and the CLI verbs.
-- [iPhone app](IOS.md) — packages, the chat and fleet, driving the app, snapshots, goldens and journeys.
+- [iPhone app](IOS.md) — packages, the chat and fleet, driving the app, snapshots and journeys.
 - [Embedding](EMBEDDED.md) — app-runtime, app-embedded, app-ffi, the generated Swift types and the seams.
 - [iPhone copy](IOS_COPY.md) — the rules the app's words follow and the lint that holds them.
 - [Cloud](CLOUD.md) — what the app and daemon ask of amux.sh.

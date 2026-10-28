@@ -1,0 +1,56 @@
+{
+  "scope": "phone-audit",
+  "hosts": [
+    {"name": "desk", "lan": true, "bonjour": true}
+  ],
+  "settle": true,
+  "agents": [
+    {
+      "name": "planner",
+      "host": "desk",
+      "kind": "claude_sdk",
+      "script": {"steps": [
+        {"tool": {"name": "mcp__amux__status", "class": "exploration", "input": {"working_on": "Tracing why the pairing errors disagree"}}},
+        {"text": {"chunks": ["Reading the pairing code first."]}},
+        {"tool": {"name": "Read", "class": "exploration", "input": {"file_path": "crates/wire/src/codes.rs"}}},
+        {"text": {"chunks": ["The pairing errors all come from one table in the wire crate, so they can share one string."]}},
+        "turn_end"
+      ]}
+    },
+    {
+      "name": "keeper",
+      "host": "desk",
+      "kind": "claude_sdk",
+      "script": {"steps": [
+        {"tool": {"name": "mcp__amux__status", "class": "exploration", "input": {"working_on": "Keeping the recovery state safe"}}},
+        {"text": {"chunks": ["The recovery state is safely stored."]}},
+        "turn_end"
+      ]}
+    },
+    {
+      "name": "asker",
+      "host": "desk",
+      "kind": "claude_sdk",
+      "prompt": "Tidy the release notes.",
+      "script": {"steps": [
+        {"ask": {"question": {"questions": [{
+          "question": "Which changes should the release notes keep?",
+          "header": "Notes",
+          "options": ["Only what users will notice", "Every change"]
+        }]}}},
+        {"text": {"chunks": ["Kept what users will notice."]}},
+        "turn_end"
+      ]}
+    },
+    {
+      "name": "dialog",
+      "host": "desk",
+      "kind": "claude_pty",
+      "script": {"steps": [
+        {"ask": {"tool_server_dialog": {"server": "github", "tool": "create_issue"}}},
+        {"text": {"chunks": ["The issue was not filed."]}},
+        "turn_end"
+      ]}
+    }
+  ]
+}

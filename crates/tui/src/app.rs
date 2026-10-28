@@ -1852,7 +1852,8 @@ impl App {
             self.report = Some(crate::report::Report::new(frozen, theme, self.start_dump()));
         }
         if let Some(report) = &self.report {
-            report.draw(paint, theme);
+            let area = paint.area();
+            report.draw(paint, area, theme);
         }
         if let Some(n) = page {
             self.chat_effect(ChatEffect::Page(n));

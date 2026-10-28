@@ -932,8 +932,8 @@ cargo = [
 
 [[suite]]
 name = "terminal-evidence-tools"
-contract = "Terminal evidence tools render deterministic PNGs of every vocabulary component and verify them, and every storybook story draws at every size in both palettes."
-paths = ["crates/shot/src"]
+contract = "Terminal evidence tools render deterministic PNGs of every vocabulary component and verify them, the storybook's stories are the terminal stories of tests/stories.json by name and in its order, and every story draws at every size in both palettes."
+paths = ["crates/shot/src", "tests/stories.json"]
 recipe = "just test-crate shot"
 boundary = "Native presentation"
 oracle = "Byte-stable images, exact dimensions, a face for every drawn glyph, and manifest membership."
@@ -1086,13 +1086,13 @@ contract = "A person can complete every declared phone story through the real ap
 paths = ["crates/testnet/src/journey", "journeys/manifest.json", "journeys/topologies/phone-stories.json", "journeys/topologies/phone-reach.json", "journeys/topologies/phone-authority.json", "journeys/topologies/phone-accounts.json", "journeys/topologies/phone-purchase.json", "journeys/topologies/phone-accessible.json", "journeys/topologies/phone-push.json", "journeys/topologies/phone-resume.json", "journeys/topologies/phone-flows.json", "journeys/fixtures/needs-you.apns", "journeys/goldens/phone"]
 recipe = "just ios journey"
 boundary = "Journeys"
-oracle = "Declared acts, independent door and host observations, screenshots, exits, and teardown evidence."
+oracle = "Declared acts, independent door and host observations, exact element geometry, exits, and teardown evidence."
 real = ["built phone app", "iOS simulator", "daemon runtimes", "relay", "network stack"]
 substituted = ["providers", "cloud account", "StoreKit where declared"]
 time = "real"
 capabilities = ["macOS", "Xcode 26.6", "iOS 26.5 golden simulator"]
 lane = "journey"
-evidence = "target/ios/journeys"
+evidence = "target/journeys/phone"
 update = "UPDATE_JOURNEY_GOLDENS=1 just ios journey -- conversation-decision-claude-sdk"
 journey_manifest = "journeys/manifest.json"
 journeys = ["account-sign-in", "purchase-restore", "report", "accessibility", "local-network", "push-wake", "resume"]
@@ -1115,46 +1115,14 @@ journey_manifest = "journeys/manifest.json"
 journeys = ["reach-host", "conversation-decision-claude-pty", "conversation-decision-claude-sdk", "conversation-decision-codex", "leave-and-recover", "manage-agent", "attachment-or-review", "keep-authority", "decide-plan-claude-sdk", "decide-plan-claude-pty", "decide-plan-codex", "answer-questions", "tool-server-asks", "queue-and-steer", "send-while-away", "send-rejected", "send-may-not-have-arrived", "composer-limits", "new-agent-terminal", "new-agent-worktree", "report-a-problem"]
 
 [[suite]]
-name = "phone-goldens"
-contract = "Every whole phone screen the golden manifest names, reached through the served door, matches its reviewed image and element geometry in light and dark."
-paths = ["apps/apple/Goldens", "crates/testnet/src/journey/goldens.rs", "journeys/topologies/phone-goldens.json"]
-recipe = "just ios goldens"
-boundary = "Native presentation"
-oracle = "Pixel comparison with declared tolerance, system-chrome and volatile-surface masks, and exact element geometry."
-real = ["built phone app", "iOS simulator", "platform rendering", "served daemons", "direct links"]
-substituted = ["providers"]
-time = "real"
-capabilities = ["macOS", "Xcode 26.6", "golden iOS simulator"]
-lane = "journey"
-evidence = "target/ios/goldens"
-update = "just ios goldens -- --update, then review every rewritten image in both appearances."
-golden_manifests = ["apps/apple/Goldens/manifest.json"]
-
-[[suite]]
-name = "phone-golden-sensitivity"
-contract = "The phone golden comparison rejects a whole screen drawn with one design token moved."
-paths = ["crates/testnet/src/journey/goldens.rs"]
-recipe = "just ios goldens-perturb"
-boundary = "Native presentation"
-oracle = "An intentional pixel change must produce a failing comparison and difference image."
-real = ["built phone app", "iOS simulator", "golden comparator", "served daemons"]
-substituted = ["providers"]
-time = "real"
-capabilities = ["macOS", "Xcode 26.6", "golden iOS simulator"]
-lane = "journey"
-evidence = "target/ios/goldens-perturb"
-update = ""
-cases = ["crates/testnet/src/journey/goldens.rs"]
-
-[[suite]]
 name = "phone-accessibility-audit"
 contract = "Every drawn phone state gives controls readable VoiceOver names and at least forty-four-point hit targets."
-paths = ["apps/apple/AmuxUITests", "crates/testnet/src/journey/goldens.rs"]
+paths = ["apps/apple/AmuxUITests", "crates/testnet/src/journey/accessibility.rs", "journeys/topologies/phone-audit.json"]
 recipe = "just ios accessibility"
 boundary = "Native presentation"
 oracle = "Accessibility tree names, frames, and hit-target geometry."
-real = ["built phone app", "XCTest", "iOS accessibility system"]
-substituted = ["model state", "network"]
+real = ["built phone app", "XCTest", "iOS accessibility system", "served daemons", "direct links"]
+substituted = ["providers"]
 time = "real"
 capabilities = ["macOS", "Xcode 26.6", "golden iOS simulator"]
 lane = "journey"
@@ -1346,8 +1314,8 @@ cases = ["scripts/qa-live-journey.py"]
 
 [[suite]]
 name = "phone-component-snapshots"
-contract = "Every catalogued phone component renders to its reviewed image in each declared appearance and size."
-paths = ["apps/apple/AmuxComponentSnapshotTests", "apps/apple/Amux/Debug/ComponentCatalog.swift", "apps/apple/Tools/ios-component-snapshots.py"]
+contract = "Every catalogued phone component and storybook story renders to its reviewed image in each declared appearance and size, and the catalogue draws every story tests/stories.json gives the phone."
+paths = ["apps/apple/AmuxComponentSnapshotTests", "apps/apple/Amux/Debug/ComponentCatalog.swift", "apps/apple/Amux/Debug/Stories.swift", "apps/apple/Tools/ios-component-snapshots.py", "tests/stories.json"]
 recipe = "just ios component-snapshots"
 boundary = "Native presentation"
 oracle = "Image comparison against the reviewed snapshot for each component, appearance and size."

@@ -4,8 +4,8 @@
 
 This page is an index. The suites themselves are listed in `tests/catalog.toml`; the promises they hold are
 listed in `tests/contracts.toml`; `just --list` is the command surface. The multi-host harness has its own page,
-[TestNet](TESTNET.md), measured performance has [Performance](PERFORMANCE.md), the phone's snapshots,
-goldens and journeys are described in [the iPhone app](IOS.md), and adversarial testing by agents has
+[TestNet](TESTNET.md), measured performance has [Performance](PERFORMANCE.md), the phone's snapshots
+and journeys are described in [the iPhone app](IOS.md), and adversarial testing by agents has
 [QA](QA.md).
 
 ## The rule
@@ -38,7 +38,7 @@ Each catalogued suite names one boundary.
 | Client model | `update(state, msg)` gives the same state under any arrival order; inputs reach a settled, rejected or uncertain state. | `crates/ui-state/tests/spec` |
 | Store, effects, bridge | Runtimes and the embedded owner reach the right service; Swift decodes and applies the Rust view and command contract. | `crates/ui-runtime`, `crates/app-runtime`, `crates/app-embedded`, `crates/client`, Swift unit suites |
 | Views | Each view is a pure function of session state; row ids are item keys and never move. | `crates/ui-view/tests` |
-| Native presentation | The terminal and the phone draw a view correctly and interaction sends the right command. The phone's compared pictures are drawn with reduce transparency on, so they hold no glass the render server finishes on its own schedule. | `crates/tui/tests`, `apps/apple` snapshot and golden suites |
+| Native presentation | The terminal and the phone draw a view correctly and interaction sends the right command. The phone's compared pictures are drawn with reduce transparency on, so they hold no glass the render server finishes on its own schedule. | `crates/tui/tests`, `apps/apple` snapshot suites |
 | System composition | Built binaries launch, survive, stop and clean up as promised: agents outlive a killed daemon, the supervisor updates and rolls back. | `crates/amux/tests`, `crates/agent/tests/lifecycle.rs`, `crates/node/tests/supervisor.rs` |
 | Journeys | A person completes a declared task through a real client and the production path. | `journeys/`, `crates/testnet/src/journey`, `crates/amux/tests/system_journeys.rs` |
 | Model | A protocol promise, written as a sentence, holds in every state a checker reaches by exploring the real code on small instances. | `crates/models` |
@@ -106,7 +106,7 @@ A lane says when and where a suite runs.
 | --- | --- | --- |
 | fast | Offline, credential-free, deterministic suites: most of the table above. | `just test` on every push, on Linux, macOS and Windows; `just ios gate` for the phone when a push touches it |
 | system | Real processes, PTYs, sockets and the supervisor, with bounded deadlines. | Also `just test`, since they are ordinary Cargo targets; the phone's loopback smoke runs in `just ios gate`, the store on the simulator in `just ios captures` |
-| journey | Both clients driving complete stories against a served network. | Terminal journeys on every push (Linux and macOS); phone journeys and goldens in `just ios captures`, nightly and by hand |
+| journey | Both clients driving complete stories against a served network. | Terminal journeys on every push (Linux and macOS); phone journeys and the accessibility audit in `just ios captures`, by hand |
 | tool | The repository's own machinery: scripts, source policy, CI command surface, the shipping-scope audit. | Beside the fast lane |
 | qualification | Live providers, measured performance, production cloud and purchases. | Only on request, on enrolled machines; results are `pass`, `fail`, `unavailable` or `not_run` |
 
@@ -246,8 +246,7 @@ production code, and small authored scenarios. Ordinary runs compare and never r
 | Login-unit goldens | `crates/amux/tests/goldens/login` | `AMUX_UPDATE_GOLDENS=1 just test-crate amux -- --test supervise_cli` |
 | Fake-provider scripts and served topologies | `journeys/scripts`, `journeys/topologies` | by hand |
 | Hand-written provider traffic | `journeys/recordings` | by hand |
-| Journey screen goldens | `journeys/goldens/terminal/<story>`, `journeys/goldens/phone/<story>` | `UPDATE_JOURNEY_GOLDENS=1` |
-| Phone whole-screen goldens | `apps/apple/Goldens` | `just ios goldens -- --update` |
+| Journey screen goldens: terminal frames and styles, phone element geometry | `journeys/goldens/terminal/<story>`, `journeys/goldens/phone/<story>` | `UPDATE_JOURNEY_GOLDENS=1` |
 | Phone component snapshots | `apps/apple/AmuxComponentSnapshotTests/__Snapshots__` | `just ios component-snapshots -- --record` |
 | Dump bundles replayed through their four stages | `crates/replay-support/tests/fixtures/bundle`, `crates/replay-support/tests/fixtures/healthy` | a fresh `amux dump` (for `healthy`, through `testnet ctl` on a served net); see [Debugging](DEBUGGING.md) |
 | Performance baselines | `perf/baselines` | `just perf --baseline` and `just ios perf --baseline`; see [Performance](PERFORMANCE.md) |
@@ -255,8 +254,8 @@ production code, and small authored scenarios. Ordinary runs compare and never r
 The recordings and live captures are read by the protocol crates' strict decode tests (every message decodes to a
 known type), the fakes' conformance run and the interpreters' `recorded_*` goldens, so a capture from a newer
 provider shows at once what changed. Every update is reviewed as a diff before it is committed. The phone's pictures with their glass on are review
-captures written wherever they are asked for (`just ios goldens -- --review DIR`, `just ios component-snapshots --
---review DIR`) and are never compared or committed; [the iPhone app](IOS.md#compared-pictures-are-drawn-flat) says
+captures written wherever they are asked for (`just ios component-snapshots -- --review DIR`) and are never compared
+or committed; [the iPhone app](IOS.md#compared-pictures-are-drawn-flat) says
 why.
 
 ## Journeys
@@ -275,7 +274,7 @@ relaunch, and a launch after a machine restarted) and keeps each launch's link l
 `target/ios/journey/resume/<launch>.log`.
 
 The phone journeys written before these stories are listed under `retired_phone_journeys`: each of their claims
-either names the story step that carries it (`story/screen`, a screen that story photographs) or is listed as
+either names the story step that carries it (`story/screen`, a screen that story compares) or is listed as
 dropped with the reason, and a script test checks every named step exists.
 
 ```sh
@@ -303,8 +302,7 @@ above. [QA](QA.md) describes running it and turning findings into tests.
 | Run | Output |
 | --- | --- |
 | Terminal journey | `target/journeys/<story>`: frames, `observations.json`, `result.txt`, `testnet.log` |
-| Phone journey | `target/journeys/phone/<story>`, differences under `diff/` |
-| Phone goldens | `target/ios/goldens`, perturbation runs in `target/ios/goldens-perturb` |
+| Phone journey | `target/journeys/phone/<story>`: each compared screen's picture and element geometry under `actual/`, `observations.json`, `result.txt`, `testnet.log` |
 | Phone component snapshots | `target/ios/component-snapshots` |
 | Phone accessibility audit | `target/ios/accessibility` |
 | TUI evidence bundle | `just tui-evidence`; rendered PNGs from `just shot` (see [amux-shot](../crates/shot/README.md)) |

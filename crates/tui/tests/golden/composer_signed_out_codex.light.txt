@@ -1,0 +1,17 @@
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ● Codex needs you to sign in                                                                 │
+  │                                                                                              │
+  │ Sign-in failed                                                                               │
+  │ unexpected status 401 Unauthorized: Missing bearer or basic authentication in header         │
+  │                                                                                              │
+  │ Run codex login on studio.                                                                   │
+  ╰──────────────────────────────────────────────────────────────────────────────────── GPT-5.5 ─╯
+--- styles
+..aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa..
+..aaaa...........................................................................................a..
+..aa.............................................................................................a..
+..aammmmmmmmmmmmmm...............................................................................a..
+..aa????????????????????????????????????????????????????????????????????????????????????.........a..
+..aa.............................................................................................a..
+..aa....ccccccccccc..............................................................................a..
+..aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa???????aaa..

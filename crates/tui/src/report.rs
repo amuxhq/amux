@@ -73,6 +73,15 @@ pub struct Report {
 impl Report {
     pub fn new(frozen: Buffer, theme: Theme, dump: Dump) -> Report {
         Report {
+            dump: Some(dump),
+            ..Report::without_dump(frozen, theme)
+        }
+    }
+
+    /// A report with no dump on its way, for drawing one where no profile
+    /// runs (the storybook); saving it records that no dump was started.
+    pub fn without_dump(frozen: Buffer, theme: Theme) -> Report {
+        Report {
             frozen,
             theme,
             at: Utc::now(),
@@ -81,7 +90,7 @@ impl Report {
             note: Editor::default(),
             marking: None,
             mark_note: Editor::default(),
-            dump: Some(dump),
+            dump: None,
         }
     }
 
@@ -156,9 +165,9 @@ impl Report {
         }
     }
 
-    /// The frozen frame, the marks over it, and the panel at the foot.
-    pub fn draw(&self, paint: &mut Paint<'_>, theme: Theme) {
-        let area = paint.area();
+    /// The frozen frame, the marks over it, and the panel at the foot of
+    /// `area`.
+    pub fn draw(&self, paint: &mut Paint<'_>, area: Rect, theme: Theme) {
         let buffer = paint.buffer_mut();
         let shared = area.intersection(self.frozen.area);
         for y in shared.top()..shared.bottom() {

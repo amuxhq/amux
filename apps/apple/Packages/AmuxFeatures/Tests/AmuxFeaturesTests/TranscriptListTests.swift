@@ -155,7 +155,7 @@ final class TranscriptListTests: XCTestCase {
 private func environment(typeSize: DynamicTypeSize = .large, photographed: Bool = true) -> CellEnvironment {
     CellEnvironment(
         design: .app, photographed: photographed, reducesMotion: true, reducesTransparency: true,
-        hidesNeedsYouDot: false, reportsElements: false, reportedPrefix: nil,
+        reportsElements: false, reportedPrefix: nil,
         reportsGeometry: false, dynamicTypeSize: typeSize)
 }
 

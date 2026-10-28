@@ -40,18 +40,47 @@ impl Default for StepBudget {
     }
 }
 
+/// One cheap invariant a core checks at the end of every step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Check {
+    /// A stable token naming the check, `<core>.<name>`: what dumps, reports
+    /// and usage events group by, so rewording the sentence does not split
+    /// one check's history in two. Lowercase letters, digits, `_` and `.`.
+    pub id: &'static str,
+    /// The invariant, as the sentence it checks, for people.
+    pub sentence: &'static str,
+}
+
+impl Check {
+    /// Whether `id` has the shape every check id has; the cores' lists are
+    /// tested against it, and the account service accepts nothing else.
+    pub fn is_id(id: &str) -> bool {
+        !id.is_empty()
+            && id.len() <= 64
+            && id.contains('.')
+            && id
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'.')
+    }
+}
+
+impl fmt::Display for Check {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.sentence)
+    }
+}
+
 /// A cheap invariant that failed: which one, and what it saw.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Violation {
-    /// The invariant, as the sentence it checks.
-    pub invariant: &'static str,
+    pub invariant: Check,
     /// The values that broke it.
     pub detail: String,
 }
 
 impl fmt::Display for Violation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.invariant, self.detail)
+        write!(f, "{}: {}", self.invariant.sentence, self.detail)
     }
 }
 
@@ -62,6 +91,16 @@ pub enum DumpReason {
     Violation(Violation),
     /// A step took longer than its budget.
     OverBudget { micros: u64, budget: StepBudget },
+}
+
+impl DumpReason {
+    /// The check that broke, or `None` for a step over its budget.
+    pub fn check(&self) -> Option<Check> {
+        match self {
+            DumpReason::Violation(violation) => Some(violation.invariant),
+            DumpReason::OverBudget { .. } => None,
+        }
+    }
 }
 
 impl fmt::Display for DumpReason {

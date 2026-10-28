@@ -33,15 +33,18 @@ final class ReportFreezeTests: XCTestCase {
         // With nothing running there is no dump, and the bundle says why
         // rather than leaving the part out.
         XCTAssertNil(capture.dump)
-        let dump = await ReportAssembly.dumpParts(capture.dump)
-        let bundle = ReportAssembly.bundle(
+        let dump = await ReportAssembly.dumped(capture.dump)
+        let upload = ReportAssembly.upload(
             from: capture, draft: ReportDraft(note: "wrong"), build: "amux-ios/test",
             dump: dump)
-        XCTAssertEqual(bundle.part(ReportAssembly.frameFile)?.present, true)
-        XCTAssertEqual(
-            bundle.part(ReportAssembly.traceFile)?.absenceReason,
-            "this build does not record view state")
-        XCTAssertFalse(bundle.parts.contains { $0.name.hasPrefix("dump/") })
+        let header = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: upload.header) as? [String: Any])
+        let parts = try XCTUnwrap(header["parts"] as? [String: Any])
+        XCTAssertEqual(parts["frame"] as? String, "present")
+        let trace = (parts["trace"] as? [String: Any])?["absent"] as? [String: Any]
+        XCTAssertEqual(trace?["reason"] as? String, "this build does not record view state")
+        XCTAssertNil(upload.trace)
+        XCTAssertEqual(upload.path, "", "no dump for the runtime to find")
     }
 
     /// The dump starts when the screen freezes, so it describes the moment
@@ -55,7 +58,7 @@ final class ReportFreezeTests: XCTestCase {
         })
         let capture = try XCTUnwrap(freezer.freeze())
         XCTAssertEqual(started, 1)
-        let dump = await ReportAssembly.dumpParts(capture.dump)
+        let dump = await ReportAssembly.dumped(capture.dump)
         XCTAssertThrowsError(try dump.get())
     }
 

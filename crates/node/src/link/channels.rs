@@ -1317,10 +1317,6 @@ mod tests {
             ) -> Answer<wire::ListRepositoriesResponse> {
                 unanswered()
             }
-
-            async fn dump(&self, _: Request<wire::DumpRequest>) -> Answer<wire::DumpPart> {
-                unanswered()
-            }
         }
 
         #[tonic::async_trait]

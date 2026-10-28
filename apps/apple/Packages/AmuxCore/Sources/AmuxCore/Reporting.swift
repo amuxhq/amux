@@ -1,3 +1,4 @@
+import AmuxValues
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -145,6 +146,51 @@ public struct PartAbsent: Error, Sendable, Equatable {
     }
 }
 
+/// Where a report was filed: the account service's id for it, and when it
+/// took it.
+public struct ReportReceipt: Sendable, Equatable, Codable {
+    public var id: String
+    public var receivedAt: Date
+
+    public init(id: String, receivedAt: Date) {
+        self.id = id
+        self.receivedAt = receivedAt
+    }
+}
+
+/// What the phone hands the runtime to send: `report.json`, the frame and
+/// the trace, and where the dump is.
+///
+/// Sealed at the first send, so a retry sends the bytes the person saw go
+/// the first time rather than a fresh header with a later time on it.
+public struct ReportUpload: Sendable, Equatable {
+    /// `report.json` as the phone writes it; the runtime adds the schema and
+    /// the dump's declaration.
+    public var header: Data
+    public var frame: Data
+    public var trace: String?
+    /// Where the runtime finds the report's dump: the directory it wrote,
+    /// empty when there is none, and after the first send the report's own
+    /// directory, which a retry names to send that same report again.
+    public var path: String
+
+    public init(header: Data, frame: Data, trace: String?, path: String) {
+        self.header = header
+        self.frame = frame
+        self.trace = trace
+        self.path = path
+    }
+}
+
+/// Sends a report: the runtime of the profile on screen, which writes it
+/// beside its dump and uploads it to the profile's account.
+///
+/// A seam so the store can be driven without a runtime; the profile is the
+/// only real one.
+public protocol ReportSubmitting: Sendable {
+    func submitReport(_ upload: ReportUpload) async -> Result<ReportSent, RuntimeFailure>
+}
+
 /// Freezes the screen and the recordings behind it.
 ///
 /// A seam rather than a call, for the same reason the cloud and the store are
@@ -185,7 +231,7 @@ public final class ReportStore {
     public private(set) var sending: ReportSending = .ready
 
     /// The first send seals the bytes so a retry keeps the report's identity.
-    public private(set) var uploadBundle: ReportBundle?
+    public private(set) var sealed: ReportUpload?
     private var captureID = UUID()
 
     public init() {}
@@ -248,7 +294,7 @@ public final class ReportStore {
         capture = nil
         draft = ReportDraft()
         sending = .ready
-        uploadBundle = nil
+        sealed = nil
         captureID = UUID()
     }
 
@@ -275,12 +321,14 @@ public final class ReportStore {
 
     // MARK: - Sending it
 
-    /// Assembles the bundle and hands it to the account service.
+    /// Hands the report to the runtime, which writes it beside its dump and
+    /// sends it to the account.
     ///
     /// A failure keeps everything. The draft, the rectangles and the frozen
     /// frame are all still here afterwards, so Retry is one press and not a
     /// second report: somebody who wrote three notes about a bug on a train
-    /// must not lose them to a tunnel.
+    /// must not lose them to a tunnel. The runtime keeps the report on the
+    /// phone either way, and a retry names it to send that one again.
     ///
     /// The account is what the report is filed under, and there may not be
     /// one: a phone nobody has signed in on yet can still take a screenshot
@@ -289,7 +337,7 @@ public final class ReportStore {
     /// thing it must not do is nothing at all — a button that quietly does
     /// not work leaves somebody pressing it and waiting.
     public func send(
-        with cloud: any CloudService, as account: AccountId?,
+        with submitter: (any ReportSubmitting)?, as account: AccountId?,
         build: String, gitSHA: String = "", now: Date = Date()
     ) async {
         guard capture != nil else { return }
@@ -297,36 +345,32 @@ public final class ReportStore {
         case .sending, .sent: return
         case .ready, .failed: break
         }
-        guard let account else {
+        guard account != nil else {
             sending = .failed(
                 "Sign in to the account this report is about, then send it again.")
             return
         }
-        guard let bundle = await assembled(build: build, gitSHA: gitSHA, now: now)
+        guard let submitter else {
+            sending = .failed("amux is not running on this phone yet. Try again in a moment.")
+            return
+        }
+        guard let upload = await assembled(build: build, gitSHA: gitSHA, now: now)
         else { return }
-        uploadBundle = bundle
+        sealed = upload
         let identity = captureID
         sending = .sending
-        do {
-            let receipt = try await cloud.uploadReport(account, bundle: bundle)
-            guard captureID == identity else { return }
-            sending = .sent(receipt)
-        } catch {
-            guard captureID == identity else { return }
-            sending = .failed(Self.sentence(for: error))
-        }
-    }
-
-    /// What the person is told when the cloud would not take it. Said in the
-    /// cloud's own words where it gave any, because "something went wrong"
-    /// tells nobody whether pressing Retry is worth it.
-    static func sentence(for error: CloudError) -> String {
-        switch error {
-        case .cancelled: "the upload was stopped"
-        case .unauthenticated: "amux.sh no longer recognises this account"
-        case .refused(let reason): reason
-        case .network(let what): what
-        case .timeout: "amux.sh did not answer"
+        let answer = await submitter.submitReport(upload)
+        guard captureID == identity else { return }
+        switch answer {
+        case .success(let sent):
+            sealed?.path = sent.reportPath
+            sending = sent.notSent.isEmpty
+                ? .sent(ReportReceipt(
+                    id: sent.id,
+                    receivedAt: Date(timeIntervalSince1970: Double(sent.receivedAtMs) / 1000)))
+                : .failed(sent.notSent)
+        case .failure(let why):
+            sending = .failed(why.description)
         }
     }
 
@@ -334,11 +378,11 @@ public final class ReportStore {
     /// before anybody presses anything, and a test reads the same thing.
     public func assembled(
         build: String, gitSHA: String = "", now: Date = Date()
-    ) async -> ReportBundle? {
-        if let uploadBundle { return uploadBundle }
+    ) async -> ReportUpload? {
+        if let sealed { return sealed }
         guard let capture else { return nil }
-        let dump = await ReportAssembly.dumpParts(capture.dump)
-        return ReportAssembly.bundle(
+        let dump = await ReportAssembly.dumped(capture.dump)
+        return ReportAssembly.upload(
             from: capture, draft: draft, build: build, gitSHA: gitSHA,
             createdAt: now, dump: dump)
     }

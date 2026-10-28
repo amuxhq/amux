@@ -556,7 +556,7 @@ async fn a_dump_carries_the_fleet_and_every_open_chat() {
         says(chat, "turn one")
     })
     .await;
-    let bundle = runtime.dump("asked for in a test").await.unwrap();
+    let bundle = runtime.dump("asked for in a test", false).await.unwrap();
     assert!(bundle.join("manifest.json").is_file());
     assert!(bundle.join("client/fleet/state.txt").is_file());
     let sessions = std::fs::read_dir(bundle.join("client/sessions"))

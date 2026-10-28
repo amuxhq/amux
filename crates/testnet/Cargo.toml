@@ -52,7 +52,9 @@ tui = { workspace = true }
 unicode-width = "0.2"
 uuid = { workspace = true }
 wire = { workspace = true, features = ["grpc"] }
+zstd = { workspace = true }
 
 [dev-dependencies]
 analytics = { workspace = true }
+ui-runtime = { workspace = true }
 ui-state = { workspace = true }

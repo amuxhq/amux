@@ -8,9 +8,9 @@ home.row.<desk-work>.age.volatile | <volatile>
 home.newAgent | New Agent |  | 338,62,44,44
 home.accounts | Switch account |  | 19,69,30,30
 report.screen |  | sent | 0,62,402,778
-report.sent | Report sent | report-7 | 0,116,402,74
+report.sent | Report sent | report-1 | 0,116,402,74
 report.cancel | Close |  | 20,66,56,36
- | Report sent, Quote report-7 if you write to us about it. |  | 16,132,276,58
+ | Report sent, Quote report-1 if you write to us about it. |  | 16,132,273,58
  | Close |  | 20,66,56,36
  | Report a Problem |  | 131,73,140,21
  | All |  | 16,172,44,44

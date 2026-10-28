@@ -309,13 +309,6 @@ public enum DoorRequest: Sendable, Equatable {
     /// the app is never told: full screen and thumbnail differ only in what
     /// covers the app next, which is the driver's to stage.
     case screenshot
-    /// Write the last report the scripted account service was handed into this
-    /// directory, and answer the files it left.
-    ///
-    /// What a person's Send actually uploaded, read at the boundary it left
-    /// the app through. Not the same as writing a fresh bundle: this is the
-    /// one that was sent, declarations and all.
-    case uploaded(path: String)
     /// Hold the app reachable in the background from here until a push is
     /// handed over, or until the system's allowance for finishing work runs
     /// out.
@@ -766,8 +759,6 @@ extension DoorRequest: Codable {
                 note: try fields.decodeIfPresent(String.self, forKey: .note) ?? "",
                 marks: try fields.decodeIfPresent([ReportMark].self, forKey: .marks) ?? [])
         case "screenshot": self = .screenshot
-        case "uploaded":
-            self = .uploaded(path: try fields.decode(String.self, forKey: .path))
         case "holdBackground": self = .holdBackground
         case "push":
             self = .push(path: try fields.decode(String.self, forKey: .path))
@@ -959,9 +950,6 @@ extension DoorRequest: Codable {
             try fields.encode(marks, forKey: .marks)
         case .screenshot:
             try fields.encode("screenshot", forKey: .kind)
-        case .uploaded(let path):
-            try fields.encode("uploaded", forKey: .kind)
-            try fields.encode(path, forKey: .path)
         case .holdBackground:
             try fields.encode("holdBackground", forKey: .kind)
         case .push(let path):

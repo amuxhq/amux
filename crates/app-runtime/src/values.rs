@@ -54,6 +54,23 @@ pub struct StartConfig {
     /// set it in the app's settings.
     #[serde(default = "yes")]
     pub telemetry: bool,
+    /// Whether the dumps a check asks for are sent to the account the
+    /// profile is signed in to, as the person set it in the app's settings.
+    #[serde(default)]
+    pub auto_reports: bool,
+}
+
+/// Where a person's report went: written on the device, and sent to their
+/// account when the profile is signed in to one.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+pub struct ReportSent {
+    /// The report's directory on the device.
+    pub report_path: String,
+    /// The account service's id for it; empty when it was not sent.
+    pub id: String,
+    pub received_at_ms: i64,
+    /// Why it was not sent, in words to show; empty when it was.
+    pub not_sent: String,
 }
 
 fn yes() -> bool {

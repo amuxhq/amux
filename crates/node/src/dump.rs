@@ -50,29 +50,15 @@
 //!     store.sqlite           the store as of that checkpoint, redacted
 //! ```
 //!
-//! An agent another host runs has only its row and store slice here; the
-//! dump asks that host for its side over the link, and its answer, a
-//! bundle of its own packed into one `wire.DumpPart`, lands beside them:
-//!
-//! ```text
-//!   agents/<agent_id>/
-//!     journal/..., part/...  as that host's dump holds them
-//!     host/row.pb, host/store.pb
-//!                            that host's row and store slice
-//!   hosts/<host_id>/
-//!     manifest.json          that host's own manifest
-//! ```
-//!
-//! A host's answer carries no daemon log: its log covers every profile its
-//! installation serves, and the asking machine is trusted by one of them.
-//!
-//! A host that cannot be reached is named in the manifest's errors, and so
-//! is anything its own dump could not gather.
+//! A bundle holds only what this host has: an agent another host runs has
+//! its row and store slice here and nothing more. Which of these parts a
+//! bundle carries is its scope's ([`Gather`]): each trigger carries what
+//! replays the stage it concerns.
 //!
 //! Everything protobuf is encoded without a length prefix except journal
 //! segments, which keep the journal's own framing. [`pack`] turns a bundle
-//! into one `wire.DumpPart` whose files carry these relative paths, for a
-//! caller on another machine.
+//! into one `wire.DumpPart` whose files carry these relative paths, which is
+//! how a bundle is uploaded.
 
 use std::collections::BTreeMap;
 use std::io;
@@ -88,7 +74,9 @@ use store::AgentRow;
 use tokio::sync::oneshot;
 use uuid::Uuid;
 use wire::dump::ClientSessionHistory;
-use wire::{AgentDumpRequest, CtlFrame, DumpFile, DumpPart, DumpRequest, Kind, Step, ctl_frame};
+use wire::{
+    AgentDumpRequest, CtlFrame, DumpFile, DumpPart, DumpRequest, DumpScope, Kind, Step, ctl_frame,
+};
 
 use crate::blobs::hex;
 use crate::driver::{AGENT_DUMP, AGENT_VIOLATION_DUMP, Captured};
@@ -115,8 +103,9 @@ pub const CLIENT_EVENTS: &str = "events";
 const CAPTURE_TRIES: u32 = 30;
 const CAPTURE_APART: Duration = Duration::from_millis(100);
 /// How much of each of the installation's logs a dump carries, from its
-/// end.
-pub const DUMP_LOG_BYTES: u64 = 4 << 20;
+/// end: a few thousand lines, which reach back past the minute or so the
+/// core's inputs cover without dwarfing the parts that replay.
+pub const DUMP_LOG_BYTES: u64 = 1 << 20;
 /// How long an agent process has to send its part.
 const PART_PATIENCE: Duration = Duration::from_secs(10);
 
@@ -124,14 +113,82 @@ pub const MANIFEST: &str = "manifest.json";
 pub const DAEMON_LOG: &str = "daemon.log";
 pub const SUPERVISOR_LOG: &str = "supervisor.log";
 
-/// Who a bundle is for.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Asker {
-    /// Somebody at this installation: the bundle gathers other hosts' sides
-    /// and carries the daemon's log.
-    Local,
-    /// A paired host: only this host's side of its own agents.
-    Peer,
+/// What a bundle of one scope gathers: what replays the stage its trigger
+/// concerns, and nothing it does not need.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Gather {
+    /// The core's checkpoint, the inputs since and the store copy.
+    core: bool,
+    slices: Slices,
+    journals: Journals,
+    /// The agent process's part: its facts ring, checkpoints, specs and
+    /// log tails.
+    parts: bool,
+    /// The daemon's and the supervisor's log tails.
+    logs: bool,
+}
+
+/// Whose store slice a bundle carries. Every covered agent has its row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Slices {
+    All,
+    /// Only agents a client session in the request is for.
+    Sessions,
+    None,
+}
+
+/// How much of each own agent's journal a bundle carries.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Journals {
+    None,
+    /// From the segment holding the core checkpoint's cursor: what the
+    /// core's replay reads.
+    FromCursor,
+    /// That, and at least the last [`DUMP_SEGMENTS`]: what the facts ring
+    /// is compared with.
+    Tail,
+}
+
+impl Gather {
+    fn of(scope: DumpScope) -> Self {
+        match scope {
+            DumpScope::Unspecified => Gather {
+                core: true,
+                slices: Slices::All,
+                journals: Journals::Tail,
+                parts: true,
+                logs: true,
+            },
+            DumpScope::Core => Gather {
+                core: true,
+                slices: Slices::None,
+                journals: Journals::FromCursor,
+                parts: false,
+                logs: true,
+            },
+            DumpScope::Agent => Gather {
+                core: false,
+                slices: Slices::All,
+                journals: Journals::Tail,
+                parts: true,
+                logs: false,
+            },
+            DumpScope::Transcript => Gather {
+                core: false,
+                slices: Slices::All,
+                journals: Journals::None,
+                parts: false,
+                logs: false,
+            },
+            DumpScope::Report => Gather {
+                core: true,
+                slices: Slices::Sessions,
+                journals: Journals::FromCursor,
+                parts: false,
+                logs: true,
+            },
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -162,22 +219,32 @@ impl DumpError {
 }
 
 impl ProfileRuntime {
-    /// Writes one bundle for the request's agents (every agent of the
-    /// profile when it names none), with the host-side parts of the ones
-    /// other hosts run, and returns its directory. What cannot be gathered
-    /// is named in the manifest, never included unredacted.
-    pub async fn dump(&self, request: DumpRequest) -> Result<PathBuf, DumpError> {
+    /// Writes one bundle of the request's scope for its agents (every
+    /// agent of the profile when it names none) and returns its directory.
+    /// What cannot be gathered is named in the manifest, never included
+    /// unredacted. An automatic one a check asked for is sent on when the
+    /// installation sends automatic reports.
+    pub async fn dump(self: &Arc<Self>, request: DumpRequest) -> Result<PathBuf, DumpError> {
         let rows = self.dump_rows(&request.agent_ids).await?;
-        self.write_dump(&request, rows, Asker::Local).await
+        let bundle = self.write_dump(&request, rows).await?;
+        if request.automatic {
+            if request.scope() == DumpScope::Transcript {
+                self.check_failed(crate::reports::Core::Transcript, &request.check, 0);
+            }
+            self.send_automatic(&bundle, &request);
+        }
+        Ok(bundle)
     }
 
-    /// Writes an automatic bundle of `agent_ids` (every agent when empty)
-    /// off the caller, for `whose` asking: under the guard a shutdown waits
-    /// on, so none starts once the profile stops waiting.
+    /// Writes an automatic bundle of `scope` for `agent_ids` (every agent
+    /// when empty) off the caller, for `whose` asking: under the guard a
+    /// shutdown waits on, so none starts once the profile stops waiting.
     pub(crate) fn dump_unasked(
         self: &Arc<Self>,
+        scope: DumpScope,
         agent_ids: Vec<Vec<u8>>,
         reason: String,
+        check: String,
         whose: &'static str,
     ) {
         let mut dumps = self.core_dumps.lock().unwrap();
@@ -197,6 +264,8 @@ impl ProfileRuntime {
                 reason,
                 automatic: true,
                 sessions: Vec::new(),
+                scope: scope.into(),
+                check,
             };
             match runtime.dump(request).await {
                 Ok(bundle) => tracing::warn!(bundle = %bundle.display(), whose, "dumped"),
@@ -213,50 +282,47 @@ impl ProfileRuntime {
     /// host's own limit per kind. The agent's lifecycle state is not a
     /// replay stage; the reason carries what its core said of it.
     pub(crate) fn agent_asked(self: &Arc<Self>, id: Uuid, asked: wire::DumpAsked) {
-        let (kind, prefix) = if asked.invariant.is_empty() {
+        // An agent from before checks had ids names its check by sentence.
+        let check = if asked.invariant.is_empty() {
+            String::new()
+        } else if core_ring::Check::is_id(&asked.check) {
+            asked.check.clone()
+        } else {
+            crate::reports::UNNAMED_AGENT_CHECK.to_owned()
+        };
+        let (kind, prefix) = if check.is_empty() {
             (DumpKind::OverBudget, AGENT_DUMP)
         } else {
             (
-                DumpKind::Violation(asked.invariant.into()),
+                DumpKind::Violation(check.clone().into()),
                 AGENT_VIOLATION_DUMP,
             )
         };
         let now = self.clock_now().max(0) as u64;
-        let Some(suppressed) = self.agent_dumps.lock().unwrap().admit(kind, now) else {
+        let Some(held_back) = self.agent_dumps.lock().unwrap().admit(kind, now) else {
             return;
         };
+        // What this host held back across its agents, and what the agent's
+        // own limit held back before asking.
+        let core = crate::reports::Core::Agent;
+        self.check_failed(core, &check, held_back + u64::from(asked.held_back));
         let reason =
-            core_ring::with_suppressed(format!("{prefix}{id}: {}", asked.reason), suppressed);
-        self.dump_unasked(vec![id.as_bytes().to_vec()], reason, "an agent's core");
-    }
-
-    /// A paired host's call for its dump: this host's own agents among the
-    /// ones it names (every own agent when it names none), as one packed
-    /// bundle. It gathers nothing from other hosts, leaves out the daemon's
-    /// log, which covers other profiles too, and is not kept here.
-    pub async fn dump_for_peer(&self, request: DumpRequest) -> Result<DumpPart, DumpError> {
-        let rows = self
-            .read_rows(|store| store.agents())
-            .await?
-            .into_iter()
-            .filter(|row| {
-                row.agent.host == self.host().as_bytes()
-                    && (request.agent_ids.is_empty()
-                        || request.agent_ids.contains(&row.agent.agent))
-            })
-            .collect();
-        let bundle = self.write_dump(&request, rows, Asker::Peer).await?;
-        let part = pack(&bundle)?;
-        std::fs::remove_dir_all(&bundle)?;
-        Ok(part)
+            core_ring::with_suppressed(format!("{prefix}{id}: {}", asked.reason), held_back);
+        self.dump_unasked(
+            DumpScope::Agent,
+            vec![id.as_bytes().to_vec()],
+            reason,
+            crate::reports::check_id(core, &check),
+            "an agent's core",
+        );
     }
 
     async fn write_dump(
         &self,
         request: &DumpRequest,
         rows: Vec<AgentRow>,
-        asker: Asker,
     ) -> Result<PathBuf, DumpError> {
+        let gather = Gather::of(request.scope());
         let dump_id = Uuid::new_v4();
         let created_at_ms = self.clock_now();
         let name = format!(
@@ -272,26 +338,34 @@ impl ProfileRuntime {
         let mut agents = Vec::new();
         // The core first: its store copy names the cursor each journal
         // must reach back to.
-        let core = match asker {
-            Asker::Local => self.dump_core(&partial, &mut errors).await?,
-            Asker::Peer => None,
+        let core = if gather.core {
+            self.dump_core(&partial, &mut errors).await?
+        } else {
+            None
         };
         let cursors = core.as_ref().map(|core| &core.cursors);
+        let sessions = client_sessions(&request.sessions, &rows, &partial, &mut errors)?;
         for row in &rows {
             // An agent the checkpoint's store does not hold was made since:
             // all of its journal came after.
             let cursor = cursors.map(|cursors| cursors.get(&row.agent.agent).copied().unwrap_or(0));
+            let slice = match gather.slices {
+                Slices::All => true,
+                Slices::Sessions => sessions.iter().any(|session| {
+                    session["agent_id"]
+                        == Uuid::from_slice(&row.agent.agent)
+                            .unwrap_or_default()
+                            .to_string()
+                }),
+                Slices::None => false,
+            };
             let (entry, mut failed) = self
-                .dump_agent(row, dump_id.as_bytes(), &partial, cursor)
+                .dump_agent(row, dump_id.as_bytes(), &partial, gather, slice, cursor)
                 .await?;
             agents.push(entry);
             errors.append(&mut failed);
         }
-        let mut sessions = Vec::new();
-        if asker == Asker::Local {
-            sessions = client_sessions(&request.sessions, &rows, &partial, &mut errors)?;
-            self.gather_hosts(request, &rows, &partial, &mut agents, &mut errors)
-                .await?;
+        if gather.logs {
             for (name, path) in [
                 (DAEMON_LOG, &self.daemon_log),
                 (SUPERVISOR_LOG, &self.supervisor_log),
@@ -311,6 +385,8 @@ impl ProfileRuntime {
             "created_at_ms": created_at_ms,
             "reason": interpret::redact_text(&request.reason),
             "automatic": request.automatic,
+            "scope": scope_name(request.scope()),
+            "check": (!request.check.is_empty()).then(|| request.check.clone()),
             "profile": self.profile().to_string(),
             "host": self.host().to_string(),
             "generation": self.generation(),
@@ -334,53 +410,6 @@ impl ProfileRuntime {
             tracing::warn!(%error, "cannot prune the reports");
         }
         Ok(bundle)
-    }
-
-    /// Asks every other host that runs one of `rows` for its side of them,
-    /// all at once, and writes what each sends into the bundle.
-    async fn gather_hosts(
-        &self,
-        request: &DumpRequest,
-        rows: &[AgentRow],
-        bundle: &Path,
-        agents: &mut [serde_json::Value],
-        errors: &mut Vec<String>,
-    ) -> Result<(), DumpError> {
-        let mut by_host: BTreeMap<Vec<u8>, Vec<Vec<u8>>> = BTreeMap::new();
-        for row in rows {
-            if row.agent.host != self.host().as_bytes() {
-                by_host
-                    .entry(row.agent.host.clone())
-                    .or_default()
-                    .push(row.agent.agent.clone());
-            }
-        }
-        let asked = by_host.into_iter().map(|(host, ids)| {
-            let request = DumpRequest {
-                agent_ids: ids.clone(),
-                reason: request.reason.clone(),
-                automatic: request.automatic,
-                // A client's sessions are this host's to write.
-                sessions: Vec::new(),
-            };
-            async move {
-                let host = Uuid::from_slice(&host).unwrap_or_default();
-                let answer = self.on_peer(host, request).await;
-                (host, ids, answer)
-            }
-        });
-        for (host, ids, answer) in futures_util::future::join_all(asked).await {
-            match answer.map_err(|error| error.to_string()) {
-                Ok(part) => unpack_host(host, &ids, part, bundle, agents, errors)?,
-                Err(error) => {
-                    for id in &ids {
-                        let id = Uuid::from_slice(id).unwrap_or_default();
-                        errors.push(format!("{id} host part: {error}"));
-                    }
-                }
-            }
-        }
-        Ok(())
     }
 
     /// The rows a dump covers, own and replica.
@@ -458,6 +487,8 @@ impl ProfileRuntime {
         row: &AgentRow,
         dump_id: &[u8],
         bundle: &Path,
+        gather: Gather,
+        slice: bool,
         cursor: Option<u64>,
     ) -> Result<(serde_json::Value, Vec<String>), DumpError> {
         let id = Uuid::from_slice(&row.agent.agent).unwrap_or_default();
@@ -474,24 +505,33 @@ impl ProfileRuntime {
             out.join("row.pb"),
             redacted(kind, RedactTarget::Agent(to_wire(row).encode_to_vec())),
         )?;
-        let key = row.agent.clone();
-        let cut = self
-            .read_rows(move |store| store.cut(&key, DUMP_ROWS))
-            .await?;
-        let slice = Step {
-            items: cut.held,
-            snapshot: cut.snapshot,
-            ..Step::default()
-        };
-        std::fs::write(
-            out.join("store.pb"),
-            redacted(kind, RedactTarget::Step(slice.encode_to_vec())),
-        )?;
+        let mut rows = None;
+        if slice {
+            let key = row.agent.clone();
+            let cut = self
+                .read_rows(move |store| store.cut(&key, DUMP_ROWS))
+                .await?;
+            let slice = Step {
+                items: cut.held,
+                snapshot: cut.snapshot,
+                ..Step::default()
+            };
+            rows = Some(slice.items.len());
+            std::fs::write(
+                out.join("store.pb"),
+                redacted(kind, RedactTarget::Step(slice.encode_to_vec())),
+            )?;
+        }
 
         let mut part_files = Vec::new();
-        if own {
-            let dir = self.agent_dir(id);
-            match journal_tail(&dir.join(agent_dir::JOURNAL), kind, cursor) {
+        let dir = self.agent_dir(id);
+        let at_least = match gather.journals {
+            Journals::None => None,
+            Journals::FromCursor => Some(0),
+            Journals::Tail => Some(DUMP_SEGMENTS),
+        };
+        if own && let Some(at_least) = at_least {
+            match journal_tail(&dir.join(agent_dir::JOURNAL), kind, cursor, at_least) {
                 Ok(segments) => {
                     for (name, bytes) in segments {
                         write_under(&out.join("journal"), &name, &bytes)?;
@@ -499,6 +539,8 @@ impl ProfileRuntime {
                 }
                 Err(error) => note("journal", &error),
             }
+        }
+        if own && gather.parts {
             match self.agent_part(id, dump_id).await {
                 Some(part) => {
                     for file in part.files {
@@ -536,7 +578,7 @@ impl ProfileRuntime {
             "own": own,
             "lifecycle": row.lifecycle,
             "incarnation": row.incarnation,
-            "rows": slice.items.len(),
+            "rows": rows,
             "part": part_files,
         });
         Ok((entry, errors))
@@ -577,67 +619,6 @@ fn dump_log(path: &Path, to: &Path) -> io::Result<Option<u64>> {
     let text = interpret::redact_text(&String::from_utf8_lossy(&tail));
     std::fs::write(to, text)?;
     Ok((skipped > 0).then_some(skipped))
-}
-
-/// Writes one host's packed answer into the bundle: each asked agent's
-/// journal and part beside its row, that host's row and slice under
-/// `host/`, and its manifest under `hosts/<host_id>/`. The host's
-/// own errors join the bundle's.
-fn unpack_host(
-    host: Uuid,
-    asked: &[Vec<u8>],
-    part: DumpPart,
-    bundle: &Path,
-    agents: &mut [serde_json::Value],
-    errors: &mut Vec<String>,
-) -> io::Result<()> {
-    let asked: Vec<String> = asked
-        .iter()
-        .map(|id| Uuid::from_slice(id).unwrap_or_default().to_string())
-        .collect();
-    let hosts = bundle.join("hosts").join(host.to_string());
-    for file in part.files {
-        let Some(path) = safe_relative(&file.name) else {
-            errors.push(format!("host {host} sent a file named {:?}", file.name));
-            continue;
-        };
-        let mut parts = file.name.splitn(3, '/');
-        match (parts.next(), parts.next(), parts.next()) {
-            (Some("agents"), Some(id), Some(rest)) if asked.iter().any(|asked| asked == id) => {
-                let out = bundle.join("agents").join(id);
-                if rest.starts_with("journal/") || rest.starts_with("part/") {
-                    write_under(&out, rest, &file.contents)?;
-                    if let Some(name) = rest.strip_prefix("part/")
-                        && let Some(entry) = agents.iter_mut().find(|entry| entry["agent_id"] == id)
-                    {
-                        if let Some(files) = entry["part"].as_array_mut() {
-                            files.push(name.into());
-                        }
-                        entry["gathered_from"] = host.to_string().into();
-                    }
-                } else {
-                    write_under(&out.join("host"), rest, &file.contents)?;
-                }
-            }
-            (Some("agents"), ..) => {}
-            _ => {
-                if file.name == MANIFEST
-                    && let Ok(manifest) =
-                        serde_json::from_slice::<serde_json::Value>(&file.contents)
-                    && let Some(theirs) = manifest["errors"].as_array()
-                {
-                    errors.extend(
-                        theirs
-                            .iter()
-                            .filter_map(serde_json::Value::as_str)
-                            .map(|error| format!("on host {host}: {error}")),
-                    );
-                }
-                write_under(&hosts, path, &file.contents)?;
-            }
-        }
-    }
-    Ok(())
 }
 
 /// One target through the kind's redactor, as the bytes it came back as.
@@ -691,6 +672,17 @@ fn client_sessions(
     Ok(entries)
 }
 
+/// A scope as the manifest names it.
+fn scope_name(scope: DumpScope) -> &'static str {
+    match scope {
+        DumpScope::Unspecified => "host",
+        DumpScope::Core => "core",
+        DumpScope::Agent => "agent",
+        DumpScope::Transcript => "transcript",
+        DumpScope::Report => "report",
+    }
+}
+
 fn redacted(kind: Kind, target: RedactTarget) -> Vec<u8> {
     match interpret::redact(kind, target) {
         RedactTarget::ItemBody(bytes)
@@ -707,12 +699,23 @@ fn redacted(kind: Kind, target: RedactTarget) -> Vec<u8> {
 }
 
 /// The journal segments from the one holding `cursor` on, and at least
-/// the last [`DUMP_SEGMENTS`], each whole frame redacted and written to its
-/// original length so every offset in the journal holds. A torn tail, a
-/// write still under way, keeps its length prefix and loses its bytes.
-fn journal_tail(dir: &Path, kind: Kind, cursor: Option<u64>) -> io::Result<Vec<(String, Vec<u8>)>> {
+/// the last `at_least` (the last [`DUMP_SEGMENTS`] when there is no
+/// cursor), each whole frame redacted and written to its original length so
+/// every offset in the journal holds. A torn tail, a write still under way,
+/// keeps its length prefix and loses its bytes.
+fn journal_tail(
+    dir: &Path,
+    kind: Kind,
+    cursor: Option<u64>,
+    at_least: usize,
+) -> io::Result<Vec<(String, Vec<u8>)>> {
     let starts = journal::segments(dir)?;
-    let last_few = starts.len().saturating_sub(DUMP_SEGMENTS);
+    let at_least = if cursor.is_some() {
+        at_least
+    } else {
+        DUMP_SEGMENTS
+    };
+    let last_few = starts.len().saturating_sub(at_least);
     let from = cursor
         .and_then(|cursor| starts.iter().rposition(|&start| start <= cursor))
         .map_or(last_few, |holding| holding.min(last_few));

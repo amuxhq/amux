@@ -1876,6 +1876,8 @@ impl App {
                     reason: "report a problem".to_owned(),
                     automatic: false,
                     sessions,
+                    scope: wire::DumpScope::Report.into(),
+                    check: String::new(),
                 })
                 .await
                 .map_err(|error| format!("the daemon could not dump: {error}"))?;
@@ -1896,14 +1898,22 @@ impl App {
         let Some(report) = self.report.take() else {
             return;
         };
-        let reports = self.config.reports.clone();
+        let client = self.client.clone();
         let build = self.config.version.clone();
-        self.notice("saving the report…", Tone::Info);
+        self.notice("sending the report…", Tone::Info);
         self.spawn(async move {
-            Some(match report.save(reports, build).await {
-                Ok(dir) => {
-                    AppEvent::Notice(format!("report saved in {}", dir.display()), Tone::Info)
-                }
+            Some(match report.submit(client, build).await {
+                Ok(done) if done.not_sent.is_empty() => AppEvent::Notice(
+                    format!("report sent; a copy is in {}", done.report_path),
+                    Tone::Info,
+                ),
+                Ok(done) => AppEvent::Notice(
+                    format!(
+                        "report saved in {}, not sent: {}",
+                        done.report_path, done.not_sent
+                    ),
+                    Tone::Warn,
+                ),
                 Err(error) => {
                     AppEvent::Notice(format!("could not save the report: {error}"), Tone::Warn)
                 }

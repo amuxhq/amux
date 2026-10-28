@@ -1061,7 +1061,7 @@ mod tests {
         out
     }
 
-    fn violations(out: &[Output]) -> Vec<&'static str> {
+    fn violations(out: &[Output]) -> Vec<crate::Check> {
         out.iter()
             .filter_map(|output| match output {
                 Output::Dump {
@@ -1273,7 +1273,7 @@ mod tests {
                 _ => None,
             })
             .unwrap_or_else(|| panic!("the report goes through the parent's lane: {out:?}"));
-        assert_eq!(violations(&out), Vec::<&str>::new());
+        assert_eq!(violations(&out), Vec::<crate::Check>::new());
 
         // Its verdict lost, the report is concluded lost and kept, and the
         // next pass hands it over again: once at a time.
@@ -1285,7 +1285,7 @@ mod tests {
                 verdict: None,
             },
         );
-        assert_eq!(violations(&lost), Vec::<&str>::new());
+        assert_eq!(violations(&lost), Vec::<crate::Check>::new());
         let again = step(
             &mut daemon,
             Input::Timer {
@@ -1300,7 +1300,7 @@ mod tests {
             )),
             "{again:?}"
         );
-        assert_eq!(violations(&again), Vec::<&str>::new());
+        assert_eq!(violations(&again), Vec::<crate::Check>::new());
 
         // A pass that lost track of the report it handed over, as only a
         // core whose state went wrong could, hands it again while it is in
@@ -1345,7 +1345,7 @@ mod tests {
             )),
             "{out:?}"
         );
-        assert_eq!(violations(&out), Vec::<&str>::new());
+        assert_eq!(violations(&out), Vec::<crate::Check>::new());
 
         // A pass that lost track of the report it sent, as only a core
         // whose state went wrong could, sends it again while it is out.

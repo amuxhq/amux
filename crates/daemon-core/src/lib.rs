@@ -584,28 +584,59 @@ impl Daemon {
 
 /// The single daemon's cheap invariants, as the sentences a violation
 /// names.
-pub const ANSWERED_UNCOMMITTED: &str =
-    "no answer carries a revision of this host's agent that the store has not committed";
-pub const RECLAIMED_ABOVE_CHECKPOINT: &str =
-    "an agent's journal is reclaimed only below the cursor of the newest checkpoint on the drive";
-pub const GENERATION_FELL: &str = "the generation this host's streams open under only ever rises";
+pub const ANSWERED_UNCOMMITTED: Check = Check {
+    id: "daemon.answered_uncommitted",
+    sentence: "no answer carries a revision of this host's agent that the store has not committed",
+};
+pub const RECLAIMED_ABOVE_CHECKPOINT: Check = Check {
+    id: "daemon.reclaimed_above_checkpoint",
+    sentence: "an agent's journal is reclaimed only below the cursor of the newest checkpoint on the drive",
+};
+pub const GENERATION_FELL: Check = Check {
+    id: "daemon.generation_fell",
+    sentence: "the generation this host's streams open under only ever rises",
+};
 
 /// No store commit lands while a checkpoint's WAL job moves the WAL into
 /// the main file, so the main file then holds exactly what the checkpoint
 /// serializes beside it.
-pub const NO_COMMIT_WHILE_HELD: &str =
-    "nothing is committed while a checkpoint moves the WAL into the main file";
+pub const NO_COMMIT_WHILE_HELD: Check = Check {
+    id: "daemon.no_commit_while_held",
+    sentence: "nothing is committed while a checkpoint moves the WAL into the main file",
+};
 
 /// The sources' and families' cheap invariants.
-pub const PAGE_OFF_THE_BOUNDARY: &str =
-    "a page from the origin joins a replica's block only at the block's lower boundary";
-pub const DELETED_UNDER_A_STALE_LISTING: &str =
-    "a child is deleted for its parent on another host only under that host's caught-up listing";
+pub const PAGE_OFF_THE_BOUNDARY: Check = Check {
+    id: "daemon.page_off_the_boundary",
+    sentence: "a page from the origin joins a replica's block only at the block's lower boundary",
+};
+pub const DELETED_UNDER_A_STALE_LISTING: Check = Check {
+    id: "daemon.deleted_under_a_stale_listing",
+    sentence: "a child is deleted for its parent on another host only under that host's caught-up listing",
+};
 
 /// The deliveries' cheap invariants.
-pub const OUTBOX_ROW_DELETED_UNACCEPTED: &str = "an outbox row is deleted only once its parent \
-     accepted it, or once the parent's incarnation or pairing it was for is gone";
-pub const REPORT_HANDED_TWICE: &str = "a report is handed to its parent at most once at a time";
+pub const OUTBOX_ROW_DELETED_UNACCEPTED: Check = Check {
+    id: "daemon.outbox_row_deleted_unaccepted",
+    sentence: "an outbox row is deleted only once its parent \
+     accepted it, or once the parent's incarnation or pairing it was for is gone",
+};
+pub const REPORT_HANDED_TWICE: Check = Check {
+    id: "daemon.report_handed_twice",
+    sentence: "a report is handed to its parent at most once at a time",
+};
+
+/// Every check the daemon core makes at the end of a step.
+pub const CHECKS: &[Check] = &[
+    ANSWERED_UNCOMMITTED,
+    RECLAIMED_ABOVE_CHECKPOINT,
+    GENERATION_FELL,
+    NO_COMMIT_WHILE_HELD,
+    PAGE_OFF_THE_BOUNDARY,
+    DELETED_UNDER_A_STALE_LISTING,
+    OUTBOX_ROW_DELETED_UNACCEPTED,
+    REPORT_HANDED_TWICE,
+];
 
 /// An id as a violation names it.
 fn hex(id: &[u8]) -> String {
@@ -712,7 +743,7 @@ pub struct Pending {
     peers: peers::PeerCalls,
 }
 
-pub use core_ring::{DumpReason, StepBudget, Violation};
+pub use core_ring::{Check, DumpReason, StepBudget, Violation};
 
 /// The core's state as of one step, serialized, under the layout it was
 /// written with.

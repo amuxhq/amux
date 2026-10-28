@@ -66,9 +66,12 @@ extension Composition {
         // an account listed with Sign In beside it has no session to send
         // with, and amux.sh would refuse it after the person had pressed Send.
         let account = accounts.selectedAccount.flatMap { $0.signedIn ? $0.id : nil }
+        // The profile on screen is the account's, and its runtime writes the
+        // report beside the dump it took and sends it.
+        let profile = runtime.profile
         Task {
             await reports.send(
-                with: cloud, as: account, build: AppFiles.build,
+                with: profile, as: account, build: AppFiles.build,
                 gitSHA: AppFiles.gitSHA)
         }
     }

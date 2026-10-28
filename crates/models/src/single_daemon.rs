@@ -1177,7 +1177,7 @@ pub fn judge_step(daemon: &Daemon, out: &[Output]) -> Option<Broken> {
     }) {
         return Some(match reason {
             DumpReason::Violation(violation) => Broken {
-                promise: violation.invariant,
+                promise: violation.invariant.sentence,
                 detail: violation.detail.clone(),
             },
             DumpReason::OverBudget { .. } => Broken {
@@ -1188,7 +1188,7 @@ pub fn judge_step(daemon: &Daemon, out: &[Output]) -> Option<Broken> {
     }
     if let Err(violation) = daemon.check_all() {
         return Some(Broken {
-            promise: violation.invariant,
+            promise: violation.invariant.sentence,
             detail: violation.detail,
         });
     }

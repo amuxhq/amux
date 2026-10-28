@@ -2,12 +2,29 @@ syntax = "proto3";
 
 package amux.v1;
 
-// The diagnostic dump: what a client asks for and gets back, and the parts a
-// paired host contributes for the agents it runs.
+// The diagnostic dump: what a client asks for and gets back, the agent
+// process's part, and a person's report built around one.
 
-// Assembles the host-side parts of a dump bundle into the reports
-// directory: the agents' journal tails, store slices and agent parts, all
-// redacted.
+// What a dump carries: what replays the stage its trigger concerns, and only
+// what this host holds.
+enum DumpScope {
+  // Everything this host holds for the named agents: `amux dump` and
+  // Export Diagnostics.
+  DUMP_SCOPE_UNSPECIFIED = 0;
+  // The daemon core's checkpoint, inputs and store copy, with the own
+  // agents' journals from its cursor on.
+  DUMP_SCOPE_CORE = 1;
+  // One agent: its process's part, journal, row and slice.
+  DUMP_SCOPE_AGENT = 2;
+  // One chat: the client's session and its agent's row and slice.
+  DUMP_SCOPE_TRANSCRIPT = 3;
+  // A person's report: every row, a slice per open chat, the client's
+  // sessions and the core's part.
+  DUMP_SCOPE_REPORT = 4;
+}
+
+// Assembles a dump bundle of this host's own records into the reports
+// directory, redacted.
 message DumpRequest {
   // Empty means every agent of the profile.
   repeated bytes agent_ids = 1;
@@ -22,6 +39,9 @@ message DumpRequest {
   // daemon redacts each through its agent's kind before it writes it into the
   // bundle, and passes none on to another host.
   repeated bytes sessions = 4;
+  DumpScope scope = 5;
+  // The id of the check that broke, for an automatic dump a check asked for.
+  string check = 6;
 }
 
 // Where the bundle was written, for a caller on the same machine.
@@ -39,4 +59,23 @@ message DumpPart {
 message DumpFile {
   string name = 1;
   bytes contents = 2;
+}
+
+// A person's report: the client's files, written beside the dump taken when
+// the screen froze and sent to the profile's account service.
+message SubmitReportRequest {
+  // The dump's directory, as `Dump` answered it.
+  string dump_path = 1;
+  // `report.json` and the frozen frame's files.
+  repeated DumpFile files = 2;
+}
+
+message SubmitReportResponse {
+  // Where the report was written.
+  string report_path = 1;
+  // The account service's id for it, when it was sent.
+  string id = 2;
+  int64 received_at_ms = 3;
+  // Why it was not sent, when it was not.
+  string not_sent = 4;
 }

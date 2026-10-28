@@ -18,10 +18,10 @@ use std::io::{self, Write as _};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
-pub use limit::{DumpKind, DumpLimit, with_suppressed};
+pub use limit::{Admitted, DumpKind, DumpLimit, with_suppressed};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-pub use step::{DumpReason, StepBudget, Violation};
+pub use step::{Check, DumpReason, StepBudget, Violation};
 
 /// Segments kept.
 const KEEP: usize = 2;

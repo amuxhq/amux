@@ -90,13 +90,22 @@ amux --profile Work dump worker
 
 Agents are named by name or id. `amux dump` asks the running daemon, which writes the bundle into
 `<root>/reports/` and prints its directory. The bundle is assembled under a dotted name beside its final one and
-renamed into place when complete, so a directory without a leading dot is whole.
+renamed into place when complete, so a directory without a leading dot is whole. `amux dump --send` also sends it
+to the profile's account (see [sending reports](#sending-reports)).
 
-For an agent another host runs, the daemon asks that host for its side over their link and adds it to the bundle.
-A host that cannot be reached is named in `errors`; the local rows and store slice are still there.
+A dump holds only what the dumping host holds. For an agent another host runs, that is this host's replica: its
+row and store slice, and the sessions of its chats this client had open. What the other host holds (the agent's
+facts ring, its journal, that host's core) is in a dump taken there.
 
-On the phone, reporting a problem takes a dump of the profile at the moment the screen freezes (see [A report
-from the phone](#a-report-from-the-phone)).
+Each dump carries what its trigger replays, and its manifest names that scope:
+
+| Scope | Taken by | Carries |
+| --- | --- | --- |
+| `host` | `amux dump`, Export Diagnostics on the phone | everything this host holds for the named agents, all of them when none are named |
+| `core` | a daemon core check that broke, or a step over budget | `core/`, own agents' journals from the checkpoint's cursor, and the daemon log |
+| `agent` | an agent core check that broke, or a step over budget | that agent's process part, its journal (at least two segments), row and slice |
+| `transcript` | a chat whose transcript failed its check | that chat's session, and its agent's row and slice |
+| `report` | a person's report, from the terminal or the phone | every agent's row, a slice for each agent with a chat open, the client's sessions, `core/` with own journals from its cursor, and the daemon log |
 
 Some dumps nobody asks for. When the daemon's core breaks one of its cheap invariants, or a step runs over its
 budget, the daemon writes a bundle whose `reason` starts `the daemon core: ` and whose manifest says `automatic`.
@@ -104,9 +113,11 @@ A chat whose transcript fails its own check when the stream catches up or resets
 reason starting `the client's transcript: ` and that chat's session inside, its trace cut at the message the check
 failed at. An agent process whose core breaks one of its invariants, or takes a step over its budget, says so on its
 stderr (`the agent core: `) and asks its daemon for a dump of it over the control connection; the daemon writes the bundle, reason starting
-`an agent's core: ` and naming the agent, with the agent's facts ring and checkpoints for the interpreter stage and
-the daemon's own parts for the core's. The relay and the supervisor log the same kind of reason (`the relay core: `,
-`the supervisor core: `) and write a text file beside it: the reason, the core's state when the driver's window began,
+`an agent's core: ` and naming the agent, with the agent's facts ring and checkpoints for the interpreter stage.
+Every check has a stable id, its core's name and its own (`daemon.generation_fell`, `agent.taken_still_pending`,
+`transcript.window`; a step over budget is `<core>.over_budget`), which the manifest's `check` names beside the
+sentence in `reason`. The relay, the path machine and the supervisor log the same kind of reason (`the relay core: `,
+`the supervisor core: `), and the relay and the supervisor write a text file beside it: the reason, the core's state when the driver's window began,
 every input stepped since (at least the last 256) and the state now. The supervisor writes
 `<data_dir>/reports/supervisor-<unix ms>-<id>.txt`; a relay writes `relay-<unix ms>-<id>.txt` into `reports/` under its
 `state_dir` (see [running the relay](CLOUD.md#running-the-relay)), and a daemon's own relay core into the
@@ -115,6 +126,11 @@ turns into a step test of that core by hand. Each process reports one per kind o
 one for steps over budget) every ten minutes, and the daemon writes one agent-asked bundle per kind in the same
 interval, however many agents ask; the next one of that kind says how many were held back since. Every core times its
 steps against a budget of its own: the daemon's 100 ms, the relay's 1 ms, and the agent's and the supervisor's 10 ms.
+
+Each check a limit admits is also counted as a `check_failed` usage event, naming the core, the check's id, whether
+it was an invariant or a step over budget, and how many the limit held back since: no reason text and nothing from
+the bundle (see [what amux sends](ANALYTICS.md)). It is sent whenever usage events are, so a check that breaks in
+the field is seen without anybody sending its dump.
 
 ## Reading a dump
 
@@ -129,9 +145,10 @@ find it ([replaying a dump](#replaying-a-dump)). The files are laid out as:
 
 ```text
 reports/dump-<unix ms>-<id>/
-  manifest.json                 dump id, time, reason, profile, host, generation, daemon version,
-                                one entry per agent, and errors
-  daemon.log                    the last 4 MiB of the daemon's log and its .1, redacted
+  manifest.json                 dump id, time, reason, scope, the check's id for a check's dump,
+                                profile, host, generation, daemon version, one entry per agent,
+                                and errors
+  daemon.log                    the last 1 MiB of the daemon's log and its .1, redacted
   supervisor.log                the same of the supervisor's, when amux runs under one
   agents/<agent id>/
     row.pb                      the inventory row (a wire.Agent)
@@ -145,8 +162,6 @@ reports/dump-<unix ms>-<id>/
     part/agent.log              the tail of the agent's and the provider's logs, each across its .1,
     part/provider.log           redacted
     part/dump-errors            anything the agent process could not read
-    host/row.pb, host/store.pb  for another host's agent: that host's row and slice
-  hosts/<host id>/manifest.json that host's own manifest
   core/checkpoint               the daemon core's newest checkpoint
   core/inputs                   every input the core stepped since, and how far each ingest read
                                 an agent's journal, one JSON line each
@@ -228,12 +243,15 @@ after the checkpoint, for a client session, with its place in the trace), the pr
 and the command exits non-zero. A client session the manifest names whose files are missing or do not read fails
 the session stage as `unreadable`, never holds. The first stage that fails is the culprit. When every stage holds,
 the fault is in a driver or in presentation, and the daemon's log tail is where to look. A stage the bundle carries
-nothing for prints `absent` and why: a bundle from a peer has no core part.
+nothing for prints `absent` and why: a transcript's dump has no core part, an agent's no client session.
 
 A dump the core asked for because one of its invariants broke replays to the step that broke it, naming the
 invariant. A dump a chat asked for because its transcript failed its check replays that chat from its checkpoint to
 the first message that left the window broken, which can come before the CaughtUp the client checked it at. Replay it with the build that wrote it: a build with the bug fixed steps the same inputs through the fix
 and holds, unless the state the checkpoint carries was already broken, in which case it fails at the same step.
+
+Both tools open a dump's directory, a report's directory (its dump is under `dump/`), or a report's
+`dump.pb.zst` as downloaded from the account service, which they unpack into a temporary directory first.
 
 The same is a library, `replay-support` (`crates/replay-support/src/bundle.rs` and `replay.rs`):
 
@@ -275,15 +293,15 @@ event produced the step that first emitted it.
 
 `b` on home, or the leader then `b` in a chat, freezes the screen as it was and opens a report over it; at the same
 instant the client starts a dump of the profile with its own parts. Drag with the mouse over anything wrong to mark
-it, and each mark takes a note of its own; one note covers the whole. Enter writes the bundle into the
-installation's `reports/` directory and says where; Esc leaves without writing anything. The terminal client has
-no account upload of its own, so the bundle stays on this machine.
+it, and each mark takes a note of its own; one note covers the whole. Enter hands the report to the daemon, which
+writes it into the installation's `reports/` directory and sends it to the profile's account; the terminal says it
+was sent and where the copy is, or where it was kept and why it was not sent. Esc leaves without writing anything.
 
-The bundle, `reports/report-<unix ms>-<n>/`, readable by its user only:
+The bundle, `reports/report-<unix ms>-<id>/`, readable by its user only:
 
 | File | Contents |
 | --- | --- |
-| `report.json` | The phone's header (schema 2): build, time, note, marks in cells, the viewport in cells, and every part declared present or absent with a reason |
+| `report.json` | The header (schema 3): build, time, note, marks in cells, the viewport in cells, and every part declared present or absent with a reason |
 | `frame.txt` | The frozen screen as text, without the report's own panel |
 | `frame.json` | The same cells with their colours and styles: each row as runs of one style from their first column, a colour as `#rrggbb`, `ansi:N` or `default` (the terminal's own ink or ground, whose values `default` records) |
 | `dump/…` | The profile's dump, as above, with this client's fleet and open chat parts under `client/` |
@@ -302,19 +320,40 @@ to Files and read as above. **Report a Problem** sends a report to the person's 
 Reporting a problem is in every build of the app. Taking a screenshot makes the app freeze its own composited
 frame and offer to report it; Report a Problem under Help freezes the screen and opens the report directly. In the
 same instant the app starts a dump of the profile. The person marks rectangles on the frozen frame, writes a note
-on each and one overall, and presses Send, which uploads one bundle to their amux account (the account signed in on
-screen; with none, Send is refused and says why). A failed send keeps everything for a retry. Nothing is sent in the
-background.
+on each and one overall, and presses Send, which hands the report to the app's runtime to write beside its dump and
+send to their amux account (the account signed in on screen; with none, Send is refused and says why). A failed send
+keeps everything for a retry, which sends the same report again. A person's report is never sent in the background;
+a check's dump is, only when **Send Automatic Reports** under **You**, in **This phone**, is on.
 
-The bundle holds:
+The bundle, in the runtime's `reports/report-<unix ms>-<id>/`, holds:
 
 | File | Contents |
 | --- | --- |
 | `report.json` | Build and git revision, time, note, marks in points with the frame's size and scale, and every part declared present or absent with a reason |
 | `frame.png` | The frozen screen, without the status bar |
 | `trace.jsonl` | The view-state trace, in builds with the driving tools only; a shipping build declares it absent |
-| `log` | Declared absent: the runtime's log rides in the dump below, redacted |
-| `dump/…` | The profile's dump, as above, with the app runtime's client parts |
+| `dump/…` | The profile's `report` dump, as above, with the app runtime's client parts |
+
+## Sending reports
+
+A report leaves a machine one way: the runtime (the daemon, or the app's embedded runtime) uploads it to the account
+service of the account its profile is signed in to, as `POST /api/reports`, multipart, with the profile's bearer.
+The sections are `report.json` (schema 3), the client's frame files (`frame.png`, or `frame.txt` and `frame.json`),
+`trace.jsonl` where there is one, and `dump.pb.zst`: the bundle packed as one `wire.DumpPart` and compressed with
+zstd, which the replay tools open as it is. A failure the service might not repeat (a server error, a timeout, no
+answer) is tried twice more, five and then ten seconds later; after that, or after a refusal, the bundle stays in
+`reports/` and the client says why. A signed-out profile sends nothing.
+
+Three things send:
+
+- **A person's report** from the terminal (Enter) or the phone (Send), through `ProfileAdminService.SubmitReport`:
+  the client names the dump it took and hands its `report.json` and frame files; the runtime writes them with the
+  dump into a report directory and uploads it. Naming that report directory again sends it again.
+- **`amux dump --send`**, a `host` dump sent with a header of its own.
+- **A check's dump**, sent right after it is written when the installation's `auto_reports` setting is on
+  (`amux config set auto_reports true`, read at each dump; on the phone, **Send Automatic Reports**). It is off by
+  default because a dump keeps conversation text. Its `report.json` says `kind: automatic`, names the core and
+  the check's id, and carries the redacted reason and no frame.
 
 What the account service does with reports is on [Cloud](CLOUD.md); the report screen itself is on [the iPhone
 app](IOS.md).

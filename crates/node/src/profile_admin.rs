@@ -193,4 +193,17 @@ impl ProfileAdminService for ProfileAdmin {
             report_path: path.to_string_lossy().into_owned(),
         }))
     }
+
+    async fn submit_report(
+        &self,
+        request: Request<wire::SubmitReportRequest>,
+    ) -> Result<Response<wire::SubmitReportResponse>, Status> {
+        let response = self
+            .registry
+            .runtime(self.profile)?
+            .submit_report(request.into_inner())
+            .await
+            .map_err(|error| crate::grpc::status(error.to_wire()))?;
+        Ok(Response::new(response))
+    }
 }

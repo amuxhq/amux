@@ -429,6 +429,7 @@ pub struct ProfileRuntime {
     pub(crate) reports: PathBuf,
     pub(crate) daemon_log: Option<PathBuf>,
     pub(crate) supervisor_log: Option<PathBuf>,
+    pub(crate) auto_reports: crate::reports::AutoReports,
     worktrees: Arc<dyn crate::worktree::MakeWorktree>,
     pub(crate) me: Weak<ProfileRuntime>,
     /// The network edge, once the profile is in service.
@@ -652,6 +653,8 @@ pub struct Profile {
     pub supervisor_log: Option<PathBuf>,
     /// Where the profile records product analytics.
     pub analytics: analytics::Analytics,
+    /// Whether the dumps a check asks for are sent to the account service.
+    pub auto_reports: crate::reports::AutoReports,
     /// What makes the worktree an agent asked to start in one starts in.
     pub worktrees: Arc<dyn crate::worktree::MakeWorktree>,
 }
@@ -672,6 +675,7 @@ impl ProfileRuntime {
             daemon_log,
             supervisor_log,
             analytics,
+            auto_reports,
             worktrees,
         } = profile;
         let options = daemon_core::StartOptions {
@@ -710,6 +714,7 @@ impl ProfileRuntime {
             reports,
             daemon_log,
             supervisor_log,
+            auto_reports,
             worktrees,
             me: me.clone(),
             edge: std::sync::OnceLock::new(),

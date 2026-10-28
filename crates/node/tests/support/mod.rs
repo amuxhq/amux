@@ -132,6 +132,7 @@ impl Install {
             front_door: None,
             edge: node::EdgeOptions::default(),
             analytics: node::Telemetry::Off,
+            auto_reports: node::AutoReports::off(),
         }
     }
 

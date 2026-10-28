@@ -628,13 +628,13 @@ pub(crate) struct CoreThread {
     _closed: watch::Sender<()>,
 }
 
-/// The reason a bundle the core asked for at `now_ms` is written with, or
-/// `None` when the limit holds it back.
+/// The bundle the core asked for at `now_ms`, or `None` when the limit
+/// holds it back.
 fn limited_dump_reason(
     limit: &mut DumpLimit,
     reason: &daemon_core::DumpReason,
     now_ms: u64,
-) -> Option<String> {
+) -> Option<core_ring::Admitted> {
     limit.reason(CORE_DUMP, reason, now_ms)
 }
 
@@ -1142,10 +1142,19 @@ impl CoreThread {
                 // thread, reading the store between later steps, so a burst
                 // of the same reason is one bundle.
                 let now = runtime.clock_now().max(0) as u64;
-                let Some(reason) = limited_dump_reason(&mut self.dumps, &reason, now) else {
+                let check = reason.check().map_or("", |check| check.id).to_owned();
+                let Some(admitted) = limited_dump_reason(&mut self.dumps, &reason, now) else {
                     return;
                 };
-                runtime.dump_unasked(Vec::new(), reason, "the daemon core");
+                let core = crate::reports::Core::Daemon;
+                runtime.check_failed(core, &check, admitted.held_back);
+                runtime.dump_unasked(
+                    wire::DumpScope::Core,
+                    Vec::new(),
+                    admitted.reason,
+                    crate::reports::check_id(core, &check),
+                    "the daemon core",
+                );
             }
             Output::OpenChannel { channel, .. } => match self.channel_reply.take() {
                 Some(reply) => {
@@ -1699,11 +1708,11 @@ mod tests {
     #[test]
     fn a_violation_the_daemon_core_repeats_is_one_bundle_per_interval() {
         let broke = daemon_core::DumpReason::Violation(daemon_core::Violation {
-            invariant: "the generation only ever rises",
+            invariant: daemon_core::GENERATION_FELL,
             detail: "3 then 2".into(),
         });
         let mut limit = DumpLimit::default();
-        let first = limited_dump_reason(&mut limit, &broke, 0).unwrap();
+        let first = limited_dump_reason(&mut limit, &broke, 0).unwrap().reason;
         assert!(first.starts_with(CORE_VIOLATION_DUMP), "{first}");
         for at in [1, DumpLimit::INTERVAL_MS - 1] {
             assert_eq!(limited_dump_reason(&mut limit, &broke, at), None);
@@ -1713,9 +1722,11 @@ mod tests {
             micros: 250_000,
             budget: daemon_core::StepBudget::DAEMON,
         };
-        let slow = limited_dump_reason(&mut limit, &slow, 2).unwrap();
+        let slow = limited_dump_reason(&mut limit, &slow, 2).unwrap().reason;
         assert!(slow.contains("250000 µs"), "{slow}");
         let second = limited_dump_reason(&mut limit, &broke, DumpLimit::INTERVAL_MS).unwrap();
+        assert_eq!(second.held_back, 2);
+        let second = second.reason;
         assert!(
             second.starts_with(CORE_VIOLATION_DUMP)
                 && second.ends_with("(2 more like it were not dumped since the last)"),

@@ -161,7 +161,7 @@
       "stage": 17,
       "clients": ["terminal"],
       "topology": "journeys/topologies/terminal-flows.json",
-      "claim": "In a chat, the leader's b freezes the screen and opens a report on it. A drag with the mouse marks what looks wrong and takes a note of its own, an overall note follows, and Enter writes one bundle into the installation's reports directory: report.json with the marks in cells and both notes, the frozen screen as text, and the profile's dump with this client's parts, every part not captured declared absent with its reason, readable by this user only."
+      "claim": "In a chat, the leader's b freezes the screen and opens a report on it. A drag with the mouse marks what looks wrong and takes a note of its own, an overall note follows, and Enter writes one bundle into the installation's reports directory: report.json with the marks in cells and both notes, the frozen screen as text, and the profile's dump with this client's parts, every part not captured declared absent with its reason, readable by this user only. Signed in to no account, the client says the report was kept and why it was not sent."
     },
     {
       "id": "account-sign-in",

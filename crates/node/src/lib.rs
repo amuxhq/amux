@@ -39,6 +39,7 @@ mod registry;
 mod relay;
 pub mod release;
 mod replicas;
+mod reports;
 mod repositories;
 mod resource_limits;
 mod retention;
@@ -108,6 +109,10 @@ pub use registry::{
 };
 pub use relay::RelayError;
 pub use replicas::{InventoryHook, SourceHook, SourcePolicy, SourceVerdict};
+pub use reports::{
+    AutoReports, CLIENT_FILES, DUMP_ARCHIVE, NotSent, REPORT_DUMP, REPORT_JSON, REPORT_SCHEMA,
+    ReportError, archive,
+};
 pub use retention::Retention;
 pub use routing::local_kinds;
 pub use runtime::{

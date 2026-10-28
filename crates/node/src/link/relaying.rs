@@ -37,9 +37,9 @@ pub(crate) struct Relaying {
     history: Mutex<History>,
     /// The clock the core is ticked by when nothing forwards here.
     epoch: Instant,
-    /// Where a dump the core asks for is written; unset only in tests that
-    /// never read one.
-    reports: OnceLock<PathBuf>,
+    /// Where a dump the core asks for is written, and where the check it
+    /// broke is counted; unset only in tests that never read one.
+    reports: OnceLock<(PathBuf, analytics::Analytics)>,
 }
 
 /// What a dump is made of: the core's recent inputs, and which dumps were
@@ -66,7 +66,7 @@ struct Dumps(DumpLimit);
 impl Dumps {
     /// The reason to report for `reason` asked for at `now_ms`, or `None`
     /// when it is held back.
-    fn reason(&mut self, reason: &DumpReason, now_ms: u64) -> Option<String> {
+    fn reason(&mut self, reason: &DumpReason, now_ms: u64) -> Option<core_ring::Admitted> {
         self.0.reason(RELAY_CORE_DUMP, reason, now_ms)
     }
 }
@@ -85,9 +85,11 @@ impl Relaying {
     }
 
     /// Writes the dumps the core asks for into `dir`: a relay's directory
-    /// from its configuration, a daemon's its installation's reports.
-    pub(crate) fn report_to(&self, dir: PathBuf) {
-        let _ = self.reports.set(dir);
+    /// from its configuration, a daemon's its installation's reports. A
+    /// daemon's relay core counts each broken check on its profile's
+    /// analytics; a relay's own server has none.
+    pub(crate) fn report_to(&self, dir: PathBuf, analytics: analytics::Analytics) {
+        let _ = self.reports.set((dir, analytics));
     }
 
     /// Forwards the packets hosts send `socket` to forward, between the
@@ -242,17 +244,25 @@ impl Relaying {
     /// link is admitted), so the file holds no secret.
     fn report(&self, reason: &DumpReason) {
         let now_ms = self.now_ms();
-        let (reason, window) = {
+        let check = reason.check().map_or("", |check| check.id);
+        let (admitted, window) = {
             let mut history = lock(&self.history);
-            let Some(reason) = history.dumps.reason(reason, now_ms) else {
+            let Some(admitted) = history.dumps.reason(reason, now_ms) else {
                 return;
             };
-            (reason, history.window.clone())
+            (admitted, history.window.clone())
         };
-        let Some(dir) = self.reports.get() else {
+        let reason = admitted.reason;
+        let Some((dir, analytics)) = self.reports.get() else {
             tracing::error!(%reason, "the relay core asked for a dump, with nowhere to write it");
             return;
         };
+        crate::reports::check_failed(
+            analytics,
+            crate::reports::Core::Relay,
+            check,
+            admitted.held_back,
+        );
         let relay = lock(&self.core).clone();
         let text = window.render("the relay core", &reason, &relay);
         match window::write(dir, "relay", &text) {
@@ -1119,7 +1129,7 @@ mod tests {
                 daemon_core::StepBudget { micros: 0 },
             ),
         );
-        relaying.report_to(reports.path().to_owned());
+        relaying.report_to(reports.path().to_owned(), analytics::Analytics::off());
         let written = || {
             std::fs::read_dir(reports.path())
                 .unwrap()
@@ -1177,11 +1187,11 @@ mod tests {
     #[test]
     fn a_violation_the_relay_core_repeats_is_reported_once_per_interval() {
         let broke = DumpReason::Violation(daemon_core::Violation {
-            invariant: "a splice only joins two live links",
+            invariant: relay_core::NOTHING_BEFORE_ADMISSION,
             detail: "link 9 is down".into(),
         });
         let mut dumps = Dumps::default();
-        let first = dumps.reason(&broke, 1_000).unwrap();
+        let first = dumps.reason(&broke, 1_000).unwrap().reason;
         assert!(first.starts_with(RELAY_CORE_DUMP), "{first}");
         for at in [1_001, 2_000, 1_000 + DumpLimit::INTERVAL_MS - 1] {
             assert_eq!(dumps.reason(&broke, at), None);
@@ -1189,6 +1199,8 @@ mod tests {
         let second = dumps
             .reason(&broke, 1_000 + DumpLimit::INTERVAL_MS)
             .unwrap();
+        assert_eq!(second.held_back, 3);
+        let second = second.reason;
         assert!(
             second.ends_with("(3 more like it were not dumped since the last)"),
             "{second}"

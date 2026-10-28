@@ -245,7 +245,6 @@ final class DoorHost {
                     return ChatWords.text(of: text).contains(saying)
                 }
             }
-        case .uploaded(let path): return writeUploaded(to: path)
         case .holdBackground: return holdBackground()
         case .awaitBackground(let seconds):
             return await until(seconds, "the app in the background") {
@@ -485,27 +484,6 @@ final class DoorHost {
         return .ack
     }
 
-    private func writeUploaded(to path: String) -> DoorReply {
-        guard let bundle = cloud.uploaded.last else { return .error("no report was sent") }
-        let directory = URL(fileURLWithPath: path, isDirectory: true)
-        let manager = FileManager.default
-        do {
-            try? manager.removeItem(at: directory)
-            try manager.createDirectory(at: directory, withIntermediateDirectories: true)
-            for part in bundle.parts {
-                guard let data = part.data else { continue }
-                let file = directory.appendingPathComponent(part.name)
-                try manager.createDirectory(
-                    at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try data.write(to: file)
-            }
-        } catch {
-            return .error("the report could not be written: \(error.localizedDescription)")
-        }
-        let header = bundle.part("report.json")?.data.flatMap { String(data: $0, encoding: .utf8) }
-        return .bundle(path: path, parts: bundle.parts.map(\.name), reportJSON: header)
-    }
-
     private func accountsState() -> AccountsState {
         let accounts = composition?.accounts
         return AccountsState(
@@ -537,8 +515,6 @@ final class DoorHost {
         case .entitlement(let id): "entitlement \(id)"
         case .recordPurchase(let id): "recordPurchase \(id)"
         case .requestDeletion(let id, let email): "requestDeletion \(id) as \(email)"
-        case .uploadReport(let id, let parts):
-            "uploadReport \(id) \(parts.joined(separator: ","))"
         }
     }
 
@@ -1008,7 +984,6 @@ final class DoorCloud: CloudService, @unchecked Sendable {
     }
 
     var calls: [CloudCall] { script.calls }
-    var uploaded: [ReportBundle] { script.uploaded }
 
     /// Reads plans from the account service at `base` from now on, with the
     /// bearer the runtime holds for the account.
@@ -1068,11 +1043,5 @@ final class DoorCloud: CloudService, @unchecked Sendable {
         _ id: AccountId, confirmedEmail: String
     ) async throws(CloudError) -> DeletionOutcome {
         try await script.requestDeletion(id, confirmedEmail: confirmedEmail)
-    }
-
-    func uploadReport(
-        _ id: AccountId, bundle: ReportBundle
-    ) async throws(CloudError) -> ReportReceipt {
-        try await script.uploadReport(id, bundle: bundle)
     }
 }

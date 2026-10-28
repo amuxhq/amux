@@ -333,10 +333,9 @@ fn a_drain_deadline_armed_while_running_is_a_violation() {
     let dumps = dumps(&out);
     assert_eq!(dumps.len(), 1, "{out:?}");
     match dumps[0] {
-        DumpReason::Violation(violation) => assert_eq!(
-            violation.invariant,
-            "a drain deadline waits only on an ask left open while draining for a lost daemon"
-        ),
+        DumpReason::Violation(violation) => {
+            assert_eq!(violation.invariant, crate::DEADLINE_WITHOUT_ORPHAN)
+        }
         other => panic!("not a violation: {other:?}"),
     }
 }
@@ -352,7 +351,7 @@ fn an_input_taken_while_still_queued_is_a_violation() {
     let out = run.reflect("p1");
     assert!(
         matches!(dumps(&out).as_slice(), [DumpReason::Violation(violation)]
-            if violation.invariant == "the pending set never holds an input the journal recorded as taken"),
+            if violation.invariant == crate::TAKEN_STILL_PENDING),
         "{out:?}"
     );
 }
@@ -368,7 +367,7 @@ fn a_lifecycle_exit_decided_mid_turn_is_a_violation() {
     });
     assert_eq!(
         run.agent.check_step_invariants().map_err(|v| v.invariant),
-        Err("an agent exits only at a turn end or a drain deadline")
+        Err(crate::EXIT_OUTSIDE_TURN_END)
     );
 }
 

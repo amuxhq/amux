@@ -165,7 +165,7 @@ impl CloudLinkServer {
         ));
         let relaying = Relaying::new(identity.host_id);
         if let Some(reports) = reports {
-            relaying.report_to(reports);
+            relaying.report_to(reports, analytics::Analytics::off());
         }
         Self {
             inner: Arc::new(CloudLinkServerInner {

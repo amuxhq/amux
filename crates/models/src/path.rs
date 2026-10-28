@@ -1021,12 +1021,12 @@ impl Machine for PathModel {
 
     fn properties(&self) -> Vec<Property<Self>> {
         vec![
-            Property::always(CARRIES_ONLY_ANSWERED, |_, s: &State| {
+            Property::always(CARRIES_ONLY_ANSWERED.sentence, |_, s: &State| {
                 s.unanswered.is_none()
                     && s.carrying()
                         .is_none_or(|path| s.link_up && s.answered.contains(&path.into()))
             }),
-            Property::always(NO_CROSS_NETWORK_AFTER_LAPSE, |_, s: &State| {
+            Property::always(NO_CROSS_NETWORK_AFTER_LAPSE.sentence, |_, s: &State| {
                 s.crossed.is_none()
             }),
             Property::eventually(
@@ -1049,12 +1049,12 @@ impl Machine for PathModel {
                                     .is_some_and(|path| !path.is_forwarded() && s.works(path))))
                 },
             ),
-            Property::always(NO_SWING, |_, s: &State| s.swung.is_none()),
+            Property::always(NO_SWING.sentence, |_, s: &State| s.swung.is_none()),
             Property::always(
                 "of two addresses as near, the link never chooses the IPv4 one while the IPv6 one works",
                 |_, s: &State| s.chose_v4.is_none(),
             ),
-            Property::always(RELAY_READY_WHILE_DIRECT, |_, s: &State| {
+            Property::always(RELAY_READY_WHILE_DIRECT.sentence, |_, s: &State| {
                 let direct = s.link_up && s.carrying().is_some_and(|path| !path.is_forwarded());
                 // The next probe is due an interval after the relay last
                 // proved itself, and its answer comes within the probe

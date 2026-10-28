@@ -2082,8 +2082,11 @@ fn report(journey: &mut PhoneJourney) -> Proved {
     let agent = journey.agent_id("desk-work");
     journey.tab("Agents")?;
     journey.wait_for(&[&format!("home.row.{agent}")])?;
-    journey.app(
-        json!({"kind": "cloud", "cloud": {"upload": "refused", "uploadReason": REFUSED_UPLOAD}}),
+    journey.request(
+        Control::RefuseReports {
+            reason: Some(REFUSED_UPLOAD.to_owned()),
+        },
+        None,
     )?;
 
     // The system photographs the app, and the app offers to report what was
@@ -2105,7 +2108,7 @@ fn report(journey: &mut PhoneJourney) -> Proved {
     journey.app(json!({"kind": "settle"}))?;
     journey.tap("report.send")?;
     let refused = journey.wait_for(&["report.refusal"])?;
-    if refused.value("report.refusal") != REFUSED_UPLOAD {
+    if !refused.value("report.refusal").contains(REFUSED_UPLOAD) {
         return Err(format!(
             "the refusal says {:?}",
             refused.get("report.refusal")
@@ -2117,50 +2120,60 @@ fn report(journey: &mut PhoneJourney) -> Proved {
     journey.screen("refused", &[])?;
 
     // Retry hands over the same report, and it is taken.
-    journey
-        .app(json!({"kind": "cloud", "cloud": {"upload": "accepted", "receipt": "report-7"}}))?;
+    journey.request(Control::RefuseReports { reason: None }, None)?;
     journey.tap("report.send")?;
     let sent = journey.wait_for(&["report.sent"])?;
-    if sent.value("report.sent") != "report-7" {
+    if sent.value("report.sent") != "report-1" {
         return Err(format!("the receipt reads {:?}", sent.get("report.sent")));
     }
     journey.screen("sent", &[])?;
-    let uploads: Vec<String> = strings(&calls(journey, "report-calls")?["cloud"])
-        .into_iter()
-        .filter(|call| call.starts_with("uploadReport"))
-        .collect();
-    if uploads.len() != 2 || uploads[0] != uploads[1] {
-        return Err(format!(
-            "the retry did not hand over the same report: {uploads:?}"
-        ));
-    }
 
     // What left the phone, read where it crossed into the account service.
-    let inside = app_data(journey)?.join("tmp/journey-report");
-    let bundle = journey.app(json!({"kind": "uploaded", "path": inside}))?;
-    let header: Value = serde_json::from_str(bundle["reportJSON"].as_str().unwrap_or_default())
-        .map_err(|error| format!("report.json: {error}"))?;
-    let parts = strings(&bundle["parts"]);
-    journey.record.observations.insert(
-        "uploaded-report".to_owned(),
-        json!({"parts": bundle["parts"], "report.json": header}),
-    );
-    if !header.to_string().contains(REPORT_NOTE) {
+    let received = journey.output.join("received");
+    let listing = journey.request(
+        Control::Reports {
+            dir: Some(received.clone()),
+        },
+        Some("received-reports"),
+    )?;
+    let reports = listing["reports"].as_array().cloned().unwrap_or_default();
+    let [first, retry] = reports.as_slice() else {
+        return Err(format!(
+            "the account service was handed {} reports",
+            reports.len()
+        ));
+    };
+    if first["refused"] != REFUSED_UPLOAD || !retry["refused"].is_null() {
+        return Err(format!(
+            "the refusals read {} and {}",
+            first["refused"], retry["refused"]
+        ));
+    }
+    if first["report_json"] != retry["report_json"] || first["files"] != retry["files"] {
+        return Err("the retry did not hand over the same report".to_owned());
+    }
+    let header = &retry["report_json"];
+    if retry["account"] != "ada" || header["kind"] != "report" {
+        return Err(format!("the report reads {retry}"));
+    }
+    if header["note"] != REPORT_NOTE {
         return Err(format!("the report does not carry the note: {header}"));
     }
-    let screen = inside.join("frame.png");
+    let files = strings(&retry["files"]);
+    let screen = received.join("2/frame.png");
     if std::fs::metadata(&screen).map_or(true, |metadata| metadata.len() == 0) {
         return Err(format!(
-            "the report carries no picture of the screen: {parts:?}"
+            "the report carries no picture of the screen: {files:?}"
         ));
     }
     std::fs::copy(&screen, journey.output.join("uploaded-frame.png"))
         .map_err(|error| error.to_string())?;
     // The dump inside it carries this phone's copy of the agent the desk
     // lists, the one whose row the report froze.
-    if !parts.contains(&format!("dump/agents/{agent}/row.pb")) {
+    let dumped = strings(&retry["dump_files"]);
+    if !dumped.contains(&format!("agents/{agent}/row.pb")) {
         return Err(format!(
-            "the report's dump holds no copy of the desk's agent: {parts:?}"
+            "the report's dump holds no copy of the desk's agent: {dumped:?}"
         ));
     }
     journey.wait_inventory(
@@ -2178,8 +2191,8 @@ fn report(journey: &mut PhoneJourney) -> Proved {
             quoted(REFUSED_UPLOAD)
         ),
         format!(
-            "Retry handed over the same report, {} parts both times, and came back with receipt report-7",
-            parts.len()
+            "Retry handed the account service the same report ({}) and came back with receipt report-1",
+            files.join(", ")
         ),
         "the report that left the phone carries the note, the frozen screen and a dump holding the agent the desk lists".to_owned(),
     ])

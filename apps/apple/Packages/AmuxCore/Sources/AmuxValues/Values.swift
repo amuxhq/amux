@@ -4873,6 +4873,32 @@ public enum RelayLink: String, Codable, Hashable, Sendable, CaseIterable {
     case versionMismatch = "VersionMismatch"
 }
 
+/// Where a person's report went: written on the device, and sent to their
+/// account when the profile is signed in to one.
+public struct ReportSent: Codable, Hashable, Sendable {
+    /// The report's directory on the device.
+    public var reportPath: String
+    /// The account service's id for it; empty when it was not sent.
+    public var id: String
+    public var receivedAtMs: Int64
+    /// Why it was not sent, in words to show; empty when it was.
+    public var notSent: String
+
+    public init(reportPath: String, id: String, receivedAtMs: Int64, notSent: String) {
+        self.reportPath = reportPath
+        self.id = id
+        self.receivedAtMs = receivedAtMs
+        self.notSent = notSent
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case reportPath = "report_path"
+        case id
+        case receivedAtMs = "received_at_ms"
+        case notSent = "not_sent"
+    }
+}
+
 /// How an ask that is the work closed.
 public enum Resolution: String, Codable, Hashable, Sendable, CaseIterable {
     case open = "Open"
@@ -6055,6 +6081,9 @@ public struct StartConfig: Codable, Hashable, Sendable {
     public var dataDir: String
     /// What this device calls itself to the machines it pairs with.
     public var deviceName: String
+    /// Whether the dumps a check asks for are sent to the account the
+    /// profile is signed in to, as the person set it in the app's settings.
+    public var autoReports: Bool?
     /// Discovery candidates are listed only when their scope equals this.
     public var discoveryScope: String?
     /// Listen for and dial direct links on the local network.
@@ -6080,9 +6109,10 @@ public struct StartConfig: Codable, Hashable, Sendable {
     /// set it in the app's settings.
     public var telemetry: Bool?
 
-    public init(dataDir: String, deviceName: String, discoveryScope: String?, lan: Bool?, lanBind: String?, logPath: String?, relayQuic: String?, relayRoot: String?, relayTcp: String?, tail: UInt32?, telemetry: Bool?) {
+    public init(dataDir: String, deviceName: String, autoReports: Bool?, discoveryScope: String?, lan: Bool?, lanBind: String?, logPath: String?, relayQuic: String?, relayRoot: String?, relayTcp: String?, tail: UInt32?, telemetry: Bool?) {
         self.dataDir = dataDir
         self.deviceName = deviceName
+        self.autoReports = autoReports
         self.discoveryScope = discoveryScope
         self.lan = lan
         self.lanBind = lanBind
@@ -6097,6 +6127,7 @@ public struct StartConfig: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case dataDir = "data_dir"
         case deviceName = "device_name"
+        case autoReports = "auto_reports"
         case discoveryScope = "discovery_scope"
         case lan
         case lanBind = "lan_bind"

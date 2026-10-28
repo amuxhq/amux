@@ -46,7 +46,9 @@ pub enum ShowError {
 
 /// The bundle at `dir` as text; with `agent`, only the agents whose id
 /// starts with it or whose name is it.
-pub fn show(dir: &Path, agent: Option<&str>) -> Result<String, ShowError> {
+pub fn show(named: &Path, agent: Option<&str>) -> Result<String, ShowError> {
+    let (dir, _unpacked) = crate::bundle::locate(named)?;
+    let dir = dir.as_path();
     let manifest_path = dir.join("manifest.json");
     if !manifest_path.is_file() {
         return Err(ShowError::NotABundle(dir.to_owned()));
@@ -97,7 +99,7 @@ pub fn show(dir: &Path, agent: Option<&str>) -> Result<String, ShowError> {
     }
 
     // What no section above showed, so nothing in the bundle is invisible:
-    // the daemon's log, a client's parts, other hosts' manifests.
+    // the daemon's log, a client's parts.
     let skipped: Vec<PathBuf> = bundle
         .agents
         .iter()
@@ -388,9 +390,11 @@ fn agent_section(
         replay(out, dump);
     }
 
-    let _ = writeln!(out, "-- store ({} rows) --", dump.store.items.len());
-    store(out, kind, &dump.store);
-    shown.insert(at.join("store.pb"));
+    if let Some(slice) = &dump.store {
+        let _ = writeln!(out, "-- store ({} rows) --", slice.items.len());
+        store(out, kind, slice);
+        shown.insert(at.join("store.pb"));
+    }
 
     let facts_dir = at.join("part").join("facts");
     for (_, path) in segments(&facts_dir)? {
@@ -430,22 +434,6 @@ fn agent_section(
             file(out, &format!("part {name}"), &path)?;
         }
         shown.insert(path);
-    }
-
-    // Another host's agent: that host's own row and store slice, beside
-    // this host's replica of them above.
-    let host_row = at.join("host").join("row.pb");
-    if host_row.is_file() {
-        let _ = writeln!(out, "-- host row --");
-        row(out, &decode(&host_row, "wire.Agent")?);
-        shown.insert(host_row);
-    }
-    let host_store = at.join("host").join("store.pb");
-    if host_store.is_file() {
-        let slice: Step = decode(&host_store, "wire.Step")?;
-        let _ = writeln!(out, "-- host store ({} rows) --", slice.items.len());
-        store(out, kind, &slice);
-        shown.insert(host_store);
     }
     Ok(())
 }

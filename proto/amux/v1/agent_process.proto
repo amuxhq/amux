@@ -151,6 +151,11 @@ message DumpAsked {
   // The invariant that failed, as the sentence it checks; empty for a step
   // over its budget.
   string invariant = 2;
+  // The check's id; empty for a step over its budget.
+  string check = 3;
+  // How many like it the agent's own limit held back since the last it
+  // asked for.
+  uint32 held_back = 4;
 }
 
 message Rename {

@@ -353,7 +353,9 @@ impl Edge {
         // The daemon forwards between its own links with a relay core of
         // its own, whose dumps go where the profile's do.
         if let Some(runtime) = runtime.upgrade() {
-            links.relaying().report_to(runtime.reports.clone());
+            links
+                .relaying()
+                .report_to(runtime.reports.clone(), runtime.analytics().clone());
         }
         let channels = Arc::new(ChannelPool::with_trust(links, trust.clone()));
         let connections = ConnectionManager::new(channels.clone(), analytics.clone());
@@ -442,6 +444,7 @@ impl Edge {
         let (paths, driving) = PathDriver::start(
             quic_endpoint.socket.clone(),
             channels.link_registry().core().cloned(),
+            analytics.clone(),
         );
         channels.link_registry().drive_paths(&paths);
         tasks.push(driving);

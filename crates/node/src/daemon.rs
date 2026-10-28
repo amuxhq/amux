@@ -49,6 +49,8 @@ pub struct StartOptions {
     pub edge: EdgeOptions,
     /// Whether profiles record product analytics, and where it goes.
     pub analytics: Telemetry,
+    /// Whether the dumps a check asks for are sent to the account service.
+    pub auto_reports: crate::reports::AutoReports,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -100,6 +102,7 @@ pub(crate) struct Installation {
     push: Arc<dyn PushSender>,
     daemon_log: Option<PathBuf>,
     supervisor_log: Option<PathBuf>,
+    auto_reports: crate::reports::AutoReports,
     edge: EdgeOptions,
     pub(crate) hosted: Mutex<BTreeMap<ProfileId, Hosted>>,
     /// One change to the profile set at a time: create, rename, delete.
@@ -166,6 +169,7 @@ impl Installation {
                 Some(sink) => analytics::Analytics::new(host, sink.clone()),
                 None => analytics::Analytics::off(),
             },
+            auto_reports: self.auto_reports.clone(),
             worktrees: Arc::new(crate::worktree::GitWorktrees::new(
                 self.data_dir.join(crate::worktree::WORKTREES),
             )),
@@ -428,6 +432,7 @@ pub async fn start(
         front_door,
         edge,
         analytics: telemetry,
+        auto_reports,
     } = options;
     let lock = InstallationLock::acquire(&data_dir)?;
     let boot_id = match boot_id {
@@ -449,6 +454,7 @@ pub async fn start(
         push,
         daemon_log,
         supervisor_log,
+        auto_reports,
         edge,
         hosted: Mutex::new(BTreeMap::new()),
         profile_changes: tokio::sync::Mutex::new(()),

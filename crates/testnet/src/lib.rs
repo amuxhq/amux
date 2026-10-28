@@ -62,6 +62,8 @@
 //! | `LanFaults` | `Net::set_lan_faults` |
 //! | `RelayGate` | `Net::relay_gate` |
 //! | `RelayFaults` | `Net::set_relay_faults` |
+//! | `RefuseReports` | `Relay::refuse_reports` |
+//! | `Reports` | `Relay::reports` |
 //! | `NetFaults` | `Net::set_net_faults` |
 //! | `BlockUdp` | `Net::block_udp` |
 //! | `SetRouter` | `Net::set_router` |
@@ -124,7 +126,7 @@ pub use net::{
 pub use observe::{
     InventoryObserver, Observer, ObserverOf, PATIENCE, Stuck, holds_for, until, until_within,
 };
-pub use relay::{CREDENTIAL_TTL, RELAY_HOST, Relay};
+pub use relay::{CREDENTIAL_TTL, RELAY_HOST, Received, Relay};
 pub use router::{Router, RouterKind};
 pub use sim::{SimNet, SimOptions};
 pub use topology::{

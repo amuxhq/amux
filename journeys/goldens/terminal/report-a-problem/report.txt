@@ -31,4 +31,4 @@
 
   ▎ The reply claims work it did not do.
 
-  enter save   esc cancel   drag to mark
+  enter send   esc cancel   drag to mark

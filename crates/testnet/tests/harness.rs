@@ -715,6 +715,8 @@ fn every_door_verb_maps_to_one_capability_and_the_crate_docs_list_the_same_map()
             rate_bytes_per_sec: 0,
         },
         Control::RelayGate {},
+        Control::RefuseReports { reason: None },
+        Control::Reports { dir: None },
         Control::RelayFaults {
             delay_ms: 100,
             loss_percent: 0,

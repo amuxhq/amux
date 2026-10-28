@@ -182,7 +182,6 @@ fn peer_writes(request: &PeerRequest) -> bool {
             | PeerRequest::GetDiff(_)
             | PeerRequest::GetCatalogue(_)
             | PeerRequest::ListRepositories(_)
-            | PeerRequest::Dump(_)
     )
 }
 

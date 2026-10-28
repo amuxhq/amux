@@ -302,8 +302,11 @@ impl Bundle {
     /// slice delivered to the session model as a Subscribe opening delivers
     /// it, the window checked after every event.
     fn replay_sessions(&self) -> Verdict {
-        if self.agents.is_empty() && self.clients.is_empty() {
-            return Verdict::Absent("the bundle holds no agent".to_owned());
+        let sliced = self.agents.iter().any(|agent| agent.store.is_some());
+        if !sliced && self.clients.is_empty() {
+            return Verdict::Absent(
+                "the bundle holds no agent's store slice or session".to_owned(),
+            );
         }
         let mut messages = 0;
         for client in &self.clients {
@@ -330,6 +333,7 @@ impl Bundle {
         let opened: Vec<&AgentDump> = self
             .agents
             .iter()
+            .filter(|agent| agent.store.is_some())
             .filter(|agent| !self.clients.iter().any(|client| client.agent == agent.id))
             .collect();
         let mut events = 0;
@@ -376,18 +380,22 @@ impl Bundle {
     /// them; this draws every agent's rows, which is what a person compares
     /// with the screen.
     fn replay_views(&self) -> Verdict {
-        if self.agents.is_empty() {
-            return Verdict::Absent("the bundle holds no agent".to_owned());
-        }
-        let rows: usize = self
+        let sliced: Vec<&AgentDump> = self
             .agents
+            .iter()
+            .filter(|agent| agent.store.is_some())
+            .collect();
+        if sliced.is_empty() {
+            return Verdict::Absent("the bundle holds no agent's store slice".to_owned());
+        }
+        let rows: usize = sliced
             .iter()
             .map(|agent| AgentDump::rows(&agent.session()).len())
             .sum();
         Verdict::Holds(format!(
             "{rows} rows drawn for {} agent{}",
-            self.agents.len(),
-            plural(self.agents.len())
+            sliced.len(),
+            plural(sliced.len())
         ))
     }
 

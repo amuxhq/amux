@@ -333,7 +333,9 @@ impl Dumps {
     /// The reason to report for `reason` asked for at `now_ms`, or `None`
     /// when it is held back.
     fn reason(&mut self, reason: &core::DumpReason, now_ms: u64) -> Option<String> {
-        self.limit.reason(SUPERVISOR_CORE_DUMP, reason, now_ms)
+        self.limit
+            .reason(SUPERVISOR_CORE_DUMP, reason, now_ms)
+            .map(|admitted| admitted.reason)
     }
 }
 
@@ -880,7 +882,7 @@ mod tests {
     #[test]
     fn a_violation_the_supervisor_core_repeats_is_reported_once_per_interval() {
         let broke = core::DumpReason::Violation(core::Violation {
-            invariant: "at most one daemon is serving",
+            invariant: core::TWO_SERVING,
             detail: "two serve".into(),
         });
         let mut dumps = Dumps::default();
@@ -927,7 +929,7 @@ mod tests {
             dumps.step(&mut core, input, &mut out);
         }
         let broke = core::DumpReason::Violation(core::Violation {
-            invariant: "at most one daemon is in the serving phase",
+            invariant: core::TWO_SERVING,
             detail: "forced by the test".into(),
         });
         let file = dumps

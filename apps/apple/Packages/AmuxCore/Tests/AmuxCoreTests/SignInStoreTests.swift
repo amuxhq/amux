@@ -38,18 +38,12 @@ private struct OneAnswer: CloudService, @unchecked Sendable {
 
     func entitlement(_ id: AccountId) async throws(CloudError) -> Entitlement { entitlement }
 
-
     func requestDeletion(
         _ id: AccountId, confirmedEmail: String
     ) async throws(CloudError) -> DeletionOutcome {
         throw .unauthenticated
     }
 
-    func uploadReport(
-        _ id: AccountId, bundle: ReportBundle
-    ) async throws(CloudError) -> ReportReceipt {
-        throw .unauthenticated
-    }
 }
 
 private struct Silent: WebAuthPresenter {

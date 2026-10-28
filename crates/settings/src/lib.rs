@@ -476,6 +476,11 @@ pub struct InstallationConfig {
     /// Whether a published build sends product analytics to amux.sh. The
     /// `DO_NOT_TRACK` environment variable turns it off as well.
     pub telemetry: bool,
+    /// Whether the dumps amux writes when one of its checks breaks are sent
+    /// to the account the profile is signed in to. They hold what agents
+    /// were told and said, redacted of secrets, so only a person turns this
+    /// on.
+    pub auto_reports: bool,
     pub ui: UiSettings,
     pub keybinds: Keybinds,
     pub new_agent: NewAgentSettings,
@@ -506,6 +511,7 @@ impl Default for InstallationConfig {
             channel: Channel::default(),
             keep_awake: true,
             telemetry: true,
+            auto_reports: false,
             ui: UiSettings::default(),
             keybinds: Keybinds::default(),
             new_agent: NewAgentSettings::default(),
@@ -619,6 +625,7 @@ pub const INSTALLATION_KEYS: &[&str] = &[
     "channel",
     "keep_awake",
     "telemetry",
+    "auto_reports",
     "ui.theme",
     "ui.color",
     "ui.chat_in",

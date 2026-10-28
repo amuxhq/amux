@@ -643,15 +643,23 @@ impl Machine for RelayModel {
 
     fn properties(&self) -> Vec<Property<Self>> {
         vec![
-            Property::always(FORWARDS_ONLY_PAID_PAIRS, |model: &RelayModel, s: &State| {
-                s.table.iter().all(|pair| s.unfit(model, *pair).is_none())
+            Property::always(
+                FORWARDS_ONLY_PAID_PAIRS.sentence,
+                |model: &RelayModel, s: &State| {
+                    s.table.iter().all(|pair| s.unfit(model, *pair).is_none())
+                },
+            ),
+            Property::always(NOTHING_BEFORE_ADMISSION.sentence, |_, s: &State| {
+                s.early.is_none()
             }),
-            Property::always(NOTHING_BEFORE_ADMISSION, |_, s: &State| s.early.is_none()),
-            Property::eventually(LAPSE_TELLS_BOTH, |model: &RelayModel, s: &State| {
-                s.rested
-                    && s.owed.is_empty()
-                    && s.table.iter().all(|pair| s.unfit(model, *pair).is_none())
-            }),
+            Property::eventually(
+                LAPSE_TELLS_BOTH.sentence,
+                |model: &RelayModel, s: &State| {
+                    s.rested
+                        && s.owed.is_empty()
+                        && s.table.iter().all(|pair| s.unfit(model, *pair).is_none())
+                },
+            ),
             Property::always(
                 "a link is only told of other hosts on its own account, and only once admitted",
                 |_, s: &State| s.foreign.is_none(),

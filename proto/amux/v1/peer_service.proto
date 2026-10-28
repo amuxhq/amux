@@ -29,9 +29,6 @@ service PeerAgentService {
   rpc GetDiff(GetDiffRequest) returns (Diff);
   rpc GetCatalogue(GetCatalogueRequest) returns (GetCatalogueResponse);
   rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
-  // The host-side parts of the caller's dump for agents this host runs,
-  // packed in the response.
-  rpc Dump(DumpRequest) returns (DumpPart);
 }
 
 service PeerSessionService {

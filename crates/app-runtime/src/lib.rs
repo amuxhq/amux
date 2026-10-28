@@ -394,8 +394,9 @@ impl AppRuntime {
 
     /// Writes a dump of the profile, with every open session for the daemon
     /// to redact and write and the fleet's part, and returns the bundle's
-    /// directory.
-    pub async fn dump(&self, reason: &str) -> Result<PathBuf, RpcError> {
+    /// directory. One for a person's report carries what reproduces this
+    /// device's screen; one to export carries everything the device holds.
+    pub async fn dump(&self, reason: &str, for_report: bool) -> Result<PathBuf, RpcError> {
         let sessions = self
             .fleet
             .sessions()
@@ -409,12 +410,52 @@ impl AppRuntime {
                 reason: reason.to_owned(),
                 automatic: false,
                 sessions,
+                scope: if for_report {
+                    wire::DumpScope::Report
+                } else {
+                    wire::DumpScope::Unspecified
+                }
+                .into(),
+                check: String::new(),
             })
             .await?;
         let bundle = PathBuf::from(response.report_path);
         ui_runtime::write_part(&bundle, &self.fleet.dump_part())
             .map_err(|error| RpcError::Transport(format!("writing the dump: {error}")))?;
         Ok(bundle)
+    }
+
+    /// Writes a person's report around the dump `dump_path` names (or the
+    /// report a failed send left there, to send it again), with its header
+    /// and frozen frame, and sends it when the profile is signed in.
+    pub async fn submit_report(
+        &self,
+        dump_path: String,
+        header: Vec<u8>,
+        frame_png: Vec<u8>,
+        trace: Option<String>,
+    ) -> Result<values::ReportSent, RpcError> {
+        let file = |name: &str, contents: Vec<u8>| wire::DumpFile {
+            name: name.to_owned(),
+            contents,
+        };
+        let mut files = vec![file("report.json", header)];
+        if !frame_png.is_empty() {
+            files.push(file("frame.png", frame_png));
+        }
+        if let Some(trace) = trace {
+            files.push(file("trace.jsonl", trace.into_bytes()));
+        }
+        let sent = self
+            .client
+            .submit_report(wire::SubmitReportRequest { dump_path, files })
+            .await?;
+        Ok(values::ReportSent {
+            report_path: sent.report_path,
+            id: sent.id,
+            received_at_ms: sent.received_at_ms,
+            not_sent: sent.not_sent,
+        })
     }
 }
 

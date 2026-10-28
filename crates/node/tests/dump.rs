@@ -209,6 +209,7 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
             reason: format!("the chat froze; my key is {KEY}"),
             automatic: false,
             sessions: vec![session.encode_to_vec(), elsewhere.encode_to_vec()],
+            ..DumpRequest::default()
         })
         .await
         .unwrap();
@@ -461,7 +462,7 @@ async fn a_dump_of_named_agents_covers_only_them_and_an_unknown_one_is_an_error(
             agent_ids: vec![one.id.as_bytes().to_vec()],
             reason: String::new(),
             automatic: true,
-            sessions: Vec::new(),
+            ..DumpRequest::default()
         })
         .await
         .unwrap();
@@ -488,49 +489,79 @@ async fn a_dump_of_named_agents_covers_only_them_and_an_unknown_one_is_an_error(
     daemon.shutdown().await.unwrap();
 }
 
-/// A paired host's dump answer carries this host's side of its agents but
-/// not the daemon's log: that log covers every profile the installation
-/// serves, and the asking machine is trusted by only one of them.
+/// Each scope carries what replays the stage its trigger concerns: the
+/// core's part and the journals it reads for the core, one chat's rows for
+/// a transcript, and for a person's report every row but slices only of
+/// the chats the client had open.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_peers_dump_answer_carries_no_daemon_log() {
-    const OTHER: &str = "a line about another profile's agents";
+async fn each_scope_carries_what_its_stage_replays() {
     let install = Install::new();
-    let log = install.path("daemon.log");
-    std::fs::write(&log, format!("INFO {OTHER}\n")).unwrap();
-    let options = node::StartOptions {
-        daemon_log: Some(log),
-        supervisor_log: None,
-        ..install.options("boot-1", support::synthetic::quiet_launch())
-    };
-    let daemon = node::start(options, None).await.unwrap();
+    let daemon = install.start("boot-1", unbudgeted()).await;
     let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
     let mut one = support::synthetic::SyntheticAgent::new(&install, "one", 1 << 20);
+    let two = support::synthetic::SyntheticAgent::new(&install, "two", 1 << 20);
     one.register(&install, &runtime).await;
+    two.register(&install, &runtime).await;
     one.append(&support::synthetic::item("a", "hello"));
     runtime.ingest(one.id).await.unwrap();
+    runtime.checkpoint().await.unwrap();
 
-    let own = runtime.dump(DumpRequest::default()).await.unwrap();
+    let dump = |scope: wire::DumpScope, agents: Vec<Vec<u8>>| {
+        let runtime = runtime.clone();
+        async move {
+            let request = DumpRequest {
+                agent_ids: agents,
+                scope: scope.into(),
+                ..DumpRequest::default()
+            };
+            let bundle = runtime.dump(request).await.unwrap();
+            let files: Vec<String> = tree(&bundle).into_iter().map(|(name, _)| name).collect();
+            (bundle, files)
+        }
+    };
+    let has = |files: &[String], path: &str| files.iter().any(|file| file.starts_with(path));
+    let one_dir = format!("agents/{}", one.id);
+
+    let (bundle, core) = dump(wire::DumpScope::Core, Vec::new()).await;
     assert!(
-        std::fs::read_to_string(own.join(DAEMON_LOG))
-            .unwrap()
-            .contains(OTHER),
-        "a dump taken here carries the log"
+        has(&core, "core/checkpoint") && has(&core, "core/store.sqlite"),
+        "{core:?}"
+    );
+    assert!(has(&core, &format!("{one_dir}/row.pb")), "{core:?}");
+    assert!(has(&core, &format!("{one_dir}/journal/")), "{core:?}");
+    assert!(!has(&core, &format!("{one_dir}/store.pb")), "{core:?}");
+    assert!(!has(&core, &format!("{one_dir}/part/")), "{core:?}");
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(bundle.join(MANIFEST)).unwrap()).unwrap();
+    assert_eq!(manifest["scope"], "core");
+
+    let (_, transcript) = dump(
+        wire::DumpScope::Transcript,
+        vec![one.id.as_bytes().to_vec()],
+    )
+    .await;
+    assert!(
+        has(&transcript, &format!("{one_dir}/store.pb")),
+        "{transcript:?}"
+    );
+    assert!(
+        !has(&transcript, &format!("{one_dir}/journal/")),
+        "{transcript:?}"
+    );
+    assert!(!has(&transcript, "core/"), "{transcript:?}");
+
+    let (_, report) = dump(wire::DumpScope::Report, Vec::new()).await;
+    assert!(has(&report, "core/checkpoint"), "{report:?}");
+    assert!(
+        has(&report, &format!("agents/{}/row.pb", two.id)),
+        "{report:?}"
+    );
+    assert!(
+        !report.iter().any(|file| file.ends_with("store.pb")),
+        "no chat was open, so no slice: {report:?}"
     );
 
-    let answer = runtime.dump_for_peer(DumpRequest::default()).await.unwrap();
-    let names: Vec<&str> = answer.files.iter().map(|file| file.name.as_str()).collect();
-    assert!(
-        names.contains(&format!("agents/{}/row.pb", one.id).as_str()),
-        "{names:?}"
-    );
-    assert!(!names.contains(&DAEMON_LOG), "{names:?}");
-    for file in &answer.files {
-        assert!(
-            !contains(&file.contents, OTHER),
-            "{} holds the log",
-            file.name
-        );
-    }
+    kill_all(&runtime).await;
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }
@@ -888,8 +919,13 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
         "{reasons:#?}"
     );
 
+    // Each names its check, a step over budget by its core's id for one.
+    let mut checks = Vec::new();
     for bundle in std::fs::read_dir(install.data_dir.join(node::REPORTS)).unwrap() {
         let bundle = bundle.unwrap().path();
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(bundle.join(MANIFEST)).unwrap()).unwrap();
+        checks.push(manifest["check"].as_str().unwrap_or_default().to_owned());
         let agents: Vec<String> = std::fs::read_dir(bundle.join("agents"))
             .unwrap()
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
@@ -902,8 +938,8 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
             .join(support::synthetic::SYNTHETIC_PART);
         assert!(part.is_file(), "the agent's own part: {}", part.display());
         assert!(
-            bundle.join("core/checkpoint").is_file(),
-            "the daemon's parts"
+            !bundle.join("core").exists(),
+            "the daemon core's part replays nothing an agent's core broke"
         );
         println!(
             "{}: {}",
@@ -914,6 +950,8 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
             .unwrap()["reason"]
         );
     }
+    checks.sort();
+    assert_eq!(checks, ["agent.over_budget", "agent.test"]);
     // A window: a dump held back leaves no mark to wait on.
     holds_for(
         "the repeat to stay held back",

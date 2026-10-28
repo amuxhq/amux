@@ -4193,9 +4193,8 @@ impl Provider {
         }
     }
 }
-/// Assembles the host-side parts of a dump bundle into the reports
-/// directory: the agents' journal tails, store slices and agent parts, all
-/// redacted.
+/// Assembles a dump bundle of this host's own records into the reports
+/// directory, redacted.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DumpRequest {
     /// Empty means every agent of the profile.
@@ -4215,6 +4214,11 @@ pub struct DumpRequest {
     /// bundle, and passes none on to another host.
     #[prost(bytes = "vec", repeated, tag = "4")]
     pub sessions: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+    #[prost(enumeration = "DumpScope", tag = "5")]
+    pub scope: i32,
+    /// The id of the check that broke, for an automatic dump a check asked for.
+    #[prost(string, tag = "6")]
+    pub check: ::prost::alloc::string::String,
 }
 impl ::prost::Name for DumpRequest {
     const NAME: &'static str = "DumpRequest";
@@ -4276,6 +4280,96 @@ impl ::prost::Name for DumpFile {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.DumpFile".into()
+    }
+}
+/// A person's report: the client's files, written beside the dump taken when
+/// the screen froze and sent to the profile's account service.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SubmitReportRequest {
+    /// The dump's directory, as `Dump` answered it.
+    #[prost(string, tag = "1")]
+    pub dump_path: ::prost::alloc::string::String,
+    /// `report.json` and the frozen frame's files.
+    #[prost(message, repeated, tag = "2")]
+    pub files: ::prost::alloc::vec::Vec<DumpFile>,
+}
+impl ::prost::Name for SubmitReportRequest {
+    const NAME: &'static str = "SubmitReportRequest";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.SubmitReportRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.SubmitReportRequest".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SubmitReportResponse {
+    /// Where the report was written.
+    #[prost(string, tag = "1")]
+    pub report_path: ::prost::alloc::string::String,
+    /// The account service's id for it, when it was sent.
+    #[prost(string, tag = "2")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(int64, tag = "3")]
+    pub received_at_ms: i64,
+    /// Why it was not sent, when it was not.
+    #[prost(string, tag = "4")]
+    pub not_sent: ::prost::alloc::string::String,
+}
+impl ::prost::Name for SubmitReportResponse {
+    const NAME: &'static str = "SubmitReportResponse";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.SubmitReportResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.SubmitReportResponse".into()
+    }
+}
+/// What a dump carries: what replays the stage its trigger concerns, and only
+/// what this host holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum DumpScope {
+    /// Everything this host holds for the named agents: `amux dump` and
+    /// Export Diagnostics.
+    Unspecified = 0,
+    /// The daemon core's checkpoint, inputs and store copy, with the own
+    /// agents' journals from its cursor on.
+    Core = 1,
+    /// One agent: its process's part, journal, row and slice.
+    Agent = 2,
+    /// One chat: the client's session and its agent's row and slice.
+    Transcript = 3,
+    /// A person's report: every row, a slice per open chat, the client's
+    /// sessions and the core's part.
+    Report = 4,
+}
+impl DumpScope {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "DUMP_SCOPE_UNSPECIFIED",
+            Self::Core => "DUMP_SCOPE_CORE",
+            Self::Agent => "DUMP_SCOPE_AGENT",
+            Self::Transcript => "DUMP_SCOPE_TRANSCRIPT",
+            Self::Report => "DUMP_SCOPE_REPORT",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "DUMP_SCOPE_UNSPECIFIED" => Some(Self::Unspecified),
+            "DUMP_SCOPE_CORE" => Some(Self::Core),
+            "DUMP_SCOPE_AGENT" => Some(Self::Agent),
+            "DUMP_SCOPE_TRANSCRIPT" => Some(Self::Transcript),
+            "DUMP_SCOPE_REPORT" => Some(Self::Report),
+            _ => None,
+        }
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -8764,29 +8858,6 @@ pub mod peer_agent_service_client {
                 .insert(GrpcMethod::new("amux.v1.PeerAgentService", "ListRepositories"));
             self.inner.unary(req, path, codec).await
         }
-        /// The host-side parts of the caller's dump for agents this host runs,
-        /// packed in the response.
-        pub async fn dump(
-            &mut self,
-            request: impl tonic::IntoRequest<super::DumpRequest>,
-        ) -> std::result::Result<tonic::Response<super::DumpPart>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.PeerAgentService/Dump",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.PeerAgentService", "Dump"));
-            self.inner.unary(req, path, codec).await
-        }
     }
 }
 /// Generated server implementations.
@@ -8872,12 +8943,6 @@ pub mod peer_agent_service_server {
             tonic::Response<super::ListRepositoriesResponse>,
             tonic::Status,
         >;
-        /// The host-side parts of the caller's dump for agents this host runs,
-        /// packed in the response.
-        async fn dump(
-            &self,
-            request: tonic::Request<super::DumpRequest>,
-        ) -> std::result::Result<tonic::Response<super::DumpPart>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct PeerAgentServiceServer<T> {
@@ -9488,50 +9553,6 @@ pub mod peer_agent_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ListRepositoriesSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.PeerAgentService/Dump" => {
-                    #[allow(non_camel_case_types)]
-                    struct DumpSvc<T: PeerAgentService>(pub Arc<T>);
-                    impl<
-                        T: PeerAgentService,
-                    > tonic::server::UnaryService<super::DumpRequest> for DumpSvc<T> {
-                        type Response = super::DumpPart;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::DumpRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as PeerAgentService>::dump(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = DumpSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -12600,8 +12621,8 @@ pub mod profile_admin_service_client {
                 .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "Unpair"));
             self.inner.unary(req, path, codec).await
         }
-        /// The one bundle format: this host's state, with the parts paired hosts
-        /// hold for the agents they run.
+        /// The one bundle format: this host's own state, scoped to what the
+        /// request is for.
         pub async fn dump(
             &mut self,
             request: impl tonic::IntoRequest<super::DumpRequest>,
@@ -12621,6 +12642,32 @@ pub mod profile_admin_service_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "Dump"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Writes a person's report around a dump and sends it to the profile's
+        /// account service when the profile is signed in to one.
+        pub async fn submit_report(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SubmitReportRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SubmitReportResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.ProfileAdminService/SubmitReport",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "SubmitReport"));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -12707,12 +12754,21 @@ pub mod profile_admin_service_server {
             &self,
             request: tonic::Request<super::UnpairRequest>,
         ) -> std::result::Result<tonic::Response<super::Peer>, tonic::Status>;
-        /// The one bundle format: this host's state, with the parts paired hosts
-        /// hold for the agents they run.
+        /// The one bundle format: this host's own state, scoped to what the
+        /// request is for.
         async fn dump(
             &self,
             request: tonic::Request<super::DumpRequest>,
         ) -> std::result::Result<tonic::Response<super::DumpResponse>, tonic::Status>;
+        /// Writes a person's report around a dump and sends it to the profile's
+        /// account service when the profile is signed in to one.
+        async fn submit_report(
+            &self,
+            request: tonic::Request<super::SubmitReportRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SubmitReportResponse>,
+            tonic::Status,
+        >;
     }
     /// Served on a profile's socket beside AgentService and SessionService, and
     /// never on an agent's tools socket or a link. The socket names the profile.
@@ -13484,6 +13540,52 @@ pub mod profile_admin_service_server {
                     };
                     Box::pin(fut)
                 }
+                "/amux.v1.ProfileAdminService/SubmitReport" => {
+                    #[allow(non_camel_case_types)]
+                    struct SubmitReportSvc<T: ProfileAdminService>(pub Arc<T>);
+                    impl<
+                        T: ProfileAdminService,
+                    > tonic::server::UnaryService<super::SubmitReportRequest>
+                    for SubmitReportSvc<T> {
+                        type Response = super::SubmitReportResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SubmitReportRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ProfileAdminService>::submit_report(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SubmitReportSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 _ => {
                     Box::pin(async move {
                         let mut response = http::Response::new(
@@ -13787,6 +13889,13 @@ pub struct DumpAsked {
     /// over its budget.
     #[prost(string, tag = "2")]
     pub invariant: ::prost::alloc::string::String,
+    /// The check's id; empty for a step over its budget.
+    #[prost(string, tag = "3")]
+    pub check: ::prost::alloc::string::String,
+    /// How many like it the agent's own limit held back since the last it
+    /// asked for.
+    #[prost(uint32, tag = "4")]
+    pub held_back: u32,
 }
 impl ::prost::Name for DumpAsked {
     const NAME: &'static str = "DumpAsked";

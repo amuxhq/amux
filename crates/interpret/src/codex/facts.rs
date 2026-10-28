@@ -512,19 +512,9 @@ impl State {
                     self.cleared(emit, &response);
                 }
             }
-            Request::Review => {
-                if self.active_turn.is_none() {
-                    self.active_turn = codex_protocol::result::<TurnStartResponse>(&result)
-                        .ok()
-                        .and_then(|response| some(&response.turn.id));
-                }
-            }
+            Request::Review => self.turn_answered(&result),
             Request::Turn { consumes } => {
-                if self.active_turn.is_none() {
-                    self.active_turn = codex_protocol::result::<TurnStartResponse>(&result)
-                        .ok()
-                        .and_then(|response| some(&response.turn.id));
-                }
+                self.turn_answered(&result);
                 for envelope in consumes {
                     self.shared.message_consumed(&envelope);
                 }
@@ -2183,6 +2173,21 @@ impl State {
 
     // --- turn end and exit -----------------------------------------------
 
+    /// The answer to a `turn/start` or `review/start` names the turn it
+    /// began; it records that turn unless Codex already named one running or
+    /// the turn has already ended.
+    fn turn_answered(&mut self, result: &Value) {
+        if self.active_turn.is_some() {
+            return;
+        }
+        let turn = codex_protocol::result::<TurnStartResponse>(result)
+            .ok()
+            .and_then(|response| some(&response.turn.id));
+        if turn != self.ended_turn {
+            self.active_turn = turn;
+        }
+    }
+
     fn turn_completed(&mut self, emit: &mut Emit, turn: &codex_protocol::Turn) {
         let outcome = match turn.status.as_str() {
             "completed" => TurnOutcome::Completed,
@@ -2270,6 +2275,7 @@ impl State {
                 },
             );
         }
+        self.ended_turn = some(&turn_id).or(self.active_turn.take());
         self.active_turn = None;
         self.interrupt_pending = false;
         if outcome == TurnOutcome::Completed {

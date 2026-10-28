@@ -493,6 +493,10 @@ pub struct State {
     overrides: Overrides,
     /// The turn Codex reports running.
     active_turn: Option<String>,
+    /// The last turn Codex reported ended. Codex writes a turn's completion
+    /// and the answer to the request that started it from separate tasks,
+    /// so an answer naming this turn can come after it ended.
+    ended_turn: Option<String>,
     /// The running turn has reported its prompt: a later user message in
     /// it is a steer.
     turn_prompted: bool,
@@ -600,6 +604,7 @@ impl State {
                 ..Overrides::default()
             },
             active_turn: None,
+            ended_turn: None,
             turn_prompted: false,
             interrupt_pending: false,
             interrupted_here: false,

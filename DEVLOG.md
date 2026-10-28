@@ -1,3 +1,7 @@
+2026-10-28 — **A late `turn/start` or `review/start` answer no longer reopens a Codex turn that already ended.** Codex writes a turn's completion and the answer to the request that started it from separate tasks, so the answer can come last; amux then recorded the ended turn as running again. amux now remembers the last turn Codex said ended and ignores an answer naming it. No recording shows this order yet; the test reproduces it from authored facts.
+
+Tests: `cargo test -p interpret --test codex a_late_turn_start_answer_does_not_reopen_an_ended_turn` passes.
+
 2026-10-28 — **A Codex model reroute no longer becomes the agent's model, and Codex's warnings are drawn.** `model/rerouted` covers one request, and Codex keeps the chosen model for the next, but amux saved the fallback as the agent's model, carrying it into the next incarnation and into the thread a `/clear` starts. amux also drew its own reroute row while dropping the warning Codex sends with it, which carries the link to apply for access and is all Codex's own app shows. The reroute now changes nothing and draws no row; `warning`, `guardianWarning` and `deprecationNotice` are drawn like config warnings, in Codex's words. The Codex item's `reroute` arm is gone from the schema.
 
 Tests: `cargo test -p interpret --test codex a_reroute_leaves_the_chosen_model_and_shows_codexs_warning` passes; the Codex interpreter and view goldens are recorded again with the warning rows.

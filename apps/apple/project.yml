@@ -155,7 +155,7 @@ targets:
         # The version matches the listing already on the App Store, so the
         # next release is the next version of it.
         MARKETING_VERSION: "1.0.33"
-        CURRENT_PROJECT_VERSION: "37"
+        CURRENT_PROJECT_VERSION: "38"
         SWIFT_EMIT_LOC_STRINGS: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # XcodeGen gives an iOS target iPhone and iPad by default; this app is

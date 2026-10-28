@@ -18,7 +18,7 @@
 mod facts;
 mod recording;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use claude_protocol::stream::control::{
     ApplyFlagSettingsRequest, InterruptRequest, SetModelRequest, SetPermissionModeRequest,
@@ -247,6 +247,10 @@ pub struct State {
     inits: u32,
     exited: bool,
     clients: BTreeMap<String, Client>,
+    /// The uuids of the messages amux handed Claude that no result has
+    /// answered yet.
+    #[serde(default)]
+    unanswered: BTreeSet<String>,
     /// The message being streamed, and its open blocks by index.
     stream: Option<String>,
     stream_tools: BTreeMap<u32, String>,
@@ -367,6 +371,7 @@ impl State {
             inits: 0,
             exited: false,
             clients: BTreeMap::new(),
+            unanswered: BTreeSet::new(),
             stream: None,
             stream_tools: BTreeMap::new(),
             blocks: BTreeMap::new(),
@@ -497,6 +502,7 @@ impl State {
                 message: true,
             },
         );
+        self.unanswered.insert(client_uuid(&envelope.id));
         self.shared.message_handed();
         emit.effect(Effect::Inject {
             id: envelope.id.clone(),
@@ -557,6 +563,7 @@ impl State {
                             message: false,
                         },
                     );
+                    self.unanswered.insert(uuid.clone());
                     emit.effect(Effect::UserMessage {
                         uuid,
                         text,
@@ -724,6 +731,7 @@ impl State {
                 message: false,
             },
         );
+        self.unanswered.insert(uuid.clone());
         emit.effect(Effect::UserMessage {
             uuid: uuid.clone(),
             text: crate::shared::provider_text(&entry),

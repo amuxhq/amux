@@ -10,26 +10,21 @@
   row    3 msg_011CfRDeiMZ5wg6gShJp7jSk:0 Thinking { text: "", open: false, duration_ms: Some(2644) }
 ## 30 recorded 29: fact Stream type=assistant uuid=1ca5b3a9-e3a2-4337-aab7-98a08030986e
   row    4 msg_011CfRDeiMZ5wg6gShJp7jSk:1 Prose { text: [Text("BRAVO")], streaming: false, working_note: false }
-## 34 recorded 33: fact Stream type=result subtype=success uuid=57eb1000-9a69-4e5f-949b-d29615c6dc22
-  row    5 turn:1 TurnEnd { duration_ms: Some(2690), failed: false }
-  composer Send activity=None queue=[] underway=[] refused=[]
 ## 45 recorded 44: fact Stream type=assistant uuid=e0c80fce-5ace-4ab9-9487-785035f57169
-  row    6 msg_011CfRDev6jemvasLfgS6uLQ:0 Thinking { text: "", open: false, duration_ms: Some(2276) }
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+  row    5 msg_011CfRDev6jemvasLfgS6uLQ:0 Thinking { text: "", open: false, duration_ms: Some(2286) }
 ## 47 recorded 46: fact Stream type=assistant uuid=4a35e32f-d33e-4117-9e57-889a232df0b0
-  row    7 msg_011CfRDev6jemvasLfgS6uLQ:1 Prose { text: [Text("ALPHA")], streaming: false, working_note: false }
+  row    6 msg_011CfRDev6jemvasLfgS6uLQ:1 Prose { text: [Text("ALPHA")], streaming: false, working_note: false }
 ## 49 recorded 48: fact Stream type=result subtype=success uuid=6cadb046-140d-4373-95aa-6094924a9144
-  row    8 turn:2 TurnEnd { duration_ms: Some(2296), failed: false }
+  row    7 turn:1 TurnEnd { duration_ms: Some(2296), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Reply with exactly ALPHA and nothing else.")], steered: false }
      3 msg_011CfRDeiMZ5wg6gShJp7jSk:0 Thinking { text: "", open: false, duration_ms: Some(2644) }
      4 msg_011CfRDeiMZ5wg6gShJp7jSk:1 Prose { text: [Text("BRAVO")], streaming: false, working_note: false }
-     5 turn:1 TurnEnd { duration_ms: Some(2690), failed: false }
-     6 msg_011CfRDev6jemvasLfgS6uLQ:0 Thinking { text: "", open: false, duration_ms: Some(2276) }
-     7 msg_011CfRDev6jemvasLfgS6uLQ:1 Prose { text: [Text("ALPHA")], streaming: false, working_note: false }
-     8 turn:2 TurnEnd { duration_ms: Some(2296), failed: false }
+     5 msg_011CfRDev6jemvasLfgS6uLQ:0 Thinking { text: "", open: false, duration_ms: Some(2286) }
+     6 msg_011CfRDev6jemvasLfgS6uLQ:1 Prose { text: [Text("ALPHA")], streaming: false, working_note: false }
+     7 turn:1 TurnEnd { duration_ms: Some(2296), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "plugin:stripe:stripe", error: "", needs_auth: true }, ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 26427, window_tokens: Some(200000), percent: Some(13), near_full: false }) sign-in None
 == settings

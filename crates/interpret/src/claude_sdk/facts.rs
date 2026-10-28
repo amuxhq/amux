@@ -381,6 +381,7 @@ impl State {
         self.shared.provider_exited();
         self.jobs.clear();
         self.exited = true;
+        self.unanswered.clear();
         self.early_boundary = None;
         self.stream = None;
     }
@@ -1117,10 +1118,6 @@ impl State {
     }
 
     fn result(&mut self, emit: &mut Emit, result: &ResultMessage) {
-        self.dismiss_asks_but_background(emit);
-        // A command that ran a turn (a custom command or a skill) wrote no
-        // output of its own; a later note is not its.
-        self.slash = None;
         // A result of a kind this build does not know still carries the
         // fields every result does.
         let unknown = match result {
@@ -1140,12 +1137,20 @@ impl State {
                 None => (None, &[]),
             },
         };
+        // Any result states the window, the main thread's model's.
         if let Some(window) = common
             .and_then(|common| common.model_usage.as_ref())
             .and_then(|models| context_window(models, self.model.as_deref().unwrap_or_default()))
         {
             self.context_window = Some(window);
         }
+        if common.is_some_and(|common| self.foreign(common)) {
+            return;
+        }
+        self.dismiss_asks_but_background(emit);
+        // A command that ran a turn (a custom command or a skill) wrote no
+        // output of its own; a later note is not its.
+        self.slash = None;
         let subtype = result.subtype();
         let aborted = common
             .and_then(|common| common.terminal_reason.as_deref())
@@ -1210,6 +1215,43 @@ impl State {
             .collect();
         self.tools.retain(|id, _| open.contains(id));
         self.blocks.clear();
+    }
+
+    /// Whether `result` ends work of Claude's own while a message amux
+    /// handed it is unanswered: it names none of amux's messages, or names
+    /// none at all and is not a person's. Such a result changes nothing of
+    /// the person's turn. Any other answers the messages it names, or all
+    /// of them when it names none.
+    fn foreign(&mut self, common: &ResultCommon) -> bool {
+        let named: BTreeSet<&str> = common
+            .user_message_uuids
+            .iter()
+            .flatten()
+            .chain(&common.user_message_uuid)
+            .map(String::as_str)
+            .collect();
+        if !self.unanswered.is_empty() {
+            let foreign = if named.is_empty() {
+                common
+                    .origin
+                    .as_ref()
+                    .and_then(|origin| origin.get("kind"))
+                    .and_then(Value::as_str)
+                    .is_some_and(|kind| kind != "human")
+            } else {
+                !named.iter().any(|uuid| self.unanswered.contains(*uuid))
+            };
+            if foreign {
+                return true;
+            }
+        }
+        if named.is_empty() {
+            self.unanswered.clear();
+        } else {
+            self.unanswered
+                .retain(|uuid| !named.contains(uuid.as_str()));
+        }
+        false
     }
 
     // --- control ---------------------------------------------------------

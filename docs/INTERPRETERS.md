@@ -598,7 +598,12 @@ nothing is inferred.
 - **Turns.** A turn starts with a submission or a `message_start`, and ends on
   the `result` line: completed, interrupted, or failed (with an error item
   for a non-success subtype), with its duration on the turn item.
-  The result dismisses the main thread's asks still open. An ask a
+  While a message amux handed Claude is unanswered, a result naming none
+  of amux's messages (`user_message_uuids`, `user_message_uuid`), or naming
+  none and not of a person's origin, ends work of Claude's own (a peer's
+  message, a task's notification) and changes nothing of the person's turn,
+  its asks or its calls; one naming amux's message ends the turn whatever
+  began it. The result dismisses the main thread's asks still open. An ask a
   subagent still running in the background raised (one naming its task's
   `agent_id`, or whose call hangs under its call) stays open, as do that
   subagent's calls, which finish after the turn; its asks close when its

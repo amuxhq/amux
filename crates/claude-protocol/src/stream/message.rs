@@ -453,6 +453,9 @@ pub struct ResultCommon {
     pub queued_turn_count: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_message_uuid: Option<String>,
+    /// Every client uuid whose prompt this turn consumed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_message_uuids: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

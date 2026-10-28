@@ -780,11 +780,15 @@ final class ChatModelTests: XCTestCase {
         XCTAssertEqual(model.frame?.controls.model, "sonnet")
     }
 
-    private func offering(_ names: [String]) -> SettingsView {
+    private func offering(_ names: [String], skills: [String] = []) -> SettingsView {
         SettingsView(
             models: [], efforts: [], permissions: [], modes: [], changeable: Changeability(
                 model: .notOffered, effort: .notOffered, permission: .notOffered, mode: .notOffered),
-            commands: names.map { CommandView(name: $0, description: "", argumentHint: "", source: "") })
+            commands: names.map {
+                CommandView(name: $0, description: "", argumentHint: "", source: "", sigil: "/", anywhere: false)
+            } + skills.map {
+                CommandView(name: $0, description: "", argumentHint: "", source: "", sigil: "$", anywhere: true)
+            })
     }
 
     func testALeadingSlashWordListsUpToFiveMatchingCommandsAndAPickFillsTheDraft() {
@@ -812,13 +816,25 @@ final class ChatModelTests: XCTestCase {
         XCTAssertTrue(model.slashMatches.isEmpty)
     }
 
-    func testACodexSkillIsPickedAsItsMention() {
+    func testACodexSkillIsOfferedAfterADollarAnywhereAndPickedAsItsMention() {
         let source = FakeChat(rows: [], frame: frame(kind: .codex))
-        source.offered = offering(["autopilot"])
+        source.offered = offering(["compact"], skills: ["autopilot", "documents:documents"])
         let model = ChatModel(source: source)
         model.draft = "/auto"
+        XCTAssertTrue(model.slashMatches.isEmpty, "a skill is not a slash command")
+        model.draft = "/comp"
+        XCTAssertEqual(model.slashMatches.map(\.name), ["compact"])
+        model.draft = "$doc"
+        XCTAssertEqual(model.slashMatches.map(\.name), ["documents:documents"])
+        for draft in ["$comp", "$auto now", "costs$auto"] {
+            model.draft = draft
+            XCTAssertTrue(model.slashMatches.isEmpty, "\(draft) ends in no skill mention")
+        }
+        model.draft = "please use $auto"
+        XCTAssertEqual(model.slashMatches.map(\.name), ["autopilot"])
         model.pick(model.slashMatches[0])
-        XCTAssertEqual(model.draft, "$autopilot ")
+        XCTAssertEqual(model.draft, "please use $autopilot ")
+        XCTAssertTrue(model.slashMatches.isEmpty)
     }
 
     func testAnAgentOfferingNoCommandsListsNothing() {

@@ -918,13 +918,11 @@ struct StripLine: View {
     }
 }
 
-/// The agent's commands matching a draft that is a leading "/word", one
+/// The agent's commands matching the "/word" or "$word" being typed, one
 /// row each; a tap puts the command in the draft.
 struct SlashRows: View {
     @Environment(\.design) private var design
     let commands: [CommandView]
-    /// Codex's commands are its skills, mentioned by "$name".
-    let codex: Bool
     let pick: (CommandView) -> Void
 
     var body: some View {
@@ -933,7 +931,7 @@ struct SlashRows: View {
                 Button { pick(command) } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
-                            Text(verbatim: (codex ? "$" : "/") + command.name)
+                            Text(verbatim: command.sigil + command.name)
                                 .designFont(.mono, design)
                                 .foregroundStyle(design.ink.color)
                                 .lineLimit(1)

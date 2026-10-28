@@ -869,12 +869,12 @@ enum CatalogFixtures {
     static let withCommands: SettingsView = {
         var view = claudeSdkSettings()
         view.commands = [
-            CommandView(name: "clear", description: "Clear conversation history and free up context", argumentHint: "", source: ""),
-            CommandView(name: "compact", description: "Clear history but keep a summary in context", argumentHint: "<instructions>", source: ""),
-            CommandView(name: "context", description: "Show current context usage", argumentHint: "", source: ""),
-            CommandView(name: "cost", description: "Show the total cost and duration of the session", argumentHint: "", source: ""),
-            CommandView(name: "code-review:review", description: "Review the current diff for correctness bugs", argumentHint: "[level]", source: "code-review"),
-            CommandView(name: "init", description: "Initialize a new CLAUDE.md file", argumentHint: "", source: ""),
+            CommandView(name: "clear", description: "Clear conversation history and free up context", argumentHint: "", source: "", sigil: "/", anywhere: false),
+            CommandView(name: "compact", description: "Clear history but keep a summary in context", argumentHint: "<instructions>", source: "", sigil: "/", anywhere: false),
+            CommandView(name: "context", description: "Show current context usage", argumentHint: "", source: "", sigil: "/", anywhere: false),
+            CommandView(name: "cost", description: "Show the total cost and duration of the session", argumentHint: "", source: "", sigil: "/", anywhere: false),
+            CommandView(name: "code-review:review", description: "Review the current diff for correctness bugs", argumentHint: "[level]", source: "code-review", sigil: "/", anywhere: false),
+            CommandView(name: "init", description: "Initialize a new CLAUDE.md file", argumentHint: "", source: "", sigil: "/", anywhere: false),
         ]
         return view
     }()
@@ -1488,7 +1488,8 @@ extension CatalogFixtures {
         modes: [
             OfferedMode(value: "default", displayName: "Default", normal: true, settable: true),
             OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true),
-        ])
+        ],
+        skills: [])
 
     static let claudeCatalogue = Catalogue(
         models: [
@@ -1502,7 +1503,8 @@ extension CatalogFixtures {
             OfferedPermission(value: "plan", displayName: "Plan", normal: false, neverAsks: false, settable: true, models: []),
             OfferedPermission(value: "bypassPermissions", displayName: "Bypass permissions", normal: false, neverAsks: true, settable: true, models: []),
         ],
-        modes: [])
+        modes: [],
+        skills: [])
 }
 
 private extension QuestionResponse {

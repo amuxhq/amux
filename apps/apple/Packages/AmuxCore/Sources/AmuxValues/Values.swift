@@ -1433,12 +1433,16 @@ public struct Catalogue: Codable, Hashable, Sendable {
     public var permissions: [OfferedPermission]
     /// How it works; empty for Claude.
     public var modes: [OfferedMode]
+    /// Codex's skills, which a person mentions as "$name" anywhere in a
+    /// message; empty for Claude, whose skills are among its commands.
+    public var skills: [OfferedSkill]
 
-    public init(models: [OfferedModel], commands: [OfferedCommand], permissions: [OfferedPermission], modes: [OfferedMode]) {
+    public init(models: [OfferedModel], commands: [OfferedCommand], permissions: [OfferedPermission], modes: [OfferedMode], skills: [OfferedSkill]) {
         self.models = models
         self.commands = commands
         self.permissions = permissions
         self.modes = modes
+        self.skills = skills
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -1446,6 +1450,7 @@ public struct Catalogue: Codable, Hashable, Sendable {
         case commands
         case permissions
         case modes
+        case skills
     }
 }
 
@@ -1939,9 +1944,9 @@ public enum CommandOutcome: Codable, Hashable, Sendable {
     /// model and effort): a prompt, as any other.
     case sent(SendOutcome)
     /// The agent does not run this command, and it was not sent: Codex
-    /// runs only the commands amux implements for it and its skills.
-    /// `offered` is what it does run.
-    case refused(command: String, offered: [String])
+    /// runs only the commands amux implements for it. `offered` is what it
+    /// does run; `hint` is the mention to type when the name is a skill.
+    case refused(command: String, offered: [String], hint: String?)
     /// The command names a model or effort the agent does not offer.
     case unknown(command: ClientCommand, value: String, offered: [String])
 
@@ -1956,6 +1961,7 @@ public enum CommandOutcome: Codable, Hashable, Sendable {
     private enum RefusedKeys: String, CodingKey {
         case command
         case offered
+        case hint
     }
 
     private enum UnknownKeys: String, CodingKey {
@@ -1996,7 +2002,8 @@ public enum CommandOutcome: Codable, Hashable, Sendable {
                 keyedBy: RefusedKeys.self, forKey: .refused)
             self = .refused(
                 command: try _fields.decode(String.self, forKey: .command),
-                offered: try _fields.decode([String].self, forKey: .offered))
+                offered: try _fields.decode([String].self, forKey: .offered),
+                hint: try _fields.decodeIfPresent(String.self, forKey: .hint))
         case .unknown:
             let _fields = try _container.nestedContainer(
                 keyedBy: UnknownKeys.self, forKey: .unknown)
@@ -2024,11 +2031,12 @@ public enum CommandOutcome: Codable, Hashable, Sendable {
         case .sent(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .sent)
-        case .refused(let command, let offered):
+        case .refused(let command, let offered, let hint):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: RefusedKeys.self, forKey: .refused)
             try _fields.encode(command, forKey: .command)
             try _fields.encode(offered, forKey: .offered)
+            try _fields.encodeIfPresent(hint, forKey: .hint)
         case .unknown(let command, let value, let offered):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: UnknownKeys.self, forKey: .unknown)
@@ -2046,12 +2054,19 @@ public struct CommandView: Codable, Hashable, Sendable {
     /// A plugin's namespace or the provider's scope word; empty when the
     /// provider does not say.
     public var source: String
+    /// What the person types before the name: "/" for a command, "$" for a
+    /// Codex skill.
+    public var sigil: String
+    /// It may be typed anywhere in a message, not only at its start.
+    public var anywhere: Bool
 
-    public init(name: String, description: String, argumentHint: String, source: String) {
+    public init(name: String, description: String, argumentHint: String, source: String, sigil: String, anywhere: Bool) {
         self.name = name
         self.description = description
         self.argumentHint = argumentHint
         self.source = source
+        self.sigil = sigil
+        self.anywhere = anywhere
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -2059,6 +2074,8 @@ public struct CommandView: Codable, Hashable, Sendable {
         case description
         case argumentHint = "argument_hint"
         case source
+        case sigil
+        case anywhere
     }
 }
 
@@ -4132,6 +4149,26 @@ public struct OfferedPermission: Codable, Hashable, Sendable {
         case neverAsks = "never_asks"
         case settable
         case models
+    }
+}
+
+/// A skill Codex offers this session.
+public struct OfferedSkill: Codable, Hashable, Sendable {
+    public var name: String
+    public var description: String
+    /// Codex's scope word for where it lives (user, repo, system).
+    public var source: String
+
+    public init(name: String, description: String, source: String) {
+        self.name = name
+        self.description = description
+        self.source = source
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case description
+        case source
     }
 }
 

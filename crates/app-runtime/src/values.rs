@@ -336,11 +336,12 @@ pub enum CommandOutcome {
     /// model and effort): a prompt, as any other.
     Sent(SendOutcome),
     /// The agent does not run this command, and it was not sent: Codex
-    /// runs only the commands amux implements for it and its skills.
-    /// `offered` is what it does run.
+    /// runs only the commands amux implements for it. `offered` is what it
+    /// does run; `hint` is the mention to type when the name is a skill.
     Refused {
         command: String,
         offered: Vec<String>,
+        hint: Option<String>,
     },
     /// The command names a model or effort the agent does not offer.
     Unknown {

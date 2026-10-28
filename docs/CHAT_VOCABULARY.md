@@ -68,7 +68,7 @@ kind is the [`ui_view::RowKind`](../crates/ui-view/src/rows.rs) variant the view
 | Subagent | `Subagent { description, running, tool_count, last_tool, answer, duration_ms }` | Live while running ("12 tools · 48s · last: Read"), its answer once finished; its own steps are rows with a `parent`, collapsed under it. | partial | full | partial |
 | Background process | `Background { command, running }` | "Started in background npm run dev"; the running job is listed in the overview. | partial | partial | partial |
 | Image | `Image { image, path, generated }` | A thumbnail opening full size; Codex can report generated images. | partial | partial | full |
-| Slash command output | `SlashOutput { command, args, output }` | The command, then its output block. | partial | partial | n/a: skills run as prompts |
+| Slash command output | `SlashOutput { command, args, output }` | The command, then its output block. | partial | partial | partial: a review's notices |
 
 A call's `state` is a `CallPhase`, decided once in the view for both clients: `Asking` while an open ask points
 at the call and nothing has decided it (it runs only if the person allows it, and both clients mark it as

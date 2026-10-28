@@ -2230,7 +2230,6 @@ fn a_childs_unknown_request_draws_nothing_in_the_parent() {
     );
 }
 
-
 /// A Codex agent whose server lists `skills`, each `(name, path)`.
 fn with_skills(skills: &[(&str, &str)]) -> Driven {
     let mut agent = Driven::started();
@@ -2273,10 +2272,19 @@ fn a_dollar_mention_sends_the_skill_with_its_path() {
 /// names one of them, the first Codex lists.
 #[test]
 fn a_mention_of_a_shared_name_names_one_skill() {
-    let mut agent = with_skills(&[("lint", "/repo/lint/SKILL.md"), ("lint", "/home/lint/SKILL.md")]);
+    let mut agent = with_skills(&[
+        ("lint", "/repo/lint/SKILL.md"),
+        ("lint", "/home/lint/SKILL.md"),
+    ]);
     let input = turn_input(&agent.prompt(b"p1", "$lint"));
-    let skills: Vec<&Value> = input.iter().filter(|part| part["type"] == "skill").collect();
-    assert_eq!(skills, [&json!({"type": "skill", "name": "lint", "path": "/repo/lint/SKILL.md"})]);
+    let skills: Vec<&Value> = input
+        .iter()
+        .filter(|part| part["type"] == "skill")
+        .collect();
+    assert_eq!(
+        skills,
+        [&json!({"type": "skill", "name": "lint", "path": "/repo/lint/SKILL.md"})]
+    );
 }
 
 /// "/name" is a command; a skill typed that way would reach the model as
@@ -2297,7 +2305,10 @@ fn a_skill_after_a_slash_is_refused_with_its_mention() {
         })
         .expect("refused");
     assert!(
-        refused.detail.as_deref().is_some_and(|detail| detail.contains("$lint")),
+        refused
+            .detail
+            .as_deref()
+            .is_some_and(|detail| detail.contains("$lint")),
         "{refused:?}"
     );
 }

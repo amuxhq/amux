@@ -359,17 +359,26 @@ pub fn slash(state: &SessionState, text: &str) -> Slash {
                 None => typed_setting(&change).map_or(Slash::Prompt, Slash::Typed),
             }
         }
-        None if kind == Kind::Codex
-            && !view.commands.iter().any(|offered| offered.name == name) =>
-        {
+        None if kind == Kind::Codex => {
+            let commands: Vec<String> = view
+                .commands
+                .iter()
+                .filter(|offered| offered.sigil == "/")
+                .map(|offered| offered.name.clone())
+                .collect();
+            if commands.iter().any(|command| command == name) {
+                return Slash::Prompt;
+            }
+            // A skill is mentioned, never run after a slash.
+            let hint = view
+                .commands
+                .iter()
+                .find(|offered| offered.sigil == "$" && offered.name == name)
+                .map(|skill| format!("${}", skill.name));
             Slash::Refused {
                 command: name.to_owned(),
-                offered: view
-                    .commands
-                    .iter()
-                    .map(|offered| offered.name.clone())
-                    .collect(),
-                hint: None,
+                offered: commands,
+                hint,
             }
         }
         None => Slash::Prompt,
@@ -487,6 +496,14 @@ pub fn settings(state: &SessionState) -> SettingsView {
                     anywhere: false,
                 }),
         )
+        .chain(agent.skills.iter().map(|skill| CommandView {
+            name: skill.name.clone(),
+            description: skill.description.clone(),
+            argument_hint: String::new(),
+            source: skill.source.clone(),
+            sigil: "$".to_owned(),
+            anywhere: true,
+        }))
         .collect();
     let changeable = match kind {
         // Terminal Claude lists no models or efforts and takes no model,

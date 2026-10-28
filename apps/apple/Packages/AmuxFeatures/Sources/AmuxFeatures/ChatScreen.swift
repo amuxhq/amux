@@ -706,7 +706,7 @@ public struct ChatStanding: View {
             }
         }
         let matches = model.slashMatches
-        if !matches.isEmpty { SlashRows(commands: matches, codex: model.frame?.kind == .codex, pick: model.pick) }
+        if !matches.isEmpty { SlashRows(commands: matches, pick: model.pick) }
         if let signIn = model.frame?.signIn {
             let kind = model.frame?.kind
             FootCard(

@@ -282,7 +282,7 @@ public final class NewAgentStore {
     /// another model starts at its own default effort, and a permission it
     /// does not take gives way to the normal one.
     public func choose(_ pick: NewAgentPick) {
-        let offered = catalogue ?? Catalogue(models: [], commands: [], permissions: [], modes: [])
+        let offered = catalogue ?? Catalogue(models: [], commands: [], permissions: [], modes: [], skills: [])
         if let next = Bridge.newAgentPick(offered, chosen, pick) { chosen = next }
     }
 

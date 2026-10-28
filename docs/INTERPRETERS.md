@@ -664,8 +664,8 @@ answer.
   (following `nextCursor` to the last page, leaving hidden models out) and
   `skills/list`, once per server, and asks `skills/list` again on
   `skills/changed`; the catalogue carries the models with their reasoning
-  efforts, and as commands the slash commands amux runs followed by the
-  skills. A refused or missing answer leaves its list empty.
+  efforts, the slash commands amux runs as its commands, and the skills
+  apart from them. A refused or missing answer leaves its list empty.
 - **Slash commands.** Codex's server has no commands: each command Codex's
   own view offers is client code calling a server method, so amux runs the
   ones it offers itself, from a table in the interpreter (`COMMANDS`):
@@ -678,13 +678,19 @@ answer.
   | `/init` | A turn with the prompt Codex's own `/init` sends (as Codex 0.161 words it), which writes an `AGENTS.md` unless one exists |
   | `/plan [prompt]` | Plan mode from the next turn, as choosing the mode does; the words after it, if any, are that turn's prompt |
 
-  The prompt's item shows what was typed. A skill named like one of these
-  commands is left out of the catalogue, since `/name` runs the command. A
-  `/` followed by any other skill's name goes to the model as written; any other `/word` (Codex's `/new` among
-  them, which means another conversation, so another agent) is refused as
-  unsupported rather than sent to the model as words. A command's name is a
+  The prompt's item shows what was typed. Any other `/word` (Codex's `/new`
+  among them, which means another conversation, so another agent) is refused
+  as unsupported rather than sent to the model as words; a skill's name after
+  a slash is refused with the mention to type instead. A command's name is a
   word with no further slash, so a prompt that starts with a path
   (`/Users/me/src/lib.rs has a bug`) is words and goes to the model.
+- **Skills** are mentioned, as in Codex's own app: `$name` anywhere in a
+  message or steer, the name a run of letters, digits, `_`, `-` and `:`. The
+  text goes as typed, followed by a `skill` input item (`name` and the
+  `path` of its `SKILL.md` from `skills/list`) for each skill it mentions,
+  once per name. Codex resolves a skill item by its path, so of two skills
+  that share a name (a user's and a repository's), the first `skills/list`
+  answers is the one selected; text alone would select neither.
 - **Asks** are the server's requests:
 
   | Request | Ask |

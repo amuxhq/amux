@@ -1677,10 +1677,15 @@ fn render_effect(effect: &Effect, catalogue: Option<&[u8]>) -> String {
         Effect::WriteBlob { hash, bytes } => {
             let catalogue = wire::Catalogue::decode(bytes.as_slice()).unwrap_or_default();
             format!(
-                "catalogue {} models=[{}] commands={} permissions=[{}] modes=[{}]",
+                "catalogue {} models=[{}] commands={}{} permissions=[{}] modes=[{}]",
                 short_hash(hash),
                 crate::claude_common::describe_models(&catalogue.models),
                 crate::claude_common::describe_commands(&catalogue.commands),
+                if catalogue.skills.is_empty() {
+                    String::new()
+                } else {
+                    format!(" skills={}", catalogue.skills.len())
+                },
                 catalogue
                     .permissions
                     .iter()

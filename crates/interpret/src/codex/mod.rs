@@ -13,16 +13,19 @@
 //! What the agent offers comes from the server, never from a client
 //! catalogue: once the handshake's thread answer arrives, the interpreter
 //! asks `model/list` (following `nextCursor` to the last page; hidden
-//! models left out) and `skills/list` once per server, and the snapshot
-//! carries the models with their reasoning efforts and the skills as
-//! commands. A refused or missing answer leaves its list empty.
+//! models left out) and `skills/list` once per server, and the catalogue
+//! carries the models with their reasoning efforts and the skills. A
+//! refused or missing answer leaves its list empty.
 //!
 //! Codex's server has no slash commands: each command Codex's own view
 //! offers is client code calling a server method. The ones amux runs are
-//! [`COMMANDS`], each a request (or, for `/init`, Codex's fixed prompt);
-//! the catalogue lists them before the skills, and any other `/word` is
-//! refused rather than sent to the model as words. A skill's name after a
-//! slash goes to the model as written, as it always has.
+//! [`COMMANDS`], each a request (or, for `/init`, Codex's fixed prompt),
+//! and they are the catalogue's commands; any other `/word` is refused
+//! rather than sent to the model as words, with the mention to type when it
+//! names a skill. Codex selects a skill from a `$name` mention anywhere in a
+//! message: the text goes as typed, with a skill input item naming the
+//! file of each skill it mentions, as Codex's own app sends them, so two
+//! skills of one name still select one (the first Codex lists).
 //!
 //! An agent message goes to Codex with `thread/inject_items`. Codex reports
 //! nothing about an injected item, so the interpreter writes the
@@ -42,7 +45,7 @@ use codex_protocol::client::{
     ReviewTarget, ThreadIdParams, ThreadStartParams, TurnInterruptParams, TurnStartParams,
     TurnSteerParams, UserInputResponse,
 };
-use codex_protocol::items::{TextContent, UserInput};
+use codex_protocol::items::{NamedPath, TextContent, UserInput};
 use codex_protocol::server::{
     CommandDecision, FileSystemPermissions, NetworkPermissions, PermissionProfile,
 };
@@ -57,9 +60,9 @@ use serde_json::Value;
 use wire::{
     AgentSpec, AskClosed, AskItem, BackgroundJob, CodexAnswer, CodexAsk, CodexGrant, CodexItem,
     CodexSnapshot, CodexUsage, ContextMeter, Decision, DecisionOutcome, Envelope, FormAction,
-    Input, KindInput, OfferedCommand, OfferedMode, OfferedModel, OfferedPermission, QueuedInput,
-    Refusal, Rejected, Step, TaskList, TaskListEntry, ToolDecision, ToolServerHealth, Work,
-    codex_answer, codex_ask, codex_grant, codex_input, codex_item, tool_decision, work,
+    Input, KindInput, OfferedCommand, OfferedMode, OfferedModel, OfferedPermission, OfferedSkill,
+    QueuedInput, Refusal, Rejected, Step, TaskList, TaskListEntry, ToolDecision, ToolServerHealth,
+    Work, codex_answer, codex_ask, codex_grant, codex_input, codex_item, tool_decision, work,
 };
 
 use crate::claude_common::{clip, describe_tasks, or_dash};
@@ -232,9 +235,8 @@ impl Command {
     }
 }
 
-/// What a catalogue offers as commands: [`COMMANDS`], then the skills. A
-/// skill named like a command is left out, since `/name` runs the command.
-fn offered_commands(skills: impl IntoIterator<Item = OfferedCommand>) -> Vec<OfferedCommand> {
+/// What a catalogue offers as commands: [`COMMANDS`].
+fn offered_commands() -> Vec<OfferedCommand> {
     COMMANDS
         .iter()
         .map(|(name, description, hint)| OfferedCommand {
@@ -243,11 +245,38 @@ fn offered_commands(skills: impl IntoIterator<Item = OfferedCommand>) -> Vec<Off
             argument_hint: (*hint).to_owned(),
             source: "codex".to_owned(),
         })
-        .chain(
-            skills
-                .into_iter()
-                .filter(|skill| !COMMANDS.iter().any(|(name, ..)| *name == skill.name)),
-        )
+        .collect()
+}
+
+/// A skill `skills/list` named, with the file a skill item names.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct ListedSkill {
+    name: String,
+    description: String,
+    source: String,
+    path: String,
+}
+
+impl ListedSkill {
+    fn offered(&self) -> OfferedSkill {
+        OfferedSkill {
+            name: self.name.clone(),
+            description: self.description.clone(),
+            source: self.source.clone(),
+        }
+    }
+}
+
+/// The names `text` mentions as Codex reads them: a `$` and a run of
+/// letters, digits, `_`, `-` and `:`.
+fn mentions(text: &str) -> Vec<&str> {
+    let mention = |c: char| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | ':');
+    text.split('$')
+        .skip(1)
+        .filter_map(|after| {
+            let end = after.find(|c: char| !mention(c)).unwrap_or(after.len());
+            (end > 0).then(|| &after[..end])
+        })
         .collect()
 }
 
@@ -477,10 +506,13 @@ pub fn host_catalogue(
 ) -> wire::Catalogue {
     wire::Catalogue {
         models: facts::offered_models(models),
-        commands: offered_commands(facts::offered_skills(skills)),
+        commands: offered_commands(),
         permissions: offered_permissions(),
         modes: offered_modes(),
-        skills: Vec::new(),
+        skills: facts::listed_skills(skills)
+            .iter()
+            .map(ListedSkill::offered)
+            .collect(),
     }
 }
 
@@ -535,8 +567,7 @@ pub struct State {
     /// What `model/list` and `skills/list` answered, whole: the catalogue.
     #[serde(with = "serde_pb::msgs")]
     models: Vec<OfferedModel>,
-    #[serde(with = "serde_pb::msgs")]
-    commands: Vec<OfferedCommand>,
+    skills: Vec<ListedSkill>,
     /// This server was asked what it offers.
     offers_asked: bool,
     /// How many times `skills/list` was asked, which names each ask.
@@ -653,7 +684,7 @@ impl State {
             // The mode the agent was created in, which its first turn sets.
             collaboration: created_mode.clone(),
             models: Vec::new(),
-            commands: Vec::new(),
+            skills: Vec::new(),
             offers_asked: false,
             skills_asked: 0,
             skills_stale: false,
@@ -986,13 +1017,23 @@ impl State {
             _ => return self.shared.reject(emit, &id, Refusal::Unsupported),
         };
         match arm {
-            // A `/word` that is neither a command amux runs nor a skill
-            // would reach the model as words.
-            codex_input::Of::Prompt(prompt)
-                if Command::parse(&prompt.text) == Some(Err(()))
-                    && !self.names_skill(&prompt.text) =>
-            {
-                self.shared.reject(emit, &id, Refusal::Unsupported)
+            // A `/word` that is not a command amux runs would reach the
+            // model as words. A skill is mentioned as `$name` instead.
+            codex_input::Of::Prompt(prompt) if Command::parse(&prompt.text) == Some(Err(())) => {
+                match self.names_skill(&prompt.text) {
+                    Some(skill) => {
+                        let detail = format!("Codex takes a skill as a mention: type ${skill}");
+                        self.shared.refuse(
+                            emit,
+                            &id,
+                            Rejected {
+                                refusal: Refusal::Unsupported as i32,
+                                detail: Some(detail),
+                            },
+                        )
+                    }
+                    None => self.shared.reject(emit, &id, Refusal::Unsupported),
+                }
             }
             // Refused here, so the words go back to the composer.
             codex_input::Of::Prompt(prompt) if prompt.text.chars().count() > PROMPT_CHARS_MOST => {
@@ -1178,15 +1219,37 @@ impl State {
         );
     }
 
-    /// Whether `text` is a slash and the name of a skill Codex offers.
-    fn names_skill(&self, text: &str) -> bool {
+    /// The skill `text`, a slash and a name, names, if Codex offers one.
+    fn names_skill(&self, text: &str) -> Option<&str> {
         let name = text
             .trim()
             .trim_start_matches('/')
             .split(char::is_whitespace)
             .next()
             .unwrap_or_default();
-        self.commands.iter().any(|skill| skill.name == name)
+        self.skills
+            .iter()
+            .find(|skill| skill.name == name)
+            .map(|skill| skill.name.as_str())
+    }
+
+    /// What a message gives Codex: its text, then a skill item for each
+    /// skill it mentions, the first Codex lists of a name.
+    fn user_input(&self, text: &str) -> Vec<UserInput> {
+        let mut input = vec![UserInput::text(text)];
+        let mut named = BTreeSet::new();
+        for name in mentions(text) {
+            if let Some(skill) = self.skills.iter().find(|skill| skill.name == name)
+                && named.insert(name)
+            {
+                input.push(UserInput::Skill(NamedPath {
+                    name: skill.name.clone(),
+                    path: skill.path.clone(),
+                    extra: Default::default(),
+                }));
+            }
+        }
+        input
     }
 
     /// The permission Codex's settings make now, by its catalogue value.
@@ -1222,7 +1285,7 @@ impl State {
             input: if text.is_empty() {
                 Vec::new()
             } else {
-                vec![UserInput::text(text)]
+                self.user_input(text)
             },
             model: overrides.model,
             effort: overrides
@@ -1244,7 +1307,7 @@ impl State {
         let params = TurnSteerParams {
             thread_id: self.thread(),
             expected_turn_id: turn.to_owned(),
-            input: vec![UserInput::text(crate::shared::provider_text(&entry))],
+            input: self.user_input(&crate::shared::provider_text(&entry)),
             client_user_message_id: Some(client_message_id(&entry.input_id)),
             ..Default::default()
         };
@@ -2133,7 +2196,7 @@ fn granted(decision: Decision, response: &ClientResponse) -> Option<CodexGrant> 
         },
         _ => None,
     };
-    of.or_else(|| match decision {
+    of.or(match decision {
         Decision::ApproveSession => Some(codex_grant::Of::Session(wire::Empty {})),
         Decision::ApproveAlways => Some(codex_grant::Of::Always(wire::Empty {})),
         _ => None,

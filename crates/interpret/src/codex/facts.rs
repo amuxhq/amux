@@ -29,14 +29,13 @@ use serde_json::Value;
 use wire::{
     AccessGrant, ApiError, BackgroundJob, CodexAsk, CodexUsage, CodexUsageWindow, CommandApproval,
     Decision, DecisionOutcome, FileChangeApproval, FormAsk, Limit, LinkAsk, McpToolApproval,
-    OfferedCommand, OfferedModel, Question, QuestionAsk, QuestionOption, ReviewerVerdict, SignIn,
-    SignInState, TaskListStatus, ToolClass, ToolDecision, ToolServer, ToolServerHealth,
-    ToolServerStatus, ToolState, Turn, TurnOutcome, UsageMeter, UsageState, Work, codex_ask,
-    codex_item, work,
+    OfferedModel, Question, QuestionAsk, QuestionOption, ReviewerVerdict, SignIn, SignInState,
+    TaskListStatus, ToolClass, ToolDecision, ToolServer, ToolServerHealth, ToolServerStatus,
+    ToolState, Turn, TurnOutcome, UsageMeter, UsageState, Work, codex_ask, codex_item, work,
 };
 
 use super::{
-    AskMeta, DROPPED_NOTIFICATIONS, FRESH_THREAD_REQUEST, InjectConsumption, Proposed,
+    AskMeta, DROPPED_NOTIFICATIONS, FRESH_THREAD_REQUEST, InjectConsumption, ListedSkill, Proposed,
     RESUME_REQUEST, Request, State, Streamed, WorkState, ask_key, client_message_id,
     elicitation_response, item_body, work_ask, work_complete,
 };
@@ -201,25 +200,25 @@ fn no_content() -> Option<Value> {
 }
 
 /// The skills `skills/list` answers.
-fn skills(result: &Value) -> Vec<OfferedCommand> {
+fn skills(result: &Value) -> Vec<ListedSkill> {
     codex_protocol::result::<SkillsListResponse>(result)
-        .map(offered_skills)
+        .map(listed_skills)
         .unwrap_or_default()
 }
 
-/// The skills a `skills/list` answer names, across every folder it lists;
-/// a skill the person turned off is left out.
-pub(crate) fn offered_skills(listed: SkillsListResponse) -> Vec<OfferedCommand> {
+/// The skills a `skills/list` answer names, across every folder it lists,
+/// in Codex's order; a skill the person turned off is left out.
+pub(super) fn listed_skills(listed: SkillsListResponse) -> Vec<ListedSkill> {
     listed
         .data
         .into_iter()
         .flat_map(|folder| folder.skills)
         .filter(|skill| skill.enabled)
-        .map(|skill| OfferedCommand {
+        .map(|skill| ListedSkill {
             name: skill.name,
             description: skill.description,
-            argument_hint: String::new(),
             source: skill.scope,
+            path: skill.path,
         })
         .collect()
 }
@@ -556,7 +555,7 @@ impl State {
         }
         if let Request::Skills = request {
             if let Ok(result) = &result {
-                self.commands = skills(result);
+                self.skills = skills(result);
                 self.publish_catalogue(emit);
             }
             if std::mem::take(&mut self.skills_stale) {
@@ -782,10 +781,10 @@ impl State {
             emit,
             wire::Catalogue {
                 models: self.models.clone(),
-                commands: super::offered_commands(self.commands.iter().cloned()),
+                commands: super::offered_commands(),
                 permissions: super::offered_permissions(),
                 modes: super::offered_modes(),
-                skills: Vec::new(),
+                skills: self.skills.iter().map(ListedSkill::offered).collect(),
             },
         );
     }

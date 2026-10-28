@@ -885,6 +885,9 @@ pub struct SkillsListEntry {
 pub struct Skill {
     pub name: String,
     pub description: String,
+    /// The skill's SKILL.md, which a skill input item names.
+    #[serde(default)]
+    pub path: String,
     pub enabled: bool,
     pub scope: String,
     #[serde(flatten)]

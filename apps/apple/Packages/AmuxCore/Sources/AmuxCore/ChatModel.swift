@@ -673,8 +673,8 @@ public final class ChatModel {
                 if composed == typed { clearDraft() }
                 setFollowing(true)
                 toNewest += 1
-            case .refused(let command, let offered)?:
-                notice = Self.refused(command: command, offered: offered, kind: frame?.kind)
+            case .refused(let command, let offered, let hint)?:
+                notice = Self.refused(command: command, offered: offered, hint: hint, kind: frame?.kind)
             case .unknown(let command, let value, let offered)?:
                 notice = Self.unknown(command, value: value, offered: offered)
             case nil:
@@ -683,10 +683,12 @@ public final class ChatModel {
         }
     }
 
-    /// "Codex does not run /status here. It runs /compact, /clear and its skills."
-    static func refused(command: String, offered: [String], kind: Kind?) -> String {
+    /// "Codex does not run /status here. It runs /compact, /clear." or, for a
+    /// skill, "Codex takes a skill as a mention: type $lint."
+    static func refused(command: String, offered: [String], hint: String? = nil, kind: Kind?) -> String {
         let name = command.hasPrefix("/") ? command : "/" + command
         let agent = kind == .codex ? "Codex" : String(localized: "This agent")
+        if let hint { return String(localized: "\(agent) takes a skill as a mention: type \(hint).") }
         let runs = offered.map { $0.hasPrefix("/") || $0.hasPrefix("$") ? $0 : "/" + $0 }
         guard !runs.isEmpty else { return String(localized: "\(agent) does not run \(name) here.") }
         return String(localized: "\(agent) does not run \(name) here. It runs \(runs.joined(separator: ", ")).")
@@ -762,20 +764,30 @@ public final class ChatModel {
     public static let pasteLines = 8
     public static let pasteCharacters = 1_000
 
-    /// The agent's commands that match a draft that is exactly a leading
-    /// "/word": by prefix, or by prefix after a plugin's namespace. The
-    /// list is the settings view's, which already leaves out what a
-    /// headless agent cannot run; an agent that offers none lists nothing.
+    /// The agent's commands that match the word being typed, each as the
+    /// settings view says it is typed: a "/" command when the draft is
+    /// exactly a leading "/word", a Codex "$" skill when the draft ends in
+    /// a "$word" mention. A name matches by prefix, or by prefix after a
+    /// plugin's namespace. The list is the settings view's, which already
+    /// leaves out what a headless agent cannot run; an agent that offers
+    /// none lists nothing.
     public var slashMatches: [CommandView] {
-        guard let word = Self.slashWord(draft), let commands = settings?.commands else { return [] }
-        return Array(commands.filter { Self.command($0.name, matches: word) }.prefix(Self.slashRows))
+        guard let commands = settings?.commands, let typed = Self.typedWord(draft) else { return [] }
+        let matches = commands.filter {
+            $0.sigil == typed.sigil && ($0.anywhere || typed.start == draft.startIndex)
+                && Self.command($0.name, matches: typed.word)
+        }
+        return Array(matches.prefix(Self.slashRows))
     }
 
-    static func slashWord(_ draft: String) -> String? {
-        guard draft.hasPrefix("/") else { return nil }
-        let word = draft.dropFirst()
-        guard !word.contains(where: { $0.isWhitespace || $0 == "/" }) else { return nil }
-        return word.lowercased()
+    /// The sigil and word the draft ends in, and where the sigil starts: a
+    /// whole draft "/word", or a "$word" after a space or at the start.
+    static func typedWord(_ draft: String) -> (sigil: String, word: String, start: String.Index)? {
+        guard let start = draft.lastIndex(where: { $0 == "/" || $0 == "$" }) else { return nil }
+        guard start == draft.startIndex || draft[draft.index(before: start)].isWhitespace else { return nil }
+        let word = draft[draft.index(after: start)...]
+        guard !word.contains(where: { $0.isWhitespace }) else { return nil }
+        return (String(draft[start]), word.lowercased(), start)
     }
 
     static func command(_ name: String, matches word: String) -> Bool {
@@ -785,11 +797,16 @@ public final class ChatModel {
         return name[name.index(after: colon)...].hasPrefix(word)
     }
 
-    /// Puts a picked command in the draft as the agent reads one: Claude's
-    /// "/name", and a Codex skill by its "$name" mention.
+    /// Puts a picked command in the draft as the agent reads one: a "/"
+    /// command as the whole draft, a "$" skill in place of the mention being
+    /// typed.
     public func pick(_ command: CommandView) {
-        let sigil = frame?.kind == .codex ? "$" : "/"
-        draft = sigil + command.name + " "
+        let picked = command.sigil + command.name + " "
+        guard command.anywhere, let typed = Self.typedWord(draft) else {
+            draft = picked
+            return
+        }
+        draft = String(draft[..<typed.start]) + picked
     }
 
     /// The field's edits. A long run arriving in one edit is a paste: it

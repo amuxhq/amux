@@ -458,9 +458,11 @@ with two efforts, and a provider command of the same name gives way to them (hea
 itself). `slash(state, text)` says what a typed draft is: `Prompt` (send it as typed; Claude runs its own commands
 from the text), `Pick`, `Set(input)`, `Rename(name)`, `Typed(text)` (terminal Claude takes no model or effort
 input, so the pick is typed as Claude's own `/model <value>`), `Unknown` for a value the agent does not offer, and
-`Refused` for a command Codex does not run: Codex runs only the commands amux implements for it and its skills,
-and any other `/…` would reach its model as words. Only a first word of a slash and a name is a command, so a path
-is words. The phone's runtime runs the same rule through `Chat::command`, which answers a `CommandOutcome`.
+`Refused` for a command Codex does not run: Codex runs only the commands amux implements for it, and any other `/…`
+would reach its model as words; for a skill's name `hint` carries the `$name` mention to type. Only a first word of
+a slash and a name is a command, so a path is words. Each `CommandView` says how it is typed: `sigil` is `/` for a
+command and `$` for a Codex skill, and `anywhere` marks a skill, which may be mentioned anywhere in a message
+rather than only at its start. Claude lists its skills among its commands, as Claude reports them. The phone's runtime runs the same rule through `Chat::command`, which answers a `CommandOutcome`.
 
 ### Answering an ask
 

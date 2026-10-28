@@ -107,7 +107,7 @@ id = "C13"
 item = "Slash command output"
 claude_pty = { mark = "partial", carriers = ["item:slash"], golden = [" slash final "] }
 claude_sdk = { mark = "partial", carriers = ["item:slash"], golden = [" slash final "] }
-codex = { mark = "na" }
+codex = { mark = "partial", carriers = ["item:command_output"], golden = [" command_output final "] }
 
 # ------------------------------------------------------------------- Decisions
 

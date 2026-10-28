@@ -4025,7 +4025,6 @@ fn a_chat_whose_host_is_away_counts_no_working_time() {
     assert_eq!(composer(&state, 60_000).activity, None);
 }
 
-
 fn session_offering(kind: Kind, catalogue: wire::Catalogue) -> SessionState {
     let mut state = SessionState::new(agent(kind), CAP);
     state.set_catalogue(b"offered".to_vec(), catalogue);
@@ -4054,7 +4053,13 @@ fn each_kinds_catalogue_is_typed_the_way_its_agent_reads_it() {
     let triggers = |view: &SettingsView| -> Vec<(String, String, bool)> {
         view.commands
             .iter()
-            .map(|command| (command.name.clone(), command.sigil.clone(), command.anywhere))
+            .map(|command| {
+                (
+                    command.name.clone(),
+                    command.sigil.clone(),
+                    command.anywhere,
+                )
+            })
             .collect()
     };
     let codex = settings(&session_offering(
@@ -4066,8 +4071,14 @@ fn each_kinds_catalogue_is_typed_the_way_its_agent_reads_it() {
         },
     ));
     let codex = triggers(&codex);
-    assert!(codex.contains(&("compact".into(), "/".into(), false)), "{codex:?}");
-    assert!(codex.contains(&("lint".into(), "$".into(), true)), "{codex:?}");
+    assert!(
+        codex.contains(&("compact".into(), "/".into(), false)),
+        "{codex:?}"
+    );
+    assert!(
+        codex.contains(&("lint".into(), "$".into(), true)),
+        "{codex:?}"
+    );
     let claude = settings(&session_offering(
         Kind::ClaudeSdk,
         wire::Catalogue {

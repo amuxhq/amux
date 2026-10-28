@@ -149,12 +149,20 @@ fn too_large_words(name: &str) -> String {
 
 /// Why a slash command was not sent: the agent does not run it, and what it
 /// does run.
-fn refused_command_words(state: &SessionState, command: &str, offered: &[String]) -> String {
+fn refused_command_words(
+    state: &SessionState,
+    command: &str,
+    offered: &[String],
+    hint: Option<&str>,
+) -> String {
     let agent = match state.kind() {
         wire::Kind::Codex => "Codex",
         wire::Kind::ClaudePty | wire::Kind::ClaudeSdk => "Claude",
         wire::Kind::Unspecified => "This agent",
     };
+    if let Some(hint) = hint {
+        return format!("{agent} takes a skill as a mention: type {hint}");
+    }
     let commands: Vec<String> = offered.iter().map(|name| format!("/{name}")).collect();
     if commands.is_empty() {
         format!("{agent} does not run /{command} here")
@@ -1052,9 +1060,16 @@ impl ChatView {
                 None => vec![ChatEffect::Rename(name)],
             },
             // The draft stays, so the person can fix it.
-            Slash::Refused { command, offered, .. } => {
+            Slash::Refused {
+                command,
+                offered,
+                hint,
+            } => {
                 return Some(vec![ChatEffect::Notice(refused_command_words(
-                    state, &command, &offered,
+                    state,
+                    &command,
+                    &offered,
+                    hint.as_deref(),
                 ))]);
             }
             Slash::Unknown {

@@ -324,10 +324,14 @@ impl Chat {
                 })
             }
             ui_view::Slash::Refused {
-                command, offered, ..
-            } => {
-                CommandOutcome::Refused { command, offered }
-            }
+                command,
+                offered,
+                hint,
+            } => CommandOutcome::Refused {
+                command,
+                offered,
+                hint,
+            },
             ui_view::Slash::Unknown {
                 command,
                 value,

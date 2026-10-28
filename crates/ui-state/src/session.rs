@@ -346,6 +346,7 @@ impl SessionState {
         };
         self.state.models = offered.models;
         self.state.commands = offered.commands;
+        self.state.skills = offered.skills;
         self.state.permissions = offered.permissions;
         self.state.modes = offered.modes;
     }

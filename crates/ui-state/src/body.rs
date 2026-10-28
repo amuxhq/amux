@@ -297,8 +297,10 @@ pub struct AgentState {
     /// The models the agent's catalogue offers, each with its efforts;
     /// empty until the catalogue is fetched, and always for terminal Claude.
     pub models: Vec<OfferedModel>,
-    /// The commands (Codex: skills) the agent's catalogue offers.
+    /// The commands the agent's catalogue offers.
     pub commands: Vec<OfferedCommand>,
+    /// The skills Codex's catalogue offers, mentioned as `$name`.
+    pub skills: Vec<wire::OfferedSkill>,
     /// The permissions and modes the agent's catalogue offers.
     pub permissions: Vec<wire::OfferedPermission>,
     pub modes: Vec<wire::OfferedMode>,

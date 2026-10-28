@@ -1,3 +1,7 @@
+2026-10-28 — **A config file loads on Windows again, and the reports spec runs only where its net does.** Loading a config resolves each path in it against the filesystem, and on Windows the front door's default is a named pipe, `\\.\pipe\amux-<user>`, which the filesystem refuses with "Incorrect function"; every `from_file` on Windows failed, which the new `amux config` tests were the first Windows tests to reach. A pipe's name is now kept as written. The new reports spec stands up a whole net, which stops its agents only on Unix, so it is Unix-only like the other net specs.
+
+Tests: `cargo test -p settings` holds a pipe's name as written; Windows CI runs the config tests.
+
 2026-10-28 — **The terminal journeys call the command line by its current names: `amux hosts` and `amux profile new`.** The command line redesign renamed `peers` to `hosts` and `profile create` to `profile new`, but `reach-host` and `keep-authority` still ran the old verbs, which now exit with an unrecognised subcommand, so both timed out waiting for a clean exit on every CI run since.
 
 Tests: `just journey terminal all` passes all 21 terminal stories.

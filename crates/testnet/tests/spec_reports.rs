@@ -4,6 +4,8 @@
 //! for is sent on its own when the installation sends automatic reports,
 //! and counted as a usage event either way.
 
+#![cfg(unix)]
+
 mod support;
 
 use analytics::{Event, Recording};

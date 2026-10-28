@@ -565,7 +565,7 @@ impl InstallationConfig {
             .map_err(|error| ConfigError::Invalid(format!("{}: {error}", path.display())))?;
         let base = path.parent().unwrap();
         config.root = absolute_path(&config.root, base)?;
-        config.front_door_socket = absolute_path(&config.front_door_socket, base)?;
+        config.front_door_socket = socket_path(&config.front_door_socket, base)?;
         if let ThemeSetting::File(theme) = &mut config.ui.theme {
             *theme = absolute_path(theme, base)?;
         }
@@ -645,6 +645,17 @@ pub const INSTALLATION_KEYS: &[&str] = &[
     "agent.facts_ring_mib",
 ];
 
+/// The front door's address: a socket file, resolved like any other path, or
+/// on Windows a named pipe, which lives in the pipe namespace rather than on
+/// a drive. Resolving a pipe's name against the filesystem fails with
+/// "Incorrect function", so it is kept as written.
+fn socket_path(path: &Path, base: &Path) -> Result<PathBuf, ConfigError> {
+    if path.to_string_lossy().starts_with(r"\\.\pipe\") {
+        return Ok(path.to_owned());
+    }
+    absolute_path(path, base)
+}
+
 // Resolve aliases in the existing ancestor, even before a socket or state file
 // exists. This gives /tmp and /private/tmp the same identity on macOS.
 fn absolute_path(path: &Path, base: &Path) -> Result<PathBuf, ConfigError> {
@@ -678,6 +689,12 @@ mod tests {
 
     fn installation(text: &str) -> Result<InstallationConfig, ConfigError> {
         InstallationConfig::from_toml(text)
+    }
+
+    #[test]
+    fn a_named_pipe_is_kept_as_written() {
+        let pipe = Path::new(r"\\.\pipe\amux-ada");
+        assert_eq!(socket_path(pipe, Path::new("/")).unwrap(), pipe);
     }
 
     /// The key list `amux config` checks against is every field the file

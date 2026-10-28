@@ -941,6 +941,27 @@ impl Log {
         }
     }
 
+    /// The tool servers the newest Claude snapshot reports.
+    pub fn tool_servers(&self) -> Vec<wire::ToolServer> {
+        let Some(snapshot) = self.snapshot() else {
+            return Vec::new();
+        };
+        let servers = match snapshot.kind() {
+            Kind::ClaudeSdk => {
+                ClaudeSdkSnapshot::decode(snapshot.body.as_slice())
+                    .unwrap()
+                    .servers
+            }
+            Kind::ClaudePty => {
+                wire::ClaudePtySnapshot::decode(snapshot.body.as_slice())
+                    .unwrap()
+                    .servers
+            }
+            other => panic!("no snapshot reader for {other:?}"),
+        };
+        servers.map(|servers| servers.servers).unwrap_or_default()
+    }
+
     pub fn open_asks(&self) -> usize {
         let snapshot = self.snapshot().expect("a snapshot");
         match snapshot.kind() {

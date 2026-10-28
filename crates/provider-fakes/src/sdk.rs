@@ -33,6 +33,10 @@ pub fn main() -> i32 {
     if crate::claude::answered_version(&args) {
         return 0;
     }
+    if let Some(refusal) = Args::parse(&args).managed_refusal() {
+        eprintln!("Error: {refusal}");
+        return 1;
+    }
     let mode = match crate::mode_from_env() {
         Ok(mode) => mode,
         Err(error) => {

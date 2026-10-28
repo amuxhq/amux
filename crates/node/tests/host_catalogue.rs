@@ -557,3 +557,27 @@ async fn terminal_claude_offers_the_commands_of_the_project_it_runs_in() {
         "the project's own command is not offered; the catalogue was gathered outside the project: {names:?}"
     );
 }
+
+/// Under an organization's managed MCP config Claude refuses
+/// `--strict-mcp-config` and will not start: the host still asks it what
+/// it offers.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_host_under_a_managed_mcp_config_still_asks_claude() {
+    let host = Host::new(&Script {
+        models: vec![model("opus")],
+        ..Script::default()
+    });
+    let managed = host.install.path("managed");
+    std::fs::create_dir_all(&managed).unwrap();
+    std::fs::write(managed.join("managed-mcp.json"), r#"{"mcpServers":{}}"#).unwrap();
+    let mut launch = host.launch();
+    launch.provider_env.insert(
+        "CLAUDE_CODE_MANAGED_SETTINGS_PATH".to_owned(),
+        managed.to_string_lossy().into_owned(),
+    );
+    let daemon = host.install.start("boot-1", launch).await;
+    let runtime = runtime(&daemon, &host.install);
+    let api = node::ClientApi::new(&runtime, None);
+    let claude = ask(&api, runtime.host(), wire::Provider::Claude).await;
+    assert_eq!(values(&claude.models, |m| &m.value), ["opus"]);
+}

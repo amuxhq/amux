@@ -1412,3 +1412,58 @@ async fn headless_claude_is_told_at_initialize_that_amux_stops_each_task_on_its_
         "the initialize request declares no per-task stop: {initialize}"
     );
 }
+
+/// A folder of managed settings holding an organization's MCP config, as
+/// `CLAUDE_CODE_MANAGED_SETTINGS_PATH` names it; it lives as long as the
+/// test binary.
+fn managed_mcp_folder() -> &'static str {
+    let folder = tempfile::tempdir().unwrap().keep();
+    std::fs::write(folder.join("managed-mcp.json"), r#"{"mcpServers":{}}"#).unwrap();
+    Box::leak(folder.display().to_string().into_boxed_str())
+}
+
+/// Under an organization's managed MCP config Claude refuses a server added
+/// on its command line and will not start; an agent there launches without
+/// amux's tool server, runs a turn, and says amux's tools are off.
+async fn under_managed_mcp(kind: Kind) {
+    let agent = Agent::start(Setup {
+        kind,
+        env: vec![("CLAUDE_CODE_MANAGED_SETTINGS_PATH", managed_mcp_folder())],
+        steps: vec![
+            Step::Text {
+                chunks: vec!["hello under policy".into()],
+            },
+            Step::TurnEnd,
+        ],
+        ..Setup::sdk()
+    })
+    .await;
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    assert_eq!(daemon.prompt(b"p1", "say hello").await, Verdict::Accepted);
+    agent
+        .wait("the turn ends", |log| log.turn_ends() == 1)
+        .await;
+    assert!(agent.log().has_text("hello under policy"));
+    let servers = agent.log().tool_servers();
+    assert!(
+        servers
+            .iter()
+            .any(|server| server.name == interpret::AMUX_TOOL_SERVER
+                && server.status == wire::ToolServerStatus::Failed as i32
+                && server.error.contains("organization")),
+        "amux's tool server is not reported off by policy: {servers:?}"
+    );
+    daemon.stop().await;
+    assert_eq!(agent.exit().await, ExitCause::Stopped);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_headless_agent_under_a_managed_mcp_config_runs_and_says_its_tools_are_off() {
+    under_managed_mcp(Kind::ClaudeSdk).await;
+}
+
+#[test]
+fn a_terminal_agent_under_a_managed_mcp_config_runs_and_says_its_tools_are_off() {
+    terminal_test(under_managed_mcp(Kind::ClaudePty));
+}

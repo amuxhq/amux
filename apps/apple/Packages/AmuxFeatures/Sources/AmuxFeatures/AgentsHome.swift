@@ -47,7 +47,9 @@ public enum HomeAction: Equatable, Sendable {
 /// navigation bar's: a large title that shrinks as the list scrolls, with
 /// glass buttons, the way a chat app's list reads.
 public struct AgentsHome: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.design) private var design
+    @Environment(\.displayScale) private var displayScale
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.photographed) private var photographed
     @Environment(\.reducesMotion) private var reducesMotion
@@ -78,6 +80,7 @@ public struct AgentsHome: View {
     /// they are offline in between flashes a card that is gone before it can
     /// be read.
     @State private var dialling = true
+    @State private var discs = AccountDiscs()
 
     public init(
         model: FleetStore,
@@ -144,10 +147,9 @@ public struct AgentsHome: View {
             ToolbarItem(placement: .topBarLeading) {
                 accountMenu
             }
-            // The disc is its own glass, as the + is; the bar's ring
-            // around it would draw a second one.
-            .sharedBackgroundVisibility(
-                reducesTransparency || accounts.selectedAccount != nil ? .hidden : .automatic)
+            // The bar's own glass, as under the + across from it; with less
+            // transparency asked for, the item draws its own surface.
+            .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
             if canStartAnAgent {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { actions(.newAgent) } label: { Image(systemName: "plus").foregroundStyle(design.onAccent.color) }
@@ -220,62 +222,63 @@ public struct AgentsHome: View {
         }
     }
 
-    /// The accounts, in the system's own menu hung from the disc: each by
-    /// name with what this phone knows of it under, the one on screen
-    /// ticked, and a signed-out one offering to sign back in; then Settings.
-    /// Always there, since it is also the way to the settings.
+    /// The accounts, in the system's own menu hung from the disc: each by its
+    /// own disc and name, with what this phone knows of it under where the
+    /// system draws a second line, the one on screen ticked, and a signed-out
+    /// one dimmed and offering to sign back in; then Settings. The discs are
+    /// what make the accounts read as people rather than as more commands,
+    /// and keep them in one column: without them, the one account not ticked
+    /// sits out at the menu's edge where its title would be. Always there,
+    /// since it is also the way to the settings.
     ///
-    /// The disc is the bar's other circle: the account's initials on the same
-    /// accent glass as the + across from it, and the same size, so the two
-    /// read as a pair. With no account signed in there is nobody to name, so
-    /// it is a person on the bar's plain glass: hollow rather than absent,
-    /// because not having a usable account yet is a state, not a hole.
+    /// The disc is the account on the bar's plain glass, the same circle as
+    /// the + across from it: its picture, or its initials on the accent until
+    /// that arrives or where it has none. The glass is the menu's, which
+    /// grows into the menu and shrinks back from it, so the account sits
+    /// inside it rather than painted over it. With no account signed in
+    /// there is nobody to name, so it is a person on the same glass: hollow
+    /// rather than absent, because not having a usable account yet is a
+    /// state, not a hole.
     @ViewBuilder
     private var accountMenu: some View {
         if let entry = accounts.selectedAccount {
             accountMenu {
-                Text(InitialsDisc.initials(of: entry.name))
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(design.onAccent.color)
-                    .fixedSize()
-                    .frame(width: 30, height: 30)
-                    // The picture covers the whole button, glass and all:
-                    // a face in a coloured ring would be a badge, not a person.
-                    .overlay { AccountPicture(url: entry.account.picture, size: Self.barButton) }
+                disc(entry).accessibilityLabel("Switch account")
             }
-            .menuStyle(.button)
-            .prominentBarButton()
-            .buttonBorderShape(.circle)
-            .tint(design.accent.color)
-            // The bar keeps room for the ring it would have drawn round a
-            // menu; without that ring the disc would sit this far in from the
-            // margin the + keeps on the other side.
-            .padding(.leading, -Space.s)
+            .barItemSurface()
         } else {
             accountMenu { Image(systemName: "person").accessibilityLabel("Switch account") }
                 .barItemSurface()
         }
     }
 
-    /// A bar button's size: the system draws its glass buttons this large.
-    static let barButton: CGFloat = 44
+    /// A toggle rather than a picker for its tick beside the disc: every tap
+    /// reaches it, the ticked account's too, which signs back in when it is
+    /// signed out.
+    private func accountRow(_ entry: AccountEntry) -> some View {
+        let picked = Binding(
+            get: { entry.id == accounts.selected },
+            set: { _ in switcher(entry.signedIn ? .select(entry.id) : .signIn(entry.id)) })
+        let line = entry.signedIn ? entry.line : String(localized: "Signed out · tap to sign in")
+        return Toggle(isOn: picked) {
+            Label {
+                Text(entry.name)
+                Text(line)
+            } icon: {
+                disc(entry)
+            }
+        }
+        .identified("account.\(entry.account.email)", label: entry.name)
+    }
+
+    private func disc(_ entry: AccountEntry) -> Image {
+        Image(uiImage: discs.image(of: entry, design: design, scheme: colorScheme, scale: displayScale))
+    }
 
     private func accountMenu(@ViewBuilder label: () -> some View) -> some View {
         Menu {
             Section {
-                ForEach(accounts.accounts) { entry in
-                    Button {
-                        switcher(entry.signedIn ? .select(entry.id) : .signIn(entry.id))
-                    } label: {
-                        Label {
-                            Text(entry.name)
-                            Text(entry.signedIn ? entry.line : String(localized: "Signed out · tap to sign in"))
-                        } icon: {
-                            if entry.id == accounts.selected { Image(systemName: "checkmark") }
-                        }
-                    }
-                    .identified("account.\(entry.account.email)", label: entry.name)
-                }
+                ForEach(accounts.accounts) { entry in accountRow(entry) }
             }
             Button { switcher(.add) } label: { Label("Add Account", systemImage: "plus") }
                 .identified("accounts.add", label: "Add Account")
@@ -287,6 +290,9 @@ public struct AgentsHome: View {
             }
         } label: {
             label()
+        }
+        .task(id: accounts.accounts.compactMap(\.account.picture)) {
+            await discs.load(accounts.accounts.compactMap(\.account.picture))
         }
         .accessibilityLabel("Switch account")
         .identified("home.accounts", label: "Switch account")
@@ -1288,6 +1294,80 @@ struct CalloutStrip<Action: Equatable>: View {
 }
 
 /// The fleet's search field, there only while there is a fleet to search.
+/// Each account's disc, drawn into an image: its picture, or its initials on
+/// the accent until that arrives or where it has none, dimmed while it is
+/// signed out.
+///
+/// An image is the one label the bar sets in a glass circle the size of its
+/// other buttons. Text or a drawn view gets a capsule sized to it, and a menu
+/// grows out of that glass and shrinks back into it, so a disc as a view
+/// shows as an oblong, and one painted over the glass leaves the glass's own
+/// colour showing on every open and close. A menu row takes an image as its
+/// icon too, so the menu's discs are the same pictures.
+@MainActor @Observable
+final class AccountDiscs {
+    /// The widest image the bar still sets in its 44-point circle; past this
+    /// the glass widens into a capsule.
+    static let size: CGFloat = 32
+
+    private struct Drawn: Equatable {
+        let initials: String
+        let picture: URL?
+        let signedIn: Bool
+        let scheme: ColorScheme
+        let scale: CGFloat
+    }
+
+    private var pictures: [URL: UIImage] = [:]
+    /// The last disc drawn for each account and what it was drawn from: the
+    /// screen is drawn again on every fleet update, and a disc almost never
+    /// changes.
+    @ObservationIgnored private var drawn: [AccountId: (of: Drawn, image: UIImage)] = [:]
+
+    func image(of entry: AccountEntry, design: Design, scheme: ColorScheme, scale: CGFloat) -> UIImage {
+        let picture = entry.account.picture.flatMap { pictures[$0] }
+        let wanted = Drawn(
+            initials: InitialsDisc.initials(of: entry.name),
+            picture: picture == nil ? nil : entry.account.picture,
+            signedIn: entry.signedIn, scheme: scheme, scale: scale)
+        if let drawn = drawn[entry.id], drawn.of == wanted { return drawn.image }
+        let renderer = ImageRenderer(content: face(wanted, picture: picture, design: design)
+            .environment(\.colorScheme, scheme))
+        renderer.scale = scale
+        let image = (renderer.uiImage ?? UIImage()).withRenderingMode(.alwaysOriginal)
+        drawn[entry.id] = (wanted, image)
+        return image
+    }
+
+    /// Fetches the accounts' pictures; until one arrives, or where it cannot,
+    /// its disc keeps the initials.
+    func load(_ urls: [URL]) async {
+        for url in urls where pictures[url] == nil {
+            guard let (data, _) = try? await URLSession.shared.data(from: url),
+                  let image = UIImage(data: data)
+            else { continue }
+            pictures[url] = image
+        }
+    }
+
+    private func face(_ drawn: Drawn, picture: UIImage?, design: Design) -> some View {
+        Group {
+            if let picture {
+                Image(uiImage: picture).resizable().scaledToFill()
+            } else {
+                Text(drawn.initials)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(design.onAccent.color)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(design.accent.color)
+            }
+        }
+        .frame(width: Self.size, height: Self.size)
+        .clipShape(Circle())
+        .opacity(drawn.signedIn ? 1 : 0.5)
+    }
+}
+
 private struct FleetSearch: ViewModifier {
     let shown: Bool
     @Binding var words: String

@@ -1269,6 +1269,7 @@ fn settings_offering(
             commands,
             permissions,
             modes,
+            skills: Vec::new(),
         },
     )
 }
@@ -4022,4 +4023,81 @@ fn a_chat_whose_host_is_away_counts_no_working_time() {
     );
     state.update(event(session_event::Of::Detached(wire::Detached {})));
     assert_eq!(composer(&state, 60_000).activity, None);
+}
+
+
+fn session_offering(kind: Kind, catalogue: wire::Catalogue) -> SessionState {
+    let mut state = SessionState::new(agent(kind), CAP);
+    state.set_catalogue(b"offered".to_vec(), catalogue);
+    state.update(event(session_event::Of::Snapshot(wire::Snapshot {
+        kind: kind as i32,
+        phase: Phase::Idle as i32,
+        catalogue: Some(b"offered".to_vec()),
+        ..wire::Snapshot::default()
+    })));
+    state
+}
+
+fn offered_skill(name: &str) -> wire::OfferedSkill {
+    wire::OfferedSkill {
+        name: name.into(),
+        ..Default::default()
+    }
+}
+
+/// Each kind's catalogue is typed as that agent reads it: Claude's whole
+/// list as "/name" at the start of a message; Codex's commands the same,
+/// and its skills as "$name" anywhere. The phone's picker shows and inserts
+/// what this says.
+#[test]
+fn each_kinds_catalogue_is_typed_the_way_its_agent_reads_it() {
+    let triggers = |view: &SettingsView| -> Vec<(String, String, bool)> {
+        view.commands
+            .iter()
+            .map(|command| (command.name.clone(), command.sigil.clone(), command.anywhere))
+            .collect()
+    };
+    let codex = settings(&session_offering(
+        Kind::Codex,
+        wire::Catalogue {
+            commands: vec![providers_command("compact")],
+            skills: vec![offered_skill("lint")],
+            ..Default::default()
+        },
+    ));
+    let codex = triggers(&codex);
+    assert!(codex.contains(&("compact".into(), "/".into(), false)), "{codex:?}");
+    assert!(codex.contains(&("lint".into(), "$".into(), true)), "{codex:?}");
+    let claude = settings(&session_offering(
+        Kind::ClaudeSdk,
+        wire::Catalogue {
+            commands: vec![providers_command("compact"), providers_command("lint")],
+            ..Default::default()
+        },
+    ));
+    assert!(
+        triggers(&claude)
+            .iter()
+            .all(|(_, sigil, anywhere)| sigil == "/" && !anywhere),
+        "{:?}",
+        triggers(&claude)
+    );
+}
+
+/// A Codex skill typed after a slash is refused in the composer with the
+/// mention Codex reads.
+#[test]
+fn a_codex_skill_after_a_slash_is_refused_with_its_mention() {
+    let state = session_offering(
+        Kind::Codex,
+        wire::Catalogue {
+            commands: vec![providers_command("compact")],
+            skills: vec![offered_skill("lint")],
+            ..Default::default()
+        },
+    );
+    match ui_view::slash(&state, "/lint") {
+        Slash::Refused { hint, .. } => assert_eq!(hint.as_deref(), Some("$lint")),
+        other => panic!("not refused: {other:?}"),
+    }
 }

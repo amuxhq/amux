@@ -1052,7 +1052,7 @@ impl ChatView {
                 None => vec![ChatEffect::Rename(name)],
             },
             // The draft stays, so the person can fix it.
-            Slash::Refused { command, offered } => {
+            Slash::Refused { command, offered, .. } => {
                 return Some(vec![ChatEffect::Notice(refused_command_words(
                     state, &command, &offered,
                 ))]);

@@ -344,16 +344,21 @@ fn offered_lists_keep_what_the_server_named() {
         ["gpt-6-astra", "gpt-6-sol"],
         "both pages, the hidden model left out"
     );
-    // The commands amux runs come first; the skills follow.
-    let skills: Vec<_> = catalogue
-        .commands
-        .iter()
-        .filter(|command| command.source != "codex")
-        .collect();
+    // The commands are the ones amux runs, typed as "/name"; the skills are
+    // apart, mentioned as "$name".
+    assert_eq!(
+        catalogue
+            .commands
+            .iter()
+            .map(|command| command.name.as_str())
+            .collect::<Vec<_>>(),
+        ["compact", "clear", "review", "init", "plan"]
+    );
+    let skills = &catalogue.skills;
     assert_eq!(
         skills
             .iter()
-            .map(|command| (command.name.as_str(), command.source.as_str()))
+            .map(|skill| (skill.name.as_str(), skill.source.as_str()))
             .collect::<Vec<_>>(),
         [
             ("autopilot", "user"),
@@ -2222,5 +2227,77 @@ fn a_childs_unknown_request_draws_nothing_in_the_parent() {
         agent.unrecognized().is_empty(),
         "{:?}",
         agent.unrecognized()
+    );
+}
+
+
+/// A Codex agent whose server lists `skills`, each `(name, path)`.
+fn with_skills(skills: &[(&str, &str)]) -> Driven {
+    let mut agent = Driven::started();
+    let listed: Vec<Value> = skills
+        .iter()
+        .map(|(name, path)| {
+            json!({"name": name, "description": "", "path": path, "scope": "user", "enabled": true})
+        })
+        .collect();
+    agent.rpc(json!({"id": "amux-skills", "result": {"data": [{"cwd": "/work", "skills": listed, "errors": []}]}}));
+    agent
+}
+
+fn turn_input(writes: &[Value]) -> Vec<Value> {
+    writes
+        .iter()
+        .find(|write| write["method"] == "turn/start")
+        .unwrap_or_else(|| panic!("a turn: {writes:?}"))["params"]["input"]
+        .as_array()
+        .unwrap()
+        .clone()
+}
+
+/// Codex selects a skill from a "$name" mention anywhere in the message, or
+/// from a skill item naming its file: the text goes as typed, with an item
+/// for each skill it mentions, as Codex's own app sends them.
+#[test]
+fn a_dollar_mention_sends_the_skill_with_its_path() {
+    let mut agent = with_skills(&[("lint", "/skills/lint/SKILL.md")]);
+    let input = turn_input(&agent.prompt(b"p1", "tidy this up with $lint please"));
+    assert_eq!(input[0]["type"], "text");
+    assert_eq!(input[0]["text"], "tidy this up with $lint please");
+    assert_eq!(
+        input[1..],
+        [json!({"type": "skill", "name": "lint", "path": "/skills/lint/SKILL.md"})]
+    );
+}
+
+/// Two skills of one name select nothing from a bare mention; the item
+/// names one of them, the first Codex lists.
+#[test]
+fn a_mention_of_a_shared_name_names_one_skill() {
+    let mut agent = with_skills(&[("lint", "/repo/lint/SKILL.md"), ("lint", "/home/lint/SKILL.md")]);
+    let input = turn_input(&agent.prompt(b"p1", "$lint"));
+    let skills: Vec<&Value> = input.iter().filter(|part| part["type"] == "skill").collect();
+    assert_eq!(skills, [&json!({"type": "skill", "name": "lint", "path": "/repo/lint/SKILL.md"})]);
+}
+
+/// "/name" is a command; a skill typed that way would reach the model as
+/// words, so it is refused with the way Codex takes it.
+#[test]
+fn a_skill_after_a_slash_is_refused_with_its_mention() {
+    let mut agent = with_skills(&[("lint", "/skills/lint/SKILL.md")]);
+    let stepped = agent.step(prompt(b"p1", "/lint"));
+    let refused = stepped
+        .effects
+        .iter()
+        .find_map(|effect| match effect {
+            Effect::Reply { verdict, .. } => match &verdict.of {
+                Some(wire::send_input_response::Of::Rejected(rejected)) => Some(rejected.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("refused");
+    assert!(
+        refused.detail.as_deref().is_some_and(|detail| detail.contains("$lint")),
+        "{refused:?}"
     );
 }

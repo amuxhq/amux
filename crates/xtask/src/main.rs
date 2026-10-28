@@ -55,6 +55,7 @@ const VIEW_VALUES: &[&str] = &[
     "amux.v1.Git",
     "amux.v1.Kind",
     "amux.v1.OfferedCommand",
+    "amux.v1.OfferedSkill",
     "amux.v1.OfferedMode",
     "amux.v1.OfferedModel",
     "amux.v1.OfferedPermission",

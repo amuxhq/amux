@@ -371,6 +371,17 @@ message Catalogue {
   repeated OfferedPermission permissions = 3;
   // How it works; empty for Claude.
   repeated OfferedMode modes = 4;
+  // Codex's skills, which a person mentions as "$name" anywhere in a
+  // message; empty for Claude, whose skills are among its commands.
+  repeated OfferedSkill skills = 5;
+}
+
+// A skill Codex offers this session.
+message OfferedSkill {
+  string name = 1;
+  string description = 2;
+  // Codex's scope word for where it lives (user, repo, system).
+  string source = 3;
 }
 
 message OfferedPermission {

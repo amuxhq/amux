@@ -182,6 +182,11 @@ pub struct CommandView {
     /// A plugin's namespace or the provider's scope word; empty when the
     /// provider does not say.
     pub source: String,
+    /// What the person types before the name: "/" for a command, "$" for a
+    /// Codex skill.
+    pub sigil: String,
+    /// It may be typed anywhere in a message, not only at its start.
+    pub anywhere: bool,
 }
 
 /// A command the client runs itself, on every kind, and never sends to the
@@ -213,6 +218,8 @@ impl ClientCommand {
             description: description.to_owned(),
             argument_hint: argument_hint.to_owned(),
             source: String::new(),
+            sigil: "/".to_owned(),
+            anywhere: false,
         }
     }
 }
@@ -270,6 +277,9 @@ pub enum Slash {
     Refused {
         command: String,
         offered: Vec<String>,
+        /// How the agent takes what was meant, when it names something it
+        /// takes another way: "$name" for a Codex skill.
+        hint: Option<String>,
     },
     /// The client's command names a value the agent does not offer.
     Unknown {
@@ -359,6 +369,7 @@ pub fn slash(state: &SessionState, text: &str) -> Slash {
                     .iter()
                     .map(|offered| offered.name.clone())
                     .collect(),
+                hint: None,
             }
         }
         None => Slash::Prompt,
@@ -472,6 +483,8 @@ pub fn settings(state: &SessionState) -> SettingsView {
                     description: command.description.clone(),
                     argument_hint: command.argument_hint.clone(),
                     source: command.source.clone(),
+                    sigil: "/".to_owned(),
+                    anywhere: false,
                 }),
         )
         .collect();

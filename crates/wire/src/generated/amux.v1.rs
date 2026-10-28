@@ -2082,6 +2082,10 @@ pub struct Catalogue {
     /// How it works; empty for Claude.
     #[prost(message, repeated, tag = "4")]
     pub modes: ::prost::alloc::vec::Vec<OfferedMode>,
+    /// Codex's skills, which a person mentions as "$name" anywhere in a
+    /// message; empty for Claude, whose skills are among its commands.
+    #[prost(message, repeated, tag = "5")]
+    pub skills: ::prost::alloc::vec::Vec<OfferedSkill>,
 }
 impl ::prost::Name for Catalogue {
     const NAME: &'static str = "Catalogue";
@@ -2091,6 +2095,28 @@ impl ::prost::Name for Catalogue {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.Catalogue".into()
+    }
+}
+/// A skill Codex offers this session.
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct OfferedSkill {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub description: ::prost::alloc::string::String,
+    /// Codex's scope word for where it lives (user, repo, system).
+    #[prost(string, tag = "3")]
+    pub source: ::prost::alloc::string::String,
+}
+impl ::prost::Name for OfferedSkill {
+    const NAME: &'static str = "OfferedSkill";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.OfferedSkill".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.OfferedSkill".into()
     }
 }
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]

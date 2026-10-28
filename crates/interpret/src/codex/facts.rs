@@ -785,6 +785,7 @@ impl State {
                 commands: super::offered_commands(self.commands.iter().cloned()),
                 permissions: super::offered_permissions(),
                 modes: super::offered_modes(),
+                skills: Vec::new(),
             },
         );
     }

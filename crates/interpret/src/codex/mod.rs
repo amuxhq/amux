@@ -480,6 +480,7 @@ pub fn host_catalogue(
         commands: offered_commands(facts::offered_skills(skills)),
         permissions: offered_permissions(),
         modes: offered_modes(),
+        skills: Vec::new(),
     }
 }
 

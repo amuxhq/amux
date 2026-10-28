@@ -3,18 +3,16 @@ home |  | signed-out | 0,174,402,617
 home.chip.all | All | on | 16,172,44,44
 home.chip.needsYou | Needs you | off | 68,172,87,44
 home.chip.working | Working | off | 163,172,76,44
-home.callout.notifications | Get notified |  | 16,222,326,60
-home.callout.notifications.dismiss | Not Now |  | 342,222,44,60
-home.row.<decision-pty> | decision-pty, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,290,370,64
+home.row.<decision-pty> | decision-pty, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,218,370,64
 home.row.<decision-pty>.age.volatile | <volatile>
-home.row.<reviewer> | reviewer, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,354,370,64
+home.row.<reviewer> | reviewer, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,282,370,64
 home.row.<reviewer>.age.volatile | <volatile>
-home.row.<keeper> | keeper, Idle, The recovery state is safely stored., desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,419,370,65
+home.row.<keeper> | keeper, Idle, The recovery state is safely stored., desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,347,370,65
 home.row.<keeper>.age.volatile | <volatile>
-home.row.<keeper>.second |  |  | 40,454,236,18
-home.row.<decision-codex> | decision-codex, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,485,370,64
+home.row.<keeper>.second |  |  | 40,382,236,18
+home.row.<decision-codex> | decision-codex, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,413,370,64
 home.row.<decision-codex>.age.volatile | <volatile>
-home.row.<decision-sdk> | decision-sdk, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,549,370,64
+home.row.<decision-sdk> | decision-sdk, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,477,370,64
 home.row.<decision-sdk>.age.volatile | <volatile>
 home.newAgent | New Agent |  | 338,62,44,44
 home.accounts | Switch account |  | 24,66,36,36
@@ -22,13 +20,11 @@ hosts |  | 1 reachable | 0,174,402,617
  | All |  | 16,172,44,44
  | Needs you |  | 68,172,87,44
  | Working |  | 163,172,76,44
- | Get notified, When an agent needs you, Turn On |  | 16,222,326,60
- | Close |  | 342,222,44,60
- | decision-pty, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,290,370,64
- | reviewer, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,355,370,64
- | keeper, Idle, The recovery state is safely stored., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,419,370,65
- | decision-codex, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,485,370,64
- | decision-sdk, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,549,370,64
+ | decision-pty, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,218,370,64
+ | reviewer, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,283,370,64
+ | keeper, Idle, The recovery state is safely stored., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,347,370,65
+ | decision-codex, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,413,370,64
+ | decision-sdk, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,477,370,64
  | Agents |  | 16,127,116,42
  | Switch account |  | 24,66,37,36
  | New Agent |  | 338,62,44,44

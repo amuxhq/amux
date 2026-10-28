@@ -33,7 +33,6 @@ release = { workspace = true }
 supervisor-core = { workspace = true }
 ring = { workspace = true }
 rustls = { workspace = true }
-rustls-pemfile = { workspace = true }
 socket2 = { workspace = true }
 tokio-rustls = { workspace = true }
 tokio-util = { workspace = true }

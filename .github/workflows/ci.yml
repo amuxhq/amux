@@ -58,6 +58,27 @@ jobs:
       - name: Run the C ABI tests under the checking interpreter
         run: just miri
 
+  sanitizers:
+    name: Sanitizers (${{ matrix.kind }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [address, thread]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-08-30
+          components: rust-src
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: sanitize-${{ matrix.kind }}
+      - uses: ./.github/actions/setup-just
+      - name: Run the unsafe code's tests under the sanitizer
+        run: just sanitize ${{ matrix.kind }}
+
   codegen-and-policy:
     name: Codegen and dependency policy
     runs-on: ubuntu-latest
@@ -76,6 +97,11 @@ jobs:
         run: just proto-compat
       - name: Enforce dependency boundaries
         run: just dependency-policy
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny@0.20.2
+      - name: Check dependency advisories, licences and sources
+        run: just deny
       - name: Check the state-machine cores carry no runtime, lock or await
         run: just cores-check
       - name: Check provider messages go through the protocol crates

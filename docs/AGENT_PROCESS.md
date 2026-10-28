@@ -394,25 +394,36 @@ that exits first ends the incarnation with its exit code. On Windows the
 agent runs `--listen stdio://` and speaks JSON lines on the child's stdin and
 stdout instead. It performs the handshake itself, every
 message a `codex_protocol` value: `initialize` (client `amux`, experimental
-API on), `initialized`, then `thread/start`, or `thread/resume` with the
-thread id from `private/provider-session` for a later incarnation, with the
-spec's working directory and model. A killed agent's server, told to finish
+API on), `initialized`, then `thread/start` (id `agent-thread`), or for a
+later incarnation `thread/resume` (id `agent-resume`) with the thread id from
+`private/provider-session` and `excludeTurns`, as Codex's own app resumes, so
+a long thread's history never has to fit one message; both carry the spec's
+working directory and model. Messages from the server's socket may be up to
+128 MiB, past the websocket library's 16 MiB frame default, since one item can
+carry a turn's screenshots. A resume Codex refuses because the thread is
+archived is answered by the interpreter with `thread/unarchive` and a second
+resume; one refused because the thread's history is gone ("no rollout found")
+draws a notice and starts a new thread (`amux-fresh-thread`), which becomes
+the agent's conversation. A killed agent's server, told to finish
 by its tether, can take seconds to exit and holds the thread until it does,
 refusing anyone else's resume ("thread … already has an active writer"); the
 agent asks again every quarter of a second for up to 30 seconds before it
 hands the refusal on, and a refusal handed on ends the incarnation with
-Codex's words rather than leave it starting. The thread id the server answers with is written to
-`private/provider-session`, as is the thread a `/clear` starts (the
-interpreter's `thread/start`, ids `amux-clear-<n>`): from then on that thread
-is the agent's conversation. Straight after, the interpreter names the thread
+Codex's words rather than leave it starting. The thread id a `thread/start`
+answers with is written to `private/provider-session`, as is the thread a
+`/clear` starts (the interpreter's `thread/start`, ids `amux-clear-<n>`) and
+the one that replaces a thread with no history: from then on that thread is
+the agent's conversation. A resume keeps the thread it resumed. Straight after, the interpreter names the thread
 with the agent's name (`thread/name/set`), and names it again when the agent
 is renamed: the daemon tells a running Codex agent with a `rename` frame, and a
 resumed agent's spec carries its current name, so Codex's own app shows the
 name amux does. A thread that has not run a turn has nothing on disk, and
 Codex's own app, which resumes from what is on disk, cannot attach to it;
-naming does not change that. When the thread has no turns the interpreter
-also reads it with its turns (`thread/read`), which has Codex write it, so
-the app can attach before the first turn. Every message the server sends the agent is a fact; the
+naming does not change that. When a started thread has no turns the
+interpreter also reads it with its turns (`thread/read`), which has Codex
+write it, so the app can attach before the first turn; a resumed thread is
+already on disk, and its answer has no turns because the resume left them
+out. Every message the server sends the agent is a fact; the
 interpreter writes every request after the handshake with ids of its own
 (`amux-<n>`). A turn whose prompt carries attachments has them appended to
 its input, each as the element text the model reads (naming it and where it

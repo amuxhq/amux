@@ -135,7 +135,8 @@ async fn a_codex_agent_is_one_client_of_a_server_on_its_private_socket() {
 
 /// The thread id Codex answers with is what the next incarnation resumes;
 /// an incarnation that cannot keep it ends rather than run a thread nobody
-/// can find again. A read-only session file stands in for the full disk.
+/// can find again. A read-only session file stands in for the full disk; a
+/// resume keeps the thread it was given, so the new thread is a `/clear`'s.
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_codex_thread_that_cannot_be_kept_ends_the_incarnation() {
@@ -164,6 +165,9 @@ async fn a_codex_thread_that_cannot_be_kept_ends_the_incarnation() {
     let session = agent.dir.join(agent::PRIVATE).join("provider-session");
     std::fs::set_permissions(&session, std::fs::Permissions::from_mode(0o400)).unwrap();
     agent.resume();
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    assert_eq!(daemon.prompt(b"p2", "/clear").await, Verdict::Accepted);
     let cause = agent.exit().await;
     std::fs::set_permissions(&session, std::fs::Permissions::from_mode(0o600)).unwrap();
     match cause {

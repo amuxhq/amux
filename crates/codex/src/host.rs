@@ -271,6 +271,9 @@ fn closed() -> io::Error {
 
 #[cfg(unix)]
 mod socket {
+    /// The largest message or frame read from Codex.
+    const MAX_MESSAGE: usize = 128 * 1024 * 1024;
+
     use std::io;
     use std::path::Path;
     use std::time::Duration;
@@ -281,6 +284,7 @@ mod socket {
     use tokio::process::Child;
     use tokio_tungstenite::WebSocketStream;
     use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 
     use super::{ConnectError, Connection, Receiver, ReceiverOf, Sender, SenderOf};
 
@@ -315,10 +319,16 @@ mod socket {
             }
         };
         // The URL's host and path are what Codex's own clients send; the
-        // server reads neither for a client connection.
-        let (socket, _) = tokio_tungstenite::client_async("ws://localhost/rpc", stream)
-            .await
-            .map_err(io::Error::other)?;
+        // server reads neither for a client connection. One message can
+        // carry a turn's screenshots, past the library's 16 MiB frame and
+        // 64 MiB message defaults.
+        let config = WebSocketConfig::default()
+            .max_frame_size(Some(MAX_MESSAGE))
+            .max_message_size(Some(MAX_MESSAGE));
+        let (socket, _) =
+            tokio_tungstenite::client_async_with_config("ws://localhost/rpc", stream, Some(config))
+                .await
+                .map_err(io::Error::other)?;
         let (sink, stream) = socket.split();
         Ok(Connection {
             sender: Sender(SenderOf::Socket(sink)),

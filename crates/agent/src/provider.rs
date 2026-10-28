@@ -375,7 +375,7 @@ impl Provider {
                     result: Err(error),
                     ..
                 }) = &decoded
-                    && id == CODEX_THREAD
+                    && (id == CODEX_THREAD || id == interpret::codex::RESUME_REQUEST)
                     && error.message.contains("active writer")
                     && tokio::time::Instant::now() < writer_wait
                     && held.send(()).is_ok()
@@ -480,20 +480,29 @@ impl Provider {
             {
                 return;
             }
+            // The resume leaves the turns out, as Codex's own app does: a
+            // long thread's whole history can outgrow one message, and the
+            // interpreter needs only the thread.
             let start = match thread {
-                Some(thread_id) => ClientRequest::ThreadResume(ThreadResumeParams {
-                    thread_id,
-                    cwd: Some(cwd),
-                    model,
-                    ..Default::default()
-                }),
-                None => ClientRequest::ThreadStart(ThreadStartParams {
-                    cwd: Some(cwd),
-                    model,
-                    ..Default::default()
-                }),
+                Some(thread_id) => ClientMessage::request(
+                    RequestId::String(interpret::codex::RESUME_REQUEST.into()),
+                    ClientRequest::ThreadResume(ThreadResumeParams {
+                        thread_id,
+                        cwd: Some(cwd),
+                        model,
+                        exclude_turns: Some(true),
+                        ..Default::default()
+                    }),
+                ),
+                None => ClientMessage::request(
+                    RequestId::String(CODEX_THREAD.into()),
+                    ClientRequest::ThreadStart(ThreadStartParams {
+                        cwd: Some(cwd),
+                        model,
+                        ..Default::default()
+                    }),
+                ),
             };
-            let start = ClientMessage::request(RequestId::String(CODEX_THREAD.into()), start);
             let initialized = ClientMessage::notification(ClientNotification::Initialized(()));
             let _ = send_codex(&handshake, &codex_protocol::encode(&initialized)).await;
             let start = codex_protocol::encode(&start);

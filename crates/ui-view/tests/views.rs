@@ -3802,7 +3802,9 @@ fn codexs_always_on_a_tool_call_reads_as_every_project() {
     assert!(
         outcomes
             .iter()
-            .any(|outcome| outcome.contains("AllowAlways") && outcome.contains("search") && outcome.contains("User")),
+            .any(|outcome| outcome.contains("AllowAlways")
+                && outcome.contains("search")
+                && outcome.contains("User")),
         "no every-project choice for the tool: {outcomes:?}"
     );
 }

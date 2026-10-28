@@ -4,7 +4,8 @@ use std::collections::BTreeSet;
 
 use codex_protocol::client::{
     BackgroundTerminalsListParams, CommandApprovalResponse, ElicitationAction, ModelListParams,
-    SkillsListParams, ThreadReadParams, ThreadSetNameParams, ToolCallResponse, TurnInterruptParams,
+    SkillsListParams, ThreadIdParams, ThreadReadParams, ThreadResumeParams, ThreadSetNameParams,
+    ToolCallResponse, TurnInterruptParams,
 };
 use codex_protocol::items::{
     CommandAction, DynamicToolCallItem, McpToolCallItem, MessagePhase, PatchChangeKind,
@@ -27,15 +28,16 @@ use serde_json::Value;
 use wire::{
     AccessGrant, ApiError, BackgroundJob, CodexAsk, CodexUsage, CodexUsageWindow, CommandApproval,
     Decision, DecisionOutcome, FileChangeApproval, FormAsk, Limit, LinkAsk, McpToolApproval,
-    OfferedCommand, OfferedModel, Question, QuestionAsk, QuestionOption,
-    ReviewerVerdict, SignIn, SignInState, TaskListStatus, ToolClass, ToolDecision, ToolServer,
-    ToolServerHealth, ToolServerStatus, ToolState, Turn, TurnOutcome, UsageMeter, UsageState, Work,
-    codex_ask, codex_item, work,
+    OfferedCommand, OfferedModel, Question, QuestionAsk, QuestionOption, ReviewerVerdict, SignIn,
+    SignInState, TaskListStatus, ToolClass, ToolDecision, ToolServer, ToolServerHealth,
+    ToolServerStatus, ToolState, Turn, TurnOutcome, UsageMeter, UsageState, Work, codex_ask,
+    codex_item, work,
 };
 
 use super::{
-    AskMeta, InjectConsumption, Proposed, Request, State, Streamed, WorkState, ask_key,
-    client_message_id, elicitation_response, item_body, work_ask, work_complete,
+    AskMeta, FRESH_THREAD_REQUEST, InjectConsumption, Proposed, RESUME_REQUEST, Request, State,
+    Streamed, WorkState, ask_key, client_message_id, elicitation_response, item_body, work_ask,
+    work_complete,
 };
 use crate::claude_common::compact_json;
 use crate::shared::{Output, json_as_written, patch_first_change};
@@ -387,6 +389,121 @@ impl State {
 
     // --- responses -------------------------------------------------------
 
+    /// The account the handshake's `account/read` names.
+    fn account_answered(&mut self, result: &Value) {
+        if let Ok(response) = codex_protocol::result::<AccountReadResponse>(result) {
+            self.sign_in = Some(match response.account {
+                None => SignIn {
+                    state: SignInState::SignedOut as i32,
+                    ..Default::default()
+                },
+                Some(account) => SignIn {
+                    state: SignInState::SignedIn as i32,
+                    account: match &account {
+                        codex_protocol::server::Account::Chatgpt(chatgpt) => {
+                            some_of(chatgpt.email.as_deref())
+                        }
+                        _ => None,
+                    }
+                    .unwrap_or_else(|| account.kind().to_owned()),
+                    message: String::new(),
+                },
+            });
+        }
+    }
+
+    /// A thread answer: the handshake's, the resume after an unarchive, or
+    /// the new thread started in place of one with no history. False when
+    /// the answer names no thread.
+    fn thread_answered(
+        &mut self,
+        emit: &mut Emit,
+        result: &Value,
+        resumed: bool,
+        fresh: bool,
+    ) -> bool {
+        let Ok(response) = codex_protocol::result::<ThreadResponse>(result) else {
+            return false;
+        };
+        if fresh {
+            self.thread_id = None;
+        }
+        self.thread_started(emit, &response.thread, Some(&response), fresh);
+        if self.thread_id.as_ref() == Some(&response.thread.id) {
+            self.name_thread(emit);
+            // A resume leaves the turns out, so an empty list says nothing
+            // about a resumed thread, which Codex has already written.
+            if !resumed && response.thread.turns.is_empty() {
+                self.persist_thread(emit);
+            }
+        }
+        self.list_offers(emit);
+        true
+    }
+
+    /// Codex refused the resume of the agent's thread. An archived thread
+    /// is unarchived and resumed, as Codex's refusal asks; one whose history
+    /// is gone is replaced by a new thread, with a notice. False for any
+    /// other refusal.
+    fn resume_refused(&mut self, emit: &mut Emit, error: &RpcError) -> bool {
+        if error.message.contains(" is archived")
+            && let Some(thread_id) = self.thread_id.clone()
+        {
+            let bytes = self.request_as(
+                "amux-unarchive".into(),
+                ClientRequest::ThreadUnarchive(ThreadIdParams {
+                    thread_id,
+                    extra: Default::default(),
+                }),
+                Request::Unarchive,
+            );
+            emit.effect(Effect::ProviderWrite(bytes));
+            return true;
+        }
+        if error.message.starts_with("no rollout found") {
+            self.warning(
+                emit,
+                "missingHistory",
+                "Codex has no history left for this conversation, so a new one started.".to_owned(),
+            );
+            let params = self.new_thread();
+            let bytes = self.request_as(
+                FRESH_THREAD_REQUEST.into(),
+                ClientRequest::ThreadStart(params),
+                Request::Fresh,
+            );
+            emit.effect(Effect::ProviderWrite(bytes));
+            return true;
+        }
+        false
+    }
+
+    /// Resumes the agent's thread, without its turns.
+    fn resume(&mut self, emit: &mut Emit) {
+        let params = ThreadResumeParams {
+            thread_id: self.thread(),
+            cwd: (!self.cwd.is_empty()).then(|| self.cwd.clone()),
+            model: self.model.clone(),
+            exclude_turns: Some(true),
+            ..Default::default()
+        };
+        let bytes = self.request_as(
+            "amux-resume".into(),
+            ClientRequest::ThreadResume(params),
+            Request::Resume,
+        );
+        emit.effect(Effect::ProviderWrite(bytes));
+    }
+
+    /// Codex refused to give the agent a thread. Waiting would leave the
+    /// agent starting for good and swallow every prompt, so the incarnation
+    /// ends with Codex's own words.
+    fn refused_to_start(&mut self, emit: &mut Emit, error: &RpcError) {
+        emit.effect(Effect::Exit {
+            cause: format!("Codex refused to start: {}", error.message),
+        });
+    }
+
     fn response(&mut self, emit: &mut Emit, id: &RequestId, result: Result<Value, RpcError>) {
         let tracked = match id {
             RequestId::String(id) => self
@@ -397,51 +514,34 @@ impl State {
         };
         let Some((id, request)) = tracked else {
             // The agent process's own handshake.
+            let resumed = matches!(id, RequestId::String(id) if id == RESUME_REQUEST);
             let result = match result {
                 Ok(result) => result,
+                Err(error) if resumed && self.resume_refused(emit, &error) => return,
                 // Refused, it never brings a thread: Codex holding the
                 // thread for another server ("already has an active
-                // writer"), a thread it cannot find. Waiting would leave the
-                // agent starting for good and swallow every prompt, so the
-                // incarnation ends with Codex's own words.
-                Err(error) if is_agent_request(id) => {
-                    emit.effect(Effect::Exit {
-                        cause: format!("Codex refused to start: {}", error.message),
-                    });
-                    return;
-                }
+                // writer"), a thread it cannot find.
+                Err(error) if is_agent_request(id) => return self.refused_to_start(emit, &error),
                 Err(_) => return,
             };
-            if let Ok(response) = codex_protocol::result::<ThreadResponse>(&result) {
-                self.thread_started(emit, &response.thread, Some(&response));
-                if self.thread_id.as_ref() == Some(&response.thread.id) {
-                    self.name_thread(emit);
-                    if response.thread.turns.is_empty() {
-                        self.persist_thread(emit);
-                    }
-                }
-                self.list_offers(emit);
-            } else if let Ok(response) = codex_protocol::result::<AccountReadResponse>(&result) {
-                self.sign_in = Some(match response.account {
-                    None => SignIn {
-                        state: SignInState::SignedOut as i32,
-                        ..Default::default()
-                    },
-                    Some(account) => SignIn {
-                        state: SignInState::SignedIn as i32,
-                        account: match &account {
-                            codex_protocol::server::Account::Chatgpt(chatgpt) => {
-                                some_of(chatgpt.email.as_deref())
-                            }
-                            _ => None,
-                        }
-                        .unwrap_or_else(|| account.kind().to_owned()),
-                        message: String::new(),
-                    },
-                });
+            if !self.thread_answered(emit, &result, resumed, false) {
+                self.account_answered(&result);
             }
             return;
         };
+        match request {
+            Request::Unarchive | Request::Resume | Request::Fresh => {
+                return match result {
+                    Ok(_) if request == Request::Unarchive => self.resume(emit),
+                    Ok(result) => {
+                        let fresh = request == Request::Fresh;
+                        self.thread_answered(emit, &result, !fresh, fresh);
+                    }
+                    Err(error) => self.refused_to_start(emit, &error),
+                };
+            }
+            _ => {}
+        }
         if let Request::Models { page, listed } = request {
             return self.models_listed(emit, page, listed, result.ok().as_ref());
         }
@@ -501,7 +601,10 @@ impl State {
                     | Request::Name
                     | Request::Persist
                     | Request::Skills
-                    | Request::Jobs { .. } => {}
+                    | Request::Jobs { .. }
+                    | Request::Unarchive
+                    | Request::Resume
+                    | Request::Fresh => {}
                 }
                 return;
             }
@@ -543,7 +646,10 @@ impl State {
             | Request::Name
             | Request::Persist
             | Request::Skills
-            | Request::Jobs { .. } => {}
+            | Request::Jobs { .. }
+            | Request::Unarchive
+            | Request::Resume
+            | Request::Fresh => {}
         }
     }
 
@@ -810,6 +916,7 @@ impl State {
         emit: &mut Emit,
         thread: &Thread,
         response: Option<&ThreadResponse>,
+        fresh: bool,
     ) {
         let Some(id) = some(&thread.id) else {
             return;
@@ -856,7 +963,7 @@ impl State {
         self.shared.provider_started();
         let kind = if some_of(thread.forked_from_id.as_deref()).is_some() {
             wire::BoundaryKind::Forked
-        } else if self.incarnation > 1 || !thread.turns.is_empty() {
+        } else if !fresh && (self.incarnation > 1 || !thread.turns.is_empty()) {
             wire::BoundaryKind::Resumed
         } else {
             wire::BoundaryKind::Started
@@ -1239,7 +1346,7 @@ impl State {
         }
         match notification {
             ServerNotification::ThreadStarted(started) => {
-                self.thread_started(emit, &started.thread, None);
+                self.thread_started(emit, &started.thread, None, false);
             }
             ServerNotification::TurnStarted(started) => {
                 self.plan_overtaken(emit);
@@ -1433,9 +1540,7 @@ impl State {
             ServerNotification::DeprecationNotice(notice) => {
                 self.warning(emit, "deprecationNotice", notice_words(notice))
             }
-            ServerNotification::Warning(warning) => {
-                self.warning(emit, "warning", warning.message)
-            }
+            ServerNotification::Warning(warning) => self.warning(emit, "warning", warning.message),
             ServerNotification::GuardianWarning(warning) => {
                 self.warning(emit, "guardianWarning", warning.message)
             }

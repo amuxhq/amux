@@ -561,7 +561,9 @@ fn an_mcp_approval_answered_always_persists_it() {
     )));
     assert_eq!(
         writes(&answered.effects),
-        [json!({"id": 0, "result": {"action": "accept", "content": {}, "_meta": {"persist": "always"}}})]
+        [
+            json!({"id": 0, "result": {"action": "accept", "content": {}, "_meta": {"persist": "always"}}})
+        ]
     );
 }
 
@@ -1821,7 +1823,10 @@ fn a_reroute_leaves_the_chosen_model_and_shows_codexs_warning() {
         "threadId": "t1", "message": "Your request was routed to fallback. Apply for access at https://example.com"}}));
     assert_eq!(agent.snapshot.model.as_deref(), Some("m"));
     assert!(
-        agent.items.iter().any(|item| item.text.contains("routed to fallback")),
+        agent
+            .items
+            .iter()
+            .any(|item| item.text.contains("routed to fallback")),
         "Codex's warning was not drawn"
     );
     let cleared = agent.prompt(b"p1", "/clear");
@@ -1867,8 +1872,7 @@ fn resuming() -> Driven {
     };
     let state = std::mem::replace(&mut first.state, Codex::initial(&spec, "test").0);
     let (state, step) = Codex::reincarnate(state, &spec, "test");
-    let snapshot =
-        wire::CodexSnapshot::decode(step.snapshot.unwrap().body.as_slice()).unwrap();
+    let snapshot = wire::CodexSnapshot::decode(step.snapshot.unwrap().body.as_slice()).unwrap();
     Driven {
         state,
         snapshot,
@@ -1908,7 +1912,10 @@ fn an_archived_thread_is_unarchived_and_resumed() {
     let mut agent = resuming();
     let refused = agent.rpc(json!({"id": "agent-resume", "error": {"code": -32600,
         "message": "session t1 is archived. Run `codex unarchive t1` to unarchive it first."}}));
-    assert!(!exits(&refused), "the archived thread ended the incarnation");
+    assert!(
+        !exits(&refused),
+        "the archived thread ended the incarnation"
+    );
     let sent = writes(&refused.effects);
     let unarchive = sent
         .iter()
@@ -1935,7 +1942,10 @@ fn a_thread_with_no_history_starts_afresh_with_a_notice() {
     let mut agent = resuming();
     let refused = agent.rpc(json!({"id": "agent-resume", "error": {"code": -32600,
         "message": "no rollout found for thread id t1"}}));
-    assert!(!exits(&refused), "the missing history ended the incarnation");
+    assert!(
+        !exits(&refused),
+        "the missing history ended the incarnation"
+    );
     assert!(
         agent.items.iter().any(|item| item.text.contains("history")),
         "the person is not told the conversation started over"

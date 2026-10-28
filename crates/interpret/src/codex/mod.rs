@@ -153,10 +153,18 @@ pub const CLEAR_REQUEST: &str = "amux-clear-";
 /// thread.
 pub const THREAD_REQUEST: &str = "agent-thread";
 
+/// The agent process's handshake request that resumes the thread a later
+/// incarnation continues, without its turns.
+pub const RESUME_REQUEST: &str = "agent-resume";
+
+/// The interpreter's request for a new thread when the one being resumed
+/// has no history left.
+pub const FRESH_THREAD_REQUEST: &str = "amux-fresh-thread";
+
 /// Whether the answer to request `id` names a thread the agent keeps as its
 /// conversation, which the next incarnation resumes.
 pub fn starts_a_thread(id: &str) -> bool {
-    id == THREAD_REQUEST || id.starts_with(CLEAR_REQUEST)
+    id == THREAD_REQUEST || id == FRESH_THREAD_REQUEST || id.starts_with(CLEAR_REQUEST)
 }
 
 /// A slash command typed for Codex.
@@ -241,6 +249,12 @@ enum Request {
     Compact,
     /// `thread/start` for `/clear`.
     Clear,
+    /// `thread/unarchive` for the thread a resume found archived.
+    Unarchive,
+    /// `thread/resume` once that thread is unarchived.
+    Resume,
+    /// `thread/start` in place of a thread whose history is gone.
+    Fresh,
     /// `review/start` for `/review`.
     Review,
     Inject {
@@ -726,6 +740,21 @@ impl State {
 
     /// A request under an id of its own choosing, outside the numbered run
     /// that turns and their controls take.
+    /// A new thread in the agent's folder, on its model and permission.
+    fn new_thread(&self) -> ThreadStartParams {
+        let named = self.permission_value().and_then(permission);
+        ThreadStartParams {
+            cwd: (!self.cwd.is_empty()).then(|| self.cwd.clone()),
+            model: self.model.clone(),
+            approval_policy: named
+                .map(|named| AskForApproval::Named(ApprovalPolicy::parse(named.approval_policy))),
+            approvals_reviewer: named
+                .map(|named| ApprovalsReviewer::parse(named.approvals_reviewer)),
+            sandbox: named.map(|named| SandboxMode::parse(named.sandbox)),
+            ..Default::default()
+        }
+    }
+
     fn request_as(&mut self, id: String, message: ClientRequest, request: Request) -> Vec<u8> {
         self.requests.insert(id.clone(), request);
         codex_protocol::encode(&ClientMessage::request(RequestId::String(id), message))
@@ -1038,18 +1067,7 @@ impl State {
             Some(Command::Clear) => {
                 self.shared.reflect_prompt();
                 self.clears += 1;
-                let named = self.permission_value().and_then(permission);
-                let params = ThreadStartParams {
-                    cwd: (!self.cwd.is_empty()).then(|| self.cwd.clone()),
-                    model: self.model.clone(),
-                    approval_policy: named.map(|named| {
-                        AskForApproval::Named(ApprovalPolicy::parse(named.approval_policy))
-                    }),
-                    approvals_reviewer: named
-                        .map(|named| ApprovalsReviewer::parse(named.approvals_reviewer)),
-                    sandbox: named.map(|named| SandboxMode::parse(named.sandbox)),
-                    ..Default::default()
-                };
+                let params = self.new_thread();
                 let bytes = self.request_as(
                     format!("{CLEAR_REQUEST}{}", self.clears),
                     ClientRequest::ThreadStart(params),

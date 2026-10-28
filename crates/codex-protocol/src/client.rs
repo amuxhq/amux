@@ -21,6 +21,7 @@ method_enum! {
         "initialize" => Initialize(InitializeParams),
         "thread/start" => ThreadStart(ThreadStartParams),
         "thread/resume" => ThreadResume(ThreadResumeParams),
+        "thread/unarchive" => ThreadUnarchive(ThreadIdParams),
         "thread/name/set" => ThreadSetName(ThreadSetNameParams),
         "thread/read" => ThreadRead(ThreadReadParams),
         "thread/list" => ThreadList(ThreadListParams),

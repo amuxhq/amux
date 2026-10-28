@@ -855,6 +855,7 @@ dependencies = [
  "codex",
  "codex-protocol",
  "futures-util",
+ "pty-host",
  "redaction",
  "replay-support",
  "semver",
@@ -3436,6 +3437,7 @@ dependencies = [
  "bytes",
  "libc",
  "portable-pty",
+ "tempfile",
  "thiserror 2.0.20",
  "tokio",
 ]

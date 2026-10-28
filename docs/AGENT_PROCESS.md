@@ -372,7 +372,10 @@ or `--resume <id>` (kept in `private/provider-session` as for terminal
 Claude, and replaced the same way), `--settings <json>` and `--mcp-config`.
 A reset gives Claude a new session, which the interpreter names once Claude's
 next `init` reports it; the agent saves it and names it on later user
-messages. Claude reports nothing until
+messages. Claude leads a process group of its own and finishes its turn
+after its input closes, so on Unix it is tethered as a Codex server on a
+socket is (see [Codex](#codex)): an agent that dies, however it dies, takes
+it with it. Claude reports nothing until
 asked, so the agent writes an `initialize` control request at once, built
 from `claude_protocol::stream` types like every line written to Claude; its
 answer is what says Claude takes input, and it lists the models and commands

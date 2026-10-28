@@ -218,6 +218,19 @@ impl Provider {
             source,
         })?;
         let pid = child.id();
+        // Claude finishes its turn after its input closes: tethered, it is
+        // asked to finish when the agent dies instead.
+        #[cfg(unix)]
+        let tether = match pty_host::Tether::new(&child) {
+            Ok(tether) => tether,
+            Err(source) => {
+                let _ = child.start_kill();
+                return Err(ProviderError::Spawn {
+                    command: "Claude's tether".to_owned(),
+                    source,
+                });
+            }
+        };
         let stdin = child.stdin.take().expect("stdin is piped");
         let stdout = child.stdout.take().expect("stdout is piped");
 
@@ -245,6 +258,8 @@ impl Provider {
                     child.wait().await
                 }
             };
+            #[cfg(unix)]
+            tether.release().await;
             let _ = tokio::time::timeout(TRAILING_OUTPUT, reader).await;
             let code = status.ok().and_then(|status| status.code());
             let _ = exited.send(ProviderEvent::Exited(code)).await;
@@ -320,7 +335,7 @@ impl Provider {
         let pid = child.id();
         #[cfg(unix)]
         let tether = match &listen {
-            codex::host::Listen::Unix(_) => match codex::host::Tether::new(&child) {
+            codex::host::Listen::Unix(_) => match pty_host::Tether::new(&child) {
                 Ok(tether) => Some(tether),
                 Err(source) => {
                     let _ = child.start_kill();

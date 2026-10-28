@@ -329,7 +329,7 @@ permission = "default"
 
 `theme = "terminal"` asks the terminal for its own colours at startup and derives the palette from them, falling back
 to the shipped dark palette when the terminal does not answer. A theme file's path is resolved beside the config
-file (YAML, as base16 and base24 schemes are published); its `tokens:` may name any semantic token directly (`attention: "#5f87d7"`). `color = "auto"` reads `COLORTERM`
+file (YAML, as base16 and base24 schemes are published, with the colours under `palette:` or at the top level); its `tokens:` may name any semantic token directly (`attention: "#5f87d7"`). `color = "auto"` reads `COLORTERM`
 and `TERM` to choose truecolor or ANSI, and `NO_COLOR` turns colour off.
 
 ## Keys

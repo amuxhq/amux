@@ -18,9 +18,6 @@ ignore = [
     # Unmaintained, with no known flaw. fontdue reads the fonts the test
     # screenshot renderer ships with; nothing shipped renders a font.
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser reads only the test renderer's own fonts" },
-    # Unmaintained, with no known flaw. serde_yaml parses terminal colour
-    # themes from the user's own files.
-    { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml parses only local theme files" },
 ]
 
 [licenses]

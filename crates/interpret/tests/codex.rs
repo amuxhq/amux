@@ -1658,3 +1658,82 @@ fn a_prompt_over_codexs_limit_is_refused_before_it_is_sent() {
         "a prompt at the limit was refused"
     );
 }
+
+/// A Codex agent driven by authored facts, keeping the last snapshot and
+/// every item its steps wrote.
+struct Driven {
+    state: State,
+    snapshot: wire::CodexSnapshot,
+    items: Vec<wire::Item>,
+}
+
+impl Driven {
+    /// An agent whose thread `t1` has started.
+    fn started() -> Self {
+        use prost::Message as _;
+        let spec = wire::AgentSpec {
+            agent_id: b"agent".to_vec(),
+            ..Default::default()
+        };
+        let (state, step) = Codex::initial(&spec, "test");
+        let snapshot = wire::CodexSnapshot::decode(
+            step.snapshot.expect("an initial snapshot").body.as_slice(),
+        )
+        .unwrap();
+        let mut driven = Driven {
+            state,
+            snapshot,
+            items: Vec::new(),
+        };
+        driven.rpc(
+            json!({"id": 2, "result": {"thread": {"id": "t1", "cliVersion": "0.163.0", "turns": []}, "model": "m"}}),
+        );
+        driven
+    }
+
+    fn step(&mut self, event: Event) -> interpret::Stepped {
+        use prost::Message as _;
+        let stepped = Codex::step(&mut self.state, event);
+        if let Some(snapshot) = &stepped.step.snapshot {
+            self.snapshot = wire::CodexSnapshot::decode(snapshot.body.as_slice()).unwrap();
+        }
+        self.items.extend(stepped.step.items.iter().cloned());
+        stepped
+    }
+
+    fn rpc(&mut self, message: Value) -> interpret::Stepped {
+        self.step(rpc(message))
+    }
+
+    /// The writes a prompt makes.
+    fn prompt(&mut self, id: &[u8], text: &str) -> Vec<Value> {
+        writes(&self.step(prompt(id, text)).effects)
+    }
+}
+
+fn rate_limits(id: Option<&str>, used: i64) -> Value {
+    let mut limits = json!({
+        "primary": {"usedPercent": used, "windowDurationMins": 300, "resetsAt": 1_800_000_000},
+    });
+    if let Some(id) = id {
+        limits["limitId"] = json!(id);
+    }
+    json!({"method": "account/rateLimits/updated", "params": {"rateLimits": limits}})
+}
+
+/// Codex reports several limits, each under its own id; the meter is the
+/// `codex` limit's (an update without an id is that one), as in Codex's own
+/// app, so another limit's update leaves it alone.
+#[test]
+fn the_usage_meter_reads_the_codex_limit_only() {
+    let mut agent = Driven::started();
+    agent.rpc(rate_limits(None, 12));
+    agent.rpc(rate_limits(Some("other_model"), 100));
+    let usage = agent.snapshot.usage.clone().expect("usage");
+    let used = usage.windows[0].meter.as_ref().unwrap().used_percent;
+    assert_eq!(used, 12.0, "another limit's update moved the meter");
+    assert_ne!(usage.state(), wire::UsageState::Blocked);
+    agent.rpc(rate_limits(Some("codex"), 40));
+    let usage = agent.snapshot.usage.clone().unwrap();
+    assert_eq!(usage.windows[0].meter.as_ref().unwrap().used_percent, 40.0);
+}

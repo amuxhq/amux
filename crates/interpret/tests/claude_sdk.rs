@@ -1664,3 +1664,97 @@ fn a_background_subagents_calls_and_asks_outlive_the_turn() {
         "its asks close when its task ends"
     );
 }
+
+fn result_frame(uuid: &str, extra: Value) -> Event {
+    let mut frame = json!({
+        "type": "result", "subtype": "success", "uuid": uuid, "session_id": "s",
+        "is_error": false, "duration_ms": 10, "num_turns": 1, "result": "",
+    });
+    frame
+        .as_object_mut()
+        .unwrap()
+        .extend(extra.as_object().unwrap().clone());
+    stream(frame)
+}
+
+fn turn_outcomes(stepped: &interpret::Stepped) -> Vec<wire::TurnOutcome> {
+    use prost::Message as _;
+    stepped
+        .step
+        .items
+        .iter()
+        .filter_map(
+            |item| match wire::ClaudeSdkItem::decode(&item.body[..]).ok()?.kind? {
+                wire::claude_sdk_item::Kind::Turn(turn) => Some(turn.outcome()),
+                _ => None,
+            },
+        )
+        .collect()
+}
+
+/// While a person's prompt is open, a result that answers none of amux's
+/// messages (Claude's own background work finishing) is not that prompt's:
+/// the turn, its asks and its calls carry on, and the prompt's own result
+/// ends the turn.
+#[test]
+fn a_result_that_answers_none_of_amuxs_messages_leaves_the_persons_turn() {
+    for (what, foreign) in [
+        (
+            "names other messages",
+            json!({"user_message_uuids": ["someone-else"], "origin": {"kind": "task-notification"}}),
+        ),
+        (
+            "names none and is not a person's",
+            json!({"origin": {"kind": "task-notification"}}),
+        ),
+    ] {
+        let mut state = idle_on_root();
+        let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+            text: "go".into(),
+            ..Default::default()
+        });
+        ClaudeSdk::step(&mut state, sdk_input(b"p1", prompt));
+        ClaudeSdk::step(
+            &mut state,
+            stream(json!({
+                "type": "control_request", "request_id": "req-1",
+                "request": {"subtype": "can_use_tool", "tool_name": "Bash", "input": {"command": "ls"}, "tool_use_id": "toolu_1"},
+            })),
+        );
+        let stray = ClaudeSdk::step(&mut state, result_frame("r-bg", foreign));
+        assert!(turn_outcomes(&stray).is_empty(), "{what}: the turn goes on");
+        if let Some((phase, snapshot)) = sdk_snapshot(&stray) {
+            assert_ne!(phase, wire::Phase::Idle, "{what}");
+            assert_eq!(snapshot.asks.len(), 1, "{what}: the ask stays open");
+        }
+        let ours = ClaudeSdk::step(
+            &mut state,
+            result_frame("r1", json!({"user_message_uuids": [client_uuid(b"p1")]})),
+        );
+        assert_eq!(
+            turn_outcomes(&ours),
+            [wire::TurnOutcome::Completed],
+            "{what}: the prompt's own result ends it"
+        );
+    }
+}
+
+/// A result naming amux's message ends its turn even when Claude's own
+/// work began that turn: the person's prompt folded into it.
+#[test]
+fn a_task_notifications_result_naming_amuxs_message_ends_the_turn() {
+    let mut state = idle_on_root();
+    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        text: "go".into(),
+        ..Default::default()
+    });
+    ClaudeSdk::step(&mut state, sdk_input(b"p1", prompt));
+    let ended = ClaudeSdk::step(
+        &mut state,
+        result_frame(
+            "r1",
+            json!({"user_message_uuids": [client_uuid(b"p1")], "origin": {"kind": "task-notification"}}),
+        ),
+    );
+    assert_eq!(turn_outcomes(&ended), [wire::TurnOutcome::Completed]);
+}

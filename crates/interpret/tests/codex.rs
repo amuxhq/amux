@@ -1790,3 +1790,26 @@ fn a_reroute_leaves_the_chosen_model_and_shows_codexs_warning() {
         }
     }
 }
+
+/// Codex writes a turn's completion and the answer to the `turn/start` (or
+/// `review/start`) that began it from separate tasks, so the answer can come
+/// last; a late answer must not reopen the turn that already ended.
+#[test]
+fn a_late_turn_start_answer_does_not_reopen_an_ended_turn() {
+    for (text, method) in [("hello", "turn/start"), ("/review", "review/start")] {
+        let mut agent = Driven::started();
+        let sent = agent.prompt(b"p1", text);
+        let start = sent
+            .iter()
+            .find(|write| write["method"] == method)
+            .unwrap_or_else(|| panic!("{method} sent: {sent:?}"))
+            .clone();
+        agent.rpc(json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}));
+        agent.rpc(json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {"id": "turn-1", "status": "completed"}}}));
+        agent.rpc(json!({"id": start["id"], "result": {"turn": {"id": "turn-1"}}}));
+        assert_eq!(
+            agent.snapshot.active_turn, None,
+            "{method}'s late answer reopened the ended turn"
+        );
+    }
+}

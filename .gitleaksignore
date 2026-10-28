@@ -1,6 +1,7 @@
 # Keys made for tests (the stand-in cloud's token signer, a localhost TLS
 # server), committed on purpose. A future one gets its own line here.
 7234904bfb284c57e62a01c450845c0f62ead984:crates/amux/tests/relay.rs:private-key:32
+67fca9dbad66f081efe099e8ee3d5061d4ea69df:crates/node/src/auth/test_signing_key.rs:private-key:6
 ddeabf6d642368712e3b03207839dae09c4fcedb:crates/node-test-support/src/process_account.rs:private-key:27
 e379bffc31bce242f7cd997c6c0fb551eedc4a33:crates/testnet/tests/support/entitlement.rs:private-key:13
 681ee492f41a27c210260797dcf15bd24db705a0:crates/e2e-runner/src/executor.rs:private-key:260

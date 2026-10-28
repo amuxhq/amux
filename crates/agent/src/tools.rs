@@ -60,6 +60,16 @@ const ATTACH: &str = "Attach a file from this host to your reply. Returns an amu
 element; put that element in your reply exactly as returned so every viewer can open the \
 file.";
 
+/// What the server tells the model at initialize. Claude defers MCP tools
+/// behind its tool search, naming them only, but always shows a server's
+/// instructions: these say what each tool is for in the words a search
+/// for it would use, and stay short, since Claude caps them.
+const INSTRUCTIONS: &str = "amux runs a fleet of coding agents, and you are one. Use these \
+tools to work with other agents: send a message to another agent, or reply to one that \
+messaged you (send); start a child agent, claude or codex, on this or another host (spawn); \
+stop a child agent (stop); list the agents in the fleet (agents) and the hosts they run on \
+(hosts); say what you are working on (status); and attach a file to your reply (attach).";
+
 /// How the tool server reaches the daemon; the defaults are the product's.
 #[derive(Clone, Debug)]
 pub struct ToolsConfig {
@@ -196,6 +206,7 @@ impl Server {
                         .unwrap_or(PROTOCOL_VERSION),
                     "capabilities": { "tools": { "listChanged": false } },
                     "serverInfo": { "name": interpret::AMUX_TOOL_SERVER, "version": crate::VERSION },
+                    "instructions": INSTRUCTIONS,
                 }),
             ),
             "ping" => rpc_result(id, json!({})),

@@ -601,7 +601,10 @@ install path, like any MCP server it is configured with; it is not the agent
 process. The agent only names it in the provider's launch (`--mcp-config`
 for Claude, `--config mcp_servers.amux.…` for Codex), and only when the
 spec's configuration has an install path. It speaks newline-delimited
-JSON-RPC over stdio.
+JSON-RPC over stdio. Its `initialize` answer carries short instructions
+saying what each tool is for: Claude defers MCP tools behind its tool
+search and shows the model only their names, but always shows a server's
+instructions, so they are worded the way a search for the tools would be.
 
 Where an organization manages Claude's MCP servers (a `managed-mcp.json` in
 the managed-settings folder: `/Library/Application Support/ClaudeCode`,

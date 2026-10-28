@@ -603,3 +603,54 @@ async fn a_headless_claude_agent_outlives_its_daemon_and_resumes() {
 async fn a_codex_agent_outlives_its_daemon_and_resumes() {
     life_of_an_agent(Kind::Codex).await;
 }
+
+/// Headless Claude leads a process group of its own and finishes its turn
+/// after its input closes, so an agent killed outright mid-turn would leave
+/// it running with no one to answer. Tethered as Codex is, it is asked to
+/// finish when its agent dies, and killed if it has not a few seconds on.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_killed_agent_takes_its_headless_claude_with_it() {
+    let agent = Fixture::new(Kind::ClaudeSdk);
+    agent.spec(
+        1,
+        "first",
+        vec![
+            text("working"),
+            Step::WaitFor {
+                path: agent.release.clone(),
+            },
+            text("never"),
+            Step::TurnEnd,
+        ],
+    );
+    let mut process = agent.spawn(1);
+    let mut daemon = agent.dial().await;
+    agent
+        .wait("the provider to take input", |log| {
+            log.phase() == Some(Phase::Idle)
+        })
+        .await;
+    daemon.prompt(b"p1", "start").await;
+    agent
+        .wait("the turn is under way", |log| log.has_text("working"))
+        .await;
+    // SAFETY: signals the agent process this test started, alone.
+    assert_eq!(
+        unsafe { libc::kill(process.id() as libc::pid_t, libc::SIGKILL) },
+        0
+    );
+    assert!(!exits(&mut process).await.success());
+    let gone = until("headless Claude to go with its agent", || {
+        std::future::ready(
+            (!agent.anything_running())
+                .then_some(())
+                .ok_or("it runs on"),
+        )
+    })
+    .await;
+    let _ = Command::new("pkill")
+        .args(["-f", agent.dir.to_str().unwrap()])
+        .status();
+    gone.unwrap();
+}

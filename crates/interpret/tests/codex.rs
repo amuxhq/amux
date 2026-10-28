@@ -1963,3 +1963,42 @@ fn a_thread_with_no_history_starts_afresh_with_a_notice() {
         "thread": {"id": "t2", "cliVersion": "0.163.0", "turns": []}, "model": "m"}}));
     assert_eq!(agent.snapshot.thread_id.as_deref(), Some("t2"));
 }
+
+/// `/clear` moves the agent to a new thread; Codex keeps a thread loaded,
+/// with its tool servers, while a client is subscribed, so the agent
+/// unsubscribes from the old thread and from the child threads it spawned,
+/// as Codex's own app does when it switches threads.
+#[test]
+fn a_clear_unsubscribes_the_old_thread_and_its_children() {
+    let mut agent = Driven::started();
+    agent.rpc(json!({"method": "item/completed", "params": {"threadId": "t1", "turnId": "turn-1",
+        "item": {"type": "collabAgentToolCall", "id": "spawn-1", "tool": "spawnAgent",
+            "status": "completed", "senderThreadId": "t1", "receiverThreadIds": ["child-1"],
+            "prompt": "look around", "agentsStates": {}}}}));
+    let cleared = agent.prompt(b"p1", "/clear");
+    let start = cleared
+        .iter()
+        .find(|write| write["method"] == "thread/start")
+        .expect("a new thread")
+        .clone();
+    let answered = agent.rpc(json!({"id": start["id"], "result": {
+        "thread": {"id": "t2", "cliVersion": "0.163.0", "turns": []}, "model": "m"}}));
+    let mut unsubscribed: Vec<String> = writes(&answered.effects)
+        .iter()
+        .filter(|write| write["method"] == "thread/unsubscribe")
+        .map(|write| write["params"]["threadId"].as_str().unwrap().to_owned())
+        .collect();
+    unsubscribed.sort();
+    assert_eq!(unsubscribed, ["child-1", "t1"]);
+}
+
+/// Codex closes a thread only once no client is subscribed, so its own
+/// thread closing means it is gone: the incarnation ends, and the next one
+/// resumes it, rather than drawing a row nobody can read.
+#[test]
+fn the_agents_thread_closing_ends_the_incarnation() {
+    let mut agent = Driven::started();
+    let closed = agent.rpc(json!({"method": "thread/closed", "params": {"threadId": "t1"}}));
+    assert!(agent.unrecognized().is_empty(), "{:?}", agent.unrecognized());
+    assert!(exits(&closed), "the closed thread left the agent running");
+}

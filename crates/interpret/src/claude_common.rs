@@ -636,6 +636,12 @@ impl Jobs {
         self.published()
     }
 
+    /// Whether task `task_id` is a job still running, as far as Claude
+    /// has said.
+    pub(crate) fn running(&self, task_id: &str) -> bool {
+        self.jobs.contains_key(task_id)
+    }
+
     /// Claude said task `task_id` ended. Returns the jobs to publish when
     /// it was one.
     pub(crate) fn ended(&mut self, task_id: &str) -> Option<Vec<BackgroundJob>> {

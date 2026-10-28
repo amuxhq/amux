@@ -1,6 +1,6 @@
 //! Stream-JSON lines from headless Claude, read into state and items.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use claude_protocol::stream::control::{CanUseToolRequest, ControlOutcome};
 use claude_protocol::stream::init::{ContextUsage, SlashCommand};
@@ -561,6 +561,10 @@ impl State {
         let shell = task.shell;
         let summary = written_opt(report.summary);
         let key = task.tool_key.clone();
+        // A subagent that ended asks nothing more.
+        if wire.state != WireTaskState::Running as i32 {
+            self.task_asks_over(emit, &id, &key);
+        }
         // A task of a call this interpreter showed is progress on that call,
         // which stays open until the task ends: its own result only said the
         // task was launched. The notification carries the task's answer.
@@ -1113,7 +1117,7 @@ impl State {
     }
 
     fn result(&mut self, emit: &mut Emit, result: &ResultMessage) {
-        self.dismiss_asks(emit);
+        self.dismiss_asks_but_background(emit);
         // A command that ran a turn (a custom command or a skill) wrote no
         // output of its own; a later note is not its.
         self.slash = None;
@@ -1196,9 +1200,15 @@ impl State {
             },
         );
         // A call whose task outlives the turn is still open: its task's
-        // events are progress on it until the notification ends it.
-        self.tools
-            .retain(|_, tool| tool.task.as_ref().is_some_and(|task| !task.finished));
+        // events are progress on it until the notification ends it. So are
+        // the calls of a subagent it runs, which finish after the turn.
+        let open: BTreeSet<String> = self
+            .tools
+            .keys()
+            .filter(|id| self.under_running_task(id))
+            .cloned()
+            .collect();
+        self.tools.retain(|id, _| open.contains(id));
         self.blocks.clear();
     }
 
@@ -1239,6 +1249,7 @@ impl State {
                         input: String::new(),
                         suggestions: Vec::new(),
                         shape,
+                        agent: None,
                     },
                 );
                 let ask = wire::Ask {
@@ -1353,6 +1364,7 @@ impl State {
                     })
                     .collect(),
                 shape,
+                agent: asked.agent_id.clone(),
             },
         );
         let drawn = self

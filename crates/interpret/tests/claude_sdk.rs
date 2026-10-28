@@ -1626,8 +1626,9 @@ fn a_background_subagents_calls_and_asks_outlive_the_turn() {
             "is_error": false, "duration_ms": 10, "num_turns": 1, "result": "launched",
         })),
     );
-    let (_, snapshot) = sdk_snapshot(&ended).expect("a snapshot");
-    assert_eq!(snapshot.asks.len(), 1, "the subagent's ask stays open");
+    // A step publishes a snapshot only when it changes.
+    let asks = sdk_snapshot(&ended).map_or(1, |(_, snapshot)| snapshot.asks.len());
+    assert_eq!(asks, 1, "the subagent's ask stays open");
     assert!(
         tool_states(&ended)
             .iter()
@@ -1657,7 +1658,7 @@ fn a_background_subagents_calls_and_asks_outlive_the_turn() {
             "summary": "counted", "output_file": "",
         })),
     );
-    let (_, snapshot) = sdk_snapshot(&notified).expect("a snapshot");
+    let (_, snapshot) = sdk_snapshot(&notified).expect("the ask closing changes the snapshot");
     assert!(
         snapshot.asks.is_empty(),
         "its asks close when its task ends"

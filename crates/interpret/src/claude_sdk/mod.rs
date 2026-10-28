@@ -161,6 +161,9 @@ struct AskMeta {
     /// Each offered scope choice as Claude sent it, to send back.
     suggestions: Vec<String>,
     shape: AskShape,
+    /// The subagent that asked; None for the main thread.
+    #[serde(default)]
+    agent: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -823,11 +826,94 @@ impl State {
         );
     }
 
-    /// Closes every open ask without an answer: the turn or the provider
-    /// ended under it.
+    /// Closes every open ask without an answer: the provider ended under
+    /// it.
     fn dismiss_asks(&mut self, emit: &mut Emit) {
         for ask in self.shared.close_all_asks() {
             self.dismissed(emit, &ask);
+        }
+    }
+
+    /// Closes the asks a turn's end is the end of, and those `ended` says
+    /// are over, without an answer. A subagent still running in the
+    /// background keeps the asks it raised.
+    fn dismiss_asks_but_background(&mut self, emit: &mut Emit) {
+        let keys: Vec<String> = self
+            .shared
+            .asks()
+            .open_asks()
+            .iter()
+            .map(|ask| ask.key.clone())
+            .filter(|key| !self.asked_in_background(key))
+            .collect();
+        for key in keys {
+            if let Some(ask) = self.shared.close_ask(&key) {
+                self.dismissed(emit, &ask);
+            }
+        }
+    }
+
+    /// Whether the ask keyed `key` is a subagent's that still runs: one
+    /// naming a task still running, or whose call hangs under one.
+    fn asked_in_background(&self, key: &str) -> bool {
+        let Some(meta) = self.asks.get(key) else {
+            return false;
+        };
+        meta.agent.as_ref().is_some_and(|agent| {
+            self.active_tasks
+                .get(agent)
+                .is_some_and(|task| task.state == wire::TaskState::Running as i32)
+        }) || self.under_running_task(&meta.tool_use_id)
+    }
+
+    /// Whether the call `id`, or a call it hangs under, is one whose task
+    /// still runs.
+    fn under_running_task(&self, id: &str) -> bool {
+        self.call_and_parents(id).iter().any(|id| {
+            self.tools[*id]
+                .task
+                .as_ref()
+                .is_some_and(|task| !task.finished)
+        })
+    }
+
+    /// The keys of the call `id` and of each call it hangs under, nearest
+    /// first, as far as they are held.
+    fn call_and_parents<'a>(&'a self, id: &'a str) -> Vec<&'a str> {
+        let mut chain = Vec::new();
+        let mut next = id;
+        // A chain of nested calls is short; the bound guards a cycle.
+        while let Some(tool) = self.tools.get(next)
+            && chain.len() < 16
+        {
+            chain.push(next);
+            next = &tool.parent_key;
+        }
+        chain
+    }
+
+    /// The task `task` started by the call `call` ended: the asks its
+    /// subagent raised are over, without an answer.
+    fn task_asks_over(&mut self, emit: &mut Emit, task: &str, call: &str) {
+        let keys: Vec<String> = self
+            .shared
+            .asks()
+            .open_asks()
+            .iter()
+            .map(|ask| ask.key.clone())
+            .filter(|key| {
+                self.asks.get(key).is_some_and(|meta| {
+                    meta.agent.as_deref() == Some(task)
+                        || (!call.is_empty()
+                            && meta.tool_use_id != call
+                            && self.call_and_parents(&meta.tool_use_id).contains(&call))
+                })
+            })
+            .collect();
+        for key in keys {
+            if let Some(ask) = self.shared.close_ask(&key) {
+                self.dismissed(emit, &ask);
+            }
         }
     }
 

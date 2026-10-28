@@ -387,6 +387,12 @@ transcript row, in transcript order:
   arrives.
 - A prompt's row precedes the rows of the turn it began, so nothing waits for
   it.
+- The facts that end the main thread's work without saying how its asks
+  went (the `Stop` hook, a turn's duration row, a task's notification, an
+  interruption, a prompt typed outside amux) close its asks with their
+  outcome unknown, and spare those a subagent still running in the
+  background raised: Claude keeps that dialog open, so amux does, until the
+  subagent's `SubagentStop`.
 
 The rest of the items a chat shows for terminal Claude do not come from hooks
 either: the agent-message item is written when the interpreter accepts the
@@ -592,7 +598,11 @@ nothing is inferred.
 - **Turns.** A turn starts with a submission or a `message_start`, and ends on
   the `result` line: completed, interrupted, or failed (with an error item
   for a non-success subtype), with its duration on the turn item.
-  The result dismisses any ask still open.
+  The result dismisses the main thread's asks still open. An ask a
+  subagent still running in the background raised (one naming its task's
+  `agent_id`, or whose call hangs under its call) stays open, as do that
+  subagent's calls, which finish after the turn; its asks close when its
+  task's notification says it ended.
 - **Boundaries.** Claude repeats its `init` at every turn; only a process
   start, a reset or a changed session id is a boundary. A
   `conversation_reset` (a `/clear`, leaving plan mode with its context

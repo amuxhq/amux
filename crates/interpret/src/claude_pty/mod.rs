@@ -1052,6 +1052,23 @@ impl State {
         }
     }
 
+    /// A fact that proves the main thread's asks are over without saying
+    /// how. A subagent Claude still runs in the background keeps the dialog
+    /// it raised open in Claude's own view: so does amux, until that
+    /// subagent stops.
+    fn close_main_threads_asks(&mut self, emit: &mut Emit) {
+        for key in self.open_ask_keys() {
+            let in_background = self
+                .asks
+                .get(&key)
+                .and_then(|meta| meta.agent.as_ref())
+                .is_some_and(|agent| self.jobs.running(agent));
+            if !in_background {
+                self.close(emit, &key, Decision::unknown());
+            }
+        }
+    }
+
     /// Writes the own item of an ask that is not a call's (an unanswerable
     /// dialog, the trust question), open or closed.
     fn emit_ask_item(&mut self, emit: &mut Emit, ask: &Ask, closed: Option<AskClosed>) {

@@ -10,6 +10,7 @@ use models::{Bounds, RelayModel, check, walk};
 /// place; a run that hangs is the test harness's bound to catch.
 const CLOUD_RELAY_STATES: u64 = 708_400;
 const DAEMON_FORWARDING_STATES: u64 = 733_500;
+const PURCHASE_STATES: u64 = 759_600;
 
 fn holds_within_budget(model: &RelayModel, budget: u64) {
     let threads = models::threads();
@@ -31,6 +32,11 @@ fn holds_within_budget(model: &RelayModel, budget: u64) {
 #[test]
 fn every_relay_forwarding_promise_holds_at_ci_bounds() {
     holds_within_budget(&RelayModel::ci(), CLOUD_RELAY_STATES);
+}
+
+#[test]
+fn every_relay_forwarding_promise_holds_across_a_purchase_at_ci_bounds() {
+    holds_within_budget(&RelayModel::purchase(), PURCHASE_STATES);
 }
 
 #[test]

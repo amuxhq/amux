@@ -150,10 +150,13 @@ public struct Design: Sendable, Equatable {
         ink: Ramp(0x1D1C1F, 0xF5F5F7),
         inkMuted: Ramp(0x5E5E66, 0x98989F),
         inkFaint: Ramp(0x8A8A93, 0x6E6E73),
-        // Petrol: cool enough to stay calm, far enough round the wheel from
-        // the indigo every AI product wears to read as instrument, not brand.
-        accent: Ramp(0x0E5F6E, 0x4FBACD),
-        onAccent: Ramp(0xFFFFFF, 0x06080B),
+        // Azure, the logo's opening blue: a few degrees toward cyan from the
+        // system's own blue so it reads as amux, and well short of the indigo
+        // every AI product wears. Dark keeps light's hue and lifts it only
+        // until it holds the same contrast on the dark card as light holds on
+        // white, so the two read as one colour and white stays legible on it.
+        accent: Ramp(0x0071C2, 0x3B90DF),
+        onAccent: Ramp(0xFFFFFF, 0xFFFFFF),
         // Read off the approved drawings rather than picked afresh, so the
         // arithmetic on a chip and the body of a diff are the same green and
         // the same red the design was signed off in.

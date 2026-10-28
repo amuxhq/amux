@@ -142,6 +142,7 @@
     "apps/apple/Amux/Sources/Composition.swift": [
       {"literal": "\"notificationsOfferDeclined\"", "context": "private static let notificationsOfferKey = \"notificationsOfferDeclined\"", "reason": "Storage filename, keychain service identifier, or relay URL syntax; not app interface copy.", "count": 1},
       {"literal": "\"shareUsage\"", "context": "private static let shareUsageKey = \"shareUsage\"", "reason": "Storage filename, keychain service identifier, or relay URL syntax; not app interface copy.", "count": 1},
+      {"literal": "\"autoReports\"", "context": "private static let autoReportsKey = \"autoReports\"", "reason": "Storage filename, keychain service identifier, or relay URL syntax; not app interface copy.", "count": 1},
       {"literal": "\"appearance\"", "context": "private static let appearanceKey = \"appearance\"", "reason": "Storage filename, keychain service identifier, or relay URL syntax; not app interface copy.", "count": 1},
       {"literal": "\"accounts.json\"", "context": "let accounts = AccountRegistry(file: AppFiles.support.appendingPathComponent(\"accounts.json\"))", "reason": "Storage filename, keychain service identifier, or relay URL syntax; not app interface copy.", "count": 1},
       {"literal": "\"-\\(Door.scriptedCloudArgument)\"", "context": ".contains(\"-\\(Door.scriptedCloudArgument)\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
@@ -436,7 +437,7 @@
       {"literal": "\"bell\"", "context": "id: \"notifications\", glyph: \"bell\",", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
       {"literal": "\"notifications\"", "context": "id: \"notifications\", glyph: \"bell\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"home\"", "context": ".identified(\"home\", value: accounts.gate.name)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"plus\"", "context": "Button { actions(.newAgent) } label: { Image(systemName: \"plus\") }", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
+      {"literal": "\"plus\"", "context": "Button { actions(.newAgent) } label: { Image(systemName: \"plus\").foregroundStyle(design.onAccent.color) }", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
       {"literal": "\"home.newAgent\"", "context": ".identified(\"home.newAgent\", label: \"New Agent\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"home.subtitle\"", "context": "LargeSubtitle(text: subtitle, identifier: \"home.subtitle\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"chevron.down\"", "context": "Image(systemName: \"chevron.down\")", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},

@@ -446,7 +446,17 @@ by `MESSAGE_SIZE_LIMIT` (16 MiB). The complete control vocabulary is:
   one `ForwardRefusal` reason: `NO_ROUTE`, `PAYMENT_REQUIRED`,
   `RATE_LIMITED` or `SHUTTING_DOWN`. The packets themselves are dropped.
 - `Reauth`: a fire-and-forget replacement token for a cloud link.
+- `RefreshCredential`: a relay asking a link on the free plan for a fresh
+  token, because another link of the same account has just presented a paid
+  one. The host fetches one and sends it as `Reauth`, as its own refresh
+  would; nothing else answers it.
 - `LinkClose`: an immediate close with a reason and optional error.
+
+After the handshake a receiver ignores a control message it does not know,
+and the link carries on: a later version may add one only when a host that
+predates it loses nothing by ignoring it. A message both ends must understand
+moves `PROTOCOL_VERSION` instead. Before the handshake is done, anything but
+the `Hello` or `HelloAck` expected is a protocol error.
 
 A host keeps what each trusted peer listed, tagged by where it came from:
 listed over a direct link, over a forwarded one, or the peer's public address,

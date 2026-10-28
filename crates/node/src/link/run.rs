@@ -844,6 +844,9 @@ async fn run_established(
                             }
                         }
                     }
+                    Ok(ConnectHandshakeEvent::Unknown) => {
+                        tracing::debug!(?link, "ignored a control message this build does not know");
+                    }
                     Ok(_) => unreachable!("handshake cannot repeat after establishment"),
                     Err(error) => {
                         let _ = out_tx.send(protocol_error_link_close(error.to_string())).await;
@@ -1125,6 +1128,12 @@ async fn handle_control_body(
                 peer_revoked(ctx, link, link.peer()).await;
             }
             ControlAction::Close(reason, link_close_status(&close))
+        }
+        // The relay saw another link of this account present a paid plan:
+        // the core refreshes this link's credential as its timer would.
+        body @ wire::pb::message::Body::RefreshCredential(_) => {
+            ctx.report_frame(link, body);
+            ControlAction::Continue
         }
         // The links the forwarder no longer carries go before the core
         // hears why, so it reads the host by the refusal and not by a

@@ -22,6 +22,7 @@ message Message {
     Addresses addresses = 7;
     ObservedAddress observed_address = 8;
     ForwardRefused forward_refused = 9;
+    RefreshCredential refresh_credential = 10;
   }
 }
 
@@ -122,6 +123,14 @@ enum ForwardRefusal {
 message Reauth {
   string auth_token = 1;
 }
+
+// From the relay to a link whose plan is free: another link of the same
+// account has just presented a paid plan, so this link's credential is
+// likely out of date. The receiver fetches a fresh credential and presents
+// it with `Reauth`, as its own refresh would, and answers nothing else. It
+// names no plan: the fresh credential says the plan, and the relay judges by
+// that alone.
+message RefreshCredential {}
 
 message Capabilities {
   // The host serves as a cloud relay.

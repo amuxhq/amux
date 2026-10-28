@@ -24,6 +24,10 @@
 //! difference between the neighbors its handshake listed and the ones
 //! there are, so a link's picture of its neighbors is never anything but
 //! this host's own links.
+//!
+//! When a link presents a paid plan, the core asks each link of its account
+//! still on the free plan for a fresh credential, so a purchase made on one
+//! device reaches the account's other hosts at once.
 
 #![forbid(unsafe_code)]
 
@@ -149,6 +153,10 @@ pub enum Output {
     Displace { link: LinkId },
     /// Tell `to` that `host` now holds a link here (`up`) or holds none.
     Neighbor { to: LinkId, host: HostId, up: bool },
+    /// Ask `link`, whose credential names the free plan, for a fresh one:
+    /// another link of its account presented a paid plan, so its own is
+    /// likely out of date.
+    RefreshCredential { link: LinkId },
     /// Take a dump: the core saw something it must not carry on from.
     Dump { reason: DumpReason },
 }
@@ -171,6 +179,10 @@ pub const LAPSE_TELLS_BOTH: Check = Check {
     id: "relay.lapse_tells_both",
     sentence: "a lapse or expiry removes every pair through the link and tells both ends",
 };
+pub const ASKS_ONLY_FREE_LINKS: Check = Check {
+    id: "relay.asks_only_free_links",
+    sentence: "a link asked for a fresh credential is up on the free plan, on the account of a paid link",
+};
 
 /// Every check the relay core makes at the end of a step.
 pub const CHECKS: &[Check] = &[
@@ -178,6 +190,7 @@ pub const CHECKS: &[Check] = &[
     FORWARDS_ONLY_PAID_PAIRS,
     NOTHING_BEFORE_ADMISSION,
     LAPSE_TELLS_BOTH,
+    ASKS_ONLY_FREE_LINKS,
 ];
 
 /// One link that is up.
@@ -296,6 +309,9 @@ struct Touched {
     /// Each link that lapsed or expired this step, with every pair removed
     /// through it and whether both ends were told.
     lapsed: Vec<(LinkId, Vec<(LinkId, bool)>)>,
+    /// Each link asked for a fresh credential this step, with the account
+    /// it was asked for.
+    asked: Vec<(LinkId, UserId)>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -502,6 +518,13 @@ impl Relay {
         for (user, host, gone, partners) in orphaned {
             self.relink(user, host, gone, partners, out);
         }
+        match tier {
+            Some(Tier::Pro) => self.ask_free_to_refresh(user, out),
+            // A credential kept from an earlier launch can name a plan the
+            // account has since left; one of its links being paid says so.
+            Some(Tier::Free) if self.account_paid(user) => self.ask_to_refresh(link, user, out),
+            _ => {}
+        }
     }
 
     /// A link went down: when it was its host's last, every other link on
@@ -701,11 +724,58 @@ impl Relay {
         }
         changed.tier = Some(tier);
         changed.expired = false;
+        let user = changed.user;
         self.touched.links.push(link);
         if tier != Tier::Free {
+            self.ask_free_to_refresh(user, out);
             return;
         }
         self.lapse(link, ForwardRefusal::PaymentRequired, out);
+    }
+
+    /// A link of `user`'s account presented a paid plan: each of its links
+    /// still on the free plan is asked for a fresh credential, so a purchase
+    /// made on one device reaches the account's other hosts at once rather
+    /// than at their next refresh. Only a paid credential asks, so a link
+    /// that comes back still free asks nothing of anyone. A link asked again
+    /// before its fresh credential comes refreshes once: its host makes one
+    /// refresh at a time.
+    fn ask_free_to_refresh(&mut self, user: UserId, out: &mut Vec<Output>) {
+        let free: Vec<LinkId> = self
+            .adjacency
+            .hosts
+            .get(&user)
+            .into_iter()
+            .flat_map(|hosts| hosts.values().flatten())
+            .copied()
+            .filter(|link| {
+                self.links
+                    .get(link)
+                    .is_some_and(|held| held.tier == Some(Tier::Free))
+            })
+            .collect();
+        for link in free {
+            self.ask_to_refresh(link, user, out);
+        }
+    }
+
+    fn ask_to_refresh(&mut self, link: LinkId, user: UserId, out: &mut Vec<Output>) {
+        self.touched.asked.push((link, user));
+        out.push(Output::RefreshCredential { link });
+    }
+
+    /// Whether a link of `user`'s account holds an unexpired paid plan.
+    fn account_paid(&self, user: UserId) -> bool {
+        self.adjacency
+            .hosts
+            .get(&user)
+            .into_iter()
+            .flat_map(|hosts| hosts.values().flatten())
+            .any(|link| {
+                self.links
+                    .get(link)
+                    .is_some_and(|held| held.tier == Some(Tier::Pro) && !held.expired)
+            })
     }
 
     /// The cheap predicates checked after every step, each in constant time
@@ -764,6 +834,22 @@ impl Relay {
                 });
             }
         }
+        for (link, user) in &self.touched.asked {
+            let fits = self
+                .links
+                .get(link)
+                .is_some_and(|asked| asked.user == *user && asked.tier == Some(Tier::Free))
+                && self.account_paid(*user);
+            if !fits {
+                return Err(Violation {
+                    invariant: ASKS_ONLY_FREE_LINKS,
+                    detail: format!(
+                        "link {} was asked for a fresh credential while it is down, paid, pinned or on an account with no paid link",
+                        link.0
+                    ),
+                });
+            }
+        }
         Ok(())
     }
 
@@ -810,7 +896,13 @@ mod tests {
 
     /// Brings a link up whose handshake listed every neighbor there is, so
     /// it is told of none.
-    fn up(relay: &mut Relay, link: u64, user: UserId, host: HostId, tier: Option<Tier>) {
+    fn up(
+        relay: &mut Relay,
+        link: u64,
+        user: UserId,
+        host: HostId,
+        tier: Option<Tier>,
+    ) -> Vec<Output> {
         let advertised = relay.neighbors(user);
         let out = step(
             relay,
@@ -824,10 +916,13 @@ mod tests {
             },
         );
         assert!(
-            out.iter()
-                .all(|output| matches!(output, Output::Neighbor { up: true, .. })),
+            out.iter().all(|output| matches!(
+                output,
+                Output::Neighbor { up: true, .. } | Output::RefreshCredential { .. }
+            )),
             "{out:?}"
         );
+        out
     }
 
     fn direct_up(
@@ -1193,6 +1288,98 @@ mod tests {
         assert_eq!(
             packet(&mut relay, 1, LAPTOP),
             refuse(1, LAPTOP, ForwardRefusal::PaymentRequired)
+        );
+    }
+
+    fn tier(relay: &mut Relay, link: u64, tier: Tier) -> Vec<Output> {
+        step(
+            relay,
+            Input::TierChanged {
+                link: LinkId(link),
+                tier,
+            },
+        )
+    }
+
+    fn asked(link: u64) -> Output {
+        Output::RefreshCredential { link: LinkId(link) }
+    }
+
+    /// A purchase made on one device reaches the account's other hosts at
+    /// once: each link still on the free plan is asked for a fresh
+    /// credential.
+    #[test]
+    fn a_link_turning_paid_asks_its_accounts_free_links_for_a_fresh_credential() {
+        let mut relay = relay();
+        up(&mut relay, 1, ALICE, DESK, Some(Tier::Free));
+        up(&mut relay, 2, ALICE, LAPTOP, Some(Tier::Free));
+        up(&mut relay, 3, ALICE, TABLET, Some(Tier::Free));
+        up(&mut relay, 4, BOB, DESK, Some(Tier::Free));
+
+        assert_eq!(
+            tier(&mut relay, 3, Tier::Pro),
+            vec![asked(2), asked(1)],
+            "only the paying account's free links, and not the paid one"
+        );
+        assert_eq!(
+            tier(&mut relay, 1, Tier::Pro),
+            vec![asked(2)],
+            "each paid credential asks the free links still left"
+        );
+        assert_eq!(tier(&mut relay, 2, Tier::Pro), Vec::new());
+        assert_eq!(packet(&mut relay, 1, LAPTOP), vec![forward(1, 2)]);
+    }
+
+    /// A link asked that comes back still free asks nothing: only a paid
+    /// credential asks, so a lapsed account's stale paid link costs its
+    /// free links one refresh, never a loop of them.
+    #[test]
+    fn a_free_link_that_refreshes_and_stays_free_asks_nothing() {
+        let mut relay = relay();
+        up(&mut relay, 1, ALICE, DESK, Some(Tier::Free));
+        assert_eq!(
+            up(&mut relay, 2, ALICE, LAPTOP, Some(Tier::Pro)),
+            vec![told(1, LAPTOP, true), asked(1)]
+        );
+
+        assert_eq!(tier(&mut relay, 1, Tier::Free), Vec::new());
+        assert_eq!(
+            tier(&mut relay, 2, Tier::Pro),
+            vec![asked(1)],
+            "the next paid renewal asks again"
+        );
+    }
+
+    #[test]
+    fn a_paid_link_coming_up_asks_its_accounts_free_links() {
+        let mut relay = relay();
+        up(&mut relay, 1, ALICE, DESK, Some(Tier::Free));
+        up(&mut relay, 2, ALICE, LAPTOP, None);
+        let out = up(&mut relay, 3, ALICE, TABLET, Some(Tier::Pro));
+        assert_eq!(
+            out,
+            vec![told(2, TABLET, true), told(1, TABLET, true), asked(1)]
+        );
+    }
+
+    /// A credential kept across launches can name a plan the account has
+    /// since left: a free link arriving where the account has a paid one is
+    /// asked at once.
+    #[test]
+    fn a_free_link_coming_up_beside_a_paid_one_is_asked_at_once() {
+        let mut paid = relay();
+        up(&mut paid, 1, ALICE, DESK, Some(Tier::Pro));
+        let out = up(&mut paid, 2, ALICE, LAPTOP, Some(Tier::Free));
+        assert_eq!(out, vec![told(1, LAPTOP, true), asked(2)]);
+
+        let mut lapsed = relay();
+        up(&mut lapsed, 1, ALICE, DESK, Some(Tier::Pro));
+        step(&mut lapsed, Input::Expired { link: LinkId(1) });
+        let out = up(&mut lapsed, 2, ALICE, LAPTOP, Some(Tier::Free));
+        assert_eq!(
+            out,
+            vec![told(1, LAPTOP, true)],
+            "an expired paid credential says nothing of the plan"
         );
     }
 

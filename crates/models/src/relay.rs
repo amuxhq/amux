@@ -9,7 +9,8 @@
 //! for any host, whenever the driver has no pair that carries them; an
 //! account's plan lapses and is bought again, and each link learns of it
 //! when it presents its next token; a link's token expires before a fresh
-//! one comes. Each link opens its handshake with the neighbors its host was
+//! one comes. When a link presents a paid plan, the relay asks its
+//! account's links still on the free plan for a fresh credential. Each link opens its handshake with the neighbors its host was
 //! told of, and its host forgets them once it holds no link here. At any
 //! point the world may stop changing.
 //!
@@ -29,8 +30,8 @@ use std::fmt;
 
 use daemon_core::{HostId, LinkId, StepBudget};
 use relay_core::{
-    DialOrder, Direct, FORWARDS_ONLY_PAID_PAIRS, Input, LAPSE_TELLS_BOTH, NOTHING_BEFORE_ADMISSION,
-    Output, Relay, Tier, UserId,
+    ASKS_ONLY_FREE_LINKS, DialOrder, Direct, FORWARDS_ONLY_PAID_PAIRS, Input, LAPSE_TELLS_BOTH,
+    NOTHING_BEFORE_ADMISSION, Output, Relay, Tier, UserId,
 };
 
 use crate::{Machine, Property};
@@ -62,6 +63,9 @@ pub struct RelayModel {
     pub pinned: bool,
     /// Times a paired host's process restarts.
     pub restarts: u8,
+    /// The accounts are paying when the world begins; otherwise their one
+    /// plan change is a purchase.
+    pub starts_paid: bool,
 }
 
 impl RelayModel {
@@ -74,6 +78,16 @@ impl RelayModel {
             expiries: 1,
             pinned: false,
             restarts: 0,
+            starts_paid: true,
+        }
+    }
+
+    /// The `just test` bounds with both accounts starting on the free plan,
+    /// so a plan change is a purchase reaching links already up.
+    pub fn purchase() -> Self {
+        Self {
+            starts_paid: false,
+            ..Self::ci()
         }
     }
 
@@ -86,6 +100,7 @@ impl RelayModel {
             expiries: 1,
             pinned: false,
             restarts: 0,
+            starts_paid: true,
         }
     }
 
@@ -209,6 +224,14 @@ pub struct State {
     kept_fallback: Option<String>,
     /// The core asked for a dump.
     dumped: Option<String>,
+    /// The first link asked for a fresh credential while not up on the
+    /// free plan beside a paid link of its account.
+    misasked: Option<String>,
+    /// The first paid presentation that left a free link of its account
+    /// unasked.
+    unasked: Option<String>,
+    /// A free link was asked for a fresh credential.
+    asked: bool,
     forwarded: bool,
     crossed: bool,
     /// The core refused a direct link, or displaced one.
@@ -231,6 +254,8 @@ impl fmt::Debug for State {
             .field("lives", &self.lives)
             .field("kept_fallback", &self.kept_fallback)
             .field("dumped", &self.dumped)
+            .field("misasked", &self.misasked)
+            .field("unasked", &self.unasked)
             .finish()
     }
 }
@@ -310,8 +335,21 @@ impl RelayModel {
     /// hosts' pictures from what it says.
     fn step(&self, s: &mut State, input: Input) {
         let label = format!("{input:?}");
+        let presenting = match input {
+            Input::LinkUp {
+                link,
+                tier: Some(Tier::Pro),
+                ..
+            }
+            | Input::TierChanged {
+                link,
+                tier: Tier::Pro,
+            } => Some(link),
+            _ => None,
+        };
         let mut out = Vec::new();
         s.relay.step(input, &mut out);
+        let mut asked = BTreeSet::new();
         for output in out {
             match output {
                 Output::Forward { a, b } => {
@@ -378,6 +416,17 @@ impl RelayModel {
                     }
                     self.forget(s, link);
                 }
+                Output::RefreshCredential { link } => {
+                    // Kept only where a property reads it, so it does not
+                    // split the states of the other worlds.
+                    if !self.starts_paid {
+                        s.asked = true;
+                    }
+                    asked.insert(link);
+                    if !self.beside_paid(s, link) && s.misasked.is_none() {
+                        s.misasked = Some(format!("asked link {} on {label}", link.0));
+                    }
+                }
                 Output::Displace { link } => {
                     s.displaced = true;
                     let kept = s.same_life(link);
@@ -395,6 +444,39 @@ impl RelayModel {
                 }
             }
         }
+        if let Some(paid) = presenting.and_then(|link| s.admitted(link)) {
+            let account = self.account(paid.host);
+            let left: Vec<LinkId> = s
+                .links
+                .iter()
+                .filter(|(id, link)| {
+                    link.admitted
+                        && link.tier == Some(Tier::Free)
+                        && self.account(link.host) == account
+                        && !asked.contains(*id)
+                })
+                .map(|(id, _)| *id)
+                .collect();
+            if !left.is_empty() && s.unasked.is_none() {
+                s.unasked = Some(format!("free links {left:?} left unasked on {label}"));
+            }
+        }
+    }
+
+    /// Whether `link` is up on the free plan beside an unexpired paid link
+    /// of its account: the only link the relay may ask for a fresh
+    /// credential.
+    fn beside_paid(&self, s: &State, link: LinkId) -> bool {
+        let Some(asked) = s
+            .admitted(link)
+            .filter(|asked| asked.tier == Some(Tier::Free))
+        else {
+            return false;
+        };
+        let account = self.account(asked.host);
+        s.links.values().any(|other| {
+            other.admitted && other.paid() == Some(true) && self.account(other.host) == account
+        })
     }
 
     /// The link went: the host forgets its neighbors once it holds none.
@@ -429,9 +511,9 @@ impl Machine for RelayModel {
 
     fn init(&self) -> State {
         let mut paid = BTreeMap::new();
-        paid.insert(ALICE, true);
+        paid.insert(ALICE, self.starts_paid || self.pinned);
         if !self.pinned {
-            paid.insert(BOB, true);
+            paid.insert(BOB, self.starts_paid);
         }
         State {
             relay: Relay::with_budget(RELAY, StepBudget::UNLIMITED),
@@ -446,6 +528,9 @@ impl Machine for RelayModel {
             early: None,
             foreign: None,
             dumped: None,
+            misasked: None,
+            unasked: None,
+            asked: false,
             lives: BTreeMap::new(),
             kept_fallback: None,
             forwarded: false,
@@ -667,6 +752,17 @@ impl Machine for RelayModel {
             Property::always("the relay core never asks for a dump", |_, s: &State| {
                 s.dumped.is_none()
             }),
+            Property::always(ASKS_ONLY_FREE_LINKS.sentence, |_, s: &State| {
+                s.misasked.is_none()
+            }),
+            Property::always(
+                "a link presenting a paid plan asks every free link of its account for a fresh credential",
+                |_, s: &State| s.unasked.is_none(),
+            ),
+            Property::sometimes(
+                "a free link is sometimes asked for a fresh credential",
+                |model: &RelayModel, s: &State| model.pinned || model.starts_paid || s.asked,
+            ),
             Property::sometimes("forwarding is sometimes in place", |_, s: &State| {
                 s.forwarded && !s.table.is_empty()
             }),

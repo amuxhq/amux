@@ -12,6 +12,10 @@ pub(crate) enum ConnectHandshakeEvent {
     Accepted(pb::HelloAccepted),
     Rejected(pb::Error),
     PostHandshake(pb::message::Body),
+    /// A control message this build does not know, after the handshake:
+    /// one a later build added. Adding a control message is allowed only if
+    /// a peer that predates it can ignore it, so the link carries on.
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -80,6 +84,9 @@ impl ConnectHandshake {
         }
 
         let Some(body) = message.body else {
+            if self.state == ConnectHandshakeState::Established {
+                return Ok(ConnectHandshakeEvent::Unknown);
+            }
             self.state = ConnectHandshakeState::Closed;
             return Err(ConnectProtocolError::MissingBody);
         };
@@ -190,6 +197,7 @@ fn body_name(body: &pb::message::Body) -> &'static str {
         pb::message::Body::Addresses(_) => "addresses",
         pb::message::Body::ObservedAddress(_) => "observed_address",
         pb::message::Body::ForwardRefused(_) => "forward_refused",
+        pb::message::Body::RefreshCredential(_) => "refresh_credential",
     }
 }
 
@@ -384,7 +392,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_message_body_closes_handshake() {
+    fn a_missing_message_body_during_the_handshake_closes_it() {
         let mut handshake = ConnectHandshake::connector();
 
         assert!(matches!(
@@ -394,6 +402,29 @@ mod tests {
         assert!(matches!(
             handshake.receive(accepted_ack()),
             Err(ConnectProtocolError::StreamClosed)
+        ));
+    }
+
+    /// A message with no body this build knows, once the handshake is
+    /// done, is one a later build added: it is ignored and the link
+    /// carries on.
+    #[test]
+    fn an_unknown_message_after_the_handshake_is_ignored() {
+        let mut handshake = ConnectHandshake::connector();
+        handshake.receive(accepted_ack()).unwrap();
+
+        assert_eq!(
+            handshake.receive(pb::Message { body: None }),
+            Ok(ConnectHandshakeEvent::Unknown)
+        );
+        assert!(handshake.is_established());
+        assert!(matches!(
+            handshake.receive(pb::Message {
+                body: Some(pb::message::Body::RefreshCredential(
+                    pb::RefreshCredential {}
+                )),
+            }),
+            Ok(ConnectHandshakeEvent::PostHandshake(_))
         ));
     }
 

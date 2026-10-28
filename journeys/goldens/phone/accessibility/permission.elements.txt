@@ -19,9 +19,9 @@ chat.title | decision-sdk | decision-sdk | 96,66,169,36
  | Always allow Bash, In this project, from now on |  | 28,512,346,225
  | Allow |  | 28,749,169,65
  | Deny… |  | 205,749,169,65
+ | Started |  | 16,124,370,54
  | Check the deployment once. |  | 16,178,370,106
  | Wants to run, deploy --check |  | 16,295,370,80
- | Started |  | 16,124,370,54
  | Back |  | 20,66,56,36
  | decision-sdk, /t/a/n/d/work · desk |  | 96,66,169,36
  | More |  | 342,66,36,36

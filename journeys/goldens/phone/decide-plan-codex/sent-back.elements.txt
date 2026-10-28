@@ -27,6 +27,9 @@ chat.title | planner-codex | planner-codex | 96,66,160,36
  | More |  | 338,710,44,44
  | Approve |  | 28,770,169,44
  | Send back… |  | 205,770,169,44
+ | Started |  | 16,63,370,34
+ | Move the journal. |  | 16,97,370,40
+ | Plan approved, Move the journal |  | 16,136,370,44
  | Worked <t> |  | 16,178,74,16
  | Implement the plan. |  | 16,208,370,40
  | Moving the journal as planned. |  | 16,260,370,20
@@ -37,9 +40,6 @@ chat.title | planner-codex | planner-codex | 96,66,160,36
  | Keep a month of logs, compressed. |  | 16,451,370,40
  | Plan proposed, Rotate the logs, Rotate the logs, 1., Rotate the daemon's log every night., 2., Compress rotated logs., 3., Delete logs older than a month. |  | 16,502,370,160
  | Worked <t> |  | 16,672,74,16
- | Started |  | 16,63,370,34
- | Move the journal. |  | 16,97,370,40
- | Plan approved, Move the journal |  | 16,136,370,44
  | Back |  | 20,66,56,36
  | planner-codex, /t/a/n/d/work · desk |  | 96,66,160,36
  | More |  | 342,66,36,36

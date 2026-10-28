@@ -250,6 +250,9 @@ pub struct CanUseToolRequest {
     pub decision_reason_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub requires_user_interaction: Option<bool>,
+    /// The subagent whose call this is; absent for the main thread's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }

@@ -630,6 +630,11 @@ impl State {
     // --- streams ---------------------------------------------------------
 
     fn stream_event(&mut self, emit: &mut Emit, event: &StreamEvent, parent: &str) {
+        // A subagent's stream is its own; its whole assistant frame carries
+        // the calls it makes.
+        if !parent.is_empty() {
+            return;
+        }
         match event {
             StreamEvent::MessageStart { message, .. } => {
                 self.stream = written(&message.id);
@@ -653,7 +658,7 @@ impl State {
                     }
                     ContentBlock::ToolUse { id, name, .. } => {
                         self.stream_tools.insert(*index, id.clone());
-                        self.tool_seen(emit, id, name, None, parent);
+                        self.tool_seen(emit, id, name, None, "");
                     }
                     _ => {}
                 }
@@ -772,8 +777,22 @@ impl State {
     // --- whole messages --------------------------------------------------
 
     fn assistant(&mut self, emit: &mut Emit, assistant: &AssistantMessage) {
-        self.shared.turn_started();
         let message = &assistant.message;
+        // A subagent's frame is its own: no turn, model, context, text or
+        // error of the main thread's, only its calls, under the call that
+        // started it.
+        if let Some(parent) = written_opt(assistant.parent_tool_use_id.as_deref()) {
+            for block in &message.content {
+                if let ContentBlock::ToolUse {
+                    id, name, input, ..
+                } = block
+                {
+                    self.tool_seen(emit, id, name, Some(input), &parent);
+                }
+            }
+            return;
+        }
+        self.shared.turn_started();
         let message_id = message.id.clone();
         if let Some(model) = written(&message.model)
             && model != "<synthetic>"
@@ -806,7 +825,6 @@ impl State {
             );
             return;
         }
-        let parent = assistant.parent_tool_use_id.as_deref().unwrap_or_default();
         let base = self.blocks.get(&message_id).copied().unwrap_or(0);
         // A built-in command Claude runs itself answers as the `<synthetic>`
         // model: the answer is the command's output, not a reply.
@@ -844,7 +862,7 @@ impl State {
                 ContentBlock::ToolUse {
                     id, name, input, ..
                 } => {
-                    self.tool_seen(emit, id, name, Some(input), parent);
+                    self.tool_seen(emit, id, name, Some(input), "");
                 }
                 other => self.shared.item(
                     emit,
@@ -939,7 +957,9 @@ impl State {
         }
         // The compaction summary Claude writes back is its own; the SDK's
         // compaction row carries the counts.
-        if message_text(content).trim_start().starts_with(INTERRUPTED) {
+        if user.parent_tool_use_id.as_deref().is_none_or(str::is_empty)
+            && message_text(content).trim_start().starts_with(INTERRUPTED)
+        {
             self.interrupted = true;
         }
     }
@@ -1244,8 +1264,15 @@ impl State {
         let input = &asked.input;
         let tool_use_id = asked.tool_use_id.clone();
         // The call's row may not have been written yet: the request names
-        // it, so the ask always has an item to point at.
-        self.tool_seen(emit, &tool_use_id, name, Some(input), "");
+        // it, so the ask always has an item to point at, under the call
+        // that started the subagent asking.
+        let parent = asked
+            .agent_id
+            .as_ref()
+            .and_then(|agent| self.active_tasks.get(agent))
+            .map(|task| task.tool_key.clone())
+            .unwrap_or_default();
+        self.tool_seen(emit, &tool_use_id, name, Some(input), &parent);
         let (server, tool) = split_tool_name(name);
         let suggestions = asked.permission_suggestions.clone().unwrap_or_default();
         let (body, shape) = match tool.as_str() {

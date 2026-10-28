@@ -608,6 +608,14 @@ nothing is inferred.
   the end of the turn that launched it, until the task's notification ends
   it with the task's answer. A task whose call this interpreter never showed
   is an item of its own.
+- **Subagents' frames.** A frame naming a `parent_tool_use_id` is a
+  subagent's, and is checked for that first: it starts no turn, sets no
+  model or context, and draws no text, thinking, error or interruption of
+  the main thread's; its tool calls are drawn under the call that started
+  it, and its stream events are skipped. A permission ask naming an
+  `agent_id` hangs under that subagent's call too. So a subagent working
+  in the background holds no turn open, and the person's next prompt goes
+  in at once.
 - **Usage.** A `rate_limit_event` states one window's status (its
   `rateLimitType`) and every window's use (`unifiedWindows`). The named
   window takes the status; every other keeps the last status stated for it,

@@ -1,3 +1,7 @@
+2026-10-28 — **The analytics spec holds across machine speeds: a step over its budget is not one of the events it compares.** Every broken check is counted now, and a core's step budget is wall-clock time, so a loaded CI runner counted a `relay.over_budget` on the desk that an idle one does not, and the spec's exact list of the desk's events failed on macOS CI.
+
+Tests: `cargo test -p testnet --test spec_analytics` passes.
+
 2026-10-28 — **A phone journey's geometry no longer depends on which journeys ran before it: every launch starts with the simulator's application accessibility on.** The system turns `AccessibilityEnabled` and `ApplicationAccessibilityEnabled` on by itself partway through journeys such as report, purchase-restore and composer-limits, and leaves them on for the rest of the lease; with them on, SwiftUI exposes a page's title, a row's combined label and the tab bar's layered copies, which it otherwise leaves out. Most goldens were recorded after the switch, so `reach-host` failed when it ran first or alone and passed after another journey, and report's first screen held the opposite. Each launch now writes both on, as the audit's VoiceOver switch does, and report's offer screen was recorded again with them on.
 
 Tests: `just ios journey reach-host` passes alone and after report; the whole phone suite passes in update mode with only report's offer screen rewritten.

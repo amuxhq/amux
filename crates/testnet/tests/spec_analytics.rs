@@ -4,7 +4,7 @@
 
 mod support;
 
-use analytics::{Event, Kind, Method, On, PairingFailure, Recording, Role};
+use analytics::{CheckCause, Event, Kind, Method, On, PairingFailure, Recording, Role};
 use node::harness::LiveRoute;
 use provider_fakes::script::Step;
 use support::*;
@@ -15,12 +15,24 @@ use wire::{ClaudeSdkInput, PromptInput, SendInputRequest, begin_pair_request, cl
 
 const SCOPE: &str = "analytics-test";
 
+/// What `host` counted, without steps that ran over their budget: a step's
+/// budget is wall-clock time, so a loaded machine counts some and an idle
+/// one none.
 fn of(recording: &Recording, host: uuid::Uuid) -> Vec<Event> {
     recording
         .events()
         .into_iter()
         .filter(|(by, _)| *by == host)
         .map(|(_, event)| event)
+        .filter(|event| {
+            !matches!(
+                event,
+                Event::CheckFailed {
+                    cause: CheckCause::OverBudget,
+                    ..
+                }
+            )
+        })
         .collect()
 }
 

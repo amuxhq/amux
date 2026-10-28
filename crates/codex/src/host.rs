@@ -435,6 +435,34 @@ mod tests {
         server.await.unwrap();
     }
 
+    /// A resumed thread's answer or a turn's item can carry screenshots well
+    /// past the websocket library's 16 MiB default frame; a 20 MiB one is
+    /// read whole.
+    #[tokio::test]
+    async fn a_frame_past_sixteen_mebibytes_is_read() {
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().join("codex.sock");
+        let listen = Listen::Unix(path.clone());
+        let mut child = idle_server(&listen);
+        let listener = UnixListener::bind(&path).unwrap();
+        let big = format!(r#"{{"blob":"{}"}}"#, "a".repeat(20 * 1024 * 1024));
+        let sent = big.clone();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+            socket.send(Message::text(sent)).await.unwrap();
+            while let Some(Ok(_)) = socket.next().await {}
+        });
+        let connection = Connection::connect(&listen, &mut child, WAIT)
+            .await
+            .unwrap();
+        let (mut sender, mut receiver) = connection.into_split();
+        let read = receiver.next().await.expect("a frame").expect("read whole");
+        assert_eq!(read.len(), big.len());
+        sender.close().await.unwrap();
+        server.await.unwrap();
+    }
+
     #[tokio::test]
     async fn a_server_that_exits_before_listening_is_reported_at_once() {
         let folder = tempfile::tempdir().unwrap();

@@ -149,6 +149,16 @@ pub const PROMPT_CHARS_MOST: usize = 1 << 20;
 /// agent process records for its next incarnation to resume.
 pub const CLEAR_REQUEST: &str = "amux-clear-";
 
+/// The agent process's handshake request that starts the agent's first
+/// thread.
+pub const THREAD_REQUEST: &str = "agent-thread";
+
+/// Whether the answer to request `id` names a thread the agent keeps as its
+/// conversation, which the next incarnation resumes.
+pub fn starts_a_thread(id: &str) -> bool {
+    id == THREAD_REQUEST || id.starts_with(CLEAR_REQUEST)
+}
+
 /// A slash command typed for Codex.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Command {

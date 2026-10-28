@@ -46,7 +46,7 @@ const FIRST_SCREEN_WAIT: Duration = Duration::from_millis(500);
 /// The request ids of the agent's own Codex handshake; the interpreter's
 /// requests are numbered amux-N.
 const CODEX_INITIALIZE: &str = "agent-initialize";
-const CODEX_THREAD: &str = "agent-thread";
+const CODEX_THREAD: &str = interpret::codex::THREAD_REQUEST;
 /// The longest a starting Codex server is waited for to listen.
 const CODEX_LISTEN_WAIT: Duration = Duration::from_secs(30);
 /// How long a resume keeps asking for a thread another Codex server still
@@ -397,8 +397,7 @@ impl Provider {
                     // `/clear` started, is the session the next incarnation
                     // resumes.
                     Some((RequestId::String(id), Some(result)))
-                        if id == CODEX_THREAD
-                            || id.starts_with(interpret::codex::CLEAR_REQUEST) =>
+                        if interpret::codex::starts_a_thread(&id) =>
                     {
                         if let Ok(answer) = codex_protocol::result::<
                             codex_protocol::server::ThreadResponse,

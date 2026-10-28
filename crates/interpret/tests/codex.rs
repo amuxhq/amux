@@ -1854,3 +1854,102 @@ fn a_late_turn_start_answer_does_not_reopen_an_ended_turn() {
         );
     }
 }
+
+/// A later incarnation's agent, whose thread `t1` the agent process is
+/// resuming with `agent-resume`.
+fn resuming() -> Driven {
+    use prost::Message as _;
+    let mut first = Driven::started();
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        incarnation: 2,
+        ..Default::default()
+    };
+    let state = std::mem::replace(&mut first.state, Codex::initial(&spec, "test").0);
+    let (state, step) = Codex::reincarnate(state, &spec, "test");
+    let snapshot =
+        wire::CodexSnapshot::decode(step.snapshot.unwrap().body.as_slice()).unwrap();
+    Driven {
+        state,
+        snapshot,
+        items: Vec::new(),
+    }
+}
+
+fn exits(stepped: &interpret::Stepped) -> bool {
+    stepped
+        .effects
+        .iter()
+        .any(|effect| matches!(effect, Effect::Exit { .. }))
+}
+
+/// A resume leaves the turns out, so its answer has none however long the
+/// thread; that is no sign of a new thread, whose history Codex has yet to
+/// write, so nothing reads the whole history back.
+#[test]
+fn a_resumed_thread_is_not_read_back_in_full() {
+    let mut agent = resuming();
+    let answered = agent.rpc(json!({"id": "agent-resume", "result": {
+        "thread": {"id": "t1", "cliVersion": "0.163.0", "turns": []}, "model": "m"}}));
+    assert!(
+        !writes(&answered.effects)
+            .iter()
+            .any(|write| write["method"] == "thread/read"),
+        "{:?}",
+        writes(&answered.effects)
+    );
+}
+
+/// An archived thread refuses a resume until it is unarchived, which
+/// Codex's own words ask for: the agent unarchives it and resumes again
+/// rather than ending the incarnation, which retries the same refusal.
+#[test]
+fn an_archived_thread_is_unarchived_and_resumed() {
+    let mut agent = resuming();
+    let refused = agent.rpc(json!({"id": "agent-resume", "error": {"code": -32600,
+        "message": "session t1 is archived. Run `codex unarchive t1` to unarchive it first."}}));
+    assert!(!exits(&refused), "the archived thread ended the incarnation");
+    let sent = writes(&refused.effects);
+    let unarchive = sent
+        .iter()
+        .find(|write| write["method"] == "thread/unarchive")
+        .unwrap_or_else(|| panic!("no unarchive: {sent:?}"));
+    assert_eq!(unarchive["params"]["threadId"], "t1");
+    let resumed = agent.rpc(json!({"id": unarchive["id"], "result": {"thread": {"id": "t1"}}}));
+    let sent = writes(&resumed.effects);
+    let resume = sent
+        .iter()
+        .find(|write| write["method"] == "thread/resume")
+        .unwrap_or_else(|| panic!("no second resume: {sent:?}"));
+    assert_eq!(resume["params"]["threadId"], "t1");
+    assert_eq!(resume["params"]["excludeTurns"], true);
+    agent.rpc(json!({"id": resume["id"], "result": {
+        "thread": {"id": "t1", "cliVersion": "0.163.0", "turns": []}, "model": "m"}}));
+    assert_eq!(agent.snapshot.thread_id.as_deref(), Some("t1"));
+}
+
+/// A thread whose history is gone cannot be resumed, archived or not: the
+/// agent says so and starts a new thread, which it keeps from then on.
+#[test]
+fn a_thread_with_no_history_starts_afresh_with_a_notice() {
+    let mut agent = resuming();
+    let refused = agent.rpc(json!({"id": "agent-resume", "error": {"code": -32600,
+        "message": "no rollout found for thread id t1"}}));
+    assert!(!exits(&refused), "the missing history ended the incarnation");
+    assert!(
+        agent.items.iter().any(|item| item.text.contains("history")),
+        "the person is not told the conversation started over"
+    );
+    let sent = writes(&refused.effects);
+    let start = sent
+        .iter()
+        .find(|write| write["method"] == "thread/start")
+        .unwrap_or_else(|| panic!("no new thread: {sent:?}"));
+    assert!(
+        interpret::codex::starts_a_thread(start["id"].as_str().unwrap()),
+        "the agent process would not keep the new thread"
+    );
+    agent.rpc(json!({"id": start["id"], "result": {
+        "thread": {"id": "t2", "cliVersion": "0.163.0", "turns": []}, "model": "m"}}));
+    assert_eq!(agent.snapshot.thread_id.as_deref(), Some("t2"));
+}

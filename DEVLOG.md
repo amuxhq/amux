@@ -1,3 +1,7 @@
+2026-10-28 — **The terminal journeys call the command line by its current names: `amux hosts` and `amux profile new`.** The command line redesign renamed `peers` to `hosts` and `profile create` to `profile new`, but `reach-host` and `keep-authority` still ran the old verbs, which now exit with an unrecognised subcommand, so both timed out waiting for a clean exit on every CI run since.
+
+Tests: `just journey terminal all` passes all 21 terminal stories.
+
 2026-10-28 — **Five phone journeys pass again: their geometry had been recorded from older code.** The accent change re-recorded the journeys on a branch whose journey driver predated launching with the notifications offer put away, so `manage-agent`, `purchase-restore` and `report` expected a "Get notified" callout the journeys now never show, and `local-network`'s link step expected the screen before the desk is found, which the step now waits for. The six geometry files are recorded again from main. Tests: those journeys, then three more passing runs of each.
 2026-10-28 — **The phone's report journey holds the fleet as journeys now launch it, with the notifications offer put away.** Its three screens still showed the offer's callout above the rows, so the journey failed on geometry alone; the callout's own component snapshot keeps it held. The manage-agent and purchase-restore goldens carry the same stale callout and are left for their own journeys' owners.
 

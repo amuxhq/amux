@@ -630,8 +630,8 @@ fn reach_host(journey: &mut TerminalJourney) -> Proved {
     journey.keys(&pane, &["h"])?;
     journey.wait_terms(&pane, &["desk", "found nearby · amux pair desk"])?;
     journey.frame(&pane, "found-not-paired")?;
-    let peers = journey.launch("peers", "laptop", &["peers"])?;
-    let listing = journey.wait_terms(&peers, &["AMUX_EXIT_0"])?;
+    let hosts = journey.launch("hosts", "laptop", &["hosts"])?;
+    let listing = journey.wait_terms(&hosts, &["AMUX_EXIT_0"])?;
     let found = [
         "desk", &desk_id, "found", "nearby", "no:", "amux", "pair", "desk",
     ];
@@ -640,7 +640,7 @@ fn reach_host(journey: &mut TerminalJourney) -> Proved {
         .any(|line| line.split_whitespace().eq(found.iter().copied()))
     {
         return Err(format!(
-            "peers does not list the desk by its id as found:\n{listing}"
+            "hosts does not list the desk by its id as found:\n{listing}"
         ));
     }
 
@@ -656,8 +656,8 @@ fn reach_host(journey: &mut TerminalJourney) -> Proved {
     identified(&paired, &desk_id)?;
     let control = negative_control(identified(&paired, "00000000-0000-0000-0000-000000000000"))?;
     journey.wait_terms(&opened, &["Pairing mode ended.", "AMUX_EXIT_0"])?;
-    let desk_peers = journey.launch("desk-peers", "desk", &["peers"])?;
-    let trusted = journey.wait_terms(&desk_peers, &["AMUX_EXIT_0"])?;
+    let desk_hosts = journey.launch("desk-hosts", "desk", &["hosts"])?;
+    let trusted = journey.wait_terms(&desk_hosts, &["AMUX_EXIT_0"])?;
     let laptop_id = journey.host_id("laptop");
     let lists_laptop = trusted.lines().any(|line| {
         let words: Vec<&str> = line.split_whitespace().collect();
@@ -698,7 +698,7 @@ fn reach_host(journey: &mut TerminalJourney) -> Proved {
     journey.frame(&pane, "usable-chat")?;
     journey.quit_client(&pane)?;
     Ok(vec![
-        "the unpaired laptop listed the desk as found, with `amux pair desk`, and `amux peers` named it by its id"
+        "the unpaired laptop listed the desk as found, with `amux pair desk`, and `amux hosts` named it by its id"
             .to_owned(),
         format!("the PIN the desk printed paired the laptop, which named desk {desk_id}"),
         control,
@@ -858,7 +858,7 @@ fn keep_authority(journey: &mut TerminalJourney) -> Proved {
     journey.request(trust("laptop", "desk"), None)?;
 
     // A second profile on the laptop is a fleet of its own.
-    let created = journey.launch("profile", "laptop", &["profile", "create", "work"])?;
+    let created = journey.launch("profile", "laptop", &["profile", "new", "work"])?;
     journey.wait_terms(&created, &["Created profile work", "AMUX_EXIT_0"])?;
     let other = journey.launch("other", "laptop", &["--profile", "work"])?;
     journey.wait_terms(&other, &["no agents yet"])?;

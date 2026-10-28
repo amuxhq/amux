@@ -719,11 +719,14 @@ extension ComponentCatalog {
         typealias F = CatalogFixtures
         return [
             overview("overview", settlesLate: true) { F.surroundings },
+            overview("overview-stop", confirming: 0, settlesLate: true) { F.surroundings },
         ]
     }()
 
+    /// `confirming` opens the stop question on that background job.
     private static func overview(
-        _ id: String, comparison: Comparison = .uncommitted, settlesLate: Bool = false,
+        _ id: String, comparison: Comparison = .uncommitted, confirming: Int? = nil,
+        settlesLate: Bool = false,
         strip: @escaping @MainActor () -> ScriptedChat.Surroundings
     ) -> ComponentExample {
         ComponentExample(
@@ -735,7 +738,11 @@ extension ComponentCatalog {
                 rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: .working),
                 strip: strip())
             ) { model in
-                ChatOverview(model: model, subject: CatalogFixtures.subject, now: CatalogFixtures.now) {}
+                let job = confirming.map { strip().overview.jobs[$0] }
+                ChatOverview(
+                    model: model, subject: CatalogFixtures.subject, now: CatalogFixtures.now,
+                    confirming: job
+                ) {}
                     .onAppear { model.compare(comparison) }
             }
         }
@@ -1005,8 +1012,8 @@ enum CatalogFixtures {
             failedServers: [ServerView(name: "github", error: "The token expired.", needsAuth: true)],
             git: git, changes: changes)
         strip.overview.jobs = [
-            JobRow(command: "npm run dev -- --port 5173", startedAtMs: ms - 14 * 60_000, kind: .shell, step: nil),
-            JobRow(command: "cargo watch -x 'test -p amux-ui'", startedAtMs: ms - 40_000, kind: .shell, step: nil),
+            JobRow(command: "npm run dev -- --port 5173", startedAtMs: ms - 14 * 60_000, kind: .shell, stop: .offered(key: "b1"), step: nil),
+            JobRow(command: "cargo watch -x 'test -p amux-ui'", startedAtMs: ms - 40_000, kind: .shell, stop: .stopping, step: nil),
         ]
         return strip
     }

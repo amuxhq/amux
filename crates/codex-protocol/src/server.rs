@@ -949,6 +949,15 @@ pub struct BackgroundTerminalsResponse {
     pub extra: Extra,
 }
 
+/// Whether `thread/backgroundTerminals/terminate` found the command to end.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackgroundTerminalTerminateResponse {
+    pub terminated: bool,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
 /// A command still running in the thread's background.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

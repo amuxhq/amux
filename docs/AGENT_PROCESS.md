@@ -389,6 +389,8 @@ and sending it SIGTERM. Its `initialize` declares `perTaskStopAffordance`:
 amux's interrupt ends the turn and leaves background work running on every
 kind, and Claude spares background subagents on an interrupt, as it spares
 background shells, only for a host that says it can stop each task itself.
+amux can: a person stops one job with `stop_task` (see
+[stopping one job](INTERPRETERS.md#background-jobs)).
 
 ### Codex
 

@@ -85,6 +85,10 @@ pub enum ChatEffect {
     Answer(wire::Input),
     /// Stop: ends the turn; the agent stays live.
     Interrupt,
+    /// Stops one background job by its key; the agent stays live.
+    StopJob {
+        key: String,
+    },
     /// Takes a queued prompt back; its words return to the composer.
     Withdraw {
         id: Vec<u8>,
@@ -315,6 +319,8 @@ pub struct ChatView {
     pub pane_keys: bool,
     /// The item the pane's keys are on.
     pane_focus: Option<pane::PaneItem>,
+    /// The Stop window asking before one background job is stopped.
+    stop_ask: Option<StopAsk>,
     /// The pane's folded sections: the client's layout for this chat, kept
     /// by the app.
     pub pane_folds: HashSet<pane::Section>,
@@ -434,6 +440,7 @@ impl ChatView {
             pane_open: false,
             pane_keys: false,
             pane_focus: None,
+            stop_ask: None,
             pane_folds: HashSet::new(),
             pane_scroll: 0,
             pane_follow: false,
@@ -688,6 +695,9 @@ impl ChatView {
             self.last_key_at = now_ms;
         }
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        if let Some(ask) = self.stop_ask.take() {
+            return self.stop_ask_key(ask, key);
+        }
         if self.review_open
             && let Some(page) = &mut self.review
         {
@@ -1266,7 +1276,7 @@ impl ChatView {
     fn pane_at(&self, items: &[pane::PaneItem]) -> Option<usize> {
         self.pane_focus
             .as_ref()
-            .and_then(|focus| items.iter().position(|item| item == focus))
+            .and_then(|focus| items.iter().position(|item| item.same(focus)))
             .or_else(|| {
                 items
                     .iter()
@@ -1300,8 +1310,35 @@ impl ChatView {
                     return self.open_item(state, item);
                 }
             }
+            // A job its provider can stop alone: the Stop window asks first.
+            KeyCode::Char('x') if key.modifiers.is_empty() => {
+                if let Some(pane::PaneItem::Job(job)) = at.and_then(|at| items.get(at))
+                    && let Some(job_key) = pane::stop_key(job)
+                {
+                    self.stop_ask = Some(StopAsk {
+                        key: job_key.to_owned(),
+                        command: text::first_line(&job.command).to_owned(),
+                        stop: true,
+                    });
+                }
+            }
             _ => {}
         }
+        vec![]
+    }
+
+    /// A key while the Stop window is open. Enter presses the focused
+    /// button, never a letter; the arrows and Tab move it; Esc cancels.
+    fn stop_ask_key(&mut self, mut ask: StopAsk, key: KeyEvent) -> Vec<ChatEffect> {
+        match key.code {
+            KeyCode::Enter if ask.stop => return vec![ChatEffect::StopJob { key: ask.key }],
+            KeyCode::Enter | KeyCode::Esc => return vec![],
+            KeyCode::Left => ask.stop = true,
+            KeyCode::Right => ask.stop = false,
+            KeyCode::Tab | KeyCode::BackTab => ask.stop = !ask.stop,
+            _ => {}
+        }
+        self.stop_ask = Some(ask);
         vec![]
     }
 
@@ -2004,8 +2041,51 @@ impl ChatView {
             page.draw(paint, area, footer, theme);
             return None;
         }
-        self.draw_turns(paint, area, state, family, footer, now_ms, theme)
+        let page = self.draw_turns(paint, area, state, family, footer, now_ms, theme);
+        if let Some(ask) = &self.stop_ask {
+            stop_window(paint, area, ask, theme);
+        }
+        page
     }
+}
+
+/// The question before one background job is stopped: which job, and the
+/// button Enter presses.
+#[derive(Clone, Debug)]
+struct StopAsk {
+    key: String,
+    command: String,
+    /// Stop has the focus, else Cancel.
+    stop: bool,
+}
+
+/// The Stop window, centred over the chat: "Stop cargo test? The agent
+/// keeps running.", then Stop and Cancel.
+fn stop_window(paint: &mut Paint<'_>, area: Rect, ask: &StopAsk, theme: Theme) {
+    let width = usize::from(area.width);
+    let (buttons, _) = crate::panel::buttons(
+        &[("Stop", true), ("Cancel", false)],
+        usize::from(!ask.stop),
+        theme,
+    );
+    let legend = crate::panel::legend(
+        &[("←→", "choose"), ("enter", "press"), ("esc", "cancel")],
+        theme,
+    );
+    let rest = "? The agent keeps running.";
+    let inner = (text::str_width("Stop ") + text::str_width(&ask.command) + text::str_width(rest))
+        .max(crate::panel::content_width(std::slice::from_ref(&legend)))
+        .clamp(36, 60)
+        .min(width.saturating_sub(8));
+    let room = inner.saturating_sub(text::str_width("Stop ") + text::str_width(rest));
+    let sentence = Line::from(vec![
+        Span::styled("Stop ", theme.text()),
+        Span::styled(text::ellipsize(&ask.command, room.max(8)), theme.code()),
+        Span::styled(rest, theme.text()),
+    ]);
+    let rows = vec![Line::default(), sentence, Line::default(), buttons, legend];
+    let lines = crate::panel::bordered("Stop", rows, inner, &[], None, theme);
+    crate::panel::centre(paint, lines, area);
 }
 
 impl ChatView {
@@ -2264,7 +2344,15 @@ impl ChatView {
         };
         let legend = || {
             if pane_keys {
-                "j/k move · enter open · esc back · ctrl+o close".to_owned()
+                let stoppable = matches!(
+                    &self.pane_focus,
+                    Some(pane::PaneItem::Job(job)) if pane::stop_key(job).is_some()
+                );
+                if stoppable {
+                    "j/k move · enter open · x stop · esc back · ctrl+o close".to_owned()
+                } else {
+                    "j/k move · enter open · esc back · ctrl+o close".to_owned()
+                }
             } else {
                 turn_hint_words(state, &self.editor, self.reach, self.leader)
             }

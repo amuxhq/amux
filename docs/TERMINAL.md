@@ -254,7 +254,11 @@ turn`.
 `ctrl+o` opens the overview beside the chat (over it on a narrow terminal): what the agent has in flight, in
 sections like home's, each foldable: its tasks (`✓` done, `●` current, `○` to do); each background job still
 running, its command with how long it has run (a subagent or monitor the provider runs itself shows its
-description after `subagent` or `monitor`), which opens the step that started it; the changed files of the
+description after `subagent` or `monitor`), which opens the step that started it. On headless Claude and Codex,
+`x` on a job opens a Stop window naming it ("Stop `cargo test`? The agent keeps running.", Stop and Cancel); a job
+asked to stop reads `Stopping…` in place of its age until the provider says it ended, and a stop the provider
+refused shows its words under the job, which can be stopped again. Terminal Claude cannot stop one job, so its
+jobs offer no stop. Then the changed files of the
 comparison the header counts, root files first and then each folder with its files and their lines added and
 removed, each opening the review page at that file; its tool servers that need signing in or failed; and, near a
 usage limit, every usage window with its name (`5-hour limit`, `Weekly limit`, `Fable weekly limit`), how full it

@@ -22,6 +22,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use claude_protocol::stream::control::{
     ApplyFlagSettingsRequest, InterruptRequest, SetModelRequest, SetPermissionModeRequest,
+    StopTaskRequest,
 };
 use claude_protocol::stream::{
     self as claude_stream, ControlRequest, ControlRequestBody, ControlResponse, ElicitationResult,
@@ -190,6 +191,8 @@ enum Request {
     /// What Claude applied: the effort it runs at, which a model change
     /// can also move.
     Settings,
+    /// A stop for one background job, by its task id.
+    StopJob(String),
 }
 
 /// What a call's task has done so far, and whether it ended.
@@ -558,7 +561,23 @@ impl State {
             // A message at the default priority joins the running turn at
             // its next tool boundary. Priority "now" is not steering: it
             // abandons the rest of the turn.
-            claude_sdk_input::Of::StopJob(_) => self.shared.reject(emit, &id, Refusal::Unsupported),
+            // The job reads stopping until Claude says it ended, as a task
+            // notification or a list without it.
+            claude_sdk_input::Of::StopJob(stop) => {
+                let Some(jobs) = self.jobs.stop_sent(&stop.key) else {
+                    return self.shared.reject(emit, &id, Refusal::Unsupported);
+                };
+                self.shared.set_jobs(jobs);
+                self.control_request(
+                    emit,
+                    Request::StopJob(stop.key.clone()),
+                    ControlRequestBody::StopTask(StopTaskRequest {
+                        task_id: stop.key,
+                        extensions: Default::default(),
+                    }),
+                );
+                self.shared.accept(emit, &id, false);
+            }
             claude_sdk_input::Of::SendNow(send) => {
                 let running = self.shared.is_busy();
                 if let Some(entry) = self

@@ -31,6 +31,8 @@ public protocol ChatSource: AnyObject, Sendable {
     func resend(_ input: [UInt8]) async -> SendOutcome?
     func discard(_ input: [UInt8])
     func interrupt() async -> ActOutcome?
+    /// Stops one background job by the key its `JobStop` gives.
+    func stopJob(_ key: String) async -> ActOutcome?
     func change(_ setting: SettingChange) async -> ActOutcome?
     func resume(with draft: Draft) async -> ActOutcome?
     func pageOlder(_ rows: UInt32) async -> PageOutcome?
@@ -1083,6 +1085,13 @@ public final class ChatModel {
     @discardableResult
     public func interrupt() -> Task<Void, Never>? {
         return act({ await $0.interrupt() })
+    }
+
+    /// Stops one background job; the agent keeps running. The job reads
+    /// stopping once the agent says so.
+    @discardableResult
+    public func stopJob(_ key: String) -> Task<Void, Never>? {
+        return act({ await $0.stopJob(key) })
     }
 
     /// Terminal Claude's own view resumed another conversation: puts this

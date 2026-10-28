@@ -58,6 +58,7 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
     func discard(_ input: [UInt8]) {}
     func draft(of input: [UInt8]) -> Draft? { drafts[input] }
     func interrupt() async -> ActOutcome? { nil }
+    func stopJob(_ key: String) async -> ActOutcome? { nil }
     func change(_ setting: SettingChange) async -> ActOutcome? { nil }
     func resume(with draft: Draft) async -> ActOutcome? { nil }
     func pageOlder(_ rows: UInt32) async -> PageOutcome? { nil }

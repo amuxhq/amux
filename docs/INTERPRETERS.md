@@ -155,9 +155,8 @@ Every snapshot body carries `BackgroundJobs`: each command or task the
 provider runs past the call that started it, with the key of that call's
 item, the command (or the task's description), when it started, and its
 kind (shell, subagent, monitor or other, unspecified while the interpreter
-does not say). The provider's own id for a job stays with the interpreter
-(the Claude interpreters track jobs by task id, Codex's by the command's
-item); no client needs it. The snapshot envelope carries how many there are, which the daemon
+does not say), and its key: the provider's own id for it (Claude's task id,
+the process id Codex lists), which a stop names. The snapshot envelope carries how many there are, which the daemon
 puts on the fleet row. The shared part holds the list and publishes it; each
 interpreter sets it from what its provider says:
 
@@ -185,6 +184,17 @@ ends their jobs; a provider killed alone can leave them running, orphaned,
 and terminal Claude's `/exit` can move the session and its jobs into
 Claude's own background. Once the provider has exited nothing reports on
 such jobs, so amux lists none.
+
+**Stopping one job.** `StopJob` names a job by its key and leaves the agent
+running. Headless Claude sends `stop_task` with the task id; Codex sends
+`thread/backgroundTerminals/terminate` with the thread and process id (ids
+`amux-stop-<key>`). The job reads `stopping` until the provider says it
+ended (Claude's task notification or a list without it; Codex's item
+completing); a refusal (Claude's error, Codex's error or `terminated:
+false`) clears `stopping` and sets `stop_error` in the provider's words,
+and the job can be stopped again. A key no running job has is refused
+unsupported. Terminal Claude has no way to stop one job, and its interpreter
+takes no `StopJob`; `ui_view` offers the stop only on the other two kinds.
 
 ## The catalogue
 

@@ -339,6 +339,11 @@ enum Request {
         #[serde(with = "serde_pb::msgs")]
         listed: Vec<BackgroundJob>,
     },
+    /// `thread/backgroundTerminals/terminate` for the job with this key,
+    /// Codex's process id.
+    StopJob {
+        key: String,
+    },
 }
 
 /// What answering an open ask needs beyond the wire ask.
@@ -1017,7 +1022,7 @@ impl State {
             _ => return self.shared.reject(emit, &id, Refusal::Unsupported),
         };
         match arm {
-            codex_input::Of::StopJob(_) => self.shared.reject(emit, &id, Refusal::Unsupported),
+            codex_input::Of::StopJob(stop) => self.stop_job(emit, &id, stop.key),
             // A `/word` that is not a command amux runs would reach the
             // model as words. A skill is mentioned as `$name` instead.
             codex_input::Of::Prompt(prompt) if Command::parse(&prompt.text) == Some(Err(())) => {

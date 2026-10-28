@@ -2305,6 +2305,19 @@ pub fn chat_overview() -> ChatScene {
     around_a_chat().1
 }
 
+/// The [`chat_overview`] with the Stop window asking before its first
+/// background job is stopped.
+pub fn chat_overview_stop() -> ChatScene {
+    let mut scene = chat_overview();
+    scene.view.open_pane();
+    scene.view.key(
+        &scene.state,
+        crossterm::event::KeyCode::Char('x').into(),
+        Theme::default(),
+    );
+    scene
+}
+
 /// The [`surroundings`], and the [`chat_overview`] built from the same
 /// parts.
 fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) {
@@ -2365,12 +2378,15 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
                 item_key: "t1".into(),
                 command: "npm run dev -- --port 5173".into(),
                 started_at_ms: now - 14 * MINUTE,
+                key: "b1".into(),
                 ..Default::default()
             },
             wire::BackgroundJob {
                 item_key: "t2".into(),
                 command: "cargo watch -x 'test -p ui-view'".into(),
                 started_at_ms: now - 40_000,
+                key: "b2".into(),
+                stopping: true,
                 ..Default::default()
             },
         ],

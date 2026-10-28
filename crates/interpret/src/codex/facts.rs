@@ -3,9 +3,9 @@
 use std::collections::BTreeSet;
 
 use codex_protocol::client::{
-    BackgroundTerminalsListParams, CommandApprovalResponse, ElicitationAction, ModelListParams,
-    SkillsListParams, ThreadIdParams, ThreadReadParams, ThreadResumeParams, ThreadSetNameParams,
-    ToolCallResponse, TurnInterruptParams,
+    BackgroundTerminalsListParams, BackgroundTerminalsTerminateParams, CommandApprovalResponse,
+    ElicitationAction, ModelListParams, SkillsListParams, ThreadIdParams, ThreadReadParams,
+    ThreadResumeParams, ThreadSetNameParams, ToolCallResponse, TurnInterruptParams,
 };
 use codex_protocol::items::{
     CommandAction, DynamicToolCallItem, FileUpdateChange, McpToolCallItem, MessagePhase,
@@ -13,10 +13,10 @@ use codex_protocol::items::{
     WebSearchItem,
 };
 use codex_protocol::server::{
-    AccountReadResponse, AutoApprovalReview, BackgroundTerminalsResponse, CommandApprovalParams,
-    CommandDecision, Decision as Offered, DeprecationNotice, ElicitationParams, ErrorNotification,
-    McpServerStatusUpdated, Model, ModelListResponse, SkillsListResponse, ThreadResponse,
-    TurnStartResponse,
+    AccountReadResponse, AutoApprovalReview, BackgroundTerminalTerminateResponse,
+    BackgroundTerminalsResponse, CommandApprovalParams, CommandDecision, Decision as Offered,
+    DeprecationNotice, ElicitationParams, ErrorNotification, McpServerStatusUpdated, Model,
+    ModelListResponse, SkillsListResponse, ThreadResponse, TurnStartResponse,
 };
 use codex_protocol::thread::{
     AskForApproval, CodexErrorInfo, RateLimitSnapshot, ReasoningEffort, SandboxPolicy, TurnError,
@@ -566,6 +566,23 @@ impl State {
         if let Request::Jobs { page, listed } = request {
             return self.jobs_listed(emit, page, listed, result.ok().as_ref());
         }
+        if let Request::StopJob { key } = request {
+            // Ended, the command's item completes and takes the job off
+            // the list; refused, the job runs on and says why.
+            let refused = match result {
+                Ok(answer) => {
+                    codex_protocol::result::<BackgroundTerminalTerminateResponse>(&answer)
+                        .ok()
+                        .filter(|answer| !answer.terminated)
+                        .map(|_| "Codex is not running it.".to_owned())
+                }
+                Err(error) => Some(error.message),
+            };
+            if let Some(error) = refused {
+                self.stop_refused(&key, error);
+            }
+            return;
+        }
         let result = match result {
             Ok(result) => result,
             Err(error) => {
@@ -610,6 +627,7 @@ impl State {
                     | Request::Persist
                     | Request::Skills
                     | Request::Jobs { .. }
+                    | Request::StopJob { .. }
                     | Request::Unarchive
                     | Request::Resume
                     | Request::Fresh
@@ -656,6 +674,7 @@ impl State {
             | Request::Persist
             | Request::Skills
             | Request::Jobs { .. }
+            | Request::StopJob { .. }
             | Request::Unarchive
             | Request::Resume
             | Request::Fresh
@@ -859,7 +878,10 @@ impl State {
             return;
         };
         let now = self.shared.now_ms();
+        // A stop sent or refused stands across a new list of the same job.
+        let held = self.shared.jobs().jobs;
         listed.extend(page.data.iter().map(|terminal| {
+            let before = held.iter().find(|job| job.key == terminal.process_id);
             BackgroundJob {
                 item_key: terminal.item_id.clone(),
                 command: terminal.command.clone(),
@@ -868,7 +890,9 @@ impl State {
                     .get(&terminal.item_id)
                     .map_or(now, |work| work.at_ms),
                 kind: wire::BackgroundKind::Shell as i32,
-                ..Default::default()
+                key: terminal.process_id.clone(),
+                stopping: before.is_some_and(|job| job.stopping),
+                stop_error: before.map(|job| job.stop_error.clone()).unwrap_or_default(),
             }
         }));
         match some_of(page.next_cursor.as_deref()) {
@@ -876,6 +900,42 @@ impl State {
                 self.list_jobs(emit, number + 1, Some(cursor), listed)
             }
             _ => self.shared.set_jobs(listed),
+        }
+    }
+
+    /// The person stops one background command by its process id: it
+    /// reads stopping until its item completes.
+    pub(super) fn stop_job(&mut self, emit: &mut Emit, id: &[u8], key: String) {
+        let mut jobs = self.shared.jobs().jobs;
+        let Some(job) = jobs
+            .iter_mut()
+            .find(|job| !key.is_empty() && job.key == key)
+        else {
+            return self.shared.reject(emit, id, wire::Refusal::Unsupported);
+        };
+        job.stopping = true;
+        job.stop_error.clear();
+        self.shared.set_jobs(jobs);
+        let bytes = self.request_as(
+            format!("amux-stop-{key}"),
+            ClientRequest::BackgroundTerminalsTerminate(BackgroundTerminalsTerminateParams {
+                thread_id: self.thread(),
+                process_id: key.clone(),
+                extra: Default::default(),
+            }),
+            Request::StopJob { key },
+        );
+        emit.effect(Effect::ProviderWrite(bytes));
+        self.shared.accept(emit, id, false);
+    }
+
+    /// Codex did not stop the job keyed `key`, saying `error`.
+    fn stop_refused(&mut self, key: &str, error: String) {
+        let mut jobs = self.shared.jobs().jobs;
+        if let Some(job) = jobs.iter_mut().find(|job| job.key == key) {
+            job.stopping = false;
+            job.stop_error = error;
+            self.shared.set_jobs(jobs);
         }
     }
 

@@ -459,6 +459,11 @@ impl Chat {
         acted(self.session.interrupt().await)
     }
 
+    /// Stops one background job by the key its `JobStop` gives.
+    pub async fn stop_job(&self, key: &str) -> ActOutcome {
+        acted(self.session.stop_job(key).await)
+    }
+
     /// Takes the agent's own view back to its conversation after it
     /// switched to another; the composer says so (`switched_away`).
     pub async fn switch_back(&self) -> ActOutcome {

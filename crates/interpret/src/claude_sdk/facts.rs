@@ -576,9 +576,13 @@ impl State {
         let shell = task.shell;
         let summary = written_opt(report.summary);
         let key = task.tool_key.clone();
-        // A subagent that ended asks nothing more.
+        // A subagent that ended asks nothing more, and a job that ended
+        // leaves the list, whether or not its call was shown.
         if wire.state != WireTaskState::Running as i32 {
             self.task_asks_over(emit, &id, &key);
+            if let Some(jobs) = self.jobs.ended(&id) {
+                self.shared.set_jobs(jobs);
+            }
         }
         // A task of a call this interpreter showed is progress on that call,
         // which stays open until the task ends: its own result only said the
@@ -611,9 +615,6 @@ impl State {
                 if let Some(jobs) = self.jobs.current() {
                     self.shared.set_jobs(jobs);
                 }
-            }
-            if finished && let Some(jobs) = self.jobs.ended(&id) {
-                self.shared.set_jobs(jobs);
             }
             if !finished {
                 tool.state = ToolState::Running as i32;
@@ -1468,6 +1469,12 @@ impl State {
                 self.ask_settings(emit);
             }
             Some(Request::Mode(mode)) if ok => self.permission_mode = Some(mode),
+            Some(Request::StopJob(task)) if !ok => {
+                let error = response.response.error.as_deref().unwrap_or_default();
+                if let Some(jobs) = self.jobs.stop_refused(&task, without_terminal_codes(error)) {
+                    self.shared.set_jobs(jobs);
+                }
+            }
             Some(Request::Effort(Some(effort))) if ok => self.effort = Some(effort),
             Some(Request::Effort(None)) if ok => self.ask_settings(emit),
             Some(Request::Settings) if ok => {

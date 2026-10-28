@@ -247,6 +247,7 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
         interrupts += 1
         return .done
     }
+    func stopJob(_ key: String) async -> ActOutcome? { .done }
 
     func change(_ setting: SettingChange) async -> ActOutcome? {
         changed.append(setting)

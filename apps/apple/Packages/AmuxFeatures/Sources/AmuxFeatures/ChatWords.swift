@@ -666,6 +666,18 @@ public enum ChatWords {
             .compactMap { $0 }.joined(separator: " ")
     }
 
+    /// The question before one background job is stopped, naming it:
+    /// "Stop cargo test?".
+    public static func stopJob(_ job: JobRow) -> String {
+        String(localized: "Stop \(firstLine(job.command))?")
+    }
+
+    /// What stopping one background job leaves alone.
+    public static let stopJobLeaves = String(localized: "The agent keeps running.")
+
+    /// A background job asked to stop that has not yet ended.
+    public static let stoppingJob = String(localized: "Stopping…")
+
     /// How long a background job has run: "40s", "14m".
     public static func ran(since startedAtMs: Int64, now: Date) -> String {
         Elapsed.spelled(max(0, now.timeIntervalSince(Date(milliseconds: startedAtMs))))

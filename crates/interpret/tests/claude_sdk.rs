@@ -1974,17 +1974,16 @@ fn a_stopped_job_reads_stopping_until_claude_says_it_ended() {
         }
         (stepped, jobs.clone())
     };
-    for task in ["b1", "b2"] {
-        step(
-            &mut state,
-            stream(json!({
-                "type": "system", "subtype": "task_started", "uuid": format!("t-{task}"),
-                "session_id": "s", "task_id": task, "task_type": "local_bash",
-                "tool_use_id": format!("toolu_{task}"), "description": format!("cargo test {task}"),
-                "is_backgrounded": true,
-            })),
-        );
-    }
+    step(
+        &mut state,
+        stream(json!({
+            "type": "system", "subtype": "background_tasks_changed", "uuid": "l1", "session_id": "s",
+            "tasks": [
+                {"task_id": "b1", "task_type": "local_bash", "description": "cargo test"},
+                {"task_id": "b2", "task_type": "local_bash", "description": "npm run dev"},
+            ],
+        })),
+    );
     let stop = |key: &str| wire::claude_sdk_input::Of::StopJob(wire::StopJob { key: key.into() });
     let stop_requests = |stepped: &interpret::Stepped| -> Vec<Value> {
         stepped

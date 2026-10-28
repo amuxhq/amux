@@ -588,6 +588,12 @@ struct Job {
     launched_after: u64,
     #[serde(default)]
     kind: i32,
+    /// A stop was sent and Claude has not said the job ended.
+    #[serde(default)]
+    stopping: bool,
+    /// Claude's refusal of the last stop.
+    #[serde(default)]
+    stop_error: String,
 }
 
 impl Jobs {
@@ -650,6 +656,28 @@ impl Jobs {
         self.jobs.contains_key(task_id)
     }
 
+    /// A stop was sent for task `task_id`. Returns the jobs to publish;
+    /// None when no job has that id.
+    pub(crate) fn stop_sent(&mut self, task_id: &str) -> Option<Vec<BackgroundJob>> {
+        let job = self.jobs.get_mut(task_id)?;
+        job.stopping = true;
+        job.stop_error.clear();
+        Some(self.published())
+    }
+
+    /// Claude refused to stop task `task_id`, saying `error`; the job runs
+    /// on. Returns the jobs to publish when it is still one.
+    pub(crate) fn stop_refused(
+        &mut self,
+        task_id: &str,
+        error: String,
+    ) -> Option<Vec<BackgroundJob>> {
+        let job = self.jobs.get_mut(task_id)?;
+        job.stopping = false;
+        job.stop_error = error;
+        Some(self.published())
+    }
+
     /// Claude said task `task_id` ended. Returns the jobs to publish when
     /// it was one.
     pub(crate) fn ended(&mut self, task_id: &str) -> Option<Vec<BackgroundJob>> {
@@ -677,12 +705,14 @@ impl Jobs {
             .iter()
             .filter_map(|id| Some((id, self.jobs.get(id)?)))
             .chain(launched)
-            .map(|(_, job)| BackgroundJob {
+            .map(|(id, job)| BackgroundJob {
                 item_key: job.step.clone(),
                 command: job.command.clone(),
                 started_at_ms: job.started_at_ms,
                 kind: job.kind,
-                ..Default::default()
+                key: id.clone(),
+                stopping: job.stopping,
+                stop_error: job.stop_error.clone(),
             })
             .collect()
     }

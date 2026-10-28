@@ -3748,13 +3748,16 @@ public struct JobRow: Codable, Hashable, Sendable {
     /// What the job is, so a client can tell a command from the provider's
     /// own subagent or monitor, whose `command` is a description.
     public var kind: BackgroundKind
+    /// Whether the person can stop this one job, and how that stands.
+    public var stop: JobStop
     /// The step that started it, when the provider said which.
     public var step: String?
 
-    public init(command: String, startedAtMs: Int64, kind: BackgroundKind, step: String?) {
+    public init(command: String, startedAtMs: Int64, kind: BackgroundKind, stop: JobStop, step: String?) {
         self.command = command
         self.startedAtMs = startedAtMs
         self.kind = kind
+        self.stop = stop
         self.step = step
     }
 
@@ -3762,7 +3765,92 @@ public struct JobRow: Codable, Hashable, Sendable {
         case command
         case startedAtMs = "started_at_ms"
         case kind
+        case stop
         case step
+    }
+}
+
+/// Stopping one background job, which leaves the agent running. Only a kind
+/// whose provider stops one job on request offers it: terminal Claude
+/// cannot.
+public enum JobStop: Codable, Hashable, Sendable {
+    /// This job cannot be stopped on its own.
+    case unavailable
+    /// The person can stop it; the key names it in the stop input.
+    case offered(key: String)
+    /// A stop was sent and the provider has not yet said the job ended.
+    case stopping
+    /// The provider refused the last stop, in its words; the person can
+    /// try again.
+    case refused(key: String, error: String)
+
+    private enum Tag: String, CodingKey {
+        case offered = "Offered"
+        case refused = "Refused"
+    }
+
+    private enum OfferedKeys: String, CodingKey {
+        case key
+    }
+
+    private enum RefusedKeys: String, CodingKey {
+        case key
+        case error
+    }
+
+    public init(from decoder: any Decoder) throws {
+        if let _single = try? decoder.singleValueContainer(),
+           let _name = try? _single.decode(String.self)
+        {
+            switch _name {
+            case "Unavailable": self = .unavailable
+            case "Stopping": self = .stopping
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: _single, debugDescription: "no JobStop is named \(_name)")
+            }
+            return
+        }
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a JobStop names exactly one variant"))
+        }
+        switch _tag {
+        case .offered:
+            let _fields = try _container.nestedContainer(
+                keyedBy: OfferedKeys.self, forKey: .offered)
+            self = .offered(
+                key: try _fields.decode(String.self, forKey: .key))
+        case .refused:
+            let _fields = try _container.nestedContainer(
+                keyedBy: RefusedKeys.self, forKey: .refused)
+            self = .refused(
+                key: try _fields.decode(String.self, forKey: .key),
+                error: try _fields.decode(String.self, forKey: .error))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .unavailable:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Unavailable")
+        case .offered(let key):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: OfferedKeys.self, forKey: .offered)
+            try _fields.encode(key, forKey: .key)
+        case .stopping:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Stopping")
+        case .refused(let key, let error):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: RefusedKeys.self, forKey: .refused)
+            try _fields.encode(key, forKey: .key)
+            try _fields.encode(error, forKey: .error)
+        }
     }
 }
 

@@ -107,6 +107,29 @@ pub fn interrupt(kind: Kind) -> Option<Input> {
     wrap(kind, Act::Interrupt)
 }
 
+/// Stops one background job by its key; None for a kind that cannot stop
+/// one job (terminal Claude).
+pub fn stop_job(kind: Kind, key: &str) -> Option<Input> {
+    let stop = wire::StopJob {
+        key: key.to_owned(),
+    };
+    match kind {
+        Kind::ClaudeSdk => Some(Input::new(
+            Vec::new(),
+            wire::ClaudeSdkInput {
+                of: Some(wire::claude_sdk_input::Of::StopJob(stop)),
+            },
+        )),
+        Kind::Codex => Some(Input::new(
+            Vec::new(),
+            wire::CodexInput {
+                of: Some(wire::codex_input::Of::StopJob(stop)),
+            },
+        )),
+        _ => None,
+    }
+}
+
 /// Takes terminal Claude's own view back to the agent's conversation; None
 /// for a kind whose view cannot switch away.
 pub fn switch_back(kind: Kind) -> Option<Input> {

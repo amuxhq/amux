@@ -173,6 +173,10 @@ public final class Chat: ChatSource, @unchecked Sendable {
         await value(ActOutcome.self) { amux_session_interrupt($0) }
     }
 
+    public func stopJob(_ key: String) async -> ActOutcome? {
+        await value(ActOutcome.self) { live in key.withCString { amux_session_stop_job(live, $0) } }
+    }
+
     public func switchBack() async -> ActOutcome? {
         await value(ActOutcome.self) { amux_session_switch_back($0) }
     }

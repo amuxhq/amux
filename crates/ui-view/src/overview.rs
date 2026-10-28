@@ -7,8 +7,8 @@ use schemars::JsonSchema;
 use serde::Serialize;
 use ui_state::{Key, SessionState, Usage};
 use wire::{
-    BackgroundKind, Diff, DiffBase, DiffFileChange, Limit, TaskListStatus, UsageMeter, UsageState,
-    diff_base,
+    BackgroundKind, Diff, DiffBase, DiffFileChange, Kind, Limit, TaskListStatus, UsageMeter,
+    UsageState, diff_base,
 };
 
 use crate::review::FileStatus;
@@ -224,6 +224,9 @@ pub fn overview(state: &SessionState, diff: Option<&Diff>) -> Overview {
             entries,
         }
     });
+    // Headless Claude and Codex stop one job on request; terminal Claude
+    // has no way to.
+    let stops_one = matches!(state.kind(), Kind::ClaudeSdk | Kind::Codex);
     let jobs = if agent.background.known {
         agent
             .background
@@ -234,7 +237,17 @@ pub fn overview(state: &SessionState, diff: Option<&Diff>) -> Overview {
                 command: job.command.clone(),
                 started_at_ms: job.started_at_ms,
                 kind: job.kind(),
-                stop: JobStop::Unavailable,
+                stop: match () {
+                    () if !stops_one || job.key.is_empty() => JobStop::Unavailable,
+                    () if job.stopping => JobStop::Stopping,
+                    () if !job.stop_error.is_empty() => JobStop::Refused {
+                        key: job.key.clone(),
+                        error: job.stop_error.clone(),
+                    },
+                    () => JobStop::Offered {
+                        key: job.key.clone(),
+                    },
+                },
             })
             .collect()
     } else {

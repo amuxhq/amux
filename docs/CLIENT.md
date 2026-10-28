@@ -358,7 +358,7 @@ directly (a name, a path, a count the state holds), but never works out a judgem
 | `composer(state, now_ms)`, `waiting(state)`, `switched_away(state)` | The composer mode, the activity line inside it, and whether terminal Claude's own view is on another conversation (prompts are refused until `Session::switch_back` takes it back); the waiting reason. |
 | `composer_tokens(draft, attachments)`, `segments(text, attachments)` | Text runs and attachment chips at their placeholder positions. |
 | `queue_rows(state)`, `sends_to_feed(state)`, `prompts_underway(state, in_feed)`, `refused_prompts(state)` | Queued prompts (withdraw, send now); whether a new prompt lands at the feed's end or in the queue; this client's prompts on their way, each where it was first drawn, sending or may not have arrived; the prompts the agent refused, with why. |
-| `overview(state, diff)`, `changes(diff)`, `diff_base(state, comparison)` | The `Overview`: tasks, background jobs, failed tool servers, usage near a limit, and the changed files by folder (root files first) from a `Diff` fetched without a patch; the base a comparison asks `GetDiff` for. |
+| `overview(state, diff)`, `changes(diff)`, `diff_base(state, comparison)` | The `Overview`: tasks, background jobs (each with its `JobStop`: unavailable on terminal Claude or for a job with no key, offered with its key, stopping, or refused with the provider's words), failed tool servers, usage near a limit, and the changed files by folder (root files first) from a `Diff` fetched without a patch; the base a comparison asks `GetDiff` for. |
 | `context(state)`, `sign_in(state)` | Context use (near full from 80%) and a sign-in problem. |
 | `settings(state)`, `setting_input(kind, change)` | What the agent offers to change (models, efforts, permissions, modes, commands), each choice named and its current one marked; how each setting changes (`Changeable`: a pick, the agent's own cycle, typing its own command, or not offered); and the input a pick sends. |
 | `controls(state)` | The `ControlsSummary` beside the composer: the running model by its one name, the effort in force, and the permission and mode only while they are not the agent's normal ones. |
@@ -437,7 +437,8 @@ input id, applies `Msg::Send` so the optimistic row exists at once, and calls `S
 interpreter's verdict: accepted (possibly `queued`), or rejected with a reason. A prompt sent while a turn runs
 waits in the agent's queue, which every snapshot lists, so other clients see it too; `queue_rows` offers
 withdraw and send-now on it, and send-now steers it into the running turn, where it reads "steered" until its
-reflection lands.
+reflection lands. `stop_job` sends the kind's `StopJob` for a background job's key (none for terminal Claude);
+the job's `JobStop` says how it stands from then on.
 
 This client's own prompts on their way are one rule for every client. `sends_to_feed` says where a new prompt
 lands: at the feed's end while the agent is idle with nothing queued, otherwise in the queue. The client

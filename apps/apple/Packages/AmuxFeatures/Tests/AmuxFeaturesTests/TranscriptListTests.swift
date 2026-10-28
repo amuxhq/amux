@@ -228,6 +228,7 @@ private final class StubChat: ChatSource, @unchecked Sendable {
     func resend(_ input: [UInt8]) async -> SendOutcome? { nil }
     func discard(_ input: [UInt8]) {}
     func interrupt() async -> ActOutcome? { nil }
+    func stopJob(_ key: String) async -> ActOutcome? { nil }
     func change(_ setting: SettingChange) async -> ActOutcome? { nil }
     func resume(with draft: Draft) async -> ActOutcome? { nil }
     func pageOlder(_ rows: UInt32) async -> PageOutcome? { nil }

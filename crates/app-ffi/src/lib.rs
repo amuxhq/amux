@@ -2296,6 +2296,19 @@ pub unsafe extern "C" fn amux_session_interrupt(chat: *const AmuxChat) -> u64 {
     unsafe { act(chat, |chat| async move { chat.interrupt().await }) }
 }
 
+/// Stops one background job by the key its `JobStop` gives; the agent
+/// keeps running. The ticket answers an `ActOutcome`.
+///
+/// # Safety
+/// `chat` is from `amux_session_open`; `key` is a NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_session_stop_job(chat: *const AmuxChat, key: *const c_char) -> u64 {
+    // SAFETY: the caller's contract.
+    let key = unsafe { text(key) }.unwrap_or_default().to_owned();
+    // SAFETY: the caller's contract.
+    unsafe { act(chat, |chat| async move { chat.stop_job(&key).await }) }
+}
+
 /// Takes terminal Claude's own view back to the agent's conversation
 /// after it switched to another. The ticket answers an `ActOutcome`.
 ///

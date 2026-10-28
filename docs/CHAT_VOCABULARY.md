@@ -250,7 +250,7 @@ row or the row failed.
 | Field | Shown | claude_pty | claude_sdk | codex |
 |---|---|---|---|---|
 | `tasks` | "3/7 · Updating the pairing copy", opening to the list (Claude's task list, Codex's plan steps) | partial | partial | full |
-| `jobs` | Each background job still running: its command, when it started, and the step that started it | partial | partial | partial |
+| `jobs` | Each background job still running: its command, when it started, the step that started it, and its own stop where the kind has one (behind a confirm; `Stopping…`; the provider's refusal) | partial | partial | partial |
 | `failed_servers` | Only tool servers that failed to start or need signing in | none | full | full |
 | `usage_near_limit` | Nothing while fine; a warning near a limit; a foot card when blocked | none | full | full |
 | `changes` | The changed files by folder, root files first, once fetched with `GetDiff` and no patch (`changes(diff)`) | full | full | full |

@@ -209,7 +209,8 @@ to attachments after that.
 
 When the agent waits on you, the ask takes over the composer's box, its edge in the attention ink; the draft waits
 behind it and comes back after. For half a second after an ask is first drawn, keys still go to the draft (Enter
-does nothing), so a digit or Enter typed as it appears never answers what was not read. The plan or the call it is
+does nothing), so a digit or Enter typed as it appears never answers what was not read. An ask the agent says must not
+be approved by one stray key opens on its refusal and takes no digit. The plan or the call it is
 about stays in the feed above. A typed answer or note shows its own line breaks, its last four lines at most.
 
 - **A permission** (`● Wants to run`, `Wants to edit`, `Wants to create`, `Wants to use`): the command, the file

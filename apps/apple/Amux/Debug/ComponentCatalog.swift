@@ -1188,7 +1188,7 @@ enum CatalogFixtures {
         AskCard(
             kind: kind, key: "ask-1", itemKey: "x6", position: 1, count: count, body: body,
             choices: choices, questionNote: kind != .claudePty, questionSkip: kind != .claudePty,
-            questionReply: true, stopsTurn: true, state: state)
+            questionReply: true, stopsTurn: true, defaultToNo: false, state: state)
     }
 
     static let runningCommand = ScriptedChat.row("rc", 50, .command(

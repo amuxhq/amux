@@ -269,7 +269,16 @@ pub fn ask_card(state: &SessionState) -> Option<AskCard> {
                 ..
             })
         ),
-        default_to_no: false,
+        default_to_no: matches!(
+            head,
+            OpenAsk::Claude(wire::Ask {
+                body: Some(wire::ask::Body::Permission(wire::PermissionAsk {
+                    default_to_no: true,
+                    ..
+                })),
+                ..
+            })
+        ),
         state: card_state,
     })
 }

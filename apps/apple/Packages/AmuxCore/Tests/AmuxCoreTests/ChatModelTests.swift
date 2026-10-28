@@ -987,7 +987,7 @@ final class ChatModelTests: XCTestCase {
         source.card = AskCard(
             kind: .codex, key: "ask:1", itemKey: "", position: 1, count: 1, body: .question([]),
             choices: [], questionNote: true, questionSkip: true, questionReply: true,
-            stopsTurn: true, state: .open)
+            stopsTurn: true, defaultToNo: false, state: .open)
         let model = ChatModel(source: source)
         let answers = [
             QuestionResponse(note: "only on staging", other: nil, picked: [1]),
@@ -1005,7 +1005,7 @@ final class ChatModelTests: XCTestCase {
             AskCard(
                 kind: .claudeSdk, key: key, itemKey: "", position: 1, count: 1, body: .question([]),
                 choices: [], questionNote: true, questionSkip: true, questionReply: true,
-                stopsTurn: true, state: .open)
+                stopsTurn: true, defaultToNo: false, state: .open)
         }
         let source = FakeChat(rows: [row("a", 1)], frame: frame())
         source.card = card("ask:1")
@@ -1038,7 +1038,7 @@ final class ChatModelTests: XCTestCase {
                 kind: .claudeSdk, key: key, itemKey: "", position: 1, count: 1,
                 body: .form(server: "linear", message: "File an issue", fields: []),
                 choices: [], questionNote: false, questionSkip: false, questionReply: false,
-                stopsTurn: true, state: .open)
+                stopsTurn: true, defaultToNo: false, state: .open)
         }
         let source = FakeChat(rows: [row("a", 1)], frame: frame())
         source.card = card("ask:1")

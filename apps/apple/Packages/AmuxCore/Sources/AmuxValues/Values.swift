@@ -626,9 +626,13 @@ public struct AskCard: Codable, Hashable, Sendable {
     /// Stopping interrupts a running turn. Codex proposes a plan as its
     /// turn ends, so with its plan open there is no turn to stop.
     public var stopsTurn: Bool
+    /// Approving must be deliberate: a keyboard view opens the card on its
+    /// refusal and takes no digit shortcut, and nothing pre-selects
+    /// approve.
+    public var defaultToNo: Bool
     public var state: CardState
 
-    public init(kind: Kind, key: String, itemKey: String, position: UInt, count: UInt, body: AskBody, choices: [Choice], questionNote: Bool, questionSkip: Bool, questionReply: Bool, stopsTurn: Bool, state: CardState) {
+    public init(kind: Kind, key: String, itemKey: String, position: UInt, count: UInt, body: AskBody, choices: [Choice], questionNote: Bool, questionSkip: Bool, questionReply: Bool, stopsTurn: Bool, defaultToNo: Bool, state: CardState) {
         self.kind = kind
         self.key = key
         self.itemKey = itemKey
@@ -640,6 +644,7 @@ public struct AskCard: Codable, Hashable, Sendable {
         self.questionSkip = questionSkip
         self.questionReply = questionReply
         self.stopsTurn = stopsTurn
+        self.defaultToNo = defaultToNo
         self.state = state
     }
 
@@ -655,6 +660,7 @@ public struct AskCard: Codable, Hashable, Sendable {
         case questionSkip = "question_skip"
         case questionReply = "question_reply"
         case stopsTurn = "stops_turn"
+        case defaultToNo = "default_to_no"
         case state
     }
 }

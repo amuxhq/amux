@@ -1327,7 +1327,14 @@ impl State {
             .unwrap_or_default();
         self.tool_seen(emit, &tool_use_id, name, Some(input), &parent);
         let (server, tool) = split_tool_name(name);
-        let suggestions = asked.permission_suggestions.clone().unwrap_or_default();
+        // An ask Claude says may offer no persistent rule offers no scope:
+        // a rule sent back would be narrowed or dropped, and amux would
+        // record a grant Claude never applied.
+        let suggestions = if asked.suppress_always_allow_rule == Some(true) {
+            Vec::new()
+        } else {
+            asked.permission_suggestions.clone().unwrap_or_default()
+        };
         let (body, shape) = match tool.as_str() {
             QUESTION_TOOL if server.is_empty() => {
                 let (question, _) = question_ask(input);
@@ -1386,7 +1393,7 @@ impl State {
                             .unwrap_or_default(),
                         deny_stops: false,
                         deny_can_stop: true,
-                        default_to_no: false,
+                        default_to_no: asked.default_to_no == Some(true),
                         server: server.clone(),
                     }),
                     AskShape::Permission,

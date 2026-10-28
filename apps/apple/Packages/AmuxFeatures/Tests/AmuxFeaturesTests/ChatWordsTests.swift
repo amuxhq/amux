@@ -370,7 +370,7 @@ final class ChatWordsTests: XCTestCase {
                     path: "/work/notes.txt", files: 1, added: 1, removed: 0, lines: [], reason: "",
                     created: created, line: 1),
                 choices: [], questionNote: false, questionSkip: false, questionReply: false,
-                stopsTurn: false, state: .open)
+                stopsTurn: false, defaultToNo: false, state: .open)
         }
         XCTAssertEqual(ChatWords.headline(card(false)), "Wants to edit a file")
         XCTAssertTrue(

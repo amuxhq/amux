@@ -569,7 +569,11 @@ nothing is inferred.
   it names. The reason is Claude's own, else "outside the allowed
   directories" when the path it blocked is beyond the agent's folder;
   Claude names the path a command would write inside the folder too, and
-  that ask has no reason. An `elicitation` request opens a tool server's form or link, with
+  that ask has no reason. A request marked `suppress_always_allow_rule`
+  offers no scope, though it carries suggestions: Claude would narrow or
+  drop a rule sent back, so amux neither offers nor records one. One marked
+  `default_to_no` says so on the ask (`default_to_no`), and keyboard views
+  open it on its refusal. An `elicitation` request opens a tool server's form or link, with
   an item of its own. Answers go back as control responses. A control
   request of any other subtype is answered with an error.
 - **Offers.** The answer to the agent process's `initialize` request lists

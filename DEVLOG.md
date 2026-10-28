@@ -1,3 +1,5 @@
+2026-10-28 — **An ask headless Claude flags is offered as Claude says.** One marked `suppress_always_allow_rule` offers no "always" scope even when Claude sent suggestions (Claude would narrow or drop the rule, and amux recorded a grant it never applied); one marked `default_to_no` carries that on the ask, and the TUI opens it on its refusal with digit shortcuts off.
+
 2026-10-28 — **Headless Claude no longer outlives its agent on Unix.** It leads its own process group and finishes its turn after its input closes, so an agent killed mid-turn left it running tools for no one. The tether that ties a Codex server to its agent moved into the shared process-hosting crate, and headless Claude is tethered the same way: SIGTERM when the agent dies, SIGKILL five seconds on.
 
 2026-10-28 — **Claude's own work no longer ends the person's turn.** While a message amux handed headless Claude is unanswered, a result naming none of amux's messages (or none at all, from something other than a person, such as a peer session's message or a task's notification) leaves the person's turn, asks and calls as they were. A result naming amux's message ends the turn whatever began it.

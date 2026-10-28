@@ -232,6 +232,13 @@ impl AskUi {
         }
         *self = AskUi {
             key: card.key.clone(),
+            // An ask that must not be approved by one stray key opens on
+            // the way out, the refusal.
+            selected: if card.default_to_no {
+                box_choices(card).len().saturating_sub(1)
+            } else {
+                0
+            },
             ..AskUi::default()
         };
         match &card.body {
@@ -603,7 +610,7 @@ impl AskUi {
             KeyCode::Down | KeyCode::Char('j') => {
                 self.selected = (self.selected + 1).min(count.saturating_sub(1))
             }
-            KeyCode::Char(c @ '1'..='9') => {
+            KeyCode::Char(c @ '1'..='9') if !card.default_to_no => {
                 let at = c as usize - '1' as usize;
                 if at < count {
                     self.selected = at;

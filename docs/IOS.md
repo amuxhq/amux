@@ -610,7 +610,10 @@ just ios journey -- --native
 
 `testnet journey phone` starts the story's topology with `testnet serve`,
 installs the debug app fresh on the leased simulator with the
-reduce-transparency flag on, and acts only as a person would, through the
+reduce-transparency flag on and the system's application accessibility
+switched on (the system otherwise turns it on by itself partway through a
+run, and with it on the app exposes more elements, so a screen's geometry
+would depend on which journeys ran first), and acts only as a person would, through the
 door: tap, type, paste, pair by the code or link a machine printed. It judges
 by what the machines recorded (the served network's chat, inventory and
 provider-input reads) and by screens compared with reviewed goldens under

@@ -981,6 +981,36 @@ impl PhoneJourney {
             &["uninstall", &self.udid, BUNDLE_ID],
             Duration::from_secs(120),
         );
+        // The system turns application accessibility on by itself partway
+        // through some journeys and leaves it on, and with it on SwiftUI
+        // exposes elements it otherwise leaves out: a page's title, a row's
+        // combined label, the tab bar's layered copies. A journey's geometry
+        // would then depend on which journeys ran before it, so every launch
+        // starts with it on.
+        for key in ["AccessibilityEnabled", "ApplicationAccessibilityEnabled"] {
+            simctl(
+                &[
+                    "spawn",
+                    &self.udid,
+                    "defaults",
+                    "write",
+                    "com.apple.Accessibility",
+                    key,
+                    "-int",
+                    "1",
+                ],
+                Duration::from_secs(60),
+            )?;
+        }
+        for cache in [
+            "com.apple.accessibility.cache.app.ax",
+            "com.apple.accessibility.cache.ax",
+        ] {
+            simctl(
+                &["spawn", &self.udid, "notifyutil", "-p", cache],
+                Duration::from_secs(60),
+            )?;
+        }
         simctl(
             &["install", &self.udid, self.build.to_string_lossy().as_ref()],
             Duration::from_secs(300),

@@ -27,6 +27,7 @@ in
   rust
   cargoNightly
   pkgs.cargo-deny
+  pkgs.cargo-shear
   pkgs.git
   pkgs.gitleaks
   pkgs.just

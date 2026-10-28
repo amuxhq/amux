@@ -39,8 +39,8 @@ Other tools a full checkout uses:
 On a machine with [Nix](https://nixos.org/download/) and flakes enabled,
 `nix develop` at the root opens a shell with everything above except Xcode:
 the toolchain `rust-toolchain.toml` pins, the formatting nightly, `just`,
-`tmux`, Python, `git`, `gitleaks`, the dependency checker `just deny` runs
-and, on Linux, a C compiler. `nix develop -c just test`
+`tmux`, Python, `git`, `gitleaks`, the dependency checkers `just deny` and
+`just shear` run and, on Linux, a C compiler. `nix develop -c just test`
 runs one recipe in it. [`nix/toolchain.nix`](../nix/toolchain.nix) is the
 list, and `flake.lock` pins every tool in it, so two machines on the same
 revision get the same tools. `nix profile install .#toolchain` installs the

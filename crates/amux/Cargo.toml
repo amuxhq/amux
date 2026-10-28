@@ -6,6 +6,10 @@ license.workspace = true
 description = "Agent multiplexer - CLI binary"
 publish = false
 
+# `store` is a dependency only so `bundled` can name its feature.
+[package.metadata.cargo-shear]
+ignored = ["store"]
+
 [features]
 default = []
 bundled = ["store/bundled"]

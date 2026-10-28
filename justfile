@@ -269,6 +269,12 @@ dependency-policy:
 deny:
     {{bounded}} 600 cargo deny --locked check
 
+# Fail on any dependency no crate's code uses, so unused ones do not pile up
+# again. A crate lists what the code cannot show it needs under
+# `[package.metadata.cargo-shear]`. Needs `cargo install cargo-shear`.
+shear:
+    {{bounded}} 300 cargo shear --locked --deny-warnings
+
 # Warm the product and ordinary test build graphs used by new worktrees.
 warm: build test-build
 
@@ -341,7 +347,7 @@ no-update-flags:
     scripts/no-update-flags.sh
 
 # Run the same task sequence exercised across continuous-integration jobs.
-ci: no-update-flags check lint fmt-check codegen-check proto-compat dependency-policy deny cores-check typed-provider-check docs-check tests-check script-tests test contracts-check doctest release-check embedded-check embedded-test mobile-check
+ci: no-update-flags check lint fmt-check codegen-check proto-compat dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests test contracts-check doctest release-check embedded-check embedded-test mobile-check
 
 # Run the live provider compatibility lane for one kind (claude_pty,
 # claude_sdk or codex) and scenario (initialize, respond, decide, interrupt,

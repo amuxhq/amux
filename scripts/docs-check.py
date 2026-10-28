@@ -39,7 +39,7 @@ VENDOR_NAMES = [
     "Stateright", "TLA+", "TigerBeetle", "FoundationDB", "Antithesis", "Jepsen", "Loom",
     "Shuttle", "Kani", "Verus", "Creusot", "Prusti", "Elle", "Maelstrom",
     "proptest", "cargo-fuzz", "libFuzzer", "Miri", "cargo-llvm-cov", "llvm-cov",
-    "cargo-deny", "AddressSanitizer", "ThreadSanitizer",
+    "cargo-deny", "cargo-shear", "AddressSanitizer", "ThreadSanitizer",
 ]
 VENDOR = re.compile(
     r"(?<![\w-])(?:" + "|".join(re.escape(name) for name in VENDOR_NAMES) + r")(?![\w-])",

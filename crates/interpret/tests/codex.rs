@@ -2002,3 +2002,95 @@ fn the_agents_thread_closing_ends_the_incarnation() {
     assert!(agent.unrecognized().is_empty(), "{:?}", agent.unrecognized());
     assert!(exits(&closed), "the closed thread left the agent running");
 }
+
+/// Every message the audit of Codex 0.163 found amux drawing as an
+/// "unrecognized" row is either drawn, folded into the turn's status or
+/// dropped on purpose: none shows as a row nobody can read.
+#[test]
+fn known_codex_messages_draw_no_unrecognized_rows() {
+    let mut agent = Driven::started();
+    agent.rpc(json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}));
+    let item = |kind: &str, extra: Value| {
+        let mut item = json!({"type": kind, "id": format!("{kind}-1")});
+        item.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        json!({"method": "item/completed", "params": {"threadId": "t1", "turnId": "turn-1", "item": item}})
+    };
+    let hook_run = json!({"id": "h1", "eventName": "preToolUse", "handlerType": "command",
+        "executionMode": "sync", "scope": "turn", "sourcePath": "/h.sh", "source": "user",
+        "displayOrder": 0, "status": "completed", "statusMessage": null, "startedAt": 1,
+        "completedAt": 2, "durationMs": 1, "entries": []});
+    for message in [
+        json!({"method": "hook/started", "params": {"threadId": "t1", "turnId": "turn-1", "run": hook_run}}),
+        json!({"method": "hook/completed", "params": {"threadId": "t1", "turnId": "turn-1", "run": hook_run}}),
+        json!({"method": "model/verification", "params": {"threadId": "t1", "turnId": "turn-1",
+            "verifications": ["trustedAccessForCyber"]}}),
+        json!({"method": "autoApprovalReview/strictReviewRequired", "params": {"threadId": "t1",
+            "turnId": "turn-1", "startedAtMs": 1}}),
+        json!({"method": "model/safetyBuffering/updated", "params": {"threadId": "t1", "turnId": "turn-1",
+            "model": "m", "useCases": [], "reasons": [], "showBufferingUi": true, "fasterModel": null}}),
+        json!({"method": "model/safetyBuffering/updated", "params": {"threadId": "t1", "turnId": "turn-1",
+            "model": "m", "useCases": [], "reasons": [], "showBufferingUi": false, "fasterModel": null}}),
+        json!({"method": "guardianWarning", "params": {"threadId": "t1",
+            "message": "Automatic approval review approved (risk: low): fine."}}),
+        json!({"method": "item/mcpToolCall/progress", "params": {"threadId": "t1", "turnId": "turn-1",
+            "itemId": "x", "message": "half way"}}),
+        json!({"method": "item/fileChange/patchUpdated", "params": {"threadId": "t1", "turnId": "turn-1", "itemId": "x"}}),
+        json!({"method": "app/list/updated", "params": {"data": []}}),
+        json!({"method": "thread/queue/changed", "params": {"threadId": "t1"}}),
+        json!({"method": "thread/environment/connected", "params": {"threadId": "t1"}}),
+        json!({"method": "thread/environment/disconnected", "params": {"threadId": "t1"}}),
+        json!({"method": "thread/attachment/updated", "params": {"threadId": "t1"}}),
+        json!({"method": "thread/prediction/updated", "params": {"threadId": "t1"}}),
+        json!({"method": "account/gatewayOAuth/changed", "params": {}}),
+        json!({"method": "mcpServer/oauthLogin/completed", "params": {"name": "docs", "success": true}}),
+        json!({"method": "mcpServer/event/stream/notification", "params": {}}),
+        json!({"method": "modelProvider/authRecoveryStarted", "params": {}}),
+        json!({"method": "modelProvider/authRecoveryCompleted", "params": {}}),
+        json!({"method": "windows/worldWritableWarning", "params": {}}),
+        json!({"method": "windowsSandbox/setupCompleted", "params": {}}),
+        item("enteredReviewMode", json!({"review": "current changes"})),
+        item("exitedReviewMode", json!({"review": "current changes"})),
+        item("hookPrompt", json!({"fragments": []})),
+        item("subAgentActivity", json!({"kind": "started", "agentThreadId": "c1", "agentPath": "/a"})),
+        item("sleep", json!({})),
+        item("functionCallOutput", json!({})),
+    ] {
+        agent.rpc(message);
+    }
+    assert!(agent.unrecognized().is_empty(), "{:?}", agent.unrecognized());
+    let texts: Vec<&str> = agent.items.iter().map(|item| item.text.as_str()).collect();
+    let shows = |words: &str| texts.iter().any(|text| text.contains(words));
+    assert!(shows("Trusted Access for Cyber"), "{texts:?}");
+    assert!(shows("additional safety checks"), "{texts:?}");
+    assert!(shows("Code review started"), "{texts:?}");
+    assert!(shows("Code review finished"), "{texts:?}");
+    assert!(
+        !shows("Automatic approval review approved"),
+        "an approved review's warning repeats the verdict row: {texts:?}"
+    );
+}
+
+/// Codex's slow safety check holds the answer for a while; it is the turn's
+/// status, as Codex's own app shows it, open while the check runs.
+#[test]
+fn a_safety_check_is_the_turns_status_while_it_runs() {
+    let mut agent = Driven::started();
+    agent.rpc(json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}));
+    let buffering = |on: bool| {
+        json!({"method": "model/safetyBuffering/updated", "params": {"threadId": "t1", "turnId": "turn-1",
+            "model": "m", "useCases": [], "reasons": [], "showBufferingUi": on, "fasterModel": null}})
+    };
+    let on = agent.rpc(buffering(true));
+    let [status] = &on.step.items[..] else {
+        panic!("one status item: {:?}", on.step.items);
+    };
+    assert!(
+        !status.text.is_empty() && !matches!(status.body.as_slice(), []),
+        "{status:?}"
+    );
+    let off = agent.rpc(buffering(false));
+    assert!(
+        off.step.items.iter().any(|item| item.key == status.key),
+        "the check's end does not close its status"
+    );
+}

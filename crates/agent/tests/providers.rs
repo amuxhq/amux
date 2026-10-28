@@ -48,6 +48,18 @@ async fn a_codex_agent_handshakes_runs_a_turn_and_resumes_its_thread() {
     // so the resume leaves the turns out, as Codex's own app does, and the
     // resumed thread is not then read back in full.
     let input = agent.provider_input();
+    // What amux never draws, Codex is asked not to send.
+    let initialize = input
+        .iter()
+        .find(|line| line["method"] == "initialize")
+        .expect("an initialize");
+    let opted_out = &initialize["params"]["capabilities"]["optOutNotificationMethods"];
+    assert!(
+        opted_out
+            .as_array()
+            .is_some_and(|methods| methods.contains(&serde_json::json!("hook/started"))),
+        "{initialize}"
+    );
     let resume = input
         .iter()
         .find(|line| line["method"] == "thread/resume")

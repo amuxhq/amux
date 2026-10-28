@@ -22,6 +22,7 @@ method_enum! {
         "thread/start" => ThreadStart(ThreadStartParams),
         "thread/resume" => ThreadResume(ThreadResumeParams),
         "thread/unarchive" => ThreadUnarchive(ThreadIdParams),
+        "thread/unsubscribe" => ThreadUnsubscribe(ThreadIdParams),
         "thread/name/set" => ThreadSetName(ThreadSetNameParams),
         "thread/read" => ThreadRead(ThreadReadParams),
         "thread/list" => ThreadList(ThreadListParams),

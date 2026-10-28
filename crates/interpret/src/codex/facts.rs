@@ -604,7 +604,8 @@ impl State {
                     | Request::Jobs { .. }
                     | Request::Unarchive
                     | Request::Resume
-                    | Request::Fresh => {}
+                    | Request::Fresh
+                    | Request::Unsubscribe => {}
                 }
                 return;
             }
@@ -649,8 +650,26 @@ impl State {
             | Request::Jobs { .. }
             | Request::Unarchive
             | Request::Resume
-            | Request::Fresh => {}
+            | Request::Fresh
+            | Request::Unsubscribe => {}
         }
+    }
+
+    /// The child threads the agent's thread spawned, from its subagent
+    /// calls.
+    fn spawned_threads(&self) -> Vec<String> {
+        let mut threads: Vec<String> = self
+            .works
+            .values()
+            .filter_map(|state| match state.work.as_ref()?.of.as_ref()? {
+                work::Of::Collab(collab) => Some(collab.thread_ids.clone()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        threads.sort();
+        threads.dedup();
+        threads
     }
 
     /// `/clear`'s thread: from now on it is this agent's conversation.
@@ -660,6 +679,26 @@ impl State {
             self.shared.turn_abandoned();
             return;
         };
+        // Codex keeps a thread loaded, with its tool servers, while a client
+        // is subscribed: the agent leaves the old thread and the children it
+        // spawned, as Codex's own app does when it switches threads.
+        let left: Vec<String> = self
+            .thread_id
+            .take()
+            .into_iter()
+            .chain(self.spawned_threads())
+            .collect();
+        for thread_id in left {
+            let bytes = self.request_as(
+                format!("amux-unsubscribe-{thread_id}"),
+                ClientRequest::ThreadUnsubscribe(ThreadIdParams {
+                    thread_id,
+                    extra: Default::default(),
+                }),
+                Request::Unsubscribe,
+            );
+            emit.effect(Effect::ProviderWrite(bytes));
+        }
         self.thread_id = Some(id);
         if let Some(model) = some(&response.model) {
             self.model = Some(model);
@@ -1544,9 +1583,12 @@ impl State {
             ServerNotification::GuardianWarning(warning) => {
                 self.warning(emit, "guardianWarning", warning.message)
             }
-            other @ ServerNotification::ThreadClosed(_) => {
-                self.unrecognized(emit, other.method(), "a notification amux does not read")
-            }
+            // Codex closes a thread only once no client is subscribed, so
+            // the agent's own thread closing means it is gone; the next
+            // incarnation resumes it.
+            ServerNotification::ThreadClosed(_) => emit.effect(Effect::Exit {
+                cause: "Codex closed the agent's thread".into(),
+            }),
         }
     }
 

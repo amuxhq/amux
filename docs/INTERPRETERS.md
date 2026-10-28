@@ -673,7 +673,7 @@ answer.
   | Command | What amux sends |
   |---|---|
   | `/compact` | `thread/compact/start`, which runs as a turn of its own |
-  | `/clear` | `thread/start` (ids `amux-clear-<n>`) in the agent's folder with the model and permission in force; the thread it answers becomes the agent's conversation, marked by a cleared boundary, named, and recorded for the next incarnation to resume. The new thread's first turn carries the mode and effort the agent ran with |
+  | `/clear` | `thread/start` (ids `amux-clear-<n>`) in the agent's folder with the model and permission in force; the thread it answers becomes the agent's conversation, marked by a cleared boundary, named, and recorded for the next incarnation to resume. The agent then unsubscribes from the old thread and the child threads it spawned (`thread/unsubscribe`), which Codex otherwise keeps loaded with their tool servers. The new thread's first turn carries the mode and effort the agent ran with |
   | `/review [instructions]` | `review/start` on the thread: the uncommitted changes, or the instructions given. The review runs as a turn |
   | `/init` | A turn with the prompt Codex's own `/init` sends (as Codex 0.161 words it), which writes an `AGENTS.md` unless one exists |
   | `/plan [prompt]` | Plan mode from the next turn, as choosing the mode does; the words after it, if any, are that turn's prompt |

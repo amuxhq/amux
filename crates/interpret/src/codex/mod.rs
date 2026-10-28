@@ -255,6 +255,8 @@ enum Request {
     Resume,
     /// `thread/start` in place of a thread whose history is gone.
     Fresh,
+    /// `thread/unsubscribe` from a thread the agent left.
+    Unsubscribe,
     /// `review/start` for `/review`.
     Review,
     Inject {

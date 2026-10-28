@@ -1737,3 +1737,59 @@ fn the_usage_meter_reads_the_codex_limit_only() {
     let usage = agent.snapshot.usage.clone().unwrap();
     assert_eq!(usage.windows[0].meter.as_ref().unwrap().used_percent, 40.0);
 }
+
+impl Driven {
+    /// The bodies of every item written so far.
+    fn bodies(&self) -> Vec<wire::codex_item::Kind> {
+        self.items
+            .iter()
+            .filter_map(|item| {
+                <wire::CodexItem as prost::Message>::decode(item.body.as_slice())
+                    .ok()?
+                    .kind
+            })
+            .collect()
+    }
+
+    /// The fact types drawn as unrecognized rows so far.
+    fn unrecognized(&self) -> Vec<String> {
+        self.bodies()
+            .into_iter()
+            .filter_map(|kind| match kind {
+                wire::codex_item::Kind::Unrecognized(what) => Some(what.fact_type),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+/// `model/rerouted` covers one request: Codex keeps the chosen model for the
+/// next, so amux does too, including for the thread `/clear` starts. Codex
+/// says so with a warning carrying its link, which is what the person sees.
+#[test]
+fn a_reroute_leaves_the_chosen_model_and_shows_codexs_warning() {
+    let mut agent = Driven::started();
+    agent.rpc(json!({"method": "model/rerouted", "params": {
+        "threadId": "t1", "turnId": "turn-1", "fromModel": "m", "toModel": "fallback",
+        "reason": "highRiskCyberActivity"}}));
+    agent.rpc(json!({"method": "warning", "params": {
+        "threadId": "t1", "message": "Your request was routed to fallback. Apply for access at https://example.com"}}));
+    assert_eq!(agent.snapshot.model.as_deref(), Some("m"));
+    assert!(
+        !agent
+            .bodies()
+            .iter()
+            .any(|kind| matches!(kind, wire::codex_item::Kind::Reroute(_))),
+        "the reroute drew a row of its own beside Codex's warning"
+    );
+    assert!(
+        agent.items.iter().any(|item| item.text.contains("routed to fallback")),
+        "Codex's warning was not drawn"
+    );
+    let cleared = agent.prompt(b"p1", "/clear");
+    for write in &cleared {
+        if let Some(model) = write["params"]["model"].as_str() {
+            assert_eq!(model, "m", "{write}");
+        }
+    }
+}

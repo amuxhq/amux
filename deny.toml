@@ -12,15 +12,6 @@ yanked = "deny"
 # Each entry says why the advisory does not reach amux. One that does is
 # fixed by updating or replacing the crate, never listed here.
 ignore = [
-    # RSA's private-key operations leak timing. amux only verifies the
-    # relay's RS256 connect tokens, with public keys, and never holds an RSA
-    # private key. No fixed rsa release exists.
-    { id = "RUSTSEC-2023-0071", reason = "only RSA verification with public keys, which the attack does not reach" },
-    # crypto-bigint 0.5 (under p256 and p384, under jsonwebtoken) is not
-    # constant-time. The fix is 0.7, which the elliptic-curve 0.13 that
-    # jsonwebtoken 11 uses cannot take; amux verifies signatures only, so no
-    # secret goes through it.
-    { id = "RUSTSEC-2026-0387", reason = "only signature verification, which handles no secret" },
     # Unmaintained, with no known flaw. syntect decodes its own bundled
     # syntax definitions with bincode.
     { id = "RUSTSEC-2025-0141", reason = "bincode reads only syntect's bundled syntaxes" },

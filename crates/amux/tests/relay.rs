@@ -13,51 +13,25 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use base64::Engine as _;
+use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use bytes::Bytes;
 use http_body_util::{BodyExt as _, Full};
 use hyper::body::Incoming;
 use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-use jsonwebtoken::{Algorithm, EncodingKey, Header};
+use ring::rand::SystemRandom;
+use ring::signature::{KeyPair as _, RSA_PKCS1_SHA256, RsaKeyPair, RsaPublicKeyComponents};
 use support::desk::{Desk, GRACE_SECS};
 use support::{amux_binary, grpc_channel, until};
 use tokio::io::{AsyncBufReadExt as _, BufReader};
 use wire::installation_service_client::InstallationServiceClient;
 use wire::{BindProfileRequest, RelayCarrier};
 
-/// The key the stand-in cloud signs connection tokens with, and the same
-/// key's public modulus in its key set.
+/// The id the stand-in cloud's key set names its signing key by.
 const KID: &str = "relay-test-key";
-const PRIVATE_KEY: &str = r#"-----BEGIN PRIVATE KEY-----
-MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDa10VP9rc+oAG3
-+JhkaPK/OJSo2y00s5pUobICMpfWApDpnoEsPJf/3yvRvlIJnQMK+eQNtxSdngFP
-1O3P6vgpL0MkB7CAOxbe2WB4LFZ0wHuQzxyO0Bv9YDLvZidNg7FKyxhnARyVK0m0
-OFwvW5dn/L6POAxEouadWWHbeyDem1BsOcEAT2spQzqeVKZc2VlZJ2FO/CapGYvi
-p7bMOAMbiIPdklfTFRj1eGA4BlLlrw645YEvlo0fCMrVZNYb+sGI1SImVfoToaxl
-dcT1lagnKE1+ERL8jPqLcbx66jIOq/Nf5hRJOHuayfjz2uUqfYduumKu5NlryBv+
-OiVeQmm3AgMBAAECggEARcoJDKs9XPdiFO1ui/b8EwdUQVVEYV41hW/beN/xlApV
-dGtb/mOEhdECBG2RdAdihQmUNNuB85IEERVyka/5XAj6fG8HVp2BeagRH8HkAG+x
-+EhUbybnBjK7i6UkO5AX5iZGrfKoztlzM8oVe/TVoA/2JW5WWz0oFl3+2yO1I8gE
-4qTcP+iNFgNa2SDu0ALjiDgVUDhap+Rs4R9qd5mxswdGYUfD9oqBcouxGZVPgv6n
-Xe66iowrnWfc25bD3swXPmsTBF1lncGPuSHrVwPYBFLb6rSbjtOh8aJf61qqRO/s
-w44UIcOAhZ15Qv5I1rbbPHoDiRK1a1VUEpPyWxZ/IQKBgQD8YwovOoSRSnzVorIa
-RlstKai7iOE6cFkrEVQUvojJcUNmfW99cMtCrGDkXQTahnpov7m2qRho/oNCPYpr
-tECo8vyiMW857CaLVZVQiHO5PvzkdCKqhdR4CNsDYpXCMqBtL0Qgn6WagsU1Qw4X
-uj9wgOxtBHoSgufe8rf1hXyLWwKBgQDd+Uo8gvP+rua4g4zkXZzyeucvQC5KJHqM
-8YNPdaZ8+cb72yMIp/p3BqPoj2zzyX+uGW7opEwwQjAO5VG5wh+jW6j09s6e5Zes
-3IJ55v5f40ioUkpxPaa3EQOSRQfi9EVRVJv6bPidRVCS4rtQMccB3oCxq+iQ8OCj
-QAf7PNwV1QKBgCG9N6pSn1Aw7fk9M6PxjdS+wfC3/qvqQvFP8raHNg//1SvJTvMs
-9e8mzhkZGkIAQjLolnIFrt6yT2e2hF+bjB1Jxl4ET8Mlf42W1kwawaWc9v+vSscS
-9vFI9cZBEpYQYIPYErptvRynqKdTHHotireGdJSqSYtZ9pdGSTNIMfsLAoGAYSHj
-MFOFfZ7/ayJ1lsC4GwtY+r41A1CvJ9nPQggTkICkaDVeQT1wRoFrXCrW3F8CNib+
-92JdzIhKC1qhxo2B1rQXXQpbJAEHvCbKGZnRGhiVBMLtvFvkBhu12l3Gs7N8WbiS
-gKUKrZdVSNFach82HEVHP3ggTrx5MDamx3O8QvkCgYBytDiq72xVjklJLWOsSbBo
-X7zVUE2d5y01FsN30UQ4nNdCGmEdvu206B1n3Clel1kepYd9Mn7JQgzrBQQwz5UP
-06MxC3IfJVYcFmiZ7Kb4ggeBW1QbUbbsb2Jbuv7wNoPcIAE2c5PwnmgacnhVB58O
-qr8VpwUTpFt0PnPahUNCRw==
------END PRIVATE KEY-----"#;
-const MODULUS: &str = "2tdFT_a3PqABt_iYZGjyvziUqNstNLOaVKGyAjKX1gKQ6Z6BLDyX_98r0b5SCZ0DCvnkDbcUnZ4BT9Ttz-r4KS9DJAewgDsW3tlgeCxWdMB7kM8cjtAb_WAy72YnTYOxSssYZwEclStJtDhcL1uXZ_y-jzgMRKLmnVlh23sg3ptQbDnBAE9rKUM6nlSmXNlZWSdhTvwmqRmL4qe2zDgDG4iD3ZJX0xUY9XhgOAZS5a8OuOWBL5aNHwjK1WTWG_rBiNUiJlX6E6GsZXXE9ZWoJyhNfhES_Iz6i3G8euoyDqvzX-YUSTh7msn489rlKn2HbrpiruTZa8gb_jolXkJptw";
+include!("../../node/src/auth/test_signing_key.rs");
 /// The name the relay's certificate is issued to and tokens are minted for.
 const RELAY_HOST: &str = "localhost";
 const REFRESH: &str = "refresh-alice";
@@ -125,7 +99,7 @@ impl Cloud {
         match path.as_str() {
             "/.well-known/openid-configuration/jwks" => json(
                 StatusCode::OK,
-                serde_json::json!({"keys": [{"kid": KID, "kty": "RSA", "alg": "RS256", "use": "sig", "n": MODULUS, "e": "AQAB"}]}),
+                serde_json::json!({"keys": [{"kid": KID, "kty": "RSA", "alg": "RS256", "use": "sig", "n": public_key("n"), "e": public_key("e")}]}),
             ),
             "/connect/token" if form.get("refresh_token").map(String::as_str) == Some(REFRESH) => {
                 json(
@@ -142,7 +116,7 @@ impl Cloud {
                 serde_json::json!({
                     "host": RELAY_HOST,
                     "port": self.relay_port,
-                    "token": connection_token(self.relay_port),
+                    "token": connection_token(&self.url(), self.relay_port),
                     "expires_at": "2099-01-01T00:00:00Z",
                     "tier": "pro",
                 }),
@@ -163,30 +137,56 @@ fn json(status: StatusCode, body: serde_json::Value) -> Response<Full<Bytes>> {
         .unwrap()
 }
 
-/// A connection token for the relay at `RELAY_HOST:port`, as the cloud
-/// mints one.
-fn connection_token(port: u16) -> String {
-    let mut header = Header::new(Algorithm::RS256);
-    header.kid = Some(KID.into());
+/// The stand-in cloud's signing key.
+fn signing_key() -> RsaKeyPair {
+    let body: String = CLOUD_SIGNING_KEY
+        .lines()
+        .filter(|line| !line.starts_with("-----"))
+        .collect();
+    RsaKeyPair::from_pkcs8(&STANDARD.decode(body).unwrap()).unwrap()
+}
+
+/// One component of the signing key's public half, as its key set names
+/// it: `n`, the modulus, or `e`, the exponent.
+fn public_key(component: &str) -> String {
+    let public: RsaPublicKeyComponents<Vec<u8>> = signing_key().public_key().into();
+    URL_SAFE_NO_PAD.encode(if component == "n" { public.n } else { public.e })
+}
+
+/// A connection token for the relay at `RELAY_HOST:port`, as the cloud at
+/// `issuer` mints one: RS256, by the key its key set names.
+fn connection_token(issuer: &str, port: u16) -> String {
     let exp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs()
         + 3600;
-    jsonwebtoken::encode(
-        &header,
-        &serde_json::json!({
-            "sub": USER,
-            "client_id": "relay-test",
-            "host": RELAY_HOST,
-            "port": port,
-            "exp": exp,
-            "aud": "amux_token",
-            "tier": "pro",
-        }),
-        &EncodingKey::from_rsa_pem(PRIVATE_KEY.as_bytes()).unwrap(),
+    let header = serde_json::json!({"alg": "RS256", "typ": "JWT", "kid": KID});
+    let claims = serde_json::json!({
+        "sub": USER,
+        "client_id": "relay-test",
+        "host": RELAY_HOST,
+        "port": port,
+        "exp": exp,
+        "iss": issuer,
+        "aud": "amux_token",
+        "tier": "pro",
+    });
+    let input = format!(
+        "{}.{}",
+        URL_SAFE_NO_PAD.encode(header.to_string()),
+        URL_SAFE_NO_PAD.encode(claims.to_string())
+    );
+    let key = signing_key();
+    let mut signature = vec![0; key.public().modulus_len()];
+    key.sign(
+        &RSA_PKCS1_SHA256,
+        &SystemRandom::new(),
+        input.as_bytes(),
+        &mut signature,
     )
-    .unwrap()
+    .unwrap();
+    format!("{input}.{}", URL_SAFE_NO_PAD.encode(signature))
 }
 
 /// A port free on TCP and UDP both, for the relay's two listeners.

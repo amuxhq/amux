@@ -52,14 +52,15 @@ libc = { workspace = true }
 libc = { workspace = true }
 
 [dev-dependencies]
+base64 = "0.22"
 release = { workspace = true, features = ["test-key"] }
 pty-host = { workspace = true }
 patience = { workspace = true }
 bytes = { workspace = true }
 http-body-util = { workspace = true }
 hyper = { workspace = true }
-jsonwebtoken = { workspace = true }
 rcgen = { workspace = true }
+ring = { workspace = true }
 agent = { workspace = true }
 journal = { workspace = true }
 prost = { workspace = true }

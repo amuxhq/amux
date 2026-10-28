@@ -144,10 +144,12 @@ is `host`, `port`, `token`, `expires_at` and `tier` (`free` or `pro`). The
 profile dials that relay over QUIC, with TCP as the fallback, and presents
 the token.
 
-The token is a JWT the account service signs. The relay validates it against
-the keys at `/.well-known/openid-configuration/jwks`, requires the audience
-`amux_token` and an expiry, and checks that its `host` and `port` claims name
-the relay it arrived at. Its other claims are `sub` (the account), `client_id`
+The token is a JWT the account service signs with RS256. The relay accepts
+that algorithm only, whatever the token's header names, and validates the
+signature against the keys at `/.well-known/openid-configuration/jwks`,
+fetched with a ten-second timeout and kept for an hour. It requires the
+audience `amux_token`, the account service's URL as the issuer, and an expiry,
+and checks that the `host` and `port` claims name the relay it arrived at. Its other claims are `sub` (the account), `client_id`
 (the OAuth client that asked for it) and `tier`.
 
 The tier decides what the relay carries:

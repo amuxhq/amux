@@ -21,8 +21,6 @@ relay-core = { workspace = true }
 path-core = { workspace = true }
 futures-util = { workspace = true }
 hyper-util = { workspace = true }
-jsonwebtoken = { workspace = true }
-oauth2 = { workspace = true }
 quinn = { workspace = true }
 rcgen = { workspace = true }
 release = { workspace = true }

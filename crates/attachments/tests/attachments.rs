@@ -382,3 +382,27 @@ fn the_path_attribute_is_accepted_and_ignored() {
     assert_eq!(parsed.positioned.attachments, vec![image()]);
     assert!(parsed.reported.is_empty());
 }
+
+/// An image is native by its bytes alone, whatever its name or label.
+#[test]
+fn an_image_is_native_by_its_bytes() {
+    use attachments::{native_image, native_image_at};
+    assert_eq!(native_image(b"\x89PNG\r\n\x1a\n..."), Some("image/png"));
+    assert_eq!(native_image(&[0xff, 0xd8, 0xff, 0xe0]), Some("image/jpeg"));
+    assert_eq!(native_image(b"GIF87a."), Some("image/gif"));
+    assert_eq!(native_image(b"GIF89a."), Some("image/gif"));
+    assert_eq!(native_image(b"RIFF\x10\0\0\0WEBPVP8 "), Some("image/webp"));
+    assert_eq!(native_image(b"RIFF\x10\0\0\0WAVEfmt "), None);
+    assert_eq!(
+        native_image(b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>"),
+        None
+    );
+    assert_eq!(native_image(b"\0\0\0\x18ftypheic"), None);
+    assert_eq!(native_image(b"II*\0"), None);
+    assert_eq!(native_image(b""), None);
+    let path = std::env::temp_dir().join(format!("amux-native-{}", std::process::id()));
+    std::fs::write(&path, b"GIF89a and the rest of a long file").unwrap();
+    assert_eq!(native_image_at(&path), Some("image/gif"));
+    std::fs::remove_file(&path).unwrap();
+    assert_eq!(native_image_at(&path), None);
+}

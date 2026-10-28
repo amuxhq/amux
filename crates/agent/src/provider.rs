@@ -829,19 +829,23 @@ impl Provider {
                     path,
                 } => {
                     prose.push_str(&element);
-                    let Some(Of::Image(blob)) = &attachment.of else {
+                    let Some(Of::Image(_)) = &attachment.of else {
                         continue;
                     };
                     // The element names the file, so a model can still
-                    // read an image whose bytes cannot be inlined.
+                    // read an image whose bytes cannot be inlined, or are
+                    // not an image Claude reads.
                     let Some(bytes) = path.and_then(|path| std::fs::read(path).ok()) else {
+                        continue;
+                    };
+                    let Some(media_type) = attachments::native_image(&bytes) else {
                         continue;
                     };
                     blocks.push(text_block(std::mem::take(&mut prose)));
                     blocks.push(ContentBlock::Image {
                         source: ImageSource {
                             r#type: ImageSourceType::Base64,
-                            media_type: blob.mime.clone(),
+                            media_type: media_type.to_owned(),
                             data: base64(&bytes),
                             extensions: Default::default(),
                         },
@@ -1166,14 +1170,16 @@ fn codex_turn_input(
             attachment,
             attachments::blob_path(attachment, blobs).as_deref(),
         )));
+        // Codex reads only some image types and swaps any other for a note
+        // the person never sees; the element names that file instead.
         if let Some(wire::attachment::Of::Image(blob)) = &attachment.of {
-            input.push(UserInput::LocalImage(LocalImageInput {
-                path: blobs
-                    .join(interpret::to_hex(&blob.hash))
-                    .to_string_lossy()
-                    .into_owned(),
-                extra: Default::default(),
-            }));
+            let path = blobs.join(interpret::to_hex(&blob.hash));
+            if attachments::native_image_at(&path).is_some() {
+                input.push(UserInput::LocalImage(LocalImageInput {
+                    path: path.to_string_lossy().into_owned(),
+                    extra: Default::default(),
+                }));
+            }
         }
     }
     Ok(codex_protocol::encode(&request))
@@ -1641,7 +1647,9 @@ mod tests {
                 ))),
             },
         ];
-        let blobs = Path::new("/agents/a/blobs");
+        let dir = tempfile::tempdir().unwrap();
+        let blobs = dir.path();
+        std::fs::write(blobs.join("ab".repeat(32)), b"\x89PNG\r\n\x1a\n").unwrap();
         let request = br#"{"id":"amux-1","method":"turn/start","params":{"threadId":"t1","input":[{"type":"text","text":"read these","text_elements":[]}]}}"#;
         let written = super::codex_turn_input(request, &attachments, blobs).unwrap();
         let written: serde_json::Value = serde_json::from_slice(&written).unwrap();

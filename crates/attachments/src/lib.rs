@@ -28,6 +28,37 @@ use wire::attachment::Of;
 use wire::diff_base::Base;
 use wire::{Attachment, BlobRef, Diff, DiffBase, Empty, InlineText, Review, ReviewComment};
 
+/// The type of an image both providers read natively (PNG, JPEG, GIF or
+/// WebP), judged by its bytes; None for anything else, which reaches the
+/// model as a file its element names. Claude and Codex both judge an image
+/// by its bytes too, so a label or extension is never trusted.
+pub fn native_image(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+        Some("image/jpeg")
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        Some("image/gif")
+    } else if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        None
+    }
+}
+
+/// [`native_image`] of the file at `path`, from its first bytes; None when
+/// it cannot be read.
+pub fn native_image_at(path: &Path) -> Option<&'static str> {
+    use std::io::Read as _;
+    let mut head = Vec::with_capacity(12);
+    std::fs::File::open(path)
+        .ok()?
+        .take(12)
+        .read_to_end(&mut head)
+        .ok()?;
+    native_image(&head)
+}
+
 /// Marks one attachment's position in text.
 pub const PLACEHOLDER: char = '\u{FFFC}';
 /// What a placeholder found where none belongs is replaced with.

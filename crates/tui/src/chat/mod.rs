@@ -1862,7 +1862,9 @@ impl ChatView {
                     .map_err(|error| format!("{name} could not be read: {error}"))?;
                 self.attaching.push(name.clone());
                 Ok(Some(ChatEffect::Attach {
-                    mime: mime_of(&name).to_owned(),
+                    mime: attachments::native_image(&bytes)
+                        .unwrap_or_else(|| mime_of(&name))
+                        .to_owned(),
                     name,
                     bytes,
                 }))
@@ -3801,13 +3803,10 @@ fn which_key_panel(
     (lines, chords)
 }
 
+/// The type of a pasted file that is not a native image, from its name.
 fn mime_of(name: &str) -> &'static str {
     let extension = name.rsplit('.').next().unwrap_or_default().to_lowercase();
     match extension.as_str() {
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
         "txt" | "md" | "log" => "text/plain",
         "json" => "application/json",
         _ => "application/octet-stream",

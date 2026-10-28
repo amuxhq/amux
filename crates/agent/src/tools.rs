@@ -574,15 +574,15 @@ impl Server {
         let hash = sha2::Sha256::digest(&bytes).to_vec();
         dir::write_blob(&self.dir, &hash, &bytes)
             .map_err(|error| format!("storing {}: {error}", path.display()))?;
-        let mime = mime_type(&path);
+        let image = attachments::native_image(&bytes);
         let blob = BlobRef {
             hash: hash.clone(),
             name,
-            mime: mime.to_owned(),
+            mime: image.unwrap_or_else(|| mime_type(&path)).to_owned(),
             size: bytes.len() as u64,
         };
         let attachment = Attachment {
-            of: Some(if mime.starts_with("image/") {
+            of: Some(if image.is_some() {
                 attachment::Of::Image(blob)
             } else {
                 attachment::Of::File(blob)
@@ -762,17 +762,14 @@ fn optional(arguments: &Value, name: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// The type a viewer opens the file as, from its extension.
+/// The type a viewer opens a file that is not a native image as, from its
+/// extension.
 fn mime_type(path: &Path) -> &'static str {
     let extension = path
         .extension()
         .map(|extension| extension.to_string_lossy().to_lowercase())
         .unwrap_or_default();
     match extension.as_str() {
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
         "svg" => "image/svg+xml",
         "pdf" => "application/pdf",
         "json" => "application/json",

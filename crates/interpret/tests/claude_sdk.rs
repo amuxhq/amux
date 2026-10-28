@@ -1876,3 +1876,40 @@ fn claudes_text_reaches_the_wire_without_terminal_codes() {
         "terminal codes reached the wire from {coded:?}"
     );
 }
+
+/// Headless Claude's plan approval switches to never ask where Claude was
+/// launched allowing it, as terminal Claude's does: one rule for both.
+#[test]
+fn a_plan_approval_switches_to_never_ask_where_claude_offers_it() {
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        incarnation: 1,
+        provider_args: vec!["--allow-dangerously-skip-permissions".into()],
+        ..Default::default()
+    };
+    let (mut state, _) = ClaudeSdk::initial(&spec, "test");
+    ClaudeSdk::step(
+        &mut state,
+        stream(
+            json!({"type": "system", "subtype": "init", "uuid": "i", "session_id": "s", "model": "claude-root"}),
+        ),
+    );
+    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        text: "plan it".into(),
+        ..Default::default()
+    });
+    ClaudeSdk::step(&mut state, sdk_input(b"p1", prompt));
+    let asked = ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "control_request", "request_id": "req-1",
+            "request": {"subtype": "can_use_tool", "tool_name": "ExitPlanMode",
+                "input": {"plan": "1. Do it."}, "tool_use_id": "t1"},
+        })),
+    );
+    let (_, snapshot) = sdk_snapshot(&asked).expect("a snapshot");
+    let Some(wire::ask::Body::Plan(plan)) = &snapshot.asks[0].body else {
+        panic!("{:?}", snapshot.asks);
+    };
+    assert_eq!(plan.switch_permission, "bypassPermissions");
+}

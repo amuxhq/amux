@@ -594,7 +594,14 @@ nothing is inferred.
   for a non-success subtype), with its duration on the turn item.
   The result dismisses any ask still open.
 - **Boundaries.** Claude repeats its `init` at every turn; only a process
-  start or a changed session id is a boundary, the latter a fork.
+  start, a reset or a changed session id is a boundary. A
+  `conversation_reset` (a `/clear`, leaving plan mode with its context
+  cleared, a fresh session, onboarding) draws a cleared boundary at once,
+  but its `new_conversation_id` is an id Claude makes up before it makes the
+  session, so nothing takes it: the next `init` names the new session, which
+  the boundary then shows, and which the agent saves (`ProviderSession`)
+  for the next incarnation to resume. A session id that changes with no
+  reset before it is a fork.
 - **Tasks.** A subagent or a shell in the background is reported as task
   events naming the call that started it. They are progress on that call:
   a subagent's steps on its Agent row, and the call stays running, across

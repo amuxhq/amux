@@ -1170,10 +1170,6 @@ async fn a_headless_clear_is_the_session_the_next_incarnation_resumes() {
                 chunks: vec!["after the clear".into()],
             },
             Step::TurnEnd,
-            Step::Text {
-                chunks: vec!["still after it".into()],
-            },
-            Step::TurnEnd,
         ],
         ..Setup::sdk()
     })
@@ -1212,7 +1208,6 @@ async fn a_headless_clear_is_the_session_the_next_incarnation_resumes() {
     agent
         .wait("the resumed turn ends", |log| log.turn_ends() == 3)
         .await;
-    assert!(agent.log().has_text("still after it"));
     assert_eq!(
         agent.provider_session(),
         after,

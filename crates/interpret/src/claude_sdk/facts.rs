@@ -33,7 +33,8 @@ use crate::claude_common::{
 };
 use crate::shared::json_as_written;
 use crate::{
-    Channel, Emit, Fact, ItemDraft, ask_item, is_attach_tool, is_status_tool, status_working_on,
+    Channel, Effect, Emit, Fact, ItemDraft, ask_item, is_attach_tool, is_status_tool,
+    status_working_on,
 };
 
 const INTERRUPTED: &str = "[Request interrupted by user";
@@ -140,10 +141,16 @@ impl State {
                     },
                 })
             }
-            Message::ConversationReset(reset) => {
-                self.session = written(&reset.new_conversation_id);
+            // Every reset, whatever started it, is a new session the next
+            // init names.
+            Message::ConversationReset(_) => {
+                self.session = None;
                 self.context_tokens = None;
-                self.boundary(emit, BoundaryKind::Cleared, wire::IncarnationEnd::default());
+                self.cleared = Some(self.boundary(
+                    emit,
+                    BoundaryKind::Cleared,
+                    wire::IncarnationEnd::default(),
+                ));
             }
             Message::Status(status) => {
                 if let Some(mode) = status
@@ -425,11 +432,30 @@ impl State {
                     (server.name.as_str(), server.status.as_str(), "")
                 })));
         }
+        let changed = session.is_some() && session != previous;
+        // A reset's boundary names the session it began once one does.
+        let cleared = self.cleared.take();
+        // The session the process launched under is saved already; one it
+        // moved to (a reset's) is the one the next incarnation resumes.
+        if changed
+            && (previous.is_some() || cleared.is_some())
+            && let Some(id) = &session
+        {
+            emit.effect(Effect::ProviderSession { id: id.clone() });
+        }
+        if let Some(key) = &cleared {
+            self.boundary_at(
+                emit,
+                key.clone(),
+                BoundaryKind::Cleared,
+                wire::IncarnationEnd::default(),
+            );
+        }
         // Claude repeats its init at every turn; only a new process or a
-        // new session is a boundary.
+        // new session it did not reset to is a boundary.
         let kind = self
             .coming_boundary()
-            .or_else(|| (session.is_some() && session != previous).then_some(BoundaryKind::Forked));
+            .or_else(|| (changed && cleared.is_none()).then_some(BoundaryKind::Forked));
         self.exited = false;
         self.inits += 1;
         let Some(kind) = kind else {

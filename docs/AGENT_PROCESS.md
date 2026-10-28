@@ -327,7 +327,11 @@ Claude is started through `pty_host::spawn` with the spec's arguments plus:
   ones. The id is a UUID the agent makes up and keeps in
   `private/provider-session`. A session Claude never began (it exited at its
   folder-trust dialog, say) has no transcript and cannot be resumed, so it is
-  started again under the same id.
+  started again under the same id. One whose transcript holds no user or
+  assistant row (Claude stopped as it wrote its first message, leaving only
+  metadata) can neither be resumed nor started again under that id, so a new
+  id replaces it. The check looks where Claude does: a resume across the
+  projects Claude searches, a new session in this folder's project alone.
 - `--settings <json>`: the user's own settings with the agent's merged over
   them. The agent's part registers `<install path> hooks claude` as the hook
   command for `SessionStart`, `SessionEnd`, `UserPromptSubmit`,
@@ -365,7 +369,10 @@ The agent runs the spec's command with the spec's arguments plus
 `--print --input-format stream-json --output-format stream-json --verbose
 --permission-prompt-tool stdio --replay-user-messages`, `--session-id <id>`
 or `--resume <id>` (kept in `private/provider-session` as for terminal
-Claude), `--settings <json>` and `--mcp-config`. Claude reports nothing until
+Claude, and replaced the same way), `--settings <json>` and `--mcp-config`.
+A reset gives Claude a new session, which the interpreter names once Claude's
+next `init` reports it; the agent saves it and names it on later user
+messages. Claude reports nothing until
 asked, so the agent writes an `initialize` control request at once, built
 from `claude_protocol::stream` types like every line written to Claude; its
 answer is what says Claude takes input, and it lists the models and commands

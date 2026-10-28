@@ -702,22 +702,17 @@ impl Provider {
                 let request = codex_turn_input(&request, &attachments, &self.dir.join(dir::BLOBS))?;
                 self.write_line(&request).await
             }
-            Effect::ProviderSession { .. } => Ok(()),
+            Effect::ProviderSession { id } => {
+                self.adopt_session(&id).await;
+                Ok(())
+            }
             Effect::FollowTranscript { path } => {
                 let path = PathBuf::from(path);
                 // A transcript is named by its session. A new one (a
                 // `/clear`, or a resume Claude ran itself) is the session
                 // the next incarnation resumes.
                 if let Some(session) = path.file_stem().and_then(|stem| stem.to_str()) {
-                    let file = self.dir.join(dir::PRIVATE).join(dir::PROVIDER_SESSION);
-                    if std::fs::read_to_string(&file)
-                        .ok()
-                        .as_deref()
-                        .map(str::trim)
-                        != Some(session)
-                    {
-                        persist(&self.events, &file, session).await;
-                    }
+                    self.adopt_session(session).await;
                 }
                 self.follow(path);
                 Ok(())
@@ -903,6 +898,22 @@ impl Provider {
             )),
             Input::Closed => Err(closed()),
         }
+    }
+
+    /// Claude's session is now `session`: the one the next incarnation
+    /// resumes, saved when it differs from the saved one, and the one later
+    /// user messages name.
+    async fn adopt_session(&mut self, session: &str) {
+        let file = self.dir.join(dir::PRIVATE).join(dir::PROVIDER_SESSION);
+        if std::fs::read_to_string(&file)
+            .ok()
+            .as_deref()
+            .map(str::trim)
+            != Some(session)
+        {
+            persist(&self.events, &file, session).await;
+        }
+        session.clone_into(&mut self.session);
     }
 
     /// Reads a transcript's rows as they are written. A transcript an
@@ -1465,25 +1476,39 @@ fn provider_session(spec: &AgentSpec, dir: &Path) -> io::Result<(String, bool)> 
 }
 
 /// Claude's session for this agent, and whether this incarnation resumes
-/// it. Claude writes a session's transcript once the session begins; one
-/// that ended before (at its folder-trust dialog, or stopped before its
-/// first prompt) has none, and Claude refuses to resume it. It starts under
-/// the same id instead.
+/// it, in both modes. Claude writes a session's transcript at its first
+/// message; one that ended before (at its folder-trust dialog, or stopped
+/// before its first prompt) has none, and starts under the same id. One
+/// stopped as it wrote its first message can hold only metadata, which
+/// Claude neither resumes nor starts again under its id: a new id replaces
+/// it.
 fn claude_session(spec: &AgentSpec, dir: &Path) -> io::Result<(String, bool)> {
     let (session, resume) = provider_session(spec, dir)?;
-    if resume && !session_began(spec, &session) {
-        eprintln!(
-            "amux agent: Claude's session {session} never began; starting it rather than resuming"
-        );
+    if !resume {
         return Ok((session, false));
     }
-    Ok((session, resume))
+    match session_file(spec, &session) {
+        claude::history::SessionFile::Conversation => Ok((session, true)),
+        claude::history::SessionFile::Missing => {
+            eprintln!(
+                "amux agent: Claude's session {session} never began; starting it rather than resuming"
+            );
+            Ok((session, false))
+        }
+        claude::history::SessionFile::Empty => {
+            let (new, resume) = new_session(&dir.join(dir::PRIVATE).join(dir::PROVIDER_SESSION))?;
+            eprintln!(
+                "amux agent: Claude's session {session} holds no conversation; starting session {new} instead"
+            );
+            Ok((new, resume))
+        }
+    }
 }
 
-/// Whether Claude has a transcript for this session: resuming needs one.
-/// Claude keeps them under CLAUDE_CONFIG_DIR, as the spec or this process
-/// sets it, else ~/.claude.
-fn session_began(spec: &AgentSpec, session: &str) -> bool {
+/// What Claude has for this session. Claude keeps its transcripts under
+/// CLAUDE_CONFIG_DIR, as the spec or this process sets it, else ~/.claude;
+/// with neither known, the session is taken to have one.
+fn session_file(spec: &AgentSpec, session: &str) -> claude::history::SessionFile {
     const CONFIG_DIR: &str = "CLAUDE_CONFIG_DIR";
     let configured = spec
         .provider_env
@@ -1493,9 +1518,9 @@ fn session_began(spec: &AgentSpec, session: &str) -> bool {
     let Some(config) = configured
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".claude")))
     else {
-        return true;
+        return claude::history::SessionFile::Conversation;
     };
-    claude::history::find_session_file(&config, Path::new(&spec.cwd), session).is_some()
+    claude::history::session_file(&config, Path::new(&spec.cwd), session)
 }
 
 fn new_session(path: &Path) -> io::Result<(String, bool)> {

@@ -259,6 +259,10 @@ pub struct State {
     /// makes it: headless Claude reports its init only after it reads the
     /// first message. That init fills it in.
     early_boundary: Option<String>,
+    /// The cleared boundary drawn at a reset, until the next init names the
+    /// session it began: Claude's reset frame names an id it made up
+    /// before it made the session.
+    cleared: Option<String>,
     tasks: Option<Vec<Task>>,
     active_tasks: BTreeMap<String, TaskState>,
     context_tokens: Option<u64>,
@@ -369,6 +373,7 @@ impl State {
             next_request: 0,
             next_boundary: 0,
             early_boundary: None,
+            cleared: None,
             tasks: None,
             active_tasks: BTreeMap::new(),
             context_tokens: None,

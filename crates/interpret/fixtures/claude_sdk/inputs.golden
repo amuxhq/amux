@@ -48,15 +48,15 @@ effect user 63310000-0000-4000-8000-000000000000 "/clear"
 item 63310000-0000-4000-8000-000000000000 prompt final input=c1 at=1800000000000 text="/clear"
 snapshot WORKING queue=[] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 17 fact {"channel":"stream","json":{"new_conversation_id":"s2","type":"conversation_reset","uuid":"cr"}}
-item boundary:2 boundary final at=1800000000000 text="" BOUNDARY_KIND_CLEARED session=s2 version=2.1.282
-snapshot WORKING queue=[] working_on="first" at=1800000000000 asks=[] session=s2 model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+item boundary:2 boundary final at=1800000000000 text="" BOUNDARY_KIND_CLEARED session=- version=2.1.282
+snapshot WORKING queue=[] working_on="first" at=1800000000000 asks=[] session=? model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 18 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":false,"subtype":"success","total_cost_usd":0.01,"type":"result","uuid":"r2"}}
 item turn:2 turn final at=1800000000000 text="" #2 TURN_OUTCOME_COMPLETED started=1799999999000
-snapshot IDLE queue=[] working_on="first" at=1800000000000 asks=[] session=s2 model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on="first" at=1800000000000 asks=[] session=? model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 turn_end 2 last=-
 ## 19 agent_message {"envelope":"env-1","from":"reviewer","text":"please look at the diff"}
 effect inject env-1 via Stdin
 effect reply env-1 queued
 item agent-message:656e762d31 agent_message final input=env-1 at=1800000000000 text="please look at the diff" envelope=656e762d31
-snapshot WORKING queue=[] working_on="first" at=1800000000000 asks=[] session=s2 model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="first" at=1800000000000 asks=[] session=? model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 pending [env-1]

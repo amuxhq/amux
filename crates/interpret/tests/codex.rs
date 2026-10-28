@@ -2094,3 +2094,91 @@ fn a_safety_check_is_the_turns_status_while_it_runs() {
         "the check's end does not close its status"
     );
 }
+
+/// A Codex agent whose thread `t1` runs a turn while its child thread
+/// `child` works on the same server.
+fn with_a_child() -> Driven {
+    let mut agent = Driven::started();
+    agent.rpc(json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}));
+    agent.rpc(json!({"method": "turn/started", "params": {"threadId": "child", "turn": {"id": "child-turn"}}}));
+    agent
+}
+
+fn turn_ends(agent: &mut Driven) -> interpret::Stepped {
+    agent.rpc(json!({"method": "turn/completed", "params": {"threadId": "t1",
+        "turn": {"id": "turn-1", "status": "completed"}}}))
+}
+
+/// Codex sends a child thread's approvals to every client of the server. A
+/// child's command ask is the child's: it adds no row to the parent's turn,
+/// outlives the parent's turn end, and closes when Codex says it was
+/// answered, whichever thread that is on.
+#[test]
+fn a_childs_command_approval_outlives_the_parents_turn() {
+    let mut agent = with_a_child();
+    let asked = agent.rpc(json!({"id": 7, "method": "item/commandExecution/requestApproval",
+        "params": {"threadId": "child", "turnId": "child-turn", "itemId": "child-cmd",
+            "command": "rm -rf build", "cwd": "/work", "reason": "clean"}}));
+    assert!(
+        !asked.step.items.iter().any(|item| item.key == "child-cmd"),
+        "the child's command became a row in the parent's turn"
+    );
+    assert_eq!(agent.snapshot.asks.len(), 1);
+    let ended = turn_ends(&mut agent);
+    assert!(
+        writes(&ended.effects).is_empty(),
+        "the parent's turn end answered the child's ask: {:?}",
+        writes(&ended.effects)
+    );
+    assert_eq!(agent.snapshot.asks.len(), 1, "the child's ask was closed");
+    agent.rpc(json!({"method": "serverRequest/resolved", "params": {"threadId": "child", "requestId": 7}}));
+    assert!(agent.snapshot.asks.is_empty(), "Codex said it was answered");
+}
+
+/// A child's file-change ask shows the child's own changes.
+#[test]
+fn a_childs_file_change_approval_shows_its_diff() {
+    let mut agent = with_a_child();
+    agent.rpc(json!({"method": "item/started", "params": {"threadId": "child", "turnId": "child-turn",
+        "item": {"type": "fileChange", "id": "child-patch", "status": "inProgress",
+            "changes": [{"path": "/work/a.txt", "kind": {"type": "update", "move_path": null},
+                "diff": "@@ -1 +1 @@\n-a\n+b\n"}]}}}));
+    agent.rpc(json!({"id": 8, "method": "item/fileChange/requestApproval",
+        "params": {"threadId": "child", "turnId": "child-turn", "itemId": "child-patch"}}));
+    let Some(wire::codex_ask::Body::FileChange(change)) = &agent.snapshot.asks[0].body else {
+        panic!("a file-change ask: {:?}", agent.snapshot.asks);
+    };
+    assert_eq!(change.changes.len(), 1, "the child's diff is missing");
+}
+
+/// A tool server's approval belongs to that server's call, not to whichever
+/// call started last; a child's names its own server.
+#[test]
+fn an_mcp_approval_names_its_own_servers_call() {
+    let mut agent = with_a_child();
+    agent.rpc(json!({"method": "item/started", "params": {"threadId": "t1", "turnId": "turn-1",
+        "item": {"type": "mcpToolCall", "id": "call-spec", "server": "spec", "tool": "ask",
+            "status": "inProgress", "arguments": {}}}}));
+    agent.rpc(json!({"id": 9, "method": "mcpServer/elicitation/request", "params": {
+        "_meta": {"codex_approval_kind": "mcp_tool_call", "tool_name": "search"},
+        "message": "Allow docs to run search?", "mode": "form",
+        "requestedSchema": {"properties": {}, "type": "object"},
+        "serverName": "docs", "threadId": "child", "turnId": "child-turn"}}));
+    let ask = &agent.snapshot.asks[0];
+    let Some(wire::codex_ask::Body::McpTool(tool)) = &ask.body else {
+        panic!("a tool approval: {ask:?}");
+    };
+    assert_eq!((tool.server.as_str(), tool.tool.as_str()), ("docs", "search"));
+    assert_ne!(ask.item_key, "call-spec", "pinned to another server's call");
+}
+
+/// A child's request amux cannot answer is refused, and draws no row in the
+/// parent.
+#[test]
+fn a_childs_unknown_request_draws_nothing_in_the_parent() {
+    let mut agent = with_a_child();
+    let refused = agent.rpc(json!({"id": 10, "method": "item/somethingNew/request",
+        "params": {"threadId": "child", "turnId": "child-turn"}}));
+    assert_eq!(writes(&refused.effects).len(), 1, "the request was not refused");
+    assert!(agent.unrecognized().is_empty(), "{:?}", agent.unrecognized());
+}

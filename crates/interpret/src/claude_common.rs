@@ -1462,39 +1462,47 @@ pub(crate) fn launched_permission(args: &[String]) -> Option<String> {
     launch_arg(args, "--permission-mode")
 }
 
-/// Text a terminal program wrote, without its colour and cursor codes:
-/// CSI and OSC sequences and the other escapes.
+/// Claude's text as a wire field carries it: without the colour, cursor
+/// and link codes a terminal program writes (CSI and OSC sequences, in
+/// their escaped and their one-character C1 forms, and the other escapes)
+/// or any other control character but a newline and a tab. Every field
+/// made of Claude's words goes through this one cleaner.
 pub(crate) fn without_terminal_codes(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c != '\u{1b}' {
-            out.push(c);
-            continue;
+    // CSI: parameters and intermediates, then one final byte.
+    let csi = |chars: &mut std::iter::Peekable<std::str::Chars>| {
+        for c in chars.by_ref() {
+            if ('\u{40}'..='\u{7e}').contains(&c) {
+                break;
+            }
         }
-        match chars.next() {
-            // CSI: parameters and intermediates, then one final byte.
-            Some('[') => {
-                for c in chars.by_ref() {
-                    if ('\u{40}'..='\u{7e}').contains(&c) {
-                        break;
-                    }
-                }
+    };
+    // OSC: up to BEL or ST, in either form.
+    let osc = |chars: &mut std::iter::Peekable<std::str::Chars>| {
+        while let Some(c) = chars.next() {
+            if c == '\u{7}' || c == '\u{9c}' {
+                break;
             }
-            // OSC: up to BEL or ST.
-            Some(']') => {
-                while let Some(c) = chars.next() {
-                    if c == '\u{7}' {
-                        break;
-                    }
-                    if c == '\u{1b}' && chars.peek() == Some(&'\\') {
-                        chars.next();
-                        break;
-                    }
-                }
+            if c == '\u{1b}' && chars.peek() == Some(&'\\') {
+                chars.next();
+                break;
             }
-            // A two-character escape.
-            _ => {}
+        }
+    };
+    while let Some(c) = chars.next() {
+        match c {
+            '\u{1b}' => match chars.next() {
+                Some('[') => csi(&mut chars),
+                Some(']') => osc(&mut chars),
+                // A two-character escape.
+                _ => {}
+            },
+            '\u{9b}' => csi(&mut chars),
+            '\u{9d}' => osc(&mut chars),
+            '\n' | '\t' => out.push(c),
+            c if c.is_control() => {}
+            c => out.push(c),
         }
     }
     out

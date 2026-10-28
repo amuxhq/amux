@@ -627,6 +627,13 @@ nothing is inferred.
   the end of the turn that launched it, until the task's notification ends
   it with the task's answer. A task whose call this interpreter never showed
   is an item of its own.
+- **Claude's words.** Claude says several of its fields may carry terminal
+  escapes. Every field made of its words (the status word, a fallback's
+  and a refusal's reason, a command's output, an ask's reason, description
+  and title, a denial's note, a tool server's message) goes through one
+  cleaner, which drops CSI and OSC sequences in either form, the other
+  escapes and every control character but a newline and a tab. Terminal
+  Claude's `!command` and command output go through the same one.
 - **Subagents' frames.** A frame naming a `parent_tool_use_id` is a
   subagent's, and is checked for that first: it starts no turn, sets no
   model or context, and draws no text, thinking, error or interruption of

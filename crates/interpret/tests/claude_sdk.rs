@@ -1792,14 +1792,18 @@ fn a_flagged_ask_offers_no_scope_and_says_it_defaults_to_no() {
     assert!(permission.default_to_no);
 }
 
-/// Whether encoded wire bytes hold a terminal escape or a C1 control.
+/// Whether encoded wire bytes hold a terminal escape or the one-character
+/// CSI. Lengths and tags make any single control byte ordinary there.
 fn holds_terminal_codes(bytes: &[u8]) -> bool {
-    bytes.windows(2).any(|pair| {
-        matches!(
-            pair,
-            [0x1b, b'[' | b']' | b'(' | b'7' | b'8'] | [0xc2, 0x80..=0x9f]
-        )
-    }) || bytes.contains(&0x07)
+    bytes
+        .windows(2)
+        .any(|pair| matches!(pair, [0x1b, b'[' | b']'] | [0xc2, 0x9b]))
+}
+
+/// Whether text holds a control character but a newline or a tab.
+fn holds_controls(text: &str) -> bool {
+    text.chars()
+        .any(|c| c.is_control() && c != '\n' && c != '\t')
 }
 
 /// Claude's text that becomes a wire field reaches no client with its
@@ -1862,7 +1866,7 @@ fn claudes_text_reaches_the_wire_without_terminal_codes() {
                 .step
                 .items
                 .iter()
-                .any(|item| holds_terminal_codes(item.text.as_bytes()))
+                .any(|item| holds_controls(&item.text))
         {
             coded.push(what);
         }

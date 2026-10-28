@@ -29,7 +29,7 @@ use crate::claude_common::{
     apply_task_tool, auto_models, blocks_text, claude_limit, compact_json, job_kind, message_text,
     offered_commands, offered_models, old_source, permission_scopes, plan_ask, plan_mode_write,
     question_ask, question_ask_text, split_tool_name, tool_class, tool_input, tool_result_images,
-    tool_result_text, without_image_bytes,
+    tool_result_text, without_image_bytes, without_terminal_codes,
 };
 use crate::shared::json_as_written;
 use crate::{
@@ -162,7 +162,7 @@ impl State {
                 }
                 // The activity line reads "Compacting" from this item until
                 // the compaction row lands; a status of null only ends one.
-                if let Some(word) = status.status {
+                if let Some(word) = status.status.as_deref().map(without_terminal_codes) {
                     let typed = match word.as_str() {
                         "compacting" => wire::SdkStatus::Compacting,
                         "requesting" => wire::SdkStatus::Requesting,
@@ -237,9 +237,11 @@ impl State {
             Message::ModelRefusalFallback(fallback) => {
                 self.model = Some(fallback.fallback_model.clone());
                 self.chosen_model = None;
-                let reason = written_opt(fallback.api_refusal_explanation.as_deref())
-                    .or_else(|| written_opt(fallback.api_refusal_category.as_deref()))
-                    .unwrap_or(fallback.content);
+                let reason = without_terminal_codes(
+                    &written_opt(fallback.api_refusal_explanation.as_deref())
+                        .or_else(|| written_opt(fallback.api_refusal_category.as_deref()))
+                        .unwrap_or(fallback.content),
+                );
                 self.shared.item(
                     emit,
                     ItemDraft {
@@ -260,8 +262,10 @@ impl State {
                     key: refusal.uuid,
                     body: item_body(Kind::ApiError(wire::ApiError {
                         error_kind: "refusal".into(),
-                        message: written_opt(refusal.api_refusal_explanation.as_deref())
-                            .unwrap_or(refusal.content),
+                        message: without_terminal_codes(
+                            &written_opt(refusal.api_refusal_explanation.as_deref())
+                                .unwrap_or(refusal.content),
+                        ),
                         ..Default::default()
                     })),
                     complete: true,
@@ -269,7 +273,7 @@ impl State {
                 },
             ),
             Message::LocalCommandOutput(output) => {
-                self.slash_output(emit, output.uuid, &output.content)
+                self.slash_output(emit, output.uuid, &without_terminal_codes(&output.content))
             }
             // Claude's own ambient work (memory consolidation and the
             // like) is nothing the person started: no row, no job.
@@ -341,7 +345,9 @@ impl State {
                 }
             }
             Message::PermissionDenied(denied) => {
-                let note = written_opt(denied.decision_reason.as_deref()).unwrap_or(denied.message);
+                let note = without_terminal_codes(
+                    &written_opt(denied.decision_reason.as_deref()).unwrap_or(denied.message),
+                );
                 self.decide(
                     emit,
                     &denied.tool_use_id,
@@ -1262,7 +1268,7 @@ impl State {
             ControlRequestBody::CanUseTool(asked) => self.can_use_tool(emit, &request_id, asked),
             ControlRequestBody::Elicitation(elicitation) => {
                 let server = elicitation.mcp_server_name;
-                let message = elicitation.message;
+                let message = without_terminal_codes(&elicitation.message);
                 let (body, shape) = if elicitation.mode.as_deref() == Some("url") {
                     (
                         wire::ask::Body::Link(LinkAsk {
@@ -1367,7 +1373,7 @@ impl State {
             }
             _ => {
                 let reason = match &asked.decision_reason {
-                    Some(reason) => reason.clone(),
+                    Some(reason) => without_terminal_codes(reason),
                     // Claude names the path a command would write even
                     // inside its folder, where it asks only because writes
                     // need asking; only a path beyond the folder is the
@@ -1388,9 +1394,11 @@ impl State {
                         )),
                         scopes: permission_scopes(&suggestions),
                         reason,
-                        description: written_opt(asked.description.as_deref())
-                            .or_else(|| written_opt(asked.title.as_deref()))
-                            .unwrap_or_default(),
+                        description: without_terminal_codes(
+                            &written_opt(asked.description.as_deref())
+                                .or_else(|| written_opt(asked.title.as_deref()))
+                                .unwrap_or_default(),
+                        ),
                         deny_stops: false,
                         deny_can_stop: true,
                         default_to_no: asked.default_to_no == Some(true),

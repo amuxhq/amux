@@ -731,6 +731,15 @@ answer.
   `two_clients_approval` and `two_clients_steer` hold real sessions of two
   clients on one server; each line carries the client it belongs to, and
   the interpreter reads only amux's.
+- **Child threads' asks.** Codex sends a child thread's approval requests to
+  every client of the server. Each ask keeps the thread that asked: a
+  child's points at no row of the agent's turn (its work is drawn by the
+  child's own subagent row), a child's file-change ask shows the changes the
+  child's own items carried, and the agent's turn end leaves a child's asks
+  open. `serverRequest/resolved` closes an ask whichever thread it names. A
+  tool server's approval belongs to that server's running call (of the tool
+  Codex names, from codex-cli 0.163), else to the newest running call. A
+  child's request amux cannot answer is refused without a row.
 - **Streaming.** Agent-message, plan and reasoning deltas and command output
   are appends to their open items.
 - **Other notices.** A web search that opens a page or looks within one

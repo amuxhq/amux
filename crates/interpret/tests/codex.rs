@@ -1971,10 +1971,12 @@ fn a_thread_with_no_history_starts_afresh_with_a_notice() {
 #[test]
 fn a_clear_unsubscribes_the_old_thread_and_its_children() {
     let mut agent = Driven::started();
-    agent.rpc(json!({"method": "item/completed", "params": {"threadId": "t1", "turnId": "turn-1",
+    agent.rpc(
+        json!({"method": "item/completed", "params": {"threadId": "t1", "turnId": "turn-1",
         "item": {"type": "collabAgentToolCall", "id": "spawn-1", "tool": "spawnAgent",
             "status": "completed", "senderThreadId": "t1", "receiverThreadIds": ["child-1"],
-            "prompt": "look around", "agentsStates": {}}}}));
+            "prompt": "look around", "agentsStates": {}}}}),
+    );
     let cleared = agent.prompt(b"p1", "/clear");
     let start = cleared
         .iter()
@@ -1999,7 +2001,11 @@ fn a_clear_unsubscribes_the_old_thread_and_its_children() {
 fn the_agents_thread_closing_ends_the_incarnation() {
     let mut agent = Driven::started();
     let closed = agent.rpc(json!({"method": "thread/closed", "params": {"threadId": "t1"}}));
-    assert!(agent.unrecognized().is_empty(), "{:?}", agent.unrecognized());
+    assert!(
+        agent.unrecognized().is_empty(),
+        "{:?}",
+        agent.unrecognized()
+    );
     assert!(exits(&closed), "the closed thread left the agent running");
 }
 
@@ -2009,10 +2015,14 @@ fn the_agents_thread_closing_ends_the_incarnation() {
 #[test]
 fn known_codex_messages_draw_no_unrecognized_rows() {
     let mut agent = Driven::started();
-    agent.rpc(json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}));
+    agent.rpc(
+        json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}),
+    );
     let item = |kind: &str, extra: Value| {
         let mut item = json!({"type": kind, "id": format!("{kind}-1")});
-        item.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        item.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
         json!({"method": "item/completed", "params": {"threadId": "t1", "turnId": "turn-1", "item": item}})
     };
     let hook_run = json!({"id": "h1", "eventName": "preToolUse", "handlerType": "command",
@@ -2051,13 +2061,20 @@ fn known_codex_messages_draw_no_unrecognized_rows() {
         item("enteredReviewMode", json!({"review": "current changes"})),
         item("exitedReviewMode", json!({"review": "current changes"})),
         item("hookPrompt", json!({"fragments": []})),
-        item("subAgentActivity", json!({"kind": "started", "agentThreadId": "c1", "agentPath": "/a"})),
+        item(
+            "subAgentActivity",
+            json!({"kind": "started", "agentThreadId": "c1", "agentPath": "/a"}),
+        ),
         item("sleep", json!({})),
         item("functionCallOutput", json!({})),
     ] {
         agent.rpc(message);
     }
-    assert!(agent.unrecognized().is_empty(), "{:?}", agent.unrecognized());
+    assert!(
+        agent.unrecognized().is_empty(),
+        "{:?}",
+        agent.unrecognized()
+    );
     let texts: Vec<&str> = agent.items.iter().map(|item| item.text.as_str()).collect();
     let shows = |words: &str| texts.iter().any(|text| text.contains(words));
     assert!(shows("Trusted Access for Cyber"), "{texts:?}");
@@ -2075,7 +2092,9 @@ fn known_codex_messages_draw_no_unrecognized_rows() {
 #[test]
 fn a_safety_check_is_the_turns_status_while_it_runs() {
     let mut agent = Driven::started();
-    agent.rpc(json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}));
+    agent.rpc(
+        json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}),
+    );
     let buffering = |on: bool| {
         json!({"method": "model/safetyBuffering/updated", "params": {"threadId": "t1", "turnId": "turn-1",
             "model": "m", "useCases": [], "reasons": [], "showBufferingUi": on, "fasterModel": null}})
@@ -2099,14 +2118,18 @@ fn a_safety_check_is_the_turns_status_while_it_runs() {
 /// `child` works on the same server.
 fn with_a_child() -> Driven {
     let mut agent = Driven::started();
-    agent.rpc(json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}));
+    agent.rpc(
+        json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}),
+    );
     agent.rpc(json!({"method": "turn/started", "params": {"threadId": "child", "turn": {"id": "child-turn"}}}));
     agent
 }
 
 fn turn_ends(agent: &mut Driven) -> interpret::Stepped {
-    agent.rpc(json!({"method": "turn/completed", "params": {"threadId": "t1",
-        "turn": {"id": "turn-1", "status": "completed"}}}))
+    agent.rpc(
+        json!({"method": "turn/completed", "params": {"threadId": "t1",
+        "turn": {"id": "turn-1", "status": "completed"}}}),
+    )
 }
 
 /// Codex sends a child thread's approvals to every client of the server. A
@@ -2116,9 +2139,11 @@ fn turn_ends(agent: &mut Driven) -> interpret::Stepped {
 #[test]
 fn a_childs_command_approval_outlives_the_parents_turn() {
     let mut agent = with_a_child();
-    let asked = agent.rpc(json!({"id": 7, "method": "item/commandExecution/requestApproval",
+    let asked = agent.rpc(
+        json!({"id": 7, "method": "item/commandExecution/requestApproval",
         "params": {"threadId": "child", "turnId": "child-turn", "itemId": "child-cmd",
-            "command": "rm -rf build", "cwd": "/work", "reason": "clean"}}));
+            "command": "rm -rf build", "cwd": "/work", "reason": "clean"}}),
+    );
     assert!(
         !asked.step.items.iter().any(|item| item.key == "child-cmd"),
         "the child's command became a row in the parent's turn"
@@ -2139,10 +2164,12 @@ fn a_childs_command_approval_outlives_the_parents_turn() {
 #[test]
 fn a_childs_file_change_approval_shows_its_diff() {
     let mut agent = with_a_child();
-    agent.rpc(json!({"method": "item/started", "params": {"threadId": "child", "turnId": "child-turn",
+    agent.rpc(
+        json!({"method": "item/started", "params": {"threadId": "child", "turnId": "child-turn",
         "item": {"type": "fileChange", "id": "child-patch", "status": "inProgress",
             "changes": [{"path": "/work/a.txt", "kind": {"type": "update", "move_path": null},
-                "diff": "@@ -1 +1 @@\n-a\n+b\n"}]}}}));
+                "diff": "@@ -1 +1 @@\n-a\n+b\n"}]}}}),
+    );
     agent.rpc(json!({"id": 8, "method": "item/fileChange/requestApproval",
         "params": {"threadId": "child", "turnId": "child-turn", "itemId": "child-patch"}}));
     let Some(wire::codex_ask::Body::FileChange(change)) = &agent.snapshot.asks[0].body else {
@@ -2156,19 +2183,26 @@ fn a_childs_file_change_approval_shows_its_diff() {
 #[test]
 fn an_mcp_approval_names_its_own_servers_call() {
     let mut agent = with_a_child();
-    agent.rpc(json!({"method": "item/started", "params": {"threadId": "t1", "turnId": "turn-1",
+    agent.rpc(
+        json!({"method": "item/started", "params": {"threadId": "t1", "turnId": "turn-1",
         "item": {"type": "mcpToolCall", "id": "call-spec", "server": "spec", "tool": "ask",
-            "status": "inProgress", "arguments": {}}}}));
-    agent.rpc(json!({"id": 9, "method": "mcpServer/elicitation/request", "params": {
+            "status": "inProgress", "arguments": {}}}}),
+    );
+    agent.rpc(
+        json!({"id": 9, "method": "mcpServer/elicitation/request", "params": {
         "_meta": {"codex_approval_kind": "mcp_tool_call", "tool_name": "search"},
         "message": "Allow docs to run search?", "mode": "form",
         "requestedSchema": {"properties": {}, "type": "object"},
-        "serverName": "docs", "threadId": "child", "turnId": "child-turn"}}));
+        "serverName": "docs", "threadId": "child", "turnId": "child-turn"}}),
+    );
     let ask = &agent.snapshot.asks[0];
     let Some(wire::codex_ask::Body::McpTool(tool)) = &ask.body else {
         panic!("a tool approval: {ask:?}");
     };
-    assert_eq!((tool.server.as_str(), tool.tool.as_str()), ("docs", "search"));
+    assert_eq!(
+        (tool.server.as_str(), tool.tool.as_str()),
+        ("docs", "search")
+    );
     assert_ne!(ask.item_key, "call-spec", "pinned to another server's call");
 }
 
@@ -2179,6 +2213,14 @@ fn a_childs_unknown_request_draws_nothing_in_the_parent() {
     let mut agent = with_a_child();
     let refused = agent.rpc(json!({"id": 10, "method": "item/somethingNew/request",
         "params": {"threadId": "child", "turnId": "child-turn"}}));
-    assert_eq!(writes(&refused.effects).len(), 1, "the request was not refused");
-    assert!(agent.unrecognized().is_empty(), "{:?}", agent.unrecognized());
+    assert_eq!(
+        writes(&refused.effects).len(),
+        1,
+        "the request was not refused"
+    );
+    assert!(
+        agent.unrecognized().is_empty(),
+        "{:?}",
+        agent.unrecognized()
+    );
 }

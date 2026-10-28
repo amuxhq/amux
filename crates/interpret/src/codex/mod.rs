@@ -325,6 +325,9 @@ struct AskMeta {
     questions: Vec<(String, Vec<String>)>,
     /// When it opened, for the item of an ask that is the work.
     at_ms: i64,
+    /// The thread that asked: the agent's own, or a child thread's on the
+    /// same server, which the agent's turn end leaves open.
+    thread: String,
 }
 
 /// A unit of work as last emitted.
@@ -566,6 +569,10 @@ pub struct State {
     #[serde(with = "serde_pb::bytes_vec")]
     parked: Vec<Vec<u8>>,
     works: BTreeMap<String, WorkState>,
+    /// Child threads' file changes, by item id, which their approvals show:
+    /// the rest of a child's work is drawn by its own subagent row.
+    #[serde(with = "serde_pb::msg_map")]
+    child_changes: BTreeMap<String, wire::FileChangeWork>,
     /// When each amux send call started, so its completion keeps the time.
     sent: BTreeMap<String, i64>,
     streamed: BTreeMap<String, Streamed>,
@@ -664,6 +671,7 @@ impl State {
             held: Vec::new(),
             parked: Vec::new(),
             works: BTreeMap::new(),
+            child_changes: BTreeMap::new(),
             sent: BTreeMap::new(),
             streamed: BTreeMap::new(),
             asks: BTreeMap::new(),

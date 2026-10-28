@@ -748,6 +748,9 @@ pub struct ElicitationMeta {
     pub persist: Option<Persist>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub codex_approval_kind: Option<String>,
+    /// The tool whose call is being approved, from codex-cli 0.163.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_description: Option<String>,
     /// The arguments of the tool call being approved.

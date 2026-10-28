@@ -8,8 +8,9 @@ use codex_protocol::client::{
     ToolCallResponse, TurnInterruptParams,
 };
 use codex_protocol::items::{
-    CommandAction, DynamicToolCallItem, McpToolCallItem, MessagePhase, PatchChangeKind,
-    TextContent, ThreadItem, ToolOutputContent, UserInput, WebSearchAction, WebSearchItem,
+    CommandAction, DynamicToolCallItem, FileUpdateChange, McpToolCallItem, MessagePhase,
+    PatchChangeKind, TextContent, ThreadItem, ToolOutputContent, UserInput, WebSearchAction,
+    WebSearchItem,
 };
 use codex_protocol::server::{
     AccountReadResponse, AutoApprovalReview, BackgroundTerminalsResponse, CommandApprovalParams,
@@ -35,9 +36,9 @@ use wire::{
 };
 
 use super::{
-    AskMeta, DROPPED_NOTIFICATIONS, FRESH_THREAD_REQUEST, InjectConsumption, Proposed, RESUME_REQUEST, Request, State,
-    Streamed, WorkState, ask_key, client_message_id, elicitation_response, item_body, work_ask,
-    work_complete,
+    AskMeta, DROPPED_NOTIFICATIONS, FRESH_THREAD_REQUEST, InjectConsumption, Proposed,
+    RESUME_REQUEST, Request, State, Streamed, WorkState, ask_key, client_message_id,
+    elicitation_response, item_body, work_ask, work_complete,
 };
 use crate::claude_common::compact_json;
 use crate::shared::{Output, json_as_written, patch_first_change};
@@ -330,7 +331,12 @@ impl State {
                     extra: Default::default(),
                 };
                 self.respond(emit, &ask_key(id), Err(refusal));
-                self.unrecognized(emit, method, "a request amux cannot answer");
+                if !unknown
+                    .thread_id()
+                    .is_some_and(|thread| self.is_child(&thread))
+                {
+                    self.unrecognized(emit, method, "a request amux cannot answer");
+                }
             }
             (Some(method), None) => {
                 // A child thread's activity on the same server is its own.
@@ -1025,20 +1031,31 @@ impl State {
     ) {
         let key = ask_key(id);
         let method = request.method();
+        let thread = request.thread_id().to_owned();
+        // A child thread's request is the child's: its work is no row of the
+        // agent's turn, so the ask points at none.
+        let child = self.is_child(&thread);
         let (item_key, body, decisions) = match request {
-            ServerRequest::CommandApproval(params) => self.command_approval(emit, params),
+            ServerRequest::CommandApproval(params) => self.command_approval(emit, params, child),
             ServerRequest::FileChangeApproval(params) => {
-                let changes = match self
-                    .works
-                    .get(&params.item_id)
-                    .and_then(|state| state.work.as_ref())
-                    .and_then(|work| work.of.as_ref())
-                {
-                    Some(work::Of::FileChange(change)) => change.changes.clone(),
-                    _ => Vec::new(),
+                let changes = if child {
+                    self.child_changes
+                        .get(&params.item_id)
+                        .map(|work| work.changes.clone())
+                        .unwrap_or_default()
+                } else {
+                    match self
+                        .works
+                        .get(&params.item_id)
+                        .and_then(|state| state.work.as_ref())
+                        .and_then(|work| work.of.as_ref())
+                    {
+                        Some(work::Of::FileChange(change)) => change.changes.clone(),
+                        _ => Vec::new(),
+                    }
                 };
                 (
-                    params.item_id,
+                    if child { String::new() } else { params.item_id },
                     codex_ask::Body::FileChange(FileChangeApproval {
                         reason: params.reason.unwrap_or_default(),
                         grant_root: params.grant_root.unwrap_or_default(),
@@ -1108,11 +1125,12 @@ impl State {
                         responses: Vec::new(),
                         questions: shapes,
                         at_ms: 0,
+                        thread,
                     },
                 );
             }
             ServerRequest::Elicitation(params) => {
-                return self.elicitation(emit, key, method, params, payload);
+                return self.elicitation(emit, key, method, params, payload, child);
             }
             ServerRequest::ToolCall(_) => {
                 // Tools amux offers Codex are served by amux's tool server;
@@ -1147,6 +1165,7 @@ impl State {
                 responses,
                 questions: Vec::new(),
                 at_ms: 0,
+                thread,
             },
         );
     }
@@ -1157,11 +1176,12 @@ impl State {
         &mut self,
         emit: &mut Emit,
         params: CommandApprovalParams,
+        child: bool,
     ) -> (String, codex_ask::Body, Vec<CommandDecision>) {
-        let item_id = params.item_id;
+        let item_id = if child { String::new() } else { params.item_id };
         let command = shown_command(&params.command.unwrap_or_default());
         let cwd = params.cwd.unwrap_or_default();
-        if !self.works.contains_key(&item_id) {
+        if !child && !self.works.contains_key(&item_id) {
             let at_ms = params.started_at_ms.unwrap_or(self.shared.now_ms());
             self.works.insert(
                 item_id.clone(),
@@ -1232,22 +1252,38 @@ impl State {
         self.shared.open_ask(ask);
     }
 
-    /// The tool-server call running now, which an elicitation belongs to.
-    fn running_tool_call(&self) -> Option<(String, String, String)> {
-        self.works
-            .iter()
-            .filter_map(|(key, state)| match state.work.as_ref() {
-                Some(Work {
-                    of: Some(work::Of::Mcp(call)),
-                    state: running,
-                    ..
-                }) if *running == ToolState::Running as i32 => {
-                    Some((state.at_ms, key, call.server.clone(), call.tool.clone()))
-                }
-                _ => None,
-            })
-            .max_by_key(|(at_ms, ..)| *at_ms)
-            .map(|(_, key, server, tool)| (key.clone(), server, tool))
+    /// The running call an elicitation of `server` belongs to, and its tool:
+    /// that server's call of `tool` when Codex names it, else the server's
+    /// newest, else, when no running call is that server's, the newest
+    /// running call.
+    fn running_tool_call(&self, server: &str, tool: &str) -> Option<(String, String, String)> {
+        let running = |of_server: bool| {
+            self.works
+                .iter()
+                .filter_map(|(key, state)| match state.work.as_ref() {
+                    Some(Work {
+                        of: Some(work::Of::Mcp(call)),
+                        state: running,
+                        ..
+                    }) if *running == ToolState::Running as i32
+                        && (!of_server
+                            || (call.server == server
+                                && (tool.is_empty() || call.tool == tool))) =>
+                    {
+                        Some((state.at_ms, key, call.server.clone(), call.tool.clone()))
+                    }
+                    _ => None,
+                })
+                .max_by_key(|(at_ms, ..)| *at_ms)
+                .map(|(_, key, server, tool)| (key.clone(), server, tool))
+        };
+        running(true).or_else(|| running(false))
+    }
+
+    /// Whether `thread` is a child thread on the agent's server, not the
+    /// agent's own.
+    fn is_child(&self, thread: &str) -> bool {
+        !thread.is_empty() && self.thread_id.as_deref().is_some_and(|ours| ours != thread)
     }
 
     fn elicitation(
@@ -1257,7 +1293,9 @@ impl State {
         method: &str,
         params: ElicitationParams,
         payload: &[u8],
+        child: bool,
     ) {
+        let thread = params.thread_id.clone();
         let meta = params.meta.unwrap_or_default();
         let server = params.server_name;
         let approval = meta.codex_approval_kind.as_deref() == Some("mcp_tool_call");
@@ -1279,7 +1317,11 @@ impl State {
             return self.respond(emit, &key, Ok(accept));
         }
         let message = params.message.unwrap_or_default();
-        let (item_key, call_server, tool) = self.running_tool_call().unwrap_or_default();
+        let named_tool = meta.tool_name.clone().unwrap_or_default();
+        let (item_key, call_server, tool) = match self.running_tool_call(&server, &named_tool) {
+            Some(call) if !child => call,
+            _ => (String::new(), server.clone(), named_tool),
+        };
         let (body, offered): (_, Vec<(Decision, ClientResponse)>) = if approval {
             let mut offered = vec![(
                 Decision::Approve,
@@ -1307,11 +1349,7 @@ impl State {
             ));
             (
                 codex_ask::Body::McpTool(McpToolApproval {
-                    server: if call_server.is_empty() {
-                        server
-                    } else {
-                        call_server
-                    },
+                    server: call_server,
                     tool,
                     arguments_json: compact_json(meta.tool_params.as_ref().unwrap_or(&Value::Null))
                         .into_bytes(),
@@ -1358,6 +1396,7 @@ impl State {
                 responses,
                 questions: Vec::new(),
                 at_ms: 0,
+                thread,
             },
         );
     }
@@ -1379,11 +1418,27 @@ impl State {
     // --- notifications ---------------------------------------------------
 
     fn notification(&mut self, emit: &mut Emit, notification: ServerNotification) {
+        // Codex says an ask was answered on whichever thread asked it.
+        if let ServerNotification::ServerRequestResolved(resolved) = &notification {
+            return self.ask_resolved(emit, &ask_key(&resolved.request_id));
+        }
         // A child thread's activity on the same server is its own; the
-        // collaboration item reports it here.
+        // collaboration item reports it here. Its file changes are kept for
+        // its approvals to show.
         if let (Some(ours), Some(theirs)) = (self.thread_id.as_deref(), about_thread(&notification))
             && ours != theirs
         {
+            if let ServerNotification::ItemStarted(started)
+            | ServerNotification::ItemCompleted(started) = &notification
+                && let ThreadItem::FileChange(change) = &started.item
+            {
+                self.child_changes.insert(
+                    change.id.clone(),
+                    wire::FileChangeWork {
+                        changes: file_changes(&change.changes, false),
+                    },
+                );
+            }
             return;
         }
         match notification {
@@ -1556,9 +1611,7 @@ impl State {
                 self.effort = settings.effort.map(|effort| effort.as_str().to_owned());
                 self.left_plan(emit);
             }
-            ServerNotification::ServerRequestResolved(resolved) => {
-                self.ask_resolved(emit, &ask_key(&resolved.request_id));
-            }
+            ServerNotification::ServerRequestResolved(_) => {}
             // Nothing a client draws, or what another fact already covers.
             ServerNotification::ThreadStatusChanged(_)
             | ServerNotification::ThreadNameUpdated(_)
@@ -2145,32 +2198,7 @@ impl State {
             }
             ThreadItem::FileChange(change) => (
                 work::Of::FileChange(wire::FileChangeWork {
-                    changes: change
-                        .changes
-                        .iter()
-                        .map(|change| wire::FileChange {
-                            path: change.path.clone(),
-                            kind: match &change.kind {
-                                PatchChangeKind::Add(_) => wire::FileChangeKind::Add,
-                                PatchChangeKind::Delete(_) => wire::FileChangeKind::Delete,
-                                PatchChangeKind::Update(_) => wire::FileChangeKind::Update,
-                                PatchChangeKind::Unknown(_) => wire::FileChangeKind::Unspecified,
-                            } as i32,
-                            move_to: match &change.kind {
-                                PatchChangeKind::Update(update) => {
-                                    update.move_path.clone().unwrap_or_default()
-                                }
-                                _ => String::new(),
-                            },
-                            patch: change.diff.clone(),
-                            line: match &change.kind {
-                                PatchChangeKind::Update(_) if state == ToolState::Succeeded => {
-                                    patch_first_change(&change.diff)
-                                }
-                                _ => None,
-                            },
-                        })
-                        .collect(),
+                    changes: file_changes(&change.changes, state == ToolState::Succeeded),
                 }),
                 ToolClass::Consequential,
             ),
@@ -2446,9 +2474,25 @@ impl State {
             );
         }
         self.final_error = None;
-        // Work whose approval was still open never ran.
+        // Work whose approval was still open never ran. A child thread's
+        // asks are the child's, and stay open past the agent's turn.
         let mut unapproved = BTreeSet::new();
-        for ask in self.shared.close_all_asks() {
+        let own: Vec<String> = self
+            .shared
+            .asks()
+            .open_asks()
+            .iter()
+            .map(|ask| ask.key.clone())
+            .filter(|key| {
+                self.asks
+                    .get(key)
+                    .is_none_or(|meta| !self.is_child(&meta.thread))
+            })
+            .collect();
+        for key in own {
+            let Some(ask) = self.shared.close_ask(&key) else {
+                continue;
+            };
             if let Some(codex_ask::Body::Plan(_)) = ask.body {
                 self.decide_plan(emit, wire::PlanVerdict::Dismissed, None);
                 continue;
@@ -2737,3 +2781,29 @@ fn notice_words(notice: DeprecationNotice) -> String {
 
 /// Codex's words for its cybersecurity checks, as its own app shows them.
 const CYBER_CHECKS: &str = "Your conversations have multiple flags for possible cybersecurity risk. Responses may take longer because extra safety checks are on. To get authorized for security work, join the Trusted Access for Cyber program: https://chatgpt.com/cyber";
+
+/// A patch's changes as the wire carries them; the first changed line only
+/// once the patch applied.
+fn file_changes(changes: &[FileUpdateChange], applied: bool) -> Vec<wire::FileChange> {
+    changes
+        .iter()
+        .map(|change| wire::FileChange {
+            path: change.path.clone(),
+            kind: match &change.kind {
+                PatchChangeKind::Add(_) => wire::FileChangeKind::Add,
+                PatchChangeKind::Delete(_) => wire::FileChangeKind::Delete,
+                PatchChangeKind::Update(_) => wire::FileChangeKind::Update,
+                PatchChangeKind::Unknown(_) => wire::FileChangeKind::Unspecified,
+            } as i32,
+            move_to: match &change.kind {
+                PatchChangeKind::Update(update) => update.move_path.clone().unwrap_or_default(),
+                _ => String::new(),
+            },
+            patch: change.diff.clone(),
+            line: match &change.kind {
+                PatchChangeKind::Update(_) if applied => patch_first_change(&change.diff),
+                _ => None,
+            },
+        })
+        .collect()
+}

@@ -1337,9 +1337,19 @@ impl State {
                     self.context_window = Some(window as u64);
                 }
             }
-            ServerNotification::AccountRateLimitsUpdated(updated) => {
+            // Codex reports each of its limits under its own id; the meter
+            // is the `codex` limit's, as in Codex's own app, and an update
+            // without an id is that one.
+            ServerNotification::AccountRateLimitsUpdated(updated)
+                if updated
+                    .rate_limits
+                    .limit_id
+                    .as_deref()
+                    .is_none_or(|id| id == "codex") =>
+            {
                 self.usage = Some(codex_usage(&updated.rate_limits));
             }
+            ServerNotification::AccountRateLimitsUpdated(_) => {}
             ServerNotification::AccountUpdated(updated) => {
                 self.sign_in = Some(
                     match some_of(updated.auth_mode.as_ref().map(|m| m.as_str())) {

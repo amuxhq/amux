@@ -1,3 +1,7 @@
+2026-10-28 — **The Codex usage meter shows the `codex` limit only.** Codex reports each of its rate limits under its own `limitId`, and amux kept whichever update came last, so another limit could move the meter or block the agent. Updates naming another limit are now ignored; one without an id is the `codex` limit, as in Codex's own app.
+
+Tests: `cargo test -p interpret --test codex the_usage_meter_reads_the_codex_limit_only` passes.
+
 2026-10-28 — **The relay's TLS fallback test always puts QUIC on another port.** It asked the free-port probe twice, once for the port tokens name and once for the relay's QUIC listener, and the probe lets a port go as soon as it finds it, so the second answer could be the first; on Linux CI the relay then listened for QUIC where the token pointed and the daemon linked over QUIC, not TLS. The QUIC port is now asked for until it differs.
 
 Tests: `cargo test -p amux --test relay` passes.

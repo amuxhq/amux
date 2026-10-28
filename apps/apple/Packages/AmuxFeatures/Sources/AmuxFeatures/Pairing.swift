@@ -139,9 +139,14 @@ func pairingRoute(_ machine: HostView?) -> String? {
 /// piece, said plainly, with the invitation kept where it was.
 public struct PairNeedsAnAccount: View {
     @Environment(\.design) private var design
+    /// Whether the sign-in Sign In started is under way. The browser opens
+    /// over this sheet and the sheet stays, so coming back from it finds the
+    /// press answered here.
+    private let signingIn: Bool
     private let actions: @MainActor (PairingAction) -> Void
 
-    public init(actions: @escaping @MainActor (PairingAction) -> Void) {
+    public init(signingIn: Bool = false, actions: @escaping @MainActor (PairingAction) -> Void) {
+        self.signingIn = signingIn
         self.actions = actions
     }
 
@@ -151,11 +156,18 @@ public struct PairNeedsAnAccount: View {
             detail: String(localized: "Its invitation names no address here, so it can only be reached through the relay. Sign in and this phone can take it up."),
             identifier: "pair-needs-account.title"
         ) {
-            Button { actions(.signIn) } label: {
-                ActionLabel("Sign In", kind: .primary, fill: true)
+            if signingIn {
+                WaitingLine(title: SigningIn.title)
+                    .identified(
+                        "pair-needs-account.signIn", label: SigningIn.title, value: "signing in",
+                        enabled: false)
+            } else {
+                Button { actions(.signIn) } label: {
+                    ActionLabel("Sign In", kind: .primary, fill: true)
+                }
+                .buttonStyle(.amuxControl)
+                .identified("pair-needs-account.signIn", label: "Sign In")
             }
-            .buttonStyle(.amuxControl)
-            .identified("pair-needs-account.signIn", label: "Sign In")
             Button { actions(.cancel) } label: {
                 ActionLabel("Not Now", kind: .outline, fill: true)
             }

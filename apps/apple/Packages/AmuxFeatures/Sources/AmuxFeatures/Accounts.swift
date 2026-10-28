@@ -53,10 +53,18 @@ struct AccountRow: View {
     @Environment(\.design) private var design
     let entry: AccountEntry
     let selected: Bool
+    /// Whether this account is being signed back into: the browser is up for
+    /// it, or what came back is being kept.
+    var signingIn = false
     let actions: @MainActor (AccountsAction) -> Void
 
     var body: some View {
-        Button { actions(entry.signedIn ? .select(entry.id) : .signIn(entry.id)) } label: {
+        Button {
+            // Signing back in is already under way: a second press would
+            // only be refused, and a row dimmed to say so cannot be read.
+            guard !signingIn else { return }
+            actions(entry.signedIn ? .select(entry.id) : .signIn(entry.id))
+        } label: {
             HStack(spacing: 12) {
                 InitialsDisc(entry: entry, filled: selected)
                 VStack(alignment: .leading, spacing: 1) {
@@ -81,12 +89,16 @@ struct AccountRow: View {
         .identified(
             "account.\(entry.account.email)",
             label: "\(entry.name), \(entry.line)",
-            value: selected ? "selected" : entry.signedIn ? "signed in" : "signed out")
+            value: signingIn ? "signing in"
+                : selected ? "selected" : entry.signedIn ? "signed in" : "signed out",
+            enabled: !signingIn)
     }
 
     @ViewBuilder
     private var trailing: some View {
-        if selected {
+        if signingIn {
+            SigningIn(font: .caption)
+        } else if selected {
             Image(systemName: "checkmark")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(design.accent.color)
@@ -187,6 +199,9 @@ public struct YouScreen: View {
     private let identity: Identity?
     /// The account being asked about removing, if one is.
     private let removing: AccountId?
+    /// Which account a sign-in in flight is for, so the row that asked for it
+    /// says so in its place.
+    private let signingIn: SignInIntent?
     private let actions: @MainActor (AccountsAction) -> Void
 
     public init(
@@ -197,6 +212,7 @@ public struct YouScreen: View {
         notifications: NotificationsSetting? = nil,
         identity: Identity? = nil,
         removing: AccountId? = nil,
+        signingIn: SignInIntent? = nil,
         actions: @escaping @MainActor (AccountsAction) -> Void
     ) {
         self.accounts = accounts
@@ -206,6 +222,7 @@ public struct YouScreen: View {
         self.notifications = notifications
         self.identity = identity
         self.removing = removing
+        self.signingIn = signingIn
         self.actions = actions
     }
 
@@ -235,7 +252,9 @@ public struct YouScreen: View {
             VStack(spacing: 0) {
                 ForEach(accounts.accounts) { entry in
                     let selected = entry.id == accounts.selected
-                    AccountRow(entry: entry, selected: selected, actions: actions)
+                    AccountRow(
+                        entry: entry, selected: selected, signingIn: signingIn?.isReturning(to: entry.id) ?? false,
+                        actions: actions)
                         .padding(.horizontal, 14)
                         // The selected account is asked about from its own
                         // section's row below; any other, from its row here.
@@ -254,7 +273,9 @@ public struct YouScreen: View {
                         }
                     rule(inset: 14)
                 }
-                if accounts.accounts.isEmpty {
+                if adding {
+                    signingInRow(accounts.accounts.isEmpty ? "you.signIn" : "you.add")
+                } else if accounts.accounts.isEmpty {
                     signIn
                 } else {
                     Button { actions(.add) } label: {
@@ -275,14 +296,32 @@ public struct YouScreen: View {
                     .identified("you.add", label: "Add Account")
                 }
             }
+            if accounts.accounts.isEmpty {
+                // What an account adds, under the offer of one. Where the
+                // browser it opens is going is said by the system as it
+                // opens: iOS names amux.sh before anything is typed, and the
+                // browser shows its address above the page.
+                Text("An account lets this phone reach your hosts from anywhere, and a subscription bought on \(CloudEndpoint.production.host) carries over.")
+                    .designFont(.caption, design)
+                    .foregroundStyle(design.inkFaint.color)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 14)
+                    .identified("you.signIn.caption")
+            }
         }
     }
 
+    /// Whether a sign-in for an account this phone does not list yet is in
+    /// flight.
+    private var adding: Bool { signingIn == .adding }
+
     /// The first account, offered where the accounts would be. A phone with
     /// nobody signed in is not a broken phone — it pairs and runs agents on
-    /// this network — so it is said as what an account adds rather than as
-    /// something missing. An account this phone remembers is signed back into
-    /// from its own row instead.
+    /// this network — so the caption under it says what an account adds
+    /// rather than what is missing. An account this phone remembers is signed
+    /// back into from its own row instead.
+    ///
+    /// It opens the browser itself.
     private var signIn: some View {
         Button { actions(.add) } label: {
             HStack(spacing: 12) {
@@ -290,23 +329,35 @@ public struct YouScreen: View {
                     .font(.system(size: 18, weight: .regular))
                     .foregroundStyle(design.accent.color)
                     .frame(width: 30)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Sign In")
-                        .designFont(.body, design)
-                        .foregroundStyle(design.accent.color)
-                    Text("Reach your agents from anywhere")
-                        .designFont(.caption, design)
-                        .foregroundStyle(design.inkMuted.color)
-                }
+                Text("Sign In")
+                    .designFont(.body, design)
+                    .foregroundStyle(design.accent.color)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 11)
+            .padding(.vertical, 13)
             .contentShape(Rectangle())
         }
         .buttonStyle(.amuxRow)
         .accessibilityElement(children: .combine)
         .identified("you.signIn", label: "Sign In")
+    }
+
+    /// Sign In or Add Account while the sign-in it started is under way: the
+    /// browser is up, or the account that came back is being kept. The row
+    /// says so in ink where its words were, and is not a button meanwhile —
+    /// a second press would only be refused, and a row dimmed to say "wait"
+    /// cannot be read.
+    private func signingInRow(_ identifier: String) -> some View {
+        HStack(spacing: 12) {
+            SigningIn.mark.frame(width: 30)
+            SigningIn.words(.body, design)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 13)
+        .accessibilityElement(children: .combine)
+        .identified(identifier, label: SigningIn.title, value: "signing in", enabled: false)
     }
 
     /// The selected account's own actions, under the list they continue.

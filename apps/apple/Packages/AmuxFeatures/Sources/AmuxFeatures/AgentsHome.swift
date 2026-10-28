@@ -64,6 +64,9 @@ public struct AgentsHome: View {
     /// Whether to offer notifications above the list: iOS has not asked,
     /// and nobody has put the offer away.
     private let offerNotifications: Bool
+    /// Whether a sign-in is under way, so the Sign In this screen offers says
+    /// so in its place rather than looking as if the press was dropped.
+    private let signingIn: Bool
     private let actions: @MainActor (HomeAction) -> Void
     /// The fold is view state, not fleet state: opening it is a thing this
     /// screen is doing, and coming back to the screen starts it closed again.
@@ -87,12 +90,14 @@ public struct AgentsHome: View {
         accounts: AccountRegistry,
         hosts: HostsStore,
         offerNotifications: Bool = false,
+        signingIn: Bool = false,
         actions: @escaping @MainActor (HomeAction) -> Void
     ) {
         self.model = model
         self.accounts = accounts
         self.hosts = hosts
         self.offerNotifications = offerNotifications
+        self.signingIn = signingIn
         self.actions = actions
         // Picked up from the fleet so the list comes back narrowed as it was
         // left, rather than with an empty field over a filtered list.
@@ -680,7 +685,8 @@ public struct AgentsHome: View {
         if let exceptions {
             callouts.append(Callout(
                 id: "exceptions", glyph: glyph(for: exceptions.act), title: exceptions.text,
-                detail: nil, button: nil, act: exceptions.act))
+                detail: nil, button: nil, act: exceptions.act,
+                working: exceptions.act == .signIn && signingIn))
         }
         if offerNotifications {
             callouts.append(Callout(
@@ -841,21 +847,30 @@ public struct AgentsHome: View {
 
     /// An account, offered under pairing as what it adds rather than as a
     /// step: amux is free on the network this phone is on.
+    ///
+    /// Sign In opens the browser itself, and says it is signing in where it
+    /// was until the sign-in has ended.
     private var haveAnAccount: some View {
         HStack(spacing: 4) {
             Text("Have an amux account?")
                 .designFont(.detail, design)
                 .foregroundStyle(design.inkMuted.color)
-            Button { actions(.signIn) } label: {
-                Text("Sign In")
-                    .designFont(.detail, design)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(design.accent.color)
-                    .thumbTarget(y: 13)
+            if signingIn {
+                SigningIn(font: .detail)
+                    .frame(minHeight: 44)
+                    .identified("home.empty.signIn", label: SigningIn.title, value: "signing in", enabled: false)
+            } else {
+                Button { actions(.signIn) } label: {
+                    Text("Sign In")
+                        .designFont(.detail, design)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(design.accent.color)
+                        .thumbTarget(y: 13)
+                }
+                .buttonStyle(.amuxControl)
+                .identified("home.empty.signIn", label: "Sign In")
+                .reclaimingThumbTarget(y: 13)
             }
-            .buttonStyle(.amuxControl)
-            .identified("home.empty.signIn", label: "Sign In")
-            .reclaimingThumbTarget(y: 13)
         }
     }
 
@@ -1264,6 +1279,9 @@ struct Callout<Action: Equatable>: Identifiable, Equatable {
     /// Putting the callout away, for one the person may decline; drawn as a
     /// close mark at its end.
     var dismiss: Action? = nil
+    /// Whether what it asks for is under way: its mark breathes in place of
+    /// its glyph and a second press does nothing.
+    var working = false
 }
 
 /// The callouts: one takes the full width; more than one narrow so the next
@@ -1416,7 +1434,12 @@ private struct CalloutCard<Action: Equatable>: View {
             .frame(minHeight: 60)
             .background(surface)
         } else {
-            Button { act(callout.act) } label: {
+            Button {
+                // Under way already: a second press would only be refused,
+                // and a card dimmed to say so cannot be read.
+                guard !callout.working else { return }
+                act(callout.act)
+            } label: {
                 face
                     .padding(.horizontal, Space.m)
                     .frame(minHeight: 60)
@@ -1424,7 +1447,9 @@ private struct CalloutCard<Action: Equatable>: View {
                     .contentShape(RoundedRectangle(cornerRadius: design.metrics.controlRadius))
             }
             .buttonStyle(.amuxControl)
-            .identified(identifier, label: callout.title)
+            .identified(
+                identifier, label: callout.title, value: callout.working ? "working" : nil,
+                enabled: !callout.working)
         }
     }
 
@@ -1434,10 +1459,16 @@ private struct CalloutCard<Action: Equatable>: View {
 
     private var face: some View {
         HStack(spacing: Space.m) {
-            Image(systemName: callout.glyph)
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(design.inkMuted.color)
-                .frame(width: 24)
+            Group {
+                if callout.working {
+                    StateMark(state: .working).accessibilityHidden(true)
+                } else {
+                    Image(systemName: callout.glyph)
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(design.inkMuted.color)
+                }
+            }
+            .frame(width: 24)
             VStack(alignment: .leading, spacing: Space.xxs) {
                 Text(callout.title)
                     .designFont(.bodyEmphasis, design)

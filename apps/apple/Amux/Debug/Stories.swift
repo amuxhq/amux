@@ -257,6 +257,7 @@ struct StoryApp: View {
     @State private var router: Router
     @State private var app: (accounts: AccountRegistry, stores: StoreBundle)
     private let notifications: NotificationsSetting?
+    private let signIn: SignInStore
 
     /// - Parameters:
     ///   - chatOpen: opens the first agent's chat, as a person who had just
@@ -266,12 +267,14 @@ struct StoryApp: View {
     ///   - newAgentOpen: raises New Agent over the list.
     ///   - notifications: what Settings says of notifications; none leaves
     ///     the row out, as a build that offers none does.
+    ///   - signIn: the sign-in in flight, or what it is asking.
     init(
         chatOpen: Bool = false,
         settingsOpen: Bool = false,
         reviewOpen: Bool = false,
         newAgentOpen: Bool = false,
         notifications: NotificationsSetting? = nil,
+        signIn: SignInStore = SignInStore(),
         chatPhase: PhaseView = .idle,
         _ fleet: @escaping @MainActor () -> StoryFleet.Stores = { StoryFleet.busy() }
     ) {
@@ -298,6 +301,7 @@ struct StoryApp: View {
         if let roster = invented.hosts.roster { bundle.hosts.show(roster) }
         _app = State(initialValue: (invented.accounts, bundle))
         self.notifications = notifications
+        self.signIn = signIn
     }
 
     var body: some View {
@@ -312,7 +316,7 @@ struct StoryApp: View {
 
     private var shell: Shell {
         Shell(
-            router: router, accounts: app.accounts, stores: app.stores, signIn: SignInStore(),
+            router: router, accounts: app.accounts, stores: app.stores, signIn: signIn,
             paywall: PaywallStore(), deletion: DeletionStore(), notifications: notifications
         ) { _ in }
     }

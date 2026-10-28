@@ -24,22 +24,27 @@ private func copy(_ text: String) {
 /// app: anything that reaches the cloud, the store or another account.
 public enum ShellAction: Equatable, Sendable {
     case selectAccount(AccountId)
+    /// Sign in to an account this phone does not list yet. It opens the
+    /// system browser at once, which is the cloud's business and not the
+    /// shell's.
     case addAccount
-    /// Somebody asked to sign in. Where that leads is a page; what it does
-    /// when it gets there is the cloud's, which is why both leave the shell.
+    /// Somebody pressed a Sign In with no account row behind it. Which
+    /// account that is for is the composition's to say, from the accounts.
     case signIn
     /// Sign back into one account this phone already lists. Kept apart from
     /// adding one, because amux.sh is asked for that account by name and
     /// whoever comes back is checked against it.
     case signInAgain(AccountId)
+    /// A sign-in was refused, and the person wants another go at the same
+    /// account.
+    case retrySignIn
+    /// The same, and the person has read why and is leaving it.
+    case dismissSignIn
     /// A sign-in came back as another account than the one asked for, and
     /// the person wants it on the phone anyway.
     case keepSignIn
     /// The same, and the person does not.
     case discardSignIn
-    /// The press on the sign-in screen itself: hand off to the account
-    /// service. The shell does not do this because it reaches nothing.
-    case handOffSignIn
     case subscribe
     /// Buy the plan the paywall has selected.
     case buySubscription
@@ -120,7 +125,9 @@ public struct Shell: View {
     private let accounts: AccountRegistry
     private let stores: StoreBundle
     /// The one sign-in this phone has in flight. It is not an account's store
-    /// because there is no account until it finishes.
+    /// because there is no account until it finishes. Its controls are on the
+    /// screens that offer it; what it has to ask afterwards is asked here,
+    /// over whichever surface is on top.
     private let signIn: SignInStore
     /// What is on offer and how a purchase went. One per app, not per account:
     /// the App Store sells to an Apple Account, not to an amux one.
@@ -199,7 +206,8 @@ public struct Shell: View {
                 NavigationStack(path: $router.agentsPath) {
                     AgentsTab(
                         router: self.router, accounts: accounts, stores: stores,
-                        offerNotifications: offerNotifications, actions: actions)
+                        offerNotifications: offerNotifications, signingIn: signIn.working,
+                        actions: actions)
                         .barUnderSheet(coveredByASheet)
                         .navigationDestination(for: Route.self) { page($0).toolbar(.hidden, for: .tabBar) }
                 }
@@ -213,10 +221,11 @@ public struct Shell: View {
             }
         }
         .surface()
+        .signInQuestions(signIn, shown: asks == .tabs, answer: answer)
         // Settings are a sheet raised from the account disc rather than a
         // tab: somewhere visited now and then does not earn a place beside
         // the two that are used all day. The sheet keeps a stack of its own,
-        // so signing in or subscribing from it pushes inside it.
+        // so subscribing from it pushes inside it.
         .sheet(isPresented: Binding(
             get: { router.tab == .you },
             set: { shown in if !shown, router.tab == .you { router.select(router.beneath) } }
@@ -230,15 +239,18 @@ public struct Shell: View {
                 .surface()
         }
         // Pairing is a short task with an end, so it is raised the same way.
-        // Putting it away by hand ends it; stepping aside for a sign-in or a
-        // subscription does not.
+        // Putting it away by hand ends it; stepping aside for a subscription
+        // does not, and nor does the browser a sign-in opens over it.
         .sheet(isPresented: Binding(
             get: { router.showsPairing },
             set: { shown in if !shown, router.showsPairing { router.pairing = nil } }
         )) {
             if let pairing = router.pairing {
-                PairingSheet(pairing: pairing, router: router, stores: stores, actions: actions)
+                PairingSheet(
+                    pairing: pairing, router: router, stores: stores, signingIn: signIn.working,
+                    actions: actions)
                     .surface()
+                    .signInQuestions(signIn, shown: asks == .pairing, answer: answer)
             }
         }
         .tint(design.accentColor)
@@ -263,12 +275,36 @@ public struct Shell: View {
                 router: self.router, accounts: accounts, stores: stores,
                 deletion: deletion, removal: removal, appearance: appearance,
                 shareUsage: shareUsage, autoReports: autoReports,
-                notifications: notifications, report: report,
+                notifications: notifications, signingIn: signIn.pending, report: report,
                 actions: actions)
                 .navigationDestination(for: Route.self) { page($0) }
         }
         .tint(design.accentColor)
         .surface()
+        .signInQuestions(signIn, shown: asks == .settings, answer: answer)
+    }
+
+    /// The surfaces a sign-in's question can be asked over.
+    private enum Surface {
+        case tabs, settings, pairing
+    }
+
+    /// The one on top, which is the only one that can show an alert: one
+    /// raised from beneath a sheet never appears. Every Sign In is on one of
+    /// these, and the browser closes back onto the surface it opened over.
+    private var asks: Surface {
+        if router.tab == .you { return .settings }
+        if router.showsPairing { return .pairing }
+        return .tabs
+    }
+
+    private func answer(_ answer: SignInAnswer) {
+        switch answer {
+        case .retry: actions(.retrySignIn)
+        case .dismiss: actions(.dismissSignIn)
+        case .keep: actions(.keepSignIn)
+        case .discard: actions(.discardSignIn)
+        }
     }
 
     /// Restores the platform's edge-to-pop interaction while the custom page
@@ -294,8 +330,6 @@ public struct Shell: View {
             ChatPage(agent: agent, router: router, stores: stores)
         case .changes(let agent):
             ChangesPage(agent: agent, router: router, stores: stores)
-        case .signIn(let from):
-            SignInPage(from: from, router: router, model: signIn, actions: actions)
         case .paywall(let from):
             PaywallPage(from: from, router: router, model: paywall, actions: actions)
         case .host(let host):
@@ -560,12 +594,13 @@ private struct AgentsTab: View {
     let accounts: AccountRegistry
     let stores: StoreBundle
     let offerNotifications: Bool
+    let signingIn: Bool
     let actions: @MainActor (ShellAction) -> Void
 
     var body: some View {
         AgentsHome(
             model: stores.fleet, accounts: accounts, hosts: stores.hosts,
-            offerNotifications: offerNotifications
+            offerNotifications: offerNotifications, signingIn: signingIn
         ) { action in
             switch action {
             case .open(let agent):
@@ -588,29 +623,6 @@ private struct AgentsTab: View {
             case .refresh: stores.fleet.refreshOrder(now: stores.now())
             case .toggleFamily(let head): stores.toggleFamily(head)
             case .filter(let filter): stores.filterFleet(filter)
-            }
-        }
-    }
-}
-
-/// Signing in.
-///
-/// The page navigates and the composition reaches the cloud: leaving is a pop
-/// either way, and the hand-off is handed out of the shell because a browser,
-/// a token and an account are none of the shell's business.
-private struct SignInPage: View {
-    let from: Tab
-    let router: Router
-    let model: SignInStore
-    let actions: @MainActor (ShellAction) -> Void
-
-    var body: some View {
-        SignIn(model: model) { action in
-            switch action {
-            case .cancel, .done: router.pop()
-            case .start: actions(.handOffSignIn)
-            case .keep: actions(.keepSignIn)
-            case .discard: actions(.discardSignIn)
             }
         }
     }
@@ -713,6 +725,7 @@ private struct PairingSheet: View {
     let pairing: Pairing
     let router: Router
     let stores: StoreBundle
+    let signingIn: Bool
     let actions: @MainActor (ShellAction) -> Void
 
     var body: some View {
@@ -722,7 +735,8 @@ private struct PairingSheet: View {
                 PairByCodePage(host: host, router: router, stores: stores, actions: actions)
             case .link(let invitation):
                 PairConfirmationPage(
-                    invitation: invitation, router: router, stores: stores, actions: actions)
+                    invitation: invitation, router: router, stores: stores, signingIn: signingIn,
+                    actions: actions)
             }
         }
         .tint(design.accentColor)
@@ -820,6 +834,7 @@ private struct PairConfirmationPage: View {
     let invitation: PairingInvitation
     let router: Router
     let stores: StoreBundle
+    let signingIn: Bool
     let actions: @MainActor (ShellAction) -> Void
     @State private var asked = LinkAsked()
 
@@ -840,7 +855,7 @@ private struct PairConfirmationPage: View {
     @ViewBuilder
     private var page: some View {
         if unreachable {
-            PairNeedsAnAccount { action in
+            PairNeedsAnAccount(signingIn: signingIn) { action in
                 switch action {
                 case .signIn: actions(.signIn)
                 case .cancel: router.pairing = nil
@@ -934,6 +949,8 @@ private struct YouTabRoot: View {
     let shareUsage: Bool
     let autoReports: Bool
     let notifications: NotificationsSetting?
+    /// Which account a sign-in in flight is for.
+    let signingIn: SignInIntent?
     /// Freezes the screen behind this page and opens the report on it.
     let report: @MainActor () -> Void
     let actions: @MainActor (ShellAction) -> Void
@@ -981,7 +998,8 @@ private struct YouTabRoot: View {
             // absent until a connection has said what this device's identity
             // is, rather than guessed at.
             identity: stores.hosts.roster?.identity,
-            removing: removal.account
+            removing: removal.account,
+            signingIn: signingIn
         ) { action in
             switch action {
             case .select(let id): actions(.selectAccount(id))

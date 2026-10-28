@@ -545,16 +545,8 @@
       "shows": "Settings with notifications on, as a build that offers them shows the row."
     },
     {
-      "id": "settings.sign-in-waiting",
-      "shows": "Signing in while amux.sh is open."
-    },
-    {
-      "id": "settings.sign-in-failed",
-      "shows": "A sign-in that did not finish, and why."
-    },
-    {
-      "id": "settings.sign-in-mismatched",
-      "shows": "Signing back in as a different account than the one asked for."
+      "id": "settings.signing-in",
+      "shows": "Settings on a phone with no account while amux.sh is open: the Sign In row says it is signing in, in its own place."
     },
     {
       "id": "settings.paywall-confirming",

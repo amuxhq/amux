@@ -18,9 +18,9 @@ final class Composition {
     let accounts = AccountRegistry(file: AppFiles.support.appendingPathComponent("accounts.json"))
     let runtime: RuntimeCoordinator
     let router: Router
-    /// The one sign-in this phone has in flight. It outlives the page that
-    /// shows it, so a person who leaves the screen while the browser is up
-    /// comes back to the attempt rather than to a fresh one.
+    /// The one sign-in this phone has in flight. It belongs to no screen:
+    /// Sign In opens the browser from wherever it was pressed, and whatever
+    /// the sign-in has to ask afterwards is asked over wherever the person is.
     let signIn = SignInStore()
     /// What the App Store has to sell and how a purchase went. One per app:
     /// the store sells to an Apple Account, not to an amux one.
@@ -218,26 +218,32 @@ final class Composition {
         switch action {
         case .selectAccount(let id):
             accounts.select(id)
+        // Every Sign In goes straight to the browser. iOS names amux.sh
+        // before it opens and the browser shows its address, so a page of the
+        // app's own saying where it was about to send somebody would only be
+        // a second press in the way.
         case .addAccount:
-            signIn.begin(.adding)
-            router.open(.signIn(router.tab))
+            startSignIn(.adding)
         // Sign In with no row behind it — the home's, or pairing's. With a
         // signed-out account on screen that is the account being signed back
         // into; otherwise it is the first account on this phone.
         case .signIn:
             let entry = accounts.selectedAccount.flatMap { $0.signedIn ? nil : $0 }
-            signIn.begin(entry.map { .returning($0.account) } ?? .adding)
-            router.open(.signIn(router.tab))
+            startSignIn(entry.map { .returning($0.account) } ?? .adding)
         case .signInAgain(let id):
             let entry = accounts.accounts.first { $0.id == id }
-            signIn.begin(entry.map { .returning($0.account) } ?? .adding)
-            router.open(.signIn(router.tab))
+            startSignIn(entry.map { .returning($0.account) } ?? .adding)
+        // The refusal is put away before the next attempt starts, so the
+        // alert is not still asking while the browser opens.
+        case .retrySignIn:
+            signIn.dismiss()
+            startSignIn(signIn.intent)
+        case .dismissSignIn:
+            signIn.dismiss()
         case .keepSignIn:
             Task { await signIn.keep(keeping: keep) }
         case .discardSignIn:
             Task { await signIn.discard(with: cloud) }
-        case .handOffSignIn:
-            Task { await signIn.signIn(with: cloud, presenting: webAuth, keeping: keep) }
         // Subscribing is a page, and it asks the store what it has on the
         // way: the screen is useful before the answer arrives.
         case .subscribe:
@@ -382,6 +388,10 @@ final class Composition {
     func open(pushed agent: AgentKey) async {
         if let host = agent.hostId { await runtime.bringForward(host) }
         router.open(.conversation(agent))
+    }
+
+    private func startSignIn(_ intent: SignInIntent) {
+        Task { await signIn.signIn(intent, with: cloud, presenting: webAuth, keeping: keep) }
     }
 
     private func forget(_ id: AccountId) {

@@ -1891,33 +1891,46 @@ fn strings(value: &Value) -> Vec<String> {
 
 /// Sign In in Settings, handed off to the account service's page and back,
 /// and Settings put away.
-fn sign_in(journey: &mut PhoneJourney, photograph: bool) -> Result<(), String> {
+/// Signs in from Settings the way a person does: Sign In opens the browser
+/// straight away, and the account it comes back as is on the phone in the
+/// sheet it was pressed in, with nothing left to press.
+fn sign_in(journey: &mut PhoneJourney) -> Result<(), String> {
     journey.settings()?;
     journey.wait_for(&["you.signIn"])?;
-    if photograph {
-        journey.screen("signed-out", &[])?;
-    }
     journey.tap("you.signIn")?;
+    signed_in_as_ada(journey)?;
+    close_settings(journey)
+}
+
+fn signed_in_as_ada(journey: &mut PhoneJourney) -> Result<Drawn, String> {
     journey.wait(
-        |drawn| drawn.enabled("sign-in.continue"),
-        "the hand-off offered",
-    )?;
-    if photograph {
-        journey.screen("hand-off", &[])?;
-    }
-    journey.tap("sign-in.continue")?;
-    journey.wait_for(&["sign-in.signed-in"])?;
-    if photograph {
-        journey.screen("signed-in", &[])?;
-    }
-    journey.tap("sign-in.continue")?;
-    journey.wait(
-        |drawn| drawn.value("you") == "ada@example.com" && !drawn.has("sign-in"),
+        |drawn| drawn.value("you") == "ada@example.com" && drawn.has("account.ada@example.com"),
         "ada in Settings",
-    )?;
+    )
+}
+
+fn close_settings(journey: &mut PhoneJourney) -> Result<(), String> {
     journey.tap("you.close")?;
     journey.wait(|drawn| !drawn.has("you"), "Settings put away")?;
     Ok(())
+}
+
+/// Waits for the account service to have been asked `call` exactly once.
+fn asked_once(journey: &mut PhoneJourney, call: &str) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let reply = journey.app(json!({"kind": "calls"}))?;
+        let asked = strings(&reply["cloud"]);
+        match asked.iter().filter(|asked| *asked == call).count() {
+            1 => return Ok(()),
+            0 if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(100)),
+            _ => {
+                return Err(format!(
+                    "the account service was not asked {call:?} once: {asked:?}"
+                ));
+            }
+        }
+    }
 }
 
 /// Opens `agent`, sends `prompt` and waits for `reply` on the phone and
@@ -1947,17 +1960,62 @@ fn round_trip(
     Ok(agent_id)
 }
 
+const REFUSED_SIGN_IN: &str = "amux.sh could not sign this account in";
+
 fn account_sign_in(journey: &mut PhoneJourney) -> Proved {
     journey.launch(Launch::plain())?;
+    journey.settings()?;
+    journey.wait_for(&["you.signIn"])?;
+    journey.screen("signed-out", &[])?;
+
+    // Closing the browser without finishing is somebody changing their
+    // mind: the row is Sign In again and nothing asks about it.
+    relay_cloud(journey, json!({"signIn": "cancelled"}))?;
+    journey.tap("you.signIn")?;
+    journey.wait(
+        |drawn| drawn.enabled("you.signIn") && drawn.value("you.signIn").is_empty(),
+        "Sign In offered again",
+    )?;
+    asked_once(journey, "signIn select")?;
+    let drawn = journey.wait_for(&["you.signIn"])?;
+    if labelled(&drawn, "Sign-in did not finish") {
+        return Err("closing the browser was answered with an alert".to_owned());
+    }
+
+    // Refused, it says so in the account service's own words, and Try Again
+    // asks again.
+    relay_cloud(
+        journey,
+        json!({"signIn": "refused", "reason": REFUSED_SIGN_IN}),
+    )?;
+    journey.tap("you.signIn")?;
+    journey.wait(
+        |drawn| labelled(drawn, "Sign-in did not finish") && labelled(drawn, REFUSED_SIGN_IN),
+        "the refusal in the account service's words",
+    )?;
+    journey.screen("refused", &[])?;
+
+    // Slowed, so the press is seen answering while the browser is up.
+    relay_cloud(journey, json!({"latencyMillis": 8000}))?;
+    journey.choose("Try Again")?;
+    journey.wait(
+        |drawn| drawn.value("you.signIn") == "signing in" && !drawn.enabled("you.signIn"),
+        "Sign In saying it is signing in",
+    )?;
+    journey.screen("signing-in", &[])?;
     relay_cloud(journey, json!({}))?;
-    sign_in(journey, true)?;
-    let asked = strings(&calls(journey, "account-service-calls")?["cloud"]);
-    for expected in ["signIn select", "handOver ada"] {
-        if !asked.iter().any(|call| call == expected) {
-            return Err(format!(
-                "the account service was never asked {expected:?}: {asked:?}"
-            ));
-        }
+    signed_in_as_ada(journey)?;
+    journey.screen("signed-in", &[])?;
+    close_settings(journey)?;
+    let asked_for = strings(&calls(journey, "account-service-calls")?["cloud"]);
+    let selects = asked_for
+        .iter()
+        .filter(|call| *call == "signIn select")
+        .count();
+    if selects != 3 || !asked_for.iter().any(|call| call == "handOver ada") {
+        return Err(format!(
+            "the account service was not asked to sign in three times and to hand over ada's session: {asked_for:?}"
+        ));
     }
 
     // Signed in, the phone reaches the desk only through the relay the
@@ -1971,11 +2029,76 @@ fn account_sign_in(journey: &mut PhoneJourney) -> Proved {
     round_trip(journey, "desk-work", RELAYED, THROUGH_RELAY)?;
     journey.screen("reached", &["chat.row.turn-end"])?;
     leave_chat(journey)?;
+
+    // Signed out and signing back in as ada, the browser comes back as
+    // somebody else: the question names both, and Cancel keeps nobody and
+    // lets that sign-in's session go.
+    journey.settings()?;
+    journey.wait_for(&["you.signOut"])?;
+    journey.tap("you.signOut")?;
+    journey.wait(
+        |drawn| {
+            drawn
+                .label("account.ada@example.com")
+                .contains("Signed out")
+        },
+        "ada signed out",
+    )?;
+    relay_cloud(journey, json!({"account": "grace"}))?;
+    journey.tap("account.ada@example.com")?;
+    journey.wait(
+        |drawn| {
+            labelled(drawn, "Signed in as another account")
+                && labelled(
+                    drawn,
+                    "You signed in as grace@example.com, not ada@example.com.",
+                )
+        },
+        "the question naming both accounts",
+    )?;
+    journey.screen("another-account", &[])?;
+    // The dialog draws no Cancel: it is put away by a tap outside it, which
+    // runs its cancelling action. That action is what is pressed here.
+    journey.app(json!({"kind": "choose", "label": "Cancel"}))?;
+    journey
+        .record
+        .actions
+        .push("put the dialog away with its cancelling action".to_owned());
+    journey.wait(
+        |drawn| {
+            !labelled(drawn, "Signed in as another account")
+                && drawn
+                    .label("account.ada@example.com")
+                    .contains("Signed out")
+                && !drawn.has("account.grace@example.com")
+        },
+        "nobody kept",
+    )?;
+    // The cancelling action runs once the dialog has gone, so its letting
+    // go is waited for rather than read at once.
+    asked_once(journey, "forgetSession grace")?;
+    let after = strings(&calls(journey, "account-service-calls-after-mismatch")?["cloud"]);
+    for expected in ["signIn hint ada@example.com", "forgetSession grace"] {
+        if !after.iter().any(|call| call == expected) {
+            return Err(format!(
+                "the account service was never asked {expected:?}: {after:?}"
+            ));
+        }
+    }
+    if after.iter().any(|call| call == "handOver grace") {
+        return Err(format!(
+            "grace's session was handed over though nobody kept it: {after:?}"
+        ));
+    }
+    close_settings(journey)?;
     Ok(vec![
-        "signed out, the You tab offered Sign In; the hand-off named the account service and came back signed in as ada".to_owned(),
-        format!("the account service was asked to sign in and to hand over ada's session: {asked:?}"),
+        "signed out, the You tab offered Sign In, which opened the account service at once; closed without finishing, nothing was shown and Sign In was offered again".to_owned(),
+        format!("refused, an alert said so in the account service's words ({}), and Try Again asked again", quoted(REFUSED_SIGN_IN)),
+        "while the browser was up the Sign In row said it was signing in, and it came back signed in as ada in Settings with nothing more to press".to_owned(),
+        format!("the account service was asked to sign in and to hand over ada's session: {asked_for:?}"),
         "the relay the hand-over named carried the pairing to the desk, which the phone lists by its own name".to_owned(),
         format!("through that relay the desk received {} once and answered", quoted(RELAYED)),
+        format!("signing back in as ada and coming back as grace asked which was meant; Cancel kept nobody and let grace's session go: {after:?}"),
     ])
 }
 
@@ -1983,7 +2106,7 @@ fn purchase_restore(journey: &mut PhoneJourney) -> Proved {
     let desk = journey.host_id("desk");
     journey.launch(Launch::plain())?;
     let unpaid = relay_cloud(journey, json!({"entitlement": "none"}))?;
-    sign_in(journey, false)?;
+    sign_in(journey)?;
 
     // Nothing bought: the relay carries nothing to the desk, so the link it
     // printed, scanned with the camera, is answered with the offer of a

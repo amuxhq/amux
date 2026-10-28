@@ -294,12 +294,6 @@
       "why": "The terminal has no settings screen; it is set up with amux on its command line."
     },
     {
-      "name": "settings.sign-in",
-      "shows": "Signing in: what an account adds, and continuing on amux.sh.",
-      "clients": ["phone"],
-      "why": "The terminal signs in with amux login."
-    },
-    {
       "name": "settings.paywall",
       "shows": "Subscribing: the plans, the one chosen, and restoring a purchase.",
       "clients": ["phone"],

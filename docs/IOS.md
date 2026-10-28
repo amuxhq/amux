@@ -216,12 +216,21 @@ accounts that browser has used and offers another; signing back into a
 listed account also sends `login_hint` with its address. The browser session
 is not ephemeral, because the chooser is made of what it remembers.
 
-When signing back in returns a different account from the one asked for, the
-sign-in page names both and adds nothing until the person continues as the
-returned account or cancels. A sign-in's session stays in memory until the
-account is kept: only then is its refresh token handed to the account's
-profile (`amux_runtime_bind`), so an account that was turned down, or a page
-somebody left, writes nothing down.
+Every Sign In opens the browser straight away; the app has no sign-in page of
+its own. iOS asks before the browser opens, naming amux.sh, and the browser
+shows its address above the page, which is everything a page of the app's
+own would have said. While the browser is up, and while the account that came
+back is kept, the control that was pressed says it is signing in; the account
+menu closes as it is pressed, so it has nothing left to say it with. A kept
+account appears where the person pressed Sign In. Closing the browser shows
+nothing; a refusal is an alert in amux.sh's own words with Try Again.
+
+When signing back in returns a different account from the one asked for, a
+dialog names both and adds nothing until the person continues as the returned
+account or cancels. A sign-in's session stays in memory until the account is
+kept: only then is its refresh token handed to the account's profile
+(`amux_runtime_bind`), so an account that was turned down writes nothing
+down, and cancelling lets its session go.
 
 What the app asks of amux.sh, and how purchases reach it, is on
 [the cloud page](CLOUD.md).

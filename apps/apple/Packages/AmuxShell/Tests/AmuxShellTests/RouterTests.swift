@@ -249,13 +249,13 @@ final class RouterTests: XCTestCase {
         XCTAssertEqual(router.pairing, .link(invitation))
     }
 
-    /// Signing in and subscribing are pages of the tab beneath, so the
-    /// pairing sheet steps aside for them and comes back as it was.
-    func testThePairingSheetStepsAsideForSigningIn() {
+    /// Subscribing is a page of the tab beneath, so the pairing sheet steps
+    /// aside for it and comes back as it was.
+    func testThePairingSheetStepsAsideForSubscribing() {
         let router = Router()
         router.pairing = .code(machine)
         XCTAssertTrue(router.showsPairing)
-        router.open(.signIn(router.tab))
+        router.open(.paywall(router.tab))
         XCTAssertFalse(router.showsPairing)
         router.pop()
         XCTAssertTrue(router.showsPairing)
@@ -266,12 +266,11 @@ final class RouterTests: XCTestCase {
         XCTAssertEqual(Route.conversation(agent()).tab, .agents)
         XCTAssertEqual(Route.changes(agent()).tab, .agents)
         XCTAssertEqual(Route.host(HostId(UUID())).tab, .hosts)
-        XCTAssertEqual(Route.signIn(.you).tab, .you)
+        XCTAssertEqual(Route.paywall(.you).tab, .you)
     }
 
     /// A different account on screen leaves none of the last one's pages on
-    /// any stack, so a later tap or a return to the app never shows them;
-    /// signing in and the list of accounts stay.
+    /// any stack, so a later tap or a return to the app never shows them.
     func testLeavingAnAccountDropsItsPagesFromEveryStack() {
         let loader = RecordingLoader()
         let router = Router(loader: loader)
@@ -279,15 +278,15 @@ final class RouterTests: XCTestCase {
         router.open(.conversation(agent))
         router.open(.changes(agent))
         router.open(.host(machine))
-        router.open(.signIn(.you))
+        router.open(.paywall(.you))
 
         router.leaveAccount()
 
         XCTAssertEqual(router.path(.agents), [])
         XCTAssertEqual(router.path(.hosts), [])
-        XCTAssertEqual(router.path(.you), [.signIn(.you)])
+        XCTAssertEqual(router.path(.you), [])
         XCTAssertEqual(
-            loader.abandoned, [.conversation(agent), .changes(agent), .host(machine)],
+            loader.abandoned, [.conversation(agent), .changes(agent), .host(machine), .paywall(.you)],
             "what the pages held open is let go")
     }
 }

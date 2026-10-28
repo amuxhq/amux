@@ -68,15 +68,17 @@ private final class Kept {
 final class SignInStoreTests: XCTestCase {
     private let ada = SignedInAccount(id: AccountId("ada"), email: "ada@example.com")
 
-    func testASignInThatSucceedsKeepsTheAccount() async {
+    /// Kept, the account is on the phone and there is nothing left to say:
+    /// the person stays where they pressed Sign In.
+    func testASignInThatSucceedsKeepsTheAccountAndLeavesNothingOnScreen() async {
         let store = SignInStore()
         let kept = Kept()
         let cloud = OneAnswer(answer: .success(ada))
 
-        let account = await store.signIn(with: cloud, presenting: Silent(), keeping: kept.keep)
+        let account = await store.signIn(.adding, with: cloud, presenting: Silent(), keeping: kept.keep)
 
         XCTAssertEqual(account, ada)
-        XCTAssertEqual(store.phase, .signedIn(ada))
+        XCTAssertEqual(store.phase, .ready)
         XCTAssertEqual(kept.accounts, [ada.id])
     }
 
@@ -86,7 +88,7 @@ final class SignInStoreTests: XCTestCase {
         kept.refusal = .refused("this account's installation did not start")
         let cloud = OneAnswer(answer: .success(ada))
 
-        let account = await store.signIn(with: cloud, presenting: Silent(), keeping: kept.keep)
+        let account = await store.signIn(.adding, with: cloud, presenting: Silent(), keeping: kept.keep)
 
         XCTAssertNil(account)
         XCTAssertEqual(store.phase, .failed("this account's installation did not start"))
@@ -97,7 +99,7 @@ final class SignInStoreTests: XCTestCase {
         let kept = Kept()
         let cloud = OneAnswer(answer: .failure(.refused("that address is not recognised")))
 
-        await store.signIn(with: cloud, presenting: Silent(), keeping: kept.keep)
+        await store.signIn(.adding, with: cloud, presenting: Silent(), keeping: kept.keep)
 
         XCTAssertEqual(store.phase, .failed("that address is not recognised"))
         XCTAssertEqual(kept.accounts, [])
@@ -107,45 +109,76 @@ final class SignInStoreTests: XCTestCase {
         let store = SignInStore()
         let cloud = OneAnswer(answer: .failure(.cancelled))
 
-        await store.signIn(with: cloud, presenting: Silent(), keeping: Kept().keep)
+        await store.signIn(.adding, with: cloud, presenting: Silent(), keeping: Kept().keep)
 
         // Cancelling is a decision, not a failure: the screen is where it was
         // before the button was pressed, with nothing on it to clear.
         XCTAssertEqual(store.phase, .ready)
     }
 
+    func testARefusalPutAwayLeavesNothingOnScreen() async {
+        let store = SignInStore(phase: .failed("amux.sh did not answer"))
+
+        store.dismiss()
+
+        XCTAssertEqual(store.phase, .ready)
+    }
+
+    /// Trying again after a refusal asks amux.sh for the same account the
+    /// refused attempt asked for.
+    func testTryingAgainAsksForTheSameAccount() async {
+        let store = SignInStore()
+        let refused = OneAnswer(answer: .failure(.timeout))
+        await store.signIn(.returning(ada), with: refused, presenting: Silent(), keeping: Kept().keep)
+        XCTAssertEqual(store.phase, .failed("amux.sh did not answer"))
+
+        let cloud = OneAnswer(answer: .success(ada))
+        let account = await store.signIn(store.intent, with: cloud, presenting: Silent(), keeping: Kept().keep)
+
+        XCTAssertEqual(account, ada)
+        XCTAssertEqual(cloud.asked.intents, [.returning(ada)])
+    }
+
     func testASecondPressWhileTheBrowserIsUpStartsNothing() async {
         let store = SignInStore(phase: .handingOff)
         let cloud = OneAnswer(answer: .success(ada))
 
-        let account = await store.signIn(with: cloud, presenting: Silent(), keeping: Kept().keep)
+        let account = await store.signIn(.adding, with: cloud, presenting: Silent(), keeping: Kept().keep)
 
         XCTAssertNil(account)
         XCTAssertEqual(store.phase, .handingOff)
+        XCTAssertEqual(cloud.asked.intents, [])
+    }
+
+    /// The control that started a sign-in is told which account it is for,
+    /// and only while the browser is up.
+    func testWhatIsPendingIsTheAccountInFlight() {
+        XCTAssertNil(SignInStore().pending)
+        XCTAssertNil(SignInStore(phase: .failed("no"), intent: .returning(ada)).pending)
+        XCTAssertEqual(SignInStore(phase: .handingOff, intent: .returning(ada)).pending, .returning(ada))
     }
 
     func testAddingAnAccountAsksForTheChooserAndSigningBackInNamesTheAccount() async {
         let store = SignInStore()
         let cloud = OneAnswer(answer: .success(ada))
-        await store.signIn(with: cloud, presenting: Silent(), keeping: Kept().keep)
-        store.begin(.returning(ada))
-        await store.signIn(with: cloud, presenting: Silent(), keeping: Kept().keep)
+        await store.signIn(.adding, with: cloud, presenting: Silent(), keeping: Kept().keep)
+        await store.signIn(.returning(ada), with: cloud, presenting: Silent(), keeping: Kept().keep)
 
         XCTAssertEqual(cloud.asked.intents, [.adding, .returning(ada)])
-        XCTAssertEqual(store.phase, .signedIn(ada))
+        XCTAssertEqual(store.phase, .ready)
     }
 
     /// Asked for one account and handed another: nothing is kept until the
-    /// person chooses, and the screen names both.
+    /// person chooses, and the question names both.
     func testSigningBackInAsSomebodyElseKeepsNobody() async {
         let work = SignedInAccount(id: AccountId("work"), email: "team@acme.example")
         let stranger = SignedInAccount(id: AccountId("stranger"), email: "jw@example.com")
         let store = SignInStore()
-        store.begin(.returning(work))
         let kept = Kept()
 
         let account = await store.signIn(
-            with: OneAnswer(answer: .success(stranger)), presenting: Silent(), keeping: kept.keep)
+            .returning(work), with: OneAnswer(answer: .success(stranger)), presenting: Silent(),
+            keeping: kept.keep)
 
         XCTAssertNil(account)
         XCTAssertEqual(store.phase, .mismatched(wanted: work, got: stranger))
@@ -159,9 +192,10 @@ final class SignInStoreTests: XCTestCase {
                                 intent: .returning(work))
         let kept = Kept()
 
-        await store.keep(keeping: kept.keep)
+        let account = await store.keep(keeping: kept.keep)
 
-        XCTAssertEqual(store.phase, .signedIn(stranger))
+        XCTAssertEqual(account, stranger)
+        XCTAssertEqual(store.phase, .ready)
         XCTAssertEqual(kept.accounts, [stranger.id])
     }
 
@@ -178,8 +212,8 @@ final class SignInStoreTests: XCTestCase {
         XCTAssertEqual(cloud.asked.forgotten, [stranger.id])
     }
 
-    func testTheScreenNamesTheHostTheHandOffOpens() {
-        XCTAssertEqual(SignInStore().host, "amux.sh")
+    func testSigningInOpensAmuxShAndComesBackToThisApp() {
+        XCTAssertEqual(CloudEndpoint.production.host, "amux.sh")
         XCTAssertEqual(CloudEndpoint.production.callback.absoluteString, "amux://callback")
     }
 }

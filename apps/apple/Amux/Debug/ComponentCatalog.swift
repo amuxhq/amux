@@ -1646,13 +1646,19 @@ extension ComponentCatalog {
 extension ComponentCatalog {
     // MARK: - Settings
 
-    /// The settings sheet with two accounts and with none, and every page it
-    /// opens: signing in, subscribing, and deleting an account. Removing one
-    /// asks in the system's dialog, which a flat capture cannot hold; it has
-    /// a preview of its own.
+    /// The settings sheet with two accounts and with none, signing in from
+    /// it, and every page it opens: subscribing and deleting an account.
+    /// Removing one, and what a sign-in asks when it is refused or comes back
+    /// as somebody else, are the system's dialogs, which a flat capture
+    /// cannot hold; they have previews of their own.
     fileprivate static let settings: [ComponentExample] = [
         sheet("two-accounts") { StoryApp(settingsOpen: true) { StoryFleet.busy(accounts: 2) }.settings },
         sheet("signed-out") { StoryApp(settingsOpen: true) { StoryFleet.busy(accounts: 0) }.settings },
+        sheet("signing-in") {
+            StoryApp(settingsOpen: true, signIn: SignInStore(phase: .handingOff)) {
+                StoryFleet.busy(accounts: 0)
+            }.settings
+        },
         sheet("notifications") { StoryApp(settingsOpen: true, notifications: .on).settings },
         // Tall enough to hold the whole sheet, down to its help rows.
         sheet("large-text", size: .accessibility3, height: 2600) { StoryApp(settingsOpen: true).settings },
@@ -1681,17 +1687,6 @@ extension ComponentCatalog {
                     asking: AccountId("ada"), typed: "ada@example.com", phase: .failed("amux.sh did not answer")),
                 actions: { _ in }
             ) { YouScreen(accounts: stores.accounts) { _ in } }
-        },
-        sheet("sign-in") { SignIn(model: SignInStore()) { _ in } },
-        sheet("sign-in-waiting") { SignIn(model: SignInStore(phase: .handingOff)) { _ in } },
-        sheet("sign-in-failed") {
-            SignIn(model: SignInStore(phase: .failed("amux.sh did not answer"))) { _ in }
-        },
-        sheet("sign-in-mismatched") {
-            SignIn(
-                model: SignInStore(
-                    phase: .mismatched(wanted: CatalogFixtures.ada, got: CatalogFixtures.lovelace),
-                    intent: .returning(CatalogFixtures.ada))) { _ in }
         },
         sheet("paywall") { Paywall(model: PaywallStore(plans: CatalogFixtures.plans)) { _ in } },
         sheet("paywall-confirming") {

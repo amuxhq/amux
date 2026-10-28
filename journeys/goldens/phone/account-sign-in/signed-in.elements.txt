@@ -1,32 +1,26 @@
 shell |  | you | 0,62,402,778
 home |  | ready | 0,174,402,617
-you |  | ada@example.com | 0,70,402,708
-account.ada@example.com | ada, ada@example.com | selected | 30,94,342,59
-you.add | Add Account |  | 16,153,370,46
-you.subscription | Relay | Subscribed | 16,241,370,46
-you.signOut | Sign Out |  | 16,287,370,46
-you.remove | Remove from This Phone |  | 16,333,370,46
-you.delete | Delete Account |  | 16,379,370,46
-you.appearance |  | system | 16,467,370,50
-you.appearance.light | Light | not chosen | 205,469,51,46
-you.appearance.dark | Dark | not chosen | 256,469,49,46
-you.appearance.system | System | chosen | 305,469,65,46
-you.shareUsage |  | on | 16,518,370,55
-you.autoReports |  | off | 16,573,370,71
-you.notifications | Notifications | Off | 16,644,370,46
+you |  | ada@example.com | 0,132,402,708
+account.ada@example.com | ada, ada@example.com | selected | 30,156,342,59
+you.add | Add Account |  | 16,215,370,46
+you.subscription | Relay | Subscribed | 16,303,370,46
+you.signOut | Sign Out |  | 16,349,370,46
+you.remove | Remove from This Phone |  | 16,395,370,46
+you.delete | Delete Account |  | 16,441,370,46
+you.appearance |  | system | 16,529,370,50
+you.appearance.light | Light | not chosen | 205,531,51,46
+you.appearance.dark | Dark | not chosen | 256,531,49,46
+you.appearance.system | System | chosen | 305,531,65,46
+you.shareUsage |  | on | 16,580,370,55
+you.autoReports |  | off | 16,635,370,71
+you.notifications | Notifications | Off | 16,706,370,46
 you.name | <volatile>
 you.fingerprint | <volatile>
-you.support | Contact Support |  | 16,860,370,46
-you.report | Report a Problem |  | 16,906,370,46
-you.dump | Export Diagnostics |  | 16,952,370,46
-you.help.caption |  |  | 16,1006,310,32
-you.close | Close |  | 326,4,56,36
-sign-in |  | ada@example.com | 0,132,402,708
-sign-in.title |  | Sign in | 16,140,80,32
-sign-in.explanation |  | An account lets this phone reach your hosts from anywhere, and a subscription bought on amux.sh carries over. | 16,178,361,59
-sign-in.continue | Done | ada@example.com | 26,746,350,44
-sign-in.signed-in |  | ada@example.com | 94,800,215,18
-sign-in.back | Back |  | 20,82,56,36
+you.support | Contact Support |  | 16,922,370,46
+you.report | Report a Problem |  | 16,968,370,46
+you.dump | Export Diagnostics |  | 16,1014,370,46
+you.help.caption |  |  | 16,1068,310,32
+you.close | Close |  | 326,82,56,36
  | Pair your first host |  | 16,204,214,32
  | amux runs agents on your computers. Pair one and its agents appear here. |  | 16,244,368,37
  | Looking on this network… |  | 36,305,174,18
@@ -36,7 +30,7 @@ sign-in.back | Back |  | 20,82,56,36
  | 2 |  | 24,464,7,16
  | Run amux pair --qr on it and scan the code with the Camera app. |  | 52,461,325,39
  | Agents |  | 16,127,116,42
- | Switch account |  | 19,69,30,30
+ | Switch account |  | 20,66,44,36
  | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12
  | Hosts |  | 197,795,94,54
@@ -45,10 +39,30 @@ sign-in.back | Back |  | 20,82,56,36
  | Agents |  | 141,830,35,12
  | Hosts |  | 197,795,94,54
  | Hosts |  | 230,830,29,12
- | Sign in |  | 16,140,80,32
- | An account lets this phone reach your hosts from anywhere, and a subscription bought on amux.sh carries over. |  | 16,178,361,59
- | Done |  | 26,746,350,44
- | Signed in as ada@example.com |  | 94,800,215,18
- | Back |  | 20,82,56,36
+ | ACCOUNTS |  | 18,132,74,16
+ | ada, ada@example.com |  | 30,156,342,59
+ | Add Account |  | 16,215,370,45
+ | ADA |  | 18,279,28,16
+ | Relay, Subscribed |  | 16,303,370,45
+ | Sign Out |  | 16,349,370,46
+ | Remove from This Phone |  | 16,395,370,46
+ | Delete Account |  | 16,441,370,46
+ | THIS PHONE |  | 18,505,78,16
+ | Appearance |  | 30,544,90,20
+ | Light |  | 205,531,51,46
+ | Dark |  | 256,531,49,46
+ | System |  | 305,531,65,46
+ | Share Usage, Counts and choices, never what you type | 1 | 30,588,342,37
+ | Send Automatic Reports, When amux catches its own bug, send what it saw, chats included | 0 | 30,644,342,53
+ | Notifications, Off |  | 16,706,370,46
+ | Name, <device> |  | 16,752,370,46
+ | Fingerprint, <key> |  | 30,810,312,58
+ | HELP |  | 18,898,34,16
+ | Contact Support |  | 16,922,370,45
+ | Report a Problem |  | 16,968,370,46
+ | Export Diagnostics |  | 16,1014,370,46
+ | A report includes a screenshot and this phone’s diagnostic dump. |  | 30,1068,282,32
+ | Settings |  | 167,89,68,21
+ | Close |  | 326,82,56,36
  | Agents | selected | 111,795,94,54
  | Hosts |  | 197,795,94,54

@@ -168,7 +168,7 @@
       "stage": 16,
       "clients": ["phone"],
       "topology": "journeys/topologies/phone-accounts.json",
-      "claim": "A phone nobody has signed in on offers Sign In on the You tab; the hand-off names the account service it sends the person to and comes back signed in, and the account service is asked to sign in and to hand over the account's session. That session's relay, and only it, carries the pairing to a machine that shares no network with the phone: the machine is listed under its own name, its agent opens, and the machine receives the prompt written on the phone exactly once and answers it."
+      "claim": "A phone nobody has signed in on offers Sign In on the You tab, and pressing it opens the account service at once, with no page of the app's own between. Closed without finishing, nothing is shown and Sign In is offered again; refused, an alert says so in the account service's words and Try Again asks again; while the browser is up the row says it is signing in, and it comes back signed in where it was pressed with nothing more to press. The account service is asked to sign in and to hand over the account's session. That session's relay, and only it, carries the pairing to a machine that shares no network with the phone: the machine is listed under its own name, its agent opens, and the machine receives the prompt written on the phone exactly once and answers it. Signed out and signing back in, a browser that comes back as another account is named in a question, and Cancel keeps nobody and lets that account's session go."
     },
     {
       "id": "purchase-restore",
@@ -603,10 +603,10 @@
       {
         "id": "accounts",
         "carried_by": ["account-sign-in", "purchase-restore", "keep-authority"],
-        "how": "The hand-off to the account service and back signed in (account-sign-in); a purchase kept when amux.sh cannot confirm it and restored to the account (purchase-restore); a second account added on its own profile, signed out and back in (keep-authority).",
+        "how": "Sign In opening the account service and coming back signed in, refused, abandoned and as another account (account-sign-in); a purchase kept when amux.sh cannot confirm it and restored to the account (purchase-restore); a second account added on its own profile, signed out and back in (keep-authority).",
         "claims": [
           {
-            "claim": "The hand-off to the account service comes back signed in.",
+            "claim": "Sign In opens the account service and comes back signed in.",
             "step": "account-sign-in/signed-in"
           },
           {
@@ -636,8 +636,8 @@
             "why": "keep-authority's second account has no machines. Switching fleets and pausing the other profile is pinned by RuntimeCoordinatorTests.testASecondAccountGetsItsOwnProfileAndSwitchingPausesTheOther, and was checked by hand with two accounts that both had machines in the phone QA pass."
           },
           {
-            "claim": "Sign-in refused and cancelled, the paywall's declined and pending purchases, a web subscription kept, sign-in mismatch, a lapsed subscription, Remove from This Phone, appearance and Contact Support.",
-            "why": "Held by SignInStoreTests, PaywallStoreTests, AccountRegistryTests and the settings component snapshots (sign-in failed and mismatched, the paywall's pending and unconfirmed purchases, and Settings with its appearance control and Contact Support); no story walks them."
+            "claim": "Keeping the other account a sign-in came back as, the paywall's declined and pending purchases, a web subscription kept, a lapsed subscription, Remove from This Phone, appearance and Contact Support.",
+            "why": "Held by SignInStoreTests, PaywallStoreTests, AccountRegistryTests and the settings component snapshots (the paywall's pending and unconfirmed purchases, and Settings with its appearance control and Contact Support); no story walks them. account-sign-in walks a sign-in refused, abandoned and answered by another account, which it turns down."
           }
         ]
       },

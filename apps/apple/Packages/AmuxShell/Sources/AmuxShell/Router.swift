@@ -70,13 +70,13 @@ public final class Router {
     /// The pairing up, if one is: a sheet with an end, like New Agent.
     public var pairing: Pairing? { didSet { arrived?() } }
 
-    /// Whether the pairing sheet is on screen. Signing in and subscribing are
-    /// pages of the tab beneath, so the sheet steps aside while one is open
-    /// and comes back, with its pairing where it was, when it is put away.
+    /// Whether the pairing sheet is on screen. Subscribing is a page of the
+    /// tab beneath, so the sheet steps aside while it is open and comes back,
+    /// with its pairing where it was, when it is put away.
     public var showsPairing: Bool {
         guard pairing != nil else { return false }
         switch top {
-        case .signIn, .paywall: return false
+        case .paywall: return false
         default: return true
         }
     }
@@ -158,9 +158,8 @@ public final class Router {
     }
 
     /// Empties every stack of the pages about the account that just left the
-    /// screen: its conversations, machines, pairings and subscription. Signing
-    /// in is about the account arriving and the list of accounts about none,
-    /// so those stay.
+    /// screen: its conversations, machines, pairings and subscription. Every
+    /// page is about one account, so none stays.
     public func leaveAccount() {
         // New Agent offers one account's machines, and a code is for a
         // machine one account found. A link names its machine itself and
@@ -170,7 +169,7 @@ public final class Router {
         composing = false
         if case .code = pairing { pairing = nil }
         for tab in Tab.allCases {
-            setPath(path(tab).filter(\.outlivesAccount), for: tab)
+            setPath([], for: tab)
         }
     }
 

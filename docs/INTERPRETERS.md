@@ -647,7 +647,12 @@ nothing is inferred.
   window takes the status; every other keeps the last status stated for it,
   so a person can see the weekly limit reached while the five-hour one is
   fine, until the window resets: a report whose reset for a window is later
-  than the one held drops the status stated for it, back to unknown. Windows are five-hour or weekly, and a weekly window that belongs to
+  than the one held drops the status stated for it, back to unknown. A
+  report can name a window without its use or reset (a window outside
+  `unifiedWindows` carries both only when Claude has them): a window seen
+  before keeps the use and reset it was last given, and a window first named
+  that way says its use is unknown (`used_unknown`) rather than empty.
+  Windows are five-hour or weekly, and a weekly window that belongs to
   one model carries the model as Claude's own labels name it
   (`seven_day_opus` Opus, `seven_day_sonnet` Sonnet,
   `seven_day_overage_included` Fable); a window amux does not recognise

@@ -309,7 +309,7 @@ pub fn usage_windows(usage: &Usage) -> Vec<UsageWindowView> {
         let meter = meter.unwrap_or_default();
         UsageWindowView {
             label,
-            used_percent: Some(meter.used_percent),
+            used_percent: (!meter.used_unknown).then_some(meter.used_percent),
             resets_at_ms: meter.resets_at_ms,
             state: meter.state(),
         }

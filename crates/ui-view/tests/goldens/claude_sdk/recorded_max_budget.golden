@@ -15,7 +15,7 @@
      2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Write a detailed 500 word essay about the history of rope.")], steered: false }
      3 79c56c71-8cc7-4abf-9e63-d4c7385326be:error Error { error_kind: "error_max_budget_usd", message: "Reached maximum budget ($0.00001)", attempts: 0, gave_up: true } attention
      4 turn:1 TurnEnd { duration_ms: Some(869), failed: true }
-== overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: Some(UsageView { blocked: false, windows: [UsageWindowView { label: FiveHour, used_percent: 19.0, resets_at_ms: Some(1787970000000), state: Unknown }, UsageWindowView { label: Weekly { model: None }, used_percent: 83.0, resets_at_ms: Some(1787976000000), state: NearLimit }], credits: None }), changes: None }
+== overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: Some(UsageView { blocked: false, windows: [UsageWindowView { label: FiveHour, used_percent: Some(19.0), resets_at_ms: Some(1787970000000), state: Unknown }, UsageWindowView { label: Weekly { model: None }, used_percent: Some(83.0), resets_at_ms: Some(1787976000000), state: NearLimit }], credits: None }), changes: None }
 == context None sign-in None
 == settings
   model  default "Default (recommended)" efforts=[low,medium,high,xhigh,max]

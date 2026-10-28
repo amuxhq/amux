@@ -1629,19 +1629,25 @@ fn server_health<'a>(
 }
 
 /// One window's use and reset as reported; a reset later than the one held
-/// means the window has reset, which ends the status stated for it.
+/// means the window has reset, which ends the status stated for it. A use
+/// or reset the report leaves out keeps the one held.
 fn report_window(meter: &mut UsageMeter, utilization: Option<f64>, resets_at_ms: Option<i64>) {
     if let (Some(held), Some(reported)) = (meter.resets_at_ms, resets_at_ms)
         && reported > held
     {
         meter.state = UsageState::Unknown as i32;
     }
-    meter.used_percent = utilization.unwrap_or(0.0) * 100.0;
-    meter.resets_at_ms = resets_at_ms;
+    if let Some(utilization) = utilization {
+        meter.used_percent = utilization * 100.0;
+        meter.used_unknown = false;
+    }
+    if resets_at_ms.is_some() {
+        meter.resets_at_ms = resets_at_ms;
+    }
 }
 
 /// The meter of the window Claude calls `name`, added the first time it
-/// is named.
+/// is named, its use unknown until a report gives it.
 fn claude_window<'a>(usage: &'a mut ClaudeUsage, name: &str) -> &'a mut UsageMeter {
     let at = match usage
         .windows
@@ -1655,7 +1661,10 @@ fn claude_window<'a>(usage: &'a mut ClaudeUsage, name: &str) -> &'a mut UsageMet
                 limit: limit as i32,
                 model: model.map(str::to_owned),
                 provider_name: name.to_owned(),
-                meter: Some(UsageMeter::default()),
+                meter: Some(UsageMeter {
+                    used_unknown: true,
+                    ..Default::default()
+                }),
             });
             usage.windows.len() - 1
         }

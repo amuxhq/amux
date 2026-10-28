@@ -501,7 +501,9 @@ public enum ChatWords {
         }
         if let usage = overview.usageNearLimit, !usage.blocked {
             let near = usage.windows
-                .map { "\(usageLabel($0.label)) \(Int(($0.usedPercent ?? 0).rounded()))%" }
+                .compactMap { window in
+                    window.usedPercent.map { "\(usageLabel(window.label)) \(Int($0.rounded()))%" }
+                }
                 .joined(separator: " · ")
             parts.append((
                 near.isEmpty
@@ -516,11 +518,11 @@ public enum ChatWords {
     }
 
     /// "5-hour limit reached · resets 23:24": the window of a usage limit
-    /// that has been reached, the fullest one when the provider does not
-    /// say which. Sending stays open: the provider may still take a prompt.
+    /// that has been reached, the fullest one whose use is known when the
+    /// provider does not say which. Sending stays open: the provider may still take a prompt.
     public static func limitReached(_ usage: UsageView, now: Date) -> String {
         let window = usage.windows.first { $0.state == .blocked }
-            ?? usage.windows.max { ($0.usedPercent ?? 0) < ($1.usedPercent ?? 0) }
+            ?? usage.windows.compactMap { window in window.usedPercent.map { (window, $0) } }.max { $0.1 < $1.1 }?.0
         guard let window else { return String(localized: "Usage limit reached") }
         let reached = String(localized: "\(usageLabel(window.label)) reached")
         guard let at = window.resetsAtMs, Date(milliseconds: at) > now else { return reached }
@@ -616,9 +618,11 @@ public enum ChatWords {
         }
     }
 
-    /// How full a usage window is: "91% used".
+    /// How full a usage window is: "91% used", or "—" when the provider
+    /// has not said.
     public static func used(_ window: UsageWindowView) -> String {
-        String(localized: "\(Int((window.usedPercent ?? 0).rounded()))% used")
+        guard let used = window.usedPercent else { return "—" }
+        return String(localized: "\(Int(used.rounded()))% used")
     }
 
     /// A usage window's state and when it resets: "near · resets 16:07".

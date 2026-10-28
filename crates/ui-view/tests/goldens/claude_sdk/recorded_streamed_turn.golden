@@ -38,7 +38,7 @@
      4 msg_011CeW3Epe3BZoTMYGXSxojn:0 Thinking { text: "The user is asking me to think briefly about the number seven, then reply with exactly SEVEN.\n\nThis is a straightforward request. Let me think about the number seven:\n- It's a prime number\n- It has cultural significance in many traditions\n- It's between 6 and 8\n- etc.\n\nNow I need to reply with exactly SEVEN.", open: false, duration_ms: …
      5 msg_011CeW3Epe3BZoTMYGXSxojn:1 Prose { text: [Text("SEVEN")], streaming: false, working_note: false }
      6 turn:1 TurnEnd { duration_ms: Some(1619), failed: false }
-== overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: Some(UsageView { blocked: false, windows: [UsageWindowView { label: FiveHour, used_percent: 19.0, resets_at_ms: Some(1787970000000), state: Unknown }, UsageWindowView { label: Weekly { model: None }, used_percent: 83.0, resets_at_ms: Some(1787976000000), state: NearLimit }], credits: None }), changes: None }
+== overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: Some(UsageView { blocked: false, windows: [UsageWindowView { label: FiveHour, used_percent: Some(19.0), resets_at_ms: Some(1787970000000), state: Unknown }, UsageWindowView { label: Weekly { model: None }, used_percent: Some(83.0), resets_at_ms: Some(1787976000000), state: NearLimit }], credits: None }), changes: None }
 == context Some(ContextView { used_tokens: 27910, window_tokens: Some(200000), percent: Some(13), near_full: false }) sign-in None
 == settings
   model  default "Default (recommended)" efforts=[low,medium,high,xhigh,max]

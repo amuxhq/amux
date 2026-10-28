@@ -33,7 +33,7 @@
      7 msg_011CeW3FxowpDKEe7YP46nJR:0 Thinking { text: "The user is asking me to recall the word they asked me to remember in the previous message. They asked me to remember the word \"ALBATROSS\" and to reply with exactly \"REMEMBERED\", which I did.\n\nNow they're asking what word they asked me to remember, and they want me to reply with just that word.\n\nThe answer is: ALBATROSS", open: false, d…
      8 msg_011CeW3FxowpDKEe7YP46nJR:1 Prose { text: [Text("ALBATROSS")], streaming: false, working_note: false }
      9 turn:2 TurnEnd { duration_ms: Some(1765), failed: false }
-== overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: Some(UsageView { blocked: false, windows: [UsageWindowView { label: FiveHour, used_percent: 19.0, resets_at_ms: Some(1787970000000), state: Unknown }, UsageWindowView { label: Weekly { model: None }, used_percent: 83.0, resets_at_ms: Some(1787976000000), state: NearLimit }], credits: None }), changes: None }
+== overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: Some(UsageView { blocked: false, windows: [UsageWindowView { label: FiveHour, used_percent: Some(19.0), resets_at_ms: Some(1787970000000), state: Unknown }, UsageWindowView { label: Weekly { model: None }, used_percent: Some(83.0), resets_at_ms: Some(1787976000000), state: NearLimit }], credits: None }), changes: None }
 == context Some(ContextView { used_tokens: 28040, window_tokens: Some(200000), percent: Some(14), near_full: false }) sign-in None
 == settings
   model  default "Default (recommended)" efforts=[low,medium,high,xhigh,max]

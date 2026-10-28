@@ -1947,7 +1947,7 @@ fn a_window_reported_without_its_use_keeps_what_was_held_or_reads_unknown() {
             .windows
             .iter()
             .find(|window| window.provider_name == name)
-            .and_then(|window| window.meter.clone())
+            .and_then(|window| window.meter)
             .unwrap_or_else(|| panic!("no {name} window in {usage:?}"))
     };
     let held = meter("seven_day_opus");

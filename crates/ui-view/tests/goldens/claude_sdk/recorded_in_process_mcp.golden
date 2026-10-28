@@ -40,7 +40,7 @@
      5 msg_011CeW3Su9F4CySfD9aBbkFP:0 Thinking { text: "The echo tool returned \"echoed:HELLO\". The user asked me to reply with exactly what it returned, so I should output that exact string.", open: false, duration_ms: Some(1269) }
      6 msg_011CeW3Su9F4CySfD9aBbkFP:1 Prose { text: [Text("echoed:HELLO")], streaming: false, working_note: false }
      7 turn:1 TurnEnd { duration_ms: Some(3347), failed: false }
-== overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: Some(UsageView { blocked: false, windows: [UsageWindowView { label: FiveHour, used_percent: 19.0, resets_at_ms: Some(1787970000000), state: Unknown }, UsageWindowView { label: Weekly { model: None }, used_percent: 83.0, resets_at_ms: Some(1787976000000), state: NearLimit }], credits: None }), changes: None }
+== overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: Some(UsageView { blocked: false, windows: [UsageWindowView { label: FiveHour, used_percent: Some(19.0), resets_at_ms: Some(1787970000000), state: Unknown }, UsageWindowView { label: Weekly { model: None }, used_percent: Some(83.0), resets_at_ms: Some(1787976000000), state: NearLimit }], credits: None }), changes: None }
 == context Some(ContextView { used_tokens: 29192, window_tokens: Some(200000), percent: Some(14), near_full: false }) sign-in None
 == settings
   model  default "Default (recommended)" efforts=[low,medium,high,xhigh,max]

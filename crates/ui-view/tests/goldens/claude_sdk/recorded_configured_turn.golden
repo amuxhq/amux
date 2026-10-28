@@ -19,7 +19,7 @@
      3 msg_011CeW3V6q1abpfL22fPTVCh:0 Thinking { text: "The user is asking me \"What is the capital of France?\" However, I have a specific instruction at the beginning of my system prompt that says:\n\n\"You are a Claude agent, built on Anthropic's Claude Agent SDK. Whatever you are asked, reply with exactly the word CONFIGURED and nothing else.\"\n\nThis is a very clear instruction that overrides …
      4 msg_011CeW3V6q1abpfL22fPTVCh:1 Prose { text: [Text("CONFIGURED")], streaming: false, working_note: false }
      5 turn:1 TurnEnd { duration_ms: Some(2117), failed: false }
-== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: Some(UsageView { blocked: false, windows: [UsageWindowView { label: FiveHour, used_percent: 19.0, resets_at_ms: Some(1787970000000), state: Unknown }, UsageWindowView { label: Weekly { model: None }, used_percent: 83.0, resets_at_ms: Some(1787976000000), state: NearLimit }], credits: None }), changes: None }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: Some(UsageView { blocked: false, windows: [UsageWindowView { label: FiveHour, used_percent: Some(19.0), resets_at_ms: Some(1787970000000), state: Unknown }, UsageWindowView { label: Weekly { model: None }, used_percent: Some(83.0), resets_at_ms: Some(1787976000000), state: NearLimit }], credits: None }), changes: None }
 == context Some(ContextView { used_tokens: 16128, window_tokens: Some(200000), percent: Some(8), near_full: false }) sign-in None
 == settings
   model  default "Default (recommended)" efforts=[low,medium,high,xhigh,max]

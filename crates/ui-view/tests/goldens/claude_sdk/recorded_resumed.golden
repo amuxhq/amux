@@ -33,7 +33,7 @@
      7 msg_011CeW3Yn8yXiAArcPPibkqz:0 Thinking { text: "The user asked me to remember the word \"ALBATROSS\" in the previous message. Now they're asking me to reply with just that word.", open: false, duration_ms: None }
      8 msg_011CeW3Yn8yXiAArcPPibkqz:1 Prose { text: [Text("ALBATROSS")], streaming: false, working_note: false }
      9 turn:2 TurnEnd { duration_ms: Some(1033), failed: false }
-== overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: Some(UsageView { blocked: false, windows: [UsageWindowView { label: FiveHour, used_percent: 19.0, resets_at_ms: Some(1787970000000), state: Unknown }, UsageWindowView { label: Weekly { model: None }, used_percent: 83.0, resets_at_ms: Some(1787976000000), state: NearLimit }], credits: None }), changes: None }
+== overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: Some(UsageView { blocked: false, windows: [UsageWindowView { label: FiveHour, used_percent: Some(19.0), resets_at_ms: Some(1787970000000), state: Unknown }, UsageWindowView { label: Weekly { model: None }, used_percent: Some(83.0), resets_at_ms: Some(1787976000000), state: NearLimit }], credits: None }), changes: None }
 == context Some(ContextView { used_tokens: 28015, window_tokens: Some(200000), percent: Some(14), near_full: false }) sign-in None
 == settings
   model  default "Default (recommended)" efforts=[low,medium,high,xhigh,max]

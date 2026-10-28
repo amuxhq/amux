@@ -258,7 +258,8 @@ description after `subagent` or `monitor`), which opens the step that started it
 comparison the header counts, root files first and then each folder with its files and their lines added and
 removed, each opening the review page at that file; its tool servers that need signing in or failed; and, near a
 usage limit, every usage window with its name (`5-hour limit`, `Weekly limit`, `Fable weekly limit`), how full it
-is, its state and when it resets, and Codex's credits. The changed files are asked for without a patch while the
+is (`—` when the provider has not said), its state and when it resets, and Codex's credits. A window whose use is
+unknown is never the one the composer names as nearest the limit or reached. The changed files are asked for without a patch while the
 overview shows, again when the row's totals move or the comparison changes. It stays open across chats until
 closed, and remembers its folds per agent.
 

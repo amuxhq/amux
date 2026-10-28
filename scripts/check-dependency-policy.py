@@ -139,7 +139,7 @@ SUPPORT_ALLOWED_LOCAL = {
     # checks while reusing the network harness rather than shipping it.
     "qualification": {"node", "provider-fakes", "store", "testnet", "wire"},
     "claude-specs": {"claude", "claude-protocol", "pty-host", "redaction", "replay-support"},
-    "codex-specs": {"codex", "codex-protocol", "redaction", "replay-support"},
+    "codex-specs": {"codex", "codex-protocol", "pty-host", "redaction", "replay-support"},
     # The fake providers speak each protocol from its recordings, and check
     # what they compose against the protocol crates' types. They never use
     # the host crates, so a host bug cannot hide behind shared host code.

@@ -18,7 +18,6 @@ clap = { workspace = true }
 crossterm = { workspace = true }
 fontdue = { workspace = true }
 png = { workspace = true }
-prost = { workspace = true }
 ratatui = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -9,7 +9,6 @@ publish = false
 [dependencies]
 agent-dir = { workspace = true }
 node = { workspace = true }
-semver = { workspace = true }
 tokio = { workspace = true }
 tracing-subscriber = { workspace = true }
 

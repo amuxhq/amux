@@ -5807,6 +5807,9 @@ pub enum Decision {
     ApproveSimilar = 5,
     /// Approve and add the ask's network rule.
     ApproveNetwork = 6,
+    /// Approve and save the approval in the person's Codex config: calls like
+    /// this one are allowed in every session from now on.
+    ApproveAlways = 7,
 }
 impl Decision {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -5822,6 +5825,7 @@ impl Decision {
             Self::Abort => "DECISION_ABORT",
             Self::ApproveSimilar => "DECISION_APPROVE_SIMILAR",
             Self::ApproveNetwork => "DECISION_APPROVE_NETWORK",
+            Self::ApproveAlways => "DECISION_APPROVE_ALWAYS",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -5834,6 +5838,7 @@ impl Decision {
             "DECISION_ABORT" => Some(Self::Abort),
             "DECISION_APPROVE_SIMILAR" => Some(Self::ApproveSimilar),
             "DECISION_APPROVE_NETWORK" => Some(Self::ApproveNetwork),
+            "DECISION_APPROVE_ALWAYS" => Some(Self::ApproveAlways),
             _ => None,
         }
     }

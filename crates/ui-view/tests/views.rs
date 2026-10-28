@@ -3774,6 +3774,39 @@ fn codexs_dont_ask_again_on_a_patch_names_the_files_it_covers() {
     );
 }
 
+/// Codex's "always" on a tool server's call is saved in the person's Codex
+/// config, so the choice says it holds in every project from now on, for
+/// that tool.
+#[test]
+fn codexs_always_on_a_tool_call_reads_as_every_project() {
+    let ask = wire::CodexAsk {
+        key: "mcp-1".into(),
+        item_key: "call-1".into(),
+        body: Some(wire::codex_ask::Body::McpTool(wire::McpToolApproval {
+            server: "docs".into(),
+            tool: "search".into(),
+            ..Default::default()
+        })),
+        decisions: vec![
+            wire::Decision::Approve as i32,
+            wire::Decision::ApproveAlways as i32,
+            wire::Decision::Deny as i32,
+        ],
+    };
+    let card = card_of(Kind::Codex, vec![], vec![ask]);
+    let outcomes: Vec<String> = card
+        .choices
+        .iter()
+        .map(|choice| format!("{:?}", choice.outcome))
+        .collect();
+    assert!(
+        outcomes
+            .iter()
+            .any(|outcome| outcome.contains("AllowAlways") && outcome.contains("search") && outcome.contains("User")),
+        "no every-project choice for the tool: {outcomes:?}"
+    );
+}
+
 // --- the client's own commands: /model, /effort and /rename run in the
 // client, are listed once for every kind, and win over a provider's
 // command of the same name.

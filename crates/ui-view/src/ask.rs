@@ -695,7 +695,7 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
                     },
                     CodexDecision::Deny => ChoiceOutcome::Deny { stops: false },
                     CodexDecision::Abort => ChoiceOutcome::DenyAndStop,
-                    CodexDecision::Unspecified => return None,
+                    CodexDecision::Unspecified | CodexDecision::ApproveAlways => return None,
                 };
                 Some(choice(
                     outcome,

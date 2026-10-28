@@ -1393,7 +1393,8 @@ impl State {
             Decision::Approve
             | Decision::ApproveSession
             | Decision::ApproveSimilar
-            | Decision::ApproveNetwork => DecisionOutcome::Allowed,
+            | Decision::ApproveNetwork
+            | Decision::ApproveAlways => DecisionOutcome::Allowed,
             Decision::Deny | Decision::Abort => DecisionOutcome::Denied,
             Decision::Unspecified => DecisionOutcome::Unknown,
         };

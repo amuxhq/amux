@@ -288,6 +288,9 @@ enum Decision {
   DECISION_APPROVE_SIMILAR = 5;
   // Approve and add the ask's network rule.
   DECISION_APPROVE_NETWORK = 6;
+  // Approve and save the approval in the person's Codex config: calls like
+  // this one are allowed in every session from now on.
+  DECISION_APPROVE_ALWAYS = 7;
 }
 
 // Rejected REFUSAL_CLOSED_ASK if ask_key is not open. An approval is rejected

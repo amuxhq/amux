@@ -512,15 +512,56 @@ fn an_approval_offering_one_lifetime_as_a_string_is_read() {
             .map(|decision| wire::Decision::try_from(*decision).unwrap())
             .collect::<Vec<_>>()
     };
-    use wire::Decision::{Abort, Approve, ApproveSession, Deny};
+    use wire::Decision::{Abort, Approve, ApproveAlways, ApproveSession, Deny};
     assert_eq!(
         decisions(json!("session")),
         [Approve, ApproveSession, Deny, Abort]
     );
     assert_eq!(
         decisions(json!("always")),
-        [Approve, Deny, Abort],
+        [Approve, ApproveAlways, Deny, Abort],
         "no remember-for-session choice when Codex offers only always"
+    );
+    assert_eq!(
+        decisions(json!(["session", "always"])),
+        [Approve, ApproveSession, ApproveAlways, Deny, Abort]
+    );
+}
+
+/// "Always" on a tool server's call is Codex's own choice: answered with
+/// `persist: always`, which Codex writes into the person's config, and
+/// recorded as that grant.
+#[test]
+fn an_mcp_approval_answered_always_persists_it() {
+    let mut agent = Driven::started();
+    agent.rpc(json!({
+        "id": 0,
+        "method": "mcpServer/elicitation/request",
+        "params": {
+            "_meta": {"codex_approval_kind": "mcp_tool_call", "persist": ["session", "always"]},
+            "message": "Allow the server to run tool \"ask\"?",
+            "mode": "form",
+            "requestedSchema": {"properties": {}, "type": "object"},
+            "serverName": "spec",
+            "threadId": "t1",
+            "turnId": "turn-1",
+        },
+    }));
+    let key = agent.snapshot.asks[0].key.clone();
+    let answered = agent.step(Event::Input(wire::Input::new(
+        b"a1".to_vec(),
+        wire::CodexInput {
+            of: Some(wire::codex_input::Of::Answer(wire::CodexAnswer {
+                ask_key: key,
+                of: Some(wire::codex_answer::Of::Approve(
+                    wire::Decision::ApproveAlways as i32,
+                )),
+            })),
+        },
+    )));
+    assert_eq!(
+        writes(&answered.effects),
+        [json!({"id": 0, "result": {"action": "accept", "content": {}, "_meta": {"persist": "always"}}})]
     );
 }
 

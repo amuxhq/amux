@@ -463,8 +463,12 @@ pub struct ResultCommon {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fast_mode_disabled_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub origin: Option<serde_json::Value>,
+    pub origin: Option<ResultOrigin>,
 }
+// Who the turn a result ends was for: `human` for a person's prompt.
+wire_struct!(ResultOrigin {
+    #[serde(default,skip_serializing_if="Option::is_none")] pub kind: Option<String>,
+});
 wire_struct!(ResultSuccess {
     #[serde(flatten)] pub common:ResultCommon,#[serde(default="crate::absent::result")] pub result:String,
     #[serde(default,skip_serializing_if="Option::is_none")] pub structured_output:Option<serde_json::Value>,

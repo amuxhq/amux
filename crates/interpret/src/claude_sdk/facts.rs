@@ -1250,8 +1250,7 @@ impl State {
                 common
                     .origin
                     .as_ref()
-                    .and_then(|origin| origin.get("kind"))
-                    .and_then(Value::as_str)
+                    .and_then(|origin| origin.kind.as_deref())
                     .is_some_and(|kind| kind != "human")
             } else {
                 !named.iter().any(|uuid| self.unanswered.contains(*uuid))

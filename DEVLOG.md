@@ -1,3 +1,5 @@
+2026-10-28 — **A result's origin is typed.** `ResultCommon.origin` is a `ResultOrigin` with an optional `kind`, so the headless interpreter's foreign-result check reads it as a field instead of looking it up by name.
+
 2026-10-28 — **Codex's live spec may use `pty-host`.** The provider tether moved there from the Codex crate, so the dependency policy allows it for `codex-specs` as it already did for `claude-specs`.
 
 2026-10-28 — **The Claude spec driver lints clean again.** A result's list of consumed message ids made its message event large enough for clippy's variant-size check; the driver's event enum allows it, as its terminal twin does.

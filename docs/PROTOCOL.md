@@ -214,7 +214,9 @@ host a neighbor announces is a candidate whose entry lists those neighbors in
 it: nearby, through a paired host on any plan, or only through the cloud relay,
 which needs a paid account. Whether an announcer is the cloud relay comes from
 how this host admitted the link, not from the capabilities the neighbor
-claimed. A cloud relay a neighbor names is never a candidate. Announcements go
+claimed. A cloud relay a neighbor names is never a candidate, and nor is a
+phone, which shows no pairing code and only joins a pairing another host
+offers. Announcements go
 one hop: a neighbor lists only the hosts it holds links to.
 
 A trusted host's presence follows from the links up to it, decided in one

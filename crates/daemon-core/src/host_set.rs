@@ -200,8 +200,9 @@ impl Daemon {
     }
 
     /// Every host this profile does not trust that discovery finds or a
-    /// neighbor announces, by id. A cloud relay a neighbor names is not one:
-    /// nothing pairs with a relay.
+    /// neighbor announces, by id. A cloud relay a neighbor names is not one,
+    /// and nor is a phone: nothing pairs with a relay, and a phone shows no
+    /// pairing code, so it only ever joins a pairing another host offers.
     fn candidate_entries(&self, own_host: &[u8]) -> BTreeMap<Vec<u8>, HostEntry> {
         let untrusted = |host: HostId| {
             host.0.as_slice() != own_host
@@ -226,7 +227,7 @@ impl Daemon {
             });
         }
         for (host, said, relays) in self.routing.catalogue.claimed() {
-            if !untrusted(host) || said.cloud_relay {
+            if !untrusted(host) || said.cloud_relay || said.platform == wire::Platform::Ios {
                 continue;
             }
             let mut announced_by: Vec<wire::Host> =

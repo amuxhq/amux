@@ -374,6 +374,53 @@ fn whether_an_announcer_is_the_cloud_relay_is_how_its_link_was_admitted_not_what
 }
 
 #[test]
+fn a_phone_a_neighbor_announces_is_no_candidate_since_it_shows_no_pairing_code() {
+    let phone = HostId([4; 16]);
+    let mut daemon = daemon(&[]);
+    step(
+        &mut daemon,
+        Input::LinkUp {
+            link: LinkId(1),
+            peer: RELAY,
+            kind: CarrierKind::Relay,
+            resumed: None,
+        },
+    );
+    step(
+        &mut daemon,
+        Input::LinkControl {
+            link: LinkId(1),
+            frame: Message {
+                body: Some(Body::Hello(Hello {
+                    host: Some(host(RELAY)),
+                    neighbors: vec![
+                        host(NAS),
+                        wire::Host {
+                            platform: wire::Platform::Ios as i32,
+                            ..host(phone)
+                        },
+                    ],
+                    ..Default::default()
+                })),
+            },
+        },
+    );
+    assert!(
+        daemon
+            .host_set()
+            .iter()
+            .any(|entry| entry.host_id() == NAS.0)
+    );
+    assert!(
+        !daemon
+            .host_set()
+            .iter()
+            .any(|entry| entry.host_id() == phone.0),
+        "a phone only joins a pairing, so nothing here could pair with it"
+    );
+}
+
+#[test]
 fn a_candidate_goes_when_its_last_announcer_takes_it_back() {
     let mut daemon = daemon(&[]);
     linked(&mut daemon, 1, RELAY, CarrierKind::Relay, &[NAS]);

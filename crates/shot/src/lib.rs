@@ -549,7 +549,7 @@ pub fn write_png(raster: &Raster, out: &Path) -> Result<(), ShotError> {
     let mut encoder = png::Encoder::new(writer, raster.width, raster.height);
     encoder.set_color(png::ColorType::Rgb);
     encoder.set_depth(png::BitDepth::Eight);
-    encoder.set_compression(png::Compression::Best);
+    encoder.set_compression(png::Compression::High);
     let mut png = encoder
         .write_header()
         .map_err(|error| ShotError::Encode(error.to_string()))?;
@@ -701,7 +701,10 @@ fn verify_entry(base: &Path, entry: &ManifestEntry) -> Result<(), ShotError> {
     let mut reader = decoder
         .read_info()
         .map_err(|error| ShotError::Verify(format!("{}: {error}", path.display())))?;
-    let mut pixels = vec![0; reader.output_buffer_size()];
+    let size = reader
+        .output_buffer_size()
+        .ok_or_else(|| ShotError::Verify(format!("{}: too large to decode", path.display())))?;
+    let mut pixels = vec![0; size];
     let info = reader
         .next_frame(&mut pixels)
         .map_err(|error| ShotError::Verify(format!("{}: {error}", path.display())))?;

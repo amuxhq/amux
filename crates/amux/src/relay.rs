@@ -78,10 +78,11 @@ pub fn run(config: Option<&Path>) -> Result<()> {
     let text =
         std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
     let mut ignored = Vec::new();
-    let config: RelayConfig = serde_ignored::deserialize(toml::Deserializer::new(&text), |key| {
-        ignored.push(key.to_string())
-    })
-    .with_context(|| format!("parsing {}", path.display()))?;
+    let parsing = || format!("parsing {}", path.display());
+    let document = toml::Deserializer::parse(&text).with_context(parsing)?;
+    let config: RelayConfig =
+        serde_ignored::deserialize(document, |key| ignored.push(key.to_string()))
+            .with_context(parsing)?;
     if config.host_name.is_empty() {
         bail!("{}: host_name must name the relay", path.display());
     }
@@ -217,7 +218,7 @@ mod tests {
                     reports_dir = \"/r\"\n";
         let mut ignored = Vec::new();
         let config: RelayConfig =
-            serde_ignored::deserialize(toml::Deserializer::new(text), |key| {
+            serde_ignored::deserialize(toml::Deserializer::parse(text).unwrap(), |key| {
                 ignored.push(key.to_string())
             })
             .unwrap();

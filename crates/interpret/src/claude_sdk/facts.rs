@@ -1365,7 +1365,8 @@ impl State {
                 )
             }
             PLAN_TOOL if server.is_empty() => {
-                let switch = crate::claude_common::plan_switch(self.offers_auto()).to_owned();
+                let switch = crate::claude_common::plan_switch(self.offers_auto(), self.never_ask)
+                    .to_owned();
                 (
                     wire::ask::Body::Plan(plan_ask(&switch)),
                     AskShape::Plan { switch },

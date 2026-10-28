@@ -181,10 +181,17 @@ pub(crate) fn plan_ask(switch: &str) -> wire::PlanAsk {
     }
 }
 
-/// The permission Claude's own plan approval switches to: auto mode where
-/// Claude offers it, accept edits otherwise.
-pub(crate) fn plan_switch(offers_auto: bool) -> &'static str {
-    if offers_auto { "auto" } else { "acceptEdits" }
+/// The permission Claude's own plan approval switches to, in both modes:
+/// never ask where Claude was launched allowing it, else auto mode where
+/// Claude offers it, else accept edits.
+pub(crate) fn plan_switch(offers_auto: bool, never_ask: bool) -> &'static str {
+    if never_ask {
+        NEVER_ASK
+    } else if offers_auto {
+        "auto"
+    } else {
+        "acceptEdits"
+    }
 }
 
 /// An RFC 3339 timestamp, as Claude writes them, in milliseconds.

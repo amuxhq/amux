@@ -1,3 +1,5 @@
+2026-10-28 — **Headless plan approval switches to never ask when Claude allows it**, by the one rule both kinds now share: never ask where Claude was launched allowing it, else auto mode where offered, else accept edits.
+
 2026-10-28 — **Claude's words reach the clients without terminal codes.** The status word, fallback and refusal reasons, command output, an ask's reason, description and title, a denial's note and a tool server's message all go through one cleaner, which now drops C1 controls and every control character but a newline and a tab as well as CSI, OSC and other escapes; the phone showed them raw and the TUI showed their remains.
 
 2026-10-28 — **An ask headless Claude flags is offered as Claude says.** One marked `suppress_always_allow_rule` offers no "always" scope even when Claude sent suggestions (Claude would narrow or drop the rule, and amux recorded a grant it never applied); one marked `default_to_no` carries that on the ask, and the TUI opens it on its refusal with digit shortcuts off.

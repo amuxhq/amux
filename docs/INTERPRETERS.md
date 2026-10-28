@@ -238,10 +238,10 @@ draw both from these facts alone.
 - **Claude, both kinds.** `ExitPlanMode` is drawn as its plan, keyed by the
   call, once its input carries the plan. The choices are start building,
   start switching permission, and keep planning. The switch is the one
-  Claude's own plan menu makes: auto mode where Claude offers it for the
-  running model, accept edits otherwise; for terminal Claude launched
-  allowing never ask, never ask. Terminal Claude's switch follows from its
-  launch arguments and the host's catalogue. The ask names the switch when
+  Claude's own plan menu makes, by one rule for both kinds: never ask where
+  Claude was launched allowing it, else auto mode where Claude offers it
+  for the running model, else accept edits. Terminal Claude's switch
+  follows from its launch arguments and the host's catalogue. The ask names the switch when
   it opens; an answer agreeing to it names no permission, so it can only
   agree to the one the person was shown. While Claude is in plan mode,
   its `Write`, `Edit`, `MultiEdit` and `NotebookEdit` calls draw nothing:

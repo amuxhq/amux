@@ -209,10 +209,7 @@ impl State {
     /// launched allowing it, else auto mode where its model offers it, else
     /// accept edits.
     fn plan_switch(&self) -> String {
-        if self.provider.never_ask {
-            return crate::claude_common::NEVER_ASK.to_owned();
-        }
-        crate::claude_common::plan_switch(self.offers_auto()).to_owned()
+        crate::claude_common::plan_switch(self.offers_auto(), self.provider.never_ask).to_owned()
     }
 
     /// A terminal offers nothing a program can read: its models and

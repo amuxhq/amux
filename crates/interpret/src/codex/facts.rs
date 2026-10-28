@@ -868,6 +868,7 @@ impl State {
                     .get(&terminal.item_id)
                     .map_or(now, |work| work.at_ms),
                 kind: wire::BackgroundKind::Shell as i32,
+                ..Default::default()
             }
         }));
         match some_of(page.next_cursor.as_deref()) {

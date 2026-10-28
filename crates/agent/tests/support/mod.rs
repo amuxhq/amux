@@ -941,6 +941,32 @@ impl Log {
         }
     }
 
+    /// The background jobs the newest snapshot lists.
+    pub fn background_jobs(&self) -> Vec<wire::BackgroundJob> {
+        let Some(snapshot) = self.snapshot() else {
+            return Vec::new();
+        };
+        let jobs = match snapshot.kind() {
+            Kind::ClaudeSdk => {
+                ClaudeSdkSnapshot::decode(snapshot.body.as_slice())
+                    .unwrap()
+                    .background_jobs
+            }
+            Kind::ClaudePty => {
+                wire::ClaudePtySnapshot::decode(snapshot.body.as_slice())
+                    .unwrap()
+                    .background_jobs
+            }
+            Kind::Codex => {
+                wire::CodexSnapshot::decode(snapshot.body.as_slice())
+                    .unwrap()
+                    .background_jobs
+            }
+            other => panic!("no snapshot reader for {other:?}"),
+        };
+        jobs.map(|jobs| jobs.jobs).unwrap_or_default()
+    }
+
     /// The tool servers the newest Claude snapshot reports.
     pub fn tool_servers(&self) -> Vec<wire::ToolServer> {
         let Some(snapshot) = self.snapshot() else {

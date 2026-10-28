@@ -1017,6 +1017,7 @@ impl State {
             _ => return self.shared.reject(emit, &id, Refusal::Unsupported),
         };
         match arm {
+            codex_input::Of::StopJob(_) => self.shared.reject(emit, &id, Refusal::Unsupported),
             // A `/word` that is not a command amux runs would reach the
             // model as words. A skill is mentioned as `$name` instead.
             codex_input::Of::Prompt(prompt) if Command::parse(&prompt.text) == Some(Err(())) => {

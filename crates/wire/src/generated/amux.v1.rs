@@ -2807,6 +2807,17 @@ pub struct BackgroundJob {
     pub started_at_ms: i64,
     #[prost(enumeration = "BackgroundKind", tag = "4")]
     pub kind: i32,
+    /// The job's own key, which a stop names: Claude's task id or the
+    /// process id Codex lists.
+    #[prost(string, tag = "5")]
+    pub key: ::prost::alloc::string::String,
+    /// A stop was sent and the provider has not yet said the job ended.
+    #[prost(bool, tag = "6")]
+    pub stopping: bool,
+    /// Why the provider refused the last stop, in its words; empty when it
+    /// did not.
+    #[prost(string, tag = "7")]
+    pub stop_error: ::prost::alloc::string::String,
 }
 impl ::prost::Name for BackgroundJob {
     const NAME: &'static str = "BackgroundJob";
@@ -2816,6 +2827,23 @@ impl ::prost::Name for BackgroundJob {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.BackgroundJob".into()
+    }
+}
+/// Stops one background job by its key; the agent keeps running. Rejected
+/// REFUSAL_UNSUPPORTED when no running job has the key.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct StopJob {
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
+}
+impl ::prost::Name for StopJob {
+    const NAME: &'static str = "StopJob";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.StopJob".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.StopJob".into()
     }
 }
 /// U+FFFC per attachment.
@@ -4836,7 +4864,7 @@ impl ::prost::Name for ClaudeSdkSnapshot {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClaudeSdkInput {
-    #[prost(oneof = "claude_sdk_input::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
+    #[prost(oneof = "claude_sdk_input::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
     pub of: ::core::option::Option<claude_sdk_input::Of>,
 }
 /// Nested message and enum types in `ClaudeSdkInput`.
@@ -4861,6 +4889,8 @@ pub mod claude_sdk_input {
         Effort(super::SetEffort),
         #[prost(message, tag = "9")]
         SendNow(super::SendQueuedNow),
+        #[prost(message, tag = "10")]
+        StopJob(super::StopJob),
     }
 }
 impl ::prost::Name for ClaudeSdkInput {
@@ -5679,7 +5709,7 @@ impl ::prost::Name for McpToolApproval {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CodexInput {
-    #[prost(oneof = "codex_input::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
+    #[prost(oneof = "codex_input::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
     pub of: ::core::option::Option<codex_input::Of>,
 }
 /// Nested message and enum types in `CodexInput`.
@@ -5704,6 +5734,8 @@ pub mod codex_input {
         Effort(super::SetEffort),
         #[prost(message, tag = "9")]
         SendNow(super::SendQueuedNow),
+        #[prost(message, tag = "10")]
+        StopJob(super::StopJob),
     }
 }
 impl ::prost::Name for CodexInput {

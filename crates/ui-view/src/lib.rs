@@ -42,9 +42,9 @@ pub use form::{
     form_problems,
 };
 pub use overview::{
-    ChangeTotals, ChangedFile, Changes, Comparison, Folder, JobRow, Overview, ServerView, TaskLine,
-    TaskMark, TasksView, UsageLabel, UsageView, UsageWindowView, changes, diff_base, overview,
-    usage_windows,
+    ChangeTotals, ChangedFile, Changes, Comparison, Folder, JobRow, JobStop, Overview, ServerView,
+    TaskLine, TaskMark, TasksView, UsageLabel, UsageView, UsageWindowView, changes, diff_base,
+    overview, usage_windows,
 };
 pub use review::{DiffLine, FileStatus, Hunk, LineKind, ReviewDoc, ReviewFile, review_doc};
 pub use rows::{

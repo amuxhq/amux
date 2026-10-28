@@ -287,6 +287,7 @@ message CodexInput {
     WithdrawQueued withdraw = 7;
     SetEffort effort = 8;
     SendQueuedNow send_now = 9;
+    StopJob stop_job = 10;
   }
 }
 

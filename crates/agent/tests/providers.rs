@@ -1535,3 +1535,82 @@ async fn headless_claude_gets_an_image_block_typed_by_its_bytes_and_anything_els
     assert_eq!(images.len(), 1, "{sent}");
     assert_eq!(images[0]["source"]["media_type"], "image/png");
 }
+
+/// A person stops one background command: the agent sends the provider's
+/// own stop for that job, the job reads stopping, and it leaves the list
+/// when the provider says it ended. The agent keeps running.
+async fn one_job_stops(kind: Kind) {
+    let never = tempfile::tempdir().unwrap().keep().join("never");
+    let agent = Agent::start(Setup {
+        kind,
+        steps: vec![
+            Step::Tool(provider_fakes::Tool {
+                name: Some("Bash".into()),
+                class: provider_fakes::ToolClass::Consequential,
+                input: Some(serde_json::json!({
+                    "command": "cargo watch", "description": "cargo watch",
+                    "run_in_background": true,
+                })),
+                outcome: Default::default(),
+                wait_for: Some(never),
+            }),
+            Step::TurnEnd,
+        ],
+        ..Setup::sdk()
+    })
+    .await;
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    assert_eq!(daemon.prompt(b"p1", "watch it").await, Verdict::Accepted);
+    agent
+        .wait("the job is listed with its key", |log| {
+            log.background_jobs().iter().any(|job| !job.key.is_empty())
+        })
+        .await;
+    let key = agent.log().background_jobs()[0].key.clone();
+    let stop = wire::StopJob { key: key.clone() };
+    let input = match kind {
+        Kind::Codex => wire::Input::new(
+            b"s1".to_vec(),
+            wire::CodexInput {
+                of: Some(wire::codex_input::Of::StopJob(stop)),
+            },
+        ),
+        _ => wire::Input::new(
+            b"s1".to_vec(),
+            wire::ClaudeSdkInput {
+                of: Some(wire::claude_sdk_input::Of::StopJob(stop)),
+            },
+        ),
+    };
+    assert_eq!(daemon.input(input).await, Verdict::Accepted);
+    agent
+        .wait("the job leaves the list", |log| {
+            log.background_jobs().is_empty()
+        })
+        .await;
+    let sent = agent.provider_input();
+    let stopped = sent.iter().any(|line| match kind {
+        Kind::Codex => {
+            line["method"] == "thread/backgroundTerminals/terminate"
+                && line["params"]["processId"] == key.as_str()
+        }
+        _ => {
+            line["request"]["subtype"] == "stop_task" && line["request"]["task_id"] == key.as_str()
+        }
+    });
+    assert!(stopped, "no stop for {key} reached the provider");
+    assert!(!agent.finished(), "the agent keeps running");
+    daemon.stop().await;
+    assert_eq!(agent.exit().await, ExitCause::Stopped);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn headless_claude_stops_one_background_job() {
+    one_job_stops(Kind::ClaudeSdk).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn codex_stops_one_background_job() {
+    one_job_stops(Kind::Codex).await;
+}

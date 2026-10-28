@@ -558,6 +558,7 @@ impl State {
             // A message at the default priority joins the running turn at
             // its next tool boundary. Priority "now" is not steering: it
             // abandons the rest of the turn.
+            claude_sdk_input::Of::StopJob(_) => self.shared.reject(emit, &id, Refusal::Unsupported),
             claude_sdk_input::Of::SendNow(send) => {
                 let running = self.shared.is_busy();
                 if let Some(entry) = self

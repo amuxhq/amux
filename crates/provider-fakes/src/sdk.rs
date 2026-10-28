@@ -401,6 +401,40 @@ impl Engine {
                 }
                 Some(json!({ "still_queued": self.still_queued() }))
             }
+            // Claude stops the task by its id: the job list loses it and
+            // its notification says it was stopped.
+            "stop_task" => {
+                let task = request["task_id"].as_str().unwrap_or_default().to_owned();
+                let Some(at) = self.jobs.iter().position(|job| job.task == task) else {
+                    let error = format!("No task found with ID: {task}");
+                    self.send(json!({
+                        "type": "control_response",
+                        "response": { "subtype": "error", "request_id": id, "error": error },
+                    }))
+                    .await;
+                    return;
+                };
+                let job = self.jobs.remove(at);
+                self.send(json!({
+                    "type": "control_response",
+                    "response": { "subtype": "success", "request_id": id, "response": {} },
+                }))
+                .await;
+                self.jobs_changed().await;
+                self.send(json!({
+                    "type": "system",
+                    "subtype": "task_notification",
+                    "task_id": job.task,
+                    "tool_use_id": job.call,
+                    "status": "stopped",
+                    "output_file": format!("/tmp/claude/tasks/{}.output", job.task),
+                    "summary": format!("Background command \"{}\" was stopped", job.description),
+                    "session_id": self.session,
+                    "uuid": uuid(),
+                }))
+                .await;
+                return;
+            }
             "cancel_async_message" => {
                 let target = request["message_uuid"].as_str().unwrap_or_default();
                 let cancelled = self.withdraw(target);

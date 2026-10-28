@@ -682,6 +682,7 @@ impl Jobs {
                 command: job.command.clone(),
                 started_at_ms: job.started_at_ms,
                 kind: job.kind,
+                ..Default::default()
             })
             .collect()
     }

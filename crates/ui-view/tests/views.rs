@@ -4115,3 +4115,66 @@ fn a_codex_skill_after_a_slash_is_refused_with_its_mention() {
         other => panic!("not refused: {other:?}"),
     }
 }
+
+/// Each background job says whether the person can stop it alone: headless
+/// Claude and Codex stop one job by its key, terminal Claude cannot, and a
+/// job the provider gave no key cannot be named. A stop sent reads
+/// stopping; a refused one carries the provider's words and is offered again.
+#[test]
+fn a_job_offers_its_own_stop_where_the_kind_can_stop_one() {
+    use ui_view::JobStop;
+    let job = |key: &str, stopping: bool, stop_error: &str| wire::BackgroundJob {
+        command: format!("job {key}"),
+        key: key.into(),
+        stopping,
+        stop_error: stop_error.into(),
+        ..Default::default()
+    };
+    let jobs = wire::BackgroundJobs {
+        known: true,
+        jobs: vec![
+            job("b1", false, ""),
+            job("b2", true, ""),
+            job("b3", false, "not running"),
+            job("", false, ""),
+        ],
+    };
+    let stops = |kind: Kind| {
+        let body = match kind {
+            Kind::ClaudeSdk => wire::ClaudeSdkSnapshot {
+                background_jobs: Some(jobs.clone()),
+                ..Default::default()
+            }
+            .encode_to_vec(),
+            Kind::ClaudePty => wire::ClaudePtySnapshot {
+                background_jobs: Some(jobs.clone()),
+                ..Default::default()
+            }
+            .encode_to_vec(),
+            _ => wire::CodexSnapshot {
+                background_jobs: Some(jobs.clone()),
+                ..Default::default()
+            }
+            .encode_to_vec(),
+        };
+        let mut state = SessionState::new(agent(kind), CAP);
+        state.update(snapshot(kind, Phase::Idle, body, vec![]));
+        overview(&state, None)
+            .jobs
+            .into_iter()
+            .map(|row| row.stop)
+            .collect::<Vec<_>>()
+    };
+    let offered = vec![
+        JobStop::Offered { key: "b1".into() },
+        JobStop::Stopping,
+        JobStop::Refused {
+            key: "b3".into(),
+            error: "not running".into(),
+        },
+        JobStop::Unavailable,
+    ];
+    assert_eq!(stops(Kind::ClaudeSdk), offered);
+    assert_eq!(stops(Kind::Codex), offered);
+    assert_eq!(stops(Kind::ClaudePty), vec![JobStop::Unavailable; 4]);
+}

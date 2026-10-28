@@ -109,7 +109,8 @@ impl InputWhat {
                     sdk::Of::Permission(_)
                     | sdk::Of::Model(_)
                     | sdk::Of::Clear(_)
-                    | sdk::Of::Effort(_),
+                    | sdk::Of::Effort(_)
+                    | sdk::Of::StopJob(_),
                 )
                 | None => InputWhat::Other,
             },
@@ -123,7 +124,8 @@ impl InputWhat {
                     codex::Of::Permission(_)
                     | codex::Of::Mode(_)
                     | codex::Of::Model(_)
-                    | codex::Of::Effort(_),
+                    | codex::Of::Effort(_)
+                    | codex::Of::StopJob(_),
                 )
                 | None => InputWhat::Other,
             },

@@ -246,6 +246,9 @@ struct Engine {
     /// The lock that makes this process its thread's writer, held until it
     /// exits.
     writer: Option<std::fs::File>,
+    /// Commands run in the background that still run, as (turn, item),
+    /// each carrying its process id.
+    terminals: Vec<(String, Value)>,
 }
 
 impl Engine {
@@ -288,6 +291,7 @@ impl Engine {
             exit_ms: script.exit_ms,
             terminated: false,
             writer: None,
+            terminals: Vec::new(),
         }
     }
 
@@ -551,6 +555,38 @@ impl Engine {
             // Drained by a running turn, held for the next by an idle one;
             // either way nothing is reported.
             "thread/inject_items" => self.respond(client, &id, json!({})).await,
+            "thread/backgroundTerminals/list" => {
+                let data: Vec<Value> = self
+                    .terminals
+                    .iter()
+                    .map(|(_, item)| {
+                        json!({
+                            "itemId": item["id"], "processId": item["processId"],
+                            "command": item["command"], "cwd": item["cwd"],
+                        })
+                    })
+                    .collect();
+                self.respond(client, &id, json!({ "data": data, "nextCursor": null }))
+                    .await;
+            }
+            // Codex ends the command by its process id; the command's item
+            // completes as one killed does.
+            "thread/backgroundTerminals/terminate" => {
+                let at = self
+                    .terminals
+                    .iter()
+                    .position(|(_, item)| item["processId"] == params["processId"]);
+                self.respond(client, &id, json!({ "terminated": at.is_some() }))
+                    .await;
+                if let Some(at) = at {
+                    let (turn, mut item) = self.terminals.remove(at);
+                    item["status"] = json!("failed");
+                    item["exitCode"] = json!(143);
+                    item["durationMs"] = json!(0);
+                    item["aggregatedOutput"] = json!("");
+                    self.item(&turn, "item/completed", &item).await;
+                }
+            }
             // Read with its turns, the loaded thread is written to disk.
             "thread/read" if self.thread.as_deref() == params["threadId"].as_str() => {
                 if params["includeTurns"] == true {
@@ -1256,6 +1292,14 @@ impl Engine {
             "status": "inProgress",
             "type": "commandExecution",
         });
+        let background = tool
+            .input
+            .as_ref()
+            .is_some_and(|input| input["run_in_background"] == true);
+        if background {
+            item["processId"] = json!(format!("{}", 9000 + self.next_item));
+            item["source"] = json!("unifiedExecStartup");
+        }
         // Codex reports the wait for a command's approval before the call.
         if approval.is_some() {
             self.status(Some(&["waitingOnApproval"])).await;
@@ -1293,6 +1337,12 @@ impl Engine {
                 return;
             }
             self.status(Some(&[])).await;
+        }
+        // A command run in the background runs on past its turn, under a
+        // process id, until it is terminated.
+        if background {
+            self.terminals.push((turn.to_owned(), item));
+            return;
         }
         // A command printing in pieces prints them while it runs; any other
         // prints its output once it is done.

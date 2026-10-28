@@ -1959,3 +1959,103 @@ fn a_window_reported_without_its_use_keeps_what_was_held_or_reads_unknown() {
     assert!(new.used_unknown, "{new:?}");
     assert_eq!(new.state(), wire::UsageState::Blocked);
 }
+
+/// A person stops one background job: amux asks Claude to stop that task,
+/// the job reads stopping until Claude says it ended, a refusal shows on
+/// the job in Claude's words, and a key no running job has is refused.
+#[test]
+fn a_stopped_job_reads_stopping_until_claude_says_it_ended() {
+    let mut state = idle_on_root();
+    let mut jobs: Vec<wire::BackgroundJob> = Vec::new();
+    let mut step = |state: &mut State, event: Event| {
+        let stepped = ClaudeSdk::step(state, event);
+        if let Some((_, snapshot)) = sdk_snapshot(&stepped) {
+            jobs = snapshot.background_jobs.unwrap_or_default().jobs;
+        }
+        (stepped, jobs.clone())
+    };
+    for task in ["b1", "b2"] {
+        step(
+            &mut state,
+            stream(json!({
+                "type": "system", "subtype": "task_started", "uuid": format!("t-{task}"),
+                "session_id": "s", "task_id": task, "task_type": "local_bash",
+                "tool_use_id": format!("toolu_{task}"), "description": format!("cargo test {task}"),
+                "is_backgrounded": true,
+            })),
+        );
+    }
+    let stop = |key: &str| wire::claude_sdk_input::Of::StopJob(wire::StopJob { key: key.into() });
+    let stop_requests = |stepped: &interpret::Stepped| -> Vec<Value> {
+        stepped
+            .effects
+            .iter()
+            .filter_map(|effect| match effect {
+                Effect::ProviderWrite(bytes) => serde_json::from_slice::<Value>(bytes).ok(),
+                _ => None,
+            })
+            .filter(|write| write["request"]["subtype"] == "stop_task")
+            .collect()
+    };
+    let verdict = |stepped: &interpret::Stepped, id: &[u8]| {
+        stepped.effects.iter().find_map(|effect| match effect {
+            Effect::Reply { input_id, verdict } if input_id == id => verdict.of.clone(),
+            _ => None,
+        })
+    };
+    let job = |jobs: &[wire::BackgroundJob], key: &str| {
+        jobs.iter()
+            .find(|job| job.key == key)
+            .cloned()
+            .unwrap_or_else(|| panic!("no job {key} in {jobs:?}"))
+    };
+
+    let (stopped, jobs) = step(&mut state, sdk_input(b"s1", stop("b1")));
+    assert!(
+        matches!(
+            verdict(&stopped, b"s1"),
+            Some(wire::send_input_response::Of::Accepted(_))
+        ),
+        "{:?}",
+        stopped.effects
+    );
+    let requests = stop_requests(&stopped);
+    assert_eq!(requests.len(), 1, "{:?}", stopped.effects);
+    assert_eq!(requests[0]["request"]["task_id"], "b1");
+    assert!(job(&jobs, "b1").stopping && !job(&jobs, "b2").stopping);
+
+    let (refused, _) = step(&mut state, sdk_input(b"s2", stop("b2")));
+    let request_id = stop_requests(&refused)[0]["request_id"].clone();
+    let (_, jobs) = step(
+        &mut state,
+        stream(json!({
+            "type": "control_response",
+            "response": {"subtype": "error", "request_id": request_id,
+                "error": "Task b2 is not running (status: completed)"},
+        })),
+    );
+    let b2 = job(&jobs, "b2");
+    assert!(!b2.stopping, "{b2:?}");
+    assert_eq!(b2.stop_error, "Task b2 is not running (status: completed)");
+
+    let (_, jobs) = step(
+        &mut state,
+        stream(json!({
+            "type": "system", "subtype": "task_notification", "uuid": "n1", "session_id": "s",
+            "task_id": "b1", "tool_use_id": "toolu_b1", "status": "stopped",
+            "summary": "", "output_file": "",
+        })),
+    );
+    assert!(jobs.iter().all(|job| job.key != "b1"), "{jobs:?}");
+
+    let (unknown, _) = step(&mut state, sdk_input(b"s3", stop("nope")));
+    assert!(
+        matches!(
+            verdict(&unknown, b"s3"),
+            Some(wire::send_input_response::Of::Rejected(_))
+        ),
+        "{:?}",
+        unknown.effects
+    );
+    assert!(stop_requests(&unknown).is_empty());
+}

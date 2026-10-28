@@ -731,6 +731,20 @@ message BackgroundJob {
   string command = 2;
   int64 started_at_ms = 3;
   BackgroundKind kind = 4;
+  // The job's own key, which a stop names: Claude's task id or the
+  // process id Codex lists.
+  string key = 5;
+  // A stop was sent and the provider has not yet said the job ended.
+  bool stopping = 6;
+  // Why the provider refused the last stop, in its words; empty when it
+  // did not.
+  string stop_error = 7;
+}
+
+// Stops one background job by its key; the agent keeps running. Rejected
+// REFUSAL_UNSUPPORTED when no running job has the key.
+message StopJob {
+  string key = 1;
 }
 
 enum BackgroundKind {

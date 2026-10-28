@@ -2312,3 +2312,134 @@ fn a_skill_after_a_slash_is_refused_with_its_mention() {
         "{refused:?}"
     );
 }
+
+/// A person stops one command Codex runs in the background: amux asks
+/// Codex to terminate it by the process id Codex listed, the job reads
+/// stopping until the command ends, and Codex's error shows on the job.
+#[test]
+fn a_stopped_background_command_reads_stopping_until_it_ends() {
+    use prost::Message as _;
+    let verdicts = |effects: &[Effect]| {
+        effects
+            .iter()
+            .filter_map(|effect| match effect {
+                Effect::Reply { verdict, .. } => verdict.of.clone(),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut state = idle_codex();
+    let mut jobs: Vec<wire::BackgroundJob> = Vec::new();
+    let mut step = |state: &mut State, event: Event| {
+        let stepped = Codex::step(state, event);
+        if let Some(snapshot) = &stepped.step.snapshot {
+            jobs = wire::CodexSnapshot::decode(&snapshot.body[..])
+                .unwrap()
+                .background_jobs
+                .unwrap_or_default()
+                .jobs;
+        }
+        (writes(&stepped.effects), jobs.clone(), stepped)
+    };
+    let command = |id: &str, pid: &str| {
+        json!({"type": "commandExecution", "id": id, "command": format!("cargo watch {id}"),
+            "cwd": "/w", "processId": pid, "source": "unifiedExecStartup", "status": "inProgress",
+            "commandActions": [], "aggregatedOutput": null, "exitCode": null, "durationMs": null})
+    };
+    let mut listed = Vec::new();
+    for event in [
+        prompt(b"p1", "watch both"),
+        rpc(
+            json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1", "status": "inProgress"}}}),
+        ),
+        rpc(
+            json!({"method": "item/started", "params": {"threadId": "t1", "turnId": "turn-1", "item": command("exec-1", "8911")}}),
+        ),
+        rpc(
+            json!({"method": "item/started", "params": {"threadId": "t1", "turnId": "turn-1", "item": command("exec-2", "8912")}}),
+        ),
+        rpc(
+            json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {"id": "turn-1", "items": [], "status": "completed", "error": null}}}),
+        ),
+    ] {
+        listed.extend(step(&mut state, event).0);
+    }
+    let list = listed
+        .iter()
+        .find(|write| write["method"] == "thread/backgroundTerminals/list")
+        .expect("Codex is asked what runs on");
+    let terminal = |id: &str, pid: &str| json!({"itemId": id, "processId": pid, "command": format!("cargo watch {id}"), "cwd": "/w"});
+    let (_, jobs, _) = step(
+        &mut state,
+        rpc(
+            json!({"id": list["id"], "result": {"data": [terminal("exec-1", "8911"), terminal("exec-2", "8912")], "nextCursor": null}}),
+        ),
+    );
+    assert_eq!(
+        jobs.iter().map(|job| job.key.as_str()).collect::<Vec<_>>(),
+        ["8911", "8912"]
+    );
+    let stop = |id: &[u8], key: &str| {
+        Event::Input(wire::Input::new(
+            id.to_vec(),
+            wire::CodexInput {
+                of: Some(wire::codex_input::Of::StopJob(wire::StopJob {
+                    key: key.into(),
+                })),
+            },
+        ))
+    };
+    let terminate = |writes: &[Value]| {
+        writes
+            .iter()
+            .find(|write| write["method"] == "thread/backgroundTerminals/terminate")
+            .cloned()
+    };
+
+    let (written, jobs, stopped) = step(&mut state, stop(b"s1", "8911"));
+    assert!(
+        matches!(
+            verdicts(&stopped.effects)[..],
+            [wire::send_input_response::Of::Accepted(_)]
+        ),
+        "{:?}",
+        stopped.effects
+    );
+    let sent = terminate(&written).unwrap_or_else(|| panic!("no terminate in {written:?}"));
+    assert_eq!(
+        sent["params"],
+        json!({"threadId": "t1", "processId": "8911"})
+    );
+    let first = jobs.iter().find(|job| job.key == "8911").unwrap();
+    assert!(first.stopping, "{jobs:?}");
+
+    let (written, _, _) = step(&mut state, stop(b"s2", "8912"));
+    let refused = terminate(&written).expect("the second stop is sent");
+    let (_, jobs, _) = step(
+        &mut state,
+        rpc(json!({"id": refused["id"], "error": {"code": -32600, "message": "no such process"}})),
+    );
+    let second = jobs.iter().find(|job| job.key == "8912").unwrap();
+    assert!(
+        !second.stopping && second.stop_error == "no such process",
+        "{second:?}"
+    );
+
+    let ended = json!({"type": "commandExecution", "id": "exec-1", "command": "cargo watch exec-1",
+        "cwd": "/w", "processId": "8911", "source": "unifiedExecStartup", "status": "completed",
+        "commandActions": [], "aggregatedOutput": "", "exitCode": 143, "durationMs": 10});
+    let (_, jobs, _) = step(
+        &mut state,
+        rpc(
+            json!({"method": "item/completed", "params": {"threadId": "t1", "turnId": "turn-1", "item": ended}}),
+        ),
+    );
+    assert!(jobs.iter().all(|job| job.key != "8911"), "{jobs:?}");
+
+    let (written, _, unknown) = step(&mut state, stop(b"s3", "1"));
+    assert!(matches!(
+        verdicts(&unknown.effects)[..],
+        [wire::send_input_response::Of::Rejected(_)]
+    ));
+    assert!(terminate(&written).is_none());
+}

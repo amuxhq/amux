@@ -4279,3 +4279,54 @@ fn a_focused_control_on_home_carries_the_agent_rows_marker() {
         "a focused control has no marker: {new_agent:?} and {heading:?}"
     );
 }
+
+/// A background job the provider can stop alone: `x` on its row in the
+/// side pane asks first, naming it, and Stop sends the stop for its key. A
+/// stop sent reads "Stopping…" on the row; a refused one shows the
+/// provider's words; terminal Claude's jobs offer no stop.
+#[test]
+fn a_job_is_stopped_from_the_pane_behind_a_confirm_card() {
+    let job = |key: &str, command: &str, stopping: bool, stop_error: &str| wire::BackgroundJob {
+        item_key: format!("k-{key}"),
+        command: command.into(),
+        key: key.into(),
+        stopping,
+        stop_error: stop_error.into(),
+        ..Default::default()
+    };
+    let shown = |jobs: Vec<wire::BackgroundJob>| {
+        let body = wire::ClaudeSdkSnapshot {
+            background_jobs: Some(wire::BackgroundJobs { known: true, jobs }),
+            ..Default::default()
+        }
+        .encode_to_vec();
+        let mut state = chat(replies(1, 2));
+        state.update(snapshot(Phase::Idle, body, vec![]));
+        let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+        view.open_pane();
+        let _ = draw(&mut view, &state, 60_000, 140, 40, theme());
+        (state, view)
+    };
+    let (state, mut view) = shown(vec![job("b1", "cargo test", false, "")]);
+    assert_eq!(view.key(&state, key(KeyCode::Char('x')), theme()), vec![]);
+    let (buffer, _) = draw(&mut view, &state, 60_000, 140, 40, theme());
+    let screen = text(&buffer);
+    assert!(
+        screen.contains("Stop cargo test? The agent keeps running."),
+        "{screen}"
+    );
+    let effects = view.key(&state, key(KeyCode::Enter), theme());
+    assert!(
+        format!("{effects:?}").contains("StopJob") && format!("{effects:?}").contains("b1"),
+        "{effects:?}"
+    );
+
+    let (state, mut view) = shown(vec![
+        job("b1", "cargo test", true, ""),
+        job("b2", "npm run dev", false, "Task b2 is not running"),
+    ]);
+    let (buffer, _) = draw(&mut view, &state, 60_000, 140, 40, theme());
+    let screen = text(&buffer);
+    assert!(screen.contains("Stopping…"), "{screen}");
+    assert!(screen.contains("Task b2 is not running"), "{screen}");
+}

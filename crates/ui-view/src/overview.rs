@@ -62,6 +62,24 @@ pub struct JobRow {
     /// What the job is, so a client can tell a command from the provider's
     /// own subagent or monitor, whose `command` is a description.
     pub kind: BackgroundKind,
+    /// Whether the person can stop this one job, and how that stands.
+    pub stop: JobStop,
+}
+
+/// Stopping one background job, which leaves the agent running. Only a kind
+/// whose provider stops one job on request offers it: terminal Claude
+/// cannot.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+pub enum JobStop {
+    /// This job cannot be stopped on its own.
+    Unavailable,
+    /// The person can stop it; the key names it in the stop input.
+    Offered { key: String },
+    /// A stop was sent and the provider has not yet said the job ended.
+    Stopping,
+    /// The provider refused the last stop, in its words; the person can
+    /// try again.
+    Refused { key: String, error: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
@@ -216,6 +234,7 @@ pub fn overview(state: &SessionState, diff: Option<&Diff>) -> Overview {
                 command: job.command.clone(),
                 started_at_ms: job.started_at_ms,
                 kind: job.kind(),
+                stop: JobStop::Unavailable,
             })
             .collect()
     } else {

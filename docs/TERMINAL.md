@@ -111,8 +111,10 @@ chat's agent, folder and host instead.
 `h`, or the leader then `h` from a chat, opens the hosts window over home: every trusted host whatever its
 presence, with `this machine`, how it is reached (`direct`, `relay`) or why not (`offline · not signed in`, `offline ·
 this machine is signed out`, `offline · no longer trusts this machine`, `away` and the free plan's words when the relay
-refused the host for the plan). Hosts that local-network discovery sees and that are
-not yet trusted are listed faint, with the command that pairs them (`found nearby · amux pair desk`); a faint line
+refused the host for the plan). Hosts not yet trusted are listed faint, with where they were found and the command
+that pairs them: `found nearby · amux pair desk` for one local-network discovery sees, `through studio · amux pair
+desk` for one a paired host announces, and `on your account · Pro pairs it through the relay · amux pair desk` for
+one only the relay announces; a faint line
 says to pair another with `amux pair`. Esc, `q` or `h` closes it. Pairing, unpairing and signing in happen from the
 command line ([`amux pair`](#command-line-verbs) and friends); [HOW_IT_WORKS.md](HOW_IT_WORKS.md) explains hosts,
 pairing and the relay.
@@ -505,8 +507,8 @@ these; the entries amux and service managers run are hidden from it and listed a
 | `amux rename <agent> <name>` | Renames an agent. |
 | `amux rm <agent>` | Deletes an agent and its history; its children follow on their own hosts, a host that is away once it is back. |
 | `amux dump [agents…]` | Writes a debug bundle for the named agents, or all of them, with an optional `--reason`, and prints its path; `--send` also sends it to the profile's amux account. See [DEBUGGING.md](DEBUGGING.md). |
-| `amux pair [target]` | Pairs with another host found nearby by name, an address, or `user@host` over SSH. With no target this host opens pairing mode and shows a PIN with what the phone and another computer do with it, or with `--qr` a QR code for the phone's camera. |
-| `amux hosts` | Lists the paired hosts and the hosts found nearby. |
+| `amux pair [target]` | Pairs with another host by name (one found nearby or announced by the relay or a paired host), an address, or `user@host` over SSH; on the free plan it refuses a host only the relay reaches before asking for the PIN, and says Pro pairs it. With no target this host opens pairing mode and shows a PIN with what the phone and another computer do with it, or with `--qr` a QR code for the phone's camera. |
+| `amux hosts` | Lists the paired hosts and the hosts that could be paired: found nearby, through a paired host, or on the account through the relay, which on the free plan says Pro pairs it. |
 | `amux unpair <host>` | Stops trusting a paired host, asking first unless `--force`. |
 | `amux login` | Signs the profile in to an amux account so its hosts reach each other through the relay. |
 | `amux logout` | Signs the profile out; its agents and paired hosts stay. |

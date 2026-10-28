@@ -739,18 +739,6 @@ impl LinkRegistry {
         })
     }
 
-    /// Whether any live link to `peer` is the authenticated cloud link.
-    /// Pairing route selection keys on the link role, never on the peer's
-    /// self-asserted capabilities.
-    pub(crate) async fn has_cloud_relay_link_to(&self, peer: HostId) -> bool {
-        self.state
-            .read()
-            .await
-            .writers
-            .values()
-            .any(|writer| writer.host.id == peer && writer.role == LinkRole::CloudRelay)
-    }
-
     pub(crate) async fn send_link_close_to_all(&self, reason: pb::LinkCloseReason) {
         let outgoing = {
             let state = self.state.read().await;

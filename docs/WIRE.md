@@ -721,7 +721,10 @@ only after an unclean reboot of that host (see
 provider the host has been asked about, the hash of what that provider offers
 there and whether it is signed in; a paired host's come from that host's own
 entry. Its `standing` is one of two arms. A pairing candidate is `Candidate`,
-carrying the addresses pairing will dial. A paired host is `Trusted`, whose
+carrying the addresses discovery found it at and `announced_by`, the
+neighbors that announce it, nearest route first, each a `Host` whose
+`capabilities.cloud_relay` says whether this machine admitted that link as
+the cloud relay (which carries a pairing only for a paid account). A paired host is `Trusted`, whose
 `reach` is one of three: `online` once a channel to it has opened on a route
 still listed, naming that route; `away` while the relay refuses its channel
 because the account's free plan carries no connection between hosts; and

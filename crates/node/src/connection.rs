@@ -193,16 +193,39 @@ impl ConnectionManager {
         }
     }
 
-    pub(crate) async fn cloud_pairing_channel_to(
-        &self,
-        peer: HostId,
-    ) -> Result<Channel, ChannelError> {
-        let relay = self.cloud_relay_for(peer).await?;
-        self.channels.pairing_channel(peer, relay).await
+    /// The neighbors announcing `peer`, nearest route first, each with
+    /// whether this host admitted it as the cloud relay: what a pairing goes
+    /// through when no address answers. A paired host forwards on any plan,
+    /// the cloud relay only on a paid one.
+    pub(crate) async fn pairing_forwarders(&self, peer: HostId) -> Vec<(HostId, bool)> {
+        let host = core_host(peer);
+        self.look(move |core| {
+            let links = core.links();
+            links
+                .routes_to(host)
+                .into_iter()
+                .filter_map(|route| match route {
+                    daemon_core::Route::Via(forwarder) => {
+                        Some((forwarder, links.is_relay(forwarder)))
+                    }
+                    daemon_core::Route::Direct(_) => None,
+                })
+                .collect::<Vec<_>>()
+        })
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(forwarder, relay)| (host_from_core(forwarder), relay))
+        .collect()
     }
 
-    pub(crate) async fn has_cloud_route(&self, peer: HostId) -> bool {
-        self.cloud_relay_for(peer).await.is_ok()
+    /// A channel to `peer`'s pairing service through `forwarder`.
+    pub(crate) async fn pairing_channel_through(
+        &self,
+        peer: HostId,
+        forwarder: HostId,
+    ) -> Result<Channel, ChannelError> {
+        self.channels.pairing_channel(peer, forwarder).await
     }
 
     /// Why the last dial to `peer` failed, until a route to it comes up.
@@ -334,23 +357,5 @@ impl ConnectionManager {
             host: core_host(peer),
         });
         self.channels.drop_host(peer);
-    }
-
-    async fn cloud_relay_for(&self, peer: HostId) -> Result<HostId, ChannelError> {
-        let registry = self.channels.link_registry();
-        let relays = self
-            .routes_to(peer)
-            .await
-            .into_iter()
-            .filter_map(|route| match route {
-                Route::Via(relay) => Some(relay),
-                Route::Direct(_) => None,
-            });
-        for relay in relays {
-            if registry.has_cloud_relay_link_to(relay).await {
-                return Ok(relay);
-            }
-        }
-        Err(ChannelError::CloudPairingUnavailable)
     }
 }

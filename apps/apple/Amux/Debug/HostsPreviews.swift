@@ -7,6 +7,7 @@ import SwiftUI
 #Preview("Hosts") { StoryScreen("hosts.list") }
 #Preview("Hosts · empty") { StoryScreen("hosts.empty") }
 #Preview("Hosts · network refused") { StoryScreen("hosts.network-refused") }
+#Preview("Hosts · on the account, free") { StoryScreen("hosts.on-the-account-free") }
 #Preview("Hosts · large text") { StoryScreen("hosts.large-text") }
 #Preview("Host") { StoryScreen("host.page") }
 #Preview("Host · confirm revoke") {

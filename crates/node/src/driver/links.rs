@@ -107,7 +107,7 @@ pub(crate) fn core_error(error: &ChannelError) -> payload::ChannelError {
             payload::ChannelError::LinkClosed
         }
         ChannelError::Refused(refusal) => payload::ChannelError::Refused(*refusal),
-        ChannelError::CloudPairingUnavailable
+        ChannelError::NoPairingRoute
         | ChannelError::Handshake(_)
         | ChannelError::Identity(_)
         | ChannelError::Tls(_)

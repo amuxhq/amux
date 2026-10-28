@@ -24,8 +24,9 @@ message InventoryEvent {
 }
 
 // One host set: every trusted host is in every snapshot whatever its
-// presence; candidates come and go with discovery. HostRemoved only on
-// untrust, or when a candidate disappears.
+// presence; candidates come and go with discovery and with the neighbors
+// that announce them. HostRemoved only on untrust, or when a candidate
+// disappears.
 message HostEntry {
   // The host as it announced itself in its handshake; a paired host's name
   // is the one this machine's trust entry keeps for it.
@@ -37,7 +38,7 @@ message HostEntry {
   oneof standing {
     // Paired with this machine, or this machine itself.
     Trusted trusted = 4;
-    // Found by discovery, never paired.
+    // Never paired: found by discovery, or announced by a neighbor.
     Candidate candidate = 5;
   }
 }
@@ -77,6 +78,13 @@ message Offline {
 message Candidate {
   // Where discovery found it; what pairing dials.
   repeated string addrs = 1;
+  // The neighbors that announce the host, nearest route first: the ones
+  // pairing goes through when no address answers. Each is one this machine
+  // holds a link with, so an announcement is never more than one hop.
+  // `capabilities.cloud_relay` is set from how this machine admitted that
+  // link, not from what the neighbor said: the cloud relay forwards only for
+  // a paid account, and a paired host forwards on any plan.
+  repeated Host announced_by = 2;
 }
 
 message ProviderOnHost {

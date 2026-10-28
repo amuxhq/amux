@@ -152,7 +152,9 @@ amux pair --qr     # shows a QR code for the phone
 Pairing mode stays open for five minutes, or until Ctrl+C. Then, from the
 other side:
 
-- **Another computer:** `amux hosts` lists hosts found nearby. Run
+- **Another computer:** `amux hosts` lists hosts found nearby, the ones
+  your paired hosts are paired with, and, signed in, your account's other
+  machines (pairing through the relay needs Pro). Run
   `amux pair <name>` (or `amux pair <address:port>`) and type the PIN.
 - **The phone:** scan the QR code with the camera, or choose the host in the
   app and type the PIN.

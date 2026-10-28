@@ -35,13 +35,18 @@ use crate::serve::answered;
 /// The length of an Ed25519 public key, the only key a host pins.
 pub const PUBKEY_LEN: usize = 32;
 
-/// How a pairing reached the host: through the account's relay, over
-/// SSH to a destination, or at addresses.
+/// How a pairing reached the host: through the account's relay, through a
+/// host both are paired with, over SSH to a destination, or at addresses.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Reachability {
     Cloud,
+    /// Through a paired host forwarding for both: nothing to keep, since
+    /// that host announcing it is the route.
+    Forwarded,
     Ssh(String),
-    Direct { addrs: Vec<SocketAddr> },
+    Direct {
+        addrs: Vec<SocketAddr>,
+    },
 }
 
 /// What the profile knows of one paired host.
@@ -455,6 +460,7 @@ impl TrustEntry {
     fn reached(&mut self, reachability: Reachability) {
         match reachability {
             Reachability::Cloud => self.on_account = true,
+            Reachability::Forwarded => {}
             Reachability::Ssh(target) => self.ssh = Some(target),
             Reachability::Direct { addrs } => {
                 for addr in addrs {

@@ -301,9 +301,26 @@ impl HostEntry {
                 name: name.into(),
                 ..Host::default()
             }),
-            standing: Some(host_entry::Standing::Candidate(Candidate { addrs })),
+            standing: Some(host_entry::Standing::Candidate(Candidate {
+                addrs,
+                announced_by: Vec::new(),
+            })),
             ..Self::default()
         }
+    }
+
+    /// A host nobody paired that the neighbors `announced_by` say they
+    /// reach.
+    pub fn announced_host(
+        host_id: impl Into<Vec<u8>>,
+        name: impl Into<String>,
+        announced_by: Vec<Host>,
+    ) -> Self {
+        let mut entry = Self::candidate_host(host_id, name, Vec::new());
+        if let Some(host_entry::Standing::Candidate(candidate)) = &mut entry.standing {
+            candidate.announced_by = announced_by;
+        }
+        entry
     }
 
     /// The host's id, as its handshake gave it.
@@ -323,7 +340,7 @@ impl HostEntry {
         }
     }
 
-    /// Found by discovery, never paired.
+    /// Never paired: found by discovery, or announced by a neighbor.
     pub fn candidate(&self) -> Option<&Candidate> {
         match &self.standing {
             Some(host_entry::Standing::Candidate(candidate)) => Some(candidate),
@@ -380,6 +397,39 @@ impl HostEntry {
     /// Whether the host is signed in to its account, as it said.
     pub fn account_signed_in(&self) -> Option<bool> {
         self.host.as_ref()?.account_signed_in
+    }
+}
+
+impl Candidate {
+    /// Discovery found it on this network, where pairing dials it on any
+    /// plan.
+    pub fn nearby(&self) -> bool {
+        !self.addrs.is_empty()
+    }
+
+    /// The paired hosts announcing it, any of which carries a pairing on any
+    /// plan.
+    pub fn through_paired(&self) -> impl Iterator<Item = &Host> {
+        self.announced_by
+            .iter()
+            .filter(|host| !host.is_cloud_relay())
+    }
+
+    /// Only the cloud relay reaches it, which carries a pairing only for a
+    /// paid account.
+    pub fn relay_only(&self) -> bool {
+        !self.nearby()
+            && !self.announced_by.is_empty()
+            && self.announced_by.iter().all(Host::is_cloud_relay)
+    }
+}
+
+impl Host {
+    /// Whether the host serves as a cloud relay.
+    pub fn is_cloud_relay(&self) -> bool {
+        self.capabilities
+            .as_ref()
+            .is_some_and(|capabilities| capabilities.cloud_relay)
     }
 }
 

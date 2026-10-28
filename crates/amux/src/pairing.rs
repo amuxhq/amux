@@ -30,10 +30,30 @@ fn plain(status: tonic::Status) -> anyhow::Error {
     crate::plain(status)
 }
 
+/// Where Pro is bought, for a host only the relay reaches.
+fn upgrade_url() -> String {
+    format!("{}/account", settings::DEFAULT_CLOUD_URL)
+}
+
+/// Whether the profile's relay link is up on the free plan, which carries
+/// no connection between hosts: what makes a host only the relay reaches
+/// one this machine cannot pair with.
+pub fn on_free(profile: &wire::Profile) -> bool {
+    use wire::cloud_standing::Standing;
+    use wire::relay_link::State;
+    matches!(
+        profile.cloud.as_ref().and_then(|cloud| cloud.standing.as_ref()),
+        Some(Standing::SignedIn(wire::RelayLink {
+            state: Some(State::Connected(connected)),
+        })) if connected.tier() == wire::Tier::Free
+    )
+}
+
 /// What `amux pair <target>` names.
 #[derive(Debug, PartialEq)]
 pub enum Target {
-    /// A host found nearby, by name or id.
+    /// A host nobody paired that this machine knows of, by name or id:
+    /// found nearby, or announced by the relay or a paired host.
     Found(String),
     /// A host's direct address.
     Addr(SocketAddr),
@@ -321,15 +341,25 @@ pub async fn cancel(mut admin: Admin) -> Result<()> {
     Ok(())
 }
 
-/// Pairs with a host found nearby or at an address with the PIN its person
-/// reads out, or with a host over SSH.
-pub async fn pair(admin: Admin, client: &mut wire::ClientStubs, target: Target) -> Result<()> {
+/// Pairs with a host this machine knows of or at an address with the PIN
+/// its person reads out, or with a host over SSH. A host only the relay
+/// reaches is refused before the PIN on the free plan, since no PIN gets a
+/// pairing through.
+pub async fn pair(
+    admin: Admin,
+    client: &mut wire::ClientStubs,
+    target: Target,
+    free: bool,
+) -> Result<()> {
     let (host_id, addrs) = match target {
         Target::Ssh(target) => return pair_over_ssh(admin, target).await,
         Target::Addr(addr) => (Vec::new(), vec![addr.to_string()]),
         Target::Found(name) => {
             let (hosts, _) = crate::verbs::inventory(client).await?;
             let host = candidate(&hosts, &name)?;
+            if free && host.candidate().is_some_and(wire::Candidate::relay_only) {
+                bail!("{}", needs_pro(host.name()));
+            }
             (
                 host.host_id().to_vec(),
                 host.candidate()
@@ -378,10 +408,11 @@ fn candidate<'a>(hosts: &'a [HostEntry], name: &str) -> Result<&'a HostEntry> {
     match found.as_slice() {
         [host] => Ok(host),
         [] => Err(anyhow!(
-            "no host named {name} is waiting nearby; `amux hosts` lists the hosts found"
+            "this machine knows of no unpaired host named {name}; `amux hosts` lists the ones \
+             found nearby or announced to it"
         )),
         _ => Err(anyhow!(
-            "more than one host nearby is named {name}; pair by the id `amux hosts` shows"
+            "more than one unpaired host is named {name}; pair by the id `amux hosts` shows"
         )),
     }
 }
@@ -423,7 +454,21 @@ fn refused(status: tonic::Status, secret: &str) -> anyhow::Error {
              check the {secret} it shows and try again"
         );
     }
+    if client::RpcError::from(status.clone()).reason() == Some(wire::ErrorReason::PaymentRequired) {
+        return anyhow!("{}", needs_pro("the other host"));
+    }
     plain(status)
+}
+
+/// Why a host only the relay reaches cannot be paired on the free plan,
+/// and what pairs it.
+fn needs_pro(name: &str) -> String {
+    format!(
+        "{name} can be reached only through the relay, and this account is on the free plan, \
+         which carries no connection between hosts. Pro pairs through the relay: {}. On the \
+         same network, or through a host both are paired with, pairing works on any plan.",
+        upgrade_url()
+    )
 }
 
 fn paired(peer: &wire::Peer, pending: &PendingPair) -> String {
@@ -540,8 +585,9 @@ pub async fn relay(profile: &wire::Profile) -> Result<()> {
     Ok(())
 }
 
-/// The trusted hosts and the hosts found nearby that could be paired.
-pub async fn hosts(mut admin: Admin, client: &mut wire::ClientStubs) -> Result<()> {
+/// The trusted hosts and the hosts that could be paired: found nearby, or
+/// announced by the relay or a paired host.
+pub async fn hosts(mut admin: Admin, client: &mut wire::ClientStubs, free: bool) -> Result<()> {
     let trusted = admin
         .list_peers(wire::ListPeersRequest {})
         .await
@@ -549,7 +595,7 @@ pub async fn hosts(mut admin: Admin, client: &mut wire::ClientStubs) -> Result<(
         .into_inner()
         .peers;
     let (hosts, _) = crate::verbs::inventory(client).await?;
-    print!("{}", peer_table(&trusted, &hosts));
+    print!("{}", peer_table(&trusted, &hosts, free));
     Ok(())
 }
 
@@ -567,7 +613,7 @@ fn pair_command(name: &str) -> String {
     }
 }
 
-fn peer_table(trusted: &[wire::Peer], hosts: &[HostEntry]) -> String {
+fn peer_table(trusted: &[wire::Peer], hosts: &[HostEntry], free: bool) -> String {
     let mut rows = vec![[
         "HOST".to_owned(),
         "ID".into(),
@@ -619,16 +665,31 @@ fn peer_table(trusted: &[wire::Peer], hosts: &[HostEntry]) -> String {
         .filter(|host| host.candidate().is_some())
         .collect::<Vec<_>>();
     found.sort_by(|a, b| a.name().cmp(b.name()));
-    for candidate in found {
+    for entry in found {
+        let Some(candidate) = entry.candidate() else {
+            continue;
+        };
+        let reached = if candidate.nearby() {
+            "found nearby".to_owned()
+        } else if let Some(through) = candidate.through_paired().next() {
+            format!("through {}", through.name)
+        } else {
+            "on your account, through the relay".to_owned()
+        };
         rows.push([
-            candidate.name().to_owned(),
-            host(candidate.host_id()),
-            "found nearby".to_owned(),
-            pair_again(candidate.name()),
+            entry.name().to_owned(),
+            host(entry.host_id()),
+            reached,
+            if free && candidate.relay_only() {
+                format!("no: Pro pairs it through the relay, {}", upgrade_url())
+            } else {
+                pair_again(entry.name())
+            },
         ]);
     }
     if rows.len() == 1 {
-        return "No paired hosts, and none found nearby. `amux pair` opens pairing mode here.\n"
+        return "No paired hosts, and none found nearby or announced. `amux pair` opens pairing \
+                mode here.\n"
             .to_owned();
     }
     let widths: Vec<usize> = (0..4)
@@ -871,13 +932,14 @@ mod tests {
             "studio",
             wire::trusted::Reach::Online(wire::RouteKind::Relay as i32),
         );
-        let nearby = HostEntry::candidate_host(vec![2; 16], "den mac", Vec::new());
+        let nearby =
+            HostEntry::candidate_host(vec![2; 16], "den mac", vec!["192.168.1.9:4000".into()]);
         let trusted = [wire::Peer {
             host_id: vec![1; 16],
             name: "studio".into(),
             ..wire::Peer::default()
         }];
-        let table = peer_table(&trusted, &[online, nearby]);
+        let table = peer_table(&trusted, &[online, nearby], false);
         let lines: Vec<&str> = table.lines().collect();
         assert!(lines[0].starts_with("HOST"), "{table}");
         assert!(lines[1].starts_with("studio"), "{table}");
@@ -900,7 +962,7 @@ mod tests {
             name: "plap".into(),
             ..wire::Peer::default()
         }];
-        let table = peer_table(&trusted, &[away]);
+        let table = peer_table(&trusted, &[away], false);
         assert!(
             table.contains("away: the free plan does not relay between hosts"),
             "{table}"
@@ -925,9 +987,75 @@ mod tests {
             name: "desk".into(),
             ..wire::Peer::default()
         }];
-        let table = peer_table(&trusted, &[revoked]);
+        let table = peer_table(&trusted, &[revoked], false);
         let row = table.lines().nth(1).unwrap();
         assert!(row.contains("no longer trusts this machine"), "{table}");
         assert!(row.ends_with("no: amux pair desk"), "{table}");
+    }
+
+    fn neighbor(name: &str, cloud_relay: bool) -> wire::Host {
+        wire::Host {
+            host_id: name.as_bytes().to_vec(),
+            name: name.into(),
+            capabilities: Some(wire::Capabilities {
+                cloud_relay,
+                kinds: Vec::new(),
+            }),
+            ..wire::Host::default()
+        }
+    }
+
+    /// A host only the relay announces pairs on Pro; on the free plan the
+    /// table says Pro is what pairs it, and where to get it.
+    #[test]
+    fn a_host_only_the_relay_announces_names_pro_on_the_free_plan() {
+        let nova = HostEntry::announced_host(vec![3; 16], "nova", vec![neighbor("s1", true)]);
+        let pro = peer_table(&[], std::slice::from_ref(&nova), false);
+        let row = pro.lines().nth(1).unwrap();
+        assert!(row.contains("on your account, through the relay"), "{pro}");
+        assert!(row.ends_with("no: amux pair nova"), "{pro}");
+
+        let free = peer_table(&[], &[nova], true);
+        let row = free.lines().nth(1).unwrap();
+        assert!(
+            row.ends_with("no: Pro pairs it through the relay, https://amux.sh/account"),
+            "{free}"
+        );
+    }
+
+    /// A paired host announcing a host forwards a pairing on any plan, so
+    /// the table names it and the command, never Pro.
+    #[test]
+    fn a_host_a_paired_host_announces_pairs_through_it_on_any_plan() {
+        let nas = HostEntry::announced_host(
+            vec![3; 16],
+            "nas",
+            vec![neighbor("studio", false), neighbor("s1", true)],
+        );
+        let table = peer_table(&[], &[nas], true);
+        let row = table.lines().nth(1).unwrap();
+        assert!(row.contains("through studio"), "{table}");
+        assert!(row.ends_with("no: amux pair nas"), "{table}");
+    }
+
+    #[test]
+    fn a_free_relay_link_reads_as_the_free_plan() {
+        let profile = |tier: wire::Tier| wire::Profile {
+            cloud: Some(wire::CloudStanding {
+                standing: Some(wire::cloud_standing::Standing::SignedIn(wire::RelayLink {
+                    state: Some(wire::relay_link::State::Connected(wire::RelayConnected {
+                        tier: tier as i32,
+                        carrier: wire::RelayCarrier::Quic as i32,
+                    })),
+                })),
+            }),
+            ..wire::Profile::default()
+        };
+        assert!(on_free(&profile(wire::Tier::Free)));
+        assert!(!on_free(&profile(wire::Tier::Pro)));
+        assert!(
+            !on_free(&wire::Profile::default()),
+            "unbound is not the free plan"
+        );
     }
 }

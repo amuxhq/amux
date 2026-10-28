@@ -486,7 +486,7 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                 } else if let Some(target) = target {
                     let mut client = connect::client_of(&selected).await?;
                     let target = pairing::Target::parse(&target)?;
-                    pairing::pair(admin, &mut client, target).await
+                    pairing::pair(admin, &mut client, target, pairing::on_free(&selected)).await
                 } else {
                     pairing::wait(admin, qr, print_link).await
                 }
@@ -494,7 +494,12 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
             Command::Hosts => {
                 let selected = connect::profile(&config, profile).await?;
                 let mut client = connect::client_of(&selected).await?;
-                pairing::hosts(connect::admin_of(&selected).await?, &mut client).await
+                pairing::hosts(
+                    connect::admin_of(&selected).await?,
+                    &mut client,
+                    pairing::on_free(&selected),
+                )
+                .await
             }
             Command::Unpair { host, force } => {
                 let selected = connect::profile(&config, profile).await?;

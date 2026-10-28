@@ -371,12 +371,14 @@ impl TunnelDispatcher {
                 self.pairing_tx
                     .send(BoxedGrpcIo::pre_trust_pairing(
                         accepted_quic_bidi_stream(send, recv),
-                        // A host dialled through the relay is reached through
-                        // it again; one dialled direct, at its address.
+                        // A host dialled through the relay or a paired host is
+                        // reached through it again; one dialled direct, at its
+                        // address.
                         match path {
                             PathKind::RelayUdp | PathKind::RelayTcp => {
                                 PreTrustPairingReachability::Cloud
                             }
+                            PathKind::ViaDaemon => PreTrustPairingReachability::Forwarded,
                             _ => PreTrustPairingReachability::Direct(addr),
                         },
                     ))

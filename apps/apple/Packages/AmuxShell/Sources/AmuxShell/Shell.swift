@@ -206,7 +206,7 @@ public struct Shell: View {
             }
             SwiftUI.Tab(Tab.hosts.title, systemImage: Tab.hosts.symbol, value: Tab.hosts) {
                 NavigationStack(path: $router.hostsPath) {
-                    HostsTabRoot(router: self.router, stores: stores)
+                    HostsTabRoot(router: self.router, stores: stores, actions: actions)
                         .barUnderSheet(coveredByASheet)
                         .navigationDestination(for: Route.self) { page($0).toolbar(.hidden, for: .tabBar) }
                 }
@@ -646,6 +646,7 @@ private struct PaywallPage: View {
 private struct HostsTabRoot: View {
     let router: Router
     let stores: StoreBundle
+    let actions: @MainActor (ShellAction) -> Void
 
     var body: some View {
         HostsTab(model: stores.hosts) { action in
@@ -657,6 +658,7 @@ private struct HostsTabRoot: View {
             // changes, and the machine leaves it when the runtime says so.
             case .revoke(let host): stores.revoke(host)
             case .openSystemSettings: openSystemSettings()
+            case .subscribe: actions(.subscribe)
             }
         }
     }

@@ -480,6 +480,65 @@ async fn route_via_daemon_reaches_a_session_through_a_paired_host() {
     net.shutdown().await.unwrap();
 }
 
+/// Three hosts and no relay, as above, but the phone and the desk have
+/// never paired. The laptop, paired with both, announces each to the
+/// other, so the phone lists the desk as a candidate the laptop reaches,
+/// and a PIN the desk shows pairs them through the laptop's forwarding:
+/// a paired host forwards a pairing as it forwards a link, on no plan.
+#[tokio::test(flavor = "multi_thread")]
+async fn pairing_via_daemon_pairs_a_host_a_paired_host_announces() {
+    let said = "said after pairing through another daemon";
+    let topology = Topology::new()
+        .host_decl(lan_host("desk", "home"))
+        .host_decl(lan_host("laptop", "home"))
+        .host_decl(lan_host("phone", "cafe"))
+        .agent(worker_saying(said));
+    let net = Net::start(topology).await.unwrap();
+    pair(&net, "laptop", "desk").await;
+    pair(&net, "phone", "laptop").await;
+    until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
+    until_via(&net, "phone", "laptop", LiveRoute::Direct).await;
+    let (desk, laptop) = (host_id(&net, "desk"), host_id(&net, "laptop"));
+
+    let mut fleet = net.observe_inventory("phone").await.unwrap();
+    row_until(
+        &mut fleet,
+        desk,
+        "the phone to list the desk through the laptop",
+        |row| {
+            row.candidate().is_some_and(|candidate| {
+                !candidate.nearby()
+                    && !candidate.relay_only()
+                    && candidate
+                        .through_paired()
+                        .any(|host| host.host_id == laptop.as_bytes())
+            })
+        },
+    )
+    .await;
+
+    let started = start_pairing(&net, "desk", pin_window()).await.unwrap();
+    let pending = begin_pair(
+        &net,
+        "phone",
+        Some(desk),
+        begin_pair_request::Secret::Pin(pin_of(&started)),
+        Vec::new(),
+    )
+    .await
+    .expect("pairing through the laptop");
+    confirm_pair(&net, "phone", pending.token).await.unwrap();
+    row_until(&mut fleet, desk, "the phone to trust the desk", |row| {
+        row.trusted().is_some()
+    })
+    .await;
+
+    carried_by(&net, "phone", "desk", PathKind::ViaDaemon).await;
+    carried_by(&net, "desk", "phone", PathKind::ViaDaemon).await;
+    streams_live(&net, &["phone"], "worker", said).await;
+    net.shutdown().await.unwrap();
+}
+
 /// A free account: the relay lists the account's hosts, so the phone,
 /// on the relay alone, sees the desk and reads it away, refused for the
 /// plan; but the relay forwards nothing, so no link to the desk comes up
@@ -700,6 +759,19 @@ async fn pairing_relay_paid_pairs_through_the_relay_and_reaches_a_session() {
         .await
         .unwrap();
     let desk = host_id(&net, "desk");
+    // The relay announces the desk to the tablet before either has paired:
+    // it is a candidate only the relay reaches, which pairs on this plan.
+    let mut fleet = net.observe_inventory("tablet").await.unwrap();
+    row_until(
+        &mut fleet,
+        desk,
+        "the tablet to list the desk as a candidate",
+        |row| {
+            row.candidate()
+                .is_some_and(|candidate| candidate.relay_only() && row.name() == "desk")
+        },
+    )
+    .await;
     let started = start_pairing(&net, "desk", pin_window()).await.unwrap();
     let pending = begin_pair(
         &net,
@@ -736,6 +808,16 @@ async fn pairing_relay_free_refused_leaves_the_window_open() {
     topology.relay.as_mut().unwrap().accounts[0].tier = testnet::TierDecl::Free;
     let net = Net::start(topology).await.unwrap();
     let (desk, tablet) = (host_id(&net, "desk"), host_id(&net, "tablet"));
+    // The relay still announces the desk on the free plan: the tablet lists
+    // it as a candidate only the relay reaches, which a client offers Pro for.
+    let mut fleet = net.observe_inventory("tablet").await.unwrap();
+    row_until(
+        &mut fleet,
+        desk,
+        "the tablet to list the desk as a candidate",
+        |row| row.candidate().is_some_and(wire::Candidate::relay_only),
+    )
+    .await;
     let mut refusals = edge(&net, "tablet").forward_refusals();
     let started = start_pairing(&net, "desk", pin_window()).await.unwrap();
     let refused = begin_pair(
@@ -747,6 +829,13 @@ async fn pairing_relay_free_refused_leaves_the_window_open() {
     )
     .await
     .expect_err("no pairing through the relay on a free account");
+    assert_eq!(
+        <wire::Error as prost::Message>::decode(refused.details())
+            .ok()
+            .and_then(|error| error.reason()),
+        Some(wire::ErrorReason::PaymentRequired),
+        "the refusal names the plan, for a client to offer Pro: {refused:?}"
+    );
     let (to, reason) = tokio::time::timeout(PATIENCE, refusals.recv())
         .await
         .expect("the relay refuses the tablet's pairing")

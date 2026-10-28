@@ -3779,8 +3779,9 @@ impl ::prost::Name for InventoryEvent {
     }
 }
 /// One host set: every trusted host is in every snapshot whatever its
-/// presence; candidates come and go with discovery. HostRemoved only on
-/// untrust, or when a candidate disappears.
+/// presence; candidates come and go with discovery and with the neighbors
+/// that announce them. HostRemoved only on untrust, or when a candidate
+/// disappears.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HostEntry {
     /// The host as it announced itself in its handshake; a paired host's name
@@ -3798,12 +3799,12 @@ pub struct HostEntry {
 }
 /// Nested message and enum types in `HostEntry`.
 pub mod host_entry {
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Standing {
         /// Paired with this machine, or this machine itself.
         #[prost(message, tag = "4")]
         Trusted(super::Trusted),
-        /// Found by discovery, never paired.
+        /// Never paired: found by discovery, or announced by a neighbor.
         #[prost(message, tag = "5")]
         Candidate(super::Candidate),
     }
@@ -3885,11 +3886,19 @@ impl ::prost::Name for Offline {
         "type.googleapis.com/amux.v1.Offline".into()
     }
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Candidate {
     /// Where discovery found it; what pairing dials.
     #[prost(string, repeated, tag = "1")]
     pub addrs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The neighbors that announce the host, nearest route first: the ones
+    /// pairing goes through when no address answers. Each is one this machine
+    /// holds a link with, so an announcement is never more than one hop.
+    /// `capabilities.cloud_relay` is set from how this machine admitted that
+    /// link, not from what the neighbor said: the cloud relay forwards only for
+    /// a paid account, and a paired host forwards on any plan.
+    #[prost(message, repeated, tag = "2")]
+    pub announced_by: ::prost::alloc::vec::Vec<Host>,
 }
 impl ::prost::Name for Candidate {
     const NAME: &'static str = "Candidate";

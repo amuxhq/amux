@@ -671,11 +671,11 @@ public struct AgentsHome: View {
     private var callouts: [Callout<HomeAction>] {
         var callouts = found.compactMap { host -> Callout<HomeAction>? in
             guard let id = host.id else { return nil }
+            let offer = PairOffer(host, pro: hosts.account?.pro)
             return Callout(
                 id: "pair.\(host.name)", glyph: "plus.circle",
-                title: String(localized: "\(host.name) is nearby"),
-                detail: String(localized: "Pair it to see its agents here"),
-                button: String(localized: "Pair"), act: .pair(id))
+                title: offer.title, detail: offer.detail, button: offer.button,
+                act: offer.subscribe ? .subscribe : .pair(id))
         }
         if let exceptions {
             callouts.append(Callout(
@@ -734,9 +734,10 @@ public struct AgentsHome: View {
                         .identified("home.empty.explain")
                 }
                 .padding(.horizontal, design.metrics.gutter)
-                // A machine that can be paired is one this phone can reach,
-                // and one it can reach is one it has found: the cards are the
-                // whole of what there is to pair with.
+                // A machine that can be paired is one this phone can reach:
+                // found on this network, or announced by the relay or a paired
+                // machine. The cards are the whole of what there is to pair
+                // with.
                 if !pairable.isEmpty {
                     CalloutStrip(callouts: pairable, act: actions)
                 } else {
@@ -762,17 +763,17 @@ public struct AgentsHome: View {
         .scrollIndicators(.hidden)
     }
 
-    /// Every machine this phone has found and not paired, as the Hosts tab
-    /// offers them.
+    /// Every machine this phone knows of and has not paired, as the Hosts
+    /// tab offers them.
     private var pairable: [Callout<HomeAction>] {
         found.compactMap { host in
             guard let id = host.id else { return nil }
+            let offer = PairOffer(host, pro: hosts.account?.pro)
             return Callout(
                 id: "pair.\(host.name)", glyph: "plus.circle",
-                title: String(localized: "\(host.name) is nearby"),
-                detail: String(localized: "Pair it to see its agents here"),
-                button: String(localized: "Pair"), act: .pair(id),
-                identifier: "home.pair.\(id)")
+                title: offer.title, detail: offer.detail, button: offer.button,
+                act: offer.subscribe ? .subscribe : .pair(id),
+                identifier: offer.subscribe ? "home.subscribe.\(id)" : "home.pair.\(id)")
         }
     }
 
@@ -894,10 +895,10 @@ public struct AgentsHome: View {
         .scrollIndicators(.hidden)
     }
 
-    /// The machines on this network this phone has found and not paired with,
-    /// offered above the list as well as on the Hosts tab: this is where
-    /// somebody is standing when one turns up.
-    private var found: [HostView] { hosts.candidates(.onThisNetwork) }
+    /// The machines this phone knows of and has not paired with, offered
+    /// above the list as well as on the Hosts tab: this is where somebody is
+    /// looking when one turns up.
+    private var found: [HostView] { hosts.discovered }
 }
 
 extension FleetGate {

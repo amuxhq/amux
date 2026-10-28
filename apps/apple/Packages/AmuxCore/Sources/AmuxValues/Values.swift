@@ -3536,12 +3536,15 @@ public struct HostView: Codable, Hashable, Sendable {
     /// This device.
     public var local: Bool
     public var trusted: Bool
-    /// Found nearby and not paired.
+    /// Not paired: found nearby, or announced by the relay or a paired host.
     public var candidate: Bool
     /// How this device reaches it now, and over which route.
     public var reach: Reach
     /// Where discovery found it; what pairing dials.
     public var addrs: [String]
+    /// For a candidate: only the cloud relay reaches it, which carries a
+    /// pairing only on a paid plan.
+    public var relayOnly: Bool
     /// This device's copy of the host's agents has caught up with the host
     /// on a live stream: what the fleet shows for it is what it lists now.
     /// Always true for this device.
@@ -3555,9 +3558,12 @@ public struct HostView: Codable, Hashable, Sendable {
     /// For this device: whether it is signed in to the account its profile
     /// is bound to; None while it was never bound.
     public var signedIn: Bool?
+    /// For a candidate no address reaches: the paired host announcing it,
+    /// which carries a pairing on any plan.
+    public var through: String?
     public var version: String?
 
-    public init(hostId: [UInt8], name: String, local: Bool, trusted: Bool, candidate: Bool, reach: Reach, addrs: [String], current: Bool, providers: [ProviderSignIn], lastDialError: String?, platform: Platform?, signedIn: Bool?, version: String?) {
+    public init(hostId: [UInt8], name: String, local: Bool, trusted: Bool, candidate: Bool, reach: Reach, addrs: [String], relayOnly: Bool, current: Bool, providers: [ProviderSignIn], lastDialError: String?, platform: Platform?, signedIn: Bool?, through: String?, version: String?) {
         self.hostId = hostId
         self.name = name
         self.local = local
@@ -3565,11 +3571,13 @@ public struct HostView: Codable, Hashable, Sendable {
         self.candidate = candidate
         self.reach = reach
         self.addrs = addrs
+        self.relayOnly = relayOnly
         self.current = current
         self.providers = providers
         self.lastDialError = lastDialError
         self.platform = platform
         self.signedIn = signedIn
+        self.through = through
         self.version = version
     }
 
@@ -3581,11 +3589,13 @@ public struct HostView: Codable, Hashable, Sendable {
         case candidate
         case reach
         case addrs
+        case relayOnly = "relay_only"
         case current
         case providers
         case lastDialError = "last_dial_error"
         case platform
         case signedIn = "signed_in"
+        case through
         case version
     }
 }

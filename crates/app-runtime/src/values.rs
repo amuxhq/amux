@@ -383,7 +383,7 @@ pub struct HostView {
     /// This device.
     pub local: bool,
     pub trusted: bool,
-    /// Found nearby and not paired.
+    /// Not paired: found nearby, or announced by the relay or a paired host.
     pub candidate: bool,
     /// How this device reaches it now, and over which route.
     pub reach: Reach,
@@ -393,6 +393,12 @@ pub struct HostView {
     pub last_dial_error: Option<String>,
     /// Where discovery found it; what pairing dials.
     pub addrs: Vec<String>,
+    /// For a candidate no address reaches: the paired host announcing it,
+    /// which carries a pairing on any plan.
+    pub through: Option<String>,
+    /// For a candidate: only the cloud relay reaches it, which carries a
+    /// pairing only on a paid plan.
+    pub relay_only: bool,
     /// For this device: whether it is signed in to the account its profile
     /// is bound to; None while it was never bound.
     pub signed_in: Option<bool>,

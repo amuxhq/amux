@@ -48,9 +48,9 @@ pub enum ChannelError {
     #[error("host {host_id} is not reachable")]
     NoRoute { host_id: HostId },
     #[error(
-        "Pairing could not reach this host. Check that both devices are online and signed in to the same cloud account."
+        "Pairing could not reach this host. Check that both devices are online, and on the same network, signed in to the same account or paired with the same host."
     )]
-    CloudPairingUnavailable,
+    NoPairingRoute,
     #[error("the forwarder refused to carry the link: {0:?}")]
     Refused(pb::ForwardRefusal),
     #[error("no live link to host {host_id}")]

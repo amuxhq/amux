@@ -10549,6 +10549,54 @@
         }
       }
     },
+    "Pair it through %@" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pair it through %@"
+          }
+        }
+      }
+    },
+    "%@ is online" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is online"
+          }
+        }
+      }
+    },
+    "Pair it from anywhere" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pair it from anywhere"
+          }
+        }
+      }
+    },
+    "Pro pairs it from anywhere" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro pairs it from anywhere"
+          }
+        }
+      }
+    },
     "A computer running amux on this network appears here, ready to pair." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
       "extractionState" : "manual",

@@ -411,25 +411,57 @@ impl Edge {
                 Err(error) => return Err(opaque(error)),
             }
         }
+        // No address answered: every neighbor announcing the host is tried,
+        // paired hosts first, since they forward on any plan and the cloud
+        // relay only on a paid one.
+        let mut unpaid = false;
         if selected.is_none()
             && let Some(host) = requested_host
-            && self.connections.has_cloud_route(host).await
         {
-            let channel = self
-                .connections
-                .cloud_pairing_channel_to(host)
-                .await
-                .map_err(|error| Status::unavailable(error.to_string()))?;
-            let pending = runtime
-                .driver()
-                .initiate(
-                    &mut wire::pairing_service_client::PairingServiceClient::new(channel),
-                    initiate(false, Reachability::Cloud),
-                )
-                .await
-                .map_err(refused)
-                .map_err(opaque)?;
-            selected = Some((pending, RouteKind::Relay));
+            for (forwarder, relay) in self.connections.pairing_forwarders(host).await {
+                let channel = match self
+                    .connections
+                    .pairing_channel_through(host, forwarder)
+                    .await
+                {
+                    Ok(channel) => channel,
+                    Err(crate::link::ChannelError::Refused(
+                        wire::pb::ForwardRefusal::PaymentRequired,
+                    )) => {
+                        unpaid = true;
+                        continue;
+                    }
+                    Err(error) => {
+                        last_unreachable = Some(error.to_string());
+                        continue;
+                    }
+                };
+                let pending = runtime
+                    .driver()
+                    .initiate(
+                        &mut wire::pairing_service_client::PairingServiceClient::new(channel),
+                        initiate(
+                            false,
+                            if relay {
+                                Reachability::Cloud
+                            } else {
+                                Reachability::Forwarded
+                            },
+                        ),
+                    )
+                    .await
+                    .map_err(refused)
+                    .map_err(opaque)?;
+                selected = Some((pending, RouteKind::Relay));
+                break;
+            }
+        }
+        if selected.is_none() && unpaid {
+            return Err(crate::grpc::status(wire::Error::because(
+                wire::ErrorReason::PaymentRequired,
+                "the other host can be reached only through the relay, and this account's free \
+                 plan carries no connection between hosts",
+            )));
         }
         // The other host not answering is this daemon's answer, not this
         // daemon going away: Unavailable would read as the latter.
@@ -439,7 +471,7 @@ impl Edge {
                 format!(
                     "the other host could not be reached: {}",
                     last_unreachable.unwrap_or_else(|| {
-                        crate::link::ChannelError::CloudPairingUnavailable.to_string()
+                        crate::link::ChannelError::NoPairingRoute.to_string()
                     })
                 ),
             ))

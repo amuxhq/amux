@@ -156,8 +156,10 @@ The tier decides what the relay carries:
 
 - **Pro.** The relay lists the account's machines and carries streams between
   them.
-- **Free.** The relay still lists the account's machines, so a phone can show
-  them as away, but refuses to carry any stream to or from a free link, with
+- **Free.** The relay still lists the account's machines, so a client shows a
+  paired one as away and an unpaired one as on the account, with Pro as what
+  pairs it, but refuses to carry any stream to or from a free link, pairing's
+  included, with
   `payment_required`. A link that renews as free also ends the streams it
   was already carrying, so a lapsed account's calls stop at once rather than
   riding a connection opened while it was Pro. Machines on the same local

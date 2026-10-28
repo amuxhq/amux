@@ -86,9 +86,12 @@ spec *ARGS:
 test-tui *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 cargo test --locked -p tui --features fixtures "$@"
 
-# Lint every workspace target with warnings denied.
+# Lint every workspace target with warnings denied. The qualification
+# features only decide which targets build, so they are on here: the live
+# tests and the perf binaries run by hand, never in CI, and this is what
+# keeps them compiling.
 lint:
-    {{bounded}} 1200 cargo clippy --locked --workspace --all-targets {{desktop_features}} -- -D warnings
+    {{bounded}} 1200 cargo clippy --locked --workspace --all-targets {{desktop_features}} --features qualification/live,qualification/perf -- -D warnings
 
 # Format all Rust sources with the pinned nightly toolchain.
 fmt:

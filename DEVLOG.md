@@ -1,3 +1,7 @@
+2026-10-28 — **The live compatibility tests compile again, and `just lint` keeps them compiling.** They still called the daemon through one client after it was split into an agent service and a session service, read a host's id as a field after it became a method, and subscribed to a session under its old name; since every live test target includes that shared code, every `just live` run failed to build before it reached a provider. Nothing in CI built the `live` feature, so nothing noticed. `just lint` now turns on qualification's `live` and `perf` features, which only decide which targets build, so the live tests and the perf binaries are linted with the rest.
+
+Tests: `just lint` passes and builds `claude_pty_live`, `claude_sdk_live`, `codex_live`, `perf` and `relay-curve`; no live scenario was run.
+
 2026-10-28 — **The Xcode project comes out the same from every checkout.** The component snapshot bundle takes the shared storybook list from `tests/stories.json`, outside `apps/apple`, and XcodeGen named the group it made for that folder after the checkout's own folder: the committed project said `storybook`, the worktree it was generated in, and the main checkout wrote `amux`. `just ios release` regenerates the project before it checks the tree is clean, so it refused to release from any checkout but one. The list now sits in the bundle's own group by name.
 
 Tests: two copies of `apps/apple` in folders with different names generate identical project files; `just ios release --preflight` finds a clean tree.

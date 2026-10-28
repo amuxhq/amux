@@ -1,3 +1,5 @@
+2026-10-28 — **The TUI's vocabulary goldens show a stopping job.** The shared vocabulary's second job is now stopping, so the overview's change goldens read "Stopping…" in place of its age.
+
 2026-10-28 — **A result's origin is typed.** `ResultCommon.origin` is a `ResultOrigin` with an optional `kind`, so the headless interpreter's foreign-result check reads it as a field instead of looking it up by name.
 
 2026-10-28 — **Codex's live spec may use `pty-host`.** The provider tether moved there from the Codex crate, so the dependency policy allows it for `codex-specs` as it already did for `claude-specs`.

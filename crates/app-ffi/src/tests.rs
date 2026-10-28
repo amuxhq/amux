@@ -1361,6 +1361,7 @@ fn a_new_agents_settings_and_picks_come_from_the_shared_view() {
         "commands": [],
         "permissions": [],
         "modes": [],
+        "skills": [],
     })
     .to_string());
     let chosen = c(r#"{"model": "astra", "effort": "high", "permission": null, "mode": null}"#);

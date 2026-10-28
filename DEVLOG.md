@@ -1,3 +1,7 @@
+2026-10-28 — **The relay's TLS fallback test always puts QUIC on another port.** It asked the free-port probe twice, once for the port tokens name and once for the relay's QUIC listener, and the probe lets a port go as soon as it finds it, so the second answer could be the first; on Linux CI the relay then listened for QUIC where the token pointed and the daemon linked over QUIC, not TLS. The QUIC port is now asked for until it differs.
+
+Tests: `cargo test -p amux --test relay` passes.
+
 2026-10-28 — **The analytics spec holds across machine speeds: a step over its budget is not one of the events it compares.** Every broken check is counted now, and a core's step budget is wall-clock time, so a loaded CI runner counted a `relay.over_budget` on the desk that an idle one does not, and the spec's exact list of the desk's events failed on macOS CI.
 
 Tests: `cargo test -p testnet --test spec_analytics` passes.

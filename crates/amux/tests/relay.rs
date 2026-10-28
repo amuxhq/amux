@@ -226,7 +226,15 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
     std::fs::write(&key_path, signing_key.serialize_pem()).unwrap();
 
     let port = free_port();
-    let udp_port = if quic { port } else { free_port() };
+    // A port the probe let go of can come straight back from it, so the
+    // QUIC listener's own port is taken until it is another one.
+    let udp_port = if quic {
+        port
+    } else {
+        std::iter::repeat_with(free_port)
+            .find(|other| *other != port)
+            .unwrap()
+    };
     let cloud = Cloud::serve(port).await;
     // The deployment's configuration and command line, word for word.
     let config = dir.path().join("config.toml");

@@ -1,5 +1,5 @@
 import Foundation
-import UIKit
+import ImageIO
 import UniformTypeIdentifiers
 
 /// A photo or file the person picked, as the composer attaches it. An
@@ -24,7 +24,7 @@ public struct PickedAttachment: Equatable, Sendable {
         if let type = types.first, [UTType.png, .gif].contains(where: { type.conforms(to: $0) }) {
             return named(data, base: base, type: type, image: true)
         }
-        if let jpeg = decoded(data)?.jpegData(compressionQuality: 0.85) {
+        if let jpeg = decoded(data).flatMap({ encoded($0, as: .jpeg) }) {
             return PickedAttachment(data: jpeg, name: "\(base).jpg", mime: "image/jpeg", image: true)
         }
         return named(data, base: base, type: types.first, image: false)
@@ -40,10 +40,10 @@ public struct PickedAttachment: Equatable, Sendable {
         }
         if type?.conforms(to: .image) == true, let image = decoded(data) {
             let base = (name as NSString).deletingPathExtension
-            if transparent(image), let png = image.pngData() {
+            if transparent(image.image), let png = encoded(image, as: .png) {
                 return PickedAttachment(data: png, name: "\(base).png", mime: "image/png", image: true)
             }
-            if let jpeg = image.jpegData(compressionQuality: 0.85) {
+            if let jpeg = encoded(image, as: .jpeg) {
                 return PickedAttachment(data: jpeg, name: "\(base).jpg", mime: "image/jpeg", image: true)
             }
         }
@@ -61,11 +61,34 @@ public struct PickedAttachment: Equatable, Sendable {
         type.preferredMIMEType ?? "application/octet-stream"
     }
 
-    private static func decoded(_ data: Data) -> UIImage? { UIImage(data: data) }
+    /// An image as read from its bytes, with the orientation its metadata
+    /// gives, which re-encoding keeps; none of its other metadata (such as
+    /// where a photo was taken) goes along.
+    private struct Decoded {
+        let image: CGImage
+        let orientation: UInt32?
+    }
 
-    private static func transparent(_ image: UIImage) -> Bool {
-        switch image.cgImage?.alphaInfo {
-        case .none?, .noneSkipFirst?, .noneSkipLast?, nil: false
+    private static func decoded(_ data: Data) -> Decoded? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        return Decoded(image: image, orientation: properties?[kCGImagePropertyOrientation] as? UInt32)
+    }
+
+    private static func encoded(_ decoded: Decoded, as type: UTType) -> Data? {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, type.identifier as CFString, 1, nil)
+        else { return nil }
+        var options: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: 0.85]
+        if let orientation = decoded.orientation { options[kCGImagePropertyOrientation] = orientation }
+        CGImageDestinationAddImage(destination, decoded.image, options as CFDictionary)
+        return CGImageDestinationFinalize(destination) ? data as Data : nil
+    }
+
+    private static func transparent(_ image: CGImage) -> Bool {
+        switch image.alphaInfo {
+        case .none, .noneSkipFirst, .noneSkipLast: false
         default: true
         }
     }

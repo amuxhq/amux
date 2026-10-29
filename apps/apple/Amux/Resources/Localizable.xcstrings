@@ -421,14 +421,14 @@
         }
       }
     },
-    "%@ is not attached because it is over the 64 MB limit for attachments." : {
+    "%@ is not attached because it is over the %@ MB limit for attachments." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ is not attached because it is over the 64 MB limit for attachments."
+            "value" : "%@ is not attached because it is over the %@ MB limit for attachments."
           }
         }
       }
@@ -11037,6 +11037,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Quote %@ if you write to us about it."
+          }
+        }
+      }
+    },
+    "%@ takes a skill as a mention: type %@." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ takes a skill as a mention: type %@."
+          }
+        }
+      }
+    },
+    "always, in every project" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "always, in every project"
+          }
+        }
+      }
+    },
+    "Running safety checks" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Running safety checks"
+          }
+        }
+      }
+    },
+    "The agent keeps running." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The agent keeps running."
+          }
+        }
+      }
+    },
+    "Stopping…" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopping…"
           }
         }
       }

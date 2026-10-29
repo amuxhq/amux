@@ -713,9 +713,6 @@
     ],
     "apps/apple/Packages/AmuxShell/Sources/AmuxShell/Shell.swift": [
       {"literal": "\"shell\"", "context": ".reported(\"shell\", value: router.tab.rawValue)", "reason": "Protocol field, enum tag, resource path or stable driving identifier; preserve its exact spelling.", "count": 1},
-      {"literal": "\"photo.jpg\"", "context": "model?.attach(jpeg, name: \"photo.jpg\", mime: \"image/jpeg\", image: true)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
-      {"literal": "\"image/jpeg\"", "context": "model?.attach(jpeg, name: \"photo.jpg\", mime: \"image/jpeg\", image: true)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
-      {"literal": "\"application/octet-stream\"", "context": "mime: type?.preferredMIMEType ?? \"application/octet-stream\",", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"you.close\"", "context": "BarButton(\"xmark\", label: String(localized: \"Close\"), identifier: \"you.close\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat\"", "context": "identifier: \"chat\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
@@ -1208,7 +1205,14 @@
       {"literal": "\"large-text\"", "context": "hostsList(\"large-text\", size: .accessibility3) { _ in },", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"hosts.\\(id)\"", "context": "id: \"hosts.\\(id)\", family: .hosts, canvas: CGSize(width: 390, height: 844), dynamicTypeSize: size", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"large-text\"", "context": "sheet(\"large-text\", size: .accessibility3, height: 2600) { StoryApp(settingsOpen: true).settings },", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"settings.\\(id)\"", "context": "id: \"settings.\\(id)\", family: .settings, canvas: CGSize(width: 390, height: height), dynamicTypeSize: size", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}
+      {"literal": "\"settings.\\(id)\"", "context": "id: \"settings.\\(id)\", family: .settings, canvas: CGSize(width: 390, height: height), dynamicTypeSize: size", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"overview-stop\"", "context": "overview(\"overview-stop\", confirming: 0, settlesLate: true) { F.surroundings },", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"/\"", "context": "CommandView(name: \"clear\", description: \"Clear conversation history and free up context\", argumentHint: \"\", source: \"\", sigil: \"/\", anywhere: false),", "reason": "Slash command syntax the agent reads, not interface copy.", "count": 1},
+      {"literal": "\"/\"", "context": "CommandView(name: \"compact\", description: \"Clear history but keep a summary in context\", argumentHint: \"<instructions>\", source: \"\", sigil: \"/\", anywhere: false),", "reason": "Slash command syntax the agent reads, not interface copy.", "count": 1},
+      {"literal": "\"/\"", "context": "CommandView(name: \"context\", description: \"Show current context usage\", argumentHint: \"\", source: \"\", sigil: \"/\", anywhere: false),", "reason": "Slash command syntax the agent reads, not interface copy.", "count": 1},
+      {"literal": "\"/\"", "context": "CommandView(name: \"cost\", description: \"Show the total cost and duration of the session\", argumentHint: \"\", source: \"\", sigil: \"/\", anywhere: false),", "reason": "Slash command syntax the agent reads, not interface copy.", "count": 1},
+      {"literal": "\"/\"", "context": "CommandView(name: \"code-review:review\", description: \"Review the current diff for correctness bugs\", argumentHint: \"[level]\", source: \"code-review\", sigil: \"/\", anywhere: false),", "reason": "Slash command syntax the agent reads, not interface copy.", "count": 1},
+      {"literal": "\"/\"", "context": "CommandView(name: \"init\", description: \"Initialize a new CLAUDE.md file\", argumentHint: \"\", source: \"\", sigil: \"/\", anywhere: false),", "reason": "Slash command syntax the agent reads, not interface copy.", "count": 1}
     ],
     "apps/apple/Amux/Debug/Stories.swift": [
       {"literal": "\"notifications-offer\"", "context": "fleet(\"notifications-offer\", offerNotifications: true) { StoryFleet.busy(nearby: false) },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1371,8 +1375,6 @@
       {"literal": "\"lock\"", "context": "Image(systemName: \"lock\")", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"chat.permissions\"", "context": ".identified(\"chat.permissions\", label: ChatWords.permissionsItem(settings))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.strip\"", "context": ".identified(\"chat.strip\", label: parts.map(\\.text).joined(separator: \", \"))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"$\"", "context": "Text(verbatim: (codex ? \"$\" : \"/\") + command.name)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
-      {"literal": "\"/\"", "context": "Text(verbatim: (codex ? \"$\" : \"/\") + command.name)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"chat.slash.\\(command.name)\"", "context": ".identified(\"chat.slash.\\(command.name)\", label: ChatWords.command(command))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.foot.\\(kind)\"", "context": ".identified(\"chat.foot.\\(kind)\", label: title, value: detail)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"\\($0.done)/\\($0.total) \\(title)\"", "context": "let label = tasks.map { \"\\($0.done)/\\($0.total) \\(title)\" } ?? title", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
@@ -1449,7 +1451,8 @@
       {"literal": "\"\\(count)\\(plus) \"", "context": "count > 0 ? \"\\(count)\\(plus) \" + plural(count, one, many) : nil", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"\\(run.steps)\\(plus) \"", "context": "return \"\\(run.steps)\\(plus) \" + plural(run.steps, \"step\", \"steps\")", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"+\\(added)\"", "context": "[added > 0 ? \"+\\(added)\" : nil, removed > 0 ? \"\\u{2212}\\(removed)\" : nil]", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
-      {"literal": "\"\\u{2212}\\(removed)\"", "context": "[added > 0 ? \"+\\(added)\" : nil, removed > 0 ? \"\\u{2212}\\(removed)\" : nil]", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1}
+      {"literal": "\"\\u{2212}\\(removed)\"", "context": "[added > 0 ? \"+\\(added)\" : nil, removed > 0 ? \"\\u{2212}\\(removed)\" : nil]", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"—\"", "context": "guard let used = window.usedPercent else { return \"—\" }", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/ReviewModel.swift": [
       {"literal": "\"\\(parent)/\\(name)\"", "context": "return parent.isEmpty ? name : \"\\(parent)/\\(name)\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1}
@@ -1499,11 +1502,8 @@
       {"literal": "\"chat.settings.mode\"", "context": "fact(ChatWords.permission(current), id: \"chat.settings.mode\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift": [
-      {"literal": "\"/\"", "context": "guard draft.hasPrefix(\"/\") else { return nil }", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
-      {"literal": "\"/\"", "context": "guard !word.contains(where: { $0.isWhitespace || $0 == \"/\" }) else { return nil }", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
-      {"literal": "\":\"", "context": "guard let colon = name.firstIndex(of: \":\") else { return false }", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
-      {"literal": "\"$\"", "context": "let sigil = frame?.kind == .codex ? \"$\" : \"/\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
-      {"literal": "\"/\"", "context": "let sigil = frame?.kind == .codex ? \"$\" : \"/\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"/\"", "context": "draft.contains(where: { $0 == \"/\" || $0 == \"$\" }) else { return [] }", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"$\"", "context": "draft.contains(where: { $0 == \"/\" || $0 == \"$\" }) else { return [] }", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"\\u{FFFC}\"", "context": "if case .text(let words) = part { words } else { \"\\u{FFFC}\" }", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"/\"", "context": "if draft.trimmingCharacters(in: .whitespaces).hasPrefix(\"/\") {", "reason": "Slash command syntax the agent reads, not interface copy.", "count": 1},
       {"literal": "\"/\"", "context": "let name = command.hasPrefix(\"/\") ? command : \"/\" + command", "reason": "Slash command syntax the agent reads, not interface copy.", "count": 2},
@@ -1598,7 +1598,10 @@
       {"literal": "\"\\(servers.count)\"", "context": "SectionHead(title: String(localized: \"Tool servers\"), trailing: \"\\(servers.count)\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"chat.overview.server.\\(server.name)\"", "context": ".identified(\"chat.overview.server.\\(server.name)\", label: ChatWords.failed(server))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.overview.usage.\\(index).detail.volatile\"", "context": ".reported(\"chat.overview.usage.\\(index).detail.volatile\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"chat.overview.usage.\\(index)\"", "context": "\"chat.overview.usage.\\(index)\", label: label, value: ChatWords.used(window))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"chat.overview.usage.\\(index)\"", "context": "\"chat.overview.usage.\\(index)\", label: label, value: ChatWords.used(window))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"chat.overview.stop\"", "context": ".identified(\"chat.overview.stop\", label: String(localized: \"Stop\"))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"chat.overview.stop-cancel\"", "context": ".identified(\"chat.overview.stop-cancel\", label: String(localized: \"Cancel\"))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"stop.circle\"", "context": "Image(systemName: \"stop.circle\")", "reason": "SF Symbol name, not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift": [
       {"literal": "\"host.pairAgain\"", "context": ".identified(\"host.pairAgain\", label: String(localized: \"Pair Again\"))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1741,6 +1744,17 @@
       {"literal": "\"motion\"", "context": "arc.add(clock.endless([turn], period: period, at: at, aligned: false), forKey: \"motion\")", "reason": "Core Animation key path or animation key, not displayed text.", "count": 1},
       {"literal": "\"strokeStart\"", "context": "keyframes(\"strokeStart\", period: period, from: at) {", "reason": "Core Animation key path or animation key, not displayed text.", "count": 1},
       {"literal": "\"strokeEnd\"", "context": "keyframes(\"strokeEnd\", period: period, from: at) {", "reason": "Core Animation key path or animation key, not displayed text.", "count": 1}
+    ],
+    "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/PickedAttachment.swift": [
+      {"literal": "\"photo-\\(index)\"", "context": "let base = \"photo-\\(index)\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"\\(base).jpg\"", "context": "return PickedAttachment(data: jpeg, name: \"\\(base).jpg\", mime: \"image/jpeg\", image: true)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 2},
+      {"literal": "\"image/jpeg\"", "context": "return PickedAttachment(data: jpeg, name: \"\\(base).jpg\", mime: \"image/jpeg\", image: true)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 2},
+      {"literal": "\"\\(base).png\"", "context": "return PickedAttachment(data: png, name: \"\\(base).png\", mime: \"image/png\", image: true)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"image/png\"", "context": "return PickedAttachment(data: png, name: \"\\(base).png\", mime: \"image/png\", image: true)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"application/octet-stream\"", "context": "data: data, name: name, mime: type.map(mime) ?? \"application/octet-stream\", image: false)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\".\\($0)\"", "context": "let suffix = type?.preferredFilenameExtension.map { \".\\($0)\" } ?? \"\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"application/octet-stream\"", "context": "data: data, name: base + suffix, mime: type.map(mime) ?? \"application/octet-stream\", image: image)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"application/octet-stream\"", "context": "type.preferredMIMEType ?? \"application/octet-stream\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1}
     ]
   }
 }

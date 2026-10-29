@@ -174,7 +174,7 @@ pub enum SettingChange {
     CyclePermission,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CommandView {
     pub name: String,
     pub description: String,

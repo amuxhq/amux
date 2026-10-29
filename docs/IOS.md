@@ -125,7 +125,7 @@ thread. A chat is a `ChatModel` over an open `Chat`:
   was deleted, and nothing typed into its chat while the page leaves is
   kept.
 - An attachment is checked against the stated limit, 64 MB of content
-  (`wire::ATTACHMENT_SIZE_LIMIT`, copied as `ChatModel.attachmentLimit`),
+  (`wire::ATTACHMENT_SIZE_LIMIT`, which the phone asks the library for),
   before anything is read or uploaded, and one over it is refused in words
   naming the file and the limit. One that fails to store is named with the
   reason in the chat's notice.
@@ -143,6 +143,11 @@ thread. A chat is a `ChatModel` over an open `Chat`:
   model) happens on the phone, a word the agent does not take is refused in
   words naming what it does take, and anything else is sent to the agent as
   typed.
+- While a draft ends in a "/word" or a Codex "$word", up to five of the
+  agent's matching commands are offered above the composer, and a tap puts
+  one in the draft. Which commands match, and what the draft becomes, is the
+  shared view's `command_matches`; a paste becomes a text attachment by its
+  `pastes_as_attachment`, the rule the terminal follows too.
 - When terminal Claude's own view resumes another conversation, the chat
   says so above the composer ("Claude's own view switched to another
   conversation") with Switch Back, which asks the library to return that

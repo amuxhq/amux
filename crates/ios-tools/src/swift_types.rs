@@ -42,6 +42,7 @@ pub fn definitions() -> Map<String, Value> {
         ui_view::QuestionResponse,
         ui_view::FormValue,
         ui_view::FormProblem,
+        ui_view::CommandMatch,
         ui_view::Overview,
         ui_view::Comparison,
         ui_view::ComposerView,

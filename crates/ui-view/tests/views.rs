@@ -4116,6 +4116,89 @@ fn a_codex_skill_after_a_slash_is_refused_with_its_mention() {
     }
 }
 
+fn command_list(commands: &[&str], skills: &[&str]) -> Vec<CommandView> {
+    let view = |name: &&str, sigil: &str, anywhere: bool| CommandView {
+        name: (*name).into(),
+        description: String::new(),
+        argument_hint: String::new(),
+        source: String::new(),
+        sigil: sigil.into(),
+        anywhere,
+    };
+    commands
+        .iter()
+        .map(|name| view(name, "/", false))
+        .chain(skills.iter().map(|name| view(name, "$", true)))
+        .collect()
+}
+
+fn matched(commands: &[CommandView], draft: &str) -> Vec<String> {
+    command_matches(commands, draft)
+        .into_iter()
+        .map(|found| found.command.name)
+        .collect()
+}
+
+/// A draft that is one "/word" lists the commands whose names start with
+/// it, ignoring case and a plugin's namespace, in the agent's order; a
+/// pick makes the command the whole draft.
+#[test]
+fn a_leading_slash_word_lists_the_commands_it_starts() {
+    let commands = command_list(
+        &[
+            "clear",
+            "compact",
+            "context",
+            "code-review:review",
+            "documents:documents",
+        ],
+        &[],
+    );
+    assert_eq!(
+        matched(&commands, "/c"),
+        ["clear", "compact", "context", "code-review:review"]
+    );
+    assert_eq!(matched(&commands, "/Doc"), ["documents:documents"]);
+    assert_eq!(matched(&commands, "/rev"), ["code-review:review"]);
+    for draft in ["/compact now", "please /c", "c", "/a/b", ""] {
+        assert!(matched(&commands, draft).is_empty(), "{draft:?}");
+    }
+    let picked = command_matches(&commands, "/comp");
+    assert_eq!(picked[0].picked, "/compact ");
+    assert!(command_matches(&commands, &picked[0].picked).is_empty());
+}
+
+/// A Codex skill is offered after a "$" that starts the draft or follows a
+/// space, and a pick puts its mention in place of the word being typed;
+/// it is never a slash command.
+#[test]
+fn a_skill_mention_matches_anywhere_and_is_picked_in_place() {
+    let commands = command_list(&["compact"], &["autopilot", "documents:documents"]);
+    assert!(matched(&commands, "/auto").is_empty());
+    assert_eq!(matched(&commands, "/comp"), ["compact"]);
+    assert_eq!(matched(&commands, "$doc"), ["documents:documents"]);
+    for draft in ["$comp", "$auto now", "costs$auto"] {
+        assert!(matched(&commands, draft).is_empty(), "{draft:?}");
+    }
+    let picked = command_matches(&commands, "please use $auto");
+    assert_eq!(picked.len(), 1);
+    assert_eq!(picked[0].picked, "please use $autopilot ");
+    assert!(command_matches(&commands, &picked[0].picked).is_empty());
+}
+
+/// A paste joins the draft as a text attachment from eight lines or a
+/// thousand characters; a last line break ends a line.
+#[test]
+fn a_long_paste_is_an_attachment_and_a_short_one_words() {
+    let lines = |count: usize| "line\n".repeat(count);
+    assert!(!pastes_as_attachment(&lines(PASTE_LINES - 1)));
+    assert!(pastes_as_attachment(&lines(PASTE_LINES)));
+    assert!(pastes_as_attachment(&"line\r\n".repeat(PASTE_LINES)));
+    assert!(!pastes_as_attachment(&"x".repeat(PASTE_CHARS - 1)));
+    assert!(pastes_as_attachment(&"x".repeat(PASTE_CHARS)));
+    assert!(!pastes_as_attachment("two\nlines"));
+}
+
 /// Each background job says whether the person can stop it alone: headless
 /// Claude and Codex stop one job by its key, terminal Claude cannot, and a
 /// job the provider gave no key cannot be named. A stop sent reads

@@ -922,13 +922,14 @@ struct StripLine: View {
 /// row each; a tap puts the command in the draft.
 struct SlashRows: View {
     @Environment(\.design) private var design
-    let commands: [CommandView]
-    let pick: (CommandView) -> Void
+    let matches: [CommandMatch]
+    let pick: (CommandMatch) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(commands, id: \.name) { command in
-                Button { pick(command) } label: {
+            ForEach(matches, id: \.command.name) { match in
+                let command = match.command
+                Button { pick(match) } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
                             Text(verbatim: command.sigil + command.name)

@@ -761,54 +761,21 @@ public final class ChatModel {
 
     /// How many commands the slash rows offer at once.
     public static let slashRows = 5
-    /// A paste this long becomes one attachment instead of draft text, as
-    /// the terminal client does.
-    public static let pasteLines = 8
-    public static let pasteCharacters = 1_000
 
-    /// The agent's commands that match the word being typed, each as the
-    /// settings view says it is typed: a "/" command when the draft is
-    /// exactly a leading "/word", a Codex "$" skill when the draft ends in
-    /// a "$word" mention. A name matches by prefix, or by prefix after a
-    /// plugin's namespace. The list is the settings view's, which already
-    /// leaves out what a headless agent cannot run; an agent that offers
-    /// none lists nothing.
-    public var slashMatches: [CommandView] {
-        guard let commands = settings?.commands, let typed = Self.typedWord(draft) else { return [] }
-        let matches = commands.filter {
-            $0.sigil == typed.sigil && ($0.anywhere || typed.start == draft.startIndex)
-                && Self.command($0.name, matches: typed.word)
-        }
-        return Array(matches.prefix(Self.slashRows))
+    /// The agent's commands that match the word being typed, as the shared
+    /// view finds them: a "/" command when the draft is one "/word", a
+    /// Codex "$" skill when the draft ends in a "$word" mention. Each comes
+    /// with the draft a pick leaves. A draft with neither sigil asks for
+    /// nothing, so typing words costs no call.
+    public var slashMatches: [CommandMatch] {
+        guard let commands = settings?.commands, !commands.isEmpty,
+              draft.contains(where: { $0 == "/" || $0 == "$" }) else { return [] }
+        return Array(Bridge.commandMatches(commands, draft).prefix(Self.slashRows))
     }
 
-    /// The sigil and word the draft ends in, and where the sigil starts: a
-    /// whole draft "/word", or a "$word" after a space or at the start.
-    static func typedWord(_ draft: String) -> (sigil: String, word: String, start: String.Index)? {
-        guard let start = draft.lastIndex(where: { $0 == "/" || $0 == "$" }) else { return nil }
-        guard start == draft.startIndex || draft[draft.index(before: start)].isWhitespace else { return nil }
-        let word = draft[draft.index(after: start)...]
-        guard !word.contains(where: { $0.isWhitespace }) else { return nil }
-        return (String(draft[start]), word.lowercased(), start)
-    }
-
-    static func command(_ name: String, matches word: String) -> Bool {
-        let name = name.lowercased()
-        if name.hasPrefix(word) { return true }
-        guard let colon = name.firstIndex(of: ":") else { return false }
-        return name[name.index(after: colon)...].hasPrefix(word)
-    }
-
-    /// Puts a picked command in the draft as the agent reads one: a "/"
-    /// command as the whole draft, a "$" skill in place of the mention being
-    /// typed.
-    public func pick(_ command: CommandView) {
-        let picked = command.sigil + command.name + " "
-        guard command.anywhere, let typed = Self.typedWord(draft) else {
-            draft = picked
-            return
-        }
-        draft = String(draft[..<typed.start]) + picked
+    /// Puts a picked command in the draft as the agent reads one.
+    public func pick(_ match: CommandMatch) {
+        draft = match.picked
     }
 
     /// The field's edits. A long run arriving in one edit is a paste: it
@@ -835,8 +802,7 @@ public final class ChatModel {
         while tail < old.count - head, tail < new.count - head,
               old[old.count - 1 - tail] == new[new.count - 1 - tail] { tail += 1 }
         var inserted = Array(new[head..<(new.count - tail)])
-        guard inserted.count >= Self.pasteCharacters || Self.lines(String(inserted)) >= Self.pasteLines
-        else {
+        guard Bridge.pastesAsAttachment(String(inserted)) else {
             draft = String(new)
             return
         }
@@ -927,19 +893,15 @@ public final class ChatModel {
         return (joined, (sent.attachments ?? []) + composer.attachments)
     }
 
-    /// The most an attachment may hold, in bytes: 64 MiB of its content,
-    /// worded "64 MB". The hosts refuse more; the phone says so before it
-    /// uploads anything. A copy of `wire::ATTACHMENT_SIZE_LIMIT`, because the
-    /// bridge carries values and no constants: the two change together.
-    public static let attachmentLimit = 64 * 1024 * 1024
-
     /// Whether an attachment this large may be stored. One over the limit is
     /// refused here, in words naming the file and the limit, so nothing is
     /// read or uploaded for it.
     @discardableResult
     public func admits(name: String, size: Int) -> Bool {
-        guard size > Self.attachmentLimit else { return true }
-        notice = String(localized: "\(name) is not attached because it is over the 64 MB limit for attachments.")
+        let limit = Bridge.attachmentLimit
+        guard size > limit else { return true }
+        let megabytes = limit / (1024 * 1024)
+        notice = String(localized: "\(name) is not attached because it is over the \(megabytes) MB limit for attachments.")
         return false
     }
 

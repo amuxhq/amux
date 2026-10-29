@@ -9,6 +9,7 @@ use ui_state::{
 use wire::{Attachment, SignInState};
 
 use crate::segments::{Segment, segments};
+use crate::settings::CommandView;
 
 /// Context use from here on is near full, which a client may set apart.
 pub const CONTEXT_NEAR_FULL_PERCENT: u64 = 80;
@@ -259,4 +260,77 @@ pub fn refused_prompts(state: &SessionState) -> Vec<RefusedPrompt> {
 /// takes no prompt until it is back, and a switch back takes it back.
 pub fn switched_away(state: &SessionState) -> bool {
     !matches!(state.composer(), Composer::Resume) && state.agent_state().switched_away
+}
+
+/// Text pasted into a draft at least this many lines long joins it as one
+/// text attachment instead of as words.
+pub const PASTE_LINES: usize = 8;
+/// Text pasted into a draft at least this many characters long joins it as
+/// one text attachment instead of as words.
+pub const PASTE_CHARS: usize = 1_000;
+
+/// Whether text arriving in a draft in one paste joins it as one text
+/// attachment rather than as words: [`PASTE_LINES`] lines or
+/// [`PASTE_CHARS`] characters. A last line break ends a line rather than
+/// starting one.
+pub fn pastes_as_attachment(text: &str) -> bool {
+    text.lines().count() >= PASTE_LINES || text.chars().count() >= PASTE_CHARS
+}
+
+/// One of the agent's commands matching the word a draft ends in.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+pub struct CommandMatch {
+    pub command: CommandView,
+    /// The draft once the command is picked: a "/" command is the whole
+    /// draft, a mention takes the place of the word being typed, and a
+    /// space follows either.
+    pub picked: String,
+}
+
+/// The agent's commands matching the word a draft ends in, in the agent's
+/// order: "/" commands when the whole draft is one "/word", and commands
+/// typed anywhere (a Codex "$" skill) when the draft ends in their sigil
+/// and a word, at its start or after a space. A name matches by prefix,
+/// ignoring case, or by prefix after a plugin's namespace. `commands` is
+/// the settings view's list, which already leaves out what the agent
+/// cannot run.
+pub fn command_matches(commands: &[CommandView], draft: &str) -> Vec<CommandMatch> {
+    let Some(start) = draft.rfind(['/', '$']) else {
+        return Vec::new();
+    };
+    if !draft[..start].is_empty() && !draft[..start].ends_with(char::is_whitespace) {
+        return Vec::new();
+    }
+    let (sigil, word) = draft[start..].split_at(1);
+    if word.contains(char::is_whitespace) {
+        return Vec::new();
+    }
+    let word = word.to_lowercase();
+    commands
+        .iter()
+        .filter(|command| {
+            command.sigil == sigil
+                && (command.anywhere || start == 0)
+                && name_matches(&command.name, &word)
+        })
+        .map(|command| {
+            let kept = if command.anywhere {
+                &draft[..start]
+            } else {
+                ""
+            };
+            CommandMatch {
+                command: command.clone(),
+                picked: format!("{kept}{}{} ", command.sigil, command.name),
+            }
+        })
+        .collect()
+}
+
+fn name_matches(name: &str, word: &str) -> bool {
+    let name = name.to_lowercase();
+    name.starts_with(word)
+        || name
+            .split_once(':')
+            .is_some_and(|(_, after)| after.starts_with(word))
 }

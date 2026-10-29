@@ -132,9 +132,9 @@ bytes)`; the daemon hashes the bytes, writes the file into that agent's
 directory and returns the `BlobRef`. The client puts the reference in its
 draft at the cursor, and the prompt goes out through `SendInput` with the
 reference in its attachments. The terminal attaches a clipboard image or a
-copied file path with Ctrl+V, and turns a paste of eight lines or 1000
-characters into a `text` attachment; the phone stores bytes with
-`amux_session_put_blob`. `PutBlob` for another host's agent is forwarded to
+copied file path with Ctrl+V, and both clients turn a paste of eight lines or
+1000 characters into a `text` attachment (`ui_view::pastes_as_attachment`);
+the phone stores bytes with `amux_session_put_blob`. `PutBlob` for another host's agent is forwarded to
 that host, since only the agent's own host writes its directory.
 
 **What counts as an image.** One rule, `attachments::native_image`: an

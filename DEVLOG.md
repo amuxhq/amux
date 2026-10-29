@@ -1,3 +1,5 @@
+2026-10-29 — **Which commands a draft offers, and when a paste is an attachment, are the shared view's rules.** `ui_view::command_matches` finds the agent's commands matching the "/word" or Codex "$word" a draft ends in, each with the draft a pick leaves, and `ui_view::pastes_as_attachment` holds the eight-line or thousand-character paste rule. The phone asks for both, and for the attachment limit, through `amux_command_matches`, `amux_pastes_as_attachment` and `amux_attachment_limit` instead of keeping its own copies; the terminal's paste uses the same rule.
+
 2026-10-29 — **The agent's headless replay fixtures come from the 2.1.312 question recording.** `sdk_question` and `sdk_lost` are re-derived from `claude-specs`'s new `question_asked` with the rewrites their README lists, so their startup messages list only Claude's own skills and agents, not the recording machine's plugins, skills and connectors.
 
 2026-10-29 — **The shared views' headless goldens follow the 2.1.312 recordings.** `ui-view`'s `claude_sdk` goldens are re-recorded from the new interpreter fixtures, and the renamed link spec's golden goes.

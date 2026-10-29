@@ -801,12 +801,12 @@ final class ChatModelTests: XCTestCase {
         let model = ChatModel(source: source)
         model.draft = "/c"
         XCTAssertEqual(
-            model.slashMatches.map(\.name), ["clear", "compact", "context", "cost", "config-check"],
+            model.slashMatches.map(\.command.name), ["clear", "compact", "context", "cost", "config-check"],
             "five at most, in the agent's order")
         model.draft = "/Doc"
-        XCTAssertEqual(model.slashMatches.map(\.name), ["documents:documents"])
+        XCTAssertEqual(model.slashMatches.map(\.command.name), ["documents:documents"])
         model.draft = "/rev"
-        XCTAssertEqual(model.slashMatches.map(\.name), ["code-review:review"], "after a plugin's namespace")
+        XCTAssertEqual(model.slashMatches.map(\.command.name), ["code-review:review"], "after a plugin's namespace")
         for draft in ["/compact now", "please /c", "c", "/a/b", ""] {
             model.draft = draft
             XCTAssertTrue(model.slashMatches.isEmpty, "\(draft) is not a leading /word")
@@ -824,15 +824,15 @@ final class ChatModelTests: XCTestCase {
         model.draft = "/auto"
         XCTAssertTrue(model.slashMatches.isEmpty, "a skill is not a slash command")
         model.draft = "/comp"
-        XCTAssertEqual(model.slashMatches.map(\.name), ["compact"])
+        XCTAssertEqual(model.slashMatches.map(\.command.name), ["compact"])
         model.draft = "$doc"
-        XCTAssertEqual(model.slashMatches.map(\.name), ["documents:documents"])
+        XCTAssertEqual(model.slashMatches.map(\.command.name), ["documents:documents"])
         for draft in ["$comp", "$auto now", "costs$auto"] {
             model.draft = draft
             XCTAssertTrue(model.slashMatches.isEmpty, "\(draft) ends in no skill mention")
         }
         model.draft = "please use $auto"
-        XCTAssertEqual(model.slashMatches.map(\.name), ["autopilot"])
+        XCTAssertEqual(model.slashMatches.map(\.command.name), ["autopilot"])
         model.pick(model.slashMatches[0])
         XCTAssertEqual(model.draft, "please use $autopilot ")
         XCTAssertTrue(model.slashMatches.isEmpty)
@@ -877,7 +877,7 @@ final class ChatModelTests: XCTestCase {
         model.type("Look at this: two\nlines")
         XCTAssertEqual(model.draft, "Look at this: two\nlines", "a short paste stays words")
         XCTAssertEqual(model.attachments.count, 1)
-        model.type(model.draft + String(repeating: "x", count: ChatModel.pasteCharacters))
+        model.type(model.draft + String(repeating: "x", count: 1_000))
         XCTAssertEqual(model.attachments.count, 2, "one very long line is a paste too")
         await model.send()?.value
         XCTAssertEqual(

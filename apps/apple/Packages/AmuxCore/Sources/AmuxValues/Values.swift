@@ -1935,6 +1935,25 @@ public enum ClientCommand: String, Codable, Hashable, Sendable, CaseIterable {
     case rename = "Rename"
 }
 
+/// One of the agent's commands matching the word a draft ends in.
+public struct CommandMatch: Codable, Hashable, Sendable {
+    public var command: CommandView
+    /// The draft once the command is picked: a "/" command is the whole
+    /// draft, a mention takes the place of the word being typed, and a
+    /// space follows either.
+    public var picked: String
+
+    public init(command: CommandView, picked: String) {
+        self.command = command
+        self.picked = picked
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case command
+        case picked
+    }
+}
+
 /// What the client did with a draft that names a command it runs itself
 /// (`/model`, `/effort`, `/rename`), or one the agent does not run.
 public enum CommandOutcome: Codable, Hashable, Sendable {

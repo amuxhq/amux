@@ -1451,9 +1451,10 @@ tests = [
 id = "socket-no-route-on-a-gone-forwarder"
 source = "model"
 property = { crate = "models", machine = "link socket", sentence = "no route stays on a forwarding link that has gone" }
-checker = "models/socket::every_link_socket_promise_holds_as_the_relay_link_goes_at_ci_bounds"
+checker = "models/socket::every_link_socket_promise_holds_as_time_passes_at_ci_bounds"
 tests = [
   "node/lib::link::socket::tests::removing_a_forwarding_link_unsets_the_paths_through_it",
+  "node/lib::link::socket::tests::socket_keeps_a_silent_forwarder_while_its_link_is_up",
 ]
 
 [[contract]]

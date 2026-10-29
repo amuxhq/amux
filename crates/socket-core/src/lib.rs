@@ -1214,9 +1214,19 @@ impl<K: Forwarding> Peers<K> {
             return;
         }
         self.next_sweep_ms = Some(now_ms + UNCLAIMED_PEER_SWEEP_MS);
+        // A forwarder is kept while a link it forwards is up, however long
+        // it is silent: the link's owner removes the link, and with it the
+        // routes through it. A phone suspended for minutes hears its relay
+        // again before QUIC's idle timer closes the relay's link.
+        let forwarders: HashSet<Peer> = self
+            .forwarding
+            .values()
+            .filter_map(|(via, _)| self.by_stand_in.get(via).copied())
+            .collect();
         let gone: Vec<Peer> = self
             .peers
             .iter()
+            .filter(|(peer, _)| !forwarders.contains(peer))
             .filter(|(_, state)| {
                 let silent = now_ms.saturating_sub(state.heard_ms) >= UNCLAIMED_PEER_TIMEOUT_MS;
                 match state.expiry {
@@ -1258,13 +1268,23 @@ impl<K: Forwarding> Peers<K> {
     /// forwarding links it was the forwarder of.
     fn forget(&mut self, peer: Peer) {
         let by_stand_in = &self.by_stand_in;
-        self.forwarding
-            .retain(|_, (via, _)| by_stand_in.get(via) != Some(&peer));
+        let forwarded: Vec<LinkId> = self
+            .forwarding
+            .iter()
+            .filter(|(_, (via, _))| by_stand_in.get(via) == Some(&peer))
+            .map(|(link, _)| *link)
+            .collect();
         self.by_stand_in.retain(|_, held| *held != peer);
         self.peers.remove(&peer);
         if let Peer::Host(host) = peer {
             self.unlearn_addresses(host);
             self.reported.retain(|(reported, _), _| *reported != host);
+        }
+        // The links it forwarded go with it, and so do the routes through
+        // them, as when a forwarding link is removed.
+        for link in forwarded {
+            self.forwarding.remove(&link);
+            self.unroute(Path::Forwarded(link));
         }
     }
 

@@ -13,7 +13,7 @@ const LAN_DOWN_STATES: u64 = 52;
 const LOSS_STATES: u64 = 253_300;
 const DUPLICATE_STATES: u64 = 106_900;
 const RELAY_DOWN_STATES: u64 = 39_200;
-const TIME_STATES: u64 = 89_400;
+const TIME_STATES: u64 = 148_400;
 
 fn holds_within_budget(model: &SocketModel, budget: u64) {
     let threads = models::threads();

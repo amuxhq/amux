@@ -1699,6 +1699,35 @@ mod tests {
         assert_eq!(socket.trusted_route(desk), Some(Path::Direct(new)));
     }
 
+    /// A forwarder silent past the time unnamed senders are kept is kept
+    /// while its link is up, and so are the routes through it: a phone
+    /// suspended for minutes hears again before QUIC closes the link.
+    #[tokio::test(start_paused = true)]
+    async fn socket_keeps_a_silent_forwarder_while_its_link_is_up() {
+        let (fake, socket, _own) = fake_socket();
+        let relay: SocketAddr = "198.51.100.1:443".parse().unwrap();
+        let via = socket.stand_in_at(relay);
+        socket.add_forwarding(LinkId(5), via, PathKind::RelayUdp);
+        let desk = HostId::new_v4();
+        socket.set_carrying(desk, Path::Forwarded(LinkId(5)));
+        let stand_in = socket.stand_in(desk);
+
+        tokio::time::advance(std::time::Duration::from_millis(
+            socket_core::UNCLAIMED_PEER_TIMEOUT_MS * 2,
+        ))
+        .await;
+        fake.push("192.0.2.61:5000".parse().unwrap(), QUIC);
+        receive(&socket).unwrap();
+
+        assert_eq!(socket.forwarding_link(via), Some(LinkId(5)));
+        assert_eq!(socket.path_of(stand_in), Some(Path::Forwarded(LinkId(5))));
+        socket.try_send(&transmit(stand_in, QUIC)).unwrap();
+        assert_eq!(
+            fake.take_sent(),
+            vec![(relay, encode_forwarded(desk, QUIC))]
+        );
+    }
+
     /// A sender whose handshake is done but that the socket cannot name,
     /// because its host is carried another way, is kept while it sends:
     /// a crossed direct link next to a relayed one stays where it is.

@@ -34,6 +34,8 @@ The rules it keeps:
   answers.
 - A probe's answer from an address one of this host's dials is still using
   is not mistaken for a stray from the peer's earlier run.
+- A forwarder is kept however long it is silent while a link it forwards
+  is up: the node removes the link, and the routes through it go with it.
 
 Like the cores, it locks, spawns, awaits and reads the clock nowhere: the
 time is an input.

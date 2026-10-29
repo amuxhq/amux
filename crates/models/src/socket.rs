@@ -664,6 +664,12 @@ pub enum Action {
     /// A dial that lost packets gives its handshake up, and the laptop may
     /// dial again.
     GiveUp(u8),
+    /// The clock passes the time unnamed senders are kept with nothing
+    /// heard from the relay at the laptop, whose link stays up: a phone
+    /// suspended for minutes runs again before QUIC's idle timer closes
+    /// it. The desk, a desktop, hears its relay throughout: its link would
+    /// close within forty seconds of silence.
+    RelayQuiet,
     /// The local network between the two goes.
     LanDown,
 }
@@ -910,6 +916,7 @@ impl Machine for SocketModel {
             out.push(Action::Fault(Fault::Tick {
                 ms: PAST_UNCLAIMED_MS,
             }));
+            out.push(Action::RelayQuiet);
         }
         if s.restarts < self.restarts {
             out.push(Action::Fault(Fault::Crash(Host(0))));
@@ -1034,6 +1041,20 @@ impl Machine for SocketModel {
                                 .arrived_quic(Arrival::Udp(RELAY_ADDR), now);
                             s.heard(who, heard);
                         }
+                    }
+                }
+                s.ticks += 1;
+            }
+            Action::RelayQuiet => {
+                for step in [
+                    PAST_UNCLAIMED_MS / 2,
+                    PAST_UNCLAIMED_MS - PAST_UNCLAIMED_MS / 2,
+                ] {
+                    s.now_ms += step;
+                    if s.relay.at.contains_key(&Who::Desk) {
+                        let now = s.now_ms;
+                        let heard = s.desk.peers.arrived_quic(Arrival::Udp(RELAY_ADDR), now);
+                        s.heard(Who::Desk, heard);
                     }
                 }
                 s.ticks += 1;

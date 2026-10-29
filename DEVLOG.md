@@ -1,3 +1,5 @@
+2026-10-29 — **The agent's provider tests are formatted.** The replay re-derivation left one assertion in `providers.rs` as written, which `just fmt-check` refuses.
+
 2026-10-29 — **The phone's lint passes again.** A picked photo or file is decoded and re-encoded with ImageIO rather than UIKit, keeping its orientation and dropping its other metadata, so the screens package imports no UIKit; the branch's new copy is in the string catalogue and its identifiers, symbol names, media types and command sigils are reviewed as non-copy.
 
 2026-10-29 — **Which commands a draft offers, and when a paste is an attachment, are the shared view's rules.** `ui_view::command_matches` finds the agent's commands matching the "/word" or Codex "$word" a draft ends in, each with the draft a pick leaves, and `ui_view::pastes_as_attachment` holds the eight-line or thousand-character paste rule. The phone asks for both, and for the attachment limit, through `amux_command_matches`, `amux_pastes_as_attachment` and `amux_attachment_limit` instead of keeping its own copies; the terminal's paste uses the same rule.

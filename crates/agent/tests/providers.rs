@@ -655,7 +655,11 @@ async fn headless_claude_replays_initialization_a_control_reply_and_the_end_of_i
     agent
         .wait("the turn ends", |log| log.turn_ends() == 1)
         .await;
-    assert!(agent.log().has_text("You chose **Blue** as your preferred color."));
+    assert!(
+        agent
+            .log()
+            .has_text("You chose **Blue** as your preferred color.")
+    );
     daemon.stop().await;
     assert_eq!(agent.exit().await, ExitCause::Stopped);
     assert_no_drift(&agent);

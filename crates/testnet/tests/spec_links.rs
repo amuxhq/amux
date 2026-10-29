@@ -1329,6 +1329,67 @@ async fn relaunch_after_a_kill_links_every_time() {
     net.shutdown().await.unwrap();
 }
 
+/// The same over a slow network, every datagram to the relay and from
+/// the laptop held 50 ms: a launch whose first reply were lost would wait
+/// out a retransmit, a second or more, so each hears from the desk inside
+/// a second. The relaunched laptop hears the desk's dead connection to its
+/// last run at the punched address before anything there is named, and
+/// the desk then probes from it to move the new link back: the probe
+/// names the address, or the laptop drops what the link sends there.
+#[tokio::test(flavor = "multi_thread")]
+async fn relaunch_after_a_kill_over_a_slow_network_loses_no_reply() {
+    let topology = Topology::new()
+        .relay(&["ada"])
+        .host_decl(HostDecl {
+            lan: true,
+            discovery: false,
+            scope: Some("server".to_owned()),
+            router: Some(testnet::RouterKind::Open),
+            ..on_the_relay("desk")
+        })
+        .host_decl(HostDecl {
+            lan: true,
+            discovery: false,
+            scope: Some("phone".to_owned()),
+            router: Some(testnet::RouterKind::Ordinary),
+            ..on_the_relay("laptop")
+        });
+    let mut net = Net::start_with(topology, relay_tcp_unreachable(&["desk", "laptop"]))
+        .await
+        .unwrap();
+    net.trust("desk", "laptop").await.unwrap();
+    net.trust("laptop", "desk").await.unwrap();
+    carried_by(&net, "laptop", "desk", PathKind::Punched).await;
+    let slow = testnet::Faults {
+        delay: Duration::from_millis(50),
+        ..testnet::Faults::default()
+    };
+    net.set_net_faults("relay", slow).unwrap();
+    net.set_net_faults("laptop", slow).unwrap();
+    let mut took = Vec::new();
+    for launch in 1..=8 {
+        net.kill_daemon("laptop").await.unwrap();
+        let mark = net.link_log("laptop").unwrap().len();
+        let began = std::time::Instant::now();
+        net.restart_daemon("laptop").await.unwrap();
+        // A resumed link is up before anything comes back; it has heard
+        // from the desk once it has caught up.
+        let up = logged(&net, "laptop", "desk", LinkTransition::Up, mark).await;
+        if up.resumed {
+            logged(&net, "laptop", "desk", LinkTransition::CaughtUp, mark).await;
+        }
+        let elapsed = began.elapsed();
+        println!("relaunch {launch}: heard from the desk after {elapsed:?}: {up:?}");
+        took.push(elapsed);
+        tokio::time::sleep(Duration::from_secs(3)).await;
+    }
+    assert!(
+        took.iter().all(|took| *took < Duration::from_secs(1)),
+        "every launch links inside a second: {took:?}"
+    );
+    net.shutdown().await.unwrap();
+}
+
 /// The same with the laptop a real daemon process, killed outright: a kill
 /// leaves nothing of it running, and its next start dials the relay and
 /// the desk where they listen.
@@ -2320,6 +2381,59 @@ async fn path_change_lan_relay_lan_keeps_the_subscription_open() {
 
     no_gap(&net, &mut chat, "laptop", "desk", &lines);
     no_gap(&net, &mut chat, "desk", "laptop", &lines);
+    net.shutdown().await.unwrap();
+}
+
+/// A desk and a laptop linked on the LAN, both on the relay, lose every
+/// path at once: the LAN between them is cut and the laptop's way to the
+/// relay drops UDP, until both read the other offline. Once the laptop
+/// reaches the relay again, the two link through it, though the LAN their
+/// last link used is still cut: a dial through the relay never goes out on
+/// a gone link's path.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_link_lost_on_every_path_comes_back_through_the_relay_not_its_dead_path() {
+    let mut net = Net::start_with(
+        Topology::new()
+            .relay(&["ada"])
+            .host_decl(lan_host("desk", "home"))
+            .host_decl(lan_host("laptop", "home"))
+            .agent(worker_saying("said through the relay")),
+        testnet::NetOptions {
+            gated_lan: true,
+            ..relay_tcp_unreachable(&["desk", "laptop"])
+        },
+    )
+    .await
+    .unwrap();
+    pair(&net, "laptop", "desk").await;
+    carried_by(&net, "laptop", "desk", PathKind::Lan).await;
+    net.sign_in("desk", "ada").await.unwrap();
+    net.sign_in("laptop", "ada").await.unwrap();
+    one_relay_link_each(&net, &["desk", "laptop"]).await;
+
+    net.sever_link("desk", "laptop").unwrap();
+    net.block_udp("laptop", true).unwrap();
+    let (desk, laptop) = (host_id(&net, "desk"), host_id(&net, "laptop"));
+    tokio::time::timeout(Duration::from_secs(120), async {
+        while edge(&net, "laptop").via(desk).await != LiveRoute::Offline
+            || edge(&net, "desk").via(laptop).await != LiveRoute::Offline
+        {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    })
+    .await
+    .expect("each reads the other offline once every path is gone");
+    println!("every path between the desk and the laptop gone");
+
+    net.block_udp("laptop", false).unwrap();
+    let back = std::time::Instant::now();
+    until_via(&net, "laptop", "desk", LiveRoute::Relay).await;
+    println!(
+        "linked through the relay {} ms after the laptop reached it again",
+        back.elapsed().as_millis()
+    );
+    streams_live(&net, &["laptop"], "worker", "said through the relay").await;
+    still_relayed(&net, "laptop", "desk");
     net.shutdown().await.unwrap();
 }
 

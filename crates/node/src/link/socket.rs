@@ -633,15 +633,21 @@ impl State {
     /// path machine probes a path before it carries the link there, and a
     /// packet it sends on a path to another of this host's addresses may
     /// leave from another of its own, which this host must know it by
-    /// before the link's packets follow. An address a connection is still
-    /// unnamed at, a dial this host made there, keeps its packets until
-    /// that connection's handshake names it: quinn would drop its answers
-    /// arriving as the host's.
+    /// before the link's packets follow. An address a dial this host made
+    /// is still unnamed at keeps its packets until that connection's
+    /// handshake names it: quinn would drop its answers arriving as the
+    /// host's. One that only sent this host something unnamed does not:
+    /// a host started afresh hears from its peer's last connection to its
+    /// last run at the address that peer then probes from.
     fn probed_from(&mut self, host: HostId, arrival: Arrival) {
+        let dialled = |state: &PeerState| !matches!(state.expiry, Expiry::Unnamed { .. });
         if let Arrival::Udp(addr) = arrival
             && self.peers.contains_key(&Peer::Host(host))
             && self.by_addr.get(&addr) != Some(&host)
-            && !self.peers.contains_key(&Peer::Unnamed(Path::Direct(addr)))
+            && !self
+                .peers
+                .get(&Peer::Unnamed(Path::Direct(addr)))
+                .is_some_and(dialled)
         {
             self.learn(host, Path::Direct(addr));
         }
@@ -2040,6 +2046,26 @@ mod tests {
         fake.push(third, QUIC);
         assert_ne!(receive(&socket).map(|(at, _)| at), Some(stand_in));
         assert_eq!(socket.peer_of(socket.stand_in_at(third)), None);
+    }
+
+    /// A known host probing from an address that so far only sent this
+    /// host packets it could not name, as a peer's dead connection to this
+    /// host's last run does, is known there from then on.
+    #[test]
+    fn socket_knows_a_host_probing_from_where_strays_came_from() {
+        let (fake, socket, _own) = fake_socket();
+        let peer = HostId::new_v4();
+        let punched: SocketAddr = "192.168.1.9:7000".parse().unwrap();
+        socket.set_carrying(peer, Path::Forwarded(LinkId(3)));
+        let stand_in = socket.stand_in(peer);
+        fake.push(punched, QUIC);
+        let (stray, _) = receive(&socket).unwrap();
+        assert_ne!(stray, stand_in);
+
+        fake.push(punched, &encode_probe(peer, 7));
+        assert_eq!(receive(&socket), None);
+        fake.push(punched, QUIC);
+        assert_eq!(receive(&socket).map(|(at, _)| at), Some(stand_in));
     }
 
     /// A known host probing from an address this host is still dialling

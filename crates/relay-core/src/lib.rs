@@ -526,6 +526,29 @@ impl Relay {
         for (user, host, gone, partners) in orphaned {
             self.relink(user, host, gone, partners, out);
         }
+        // Packets for the host go on its newest link, and so do the pairs
+        // its older links were in: a host opens another link here when it
+        // has given up on the last one, which may never send again to
+        // move them itself.
+        for older in self.adjacency.links_of(user, host) {
+            if older == link {
+                continue;
+            }
+            let partners = self.pairs.get(&older).cloned().unwrap_or_default();
+            for partner in partners {
+                if self.may_pair(partner, link).is_err() {
+                    continue;
+                }
+                self.unpair(partner, older);
+                out.push(Output::Unforward {
+                    a: partner,
+                    b: older,
+                    reason: ForwardRefusal::NoRoute,
+                    tell_both: false,
+                });
+                self.pair(partner, link, out);
+            }
+        }
         match tier {
             Some(Tier::Pro) => self.ask_free_to_refresh(user, out),
             // A credential kept from an earlier launch can name a plan the
@@ -573,6 +596,18 @@ impl Relay {
             }
         }
         partners
+    }
+
+    /// Removes the pair between `a` and `b` from the table.
+    fn unpair(&mut self, a: LinkId, b: LinkId) {
+        for (from, to) in [(a, b), (b, a)] {
+            if let Some(theirs) = self.pairs.get_mut(&from) {
+                theirs.remove(&to);
+                if theirs.is_empty() {
+                    self.pairs.remove(&from);
+                }
+            }
+        }
     }
 
     /// The pairs `gone`, a link of `host`, was in: each moves to the link
@@ -1501,7 +1536,8 @@ mod tests {
             ]
         );
         assert_eq!(pairs(&relay), vec![(2, 9)]);
-        // Another link of the same life is kept beside it.
+        // Another link of the same life is kept beside it, and the pairs
+        // move onto it at once rather than when it first sends.
         let advertised = relay.neighbors(ALICE);
         assert_eq!(
             step(
@@ -1516,7 +1552,16 @@ mod tests {
                     advertised,
                 },
             ),
-            Vec::new()
+            vec![
+                unforward(9, 2, ForwardRefusal::NoRoute, false),
+                forward(9, 3)
+            ]
+        );
+        assert_eq!(pairs(&relay), vec![(3, 9)]);
+        assert_eq!(
+            step(&mut relay, Input::LinkDown { link: LinkId(2) }),
+            Vec::new(),
+            "the older link going takes nothing with it"
         );
     }
 

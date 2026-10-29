@@ -182,7 +182,9 @@ impl LinkEndpoint {
         server_name: &str,
     ) -> Result<quinn::Connecting, quinn::ConnectError> {
         let stand_in = self.socket.stand_in(peer);
-        if self.socket.path_of(stand_in).is_none() {
+        // A route left by a link that has gone may be a dead path: the dial
+        // goes through the forwarder it was asked to go through.
+        if self.socket.trusted_route(peer).is_none() {
             self.socket
                 .set_carrying(peer, super::socket::Path::Forwarded(through));
         }
@@ -2371,6 +2373,33 @@ mod tests {
         assert_eq!(
             carrier.connection.remote_address(),
             client.socket.stand_in_at(relay)
+        );
+    }
+
+    /// A dial through a forwarder to a host whose last link went goes
+    /// through the forwarder, not on the path that link last used; one to
+    /// a host a live link carries keeps its path.
+    #[tokio::test]
+    async fn a_dial_through_a_forwarder_passes_over_a_gone_links_route() {
+        let (_server_config, client_config) = relay_server_and_client();
+        let client = LinkEndpoint::bind(ANY_PORT.parse().unwrap(), None).unwrap();
+        let desk = HostId::new_v4();
+        let old: SocketAddr = "192.0.2.50:5000".parse().unwrap();
+        assert!(client.socket.name(client.socket.stand_in_at(old), desk));
+        let through = super::super::socket::LinkId(7);
+
+        drop(client.connect_through(client_config.clone(), desk, through, "relay.test"));
+        assert_eq!(
+            client.socket.trusted_route(desk),
+            Some(super::super::socket::Path::Direct(old)),
+            "a live link's path is kept"
+        );
+
+        client.socket.release(desk);
+        drop(client.connect_through(client_config, desk, through, "relay.test"));
+        assert_eq!(
+            client.socket.trusted_route(desk),
+            Some(super::super::socket::Path::Forwarded(through))
         );
     }
 

@@ -15,6 +15,7 @@ import SwiftUI
 #Preview("Chat · exited") { StoryScreen("chat.exited") }
 #Preview("Chat · signed out") { StoryScreen("chat.signed-out") }
 #Preview("Chat · overview") { StoryScreen("chat.overview") }
+#Preview("Chat · stop a job") { StoryScreen("chat.overview-stop") }
 #Preview("Chat · settings") { StoryScreen("chat.settings") }
 #Preview("Chat · stop") { StoryScreen("chat.stop") }
 #Preview("Chat · delete") { StoryScreen("chat.delete") }

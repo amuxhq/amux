@@ -1467,6 +1467,7 @@ async fn a_headless_agent_under_a_managed_mcp_config_runs_and_says_its_tools_are
     under_managed_mcp(Kind::ClaudeSdk).await;
 }
 
+#[cfg(unix)]
 #[test]
 fn a_terminal_agent_under_a_managed_mcp_config_runs_and_says_its_tools_are_off() {
     terminal_test(under_managed_mcp(Kind::ClaudePty));

@@ -1,3 +1,5 @@
+2026-10-29 — **CI fixed after the provider audit landed.** The managed-MCP terminal test now runs only on Unix, like every other terminal Claude test (Windows refuses terminal Claude). The composer-limits sign-in frame is re-recorded: it now shows the agent's scripted reply and one sign-in failure, where the old frame had dropped the reply and repeated the failure. The overview-stop story has its Xcode preview.
+
 2026-10-29 — **Main merged into the provider audit.** Both sides' phone copy and non-copy reviews are kept, and the wire code is regenerated from the merged schemas.
 
 2026-10-29 — **The agent's provider tests are formatted.** The replay re-derivation left one assertion in `providers.rs` as written, which `just fmt-check` refuses.

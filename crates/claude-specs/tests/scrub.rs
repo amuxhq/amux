@@ -27,7 +27,9 @@ fn rows(events: &[IoEvent]) -> Vec<Value> {
 #[test]
 fn the_api_request_rows_are_left_out() {
     let mut events = vec![
-        transcript(json!({"type": "user", "uuid": "u1", "message": {"role": "user", "content": "hi"}})),
+        transcript(
+            json!({"type": "user", "uuid": "u1", "message": {"role": "user", "content": "hi"}}),
+        ),
         transcript(json!({
             "type": "api-request", "sessionId": "s", "id": "r1", "version": "2.1.312",
             "params": "{\"model\":\"claude-haiku-4-5\"}", "requestDigest": "d",
@@ -77,5 +79,37 @@ fn what_the_owner_installed_is_scrubbed() {
             json!({"type": original["type"], "scrubbed": true})
         );
         assert_eq!(row["rendered"], json!([{"type": "text", "content": ""}]));
+    }
+}
+
+/// The recording machine's environment (its folders, the guidance Claude
+/// gives about them) and its attribution text are the owner's, not the
+/// scenario's; both reach the model as system reminders.
+#[test]
+fn the_environment_and_attribution_are_scrubbed() {
+    let owners = [
+        json!({"type": "environment", "snapshot": {"workingDirectory": "<MACHINE_PATH>", "shell": "zsh"}}),
+        json!({
+            "type": "remote_session_change",
+            "commit": "Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>",
+            "pr": "Generated with [Claude Code](https://claude.com/claude-code)",
+        }),
+    ];
+    let mut events: Vec<_> = owners
+        .iter()
+        .map(|attachment| {
+            transcript(json!({
+                "type": "attachment", "uuid": "x", "attachment": attachment,
+                "rendered": [{"content": "<system-reminder>\n# Environment\n</system-reminder>"}],
+            }))
+        })
+        .collect();
+    claude_specs::scrub::transcript(&mut events).unwrap();
+    for (row, original) in rows(&events).iter().zip(&owners) {
+        assert_eq!(
+            row["attachment"],
+            json!({"type": original["type"], "scrubbed": true})
+        );
+        assert_eq!(row["rendered"], json!([{"content": ""}]));
     }
 }

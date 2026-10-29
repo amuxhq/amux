@@ -1,3 +1,5 @@
+2026-10-29 — **Test that a terminal recording scrubs the machine's environment and attribution text.** The recording scrub keeps the environment attachment (folders and the guidance Claude gives about them) and the commit and pull-request attribution whole, with their system-reminder copies.
+
 2026-10-29 — **A terminal recording leaves out Claude's API-request rows.** Claude 2.1.312 writes `api-request`, `api-request-blob` and `api-request-shape` rows that copy each request whole, system prompt and owner context included; the recording scrub drops them, and scrubs the skill, agent and deferred-tool listings as it already scrubbed the owner's instructions.
 
 2026-10-29 — **Test that a terminal recording leaves out what Claude 2.1.312 copies of each API request.** The transcript scrub moves from `claude-probe` into `claude_specs::scrub`; its test shows the api-request rows kept and the owner's installed skills, agents and deferred tools listed whole.

@@ -628,7 +628,7 @@ fn assert_no_drift(agent: &Agent) {
     );
 }
 
-const SDK_SESSION: &str = "d7ec31b2-733c-4a1c-8f61-38a6b6d96b2b";
+const SDK_SESSION: &str = "d34066a8-442f-45df-b6b9-8c7054bd21c6";
 const SDK_PROMPT: &str = "Use AskUserQuestion to ask exactly one single-select question with header Color, question 'Which color do you prefer?', and options Red and Blue. Then repeat my answer.";
 
 /// Headless Claude: the initialize exchange, a turn whose thinking, tool
@@ -655,7 +655,7 @@ async fn headless_claude_replays_initialization_a_control_reply_and_the_end_of_i
     agent
         .wait("the turn ends", |log| log.turn_ends() == 1)
         .await;
-    assert!(agent.log().has_text("You selected **Blue**."));
+    assert!(agent.log().has_text("You chose **Blue** as your preferred color."));
     daemon.stop().await;
     assert_eq!(agent.exit().await, ExitCause::Stopped);
     assert_no_drift(&agent);

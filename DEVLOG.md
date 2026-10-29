@@ -1,3 +1,5 @@
+2026-10-29 — **The agent's headless replay fixtures come from the 2.1.312 question recording.** `sdk_question` and `sdk_lost` are re-derived from `claude-specs`'s new `question_asked` with the rewrites their README lists, so their startup messages list only Claude's own skills and agents, not the recording machine's plugins, skills and connectors.
+
 2026-10-29 — **The shared views' headless goldens follow the 2.1.312 recordings.** `ui-view`'s `claude_sdk` goldens are re-recorded from the new interpreter fixtures, and the renamed link spec's golden goes.
 
 2026-10-29 — **The tests catalogue lists the recording scrub's test.** `claude-specs`'s `scrub` target joins its recorded-adapter suite.

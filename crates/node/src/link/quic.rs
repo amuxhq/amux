@@ -181,13 +181,7 @@ impl LinkEndpoint {
         through: super::socket::LinkId,
         server_name: &str,
     ) -> Result<quinn::Connecting, quinn::ConnectError> {
-        let stand_in = self.socket.stand_in(peer);
-        // A route left by a link that has gone may be a dead path: the dial
-        // goes through the forwarder it was asked to go through.
-        if self.socket.trusted_route(peer).is_none() {
-            self.socket
-                .set_carrying(peer, super::socket::Path::Forwarded(through));
-        }
+        let stand_in = self.socket.dial_through(peer, through);
         config.token_store(self.tokens.for_server(Server::Host(peer)));
         self.endpoint.connect_with(config, stand_in, server_name)
     }
@@ -205,10 +199,7 @@ impl LinkEndpoint {
         through_relay: bool,
         server_name: &str,
     ) -> Result<quinn::Connecting, quinn::ConnectError> {
-        let stand_in = self.socket.stand_in(peer);
-        if self.socket.trusted_route(peer).is_none() {
-            self.socket.send_on_all(peer, paths, through_relay);
-        }
+        let stand_in = self.socket.dial_on_all(peer, paths, through_relay);
         config.token_store(self.tokens.for_server(Server::Host(peer)));
         self.endpoint.connect_with(config, stand_in, server_name)
     }

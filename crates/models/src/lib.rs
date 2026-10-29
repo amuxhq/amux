@@ -24,6 +24,7 @@ pub mod presence;
 pub mod relay;
 pub mod replication;
 pub mod single_daemon;
+pub mod socket;
 pub mod supervisor;
 pub use client::ClientModel;
 pub use family::FamilyDeliveries;
@@ -34,6 +35,7 @@ pub use presence::PresenceRouting;
 pub use relay::RelayModel;
 pub use replication::Replication;
 pub use single_daemon::SingleDaemon;
+pub use socket::SocketModel;
 pub use supervisor::SupervisorUpdate;
 
 /// What the world may do to a machine between its own actions: the one
@@ -110,6 +112,7 @@ pub fn properties() -> Vec<Listed> {
     listed.extend(of("client", &ClientModel::ci()));
     listed.extend(of("path machine", &PathModel::ci()));
     listed.extend(of("relay forwarding", &RelayModel::ci()));
+    listed.extend(of("link socket", &SocketModel::ci()));
     for (_, model) in ComposedNet::ci() {
         for property in of("composed net", &model) {
             if !listed.contains(&property) {

@@ -48,7 +48,7 @@ ALLOWED_LOCAL = {
     # provider in its graph.
     # interpret only for the dump path's per-kind redactor: the one stated
     # exception to "the daemon interprets nothing".
-    "node": {"agent-dir", "analytics", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "log-file", "path-core", "relay-core", "release", "settings", "store", "supervisor-core", "version-stamp", "wire"},
+    "node": {"agent-dir", "analytics", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "log-file", "path-core", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "version-stamp", "wire"},
     "amux": {"agent", "agent-dir", "analytics", "claude", "client", "log-file", "node", "settings", "store", "tui", "wire"},
     # The version stamp a release tool can rewrite in a built binary, and the
     # release manifest the tool signs and the daemon verifies; the xtask
@@ -86,11 +86,13 @@ ALLOWED_LOCAL = {
 # the agent's wraps the interpreter; the supervisor's reads release
 # manifests and version stamps and shares the cores' step budget and dump
 # reasons from the ring's crate; the path machine names links and reports
-# dumps as the daemon's does.
+# dumps as the daemon's does; the link socket's routing core names links and
+# paths as the path machine does.
 CORES_ALLOWED_LOCAL = {
     "daemon-core": {"core-ring", "journal", "store", "wire"},
     "relay-core": {"daemon-core"},
     "path-core": {"daemon-core"},
+    "socket-core": {"path-core"},
     "agent-core": {"core-ring", "interpret", "journal", "wire"},
     "supervisor-core": {"core-ring", "release", "version-stamp"},
 }
@@ -164,7 +166,7 @@ SUPPORT_ALLOWED_LOCAL = {
     # The protocol's properties, explored over the real code: the store, the
     # journal and the message types, each state-machine core, and the
     # clients' session state.
-    "models": {"agent-core", "daemon-core", "interpret", "journal", "path-core", "provider-fakes", "relay-core", "release", "store", "supervisor-core", "ui-state", "wire"},
+    "models": {"agent-core", "daemon-core", "interpret", "journal", "path-core", "provider-fakes", "relay-core", "release", "socket-core", "store", "supervisor-core", "ui-state", "wire"},
 }
 
 # Every dependency comes from crates.io but rustls, which comes from the

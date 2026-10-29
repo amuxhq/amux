@@ -38,6 +38,7 @@ members = [
     "crates/replay-support",
     "crates/settings",
     "crates/shot",
+    "crates/socket-core",
     "crates/store",
     "crates/supervisor-core",
     "crates/testnet",
@@ -64,6 +65,7 @@ log-file = { path = "crates/log-file" }
 daemon-core = { path = "crates/daemon-core" }
 relay-core = { path = "crates/relay-core" }
 path-core = { path = "crates/path-core" }
+socket-core = { path = "crates/socket-core" }
 supervisor-core = { path = "crates/supervisor-core" }
 agent-dir = { path = "crates/agent-dir" }
 analytics = { path = "crates/analytics" }

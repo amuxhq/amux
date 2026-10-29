@@ -22,11 +22,15 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::task::{Context, Poll, Waker};
-use std::time::Duration;
 
 pub use path_core::{LinkId, Path, PathId};
 use quinn::udp::{RecvMeta, Transmit};
 use quinn::{AsyncUdpSocket, UdpPoller};
+use socket_core::{Again, Arrival, Heard, NoPath, Peer, Peers, Transmit as Sends, Wire, WireTo};
+pub use socket_core::{
+    FORWARD_HEADER, MAX_DATAGRAM, Malformed, PacketKind, encode_delivered, encode_forwarded,
+    encode_probe, encode_probe_answer, parse,
+};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
@@ -58,138 +62,11 @@ pub trait Datagrams: Send + Sync + 'static {
     }
 }
 
-/// QUIC sets this bit in the first byte of every packet, long header or
-/// short; our own datagrams clear it.
-const FIXED_BIT: u8 = 0x40;
-const KIND_FORWARDED: u8 = 0x00;
-const KIND_PROBE: u8 = 0x01;
-const KIND_PROBE_ANSWER: u8 = 0x02;
-const KIND_DELIVERED: u8 = 0x03;
-
-/// The bytes forwarding adds in front of a QUIC packet: the kind and a
-/// host id, the same on the way to a forwarder and from it.
-pub const FORWARD_HEADER: usize = 1 + 16;
-const PROBE_LEN: usize = 1 + 16 + 8;
-
-/// The largest QUIC datagram on every path. QUIC's smallest, so it fits on
-/// every IPv6 path even behind the forwarding header (1,217 of the 1,232
-/// bytes IPv6's minimum MTU leaves for UDP), and a path switch never needs
-/// a new path MTU search.
-pub const MAX_DATAGRAM: usize = 1200;
-
-/// One datagram on the socket, told apart by its first byte.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PacketKind<'a> {
-    Quic(&'a [u8]),
-    /// A packet on its way to a forwarder, for it to forward to `host`.
-    /// The payload is a QUIC packet or a probe.
-    Forwarded {
-        host: HostId,
-        payload: &'a [u8],
-    },
-    /// A packet a forwarder delivers: `host` sent it. A kind of its own,
-    /// since a daemon both forwards for its paired hosts and sends through
-    /// them, so where a packet arrives from cannot say which it is.
-    Delivered {
-        host: HostId,
-        payload: &'a [u8],
-    },
-    Probe {
-        from: HostId,
-        nonce: u64,
-    },
-    ProbeAnswer {
-        from: HostId,
-        nonce: u64,
-    },
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Malformed {
-    Empty,
-    UnknownKind(u8),
-    /// The datagram is not the length its kind requires.
-    Length,
-}
-
-pub fn parse(datagram: &[u8]) -> Result<PacketKind<'_>, Malformed> {
-    let Some(&first) = datagram.first() else {
-        return Err(Malformed::Empty);
-    };
-    if first & FIXED_BIT != 0 {
-        return Ok(PacketKind::Quic(datagram));
-    }
-    match first {
-        KIND_FORWARDED | KIND_DELIVERED => {
-            if datagram.len() <= FORWARD_HEADER {
-                return Err(Malformed::Length);
-            }
-            let (host, payload) = (host_at(datagram), &datagram[FORWARD_HEADER..]);
-            Ok(if first == KIND_FORWARDED {
-                PacketKind::Forwarded { host, payload }
-            } else {
-                PacketKind::Delivered { host, payload }
-            })
-        }
-        KIND_PROBE | KIND_PROBE_ANSWER => {
-            if datagram.len() != PROBE_LEN {
-                return Err(Malformed::Length);
-            }
-            let from = host_at(datagram);
-            let nonce = u64::from_be_bytes(datagram[17..25].try_into().expect("eight bytes"));
-            Ok(if first == KIND_PROBE {
-                PacketKind::Probe { from, nonce }
-            } else {
-                PacketKind::ProbeAnswer { from, nonce }
-            })
-        }
-        other => Err(Malformed::UnknownKind(other)),
-    }
-}
-
 /// Whether a QUIC packet is an Initial: one of the first a handshake
 /// sends, either way.
 fn handshake(packet: &[u8]) -> bool {
     // A long header with the fixed bit set and the Initial type (QUIC v1).
     packet.first().is_some_and(|first| first & 0xf0 == 0xc0)
-}
-
-fn host_at(datagram: &[u8]) -> HostId {
-    HostId::from_bytes(datagram[1..17].try_into().expect("sixteen bytes"))
-}
-
-/// `payload` on its way to a forwarder, for `dst`.
-pub fn encode_forwarded(dst: HostId, payload: &[u8]) -> Vec<u8> {
-    encode_behind_header(KIND_FORWARDED, dst, payload)
-}
-
-/// `payload` as a forwarder delivers it, from `sender`.
-pub fn encode_delivered(sender: HostId, payload: &[u8]) -> Vec<u8> {
-    encode_behind_header(KIND_DELIVERED, sender, payload)
-}
-
-fn encode_behind_header(kind: u8, host: HostId, payload: &[u8]) -> Vec<u8> {
-    let mut datagram = Vec::with_capacity(FORWARD_HEADER + payload.len());
-    datagram.push(kind);
-    datagram.extend_from_slice(host.as_bytes());
-    datagram.extend_from_slice(payload);
-    datagram
-}
-
-pub fn encode_probe(from: HostId, nonce: u64) -> [u8; PROBE_LEN] {
-    encode_probe_kind(KIND_PROBE, from, nonce)
-}
-
-pub fn encode_probe_answer(from: HostId, nonce: u64) -> [u8; PROBE_LEN] {
-    encode_probe_kind(KIND_PROBE_ANSWER, from, nonce)
-}
-
-fn encode_probe_kind(kind: u8, from: HostId, nonce: u64) -> [u8; PROBE_LEN] {
-    let mut datagram = [0; PROBE_LEN];
-    datagram[0] = kind;
-    datagram[1..17].copy_from_slice(from.as_bytes());
-    datagram[17..].copy_from_slice(&nonce.to_be_bytes());
-    datagram
 }
 
 /// How many packets that arrived on byte-stream paths may wait for quinn,
@@ -200,26 +77,6 @@ const FRAMED_RECV_QUEUE: usize = 1024;
 /// How many receive errors in a row one poll skips before it yields, so a
 /// substrate failing every receive cannot hold the runtime's thread.
 const RECV_ERRORS_PER_POLL: usize = 64;
-
-/// How long a peer the socket learned of only from what arrived is kept
-/// without being named or heard from. Every link's keepalives arrive more
-/// often (twenty seconds at the longest, a phone's) and its idle timeout
-/// is no longer (a phone's sixty), so a peer silent this long has no link.
-const UNCLAIMED_PEER_TIMEOUT: Duration = Duration::from_secs(60);
-/// How often arrivals look for peers past [`UNCLAIMED_PEER_TIMEOUT`].
-const UNCLAIMED_PEER_SWEEP: Duration = Duration::from_secs(5);
-
-/// How often an arrival on one path from one host is reported to the path
-/// machines: often enough to keep a working path from being probed, rare
-/// enough that a busy link costs nothing.
-const ARRIVAL_REPORT_EVERY: Duration = Duration::from_secs(1);
-
-/// How much of a link's first flight the socket keeps to send again on a
-/// path that joins it late, as the relay joins once its own connection
-/// exists: the opening packets with the Hello and the first calls, and
-/// no more than a relay holds for one sender.
-const FIRST_FLIGHT_PACKETS: usize = 32;
-const FIRST_FLIGHT_BYTES: usize = 64 * 1024;
 
 /// What the socket dropped rather than hand quinn an error, which would
 /// end a connection (a send) or the endpoint (a receive).
@@ -262,534 +119,63 @@ pub struct ProbeAnswered {
     pub nonce: u64,
 }
 
+/// What a path's kind says about forwarding through it: the relay's links
+/// join every first flight sent through the relay.
+impl socket_core::Forwarding for PathKind {
+    fn relayed(&self) -> bool {
+        matches!(self, PathKind::RelayUdp | PathKind::RelayTcp)
+    }
+}
+
 /// What the socket saw that the path machines act on.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PathEvent {
-    /// A forwarding link this host sends through came up: through the
-    /// relay, or through a paired daemon.
-    ForwardingUp {
-        link: LinkId,
-        kind: PathKind,
-    },
-    ForwardingDown {
-        link: LinkId,
-    },
-    /// A QUIC packet from `peer` arrived on `path`; reported at most once
-    /// a second per path and peer.
-    Arrived {
-        peer: HostId,
-        path: Path,
-    },
-}
-
-/// Stand-ins live in a unique-local IPv6 prefix (`fd61:6d75:7800::/48`)
-/// that no real path uses, so a stand-in is never mistaken for an address.
-/// The next 16 bits say what the last 64 hold: a counter, with every
-/// stand-in on one port, or the IP of the address a sender was heard at.
-const STAND_IN_PREFIX: [u16; 3] = [0xfd61, 0x6d75, 0x7800];
-const STAND_IN_PORT: u16 = 1;
-const COUNTED: u16 = 0;
-const FROM_IPV4: u16 = 4;
-const FROM_IPV6: u16 = 6;
-
-fn stand_in_ip(kind: u16, bits: u64) -> IpAddr {
-    let [a, b, c] = STAND_IN_PREFIX;
-    IpAddr::V6(Ipv6Addr::new(
-        a,
-        b,
-        c,
-        kind,
-        (bits >> 48) as u16,
-        (bits >> 32) as u16,
-        (bits >> 16) as u16,
-        bits as u16,
-    ))
-}
-
-fn counted_stand_in(index: u64) -> SocketAddr {
-    SocketAddr::new(stand_in_ip(COUNTED, index), STAND_IN_PORT)
-}
-
-/// The one stand-in IP every sender from `ip` is given, each on a port of
-/// its own. quinn validates an address by its IP alone (a Retry or
-/// NEW_TOKEN token names the IP it was sent to), so a sender that comes
-/// back from a new port on the same IP, as one does when its NAT gives it
-/// a new mapping, presents a token the server honours. An IPv6 address is
-/// folded into the 64 bits, so two could share a stand-in IP; their
-/// stand-ins still differ by port.
-fn stand_in_ip_for(ip: IpAddr) -> IpAddr {
-    match ip.to_canonical() {
-        IpAddr::V4(v4) => stand_in_ip(FROM_IPV4, u32::from(v4).into()),
-        IpAddr::V6(v6) => {
-            let bits = u128::from(v6);
-            stand_in_ip(FROM_IPV6, (bits >> 64) as u64 ^ bits as u64)
-        }
-    }
-}
-
-/// Who a stand-in stands for. A sender that has not said who it is (the
-/// first packets of a link someone dialled to us) is known only by the path
-/// it came on, until [`LinkSocket::name`] gives it its host.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum Peer {
-    Host(HostId),
-    Unnamed(Path),
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-enum Route {
-    /// Nowhere to send yet: quinn's packets are dropped, as a lost packet
-    /// would be, and quinn sends them again.
-    #[default]
-    Unset,
-    Carrying(Path),
-    /// Every candidate at once, until a packet from the peer arrives on
-    /// one, which carries the link from then on. The peer drops the copies
-    /// as duplicate packets.
-    All(Vec<Path>),
-}
-
-impl Route {
-    fn paths(&self) -> &[Path] {
-        match self {
-            Route::Unset => &[],
-            Route::Carrying(path) => std::slice::from_ref(path),
-            Route::All(paths) => paths,
-        }
-    }
-
-    /// The route no longer takes `path`.
-    fn drop_path(&mut self, path: Path) {
-        match self {
-            Route::Carrying(carrying) if *carrying == path => *self = Route::Unset,
-            Route::All(paths) => paths.retain(|candidate| *candidate != path),
-            _ => {}
-        }
-    }
-}
-
-/// The largest QUIC datagram one path carries. Every path carries
-/// [`MAX_DATAGRAM`]: the forwarding header was left room for under IPv6's
-/// minimum MTU, and byte streams carry whatever they are given.
-fn path_datagram(path: Path) -> usize {
-    match path {
-        Path::Direct(_) | Path::Punched(_) | Path::Forwarded(_) | Path::Framed(_) => MAX_DATAGRAM,
-    }
-}
-
-/// A path that is a network address of the peer's own, rather than a
-/// forwarder or a byte stream.
-fn addressed(path: Path) -> bool {
-    matches!(path, Path::Direct(_) | Path::Punched(_))
-}
-
-struct PeerState {
-    /// Where quinn hears the peer now. A host's earlier stand-ins (an
-    /// unnamed sender's it was later known by) stay mapped to it, so a
-    /// connection quinn still holds on one keeps reaching it.
-    stand_in: SocketAddr,
-    route: Route,
-    /// When a packet last came from the peer, or it was last dialled.
-    heard: Instant,
-    expiry: Expiry,
-    /// What went out while the route sends on every candidate, for a
-    /// path that joins it late.
-    flight: Option<Flight>,
-    /// The host's last link went: its route still sends what its closing
-    /// connection has left, but no dial trusts it.
-    released: bool,
-}
-
-/// A link's first flight, while no one path carries it yet.
-#[derive(Default)]
-struct Flight {
-    /// The relay's forwarding links join the candidates as they come.
-    through_relay: bool,
-    sent: VecDeque<Vec<u8>>,
-    bytes: usize,
-}
-
-impl Flight {
-    fn keep(&mut self, packet: &[u8]) {
-        self.sent.push_back(packet.to_vec());
-        self.bytes += packet.len();
-        while self.sent.len() > FIRST_FLIGHT_PACKETS || self.bytes > FIRST_FLIGHT_BYTES {
-            let Some(oldest) = self.sent.pop_front() else {
-                break;
-            };
-            self.bytes -= oldest.len();
-        }
-    }
-}
-
-/// Whether a forwarding link of this kind reaches the relay.
-fn relayed(kind: PathKind) -> bool {
-    matches!(kind, PathKind::RelayUdp | PathKind::RelayTcp)
-}
-
-/// When the socket lets a peer go by itself. A sender anyone can make the
-/// socket mint a stand-in for, by sending a packet from a new address or
-/// delivering one in a new host's name, is let go once it has nothing
-/// left to say, so a burst of them leaves nothing behind.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Expiry {
-    /// Kept until it is forgotten: a host this host named, routed or
-    /// dialled, or a sender on a byte stream, which goes with the stream.
-    Kept,
-    /// Let go after [`UNCLAIMED_PEER_TIMEOUT`] without a packet: an address
-    /// dialled before the handshake says who answers there, a host first
-    /// heard of in a forwarder's delivery, and a host whose last link to
-    /// the relay went.
-    Silent,
-    /// An unnamed sender that dialled this host: let go when silent, or
-    /// when its handshake has not named it [`UNCLAIMED_PEER_TIMEOUT`] after
-    /// it was `first` heard.
-    Unnamed { first: Instant },
-}
-
-/// Where an arrival came from, before the stand-in mapping.
-#[derive(Clone, Copy, Debug)]
-enum Arrival {
-    Udp(SocketAddr),
-    Framed(PathId),
-}
+pub type PathEvent = socket_core::PathEvent<PathKind>;
 
 #[derive(Default)]
 struct State {
-    next_stand_in: u64,
-    /// The port the last stand-in given for an address took.
-    next_port: u16,
-    /// When arrivals next look for unclaimed peers past their time.
-    next_sweep: Option<Instant>,
-    peers: HashMap<Peer, PeerState>,
-    by_stand_in: HashMap<SocketAddr, Peer>,
-    /// The host each direct or punched address leads to, learned from the
-    /// routes this host chose and the senders it named. An address is one
-    /// host's at a time, and a host lets go of its addresses when it is
-    /// named at a new one or its route is removed, so an address a host
-    /// left and another took (a reused LAN address, a NAT's port given to
-    /// someone else) never maps to the host that left.
-    by_addr: HashMap<SocketAddr, HostId>,
-    by_framed: HashMap<PathId, HostId>,
-    /// Each forwarding link's forwarder, by a stand-in of the forwarder's,
-    /// and what kind of path a link carried through it is.
-    forwarding: HashMap<LinkId, (SocketAddr, PathKind)>,
+    /// Who each stand-in stands for and where each peer's packets go.
+    peers: Peers<PathKind>,
     framed: HashMap<PathId, Arc<dyn FramedIo>>,
-    next_path: u64,
     inbound: VecDeque<(PathId, Vec<u8>)>,
     recv_waker: Option<Waker>,
     probe_answers: Option<mpsc::UnboundedSender<ProbeAnswered>>,
     path_events: Option<mpsc::UnboundedSender<PathEvent>>,
-    /// When an arrival on each path from each host was last reported.
-    reported: HashMap<(HostId, Path), Instant>,
     forward_sink: Option<Arc<dyn ForwardSink>>,
 }
 
 impl State {
-    /// The peer's stand-in, minted if it has none. This host asking for
-    /// it claims a host and a dialled address: a host is kept from then
-    /// on, an address until it goes silent.
-    fn stand_in(&mut self, peer: Peer) -> SocketAddr {
-        let now = Instant::now();
-        let claimed = match peer {
-            Peer::Host(_) | Peer::Unnamed(Path::Framed(_)) => Expiry::Kept,
-            Peer::Unnamed(_) => Expiry::Silent,
-        };
-        let state = self.mint(peer, now, claimed);
-        state.heard = now;
-        if state.expiry != Expiry::Kept {
-            state.expiry = claimed;
-        }
-        state.stand_in
-    }
-
-    /// The stand-in of a peer a packet just came from, minted as `minted`
-    /// if it has none; the packet counts as hearing from it.
-    fn heard(&mut self, peer: Peer, now: Instant, minted: Expiry) -> SocketAddr {
-        let state = self.mint(peer, now, minted);
-        state.heard = now;
-        state.stand_in
-    }
-
-    /// The peer's state, a stand-in minted for it with `expiry` if it has
-    /// none.
-    fn mint(&mut self, peer: Peer, now: Instant, expiry: Expiry) -> &mut PeerState {
-        if !self.peers.contains_key(&peer) {
-            let stand_in = self.new_stand_in(peer);
-            let route = match peer {
-                Peer::Host(_) => Route::Unset,
-                Peer::Unnamed(path) => Route::Carrying(path),
-            };
-            self.by_stand_in.insert(stand_in, peer);
-            self.peers.insert(
-                peer,
-                PeerState {
-                    stand_in,
-                    route,
-                    heard: now,
-                    expiry,
-                    flight: None,
-                    released: false,
-                },
-            );
-        }
-        self.peers.get_mut(&peer).expect("just minted")
-    }
-
-    /// A stand-in no peer holds: for a sender known by its address, one
-    /// sharing the IP of every sender from that address's IP.
-    fn new_stand_in(&mut self, peer: Peer) -> SocketAddr {
-        if let Peer::Unnamed(Path::Direct(addr) | Path::Punched(addr)) = peer {
-            let ip = stand_in_ip_for(addr.ip());
-            for _ in 0..u16::MAX {
-                self.next_port = self.next_port.wrapping_add(1).max(1);
-                let stand_in = SocketAddr::new(ip, self.next_port);
-                if !self.by_stand_in.contains_key(&stand_in) {
-                    return stand_in;
-                }
-            }
-        }
-        let stand_in = counted_stand_in(self.next_stand_in);
-        self.next_stand_in += 1;
-        stand_in
-    }
-
-    /// The stand-in of the sender of an arrival, an unnamed one minted to
-    /// wait for its handshake if it has none.
-    fn heard_from(&mut self, arrival: Arrival, now: Instant) -> SocketAddr {
-        self.sweep(now);
-        let peer = self.sender(arrival);
-        let minted = match peer {
-            Peer::Unnamed(Path::Framed(_)) => Expiry::Kept,
-            _ => Expiry::Unnamed { first: now },
-        };
-        self.heard(peer, now, minted)
-    }
-
-    /// Lets go of the peers past their time, at most once a sweep
-    /// interval: a peer is only ever minted by an arrival or by this host,
-    /// so arrivals are when there can be more of them.
-    fn sweep(&mut self, now: Instant) {
-        if self.next_sweep.is_some_and(|next| now < next) {
-            return;
-        }
-        self.next_sweep = Some(now + UNCLAIMED_PEER_SWEEP);
-        let gone: Vec<Peer> = self
-            .peers
-            .iter()
-            .filter(|(_, state)| {
-                let silent = now.duration_since(state.heard) >= UNCLAIMED_PEER_TIMEOUT;
-                match state.expiry {
-                    Expiry::Kept => false,
-                    Expiry::Silent => silent,
-                    Expiry::Unnamed { first } => {
-                        silent || now.duration_since(first) >= UNCLAIMED_PEER_TIMEOUT
-                    }
-                }
-            })
-            .map(|(peer, _)| *peer)
-            .collect();
-        for peer in gone {
-            self.forget(peer);
-        }
-    }
-
-    /// Arrivals on `path` are `host`'s from now on. Whoever the address
-    /// led to before loses it from its route: one address, one host.
-    fn learn(&mut self, host: HostId, path: Path) {
-        let previous = match path {
-            Path::Direct(addr) | Path::Punched(addr) => self.by_addr.insert(addr, host),
-            Path::Framed(id) => self.by_framed.insert(id, host),
-            Path::Forwarded(_) => None,
-        };
-        if let Some(previous) = previous.filter(|previous| *previous != host)
-            && let Some(peer) = self.peers.get_mut(&Peer::Host(previous))
-        {
-            peer.route.drop_path(path);
-        }
-    }
-
-    /// No address leads to `host` any more: it left them all.
-    fn unlearn_addresses(&mut self, host: HostId) {
-        self.by_addr.retain(|_, owner| *owner != host);
-    }
-
-    /// Forgets `peer`: its stand-ins, a host's addresses and the
-    /// forwarding links it was the forwarder of.
-    fn forget(&mut self, peer: Peer) {
-        let by_stand_in = &self.by_stand_in;
-        self.forwarding
-            .retain(|_, (via, _)| by_stand_in.get(via) != Some(&peer));
-        self.by_stand_in.retain(|_, held| *held != peer);
-        self.peers.remove(&peer);
-        if let Peer::Host(host) = peer {
-            self.unlearn_addresses(host);
-            self.reported.retain(|(reported, _), _| *reported != host);
-        }
-    }
-
-    /// A known host probed this host, or answered its probe, from an
-    /// address: its packets from there are its own from now on. A host's
-    /// path machine probes a path before it carries the link there, and a
-    /// packet it sends on a path to another of this host's addresses may
-    /// leave from another of its own, which this host must know it by
-    /// before the link's packets follow. An address a dial this host made
-    /// is still unnamed at keeps its packets until that connection's
-    /// handshake names it: quinn would drop its answers arriving as the
-    /// host's. One that only sent this host something unnamed does not:
-    /// a host started afresh hears from its peer's last connection to its
-    /// last run at the address that peer then probes from.
-    fn probed_from(&mut self, host: HostId, arrival: Arrival) {
-        let dialled = |state: &PeerState| !matches!(state.expiry, Expiry::Unnamed { .. });
-        if let Arrival::Udp(addr) = arrival
-            && self.peers.contains_key(&Peer::Host(host))
-            && self.by_addr.get(&addr) != Some(&host)
-            && !self
-                .peers
-                .get(&Peer::Unnamed(Path::Direct(addr)))
-                .is_some_and(dialled)
-        {
-            self.learn(host, Path::Direct(addr));
-        }
-    }
-
     fn tell(&mut self, event: PathEvent) {
         if let Some(events) = &self.path_events
             && events.send(event).is_err()
         {
             self.path_events = None;
+            self.peers.report_arrivals(false);
         }
     }
+}
 
-    /// Reports a packet from `peer` on `path`, unless one was this past
-    /// second.
-    fn arrived(&mut self, peer: Peer, path: Path, now: Instant) {
-        let Peer::Host(host) = peer else {
-            return;
-        };
-        if self.path_events.is_none() {
-            return;
-        }
-        if self
-            .reported
-            .get(&(host, path))
-            .is_some_and(|last| now.duration_since(*last) < ARRIVAL_REPORT_EVERY)
-        {
-            return;
-        }
-        self.reported.insert((host, path), now);
-        self.tell(PathEvent::Arrived { peer: host, path });
-    }
-
-    /// Carries `host` on `route`. Addresses its earlier routes took still
-    /// lead to it, so packets still in flight on a path it switched from
-    /// arrive as its own.
-    fn set_route(&mut self, host: HostId, route: Route) {
-        self.stand_in(Peer::Host(host));
-        for path in route.paths() {
-            self.learn(host, *path);
-        }
-        let peer = self
-            .peers
-            .get_mut(&Peer::Host(host))
-            .expect("stand-in just made");
-        if !matches!(route, Route::All(_)) {
-            peer.flight = None;
-        }
-        peer.route = route;
-        peer.released = false;
-    }
-
-    /// A packet from `peer` arrived on `path` while its first flight goes
-    /// out on every candidate: that path carries it from now on, whether
-    /// or not the flight named it, since it is where the peer answers (a
-    /// host known at another address, or dialling this host itself while
-    /// its dial found no candidate).
-    ///
-    /// Answers the flight sent so far when the flight never named that
-    /// path, to be sent again on it: what went out only on the others,
-    /// such as through a relay address nothing answers at, would otherwise
-    /// wait out a retransmit. The packet that moved the route may not even
-    /// be the dial's own, but the stray of a connection the peer still
-    /// holds from this host's last run.
-    fn carried_by(&mut self, peer: Peer, path: Path) -> Option<Vec<Vec<u8>>> {
-        let held = self.peers.get_mut(&peer)?;
-        let Route::All(paths) = &held.route else {
-            return None;
-        };
-        let named = paths
-            .iter()
-            .copied()
-            .find(|candidate| match (candidate, path) {
-                (Path::Direct(a) | Path::Punched(a), Path::Direct(b) | Path::Punched(b)) => *a == b,
-                (candidate, path) => *candidate == path,
-            });
-        held.route = Route::Carrying(named.unwrap_or(path));
-        let flight = held.flight.take()?;
-        named.is_none().then(|| flight.sent.into())
-    }
-
-    /// No route takes `gone` any more. A host carried only on it is left
-    /// unrouted, and forgotten if this host never named, routed or dialled
-    /// it.
-    fn unroute(&mut self, gone: Path) {
-        let mut left = Vec::new();
-        for (peer, held) in &mut self.peers {
-            match &mut held.route {
-                Route::Carrying(path) if *path == gone => {
-                    held.route = Route::Unset;
-                    if held.expiry != Expiry::Kept {
-                        left.push(*peer);
-                    }
-                }
-                Route::All(paths) => paths.retain(|path| *path != gone),
-                _ => {}
-            }
-        }
-        for peer in left {
-            self.forget(peer);
-        }
-    }
-
-    /// The forwarding link whose forwarder is `peer`, if one is.
-    fn forwarding_of(&self, peer: Peer) -> Option<LinkId> {
-        self.forwarding
-            .iter()
-            .find(|(_, (via, _))| self.by_stand_in.get(via) == Some(&peer))
-            .map(|(link, _)| *link)
-    }
-
-    /// The forwarding link whose forwarder sent this arrival, if one did.
-    fn forwarder_of(&self, arrival: Arrival) -> Option<LinkId> {
-        self.forwarding_of(self.sender(arrival))
-    }
-
-    /// The peer a QUIC packet came from: the host that path leads to, or an
-    /// unnamed sender known by the path.
-    fn sender(&self, arrival: Arrival) -> Peer {
-        match arrival {
-            Arrival::Udp(addr) => match self.by_addr.get(&addr) {
-                Some(host) => Peer::Host(*host),
-                None => Peer::Unnamed(Path::Direct(addr)),
-            },
-            Arrival::Framed(id) => match self.by_framed.get(&id) {
-                Some(host) => Peer::Host(*host),
-                None => Peer::Unnamed(Path::Framed(id)),
-            },
-        }
-    }
+/// A send that has nowhere to go, as quinn's socket reports it.
+fn no_path(NoPath(reason): NoPath) -> io::Error {
+    let kind = if reason == socket_core::NOT_A_STAND_IN {
+        io::ErrorKind::AddrNotAvailable
+    } else {
+        io::ErrorKind::NotConnected
+    };
+    io::Error::new(kind, reason)
 }
 
 /// quinn's socket: one stand-in address per peer, one route per peer.
 /// quinn sends to the stand-in; the layer puts the packet on the carrying
 /// path, or on every candidate while the route sends on all, and maps
-/// arrivals back to the stand-in whichever path brought them.
+/// arrivals back to the stand-in whichever path brought them. Which peer
+/// and which path are [`Peers`]' to say; this sends and receives.
 pub struct LinkSocket {
     /// Swapped whole when the network under the profile changes.
     substrate: RwLock<Arc<dyn Datagrams>>,
     own: HostId,
     state: Mutex<State>,
     drops: DropCounts,
+    /// What the peers' clock counts from.
+    epoch: Instant,
 }
 
 impl fmt::Debug for LinkSocket {
@@ -809,6 +195,7 @@ impl LinkSocket {
             own,
             state: Mutex::new(State::default()),
             drops: DropCounts::default(),
+            epoch: Instant::now(),
         }))
     }
 
@@ -867,232 +254,132 @@ impl LinkSocket {
             .clone()
     }
 
-    /// The address quinn dials and hears `peer` at. It changes only when
-    /// the peer is named afresh at a stand-in it was first heard at
-    /// unnamed; the earlier one keeps reaching it.
+    fn now_ms(&self) -> u64 {
+        Instant::now()
+            .saturating_duration_since(self.epoch)
+            .as_millis()
+            .try_into()
+            .unwrap_or(u64::MAX)
+    }
+
+    /// The address quinn dials and hears `peer` at; see
+    /// [`Peers::stand_in`].
     pub fn stand_in(&self, peer: HostId) -> SocketAddr {
-        self.lock().stand_in(Peer::Host(peer))
+        let now = self.now_ms();
+        self.lock().peers.stand_in(peer, now)
     }
 
     /// The host behind a stand-in, if it has said who it is.
     pub fn peer_of(&self, stand_in: SocketAddr) -> Option<HostId> {
-        match self.lock().by_stand_in.get(&stand_in)? {
-            Peer::Host(host) => Some(*host),
-            Peer::Unnamed(_) => None,
-        }
+        self.lock().peers.peer_of(stand_in)
     }
 
-    /// The address quinn dials to reach whoever answers at `addr`, before
-    /// the handshake says who that is: the stand-in arrivals from `addr`
-    /// map to, so the dial and its answers meet on one address.
+    /// The address quinn dials to reach whoever answers at `addr`; see
+    /// [`Peers::stand_in_at`].
     pub fn stand_in_at(&self, addr: SocketAddr) -> SocketAddr {
-        let addr = plain(addr);
-        let mut state = self.lock();
-        let peer = state.sender(Arrival::Udp(addr));
-        state.stand_in(peer)
+        let now = self.now_ms();
+        self.lock().peers.stand_in_at(plain(addr), now)
     }
 
     /// The address quinn dials to reach whoever answers on the byte-stream
-    /// path `path`: the stand-in arrivals on that path map to.
+    /// path `path`.
     pub fn stand_in_on(&self, path: PathId) -> SocketAddr {
-        let mut state = self.lock();
-        let peer = state.sender(Arrival::Framed(path));
-        state.stand_in(peer)
+        let now = self.now_ms();
+        self.lock().peers.stand_in_on(path, now)
     }
 
-    /// The network address behind a stand-in, where it is one: an unnamed
-    /// sender's address, or the address carrying a host's link. None for a
-    /// byte stream or a forwarder.
+    /// The network address behind a stand-in, where it is one.
     pub fn address_of(&self, stand_in: SocketAddr) -> Option<SocketAddr> {
-        let state = self.lock();
-        let peer = state.by_stand_in.get(&stand_in)?;
-        let path = match peer {
-            Peer::Unnamed(path) => *path,
-            Peer::Host(_) => match &state.peers.get(peer)?.route {
-                Route::Carrying(path) => *path,
-                Route::Unset | Route::All(_) => return None,
-            },
-        };
-        match path {
-            Path::Direct(addr) | Path::Punched(addr) => Some(addr),
-            Path::Forwarded(_) | Path::Framed(_) => None,
-        }
+        self.lock().peers.address_of(stand_in)
     }
 
     /// Gives an unnamed sender's stand-in its host once the handshake says
-    /// who it is; quinn keeps the same address, and the host's packets on
-    /// that path arrive from it.
-    ///
-    /// A host already known is named afresh when the path is an address
-    /// and the host's route is unset or another address: a host that
-    /// connected again from elsewhere, or whose connection quinn moved to
-    /// the address its packets now come from after its NAT rebound or its
-    /// network changed. Its earlier stand-in goes on reaching it at the new
-    /// address. A host carried some other way (through a forwarder, over a
-    /// byte stream, or on every candidate) keeps that route, and this
-    /// sender stays unnamed; its handshake is done, so it is let go only
-    /// once it goes silent, not for going unnamed.
-    ///
-    /// A stand-in another host was last heard at, at an address, is taken
-    /// from it: the address was reused (a LAN address given out again, a
-    /// NAT's port given to someone else), and the host that left is
-    /// forgotten until it is heard again.
-    ///
-    /// True when the stand-in is the host's.
+    /// who it is; see [`Peers::name`]. True when the stand-in is the host's.
     pub fn name(&self, stand_in: SocketAddr, host: HostId) -> bool {
-        let mut state = self.lock();
-        let (path, left) = match state.by_stand_in.get(&stand_in).copied() {
-            Some(Peer::Unnamed(path)) => (path, None),
-            Some(Peer::Host(named)) if named == host => return true,
-            Some(Peer::Host(left)) => {
-                let held = &state.peers[&Peer::Host(left)];
-                match held.route {
-                    Route::Carrying(path) if addressed(path) && held.stand_in == stand_in => {
-                        (path, Some(left))
-                    }
-                    _ => return false,
-                }
-            }
-            None => return false,
-        };
-        if let Some(known) = state.peers.get(&Peer::Host(host)) {
-            let readdressed = match &known.route {
-                Route::Unset => true,
-                Route::Carrying(carrying) => {
-                    known.released || (addressed(*carrying) && addressed(path))
-                }
-                Route::All(_) => false,
-            };
-            if !readdressed {
-                if let Some(sender) = state.peers.get_mut(&Peer::Unnamed(path)) {
-                    sender.expiry = Expiry::Silent;
-                }
-                return false;
-            }
-        }
-        match left {
-            Some(left) => state.forget(Peer::Host(left)),
-            None => {
-                state.peers.remove(&Peer::Unnamed(path));
-            }
-        }
-        state
-            .mint(Peer::Host(host), Instant::now(), Expiry::Kept)
-            .stand_in = stand_in;
-        state.by_stand_in.insert(stand_in, Peer::Host(host));
-        if addressed(path) {
-            state.unlearn_addresses(host);
-        }
-        state.set_route(host, Route::Carrying(path));
-        true
+        let now = self.now_ms();
+        self.lock().peers.name(stand_in, host, now)
     }
 
-    /// `peer`'s last link went. Its route stays, so what the closing
-    /// connection still sends goes out, but no dial trusts it: the next
-    /// dial's first flight goes out on every candidate rather than only on
-    /// the path the old link last used, which may be dead, and a connection
-    /// from the peer on any path names it afresh. Its next link, or any
-    /// route set, takes the release back.
+    /// `peer`'s last link went; see [`Peers::release`].
     pub fn release(&self, peer: HostId) {
-        if let Some(held) = self.lock().peers.get_mut(&Peer::Host(peer)) {
-            held.released = true;
-        }
+        self.lock().peers.release(peer);
     }
 
-    /// `peer`'s last link to this relay went: it is let go, with every
-    /// stand-in it was known by and its addresses, once it has been silent
-    /// for [`UNCLAIMED_PEER_TIMEOUT`]. Until then a link from it finds its
-    /// stand-in where it was. A relay sees a host at a new stand-in each
-    /// time its NAT rebinds or it relaunches, so a host it never let go of
-    /// would leave one more behind each time, for the life of the relay.
+    /// `peer`'s last link to this relay went; see [`Peers::let_go`].
     pub fn let_go(&self, peer: HostId) {
-        if let Some(held) = self.lock().peers.get_mut(&Peer::Host(peer)) {
-            held.expiry = Expiry::Silent;
-        }
+        self.lock().peers.let_go(peer);
     }
 
     /// `peer` holds a link to this relay again: it is kept until it is let
     /// go.
     pub fn keep(&self, peer: HostId) {
-        if let Some(held) = self.lock().peers.get_mut(&Peer::Host(peer)) {
-            held.expiry = Expiry::Kept;
-        }
+        self.lock().peers.keep(peer);
     }
 
     /// `peer` has a link again: its route is trusted once more.
     pub fn reclaim(&self, peer: HostId) {
-        if let Some(held) = self.lock().peers.get_mut(&Peer::Host(peer)) {
-            held.released = false;
-        }
+        self.lock().peers.reclaim(peer);
     }
 
-    /// Whether `peer`'s route is one a dial should trust: something
-    /// carries it on one path and its last link has not gone since.
+    /// Whether `peer`'s route is one a dial should trust; see
+    /// [`Peers::trusted_route`].
     pub fn trusted_route(&self, peer: HostId) -> Option<Path> {
-        let state = self.lock();
-        let held = state.peers.get(&Peer::Host(peer))?;
-        match held.route {
-            Route::Carrying(path) if !held.released => Some(path),
-            _ => None,
-        }
+        self.lock().peers.trusted_route(peer)
     }
 
     /// Carries `peer`'s packets on one path.
     pub fn set_carrying(&self, peer: HostId, path: Path) {
-        self.lock().set_route(peer, Route::Carrying(path));
+        let now = self.now_ms();
+        self.lock().peers.set_carrying(peer, path, now);
     }
 
-    /// Sends none of `peer`'s packets until a path is named again: the one
-    /// carrying them is one this host may no longer use. A packet from the
-    /// peer on it does not bring it back.
+    /// Sends none of `peer`'s packets until a path is named again; see
+    /// [`Peers::stop_carrying`].
     pub fn stop_carrying(&self, peer: HostId) {
-        if let Some(held) = self.lock().peers.get_mut(&Peer::Host(peer)) {
-            held.route = Route::Unset;
-            held.flight = None;
-        }
+        self.lock().peers.stop_carrying(peer);
     }
 
     /// Sends each of `peer`'s packets on every one of `paths` until a
-    /// packet from the peer arrives on one, which carries the link from
-    /// then on: a link's first flight, before anything says which path
-    /// works. With `through_relay`, every forwarding link to the relay is
-    /// a candidate too, one that comes up later as well; a path that joins
-    /// late is sent the first flight's packets that went out before it.
+    /// packet from the peer arrives on one; see [`Peers::send_on_all`].
     pub fn send_on_all(&self, peer: HostId, paths: Vec<Path>, through_relay: bool) {
-        let mut paths: Vec<Path> = paths
-            .into_iter()
-            .map(|path| match path {
-                Path::Direct(addr) => Path::Direct(plain(addr)),
-                Path::Punched(addr) => Path::Punched(plain(addr)),
-                path => path,
-            })
-            .collect();
-        let mut state = self.lock();
-        if through_relay {
-            for (link, (_, kind)) in &state.forwarding {
-                let path = Path::Forwarded(*link);
-                if relayed(*kind) && !paths.contains(&path) {
-                    paths.push(path);
-                }
-            }
-        }
-        state.set_route(peer, Route::All(paths));
-        state
+        let paths = paths.into_iter().map(plain_path).collect();
+        let now = self.now_ms();
+        self.lock()
             .peers
-            .get_mut(&Peer::Host(peer))
-            .expect("route just set")
-            .flight = Some(Flight {
-            through_relay,
-            ..Flight::default()
-        });
+            .send_on_all(peer, paths, through_relay, now);
+    }
+
+    /// Dials `peer` on every one of `paths` at once, and through the relay
+    /// when `through_relay`; see [`Peers::dial_on_all`]. Answers the
+    /// stand-in quinn dials.
+    pub fn dial_on_all(&self, peer: HostId, paths: Vec<Path>, through_relay: bool) -> SocketAddr {
+        let paths = paths.into_iter().map(plain_path).collect();
+        let now = self.now_ms();
+        self.lock()
+            .peers
+            .dial_on_all(peer, paths, through_relay, now)
+    }
+
+    /// Dials `peer` through the forwarder at the far end of `through`; see
+    /// [`Peers::dial_through`]. Answers the stand-in quinn dials.
+    pub fn dial_through(&self, peer: HostId, through: LinkId) -> SocketAddr {
+        let now = self.now_ms();
+        self.lock().peers.dial_through(peer, through, now)
+    }
+
+    /// A link to `peer` came up on its connection at `stand_in`: whether
+    /// that connection is what carries the peer here; see
+    /// [`Peers::linked`].
+    pub fn linked(&self, peer: HostId, stand_in: SocketAddr) -> bool {
+        let now = self.now_ms();
+        self.lock().peers.linked(peer, stand_in, now)
     }
 
     /// Registers a byte-stream path; its packets arrive through
     /// [`LinkSocket::deliver_framed`].
     pub fn add_framed(&self, io: Arc<dyn FramedIo>) -> PathId {
         let mut state = self.lock();
-        let id = PathId(state.next_path);
-        state.next_path += 1;
+        let id = state.peers.add_framed();
         state.framed.insert(id, io);
         id
     }
@@ -1102,15 +389,11 @@ impl LinkSocket {
         Some(self.lock().framed.get(&path)?.kind())
     }
 
-    /// Forgets a byte-stream path, the sender on it if it was never named,
-    /// and the path of every host it carried: a host that comes back some
-    /// other way is named where it comes back.
+    /// Forgets a byte-stream path; see [`Peers::remove_framed`].
     pub fn remove_framed(&self, path: PathId) {
         let mut state = self.lock();
         state.framed.remove(&path);
-        state.by_framed.remove(&path);
-        state.forget(Peer::Unnamed(Path::Framed(path)));
-        state.unroute(Path::Framed(path));
+        state.peers.remove_framed(path);
     }
 
     /// One packet arrived on a byte-stream path.
@@ -1127,119 +410,53 @@ impl LinkSocket {
     }
 
     /// Names the forwarder a forwarding link reaches by its stand-in on
-    /// this socket: packets for a peer carried on `Path::Forwarded(link)`
-    /// go behind the header on whatever path carries the forwarder, UDP or
-    /// a byte stream, and packets it delivers are answered through it.
-    ///
-    /// A link to the relay at a stand-in another link to the relay holds
-    /// is that link named afresh: a connection to the relay is a
-    /// forwarding link as soon as it carries data, so that links' first
-    /// flights go through it at once, and is named again once the relay
-    /// admits it. Routes through the old name follow.
-    ///
-    /// A link to the relay joins the first flight of every peer sending
-    /// on all its candidates through the relay, and is sent what that
-    /// flight sent before it.
+    /// this socket, and sends it the first flights it joins; see
+    /// [`Peers::add_forwarding`].
     pub fn add_forwarding(&self, link: LinkId, via: SocketAddr, kind: PathKind) {
-        let late = {
+        let again = {
             let mut state = self.lock();
-            let renamed: Vec<LinkId> = state
-                .forwarding
-                .iter()
-                .filter(|(old, (at, was))| {
-                    **old != link && *at == via && relayed(*was) && relayed(kind)
-                })
-                .map(|(old, _)| *old)
-                .collect();
-            for old in renamed {
-                state.forwarding.remove(&old);
-                state.tell(PathEvent::ForwardingDown { link: old });
-                for held in state.peers.values_mut() {
-                    match &mut held.route {
-                        Route::Carrying(path) if *path == Path::Forwarded(old) => {
-                            *path = Path::Forwarded(link);
-                        }
-                        Route::All(paths) => {
-                            for path in paths.iter_mut() {
-                                if *path == Path::Forwarded(old) {
-                                    *path = Path::Forwarded(link);
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
+            let added = state.peers.add_forwarding(link, via, kind);
+            for event in added.events {
+                state.tell(event);
             }
-            let previous = state.forwarding.insert(link, (via, kind));
-            if previous.is_none() {
-                state.tell(PathEvent::ForwardingUp { link, kind });
-            }
-            // A forwarding link pointed somewhere new, as a relay dial
-            // moves it from the attempt that said its Hello first to the
-            // one it keeps, sends a first flight again there: what went to
-            // the old address may have gone nowhere.
-            let moved = previous.is_some_and(|(at, _)| at != via);
-            let mut late = Vec::new();
-            if relayed(kind) {
-                let path = Path::Forwarded(link);
-                for (peer, held) in &mut state.peers {
-                    if let (Route::All(paths), Some(flight)) = (&mut held.route, &held.flight)
-                        && flight.through_relay
-                        && (moved || !paths.contains(&path))
-                    {
-                        if !paths.contains(&path) {
-                            paths.push(path);
-                        }
-                        late.push((*peer, flight.sent.iter().cloned().collect::<Vec<_>>()));
-                    }
-                }
-            }
-            late
+            added.again
         };
-        for (peer, sent) in late {
-            for packet in sent {
-                if let Err(error) = self.send_on(peer, Path::Forwarded(link), &packet) {
-                    self.dropped_send(via, &error);
-                }
-            }
+        for again in again {
+            self.send_again(again);
         }
     }
 
-    /// Sends `peer`'s first flight again on `path`, the path an arrival
-    /// moved its route to.
-    fn send_again(&self, peer: Peer, path: Path, stranded: Option<Vec<Vec<u8>>>) {
-        for packet in stranded.into_iter().flatten() {
-            if let Err(error) = self.send_on(peer, path, &packet) {
+    /// Sends a first flight again on the path that now carries it.
+    fn send_again(&self, again: Again) {
+        let wire = self.lock().peers.wire(again.peer, again.path);
+        for packet in &again.sent {
+            if let Err(error) = wire
+                .map_err(no_path)
+                .and_then(|wire| self.put(wire, packet))
+            {
                 self.drops.sends.fetch_add(1, Ordering::Relaxed);
-                tracing::debug!(?path, %error, "link socket dropped a first flight sent again");
+                tracing::debug!(path = ?again.path, %error, "link socket dropped a first flight sent again");
             }
         }
     }
 
-    /// Forgets a forwarding link, and with it the path through it of every
-    /// peer it carried: a link dialled to one of them later goes through
-    /// whichever forwarding link reaches the forwarder then.
-    ///
-    /// A host known only from the forwarder's deliveries, which this host
-    /// never named, routed or dialled, is forgotten with it.
+    /// Forgets a forwarding link; see [`Peers::remove_forwarding`].
     pub fn remove_forwarding(&self, link: LinkId) {
         let mut state = self.lock();
-        if state.forwarding.remove(&link).is_some() {
-            state.tell(PathEvent::ForwardingDown { link });
+        if let Some(event) = state.peers.remove_forwarding(link) {
+            state.tell(event);
         }
-        state.unroute(Path::Forwarded(link));
     }
 
     /// The forwarding link whose forwarder stands behind `stand_in`.
     pub fn forwarding_link(&self, stand_in: SocketAddr) -> Option<LinkId> {
-        let state = self.lock();
-        state.forwarding_of(*state.by_stand_in.get(&stand_in)?)
+        self.lock().peers.forwarding_link(stand_in)
     }
 
     /// What kind of path a link carried through `link` is: through the
     /// relay or through a paired daemon.
     pub fn forwarded_kind(&self, link: LinkId) -> Option<PathKind> {
-        self.lock().forwarding.get(&link).map(|(_, kind)| *kind)
+        self.lock().peers.forwarded_kind(link)
     }
 
     /// Makes this the socket of a forwarder: a packet sent to it to
@@ -1250,14 +467,7 @@ impl LinkSocket {
 
     /// The path a stand-in's packets go out on, where there is one.
     pub fn path_of(&self, stand_in: SocketAddr) -> Option<Path> {
-        let state = self.lock();
-        match state.by_stand_in.get(&stand_in)? {
-            Peer::Unnamed(path) => Some(*path),
-            peer @ Peer::Host(_) => match &state.peers.get(peer)?.route {
-                Route::Carrying(path) => Some(*path),
-                Route::Unset | Route::All(_) => None,
-            },
-        }
+        self.lock().peers.path_of(stand_in)
     }
 
     /// What kind of path `path` is, as the link log names it, while the
@@ -1275,29 +485,19 @@ impl LinkSocket {
     /// the peer behind `stand_in`: how a forwarder puts a packet it
     /// forwards on the destination's link.
     pub fn send_raw(&self, stand_in: SocketAddr, datagram: &[u8]) -> io::Result<()> {
-        let (peer, path) = {
-            let state = self.lock();
-            let peer = *state.by_stand_in.get(&stand_in).ok_or_else(|| {
-                io::Error::new(io::ErrorKind::AddrNotAvailable, "not a stand-in address")
-            })?;
-            let path = match (&peer, &state.peers[&peer].route) {
-                (Peer::Unnamed(path), _) | (Peer::Host(_), Route::Carrying(path)) => *path,
-                _ => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::NotConnected,
-                        "no one path carries this peer",
-                    ));
-                }
-            };
-            (peer, path)
-        };
-        self.send_on(peer, path, datagram)
+        let wire = self.lock().peers.raw(stand_in).map_err(no_path)?;
+        self.put(wire, datagram)
     }
 
     /// Sends a probe to `peer` on `path`; its answer comes back on
     /// [`LinkSocket::probe_answers`].
     pub fn probe(&self, peer: HostId, path: Path, nonce: u64) -> io::Result<()> {
-        self.send_on(Peer::Host(peer), path, &encode_probe(self.own, nonce))
+        let wire = self
+            .lock()
+            .peers
+            .wire(Peer::Host(peer), path)
+            .map_err(no_path)?;
+        self.put(wire, &encode_probe(self.own, nonce))
     }
 
     /// The answers to this socket's probes from now on; a second call takes
@@ -1314,22 +514,17 @@ impl LinkSocket {
     pub fn path_events(&self) -> mpsc::UnboundedReceiver<PathEvent> {
         let (sender, receiver) = mpsc::unbounded_channel();
         let mut state = self.lock();
-        for (link, (_, kind)) in &state.forwarding {
-            let _ = sender.send(PathEvent::ForwardingUp {
-                link: *link,
-                kind: *kind,
-            });
+        for (link, kind) in state.peers.forwarding_links() {
+            let _ = sender.send(PathEvent::ForwardingUp { link, kind });
         }
         state.path_events = Some(sender);
+        state.peers.report_arrivals(true);
         receiver
     }
 
     /// The path carrying `peer` now, when one path does.
     pub fn carrying(&self, peer: HostId) -> Option<Path> {
-        match &self.lock().peers.get(&Peer::Host(peer))?.route {
-            Route::Carrying(path) => Some(*path),
-            Route::Unset | Route::All(_) => None,
-        }
+        self.lock().peers.carrying(peer)
     }
 
     /// What the socket has dropped so far instead of failing quinn.
@@ -1349,30 +544,14 @@ impl LinkSocket {
     /// The largest datagram every path of this peer carries: the smallest
     /// of its paths', so a switch between them never needs a smaller one.
     pub fn max_datagram(&self, peer: HostId) -> usize {
-        let state = self.lock();
-        let paths = state
-            .peers
-            .get(&Peer::Host(peer))
-            .map(|held| held.route.paths().to_vec())
-            .unwrap_or_default();
-        paths
-            .into_iter()
-            .map(path_datagram)
-            .min()
-            .unwrap_or(MAX_DATAGRAM)
+        self.lock().peers.max_datagram(peer)
     }
 
     /// What the socket holds for its peers: their states, stand-ins,
     /// addresses and forwarding links.
     #[cfg(test)]
     pub(crate) fn held(&self) -> (usize, usize, usize, usize) {
-        let state = self.lock();
-        (
-            state.peers.len(),
-            state.by_stand_in.len(),
-            state.by_addr.len(),
-            state.forwarding.len(),
-        )
+        self.lock().peers.held()
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
@@ -1381,50 +560,24 @@ impl LinkSocket {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn send_on(&self, peer: Peer, path: Path, packet: &[u8]) -> io::Result<()> {
-        match path {
-            Path::Direct(addr) | Path::Punched(addr) => self.substrate().send_to(packet, addr),
-            Path::Forwarded(link) => {
-                let Peer::Host(host) = peer else {
-                    return Err(io::Error::new(
-                        io::ErrorKind::NotConnected,
-                        "an unnamed sender cannot be reached through a forwarder",
-                    ));
-                };
-                let (forwarder, path) = {
-                    let state = self.lock();
-                    let (via, _) = state.forwarding.get(&link).copied().ok_or_else(|| {
-                        io::Error::new(io::ErrorKind::NotConnected, "no such forwarding link")
-                    })?;
-                    let forwarder = *state.by_stand_in.get(&via).ok_or_else(|| {
-                        io::Error::new(io::ErrorKind::NotConnected, "the forwarder is gone")
-                    })?;
-                    let path = match (&forwarder, &state.peers[&forwarder].route) {
-                        (Peer::Unnamed(path), _) | (Peer::Host(_), Route::Carrying(path)) => *path,
-                        _ => {
-                            return Err(io::Error::new(
-                                io::ErrorKind::NotConnected,
-                                "no one path carries the forwarder",
-                            ));
-                        }
-                    };
-                    (forwarder, path)
-                };
-                // Forwarding is one hop: a forwarder is never reached
-                // through another.
-                if matches!(path, Path::Forwarded(_)) {
-                    return Err(io::Error::new(
-                        io::ErrorKind::NotConnected,
-                        "a forwarder reached through a forwarder",
-                    ));
-                }
-                self.send_on(forwarder, path, &encode_forwarded(host, packet))
+    /// Puts one datagram on the wire where [`Peers`] said it goes, behind
+    /// the forwarding header when it goes to a forwarder.
+    fn put(&self, wire: Wire, packet: &[u8]) -> io::Result<()> {
+        let behind;
+        let datagram = match wire.behind {
+            Some(host) => {
+                behind = encode_forwarded(host, packet);
+                &behind[..]
             }
-            Path::Framed(id) => {
+            None => packet,
+        };
+        match wire.to {
+            WireTo::Udp(addr) => self.substrate().send_to(datagram, addr),
+            WireTo::Framed(id) => {
                 let io = self.lock().framed.get(&id).cloned().ok_or_else(|| {
                     io::Error::new(io::ErrorKind::NotConnected, "no such byte-stream path")
                 })?;
-                io.send(packet)
+                io.send(datagram)
             }
         }
     }
@@ -1448,82 +601,67 @@ impl LinkSocket {
         }
     }
 
+    /// What a QUIC packet's arrival changed: the path machines hear of it,
+    /// and a first flight it moved goes again.
+    fn heard(&self, heard: Heard<PathKind>) -> SocketAddr {
+        if let Some(again) = heard.again {
+            self.send_again(again);
+        }
+        heard.stand_in
+    }
+
     /// Handles one arrival in place: our own datagrams are answered or
     /// reported and dropped; a QUIC packet's stand-in and where it starts
     /// in `datagram` are returned.
     fn arrive(&self, arrival: Arrival, datagram: &[u8]) -> Option<(SocketAddr, usize)> {
         match parse(datagram).ok()? {
             PacketKind::Quic(_) => {
-                let now = Instant::now();
-                let mut state = self.lock();
-                let stand_in = state.heard_from(arrival, now);
-                let peer = state.sender(arrival);
-                let path = match arrival {
-                    Arrival::Udp(addr) => Path::Direct(addr),
-                    Arrival::Framed(id) => Path::Framed(id),
+                let now = self.now_ms();
+                let heard = {
+                    let mut state = self.lock();
+                    let heard = state.peers.arrived_quic(arrival, now);
+                    if let Some(event) = heard.event {
+                        state.tell(event);
+                    }
+                    heard
                 };
-                let stranded = state.carried_by(peer, path);
-                state.arrived(peer, path, now);
-                drop(state);
-                self.send_again(peer, path, stranded);
-                Some((stand_in, 0))
+                Some((self.heard(heard), 0))
             }
             PacketKind::Probe { from, nonce } => {
-                self.lock().probed_from(from, arrival);
+                self.lock().peers.probed_from(from, arrival);
                 self.reply(arrival, &encode_probe_answer(self.own, nonce));
                 None
             }
             PacketKind::ProbeAnswer { from, nonce } => {
-                self.lock().probed_from(from, arrival);
+                self.lock().peers.probed_from(from, arrival);
                 self.answered(ProbeAnswered { from, nonce });
                 None
             }
             PacketKind::Forwarded { host, payload } => {
+                let now = self.now_ms();
                 let (sink, sender) = {
                     let mut state = self.lock();
                     let sink = state.forward_sink.clone()?;
-                    (sink, state.heard_from(arrival, Instant::now()))
+                    (sink, state.peers.arrived_to_forward(arrival, now))
                 };
                 sink.arrived(sender, host, payload);
                 None
             }
             PacketKind::Delivered { host, payload } => match parse(payload).ok()? {
                 PacketKind::Quic(_) => {
-                    let now = Instant::now();
-                    let mut state = self.lock();
-                    state.sweep(now);
-                    let stand_in = state.heard(Peer::Host(host), now, Expiry::Silent);
-                    let mut stranded = None;
-                    // A link someone dialled to us through a forwarder is
-                    // answered the way it came until a route is chosen.
-                    if let Some(link) = state.forwarder_of(arrival) {
-                        let path = Path::Forwarded(link);
-                        stranded = state
-                            .carried_by(Peer::Host(host), path)
-                            .map(|sent| (path, sent));
-                        state.arrived(Peer::Host(host), path, now);
-                        let peer = state.peers.get_mut(&Peer::Host(host)).expect("stand-in");
-                        match peer.route {
-                            Route::Unset => peer.route = Route::Carrying(path),
-                            // So is a handshake through a forwarder while
-                            // another path carries the peer: the route is
-                            // its last link's, and a host started afresh (an
-                            // app opened again) may know no path to this one
-                            // but the forwarder, while its last link, dead,
-                            // has yet to time out here. The path machine
-                            // moves the link back once the other path
-                            // answers.
-                            Route::Carrying(carrying) if carrying != path && handshake(payload) => {
-                                state.set_route(host, Route::Carrying(path));
-                            }
-                            _ => {}
+                    let now = self.now_ms();
+                    let heard = {
+                        let mut state = self.lock();
+                        let heard =
+                            state
+                                .peers
+                                .arrived_delivered(arrival, host, handshake(payload), now);
+                        if let Some(event) = heard.event {
+                            state.tell(event);
                         }
-                    }
-                    drop(state);
-                    if let Some((path, sent)) = stranded {
-                        self.send_again(Peer::Host(host), path, Some(sent));
-                    }
-                    Some((stand_in, FORWARD_HEADER))
+                        heard
+                    };
+                    Some((self.heard(heard), FORWARD_HEADER))
                 }
                 PacketKind::Probe { nonce, .. } => {
                     let answer = encode_probe_answer(self.own, nonce);
@@ -1554,25 +692,24 @@ impl AsyncUdpSocket for LinkSocket {
         // Each transmit is one datagram sent as it is: segmentation and ECN
         // marks are not carried by every path.
         debug_assert!(transmit.segment_size.is_none(), "one datagram per transmit");
-        let (peer, route) = {
-            let mut state = self.lock();
-            let Some(peer) = state.by_stand_in.get(&transmit.destination).copied() else {
-                drop(state);
+        let sends = self
+            .lock()
+            .peers
+            .transmit(transmit.destination, transmit.contents);
+        let put = |wire: Result<Wire, NoPath>| {
+            wire.map_err(no_path)
+                .and_then(|wire| self.put(wire, transmit.contents))
+        };
+        match sends {
+            Sends::NotStandIn => {
                 self.dropped_send(
                     transmit.destination,
-                    &io::Error::new(io::ErrorKind::AddrNotAvailable, "not a stand-in address"),
+                    &no_path(NoPath(socket_core::NOT_A_STAND_IN)),
                 );
-                return Ok(());
-            };
-            let held = state.peers.get_mut(&peer).expect("a stand-in's peer");
-            if let Some(flight) = &mut held.flight {
-                flight.keep(transmit.contents);
+                Ok(())
             }
-            (peer, held.route.clone())
-        };
-        match route {
-            Route::Unset => Ok(()),
-            Route::Carrying(path) => match self.send_on(peer, path, transmit.contents) {
+            Sends::Nowhere => Ok(()),
+            Sends::One(wire) => match put(wire) {
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => Err(error),
                 Err(error) => {
                     self.dropped_send(transmit.destination, &error);
@@ -1580,12 +717,12 @@ impl AsyncUdpSocket for LinkSocket {
                 }
                 Ok(()) => Ok(()),
             },
-            Route::All(paths) => {
+            Sends::All(wires) => {
                 // One path refusing is a lost copy; only every path being
                 // full holds quinn back.
-                let mut blocked = !paths.is_empty();
-                for path in paths {
-                    match self.send_on(peer, path, transmit.contents) {
+                let mut blocked = !wires.is_empty();
+                for wire in wires {
+                    match put(wire) {
                         Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
                         Err(error) => {
                             self.dropped_send(transmit.destination, &error);
@@ -1709,6 +846,15 @@ pub(crate) fn plain(addr: SocketAddr) -> SocketAddr {
             None => addr,
         },
         SocketAddr::V4(_) => addr,
+    }
+}
+
+/// A path in the address family the OS socket reports arrivals in.
+fn plain_path(path: Path) -> Path {
+    match path {
+        Path::Direct(addr) => Path::Direct(plain(addr)),
+        Path::Punched(addr) => Path::Punched(plain(addr)),
+        path => path,
     }
 }
 
@@ -2027,7 +1173,7 @@ mod tests {
         // A header with nothing behind it, and probes of the wrong length.
         assert_eq!(parse(&forwarded[..FORWARD_HEADER]), Err(Malformed::Length));
         assert_eq!(
-            parse(&encode_probe(host, 7)[..PROBE_LEN - 1]),
+            parse(&encode_probe(host, 7)[..socket_core::PROBE_LEN - 1]),
             Err(Malformed::Length)
         );
         let mut long_probe = encode_probe(host, 7).to_vec();
@@ -2580,7 +1726,10 @@ mod tests {
         assert_eq!(fake.take_sent(), vec![(lan, QUIC.to_vec())]);
 
         // Once it stops, it is let go like any silent sender.
-        tokio::time::advance(UNCLAIMED_PEER_TIMEOUT).await;
+        tokio::time::advance(std::time::Duration::from_millis(
+            socket_core::UNCLAIMED_PEER_TIMEOUT_MS,
+        ))
+        .await;
         fake.push("192.0.2.61:5000".parse().unwrap(), QUIC);
         receive(&socket).unwrap();
         assert_eq!(socket.path_of(direct), None);
@@ -2649,7 +1798,7 @@ mod tests {
             let IpAddr::V6(v6) = stand_in.ip() else {
                 panic!("{stand_in} is not in the stand-in prefix");
             };
-            assert_eq!(v6.segments()[..3], STAND_IN_PREFIX);
+            assert_eq!(v6.segments()[..3], socket_core::STAND_IN_PREFIX);
         }
     }
 

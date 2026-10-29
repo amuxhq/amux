@@ -1,3 +1,5 @@
+2026-10-28 — **The tool-instructions test checks the tools, not the words.** It asserts the instructions name every tool the server lists, so a new tool without a word in them fails; the wording itself was checked once by hand.
+
 2026-10-28 — **A withheld tool server lasts one incarnation.** Both Claude interpreters forget at reincarnation that policy withheld amux's tools; the agent says so again at each launch it holds.
 
 2026-10-28 — **Test that a withheld tool server is not carried into the next incarnation.** Both Claude interpreters keep reading amux's tool server as withheld by policy after a relaunch that no longer says so.

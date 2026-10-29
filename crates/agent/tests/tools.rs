@@ -591,8 +591,7 @@ async fn the_server_lists_the_seven_tools() {
 
 /// Claude defers every MCP tool behind its tool search, showing the model
 /// only the tools' bare names, but always shows a server's instructions:
-/// they say briefly what each tool is for, in the words a search for it
-/// would use.
+/// they say briefly what each tool the server lists is for, naming it.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_server_says_at_initialize_what_each_tool_is_for() {
     let mut mcp = Mcp::start(WINDOW).await;
@@ -606,22 +605,12 @@ async fn the_server_says_at_initialize_what_each_tool_is_for() {
     let instructions = init["result"]["instructions"]
         .as_str()
         .unwrap_or_else(|| panic!("no instructions: {init}"));
-    assert!(instructions.len() <= 800, "too long: {instructions}");
-    for words in [
-        "agents",
-        "hosts",
-        "send",
-        "spawn",
-        "stop",
-        "status",
-        "attach",
-        "message",
-        "child agent",
-        "file",
-    ] {
+    let listed = mcp.request("tools/list", json!({})).await;
+    for tool in listed["result"]["tools"].as_array().unwrap() {
+        let name = tool["name"].as_str().unwrap();
         assert!(
-            instructions.contains(words),
-            "{words:?} missing: {instructions}"
+            instructions.contains(&format!("({name})")),
+            "{name} is not said: {instructions}"
         );
     }
 }

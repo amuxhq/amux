@@ -1,3 +1,5 @@
+2026-10-29 — **A terminal recording scrubs the machine's environment and attribution text.** `environment` and `remote_session_change` join the attachments whose payload and system-reminder copy the scrub replaces; the attachment and its type stay.
+
 2026-10-29 — **Test that a terminal recording scrubs the machine's environment and attribution text.** The recording scrub keeps the environment attachment (folders and the guidance Claude gives about them) and the commit and pull-request attribution whole, with their system-reminder copies.
 
 2026-10-29 — **A terminal recording leaves out Claude's API-request rows.** Claude 2.1.312 writes `api-request`, `api-request-blob` and `api-request-shape` rows that copy each request whole, system prompt and owner context included; the recording scrub drops them, and scrubs the skill, agent and deferred-tool listings as it already scrubbed the owner's instructions.

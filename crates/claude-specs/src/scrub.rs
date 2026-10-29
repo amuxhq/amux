@@ -8,9 +8,10 @@ use replay_support::IoEvent;
 
 /// Transcript attachments that carry the recording machine owner's own
 /// context rather than anything the scenario did: their instruction files,
-/// account email and organisation, the full system prompt, and what their
-/// plugins and tool servers inject, and what they have installed (skills,
-/// agents, deferred tools). Newer Claude Code versions write these into the
+/// account email and organisation, the full system prompt, what their
+/// plugins and tool servers inject, what they have installed (skills,
+/// agents, deferred tools), their machine's environment and their commit
+/// attribution. Newer Claude Code versions write these into the
 /// transcript. The row and its attachment type stay so the stream keeps its
 /// shape; the payload and its rendered copy are replaced.
 const PERSONAL_ATTACHMENTS: &[&str] = &[
@@ -25,6 +26,8 @@ const PERSONAL_ATTACHMENTS: &[&str] = &[
     "agent_listing_delta",
     "deferred_tools_delta",
     "deferred_tools_record",
+    "environment",
+    "remote_session_change",
 ];
 
 /// Rows that copy an API request whole (Claude 2.1.312 writes one per

@@ -398,6 +398,22 @@ impl Drop for CloseUnlessKept {
 pub(crate) struct Opening {
     pub(crate) hello: pb::Message,
     pub(crate) neighbors: Vec<crate::routing::Host>,
+    /// The forwarding link the profile's packets for other hosts go out
+    /// on through the relay, put on each attempt as it says its Hello:
+    /// the relay holds what it is sent until the Hello admits the link,
+    /// so a first flight goes with the Hello rather than a round trip
+    /// after it, whichever attempt the dial keeps.
+    pub(crate) forwarding: Option<EarlyForwarding>,
+}
+
+/// A forwarding link the dial points at its attempts until the dial is
+/// settled, when its owner points it at the attempt kept. Both point it
+/// while holding `settled`, so an attempt finishing late never takes it
+/// back from the one kept.
+#[derive(Clone, Debug)]
+pub(crate) struct EarlyForwarding {
+    pub(crate) link: super::socket::LinkId,
+    pub(crate) settled: Arc<Mutex<bool>>,
 }
 
 impl QuicCarrier {
@@ -554,6 +570,18 @@ impl QuicCarrier {
                                 .open_with(opening)
                                 .await
                                 .map_err(ConnectError::Opening)?;
+                            if let Some(early) = &opening.forwarding
+                                && let Some(via) = carrier.remote_address()
+                            {
+                                let settled = early.settled.lock().expect("settled lock poisoned");
+                                if !*settled {
+                                    endpoint.socket.add_forwarding(
+                                        early.link,
+                                        via,
+                                        carrier.path_kind(),
+                                    );
+                                }
+                            }
                         }
                         if settle {
                             carrier.handshake().await?;
@@ -2221,6 +2249,7 @@ mod tests {
             let opening = Opening {
                 hello: hello_frame(),
                 neighbors: Vec::new(),
+                forwarding: None,
             };
             let carrier = QuicCarrier::connect_relay_candidates_with_config(
                 client,
@@ -2275,6 +2304,49 @@ mod tests {
             assert_eq!(arrived_early, expected == EarlyData::Accepted);
             assert_eq!(hello, hello_frame(), "the Hello carries the relay token");
         }
+    }
+
+    /// A resumed dial to a relay at one address puts the profile's
+    /// forwarding on the attempt as it says its Hello, before the relay
+    /// has so much as taken the connection: a first flight through the
+    /// relay leaves with the Hello, not a round trip after it.
+    #[tokio::test]
+    async fn a_resumed_relay_dial_forwards_through_its_attempt_before_the_relay_answers() {
+        let (server_config, client_config) = relay_server_and_client();
+        let server = LinkEndpoint::bind(ANY_PORT.parse().unwrap(), Some(server_config)).unwrap();
+        let client = LinkEndpoint::bind(ANY_PORT.parse().unwrap(), None).unwrap();
+        link_to_relay(&client, &server, &client_config).await;
+        let relay = server.local_addr().unwrap();
+        let link = super::super::socket::LinkId(42);
+        let opening = Opening {
+            hello: hello_frame(),
+            neighbors: Vec::new(),
+            forwarding: Some(EarlyForwarding {
+                link,
+                settled: Arc::default(),
+            }),
+        };
+        let dial = QuicCarrier::connect_relay_candidates_with_config(
+            &client,
+            [relay],
+            "relay.test",
+            relay.port(),
+            client_config,
+            Some(&opening),
+        );
+        tokio::pin!(dial);
+        tokio::time::timeout(RELAY_QUIC_HANDSHAKE_TIMEOUT, async {
+            while client.socket.forwarded_kind(link).is_none() {
+                tokio::select! {
+                    done = &mut dial => panic!("the dial finished first: {:?}", done.err()),
+                    () = tokio::time::sleep(Duration::from_millis(5)) => {}
+                }
+            }
+        })
+        .await
+        .expect("forwarding is on the attempt while the relay has yet to answer");
+        let (carrier, _connection) = tokio::join!(dial, answer_early(&server.endpoint));
+        carrier.expect("the relay dial");
     }
 
     #[tokio::test]

@@ -1277,13 +1277,21 @@ fn accept_peer_hello_ack(
 /// What a host's link to the relay opens with, for its dial to write the
 /// moment it starts: the Hello presenting `token`, listing no addresses
 /// (punching needs only what the relay sees), and the neighbors it lists.
-pub(crate) async fn relay_opening(ctx: &LinkCtx, token: &str) -> super::quic::Opening {
+pub(crate) async fn relay_opening(
+    ctx: &LinkCtx,
+    token: &str,
+    forwarding: Option<super::quic::EarlyForwarding>,
+) -> super::quic::Opening {
     let neighbors = ctx.links.neighbor_snapshot().await;
     let mut hello = connector_hello(ctx, &neighbors, &crate::routing::OwnAddresses::default());
     if let Some(wire::pb::message::Body::Hello(opening)) = hello.body.as_mut() {
         opening.auth_token = Some(token.to_owned());
     }
-    super::quic::Opening { hello, neighbors }
+    super::quic::Opening {
+        hello,
+        neighbors,
+        forwarding,
+    }
 }
 
 fn connector_hello(

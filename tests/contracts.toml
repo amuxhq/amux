@@ -1425,6 +1425,59 @@ tests = [
 ]
 
 [[contract]]
+id = "socket-never-drops-a-known-peer"
+source = "model"
+property = { crate = "models", machine = "link socket", sentence = "a dialler never drops its peer's packets as coming from somewhere it does not know" }
+checker = "models/socket::every_link_socket_promise_holds_across_a_relaunch_at_ci_bounds"
+tests = [
+  "node/lib::link::socket::tests::socket_knows_a_host_probing_from_where_strays_came_from",
+  "node/lib::link::socket::tests::socket_leaves_an_address_a_dial_is_unnamed_at_to_the_dial",
+  "node/lib::link::socket::tests::socket_forwarded_dial_is_answered_through_its_forwarder",
+]
+
+[[contract]]
+id = "socket-flight-follows-the-dial"
+source = "model"
+property = { crate = "models", machine = "link socket", sentence = "a dial's first flight has gone out on whatever path carries the dial" }
+checker = "models/socket::every_link_socket_promise_holds_across_a_relaunch_at_ci_bounds"
+tests = [
+  "node/lib::link::socket::tests::socket_sends_a_first_flight_again_where_an_arrival_moves_it",
+  "node/lib::link::socket::tests::socket_sends_a_first_flight_again_where_its_forwarding_moves",
+  "node/lib::link::socket::tests::socket_sends_no_first_flight_again_where_it_already_went",
+  "node/lib::link::socket::tests::socket_sends_a_first_flight_through_a_relay_that_joins_late",
+]
+
+[[contract]]
+id = "socket-no-route-on-a-gone-forwarder"
+source = "model"
+property = { crate = "models", machine = "link socket", sentence = "no route stays on a forwarding link that has gone" }
+checker = "models/socket::every_link_socket_promise_holds_as_time_passes_at_ci_bounds"
+tests = [
+  "node/lib::link::socket::tests::removing_a_forwarding_link_unsets_the_paths_through_it",
+  "node/lib::link::socket::tests::socket_keeps_a_silent_forwarder_while_its_link_is_up",
+]
+
+[[contract]]
+id = "socket-strays-bounded"
+source = "model"
+property = { crate = "models", machine = "link socket", sentence = "a socket holds no more peers than the hosts and addresses it has heard from" }
+checker = "models/socket::every_link_socket_promise_holds_across_a_relaunch_at_ci_bounds"
+tests = [
+  "node/lib::link::socket::tests::socket_peer_count_returns_to_its_baseline_after_a_burst_of_idle_senders",
+]
+
+[[contract]]
+id = "socket-relaunch-links"
+source = "model"
+property = { crate = "models", machine = "link socket", sentence = "once the world settles, the laptop's dial has linked at both ends, sending again only what was lost" }
+checker = "models/socket::every_link_socket_promise_holds_across_a_relaunch_at_ci_bounds"
+tests = [
+  "testnet/spec_links::relaunch_on_the_same_port_links_every_time",
+  "testnet/spec_links::relaunch_after_a_kill_links_every_time",
+  "testnet/spec_links::relaunch_of_a_killed_process_links_every_time",
+]
+
+[[contract]]
 id = "lifecycle-exits-at-turn-end"
 source = "model"
 property = { crate = "models", machine = "agent lifecycle", sentence = "an agent exits only at a turn end or a drain deadline: the lifecycle decides to end an incarnation only as a turn ends, while no turn runs, or as its drain deadline passes" }

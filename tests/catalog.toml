@@ -196,7 +196,7 @@ cargo = [
 [[suite]]
 name = "protocol-models"
 contract = "Every protocol promise, written as a sentence, holds in every state a checker reaches by exploring the real code on small instances, and a seed reproduces a walk."
-paths = ["crates/models"]
+paths = ["crates/models", "crates/socket-core/src"]
 recipe = "just test-crate models"
 boundary = "Model"
 oracle = "Each property judged in every explored state: an always that never fails, a sometimes that is reached, an eventually that holds on every ending path, with the shortest counterexample printed for a failure."
@@ -209,7 +209,7 @@ evidence = "the checker's printed verdict"
 update = ""
 cargo = [
   { package = "models", kind = "lib", targets = ["models"], features = [] },
-  { package = "models", targets = ["client", "composed", "family", "lifecycle", "path", "presence", "relay", "replication", "single_daemon", "supervisor", "switch"], features = [] },
+  { package = "models", targets = ["client", "composed", "family", "lifecycle", "path", "presence", "relay", "replication", "single_daemon", "socket", "supervisor", "switch"], features = [] },
 ]
 
 [[suite]]
@@ -567,7 +567,7 @@ cargo = [
 [[suite]]
 name = "daemon-library-units"
 contract = "Daemon-side libraries preserve their local parsing, state, routing, lifecycle, persistence, agent-directory and wire invariants."
-paths = ["crates/agent-dir/src", "crates/analytics/src", "crates/client/src", "crates/log-file/src", "crates/node/src", "crates/release/src", "crates/settings/src", "crates/version-stamp/src", "crates/wire/src"]
+paths = ["crates/agent-dir/src", "crates/analytics/src", "crates/client/src", "crates/log-file/src", "crates/node/src", "crates/release/src", "crates/socket-core/src", "crates/settings/src", "crates/version-stamp/src", "crates/wire/src"]
 recipe = "just test -- --lib -p agent-dir -p analytics -p client -p log-file -p node -p release -p settings -p version-stamp -p wire"
 boundary = "Single daemon"
 oracle = "Value assertions, explicit state transitions, wire round trips, and owned-resource observations."

@@ -283,6 +283,35 @@ dead. The properties read the driver's table of pairs,
 built only from what the core told it, against the world's record of each
 link, and are in `src/relay.rs`.
 
+## The link socket
+
+`SocketModel` runs the real `socket_core::Peers` of two hosts, a laptop
+and a desk, each signed in to the relay and linked to the other directly,
+with a cut-down QUIC above them: a dial's first flight, its answer, and
+data on a link that is up, each carrying its connection's number so a
+packet from a dead run's connection reaches a process that drops it. The
+world delivers each datagram to wherever its address leads: the other
+host, the relay (which forwards to the host behind the header while that
+host's relay link is up and drops it otherwise), or nowhere. The laptop's
+process may start afresh, on its port or another, leaving the desk's end
+of the old link alive and stray packets of it in flight; it dials the desk
+directly, on every path at once, or through the relay once the relay has
+admitted its link; its relay link may first dial an address that never
+answers, and may go and come back. Either host's path machine may probe
+the address it knows the other at and move the link to a path that
+answered. A datagram may be lost, which QUIC answers by sending the first
+flight once more, or by giving up and dialling again; one may arrive
+twice; the clock may pass the time unnamed senders are kept, while each
+relay link keeps being heard from or while the laptop hears nothing from
+the relay and its link stays up, as a phone suspended for minutes finds;
+the local network may go. A link idles
+out at either end once the other end is dead or nothing it sends can
+arrive. Each fault is explored in a world of its own beside the relaunch,
+and the world rests once no action is left, where the liveness promise is
+judged. The properties are in `src/socket.rs`; each of the socket's fixes
+for the relaunch failures of October 2026, undone one at a time, makes
+one of them fail.
+
 ## The composed net
 
 `ComposedNet` takes a topology (hosts, the links between them and the
@@ -378,6 +407,7 @@ catch, not a verdict the model gives.
 | One open chat | 2 writes, 1 lag, 1 reset, 2 pages over a three-item opening, a tail of 2, pages of 1 | 1,217,819 | 10 s | 24 s | 51, 109, 116, 105, 105 and 107 s | 240 s | 3 writes | 343 s |
 | Path machine, in three worlds | 2 of the 3 addresses learned, 1 lost probe, 1 network change, 1 plan change, 2 ticks, 1 relay link drop, 1 silence of the local address; the same with no network change, relay link drop or silence, and 1 of the peer's packets arriving, a byte stream and 1 paired daemon's forwarding link; the first with no relay link drop or silence, and 1 answer with no probe outstanding, 1 refusal for another reason than the plan, 1 address forgotten and an IPv6 address | 12,929,251, 11,118,688 and 12,701,530 | 15 s, 14 s and 17 s | 30 s, 28 s and 34 s | none yet | 300 s, 300 s and 360 s | the first with all 3 addresses, 2 plan changes and 3 ticks; the second with a network change; the third with a relay link drop | the first not re-measured since it was 90,308,562 states in 405 s; the second 60,146,859 states in 89 s and the third 59,820,884 in 106 s (load about 13, about 19 GB each) |
 | Relay's forwarding, as the relay and as a daemon | 3 links connecting, 3 packets asked about, 1 plan change, 1 expiry; the daemon's links dialled by either end, and 1 restart of a host's process | 694,420 and 719,032 | 4 s and 4 s | 3 s and 3 s | none yet | 60 s each | the relay with 4 links; the daemon with 4 links | 41 s; the daemon's 18,625,784 states in 43 s (load about 13) |
+| Link socket, in six worlds | the laptop starting again once on its port or another, 1 probe from each host, 1 send on each link; the local network going; then on the laptop's port, 1 loss; 1 duplicate; the local network and then the relay link going; 1 tick past the unnamed senders' time, the relay heard or silent at the laptop | 3,531,706, 51, 248,321, 104,781, 38,389 and 145,457 | 7 s for the first, under 1 s for each other | 15 s for the first, under 2 s for each other | none yet | 60 s for all six | the relaunch on its port or another with 1 loss and 1 send on each link | 230 s (93,186,069 states, load about 12) |
 | Composed net: a reset while presence flips, lost messages, a person's calls through a crash | 1 sever and 1 unclean reboot; 1 reordering, 1 lost message and 1 advance; 1 kill, 1 prompt and 1 stop | 33,025, 9,559 and 216,320 | 27 s | 51 s | 151, 105, 204, 207, 139 and 180 s for all three | 420 s for all three | every fault but a kill, with 1 reordering; the calls through a crash with 1 lost message | 184 s |
 
 Measured on 2026-10-18 and 2026-10-19 on the enrolled Mac (Mac14,6, 12
@@ -388,7 +418,7 @@ about 5 to 13;
 presence's again that day at load about 15, and presence, the single
 daemon's peer and replication again that night at load about 8, and the
 nightly bounds of presence, replication and the single daemon the next
-morning at load 16 to 56), with the
+morning at load 16 to 56; the link socket's on 2026-10-29 at load about 20), with the
 development profile,
 which optimises SQLite, the store and the models; `MODELS_THREADS=4` gives
 the four-thread figure. The checker runs on every core the machine has; the

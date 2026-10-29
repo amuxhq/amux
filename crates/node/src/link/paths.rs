@@ -119,16 +119,7 @@ impl PathDriver {
     /// A link to `peer` came up on its connection at `stand_in`, on a path
     /// of `kind`.
     fn link_up_at(&self, link: LinkId, peer: HostId, stand_in: SocketAddr, kind: PathKind) {
-        // A link this host dialled by address, a pairing's, a discovered
-        // host's or a remembered address's, is still at the stand-in of
-        // whoever answered there: the handshake proved that is `peer`, so
-        // the stand-in becomes its, and quinn keeps the address it dialled.
-        let dialled = || {
-            self.socket.peer_of(stand_in).is_none()
-                && matches!(self.socket.path_of(stand_in), Some(Path::Direct(_)))
-                && self.socket.name(stand_in, peer)
-        };
-        if self.socket.peer_of(stand_in) != Some(peer) && !dialled() {
+        if !self.socket.linked(peer, stand_in) {
             // Carried some other way than this connection: the peer still
             // has its machine, which a network change tells.
             let now_ms = self.now_ms();

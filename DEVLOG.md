@@ -1,3 +1,7 @@
+2026-10-29 — **The design contract for a host's one direct link at the relay names the relay model's property as it now reads.** The model's property grew to say that no link of an earlier life sits beside one of the latest, and `just contracts-check` failed on main because the contract still quoted the old sentence.
+
+Tests: `just contracts-check` passes.
+
 2026-10-29 — **A resumed link to the relay carries a launch's first flight with its Hello again, not a round trip after it.** Since a relay dial began winning only once its handshake completed, the profile's forwarding through the relay was put on the connection only when the dial returned, so packets for hosts the relay reaches waited a full round trip to the relay on every launch that resumed. The relay holds what a connection sends until its Hello admits it, so nothing needs to wait: each attempt now takes the forwarding as it writes its Hello, and the attempt the dial keeps, or the TCP connection if that wins, takes it once the dial settles. Both point it under one lock, so an attempt that finishes after the dial has settled never takes it back.
 
 Where the dial keeps an attempt other than the first to say its Hello, a second address of the relay's name or the TCP fallback, the forwarding moves to it, and a first flight already sent goes again through the new one: moving a forwarding link to a new address now sends the flight there, as adding one did. Without that, what went to an address that never answered waited out a retransmit, about a second.

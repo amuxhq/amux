@@ -615,7 +615,12 @@ impl<K: Forwarding> Peers<K> {
             }
         }
         match left {
-            Some(left) => self.forget(Peer::Host(left)),
+            // A paired daemon forwarding for this host: the path machines
+            // follow only the relay's forwarding links, so nothing need
+            // hear that its links went.
+            Some(left) => {
+                self.forget(Peer::Host(left));
+            }
             None => {
                 self.peers.remove(&Peer::Unnamed(path));
             }
@@ -805,12 +810,19 @@ impl<K: Forwarding> Peers<K> {
 
     /// Forgets a byte-stream path, the sender on it if it was never named,
     /// and the path of every host it carried: a host that comes back some
-    /// other way is named where it comes back.
-    pub fn remove_framed(&mut self, path: PathId) {
+    /// other way is named where it comes back. A link to the relay over
+    /// TCP is forwarded through that unnamed sender, and its stream can
+    /// end well before QUIC's idle timer closes the link: the forwarding
+    /// links that go with the sender are reported gone here, since
+    /// removing them later finds nothing left to report.
+    pub fn remove_framed(&mut self, path: PathId) -> Vec<PathEvent<K>> {
         self.framed.remove(&path);
         self.by_framed.remove(&path);
-        self.forget(Peer::Unnamed(Path::Framed(path)));
+        let gone = self.forget(Peer::Unnamed(Path::Framed(path)));
         self.unroute(Path::Framed(path));
+        gone.into_iter()
+            .map(|link| PathEvent::ForwardingDown { link })
+            .collect()
     }
 
     /// Names the forwarder a forwarding link reaches by its stand-in on
@@ -1265,8 +1277,8 @@ impl<K: Forwarding> Peers<K> {
     }
 
     /// Forgets `peer`: its stand-ins, a host's addresses and the
-    /// forwarding links it was the forwarder of.
-    fn forget(&mut self, peer: Peer) {
+    /// forwarding links it was the forwarder of, which it returns.
+    fn forget(&mut self, peer: Peer) -> Vec<LinkId> {
         let by_stand_in = &self.by_stand_in;
         let forwarded: Vec<LinkId> = self
             .forwarding
@@ -1282,10 +1294,11 @@ impl<K: Forwarding> Peers<K> {
         }
         // The links it forwarded go with it, and so do the routes through
         // them, as when a forwarding link is removed.
-        for link in forwarded {
-            self.forwarding.remove(&link);
-            self.unroute(Path::Forwarded(link));
+        for link in &forwarded {
+            self.forwarding.remove(link);
+            self.unroute(Path::Forwarded(*link));
         }
+        forwarded
     }
 
     /// Reports a packet from `peer` on `path`, unless one was this past

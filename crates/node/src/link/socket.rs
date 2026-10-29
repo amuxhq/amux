@@ -393,7 +393,9 @@ impl LinkSocket {
     pub fn remove_framed(&self, path: PathId) {
         let mut state = self.lock();
         state.framed.remove(&path);
-        state.peers.remove_framed(path);
+        for event in state.peers.remove_framed(path) {
+            state.tell(event);
+        }
     }
 
     /// One packet arrived on a byte-stream path.
@@ -1697,6 +1699,35 @@ mod tests {
         let (moved, _) = receive(&socket).unwrap();
         assert!(socket.name(moved, desk), "named afresh where it came from");
         assert_eq!(socket.trusted_route(desk), Some(Path::Direct(new)));
+    }
+
+    /// A link to the relay over TCP whose stream ends before QUIC closes
+    /// the link is reported gone once, as the stream goes, so the path
+    /// machines stop holding a relay path that can never answer.
+    #[test]
+    fn a_relay_link_over_a_stream_that_ends_is_reported_gone_once() {
+        let (_fake, socket, _own) = fake_socket();
+        let stream = Arc::new(Recorded::default());
+        let path = socket.add_framed(stream);
+        let via = socket.stand_in_on(path);
+        socket.add_forwarding(LinkId(7), via, PathKind::RelayTcp);
+        let mut events = socket.path_events();
+        assert!(matches!(
+            events.try_recv(),
+            Ok(PathEvent::ForwardingUp {
+                link: LinkId(7),
+                ..
+            })
+        ));
+
+        socket.remove_framed(path);
+        assert!(matches!(
+            events.try_recv(),
+            Ok(PathEvent::ForwardingDown { link: LinkId(7) })
+        ));
+
+        socket.remove_forwarding(LinkId(7));
+        assert!(events.try_recv().is_err());
     }
 
     /// A forwarder silent past the time unnamed senders are kept is kept

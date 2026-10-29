@@ -249,7 +249,7 @@ update = "Run the relevant claude-probe capture and review its manifest."
 cargo = [
   { package = "claude-specs", kind = "lib", targets = ["claude_specs"], features = [] },
   { package = "claude-specs", kind = "bin", targets = ["claude-probe"], features = [] },
-  { package = "claude-specs", targets = ["capture_proxy", "driver_boundary", "keymap_provenance", "sdk_boundary", "spec_replay"], features = [] },
+  { package = "claude-specs", targets = ["capture_proxy", "driver_boundary", "keymap_provenance", "scrub", "sdk_boundary", "spec_replay"], features = [] },
 ]
 
 [[suite]]

@@ -33,6 +33,8 @@
   row    7 u2 Hidden collapsed
   row    8 turn:1 Stopped
   composer Send activity=None queue=[] underway=[] refused=[]
+## 20 input {"id":"p2","prompt":{"text":"carry on"}}
+  composer Send activity=None queue=[] underway=[SentPrompt { input_id: [112, 50], text: [Text("carry on")], lands: Queue, underway: Sending { waiting: false } }] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 u1 Prompt { text: [Text("write a short poem, then list the files")], steered: false }

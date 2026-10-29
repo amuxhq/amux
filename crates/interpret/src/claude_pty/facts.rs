@@ -248,11 +248,23 @@ impl State {
             return;
         };
         // While Claude's own view shows another conversation, only its
-        // next session start concerns this agent.
+        // next session start concerns this agent. A hook that conversation
+        // waits on is let go at once, so Claude shows its own dialog.
         if self.provider.switched_away
             && !matches!(payload, Payload::SessionStart(_))
             && self.provider.session.as_deref() != Some(common.session_id.as_str())
         {
+            let held = match payload {
+                Payload::PermissionRequest(request) => hook_number(&request.extensions),
+                Payload::Elicitation(elicitation) => hook_number(&elicitation.extensions),
+                _ => None,
+            };
+            if let Some(id) = held {
+                emit.effect(crate::Effect::HookAnswer {
+                    id,
+                    answer: Vec::new(),
+                });
+            }
             return;
         }
         if let Some(mode) = &common.permission_mode {
@@ -273,7 +285,10 @@ impl State {
         match payload {
             Payload::SessionStart(start) => self.session_start(emit, start),
             Payload::SessionEnd(_) => self.close_all_unknown(emit),
-            Payload::UserPromptSubmit(_) => self.shared.provider_started(),
+            Payload::UserPromptSubmit(_) => {
+                self.between_turns = false;
+                self.shared.provider_started();
+            }
             Payload::PreToolUse(call) => {
                 let (server, name) = split_tool_name(&call.tool_name);
                 if server.is_empty() && name == PLAN_TOOL {
@@ -783,6 +798,11 @@ impl State {
     /// Claude draws replies in the order it writes their rows, so a reply
     /// whose row came first is one already drawn.
     fn display(&mut self, emit: &mut Emit, display: &MessageDisplay) {
+        // Hooks and rows travel apart: the reply's last batch can come after
+        // the row that ended its turn.
+        if self.between_turns {
+            return;
+        }
         self.shared.turn_started();
         if let Some(stream) = self
             .streams
@@ -859,6 +879,7 @@ impl State {
     /// names it from here. The model is working, whether or not the row
     /// of the prompt that began the turn landed yet.
     fn pre_tool_use(&mut self, call: &PreToolUse) {
+        self.between_turns = false;
         self.shared.turn_started();
         self.announce(call, None);
         let (server, name) = split_tool_name(&call.tool_name);
@@ -1381,6 +1402,7 @@ impl State {
     /// A prompt sent into a turn that had no tool boundary left lands here
     /// too, as a turn of its own after that turn ended: an ordinary prompt.
     fn prompt_row(&mut self, emit: &mut Emit, key: String, text: String, at_ms: Option<i64>) {
+        self.between_turns = false;
         // A prompt amux submitted went in with no ask open, so its
         // reflection proves nothing about an ask open now: the row can land
         // after the hook that opened one, since rows are read by polling.
@@ -1588,6 +1610,7 @@ impl State {
         self.local_turn = false;
         self.running.clear();
         self.finish_streams(emit);
+        self.between_turns = true;
         // A subagent's calls may outlive the turn, in the background.
         self.announced.retain(|call| call.agent.is_some());
         let Some(turn) = self.shared.turn_ended(emit, outcome) else {

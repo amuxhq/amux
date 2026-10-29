@@ -1,5 +1,5 @@
 {
-  "about": "Terminal Claude draws a reply as it writes it and hands each batch of finished lines to the MessageDisplay hook. The first batch opens the reply as a message still being written, later ones extend it, and the transcript row the reply becomes takes it over, whole. Claude writes rows in the order it draws replies, so a row whose reply was not drawn yet lands under its own key and that reply's late batch draws nothing. A reply cut short ends as it was drawn.",
+  "about": "Terminal Claude draws a reply as it writes it and hands each batch of finished lines to the MessageDisplay hook. The first batch opens the reply as a message still being written, later ones extend it, and the transcript row the reply becomes takes it over, whole. Claude writes rows in the order it draws replies, so a row whose reply was not drawn yet lands under its own key and that reply's late batch draws nothing. A reply cut short ends as it was drawn. A batch that arrives after the turn ended draws nothing.",
   "spec": {
     "created_at_ms": 1800000000000
   },
@@ -337,6 +337,39 @@
         "phase": "IDLE"
       },
       "note": "a reply cut short ends as it was drawn"
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "session_id": "s1",
+          "transcript_path": "/t/s1.jsonl",
+          "cwd": "/w",
+          "permission_mode": "default",
+          "hook_event_name": "MessageDisplay",
+          "turn_id": "turn1",
+          "message_id": "d-c",
+          "index": 1,
+          "final": true,
+          "delta": ""
+        }
+      },
+      "expect": {
+        "items": [],
+        "phase": "IDLE"
+      },
+      "note": "the reply's last batch after its turn ended draws nothing and starts no turn"
+    },
+    {
+      "input": {
+        "id": "p2",
+        "prompt": {
+          "text": "carry on"
+        }
+      },
+      "expect": {
+        "reply": "accepted"
+      }
     }
   ]
 }

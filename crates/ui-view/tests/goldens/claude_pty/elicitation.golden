@@ -87,7 +87,7 @@
     body Form { server: "github", message: "github needs your input", fields: [FormField { name: "repo", title: "repo", description: "", required: true, kind: Text { min_length: None, max_length: None }, initial: Text("") }] }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 35 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"SessionEnd","permission_mode":"default","reason":"other","session_id":"s1","transcript_path":"/t/s1.jsonl"}}
-  row   13  Ask(Form { server: "github", message: "github needs your input", fields: [], resolution: Dismissed })
+  row   13 ask:ask:5 Ask(Form { server: "github", message: "github needs your input", fields: [], resolution: Dismissed })
   ask none
   composer Send activity=Some(Running { key: "t5" }) queue=[] underway=[] refused=[]
 ## 37 fact {"channel":"transcript","json":{"message":{"content":"once more","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:50.000Z","type":"user","uuid":"u3"}}
@@ -100,8 +100,8 @@
     body Link { server: "github", message: "github needs your input", url: "https://github.example/sign-in" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 40 provider_exit {"code":1}
-  row   13  Ask(Link { server: "github", message: "github needs your input", url: "https://github.example/sign-in", resolution: Dismissed })
-  row   15 boundary:2 Boundary { kind: Exited, cause: "the provider exited: exit code 1" }
+  row   15 ask:ask:6 Ask(Link { server: "github", message: "github needs your input", url: "https://github.example/sign-in", resolution: Dismissed })
+  row   16 boundary:2 Boundary { kind: Exited, cause: "the provider exited: exit code 1" }
   ask none
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -116,9 +116,10 @@
     10 ask:ask:4 Ask(Form { server: "docs", message: "docs needs your input", fields: [], resolution: Dismissed })
     11 turn:1 TurnEnd { duration_ms: Some(50), failed: false }
     12 u2 Prompt { text: [Text("try again")], steered: false }
-    13  Ask(Link { server: "github", message: "github needs your input", url: "https://github.example/sign-in", resolution: Dismissed })
+    13 ask:ask:5 Ask(Form { server: "github", message: "github needs your input", fields: [], resolution: Dismissed })
     14 u3 Prompt { text: [Text("once more")], steered: false }
-    15 boundary:2 Boundary { kind: Exited, cause: "the provider exited: exit code 1" }
+    15 ask:ask:6 Ask(Link { server: "github", message: "github needs your input", url: "https://github.example/sign-in", resolution: Dismissed })
+    16 boundary:2 Boundary { kind: Exited, cause: "the provider exited: exit code 1" }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

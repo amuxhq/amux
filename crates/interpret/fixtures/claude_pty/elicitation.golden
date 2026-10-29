@@ -87,7 +87,7 @@ snapshot WORKING queue=[] working_on=- at=1800000040000 asks=[] session=s1 model
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000040000 asks=[ask:5->- form:github "github needs your input"] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=[] running=t5 create_issue since=1800000040000
 ## 35 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"SessionEnd","permission_mode":"default","reason":"other","session_id":"s1","transcript_path":"/t/s1.jsonl"}}
 effect hook 105 released
-item  ask final at=1800000040000 text="" form github ASK_OUTCOME_DISMISSED
+item ask:ask:5 ask final at=1800000040000 text="" form github ASK_OUTCOME_DISMISSED
 snapshot WORKING queue=[] working_on=- at=1800000040000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=[] running=t5 create_issue since=1800000040000
 ## 36 tick 1800000050000
 ## 37 fact {"channel":"transcript","json":{"message":{"content":"once more","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:50.000Z","type":"user","uuid":"u3"}}
@@ -98,7 +98,7 @@ snapshot WORKING queue=[] working_on=- at=1800000050000 asks=[] session=s1 model
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000050000 asks=[ask:6->- link:github "github needs your input" https://github.example/sign-in] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=[] running=t5 create_issue since=1800000040000 running=t6 create_issue since=1800000050000
 ## 40 provider_exit {"code":1}
 effect hook 106 released
-item  ask final at=1800000050000 text="" link github ASK_OUTCOME_DISMISSED
+item ask:ask:6 ask final at=1800000050000 text="" link github ASK_OUTCOME_DISMISSED
 item boundary:2 boundary final at=1800000050000 text="" BOUNDARY_KIND_EXITED session=s1 version=2.1.283 cause=PROVIDER_EXITED detail="exit code 1"
 snapshot STARTING queue=[] working_on=- at=1800000050000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=[]
 incarnation_end PROVIDER_EXITED "exit code 1"

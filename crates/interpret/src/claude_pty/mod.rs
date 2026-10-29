@@ -541,6 +541,10 @@ pub struct State {
     /// stream that follows for each is already drawn.
     #[serde(default)]
     unstreamed: u32,
+    /// The turn ended and the next has not begun: a batch of a reply that
+    /// arrives now is the last of one already written, and draws nothing.
+    #[serde(default)]
+    between_turns: bool,
     /// Why auto mode refused a call whose row has not landed yet, by
     /// tool-use id.
     #[serde(default)]
@@ -624,6 +628,7 @@ impl State {
             announced: Vec::new(),
             streams: Vec::new(),
             unstreamed: 0,
+            between_turns: false,
             refused: BTreeMap::new(),
             bang: None,
         }
@@ -1085,7 +1090,11 @@ impl State {
     fn close_ask_item(&mut self, emit: &mut Emit, ask_key: &str, closed: AskClosed) {
         self.release(emit, ask_key);
         self.asks.remove(ask_key);
-        if let Some(ask) = self.shared.close_ask(ask_key) {
+        if let Some(mut ask) = self.shared.close_ask(ask_key) {
+            // Closed before the row it waited for: it lands now.
+            if ask.item_key.is_empty() {
+                ask.item_key = ask_item::key(ask_key);
+            }
             self.emit_ask_item(emit, &ask, Some(closed));
         }
     }

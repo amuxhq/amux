@@ -44,3 +44,8 @@ item stream:d-c message final at=1800000000100 text="There is one file:\n"
 item turn:1 turn final at=1800000005000 text="" #1 TURN_OUTCOME_INTERRUPTED started=1800000000010
 snapshot IDLE queue=[] working_on=- at=1800000000100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
 turn_end 1 last=a2
+## 19 fact {"channel":"hook","json":{"cwd":"/w","delta":"","final":true,"hook_event_name":"MessageDisplay","index":1,"message_id":"d-c","permission_mode":"default","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn1"}}
+## 20 input {"id":"p2","prompt":{"text":"carry on"}}
+effect reply p2 accepted
+effect terminal prompt "carry on"
+snapshot IDLE queue=[] working_on="carry on" at=1800000000100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?

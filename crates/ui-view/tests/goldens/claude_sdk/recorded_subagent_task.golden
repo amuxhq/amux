@@ -4,56 +4,65 @@
   row    1 boundary:1 Boundary { kind: Started, cause: "" }
   row    2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Delegate to the `counter` subagent, then reply with exactly what it said.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 6 recorded 5: fact Stream type=system subtype=init uuid=001334b5-a099-499d-90fb-35f3866b8d54
+## 6 recorded 5: fact Stream type=system subtype=init uuid=1c2581bf-0c5f-41a4-840e-98449558927e
   row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 22 recorded 21: fact Stream type=assistant uuid=6445ce99-6033-4647-8666-130a4d784844
-  row    3 msg_011CeW3XC4b5psuZgBvbF9NG:0 Thinking { text: "The user is asking me to delegate to the `counter` subagent and reply with exactly what it said. Looking at the available agent types, I can see that `counter` is listed as \"Counts to three and reports the result. (Tools: All tools)\"\n\nI'll use the Agent tool to invoke the counter agent and then return its exact response.", open: false, dura…
-## 24 recorded 23: fact Stream type=assistant uuid=fc7328cc-764b-4f1e-ad6b-846b77998e96
-  row    4 toolu_011tXt8wWZsDcqNkmr2GAzYp Subagent { description: "Count to three", running: true, tool_count: 0, last_tool: "", answer: "", duration_ms: None } run[toolu_011tXt8wWZsDcqNkmr2GAzYp..toolu_011tXt8wWZsDcqNkmr2GAzYp x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
-  composer Send activity=Some(Running { key: "toolu_011tXt8wWZsDcqNkmr2GAzYp" }) queue=[] underway=[] refused=[]
-## 28 recorded 27: fact Stream type=system subtype=task_started uuid=567d587a-8058-4769-a05a-15bb0ea6eea0 tool_use_id=toolu_011tXt8wWZsDcqNkmr2GAzYp
-  row    4 toolu_011tXt8wWZsDcqNkmr2GAzYp Subagent { description: "Count to three", running: true, tool_count: 0, last_tool: "", answer: "", duration_ms: None } run[toolu_011tXt8wWZsDcqNkmr2GAzYp..toolu_011tXt8wWZsDcqNkmr2GAzYp x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
+## 12 recorded 11: fact Stream type=assistant uuid=f2973ef4-e528-4d2d-be0c-f9cfcc67aa1d
+  row    3 msg_011CgWLMxM1p6kzYpPuhwn4Q:0 Thinking { text: "", open: false, duration_ms: Some(2065) }
+## 14 recorded 13: fact Stream type=assistant uuid=1d7c9469-5b87-40ea-a251-b9c30db471b5
+  row    4 toolu_011fZp17HqyppSrtzKsvEpbK Subagent { description: "Count to three", running: true, tool_count: 0, last_tool: "", answer: "", duration_ms: None } run[toolu_011fZp17HqyppSrtzKsvEpbK..toolu_011fZp17HqyppSrtzKsvEpbK x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
+  composer Send activity=Some(Running { key: "toolu_011fZp17HqyppSrtzKsvEpbK" }) queue=[] underway=[] refused=[]
+## 18 recorded 17: fact Stream type=system subtype=task_started uuid=9ee1d1f4-2852-4511-98f9-b500f9ac7875 tool_use_id=toolu_011fZp17HqyppSrtzKsvEpbK
+  row    4 toolu_011fZp17HqyppSrtzKsvEpbK Subagent { description: "Count to three", running: true, tool_count: 0, last_tool: "", answer: "", duration_ms: None } run[toolu_011fZp17HqyppSrtzKsvEpbK..toolu_011fZp17HqyppSrtzKsvEpbK x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
   composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
-## 44 recorded 43: fact Stream type=assistant uuid=a918bfce-cd29-4dc2-95f2-8146a3ad774e
-  row    5 msg_011CeW3XPJm4JjB5UX8mmfpP:0 Thinking { text: "The counter agent is running in the background. I need to wait for it to complete and then I'll be notified of the result. The user asked me to delegate to the counter subagent and reply with exactly what it said, so I should wait for the notification.\n\nThe system indicated that I will be notified automatically when the agent completes. I sho…
-## 46 recorded 45: fact Stream type=assistant uuid=0ee89b87-5b61-4e94-85fa-decba585cd51
-  row    4 toolu_011tXt8wWZsDcqNkmr2GAzYp Subagent { description: "Count to three", running: true, tool_count: 0, last_tool: "", answer: "", duration_ms: None } run[toolu_011tXt8wWZsDcqNkmr2GAzYp..toolu_011tXt8wWZsDcqNkmr2GAzYp x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
-  row    6 msg_011CeW3XPJm4JjB5UX8mmfpP:1 Prose { text: [Text("Waiting for the counter agent to complete...")], streaming: false, working_note: false }
-## 48 recorded 47: fact Stream type=result subtype=success uuid=6b872f45-0001-48cb-ab82-f007edfd8deb
-  row    4 toolu_011tXt8wWZsDcqNkmr2GAzYp Subagent { description: "Count to three", running: true, tool_count: 0, last_tool: "", answer: "", duration_ms: None } run[toolu_011tXt8wWZsDcqNkmr2GAzYp..toolu_011tXt8wWZsDcqNkmr2GAzYp x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
-  row    7 turn:1 TurnEnd { duration_ms: Some(4555), failed: false }
-  composer Send activity=None queue=[] underway=[] refused=[]
-## 55 recorded 54: fact Stream type=system subtype=task_updated uuid=5affb7eb-c3e8-4a74-8874-917f5b3a3bcc
-  row    4 toolu_011tXt8wWZsDcqNkmr2GAzYp Subagent { description: "Count to three", running: false, tool_count: 0, last_tool: "", answer: "", duration_ms: Some(2379) } run[toolu_011tXt8wWZsDcqNkmr2GAzYp..toolu_011tXt8wWZsDcqNkmr2GAzYp x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
-## 57 recorded 56: fact Stream type=system subtype=task_notification uuid=ed39ed13-2798-4dd5-b16d-20a62e162815 tool_use_id=toolu_011tXt8wWZsDcqNkmr2GAzYp
-  row    4 toolu_011tXt8wWZsDcqNkmr2GAzYp Subagent { description: "Count to three", running: false, tool_count: 0, last_tool: "", answer: "ONE TWO THREE", duration_ms: Some(2379) } run[toolu_011tXt8wWZsDcqNkmr2GAzYp..toolu_011tXt8wWZsDcqNkmr2GAzYp x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
-## 69 recorded 68: fact Stream type=assistant uuid=63f5af2d-43c4-4149-bd27-ee500a7c8a73
-  row    8 msg_011CeW3XZiLBkgSpdEiS4RW8:0 Thinking { text: "The counter agent has completed and the result is: \"ONE TWO THREE\"\n\nThe user asked me to \"Delegate to the `counter` subagent, then reply with exactly what it said.\"\n\nSo I should reply with exactly: ONE TWO THREE", open: false, duration_ms: Some(1855) }
+## 30 recorded 29: fact Stream type=system subtype=task_updated uuid=0e707793-fb44-4832-a500-4d1e0e4614b9
+  row    4 toolu_011fZp17HqyppSrtzKsvEpbK Subagent { description: "Count to three", running: false, tool_count: 0, last_tool: "", answer: "", duration_ms: Some(1340) } run[toolu_011fZp17HqyppSrtzKsvEpbK..toolu_011fZp17HqyppSrtzKsvEpbK x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 71 recorded 70: fact Stream type=assistant uuid=78d78602-a4a4-433e-8a31-0b3d66590647
-  row    9 msg_011CeW3XZiLBkgSpdEiS4RW8:1 Prose { text: [Text("ONE TWO THREE")], streaming: false, working_note: false }
-## 73 recorded 72: fact Stream type=result subtype=success uuid=c4435006-66f5-4b76-8d57-838505bdf032
-  row   10 turn:2 TurnEnd { duration_ms: Some(1346), failed: false }
+## 31 recorded 30: fact Stream type=system subtype=task_notification uuid=7a4fd4af-53c4-40c9-9c7b-b897810345f8 tool_use_id=toolu_011fZp17HqyppSrtzKsvEpbK
+  row    4 toolu_011fZp17HqyppSrtzKsvEpbK Subagent { description: "Count to three", running: false, tool_count: 0, last_tool: "", answer: "ONE TWO THREE", duration_ms: Some(1340) } run[toolu_011fZp17HqyppSrtzKsvEpbK..toolu_011fZp17HqyppSrtzKsvEpbK x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
+## 36 recorded 35: fact Stream type=assistant uuid=e4e5d2fe-b7c5-4f87-8166-0638a43ff880
+  row    5 msg_011CgWLN8VTHan7ACVfZWYUR:0 Thinking { text: "", open: false, duration_ms: Some(1425) }
+## 38 recorded 37: fact Stream type=assistant uuid=01f82c80-74ed-4bf0-8c57-97cfba84a50f
+  row    4 toolu_011fZp17HqyppSrtzKsvEpbK Subagent { description: "Count to three", running: false, tool_count: 0, last_tool: "", answer: "ONE TWO THREE", duration_ms: Some(1340) } run[toolu_011fZp17HqyppSrtzKsvEpbK..toolu_011fZp17HqyppSrtzKsvEpbK x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
+  row    6 msg_011CgWLN8VTHan7ACVfZWYUR:1 Prose { text: [Text("I've delegated the task to the counter subagent. It's running in the background and will report its result when it finishes. I'll share exactly what it says once it completes.")], streaming: false, working_note: false }
+## 40 recorded 39: fact Stream type=result subtype=success uuid=68f55749-21b8-41a3-905c-e022b2eb00b3
+  row    4 toolu_011fZp17HqyppSrtzKsvEpbK Subagent { description: "Count to three", running: false, tool_count: 0, last_tool: "", answer: "ONE TWO THREE", duration_ms: Some(1340) } run[toolu_011fZp17HqyppSrtzKsvEpbK..toolu_011fZp17HqyppSrtzKsvEpbK x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
+  row    7 turn:1 TurnEnd { duration_ms: Some(4327), failed: false }
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 48 recorded 47: fact Stream type=assistant uuid=7574f651-1fb4-4903-a30a-8f94a8f4c7d2
+  row    8 msg_011CgWLNGNUTU1cbnDYkAFVe:0 Thinking { text: "", open: false, duration_ms: Some(1532) }
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 50 recorded 49: fact Stream type=assistant uuid=b506c153-6779-41d1-bea2-28c775276025
+  row    9 msg_011CgWLNGNUTU1cbnDYkAFVe:1 Prose { text: [Text("ONE TWO THREE")], streaming: false, working_note: false }
+## 52 recorded 51: fact Stream type=result subtype=success uuid=cef7fa77-8708-4923-9c28-2aeccb48a7a4
+  row   10 turn:2 TurnEnd { duration_ms: Some(1572), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Delegate to the `counter` subagent, then reply with exactly what it said.")], steered: false }
-     3 msg_011CeW3XC4b5psuZgBvbF9NG:0 Thinking { text: "The user is asking me to delegate to the `counter` subagent and reply with exactly what it said. Looking at the available agent types, I can see that `counter` is listed as \"Counts to three and reports the result. (Tools: All tools)\"\n\nI'll use the Agent tool to invoke the counter agent and then return its exact response.", open: false, dura…
-     4 toolu_011tXt8wWZsDcqNkmr2GAzYp Subagent { description: "Count to three", running: false, tool_count: 0, last_tool: "", answer: "ONE TWO THREE", duration_ms: Some(2379) } run[toolu_011tXt8wWZsDcqNkmr2GAzYp..toolu_011tXt8wWZsDcqNkmr2GAzYp x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
-     5 msg_011CeW3XPJm4JjB5UX8mmfpP:0 Thinking { text: "The counter agent is running in the background. I need to wait for it to complete and then I'll be notified of the result. The user asked me to delegate to the counter subagent and reply with exactly what it said, so I should wait for the notification.\n\nThe system indicated that I will be notified automatically when the agent completes. I sho…
-     6 msg_011CeW3XPJm4JjB5UX8mmfpP:1 Prose { text: [Text("Waiting for the counter agent to complete...")], streaming: false, working_note: false }
-     7 turn:1 TurnEnd { duration_ms: Some(4555), failed: false }
-     8 msg_011CeW3XZiLBkgSpdEiS4RW8:0 Thinking { text: "The counter agent has completed and the result is: \"ONE TWO THREE\"\n\nThe user asked me to \"Delegate to the `counter` subagent, then reply with exactly what it said.\"\n\nSo I should reply with exactly: ONE TWO THREE", open: false, duration_ms: Some(1855) }
-     9 msg_011CeW3XZiLBkgSpdEiS4RW8:1 Prose { text: [Text("ONE TWO THREE")], streaming: false, working_note: false }
-    10 turn:2 TurnEnd { duration_ms: Some(1346), failed: false }
-== overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: Some(UsageView { blocked: false, windows: [UsageWindowView { label: FiveHour, used_percent: Some(19.0), resets_at_ms: Some(1787970000000), state: Unknown }, UsageWindowView { label: Weekly { model: None }, used_percent: Some(83.0), resets_at_ms: Some(1787976000000), state: NearLimit }], credits: None }), changes: None }
-== context Some(ContextView { used_tokens: 30040, window_tokens: Some(200000), percent: Some(15), near_full: false }) sign-in None
+     3 msg_011CgWLMxM1p6kzYpPuhwn4Q:0 Thinking { text: "", open: false, duration_ms: Some(2065) }
+     4 toolu_011fZp17HqyppSrtzKsvEpbK Subagent { description: "Count to three", running: false, tool_count: 0, last_tool: "", answer: "ONE TWO THREE", duration_ms: Some(1340) } run[toolu_011fZp17HqyppSrtzKsvEpbK..toolu_011fZp17HqyppSrtzKsvEpbK x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
+     5 msg_011CgWLN8VTHan7ACVfZWYUR:0 Thinking { text: "", open: false, duration_ms: Some(1425) }
+     6 msg_011CgWLN8VTHan7ACVfZWYUR:1 Prose { text: [Text("I've delegated the task to the counter subagent. It's running in the background and will report its result when it finishes. I'll share exactly what it says once it completes.")], streaming: false, working_note: false }
+     7 turn:1 TurnEnd { duration_ms: Some(4327), failed: false }
+     8 msg_011CgWLNGNUTU1cbnDYkAFVe:0 Thinking { text: "", open: false, duration_ms: Some(1532) }
+     9 msg_011CgWLNGNUTU1cbnDYkAFVe:1 Prose { text: [Text("ONE TWO THREE")], streaming: false, working_note: false }
+    10 turn:2 TurnEnd { duration_ms: Some(1572), failed: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 24819, window_tokens: Some(200000), percent: Some(12), near_full: false }) sign-in None
 == settings
   model  default "Default (recommended)" efforts=[low,medium,high,xhigh,max]
-  model  opus[1m] "Opus (1M context)" efforts=[low,medium,high,xhigh,max]
-  model  claude-fable-5[1m] "Fable" efforts=[low,medium,high,xhigh,max]
-  model  sonnet "Sonnet" efforts=[low,medium,high,xhigh,max]
-  model* haiku "Haiku" efforts=[]
+  model  opus "Opus 5.5" efforts=[low,medium,high,xhigh,max]
+  model  fable "Fable 5.1" efforts=[low,medium,high,xhigh,max]
+  model  sonnet "Sonnet 5.5" efforts=[low,medium,high,xhigh,max]
+  model  haiku "Haiku 5.5" efforts=[low,medium,high,xhigh,max]
+  model* claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
+  model  claude-sonnet-5 "Sonnet 5" efforts=[low,medium,high,xhigh,max]
+  model  claude-opus-5 "Opus 5" efforts=[low,medium,high,xhigh,max]
+  model  claude-fable-5 "Fable 5" efforts=[low,medium,high,xhigh,max]
+  model  claude-opus-4-8 "Opus 4.8" efforts=[low,medium,high,xhigh,max]
+  model  claude-opus-4-7 "Opus 4.7" efforts=[low,medium,high,xhigh,max]
+  model  claude-opus-4-6 "Opus 4.6" efforts=[low,medium,high,max]
+  model  claude-sonnet-4-6 "Sonnet 4.6" efforts=[low,medium,high,max]
   permission* "default" "Ask" normal
   permission  "acceptEdits" "Accept edits"
   permission  "plan" "Plan"
@@ -61,56 +70,47 @@
   changes: model Pick · effort NotOffered · permission Pick · mode NotOffered
   command /model source="" hint="[model]" "Choose the model the agent runs"
   command /rename source="" hint="<name>" "Rename the agent"
-  command /autopilot source="" hint="" "Execute confirmed software work on an unattended loop of fresh agents when it spans contexts or must continue while the operator is away. Requires an approved plan; decline work that fits one sitting unless explicitly requested. (user)"
-  command /delegate source="" hint="" "Resolve or diagnose agent staffing by mapping a requested role and effort through the operator-owned roster to a mind and dispatch specification. Use when an agent or driver will dispatch work, or when a binding cannot launch. Do not use merely because ordinary work is being discussed or performed locally. (user)"
-  command /frontend-design source="" hint="" "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.…
-  command /handoff source="" hint="" "Carry, validate, and present proportionate proof when finished work cannot be judged from an ordinary diff and focused checks, or when reviewing inbound work. Use compact proof for easily judged behavior and a reviewed decision page for risky, long, architectural, or difficult work. Do not impose a page or review on ordinary small changes. (user)"
-  command /intake source="" hint="" "Align and confirm a durable acceptance contract for consequential work that must cross contexts. Use after the operator commits to work when several requirements, boundaries, or success demonstrations remain unsettled. Skip for exploration, one or two locally resolvable questions, and already-confirmed requirements. (user)"
-  command /tasks source="" hint="" "Read and update tracked work through one command with pluggable local or Linear backends. Use when the operator asks about a tracker or backlog, when tracked work is the stated source, or when authorized follow-ups should be filed. Do not invoke for ordinary work merely because a tracker is installed; tracker failure never blocks otherwise authorized product work. (user)"
   command /deep-research source="" hint="" "Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, synthesize a cited report. (dynamic workflow)"
-  command /stripe:explain-error source="stripe" hint="error_code or error_message" "(stripe) Explain Stripe error codes and provide solutions with code examples"
-  command /stripe:test-cards source="stripe" hint="scenario" "(stripe) Display Stripe test card numbers for various testing scenarios"
-  command /stripe:connect-recommend source="stripe" hint="" "(stripe) Use this skill when the user asks about Stripe Connect configuration, charge patterns, Dashboard access, or how to get started with Connect, is building a marketplace, platform, multi-vendor store, gig platform, or subscription platform, needs to pay out sellers, vendors, or providers, mentions split payments, revenue sharing, multi-party payments, or similar payment distribution concept…
-  command /stripe:connect-required-verification-information source="stripe" hint="" "(stripe) Use this skill when the user asks what information a Stripe Connect connected account must provide for verification, onboarding, KYC, or account requirements; when they need to compare requirements between connected-account setups; or when they ask which verification fields, documents, or business details are required for a particular platform country, account country, business type, das…
-  command /stripe:stripe-apps source="stripe" hint="" "(stripe) Use when building, modifying, or reviewing a Stripe App — or when the user describes something that implies one (e.g. \"add a panel to the customer page\", \"customize my Stripe Dashboard\", \"react to Stripe events from my app\", \"connect my service to Stripe without sharing API keys\"). Covers the full app development workflow (scaffold, preview, upload, versioning), UI extension arch…
-  command /stripe:stripe-best-practices source="stripe" hint="" "(stripe) Guides Stripe integration decisions across API selection (Checkout Sessions vs PaymentIntents), Connect platform setup (Accounts v2, controller properties), billing/subscriptions, tax and registrations (Stripe Tax, automatic_tax, product tax codes), Treasury financial accounts, integration options (Checkout, Payment Element), migrating from deprecated Stripe APIs, and security best pract…
-  command /stripe:stripe-directory source="stripe" hint="" "(stripe) Use when the user wants to find businesses, software, service providers, or partners for a specific industry, workflow, pain point, capability, or job to be done. Also use when the agent needs to programmatically purchase or consume a service. Use Stripe Directory to build a short relevant shortlist, even if the user does not mention Stripe Directory explicitly."
-  command /stripe:stripe-docs source="stripe" hint="" "(stripe) Use when the user or agent needs to read, search, or look up Stripe documentation or API reference. Prefer this over curl or WebFetch for any docs.stripe.com content."
-  command /stripe:stripe-projects source="stripe" hint="" "(stripe) Use when the user wants to provision infrastructure or third-party services using Stripe Projects. Triggers: \"I need a database\", \"set up auth\", \"add caching\", \"give me a Postgres\", \"provision Redis\", \"I need hosting\", \"add a vector DB\", \"get me an API key for X\", \"get credentials for X\", \"sign up for a service\", \"set up monitoring\", \"show me the catalog\", \"what …
-  command /stripe:upgrade-stripe source="stripe" hint="" "(stripe) Guide for upgrading Stripe API versions and SDKs"
+  command /design source="" hint="consent | revoke" "Grant or revoke Claude agent access to your Design projects"
   command /design-sync source="" hint="[<project hint, e.g. \"Acme DS\">]" "Push a React design system to claude.ai/design. This runs a converter that bundles the real component code (from Storybook or a bare package) and uploads it. Use when the user runs /design-sync or says \"sync my design system to Claude Design\"."
   command /dataviz source="" hint="" "Use this skill whenever you are about to create ANY chart, graph, plot, dashboard, or data visualization, in ANY output medium — an HTML or React artifact, inline SVG, plotting code in any library (matplotlib, plotly, d3, Recharts, …), an image/PNG you will render and upload, or a chart shared into Slack. Read it BEFORE writing the first line of chart code, choosing chart colors, building a stat …
   command /update-config source="" hint="" "Use this skill to configure the Claude Code harness via settings.json. Automated behaviors (\"from now on when X\", \"each time X\", \"whenever X\", \"before/after X\") require hooks configured in settings.json - the harness executes these, not Claude, so memory/preferences cannot fulfill them. Also use for: permissions (\"allow X\", \"add permission\", \"move permission to\"), env vars (\"set X=…
   command /verify source="" hint="" "Verify that a code change actually does what it's supposed to by exercising it end-to-end and observing behavior — drive the affected flow, not just tests or typecheck. Run before committing nontrivial changes; bootstraps this repo's project verify skill if none exists yet. Don't invoke it on a diff that only touches tests, docs, or other code with no runtime surface to drive (a change to product…
   command /debug source="" hint="[issue description]" "Enable debug logging for this session and help diagnose issues"
-  command /code-review source="" hint="[low|medium|high|xhigh|max|ultra] [--fix] [--comment] [<pr#>|<branch>|<path>]" "Review the current diff, or a PR number/branch/path target, for correctness bugs and reuse/simplification/efficiency cleanups at the given effort level (low/medium: fewer, high-confidence findings; high→max: broader coverage, may include uncertain findings; ultra: deep multi-agent review in the cloud); with no level given, it reuses the level you typed last. Pass --comment to post findings as inl…
+  command /code-review source="" hint="[low|medium|high|xhigh|max|ultra] [--fix] [--comment] [<pr#>|<branch>|<path>] [--max-findings <n>|all]" "Review the current diff, or a PR number/branch/path target, for correctness bugs (plus reuse/simplification/efficiency cleanups where the model's recipe covers them) at the effort level given first, before any target (low|medium|high|xhigh|max: from few high-confidence findings to many, some uncertain; ultra: deep multi-agent review in the cloud); with no level given, it reuses the level you type…
   command /simplify source="" hint="[<target>]" "Review the changed code for reuse, simplification, efficiency, and altitude cleanups, then apply the fixes. Quality only — it does not hunt for bugs; use /code-review for that."
   command /batch source="" hint="<instruction>" "Research and plan a large-scale change, then execute it in parallel across 5–30 isolated worktree agents that each open a PR."
   command /fewer-permission-prompts source="" hint="" "Scan your transcripts for common read-only Bash and MCP tool calls, then add a prioritized allowlist to project .claude/settings.json to reduce permission prompts."
   command /loop source="" hint="[interval] [prompt]" "Run a prompt or slash command on a recurring interval (e.g. /loop 5m /foo). Omit the interval to let the model self-pace."
   command /schedule source="" hint="" "Create, update, list, or run scheduled cloud agents (routines) that execute on a cron schedule."
   command /claude-api source="" hint="" "Reference for the Claude API / Anthropic SDK — model ids, pricing, params, streaming, tool use, MCP, agents, caching, token counting, model migration.\nTRIGGER — read BEFORE opening the target file; don't skip because it \"looks like a one-liner\" — whenever: the prompt names Claude/Anthropic in any form (Claude, Anthropic, Fable, Opus, Sonnet, Haiku, `anthropic`, `@anthropic-ai`, `claude-*`, `us…
+  command /workflow-authoring source="" hint="" "Reference for writing a Workflow tool script (script API and gotchas, resume, quality patterns, worked examples). Load before authoring a script for a workflow the user already opted into; it does not itself authorize running one."
   command /run source="" hint="" "Launch and drive this project's app to see a change working. Use when asked to run, start, or screenshot the app, or to confirm a change works in the real app (not just tests). First looks for a project skill that already covers launching the app; otherwise falls back to built-in patterns per project type (CLI, server, TUI, Electron, browser-driven, library)."
   command /run-skill-generator source="" hint="" "Author or improve the run-<unit> skill - a per-project skill that tells agents how to build, launch, and drive this project's app. Use when the user asks to set up the project, get it running, write run instructions, or verify build/run steps work from a clean environment."
+  command /plugin-authoring source="" hint="" "Make a mod: a change to Claude's own interface or behaviour, such as a panel or pane that stays beside the chat and updates, a band, status line, toast, slash command, or hook on tool calls. Use to make, change or debug a mod or its hooks module."
+  command /advisor source="" hint="[fable|opus|sonnet|off]" "Let Claude consult a stronger model at key moments"
   command /autocompact source="" hint="[auto|<tokens>]" "Configure the auto-compact window size"
   command /clear source="" hint="[name]" "Start a new session with empty context; previous session stays on disk (resumable with /resume)"
   command /compact source="" hint="<optional custom summarization instructions>" "Free up context by summarizing the conversation so far"
+  command /output-style source="" hint="[style]" "List output styles or switch to one"
   command /context source="" hint="" "Show current context usage"
-  command /fast source="" hint="[on|off]" "Toggle fast mode (Opus 5)"
+  command /fast source="" hint="[on|off]" "Toggle fast mode (Opus 5.5)"
+  command /focus source="" hint="[on|off]" "Toggle focus view: just your prompt, summary, and response"
   command /init source="" hint="" "Initialize a new CLAUDE.md file with codebase documentation"
   command /import source="" hint="" "Import config from another AI coding agent"
   command /__remote-workflow source="" hint="" "Run the workflow script delivered in this session environment (server-launched sessions only)"
   command /workflow-launch-exec source="" hint="" "Execute a server-launched workflow handoff (workflow_launch event sessions only)"
+  command /reload-plugins source="" hint="[--force]" "Activate pending plugin changes in the current session"
   command /reload-skills source="" hint="" "Pick up skills added or changed on disk during this session"
-  command /ultrareview source="" hint="" "Start a cloud agent that finds and verifies bugs in your branch (~5-10 min, $5-$25 USD) · Runs in Claude Code on the web. See https://code.claude.com/docs/en/claude-code-on-the-web"
+  command /ultrareview source="" hint="" "Start a cloud agent that finds and verifies bugs in your branch (~15-25 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web"
   command /security-review source="" hint="" "Complete a security review of the pending changes on the current branch"
   command /usage-credits source="" hint="" "Configure usage credits or request them from your admin when you hit a limit"
   command /extra-usage source="" hint="" "Renamed to /usage-credits"
   command /usage source="" hint="" "Show session cost, plan usage, and what's contributing to your limits"
   command /insights source="" hint="" "Generate a report analyzing your Claude Code sessions"
   command /recap source="" hint="" "Generate a one-line session recap now"
+  command /skill-doctor source="" hint="" "Show which loaded skills are unused and costing context"
   command /goal source="" hint="" "Set a goal — keep working until the condition is met"
-  command /design source="" hint="consent | revoke" "Grant or revoke Claude agent access to your Design projects"
   command /design-consent source="" hint="" "Grant Claude agent access to your Design projects"
   command /design-revoke source="" hint="" "Revoke Claude agent access to your Design projects"
   command /list-agents source="" hint="" "List subagents, teammates, and other Claude sessions you can message"

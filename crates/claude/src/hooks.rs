@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 const FORWARD_ENVELOPE_FIELD: &str = "amux_hook_forward_v1";
 
-/// The variable the `claude-hook` forwarder reads to find the socket its hook
+/// The variable Claude's hook command reads to find the socket its hook
 /// payloads go to.
 pub const HOOK_SOCKET_ENV: &str = "CLAUDE_HOOK_SOCKET";
 

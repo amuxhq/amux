@@ -228,7 +228,6 @@ evidence = ""
 update = ""
 cargo = [
   { package = "claude", kind = "lib", targets = ["claude"], features = [] },
-  { package = "claude", kind = "bin", targets = ["claude-hook"], features = [] },
   { package = "claude", targets = ["boundary"], features = [] },
 ]
 

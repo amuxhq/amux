@@ -465,17 +465,25 @@ mode, where Claude offers auto mode for the running model, its menu has
 knows, the card offers it as one more scope, a switch to auto, and choosing
 it types that entry and records the permission as auto at once.
 
-The permission hook carries neither of Claude's flags for an ask it leaves
-to a person (`suppress_always_allow_rule`, `default_to_no`). It needs none:
-Claude 2.1.312 sends such an ask's hook without suggestions, and its menu
-reads Yes / No, with no "don't ask again" row and no switch to auto mode
-(recorded live for a write into Claude's jobs folder). An ask with no
-suggestion offers no scope, so amux types only Yes or Escape on it, both
-where the menu has them. A menu Claude opens on its refusal
-(`default_to_no`, which Claude sets when auto mode has no classifier to
-ask) takes no digit, by Claude's own account: an allow from amux does not
-land there and the ask stays open in the terminal, while Escape still
-declines it.
+The permission hook carries neither of Claude's flags
+(`suppress_always_allow_rule`, `default_to_no`). For the common flagged
+ask it needs neither: an ask Claude leaves only to a person comes with no
+suggestions in its hook, and its menu reads Yes / No, with no "don't ask
+again" row and no switch to auto mode (recorded live on Claude 2.1.312
+for a write into its jobs folder). An ask with no suggestion offers no
+scope, so amux types only Yes or Escape on it, both where the menu has
+them. Two rarer cases remain, both read from Claude's source rather than
+recorded:
+
+- a few flagged asks keep their suggestions (some tool-server policy and
+  ask-rule paths), so amux offers a scope for a row the menu leaves out,
+  and the digit it types lands on a later row, No on a Yes / No menu;
+- a menu Claude opens on its refusal (`default_to_no`, set on several
+  person-only and auto-mode fallback paths) takes no digit, so an allow
+  from amux does not land: amux closes its ask as allowed while Claude's
+  menu stays open in the terminal. Escape still declines either way.
+
+Neither can approve what the person declined.
 
 Terminal Claude offers no list of models, efforts or commands a program could
 read, so its catalogue, written when it launches, holds the models and

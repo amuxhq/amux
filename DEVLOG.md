@@ -1,3 +1,7 @@
+2026-10-29 — **A host started again sends its first flight where its peer's packets first come from, when that is a path the flight never took.** A laptop started again knows its peer only through the relay, and a relay name whose first address answers nothing carries the flight until the dial moves its forwarding on. Meanwhile the peer's link from the last run, not yet timed out, probes the address the new run took over; the laptop learns the peer there, and the next packet from it moved the dial onto that path and forgot the flight, so the relay's resend had nothing to send and the launch waited out QUIC's retransmit, about a second. CI caught it once on Linux; locally it failed about one full link-spec run in six. A packet that moves a dial onto a path the flight never named now sends the flight again there, as moving a forwarding link does.
+
+Tests: the socket sends a relay-only flight again at the address a probing peer's packet came from, and sends nothing twice when the packet comes on a path the flight took. Eight full `spec_links` runs pass, every launch of the killed-process relaunch spec within 360 ms; node and `just lint` pass.
+
 2026-10-29 — **The design contract for a host's one direct link at the relay names the relay model's property as it now reads.** The model's property grew to say that no link of an earlier life sits beside one of the latest, and `just contracts-check` failed on main because the contract still quoted the old sentence.
 
 Tests: `just contracts-check` passes.

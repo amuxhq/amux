@@ -717,10 +717,13 @@ impl State {
         let Route::All(paths) = &held.route else {
             return None;
         };
-        let named = paths.iter().copied().find(|candidate| match (candidate, path) {
-            (Path::Direct(a) | Path::Punched(a), Path::Direct(b) | Path::Punched(b)) => *a == b,
-            (candidate, path) => *candidate == path,
-        });
+        let named = paths
+            .iter()
+            .copied()
+            .find(|candidate| match (candidate, path) {
+                (Path::Direct(a) | Path::Punched(a), Path::Direct(b) | Path::Punched(b)) => *a == b,
+                (candidate, path) => *candidate == path,
+            });
         held.route = Route::Carrying(named.unwrap_or(path));
         let flight = held.flight.take()?;
         named.is_none().then(|| flight.sent.into())

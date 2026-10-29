@@ -785,12 +785,9 @@ mod tests {
                 .unwrap(),
         );
         let _far = link(far, carrier, &format!("{account}/pro")).await;
-        assert_eq!(
-            relay.server.user_links(account).await.len(),
-            2,
-            "both hosts hold a link"
-        );
 
+        // The relay answers a Hello before it registers the link, so the
+        // probe is sent again until the far host's link is there.
         let through = LinkId(1);
         let via = endpoint.socket.stand_in_at(udp_addr);
         endpoint
@@ -812,6 +809,11 @@ mod tests {
         }
         let answer = answered.expect("the probe's answer came back through the relay");
         assert!(answer.nonce < 50, "{answer:?}");
+        assert_eq!(
+            relay.server.user_links(account).await.len(),
+            2,
+            "both hosts hold a link"
+        );
         relay.serving.close();
     }
 

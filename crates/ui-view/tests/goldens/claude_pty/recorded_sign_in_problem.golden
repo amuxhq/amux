@@ -2,19 +2,19 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
   row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 13 recorded 11: fact Transcript type=user uuid=2b2977b9-0b94-4cbc-a523-20d7346ac06e
-  row    2 2b2977b9-0b94-4cbc-a523-20d7346ac06e Prompt { text: [Text("Reply exactly PTY_SPEC_SIGN_IN and nothing else.")], steered: false }
+## 13 recorded 11: fact Transcript type=user uuid=ff489948-0eae-4a87-a69f-f793138ce775
+  row    2 ff489948-0eae-4a87-a69f-f793138ce775 Prompt { text: [Text("Reply exactly PTY_SPEC_SIGN_IN and nothing else.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 35 recorded 33: fact Transcript type=assistant uuid=be31fc58-a53e-4488-98ae-a0384fa2dbec
-  row    3 be31fc58-a53e-4488-98ae-a0384fa2dbec Error { error_kind: "authentication_failed", message: "Please run /login · API Error: 401 API key is invalid.", attempts: 0, gave_up: true } attention
-## 36 recorded 34: fact Transcript type=system subtype=turn_duration uuid=db2f6def-b34b-42d1-80a6-98380d005626
-  row    4 turn:1 TurnEnd { duration_ms: Some(2510), failed: false }
+## 33 recorded 31: fact Transcript type=assistant uuid=ad4f467a-a62d-402b-88e2-4b23c1138285
+  row    3 ad4f467a-a62d-402b-88e2-4b23c1138285 Error { error_kind: "authentication_failed", message: "Invalid API key · Fix external API key", attempts: 0, gave_up: true } attention
+## 35 recorded 33: fact Transcript type=system subtype=turn_duration uuid=aaed4b8c-c9c6-4dba-9708-a83bbe8af154
+  row    4 turn:1 TurnEnd { duration_ms: Some(281), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 2b2977b9-0b94-4cbc-a523-20d7346ac06e Prompt { text: [Text("Reply exactly PTY_SPEC_SIGN_IN and nothing else.")], steered: false }
-     3 be31fc58-a53e-4488-98ae-a0384fa2dbec Error { error_kind: "authentication_failed", message: "Please run /login · API Error: 401 API key is invalid.", attempts: 0, gave_up: true } attention
-     4 turn:1 TurnEnd { duration_ms: Some(2510), failed: false }
+     2 ff489948-0eae-4a87-a69f-f793138ce775 Prompt { text: [Text("Reply exactly PTY_SPEC_SIGN_IN and nothing else.")], steered: false }
+     3 ad4f467a-a62d-402b-88e2-4b23c1138285 Error { error_kind: "authentication_failed", message: "Invalid API key · Fix external API key", attempts: 0, gave_up: true } attention
+     4 turn:1 TurnEnd { duration_ms: Some(281), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

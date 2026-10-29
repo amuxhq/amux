@@ -85,7 +85,7 @@ codex = { mark = "full", carriers = ["item:work.mcp"], golden = [" work final ",
 [[row]]
 id = "C10"
 item = "Subagent"
-claude_pty = { mark = "partial", carriers = ["item:tool", "item:tool.subagent"], golden = ["\" Agent TOOL_STATE_SUCCEEDED", " subagent=1 ", " finished ", " out=\"The line says"] }
+claude_pty = { mark = "partial", carriers = ["item:tool", "item:tool.subagent"], golden = ["\" Agent TOOL_STATE_SUCCEEDED", " subagent=1 ", " finished ", " out=\""] }
 claude_sdk = { mark = "full", carriers = ["item:tool", "snapshot:active_tasks"], golden = [" Agent TOOL_STATE_", " subagent="] }
 codex = { mark = "partial", carriers = ["item:work.collab"], golden = [" work ", " collab "] }
 

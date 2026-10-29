@@ -421,7 +421,7 @@ Hooks carry only what the transcript never does:
 | `PermissionRequest` | Opens the permission card: an ask carrying the hook's tool, input and scope suggestions (or a question or plan ask for `AskUserQuestion` and `ExitPlanMode`), answered on the hook itself (see [asks and answers](#asks-and-answers)). The hook names no tool-use id; the call the `PreToolUse` before it announced is the one it gates. Claude writes a gated call's row only once the call is decided, so the card points at no row until that call's row lands. |
 | `PermissionDenied` | Auto mode refused a call without asking anyone: the call's row reads denied, with the reason, whichever side of the row the hook lands. |
 | `Elicitation` | A tool server asks for a form or a link while one of its calls runs. Claude waits on the hook before drawing its own dialog, so the ask, a form or link with an item of its own, is answered on the hook. Someone at Claude's own terminal must see the dialog: while a terminal client shows Claude's screen, the hook is let go as it arrives, and one that comes to the screen lets go of the hook that waits. Claude then draws its dialog, and the open ask is an unanswerable one saying it is answered there, while its item keeps the form or link. It closes cancelled on an interrupt through amux (which cancels it on the hook too), and dismissed, releasing the hook, on that call's result, a row from a later assistant message, or any fact that closes every ask. |
-| `MessageDisplay` | A batch of finished lines of the reply Claude is drawing. The first opens a message item keyed `stream:<message id>`, later ones append to it, and the reply's transcript row takes the item over, whole. The hook's message id is not the row's, but Claude writes rows in the order it draws replies, so the oldest reply not yet written is the next text row's; a row that lands before its reply's first batch keeps its own key, and the late batch draws nothing. Hooks and rows travel apart, so a reply's last batch can come after the row that ended its turn, even after the next prompt began; every hook names the prompt its turn answers, and a batch for a prompt whose turn is over draws nothing. A reply cut short with no row ends as drawn when the turn ends. |
+| `MessageDisplay` | A batch of finished lines of the reply Claude is drawing. The first opens a message item keyed `stream:<message id>`, later ones append to it, and the reply's transcript row takes the item over, whole. The hook's message id is not the row's, but Claude writes rows in the order it draws replies, so the oldest reply not yet written is the next text row's; a row that lands before its reply's first batch keeps its own key, and the late batch draws nothing. Hooks and rows travel apart, so a reply's last batch can come after the row that ended its turn, even after the next prompt began; every hook names the prompt its turn answers, and a batch for a prompt whose turn is over draws nothing. A reply's first batch can also come before the row of the prompt it answers: a turn's batches wait from its prompt's `UserPromptSubmit` until a user row of that prompt lands, so the reply is drawn below the prompt. A reply cut short with no row ends as drawn when the turn ends. |
 | `PostModelSwitch` | The model Claude switched to, as when plan mode moves to a bigger model, shown until the next assistant row names the model it ran. |
 | `Stop` | Lists the background jobs still running (see [background jobs](#background-jobs)), clears the running marks, and closes every ask still open with its outcome unknown, drawn dismissed until the call's result says how it went, except one raised by a subagent still running in the background, whose dialog Claude keeps open. It does **not** end the turn. |
 | `SubagentStop` | A subagent finished: it leaves the background jobs, and any ask it left open closes with its outcome unknown. |
@@ -884,12 +884,12 @@ cargo run -p codex-specs --bin codex-probe -- probe [--out <dir>]
 
 `claude-probe` runs the `claude` on your `PATH`, or the one named by
 `CLAUDE_REAL_PATH`; `codex-probe` runs `codex` and records with the model its
-specs pin (`CAPTURE_MODEL` in `crates/codex-specs/src/specs.rs`). A headless
-Claude capture reads only project and local settings and only the tool servers
-its spec names (`--setting-sources project,local --strict-mcp-config`, unless
-the spec names its own sources), so your own plugins, skills, agents,
-permission rules and connected accounts stay out of the recording. A terminal
-capture's transcript drops the rows that copy each API request and scrubs the
+specs pin (`CAPTURE_MODEL` in `crates/codex-specs/src/specs.rs`). A Claude
+capture, terminal or headless, reads only project and local settings and only
+the tool servers its spec names (`--setting-sources project,local
+--strict-mcp-config`, unless the spec names its own sources), so your own
+plugins, skills, agents, permission rules, default mode and connected accounts
+stay out of the recording. A terminal capture's transcript drops the rows that copy each API request and scrubs the
 attachments that carry your instructions, environment, attribution and what
 you have installed.
 

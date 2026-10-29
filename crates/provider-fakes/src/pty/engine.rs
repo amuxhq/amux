@@ -292,6 +292,9 @@ fn serve_messaging(path: PathBuf, tx: mpsc::UnboundedSender<In>) -> std::io::Res
 struct Queued {
     text: String,
     peer: bool,
+    /// Its `UserPromptSubmit` hook has run: Claude runs it as a prompt is
+    /// submitted, a prompt typed mid-turn included.
+    announced: bool,
 }
 
 /// Why a turn stopped before its steps did.
@@ -342,6 +345,12 @@ struct Engine {
     /// The last row written, for `parentUuid`.
     parent: Option<String>,
     prompt_id: String,
+    /// A thinking row not yet written: see `assistant_with`.
+    held_thinking: Option<Value>,
+    /// Every tool the session has called, in first-use order.
+    tools_used: Vec<String>,
+    /// The running turn's id, which MessageDisplay names.
+    turn_id: String,
     /// Prompts and turns so far, which Claude numbers on each prompt row.
     prompts: u64,
     turns: u64,
@@ -401,6 +410,9 @@ impl Engine {
             decided: None,
             parent: None,
             prompt_id: uuid(),
+            held_thinking: None,
+            tools_used: Vec::new(),
+            turn_id: uuid(),
             prompts: 0,
             turns: 0,
             last_text: String::new(),
@@ -563,6 +575,7 @@ impl Engine {
             In::Peer(text) => self.submit(Queued {
                 text: peer_element(&text),
                 peer: true,
+                announced: false,
             }),
             In::Key(key) => match key {
                 Key::Paste(text) => self.composer.push_str(&text),
@@ -571,7 +584,11 @@ impl Engine {
                 Key::Enter => {
                     let text = std::mem::take(&mut self.composer);
                     if !text.trim().is_empty() {
-                        self.submit(Queued { text, peer: false });
+                        self.submit(Queued {
+                            text,
+                            peer: false,
+                            announced: false,
+                        });
                     }
                 }
                 Key::Escape => {
@@ -600,7 +617,7 @@ impl Engine {
         }
     }
 
-    fn submit(&mut self, queued: Queued) {
+    fn submit(&mut self, mut queued: Queued) {
         if self.busy {
             let row = json!({
                 "type": "queue-operation",
@@ -610,8 +627,22 @@ impl Engine {
                 "timestamp": timestamp(),
             });
             self.row(row);
+            self.prompt_submitted(&mut queued);
         }
         self.queue.push_back(queued);
+    }
+
+    /// A typed prompt's `UserPromptSubmit` hook, once, under the prompt id
+    /// in force: a prompt typed mid-turn carries the running turn's.
+    fn prompt_submitted(&mut self, queued: &mut Queued) {
+        if queued.peer || queued.announced {
+            return;
+        }
+        queued.announced = true;
+        self.hook(json!({
+            "hook_event_name": "UserPromptSubmit",
+            "prompt": queued.text,
+        }));
     }
 
     /// Claude's folder-trust dialog, drawn as its first screen with its
@@ -644,12 +675,19 @@ impl Engine {
     /// Append a row. Conversation rows carry the envelope Claude puts on
     /// them and chain through `parentUuid`.
     fn row(&mut self, row: Value) {
-        let bytes = serde_json::to_vec(&row).expect("rows serialise");
-        if let Err(error) = append_row(&self.transcript, &bytes) {
-            eprintln!("fake-claude-pty: transcript: {error}");
+        if let Some(thinking) = self.held_thinking.take() {
+            self.append(&thinking);
         }
+        self.append(&row);
         if let Some(uuid) = row["uuid"].as_str() {
             self.parent = Some(uuid.to_owned());
+        }
+    }
+
+    fn append(&self, row: &Value) {
+        let bytes = serde_json::to_vec(row).expect("rows serialise");
+        if let Err(error) = append_row(&self.transcript, &bytes) {
+            eprintln!("fake-claude-pty: transcript: {error}");
         }
     }
 
@@ -713,7 +751,13 @@ impl Engine {
         }
         if matches!(
             event,
-            "SessionStart" | "PreToolUse" | "PostToolUse" | "PermissionRequest" | "Stop"
+            "SessionStart"
+                | "UserPromptSubmit"
+                | "PreToolUse"
+                | "PostToolUse"
+                | "PermissionRequest"
+                | "MessageDisplay"
+                | "Stop"
         ) {
             payload["scratchpad_dir"] = json!(format!("{}/.scratchpad", self.cwd));
         }
@@ -757,15 +801,17 @@ impl Engine {
         self.row(row);
     }
 
-    async fn turn(&mut self, first: Queued) -> Option<i32> {
+    async fn turn(&mut self, mut first: Queued) -> Option<i32> {
         let started = std::time::Instant::now();
         self.busy = true;
         self.cut = None;
         self.send_now = false;
         self.prompt_id = uuid();
+        self.turn_id = uuid();
         self.turns += 1;
         self.last_text.clear();
         self.screen(&format!("> {}", first.text));
+        self.prompt_submitted(&mut first);
         self.user_row(&first, "typed");
         let request = self.ids.next("req_fake");
         let message = self.ids.next("msg_fake");
@@ -790,6 +836,16 @@ impl Engine {
                 Step::Text { chunks } => {
                     let text = chunks.concat();
                     self.screen(&text);
+                    // Claude hands its finished lines to MessageDisplay as
+                    // it draws them; the fake draws the message whole.
+                    self.hook(json!({
+                        "hook_event_name": "MessageDisplay",
+                        "delta": text,
+                        "final": true,
+                        "index": 0,
+                        "message_id": uuid(),
+                        "turn_id": self.turn_id,
+                    }));
                     self.assistant(
                         &request,
                         &message,
@@ -807,8 +863,9 @@ impl Engine {
                     match self.hold(&tool).await {
                         Held::Ran => {
                             let outcome = self.outcome(&name, &tool, &input).await;
+                            let absorbed = self.absorb();
                             self.finish_tool(&id, &name, &input, &tool, outcome);
-                            self.fold();
+                            self.attach(absorbed);
                         }
                         Held::Backgrounded => self.background(&id),
                         Held::Interrupted => {
@@ -897,14 +954,12 @@ impl Engine {
         stop: &str,
         wire_inputs: Value,
     ) {
-        // Terminal Claude 2.1.292 writes the fallback credit on its thinking
-        // and tool-call rows, and how long a thinking block took on its row;
-        // no recording of it yet holds a reply's text row.
+        // Terminal Claude 2.1.312 writes the fallback credit, the request's
+        // own reference and the model asked for on every assistant row, and
+        // on a thinking row how long it took and how thinking is displayed.
         let thinking = block["type"] == "thinking";
         let mut usage = turn_usage();
-        if block["type"] != "text" {
-            usage["fallback_credit"] = Value::Null;
-        }
+        usage["fallback_credit"] = Value::Null;
         let mut row = self.envelope(json!({
             "type": "assistant",
             "apiBlockIndex": 0,
@@ -925,6 +980,8 @@ impl Engine {
             },
             "perTurnEffort": null,
             "requestId": request,
+            "requestRef": format!("{request}-ref"),
+            "requestedModel": self.model,
             "session_id": self.session,
         }));
         if !wire_inputs.is_null() {
@@ -932,6 +989,13 @@ impl Engine {
         }
         if thinking {
             row["thinkingDurationMs"] = json!(1);
+            row["thinkingDisplay"] = json!("updates");
+            // Claude writes a message's rows once it has the message, so a
+            // thinking row lands with whatever follows it, after the
+            // tools-used row a new tool brings.
+            self.parent = row["uuid"].as_str().map(str::to_owned);
+            self.held_thinking = Some(row);
+            return;
         }
         self.row(row);
     }
@@ -959,6 +1023,16 @@ impl Engine {
 
     /// A call's tool_use row.
     fn call_row(&mut self, request: &str, message: &str, id: &str, name: &str, input: &Value) {
+        // A tool the session has not used before adds a tools-used row
+        // listing every tool used so far, ahead of the message's rows.
+        if !self.tools_used.iter().any(|used| used == name) {
+            self.tools_used.push(name.to_owned());
+            self.append(&json!({
+                "type": "tools-used",
+                "sessionId": self.session,
+                "tools": self.tools_used,
+            }));
+        }
         let block = json!({
             "type": "tool_use",
             "id": id,
@@ -1044,17 +1118,38 @@ impl Engine {
 
     /// Fold prompts queued since the last boundary into the running turn.
     fn fold(&mut self) {
+        let absorbed = self.absorb();
+        self.attach(absorbed);
+    }
+
+    /// The removal rows of the prompts queued since the last boundary.
+    /// After a call Claude writes them ahead of the call's result row, and
+    /// the prompts' attachments after it.
+    fn absorb(&mut self) -> Vec<(Queued, String, String)> {
         self.drain();
+        let mut absorbed = Vec::new();
         while let Some(queued) = self.queue.pop_front() {
+            // The removal and the attachment name the same command and
+            // delivery.
+            let (command, delivery) = (uuid(), uuid());
             let row = json!({
                 "type": "queue-operation",
                 "operation": "remove",
+                "commandUuid": command,
                 "content": queued.text,
+                "deliveryId": delivery,
                 "reason": "absorbed_mid_turn",
                 "sessionId": self.session,
                 "timestamp": timestamp(),
             });
             self.row(row);
+            absorbed.push((queued, command, delivery));
+        }
+        absorbed
+    }
+
+    fn attach(&mut self, absorbed: Vec<(Queued, String, String)>) {
+        for (queued, command, delivery) in absorbed {
             let origin = if queued.peer {
                 json!({ "kind": "peer" })
             } else {
@@ -1065,13 +1160,15 @@ impl Engine {
                 "attachment": {
                     "type": "queued_command",
                     "commandMode": "prompt",
+                    "delivery_id": delivery,
                     "humanTurn": !queued.peer,
                     "origin": origin,
                     "prompt": queued.text,
-                    "source_uuid": uuid(),
+                    "source_uuid": command,
                     "timestamp": timestamp(),
                 },
                 "rendered": [{ "content": format!("<system-reminder>\nThe user sent a new message while you were working:\n{}\n</system-reminder>", queued.text) }],
+                "renderedRole": "system",
                 "session_id": self.session,
             }));
             self.row(row);

@@ -739,13 +739,33 @@ fn join(capture: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
             return Err(format!("{}: not a Claude capture ({other:?})", capture.display()).into());
         }
     };
-    let spawns = std::fs::read_to_string(capture.join("spawn.jsonl"))?
+    let mut spawns = std::fs::read_to_string(capture.join("spawn.jsonl"))?
         .lines()
         .filter(|line| !line.trim().is_empty())
         .map(serde_json::from_str::<serde_json::Value>)
         .collect::<Result<Vec<_>, _>>()?;
     let mut events = replay_support::load_script(capture.join("io.jsonl"));
     if pty {
+        // A terminal capture is the terminal session. The headless Claude
+        // the agent asks for the host's catalogue runs beside it under its
+        // own transport, with the owner's settings: its answer lists their
+        // plugins, skills and agents, so it stays out.
+        let beside: Vec<String> = events
+            .iter()
+            .filter_map(|event| event.transport_id.clone())
+            .filter(|id| !matches!(id.as_str(), "pty" | "transcript" | "hook"))
+            .collect();
+        events.retain(|event| {
+            event
+                .transport_id
+                .as_ref()
+                .is_none_or(|id| !beside.contains(id))
+        });
+        spawns.retain(|row| {
+            row["transport_id"]
+                .as_str()
+                .is_none_or(|id| !beside.iter().any(|beside| beside == id))
+        });
         stabilize_pty_transcript_paths(&mut events)?;
         claude_specs::scrub::transcript(&mut events)?;
     } else {

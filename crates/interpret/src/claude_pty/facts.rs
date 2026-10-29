@@ -16,8 +16,8 @@ use wire::claude_pty_item::Kind;
 use wire::{Ask, BoundaryKind, DecisionOutcome, PermissionAsk, ToolState, Turn, TurnOutcome};
 
 use super::{
-    AgentFact, Announced, AskMeta, AskShape, Decision, HookRow, PendingMessage, Running, Slash,
-    State, Stream, Subagent, Tool, item_body,
+    AgentFact, Announced, AskMeta, AskShape, Decision, HeldDisplay, HookRow, PendingMessage,
+    Running, Slash, State, Stream, Subagent, Tool, item_body,
 };
 use crate::claude_answers::AnswerShape;
 use crate::claude_common::{
@@ -299,6 +299,11 @@ impl State {
             && !self.turn_prompts.contains(prompt)
         {
             self.turn_prompts.push(prompt.clone());
+            if matches!(payload, Payload::UserPromptSubmit(_))
+                && self.prompt_seen.as_ref() != Some(prompt)
+            {
+                self.prompt_unseen = Some(prompt.clone());
+            }
         }
         match payload {
             Payload::SessionStart(start) => self.session_start(emit, start),
@@ -814,23 +819,35 @@ impl State {
         {
             return;
         }
+        if self.prompt_unseen.is_some() && self.prompt_unseen == display.common.prompt_id {
+            self.held_displays.push(HeldDisplay {
+                message_id: display.message_id.clone(),
+                delta: display.delta.clone(),
+            });
+            return;
+        }
+        self.draw_display(emit, &display.message_id, &display.delta);
+    }
+
+    /// Draws a batch of the reply Claude displays under `message_id`.
+    fn draw_display(&mut self, emit: &mut Emit, message_id: &str, delta: &str) {
         self.shared.turn_started();
         if let Some(stream) = self
             .streams
             .iter()
-            .find(|stream| stream.message_id == display.message_id)
+            .find(|stream| stream.message_id == message_id)
         {
-            if !stream.landed && !display.delta.is_empty() {
+            if !stream.landed && !delta.is_empty() {
                 let key = stream.key.clone();
-                self.shared.append(emit, &key, &display.delta);
+                self.shared.append(emit, &key, delta);
             }
             return;
         }
         let landed = self.unstreamed > 0;
         self.unstreamed = self.unstreamed.saturating_sub(1);
-        let key = format!("stream:{}", display.message_id);
+        let key = format!("stream:{message_id}");
         self.streams.push(Stream {
-            message_id: display.message_id.clone(),
+            message_id: message_id.to_owned(),
             key: key.clone(),
             landed,
         });
@@ -839,7 +856,7 @@ impl State {
                 emit,
                 ItemDraft {
                     key,
-                    text: display.delta.clone(),
+                    text: delta.to_owned(),
                     body: item_body(Kind::Message(wire::Text { complete: false })),
                     ..Default::default()
                 },
@@ -1176,6 +1193,8 @@ impl State {
             Row::User(user) => {
                 self.shared.provider_started();
                 self.user_row(emit, user, at_ms);
+                // Any row of a prompt's comes after the prompt itself.
+                self.prompt_landed(emit, &user.prompt_id);
             }
             Row::Assistant(assistant) => {
                 self.shared.provider_started();
@@ -1458,6 +1477,18 @@ impl State {
         );
     }
 
+    /// The row of the prompt `prompt_id` landed: a reply drawn before it
+    /// goes below it now.
+    fn prompt_landed(&mut self, emit: &mut Emit, prompt_id: &str) {
+        self.prompt_seen = Some(prompt_id.to_owned());
+        if self.prompt_unseen.as_deref() == Some(prompt_id) {
+            self.prompt_unseen = None;
+            for held in std::mem::take(&mut self.held_displays) {
+                self.draw_display(emit, &held.message_id, &held.delta);
+            }
+        }
+    }
+
     /// A prompt typed while a turn ran that Claude folded into that turn at
     /// a tool boundary: a queued-command attachment, with no user row. Its
     /// item is the prompt, marked steered; one sent through amux carries
@@ -1619,6 +1650,8 @@ impl State {
     ) {
         self.local_turn = false;
         self.running.clear();
+        self.prompt_unseen = None;
+        self.held_displays.clear();
         self.finish_streams(emit);
         self.ended_prompts
             .extend(std::mem::take(&mut self.turn_prompts));

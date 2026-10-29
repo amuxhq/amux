@@ -9,7 +9,7 @@
         "channel": "agent",
         "json": {
           "type": "launch",
-          "version": "2.1.292"
+          "version": "2.1.312"
         }
       }
     }

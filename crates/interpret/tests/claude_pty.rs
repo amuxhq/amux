@@ -1706,3 +1706,50 @@ fn an_ask_claude_leaves_to_a_person_offers_no_scope() {
     };
     assert!(permission.scopes.is_empty(), "{:?}", permission.scopes);
 }
+
+/// Hooks and rows travel apart, so a reply's first batch can reach amux
+/// before the row of the prompt it answers. The reply is held until that
+/// row lands, so it is drawn below the prompt rather than above it.
+#[test]
+fn a_reply_drawn_before_its_prompts_row_lands_below_the_prompt() {
+    let (mut state, _) = started_claude();
+    let common = |event: &str| {
+        serde_json::json!({
+            "hook_event_name": event, "session_id": "s1", "prompt_id": "q1",
+            "transcript_path": "/claude/projects/w/s1.jsonl", "cwd": "/w",
+            "permission_mode": "default",
+        })
+    };
+    let mut submitted = common("UserPromptSubmit");
+    submitted["prompt"] = "say hello".into();
+    ClaudePty::step(&mut state, hook(submitted));
+    let mut display = common("MessageDisplay");
+    for (key, value) in [
+        ("delta", serde_json::json!("Hello.\n")),
+        ("final", serde_json::json!(false)),
+        ("index", serde_json::json!(0)),
+        ("message_id", serde_json::json!("d1")),
+        ("turn_id", serde_json::json!("turn-q1")),
+    ] {
+        display[key] = value;
+    }
+    let early = ClaudePty::step(&mut state, hook(display));
+    assert!(early.step.items.is_empty(), "{:?}", early.step.items);
+
+    let landed = ClaudePty::step(
+        &mut state,
+        transcript_row(serde_json::json!({
+            "type": "user", "uuid": "u1", "sessionId": "s1", "promptId": "q1",
+            "timestamp": "2027-01-15T08:00:01.000Z", "promptSource": "typed",
+            "origin": {"kind": "human"},
+            "message": {"role": "user", "content": "say hello"},
+        })),
+    );
+    let keys: Vec<&str> = landed
+        .step
+        .items
+        .iter()
+        .map(|item| item.key.as_str())
+        .collect();
+    assert_eq!(keys, ["u1", "stream:d1"]);
+}

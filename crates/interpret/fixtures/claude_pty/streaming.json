@@ -45,7 +45,8 @@
           "message": {
             "role": "user",
             "content": "write a short poem, then list the files"
-          }
+          },
+          "promptId": "q1"
         }
       }
     },
@@ -264,7 +265,8 @@
           "toolUseResult": {
             "stdout": "a.txt",
             "stderr": ""
-          }
+          },
+          "promptId": "q1"
         }
       }
     },
@@ -337,7 +339,8 @@
           "message": {
             "role": "user",
             "content": "[Request interrupted by user]"
-          }
+          },
+          "promptId": "q1"
         }
       },
       "expect": {
@@ -408,7 +411,8 @@
           "message": {
             "role": "user",
             "content": "carry on"
-          }
+          },
+          "promptId": "q2"
         }
       }
     },
@@ -510,7 +514,8 @@
           "message": {
             "role": "user",
             "content": "and again"
-          }
+          },
+          "promptId": "q3"
         }
       }
     },

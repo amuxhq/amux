@@ -2,47 +2,54 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
   row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 13 recorded 11: fact Transcript type=user uuid=fa5e9ed5-2fc3-4847-a432-b2cfec56dee4
-  row    2 fa5e9ed5-2fc3-4847-a432-b2cfec56dee4 Prompt { text: [Text("Use Bash to run exactly: python3 -c 'import time; time.sleep(15)'; echo S1. Then use Bash to run exactly: python3 -c 'import time; time.sleep(5)'; echo S2. Then reply exactly PTY_STEER_QUEUED plus any extra words the user asked for.")], steered: false }
+## 13 recorded 11: fact Transcript type=user uuid=95e5fb33-b006-45a8-8cbf-f7fab16c5a6c
+  row    2 95e5fb33-b006-45a8-8cbf-f7fab16c5a6c Prompt { text: [Text("Use Bash to run exactly: python3 -c 'import time; time.sleep(15)'; echo S1. Then use Bash to run exactly: python3 -c 'import time; time.sleep(5)'; echo S2. Then reply exactly PTY_STEER_QUEUED plus any extra words the user asked for.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 41 recorded 39: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_0177QLZtD7mJgYG5i1jpCyFq
-  composer Send activity=Some(Running { key: "toolu_0177QLZtD7mJgYG5i1jpCyFq" }) queue=[] underway=[] refused=[]
-## 43 recorded 41: fact Transcript type=assistant uuid=bbbc587c-90a4-4508-8da4-31ec6bbe9e97
-  row    3 bbbc587c-90a4-4508-8da4-31ec6bbe9e97 Thinking { text: "", open: false, duration_ms: Some(2103) }
-## 44 recorded 42: fact Transcript type=assistant uuid=ff73dca0-8c7f-4fbf-b9ad-1cf9d156708c
-  row    4 toolu_0177QLZtD7mJgYG5i1jpCyFq Command { command: "python3 -c 'import time; time.sleep(15)'; echo S1", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_0177QLZtD7mJgYG5i1jpCyFq..toolu_0177QLZtD7mJgYG5i1jpCyFq x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
-## 50 recorded 48: fact Transcript type=user uuid=6209f922-e7dd-4e0f-af0d-abe36418c426
-  row    4 toolu_0177QLZtD7mJgYG5i1jpCyFq Command { command: "python3 -c 'import time; time.sleep(15)'; echo S1", state: Succeeded, exit_code: None, output_head: ["S1"], more_lines: 0, output_trimmed: false, output_tail: ["S1"], duration_ms: Some(15192) } run[toolu_0177QLZtD7mJgYG5i1jpCyFq..toolu_0177QLZtD7mJgYG5i1jpCyFq x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagent…
+## 36 recorded 34: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01GM3BBcrhbmebMzp7wjaUYN
+  composer Send activity=Some(Running { key: "toolu_01GM3BBcrhbmebMzp7wjaUYN" }) queue=[] underway=[] refused=[]
+## 40 recorded 38: fact Transcript type=assistant uuid=c7a99d17-72ec-4d38-9bc8-0e625f20aad4
+  row    3 c7a99d17-72ec-4d38-9bc8-0e625f20aad4 Thinking { text: "", open: false, duration_ms: Some(2449) }
+## 41 recorded 39: fact Transcript type=assistant uuid=ebf66426-ead1-456d-ad4e-aa6525abf5d6
+  row    4 toolu_01GM3BBcrhbmebMzp7wjaUYN Command { command: "python3 -c 'import time; time.sleep(15)'; echo S1", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_01GM3BBcrhbmebMzp7wjaUYN..toolu_01GM3BBcrhbmebMzp7wjaUYN x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
+## 51 recorded 49: fact Transcript type=user uuid=976c8b3f-b427-43bc-95f9-59cffcbfa0ae
+  row    4 toolu_01GM3BBcrhbmebMzp7wjaUYN Command { command: "python3 -c 'import time; time.sleep(15)'; echo S1", state: Succeeded, exit_code: None, output_head: ["S1"], more_lines: 0, output_trimmed: false, output_tail: ["S1"], duration_ms: Some(15209) } run[toolu_01GM3BBcrhbmebMzp7wjaUYN..toolu_01GM3BBcrhbmebMzp7wjaUYN x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagent…
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 55 recorded 53: fact Transcript type=attachment uuid=721326aa-2cce-4201-a92f-3fc9c6deb9fe
-  row    4 toolu_0177QLZtD7mJgYG5i1jpCyFq Command { command: "python3 -c 'import time; time.sleep(15)'; echo S1", state: Succeeded, exit_code: None, output_head: ["S1"], more_lines: 0, output_trimmed: false, output_tail: ["S1"], duration_ms: Some(15192) } run[toolu_0177QLZtD7mJgYG5i1jpCyFq..toolu_0177QLZtD7mJgYG5i1jpCyFq x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0,…
-  row    5 721326aa-2cce-4201-a92f-3fc9c6deb9fe Prompt { text: [Text("Also append the word BANANA.")], steered: true }
-## 64 recorded 62: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01ADAvuLV3aTwhoCMVMFAcQB
-  composer Send activity=Some(Running { key: "toolu_01ADAvuLV3aTwhoCMVMFAcQB" }) queue=[] underway=[] refused=[]
-## 66 recorded 64: fact Transcript type=assistant uuid=a53e936d-116e-4a20-9011-4d6630e006ea
-  row    6 a53e936d-116e-4a20-9011-4d6630e006ea Thinking { text: "", open: false, duration_ms: Some(16155) }
-## 68 recorded 66: fact Transcript type=assistant uuid=e6fc9615-8ba2-461b-a646-ba44c442aff5
-  row    7 toolu_01ADAvuLV3aTwhoCMVMFAcQB Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_01ADAvuLV3aTwhoCMVMFAcQB..toolu_01ADAvuLV3aTwhoCMVMFAcQB x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
-## 72 recorded 70: fact Transcript type=user uuid=67869676-4793-4f26-a4da-bd76b3456553
-  row    7 toolu_01ADAvuLV3aTwhoCMVMFAcQB Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5109) } run[toolu_01ADAvuLV3aTwhoCMVMFAcQB..toolu_01ADAvuLV3aTwhoCMVMFAcQB x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents:…
+## 55 recorded 53: fact Transcript type=attachment uuid=0867a619-5e72-498d-a840-b37ca53885e6
+  row    4 toolu_01GM3BBcrhbmebMzp7wjaUYN Command { command: "python3 -c 'import time; time.sleep(15)'; echo S1", state: Succeeded, exit_code: None, output_head: ["S1"], more_lines: 0, output_trimmed: false, output_tail: ["S1"], duration_ms: Some(15209) } run[toolu_01GM3BBcrhbmebMzp7wjaUYN..toolu_01GM3BBcrhbmebMzp7wjaUYN x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0,…
+  row    5 0867a619-5e72-498d-a840-b37ca53885e6 Prompt { text: [Text("Also append the word BANANA.")], steered: true }
+## 64 recorded 62: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01TLEtgZofXe46i3a5QDzAfs
+  composer Send activity=Some(Running { key: "toolu_01TLEtgZofXe46i3a5QDzAfs" }) queue=[] underway=[] refused=[]
+## 66 recorded 64: fact Transcript type=assistant uuid=8bb1493f-7a6c-4641-ac1c-898ea29dbfe6
+  row    6 8bb1493f-7a6c-4641-ac1c-898ea29dbfe6 Thinking { text: "", open: false, duration_ms: Some(16856) }
+## 67 recorded 65: fact Transcript type=assistant uuid=8b1b61a7-a072-4baa-8327-e363c7e0e319
+  row    7 toolu_01TLEtgZofXe46i3a5QDzAfs Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_01TLEtgZofXe46i3a5QDzAfs..toolu_01TLEtgZofXe46i3a5QDzAfs x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
+## 71 recorded 69: fact Transcript type=user uuid=e5ac7d18-0c1a-4b43-b7c9-91d12b10533b
+  row    7 toolu_01TLEtgZofXe46i3a5QDzAfs Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5089) } run[toolu_01TLEtgZofXe46i3a5QDzAfs..toolu_01TLEtgZofXe46i3a5QDzAfs x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents:…
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 78 recorded 76: fact Transcript type=assistant uuid=76c75e76-b967-41b4-8db0-fa7016e64164
-  row    8 76c75e76-b967-41b4-8db0-fa7016e64164 Thinking { text: "", open: false, duration_ms: Some(6252) }
-## 79 recorded 77: fact Transcript type=assistant uuid=d0cce4ba-d3db-4f17-931a-22839a48285f
-  row    7 toolu_01ADAvuLV3aTwhoCMVMFAcQB Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5109) } run[toolu_01ADAvuLV3aTwhoCMVMFAcQB..toolu_01ADAvuLV3aTwhoCMVMFAcQB x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, o…
-  row    9 d0cce4ba-d3db-4f17-931a-22839a48285f Prose { text: [Text("PTY_STEER_QUEUED BANANA")], streaming: false, working_note: false }
+## 73 recorded 71: fact Hook hook_event_name=MessageDisplay
+  row    7 toolu_01TLEtgZofXe46i3a5QDzAfs Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5089) } run[toolu_01TLEtgZofXe46i3a5QDzAfs..toolu_01TLEtgZofXe46i3a5QDzAfs x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, o…
+  row    8 stream:311a9ec7-f002-4ccf-bfc3-e1cef15963e6 Prose { text: [Text("PTY_STEER_QUEUED BANANA")], streaming: true, working_note: false }
+## 78 recorded 76: fact Transcript type=assistant uuid=1444bb26-4f12-4eda-9dd1-1156505fa40d
+  row    9 1444bb26-4f12-4eda-9dd1-1156505fa40d Thinking { text: "", open: false, duration_ms: Some(113) }
+## 80 recorded 78: fact Transcript type=assistant uuid=cbb1fa1f-4b02-46ab-98ec-5e13137422f9
+  row    8 stream:311a9ec7-f002-4ccf-bfc3-e1cef15963e6 Prose { text: [Text("PTY_STEER_QUEUED BANANA")], streaming: false, working_note: false }
+## 82 recorded 80: fact Transcript type=system subtype=turn_duration uuid=ffe64b79-4733-40fc-89c9-f61fd685d4aa
+  row    7 toolu_01TLEtgZofXe46i3a5QDzAfs Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5089) } run[toolu_01TLEtgZofXe46i3a5QDzAfs..toolu_01TLEtgZofXe46i3a5QDzAfs x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, o…
+  row   10 turn:1 TurnEnd { duration_ms: Some(26793), failed: false }
+  composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 fa5e9ed5-2fc3-4847-a432-b2cfec56dee4 Prompt { text: [Text("Use Bash to run exactly: python3 -c 'import time; time.sleep(15)'; echo S1. Then use Bash to run exactly: python3 -c 'import time; time.sleep(5)'; echo S2. Then reply exactly PTY_STEER_QUEUED plus any extra words the user asked for.")], steered: false }
-     3 bbbc587c-90a4-4508-8da4-31ec6bbe9e97 Thinking { text: "", open: false, duration_ms: Some(2103) }
-     4 toolu_0177QLZtD7mJgYG5i1jpCyFq Command { command: "python3 -c 'import time; time.sleep(15)'; echo S1", state: Succeeded, exit_code: None, output_head: ["S1"], more_lines: 0, output_trimmed: false, output_tail: ["S1"], duration_ms: Some(15192) } run[toolu_0177QLZtD7mJgYG5i1jpCyFq..toolu_0177QLZtD7mJgYG5i1jpCyFq x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0,…
-     5 721326aa-2cce-4201-a92f-3fc9c6deb9fe Prompt { text: [Text("Also append the word BANANA.")], steered: true }
-     6 a53e936d-116e-4a20-9011-4d6630e006ea Thinking { text: "", open: false, duration_ms: Some(16155) }
-     7 toolu_01ADAvuLV3aTwhoCMVMFAcQB Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5109) } run[toolu_01ADAvuLV3aTwhoCMVMFAcQB..toolu_01ADAvuLV3aTwhoCMVMFAcQB x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, o…
-     8 76c75e76-b967-41b4-8db0-fa7016e64164 Thinking { text: "", open: false, duration_ms: Some(6252) }
-     9 d0cce4ba-d3db-4f17-931a-22839a48285f Prose { text: [Text("PTY_STEER_QUEUED BANANA")], streaming: false, working_note: false }
+     2 95e5fb33-b006-45a8-8cbf-f7fab16c5a6c Prompt { text: [Text("Use Bash to run exactly: python3 -c 'import time; time.sleep(15)'; echo S1. Then use Bash to run exactly: python3 -c 'import time; time.sleep(5)'; echo S2. Then reply exactly PTY_STEER_QUEUED plus any extra words the user asked for.")], steered: false }
+     3 c7a99d17-72ec-4d38-9bc8-0e625f20aad4 Thinking { text: "", open: false, duration_ms: Some(2449) }
+     4 toolu_01GM3BBcrhbmebMzp7wjaUYN Command { command: "python3 -c 'import time; time.sleep(15)'; echo S1", state: Succeeded, exit_code: None, output_head: ["S1"], more_lines: 0, output_trimmed: false, output_tail: ["S1"], duration_ms: Some(15209) } run[toolu_01GM3BBcrhbmebMzp7wjaUYN..toolu_01GM3BBcrhbmebMzp7wjaUYN x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0,…
+     5 0867a619-5e72-498d-a840-b37ca53885e6 Prompt { text: [Text("Also append the word BANANA.")], steered: true }
+     6 8bb1493f-7a6c-4641-ac1c-898ea29dbfe6 Thinking { text: "", open: false, duration_ms: Some(16856) }
+     7 toolu_01TLEtgZofXe46i3a5QDzAfs Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5089) } run[toolu_01TLEtgZofXe46i3a5QDzAfs..toolu_01TLEtgZofXe46i3a5QDzAfs x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, o…
+     8 stream:311a9ec7-f002-4ccf-bfc3-e1cef15963e6 Prose { text: [Text("PTY_STEER_QUEUED BANANA")], streaming: false, working_note: false }
+     9 1444bb26-4f12-4eda-9dd1-1156505fa40d Thinking { text: "", open: false, duration_ms: None }
+    10 turn:1 TurnEnd { duration_ms: Some(26793), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 36836, window_tokens: None, percent: None, near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 33078, window_tokens: None, percent: None, near_full: false }) sign-in None
 == settings
   model* unlisted claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
   permission  "default" "Ask" normal unsettable

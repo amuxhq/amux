@@ -17,7 +17,7 @@ from the recording host:
 | `sdk_lost` | `sdk_question` | cut after the permission request, then an exit |
 | `codex_approval` | `codex-specs/fixtures/runtime/approval_allow` | the agent's handshake ids (`agent-initialize`, `agent-thread`), the notifications its `initialize` opts out of, and `thread/start` params; `turn/start` as the interpreter writes it (`amux-1`, `text_elements`, the prompt's input id as `clientUserMessageId`); after the thread answer, the interpreter's `thread/name/set` (the agent's name) with its answer and `thread/name/updated` in the shape `codex-specs/fixtures/runtime/thread_list_and_resume` records, then its `thread/read` with the turns (which has Codex write the fresh thread to disk) answered with a `deprecationNotice` and the thread in the shape `codex-specs/fixtures/runtime/two_clients_join_fresh` records, and its `model/list` and `skills/list` requests and their answers, in the shape codex-cli 0.157.0 answers them (no recording holds them yet) |
 | `codex_lost` | `codex_approval` | cut after the approval request, then an exit |
-| `pty_lost` | `claude-specs/fixtures/pty/permission_deny_feedback` as recorded on 2.1.251 | cut after the permission request, then an exit |
+| `pty_lost` | `claude-specs/fixtures/pty/permission_deny_feedback` as recorded on 2.1.312 | cut after the permission request, then an exit |
 | `pty_mode_cycle` | `claude-specs/fixtures/pty/mode_cycle` | the prompt the recording typed after Shift+Tab left out, cut after the screen that shows `accept edits on`, then an exit |
 
 Placeholders filled per run: `{{cwd}}`, `{{version}}` (the agent's), and

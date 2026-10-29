@@ -37,6 +37,7 @@ tagged_enum! {
         "file-history-snapshot" => FileHistorySnapshot(FileHistorySnapshotRow),
         "file-history-delta" => FileHistoryDelta(FileHistoryDeltaRow),
         "bridge-session" => BridgeSession(BridgeSessionRow),
+        "tools-used" => ToolsUsed(ToolsUsedRow),
     }
 }
 
@@ -371,6 +372,8 @@ tagged_enum! {
         "prompt_snapshot" => PromptSnapshot(Extensions),
         "hook_success" => HookSuccess(Extensions),
         "hook_additional_context" => HookAdditionalContext(Extensions),
+        // A hook decided a permission: its event, the call and the decision.
+        "hook_permission_decision" => HookPermissionDecision(Extensions),
         "environment" => Environment(Extensions),
         "model" => Model(Extensions),
         "instructions" => Instructions(Extensions),
@@ -441,6 +444,17 @@ pub struct AiTitleRow {
 pub struct AgentNameRow {
     pub agent_name: String,
     pub session_id: String,
+    #[serde(flatten)]
+    pub extensions: Extensions,
+}
+
+/// Every tool the session has called so far, in first-use order: written
+/// ahead of the message that first calls a tool (Claude 2.1.312).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolsUsedRow {
+    pub session_id: String,
+    pub tools: Vec<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }

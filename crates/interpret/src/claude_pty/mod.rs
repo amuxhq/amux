@@ -582,6 +582,16 @@ pub struct State {
     turn_prompts: Vec<String>,
     #[serde(default)]
     ended_prompts: VecDeque<String>,
+    /// A new turn's prompt its `UserPromptSubmit` announced, until the
+    /// prompt's row lands, and the reply's batches that came before it:
+    /// drawn first, they would sit above the prompt. The hook can come
+    /// after the row too: `prompt_seen` is the newest prompt row's.
+    #[serde(default)]
+    prompt_unseen: Option<String>,
+    #[serde(default)]
+    prompt_seen: Option<String>,
+    #[serde(default)]
+    held_displays: Vec<HeldDisplay>,
     /// Why auto mode refused a call whose row has not landed yet, by
     /// tool-use id.
     #[serde(default)]
@@ -611,6 +621,13 @@ pub(super) struct Announced {
     pub(super) name: String,
     pub(super) input: String,
     pub(super) agent: Option<String>,
+}
+
+/// A reply's batch held until its prompt's row lands.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub(super) struct HeldDisplay {
+    pub(super) message_id: String,
+    pub(super) delta: String,
 }
 
 /// A reply Claude is drawing, by its display id, under the key its item
@@ -671,6 +688,9 @@ impl State {
             unstreamed: 0,
             turn_prompts: Vec::new(),
             ended_prompts: VecDeque::new(),
+            prompt_unseen: None,
+            prompt_seen: None,
+            held_displays: Vec::new(),
             refused: BTreeMap::new(),
             bang: None,
             watched: false,

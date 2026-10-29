@@ -2,32 +2,34 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
   row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 10 recorded 8: fact Transcript type=user uuid=d22bb2a7-726c-4ebf-958d-67d6732ef09d
-  row    2 d22bb2a7-726c-4ebf-958d-67d6732ef09d Prompt { text: [Text("Use the Bash tool to run exactly: printf allow-scoped > allow-scoped.txt; printf allow-scoped. Then stop.")], steered: false }
+## 13 recorded 11: fact Transcript type=user uuid=5bef59ce-1520-4348-beb9-bc711d63d82b
+  row    2 5bef59ce-1520-4348-beb9-bc711d63d82b Prompt { text: [Text("Use the Bash tool to run exactly: printf allow-scoped > allow-scoped.txt; printf allow-scoped. Then stop.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 20 recorded 18: fact Hook hook_event_name=PermissionRequest
+## 36 recorded 34: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01Wfy5Vk8ddKz4n2cnEc4yCC
+  composer Send activity=Some(Running { key: "toolu_01Wfy5Vk8ddKz4n2cnEc4yCC" }) queue=[] underway=[] refused=[]
+## 38 recorded 36: fact Hook hook_event_name=PermissionRequest
   ask ask:1 -> "" 1/1 Open
     choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
-    body Command { command: "printf allow-scoped > allow-scoped.txt; printf allow-scoped", cwd: "", reason: "", description: "Create file and print content as requested" }
+    body Command { command: "printf allow-scoped > allow-scoped.txt; printf allow-scoped", cwd: "", reason: "", description: "Write \"allow-scoped\" to file and print to stdout" }
   composer Send activity=None queue=[] underway=[] refused=[]
-## 22 recorded 20: fact Transcript type=assistant uuid=5add42fe-53cd-41b5-b1cb-6673595143b7
-  row    3 5add42fe-53cd-41b5-b1cb-6673595143b7 Thinking { text: "", open: false, duration_ms: Some(2423) }
-## 23 recorded 21: fact Transcript type=assistant uuid=72eafc06-9389-449d-8818-c1ae42056c79
-  row    4 toolu_01QMearN6kQdqbAdp2iEYZpc Command { command: "printf allow-scoped > allow-scoped.txt; printf allow-scoped", state: Asking, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_01QMearN6kQdqbAdp2iEYZpc..toolu_01QMearN6kQdqbAdp2iEYZpc x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, ot…
-  ask ask:1 -> "toolu_01QMearN6kQdqbAdp2iEYZpc" 1/1 Open
+## 44 recorded 42: fact Transcript type=assistant uuid=57c87a2b-12d2-4ee6-9d55-b9aab7a42424
+  row    3 57c87a2b-12d2-4ee6-9d55-b9aab7a42424 Thinking { text: "", open: false, duration_ms: Some(1579) }
+## 45 recorded 43: fact Transcript type=assistant uuid=3b50cd0a-bffd-44cc-b06f-c10a1415bdef
+  row    4 toolu_01Wfy5Vk8ddKz4n2cnEc4yCC Command { command: "printf allow-scoped > allow-scoped.txt; printf allow-scoped", state: Asking, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_01Wfy5Vk8ddKz4n2cnEc4yCC..toolu_01Wfy5Vk8ddKz4n2cnEc4yCC x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, ot…
+  ask ask:1 -> "toolu_01Wfy5Vk8ddKz4n2cnEc4yCC" 1/1 Open
     choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
-    body Command { command: "printf allow-scoped > allow-scoped.txt; printf allow-scoped", cwd: "", reason: "", description: "Create file and print content as requested" }
-## 24 recorded 22: fact Transcript type=user uuid=dd979c0a-c2a5-49cb-bcb5-57784a4d8a50
-  row    4 toolu_01QMearN6kQdqbAdp2iEYZpc Command { command: "printf allow-scoped > allow-scoped.txt; printf allow-scoped", state: Succeeded, exit_code: None, output_head: ["allow-scoped"], more_lines: 0, output_trimmed: false, output_tail: ["allow-scoped"], duration_ms: Some(512) } run[toolu_01QMearN6kQdqbAdp2iEYZpc..toolu_01QMearN6kQdqbAdp2iEYZpc x1 recent=0 live RunCounts { commands: 1, edits: 0, rea…
+    body Command { command: "printf allow-scoped > allow-scoped.txt; printf allow-scoped", cwd: "", reason: "", description: "Write \"allow-scoped\" to file and print to stdout" }
+## 47 recorded 45: fact Transcript type=user uuid=fc3155a2-9c38-49e5-8207-c5cb56fc5c3f
+  row    4 toolu_01Wfy5Vk8ddKz4n2cnEc4yCC Command { command: "printf allow-scoped > allow-scoped.txt; printf allow-scoped", state: Succeeded, exit_code: None, output_head: ["allow-scoped"], more_lines: 0, output_trimmed: false, output_tail: ["allow-scoped"], duration_ms: Some(195) } run[toolu_01Wfy5Vk8ddKz4n2cnEc4yCC..toolu_01Wfy5Vk8ddKz4n2cnEc4yCC x1 recent=0 live RunCounts { commands: 1, edits: 0, rea…
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 d22bb2a7-726c-4ebf-958d-67d6732ef09d Prompt { text: [Text("Use the Bash tool to run exactly: printf allow-scoped > allow-scoped.txt; printf allow-scoped. Then stop.")], steered: false }
-     3 5add42fe-53cd-41b5-b1cb-6673595143b7 Thinking { text: "", open: false, duration_ms: Some(2423) }
-     4 toolu_01QMearN6kQdqbAdp2iEYZpc Command { command: "printf allow-scoped > allow-scoped.txt; printf allow-scoped", state: Succeeded, exit_code: None, output_head: ["allow-scoped"], more_lines: 0, output_trimmed: false, output_tail: ["allow-scoped"], duration_ms: Some(512) } run[toolu_01QMearN6kQdqbAdp2iEYZpc..toolu_01QMearN6kQdqbAdp2iEYZpc x1 recent=0 live RunCounts { commands: 1, edits: 0, rea…
+     2 5bef59ce-1520-4348-beb9-bc711d63d82b Prompt { text: [Text("Use the Bash tool to run exactly: printf allow-scoped > allow-scoped.txt; printf allow-scoped. Then stop.")], steered: false }
+     3 57c87a2b-12d2-4ee6-9d55-b9aab7a42424 Thinking { text: "", open: false, duration_ms: Some(1579) }
+     4 toolu_01Wfy5Vk8ddKz4n2cnEc4yCC Command { command: "printf allow-scoped > allow-scoped.txt; printf allow-scoped", state: Succeeded, exit_code: None, output_head: ["allow-scoped"], more_lines: 0, output_trimmed: false, output_tail: ["allow-scoped"], duration_ms: Some(195) } run[toolu_01Wfy5Vk8ddKz4n2cnEc4yCC..toolu_01Wfy5Vk8ddKz4n2cnEc4yCC x1 recent=0 live RunCounts { commands: 1, edits: 0, rea…
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 34322, window_tokens: None, percent: None, near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 34742, window_tokens: None, percent: None, near_full: false }) sign-in None
 == settings
   model* unlisted claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
   permission* "default" "Ask" normal unsettable

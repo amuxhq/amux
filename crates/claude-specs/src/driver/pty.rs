@@ -1126,7 +1126,7 @@ mod tests {
                 },
                 hooks,
                 transcript,
-                version: "2.1.251".parse().unwrap(),
+                version: "2.1.312".parse().unwrap(),
                 delays: DelaySource::live(),
             },
             hook_tx,

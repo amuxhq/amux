@@ -1,3 +1,5 @@
+2026-10-29 — **A terminal recording leaves out Claude's API-request rows.** Claude 2.1.312 writes `api-request`, `api-request-blob` and `api-request-shape` rows that copy each request whole, system prompt and owner context included; the recording scrub drops them, and scrubs the skill, agent and deferred-tool listings as it already scrubbed the owner's instructions.
+
 2026-10-29 — **Test that a terminal recording leaves out what Claude 2.1.312 copies of each API request.** The transcript scrub moves from `claude-probe` into `claude_specs::scrub`; its test shows the api-request rows kept and the owner's installed skills, agents and deferred tools listed whole.
 
 2026-10-28 — **The terminal flagged-ask note says only what was recorded.** `docs/INTERPRETERS.md` narrows the finding to asks Claude leaves only to a person (no suggestions in the hook) and names the two rarer cases from Claude's source: flagged asks that keep their suggestions, and menus opened on their refusal, where an allow from amux does not land.

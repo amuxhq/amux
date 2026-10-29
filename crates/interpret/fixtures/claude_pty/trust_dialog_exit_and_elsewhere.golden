@@ -1,6 +1,6 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
-## 1 fact {"channel":"agent","json":{"keymap":"claude-2.1","permission_menus":{"folded":[2],"per_suggestion":[1]},"type":"launch","version":"2.1.283"}}
+## 1 fact {"channel":"agent","json":{"type":"launch","version":"2.1.283"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
 snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
@@ -14,10 +14,10 @@ effect reply a1 accepted
 item ask:ask:1 ask final at=1800000000000 text="" question×1 ASK_OUTCOME_ANSWERED answered 1 of 1 [Exit]
 snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
 ## 5 provider_exit {"code":1}
-item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_EXITED session=- version=2.1.283 keymap=claude-2.1 cause=PROVIDER_EXITED detail="exit code 1"
+item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_EXITED session=- version=2.1.283 cause=PROVIDER_EXITED detail="exit code 1"
 snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=[]
 incarnation_end PROVIDER_EXITED "exit code 1"
-## 6 fact {"channel":"agent","json":{"keymap":"claude-2.1","permission_menus":{"folded":[2],"per_suggestion":[1]},"type":"launch","version":"2.1.283"}}
+## 6 fact {"channel":"agent","json":{"type":"launch","version":"2.1.283"}}
 ## 7 fact {"channel":"agent","json":{"type":"trust_dialog"}}
 item ask:ask:2 ask final at=1800000000000 text="" question×1 open
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[ask:2->ask:ask:2 question:2] session=? model=? model_name=? mode=? context=? tasks=? background=[]
@@ -25,5 +25,5 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[ask:2->ask:ask:2
 ## 9 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
 effect follow "/t/s1.jsonl"
 item ask:ask:2 ask final at=1800000000000 text="" question×1 ASK_OUTCOME_ANSWERED answered 1 of 1 [Trust this folder]
-item boundary:2 boundary final at=1800000000000 text="" BOUNDARY_KIND_RESTARTED session=s1 version=2.1.283 keymap=claude-2.1
+item boundary:2 boundary final at=1800000000000 text="" BOUNDARY_KIND_RESTARTED session=s1 version=2.1.283
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[]

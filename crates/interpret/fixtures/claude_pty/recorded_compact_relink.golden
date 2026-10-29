@@ -1,12 +1,12 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
-## 1 fact {"channel":"agent","json":{"keymap":"claude-2.1","permission_menus":{"folded":[2],"per_suggestion":[1]},"type":"launch","version":"2.1.251"}}
+## 1 fact {"channel":"agent","json":{"type":"launch","version":"2.1.251"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
-item boundary:1 boundary final at=1788079080524 text="" BOUNDARY_KIND_STARTED session=51c46a71-bdfc-4ee6-a909-bfc60782a2d9 version=2.1.251 keymap=claude-2.1
+item boundary:1 boundary final at=1788079080524 text="" BOUNDARY_KIND_STARTED session=51c46a71-bdfc-4ee6-a909-bfc60782a2d9 version=2.1.251
 snapshot IDLE queue=[] working_on=- at=1788079080524 asks=[] session=51c46a71-bdfc-4ee6-a909-bfc60782a2d9 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=? tasks=? background=?
 ## 6 recorded 4: fact Transcript type=permission-mode
 snapshot IDLE queue=[] working_on=- at=1788079080612 asks=[] session=51c46a71-bdfc-4ee6-a909-bfc60782a2d9 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?
@@ -63,7 +63,7 @@ turn_end 4 last=2f756e98-fc61-4783-b702-4cacf189bd3e
 ## 70 recorded 68: fact Transcript type=user uuid=d99b454e-51c4-43e1-bd7a-4332808eaf89
 item d99b454e-51c4-43e1-bd7a-4332808eaf89 slash final at=1788079087156 text="" /compact args=""
 ## 72 recorded 70: fact Hook hook_event_name=SessionStart
-item boundary:2 boundary final at=1788079096613 text="" BOUNDARY_KIND_COMPACTED session=51c46a71-bdfc-4ee6-a909-bfc60782a2d9 version=2.1.251 keymap=claude-2.1
+item boundary:2 boundary final at=1788079096613 text="" BOUNDARY_KIND_COMPACTED session=51c46a71-bdfc-4ee6-a909-bfc60782a2d9 version=2.1.251
 snapshot IDLE queue=[] working_on=- at=1788079096613 asks=[] session=51c46a71-bdfc-4ee6-a909-bfc60782a2d9 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=[]
 ## 81 recorded 79: fact Transcript type=system subtype=compact_boundary uuid=8b164c5e-6b9e-4737-8685-335403c36779
 item 8b164c5e-6b9e-4737-8685-335403c36779 compaction final at=1788079096785 text="" 34695→2587

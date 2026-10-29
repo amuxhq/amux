@@ -36,7 +36,7 @@ ALLOWED_LOCAL = {
         "codex-protocol", "core-ring", "git-facts", "interpret", "journal", "log-file", "pty-host",
         "wire",
     },
-    "claude": {"claude-protocol", "pty-host"},
+    "claude": {"claude-protocol"},
     "codex": {"codex-protocol"},
     # Each provider's messages as types: pure, so the interpreter the phone
     # links can read them. PURE_EXTERNAL below bounds what they may pull in.

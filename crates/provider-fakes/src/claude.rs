@@ -76,15 +76,28 @@ impl Args {
         parsed
     }
 
-    /// Every hook command registered for `event`, in settings order.
-    pub fn hook_commands(&self, event: &str) -> Vec<String> {
+    /// Every hook command registered for `event`, in settings order, as
+    /// the program and arguments to run: a command with `args` runs as
+    /// given, one without through the shell.
+    pub fn hook_commands(&self, event: &str) -> Vec<Vec<String>> {
         self.settings
             .iter()
             .filter_map(|settings| settings.get("hooks")?.get(event)?.as_array())
             .flatten()
             .filter_map(|matcher| matcher.get("hooks")?.as_array())
             .flatten()
-            .filter_map(|hook| hook.get("command")?.as_str().map(str::to_owned))
+            .filter_map(|hook| {
+                let command = hook.get("command")?.as_str()?.to_owned();
+                Some(match hook.get("args").and_then(|args| args.as_array()) {
+                    Some(args) => std::iter::once(command)
+                        .chain(
+                            args.iter()
+                                .filter_map(|arg| arg.as_str().map(str::to_owned)),
+                        )
+                        .collect(),
+                    None => vec!["/bin/sh".to_owned(), "-c".to_owned(), command],
+                })
+            })
             .collect()
     }
 }

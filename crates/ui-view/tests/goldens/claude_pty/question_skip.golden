@@ -9,7 +9,7 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 5 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"","label":"Red"},{"description":"","label":"Blue"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"}],"question":"Pick tools"},{"header":"Size","multiS…
   composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
-## 6 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","tool_input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"","label":"Red"},{"description":"","label":"Blue"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"}],"question":"Pick tools"},{"header":"Size",…
+## 6 fact {"channel":"hook","json":{"amux_reply":1,"hook_event_name":"PermissionRequest","tool_input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"","label":"Red"},{"description":"","label":"Blue"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"}],"question":"Pick tools"},{"…
   ask ask:1 -> "" 1/1 Open
     choices 
     body Question([QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "", preview: "", recommended: false }, OptionView { label: "Blue", description: "", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Tools", question: "Pick tools", multi_select: true, options: [OptionView { label:…
@@ -23,16 +23,12 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 10 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"questions":[{"header":"Ship","multiSelect":false,"options":[{"description":"","label":"Yes"},{"description":"","label":"No"}],"question":"Ship it now?"}]},"tool_name":"AskUserQuestion","tool_use_id":"t2"}}
   composer Send activity=Some(Running { key: "t2" }) queue=[] underway=[] refused=[]
-## 11 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","tool_input":{"questions":[{"header":"Ship","multiSelect":false,"options":[{"description":"","label":"Yes"},{"description":"","label":"No"}],"question":"Ship it now?"}]},"tool_name":"AskUserQuestion"}}
+## 11 fact {"channel":"hook","json":{"amux_reply":2,"hook_event_name":"PermissionRequest","tool_input":{"questions":[{"header":"Ship","multiSelect":false,"options":[{"description":"","label":"Yes"},{"description":"","label":"No"}],"question":"Ship it now?"}]},"tool_name":"AskUserQuestion"}}
   ask ask:2 -> "" 1/1 Open
     choices 
     body Question([QuestionView { header: "Ship", question: "Ship it now?", multi_select: false, options: [OptionView { label: "Yes", description: "", preview: "", recommended: false }, OptionView { label: "No", description: "", preview: "", recommended: false }], allow_other: true, secret: false }])
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 12 input {"answer":{"answer":{"selected":[null]},"ask":"ask:2"},"id":"a2"}
-  ask ask:2 -> "" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
-    choices 
-    body Question([QuestionView { header: "Ship", question: "Ship it now?", multi_select: false, options: [OptionView { label: "Yes", description: "", preview: "", recommended: false }, OptionView { label: "No", description: "", preview: "", recommended: false }], allow_other: true, secret: false }])
-## 13 input {"answer":{"answer":{"selected":[0]},"ask":"ask:2"},"id":"a3"}
   ask none
   composer Send activity=Some(Running { key: "t2" }) queue=[] underway=[] refused=[]
 == chat

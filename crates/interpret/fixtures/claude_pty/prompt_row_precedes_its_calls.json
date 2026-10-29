@@ -1,5 +1,5 @@
 {
-  "about": "Rows are read by polling and hooks arrive at once, so a hook of the turn a prompt sent through amux began can land before that prompt's row. A hook makes no row, so nothing waits: the prompt's row precedes its turn's rows in the transcript, and the calls follow it. A dialog only the terminal can answer owns its item from its hook. A prompt Claude folds into a turn already running is reflected by its queued-command row, so later reflections keep their own input ids.",
+  "about": "Rows are read by polling and hooks arrive at once, so a hook of the turn a prompt sent through amux began can land before that prompt's row. A hook makes no row, so nothing waits: the prompt's row precedes its turn's rows in the transcript, and the calls follow it. A tool server's form owns its item from its hook. A prompt Claude folds into a turn already running is reflected by its queued-command row, so later reflections keep their own input ids.",
   "spec": {
     "created_at_ms": 1800000000000
   },
@@ -9,16 +9,7 @@
         "channel": "agent",
         "json": {
           "type": "launch",
-          "version": "2.1.283",
-          "keymap": "claude-2.1",
-          "permission_menus": {
-            "per_suggestion": [
-              1
-            ],
-            "folded": [
-              2
-            ]
-          }
+          "version": "2.1.283"
         }
       }
     },
@@ -236,13 +227,26 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 101,
           "session_id": "s1",
           "transcript_path": "/t/s1.jsonl",
           "cwd": "/w",
           "permission_mode": "default",
-          "hook_event_name": "Notification",
-          "message": "Claude Code needs your input",
-          "notification_type": "elicitation_dialog"
+          "hook_event_name": "Elicitation",
+          "mcp_server_name": "tracker",
+          "message": "tracker needs your input",
+          "mode": "form",
+          "requested_schema": {
+            "type": "object",
+            "properties": {
+              "repo": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "repo"
+            ]
+          }
         }
       },
       "expect": {

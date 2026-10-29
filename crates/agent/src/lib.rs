@@ -19,6 +19,7 @@ pub mod catalogue;
 mod dir;
 mod dump;
 mod git;
+mod hook_answers;
 mod host;
 mod notebook;
 mod provider;

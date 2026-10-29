@@ -1894,9 +1894,6 @@ pub struct Boundary {
     pub cause: i32,
     #[prost(string, optional, tag = "5")]
     pub cause_detail: ::core::option::Option<::prost::alloc::string::String>,
-    /// The keymap the agent process resolved for the observed provider version.
-    #[prost(string, tag = "6")]
-    pub keymap: ::prost::alloc::string::String,
 }
 impl ::prost::Name for Boundary {
     const NAME: &'static str = "Boundary";

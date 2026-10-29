@@ -606,13 +606,11 @@ public struct AskCard: Codable, Hashable, Sendable {
     public var body: AskBody
     /// The likely choice first. Only what this agent offers.
     public var choices: [Choice]
-    /// A note may go out with each question's answer. Terminal Claude has
-    /// no place to type one, so it takes none.
+    /// A note may go out with each question's answer. Not for the
+    /// provider's own dialogs, answered on its screen.
     public var questionNote: Bool
-    /// A question may be left unanswered. Terminal Claude's form takes one
-    /// only when it asks several questions: it then ends in Claude's review
-    /// screen, which submits with some unanswered, while a lone question is
-    /// submitted by answering it.
+    /// A question may be left unanswered. Not for the provider's own
+    /// dialogs either.
     public var questionSkip: Bool
     /// The person may reply in their own words instead of answering the
     /// questions. Not for the provider's own dialogs, outside any turn.

@@ -1,12 +1,12 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
-## 1 fact {"channel":"agent","json":{"keymap":"claude-2.1","permission_menus":{"folded":[2],"per_suggestion":[1]},"type":"launch","version":"2.1.292"}}
+## 1 fact {"channel":"agent","json":{"type":"launch","version":"2.1.292"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
-item boundary:1 boundary final at=1791344135909 text="" BOUNDARY_KIND_STARTED session=2da8f4f8-4e93-43a3-940e-9dac12a3411f version=2.1.292 keymap=claude-2.1
+item boundary:1 boundary final at=1791344135909 text="" BOUNDARY_KIND_STARTED session=2da8f4f8-4e93-43a3-940e-9dac12a3411f version=2.1.292
 snapshot IDLE queue=[] working_on=- at=1791344135909 asks=[] session=2da8f4f8-4e93-43a3-940e-9dac12a3411f model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=? tasks=? background=?
 ## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
 snapshot IDLE queue=[] working_on=- at=1791344136370 asks=[] session=2da8f4f8-4e93-43a3-940e-9dac12a3411f model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=plan context=? tasks=? background=?
@@ -47,15 +47,15 @@ item toolu_01DREqFCCGvj7gfXeDNovDVt tool final at=1791344142946 text="" Read TOO
 ## 94 recorded 92: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01SqjhP72QyjDbsj1HxaUjBU
 snapshot WORKING queue=[] working_on=- at=1791344144519 asks=[] session=2da8f4f8-4e93-43a3-940e-9dac12a3411f model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=27285 tasks=? background=? running=toolu_01SqjhP72QyjDbsj1HxaUjBU Edit since=1791344144519
 ## 96 recorded 94: fact Hook hook_event_name=PermissionRequest
-snapshot NEEDS_YOU queue=[] working_on=- at=1791344144547 asks=[ask:2->- permission:Edit/session mode=acceptEdits deny-stops] session=2da8f4f8-4e93-43a3-940e-9dac12a3411f model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=27285 tasks=? background=? running=toolu_01SqjhP72QyjDbsj1HxaUjBU Edit since=1791344144519
+snapshot NEEDS_YOU queue=[] working_on=- at=1791344144547 asks=[ask:2->- permission:Edit/session mode=acceptEdits deny-can-stop] session=2da8f4f8-4e93-43a3-940e-9dac12a3411f model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=27285 tasks=? background=? running=toolu_01SqjhP72QyjDbsj1HxaUjBU Edit since=1791344144519
 ## 98 recorded 96: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01SqjhP72QyjDbsj1HxaUjBU
-snapshot NEEDS_YOU queue=[] working_on=- at=1791344144595 asks=[ask:2->- permission:Edit/session mode=acceptEdits deny-stops] session=2da8f4f8-4e93-43a3-940e-9dac12a3411f model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=27285 tasks=? background=?
+snapshot NEEDS_YOU queue=[] working_on=- at=1791344144595 asks=[ask:2->- permission:Edit/session mode=acceptEdits deny-can-stop] session=2da8f4f8-4e93-43a3-940e-9dac12a3411f model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=27285 tasks=? background=?
 ## 100 recorded 98: fact Transcript type=assistant uuid=1bac1ac0-a3f5-41b8-8ba0-cea0336cf888
 item 1bac1ac0-a3f5-41b8-8ba0-cea0336cf888 thinking final at=1791344144064 text=""
-snapshot NEEDS_YOU queue=[] working_on=- at=1791344144660 asks=[ask:2->- permission:Edit/session mode=acceptEdits deny-stops] session=2da8f4f8-4e93-43a3-940e-9dac12a3411f model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=27522 tasks=? background=?
+snapshot NEEDS_YOU queue=[] working_on=- at=1791344144660 asks=[ask:2->- permission:Edit/session mode=acceptEdits deny-can-stop] session=2da8f4f8-4e93-43a3-940e-9dac12a3411f model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=27522 tasks=? background=?
 ## 101 recorded 99: fact Transcript type=assistant uuid=86a46355-8121-4101-9da6-00756a1a8abb
 item toolu_01SqjhP72QyjDbsj1HxaUjBU tool final at=1791344144690 text="" Edit TOOL_STATE_RUNNING started=1791344144690 input=edit:"<MACHINE_PATH>"x1
-snapshot NEEDS_YOU queue=[] working_on=- at=1791344144660 asks=[ask:2->toolu_01SqjhP72QyjDbsj1HxaUjBU permission:Edit/session mode=acceptEdits deny-stops] session=2da8f4f8-4e93-43a3-940e-9dac12a3411f model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=27522 tasks=? background=?
+snapshot NEEDS_YOU queue=[] working_on=- at=1791344144660 asks=[ask:2->toolu_01SqjhP72QyjDbsj1HxaUjBU permission:Edit/session mode=acceptEdits deny-can-stop] session=2da8f4f8-4e93-43a3-940e-9dac12a3411f model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=27522 tasks=? background=?
 ## 104 recorded 102: fact Transcript type=user uuid=3d1ce811-a9db-4be4-bd60-9c1bd2cb200e
 item toolu_01SqjhP72QyjDbsj1HxaUjBU tool final at=1791344144690 text="" Edit TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED elsewhere started=1791344144690 ended=1791344144861 line=1 input=edit:"<MACHINE_PATH>"x1 patch=1/2 out="The file <MACHINE_PATH> has been updated successfully. (file…"
 snapshot WORKING queue=[] working_on=- at=1791344144810 asks=[] session=2da8f4f8-4e93-43a3-940e-9dac12a3411f model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=27522 tasks=? background=?

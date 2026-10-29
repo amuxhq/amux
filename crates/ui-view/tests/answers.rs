@@ -46,6 +46,8 @@ struct Driven<S> {
     interpreter: S,
     session: SessionState,
     committer: Committer,
+    /// Hooks held for a decision so far, numbered as the agent numbers them.
+    held: u64,
 }
 
 impl<S: Checkpoint + Clone> Driven<S> {
@@ -59,6 +61,7 @@ impl<S: Checkpoint + Clone> Driven<S> {
             interpreter,
             session: SessionState::new(agent(kind), support::CAP),
             committer: Committer::default(),
+            held: 0,
         };
         driven.commit(&first);
         let caught_up = driven.committer.revision;
@@ -74,6 +77,30 @@ impl<S: Checkpoint + Clone> Driven<S> {
         for event in self.committer.commit(step) {
             self.session.update(Msg::Event(event));
         }
+    }
+
+    /// A recorded hook Claude waits on for a decision, numbered as the agent
+    /// holding its connection numbers it, so an answer has a hook to go on.
+    fn held(&mut self, event: Event) -> Event {
+        let Event::Fact(mut fact) = event else {
+            return event;
+        };
+        if fact.channel == interpret::Channel::Hook
+            && let Ok(serde_json::Value::Object(mut payload)) =
+                serde_json::from_slice(&fact.payload)
+            && matches!(
+                payload
+                    .get("hook_event_name")
+                    .and_then(|name| name.as_str()),
+                Some("PermissionRequest" | "Elicitation")
+            )
+            && !payload.contains_key(interpret::HOOK_ANSWER_FIELD)
+        {
+            self.held += 1;
+            payload.insert(interpret::HOOK_ANSWER_FIELD.to_owned(), self.held.into());
+            fact.payload = serde_json::to_vec(&payload).expect("a payload encodes");
+        }
+        Event::Fact(fact)
     }
 
     /// Feeds one event; the verdicts it replied.
@@ -92,6 +119,7 @@ impl<S: Checkpoint + Clone> Driven<S> {
         if let Event::Input(input) = &event {
             self.session.update(Msg::Send(input.clone()));
         }
+        let event = self.held(event);
         let stepped = I::step(&mut self.interpreter, event);
         self.commit(&stepped.step);
         // The catalogue as a client fetches it once the snapshot names it.
@@ -299,7 +327,7 @@ fn claude_pty_cards_answer_the_interpreter() {
     let answered = answer_all::<ClaudePty>(Kind::ClaudePty, "claude_pty");
     assert_eq!(
         answered,
-        BTreeSet::from(["command", "edit", "plan", "question"]),
+        BTreeSet::from(["command", "edit", "form", "link", "plan", "question"]),
         "card bodies answered"
     );
 }

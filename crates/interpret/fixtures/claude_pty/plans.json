@@ -1,5 +1,5 @@
 {
-  "about": "Plans: Claude's plan-mode file writes draw nothing; ExitPlanMode lands as a plan item with its verdict; a prompt typed instead dismisses the plan and cancels Claude's menu; leaving plan in Claude's own terminal approves it, by the permission it left for.",
+  "about": "Plans: Claude's plan-mode file writes draw nothing; ExitPlanMode lands as a plan item with its verdict; a prompt sent instead dismisses the plan by refusing it on its hook, which ends the turn, and the prompt follows; leaving plan in Claude's own terminal approves it, by the permission it left for.",
   "spec": {
     "created_at_ms": 1800000000000
   },
@@ -9,16 +9,7 @@
         "channel": "agent",
         "json": {
           "type": "launch",
-          "version": "2.1.282",
-          "keymap": "claude-2.1",
-          "permission_menus": {
-            "per_suggestion": [
-              1
-            ],
-            "folded": [
-              2
-            ]
-          }
+          "version": "2.1.282"
         }
       }
     },
@@ -193,6 +184,7 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 1,
           "hook_event_name": "PermissionRequest",
           "session_id": "s1",
           "permission_mode": "plan",
@@ -248,7 +240,7 @@
           "t1"
         ],
         "effects": [
-          "terminal interrupt",
+          "hook 1 answered {\"hookSpecificOutput\":{\"decision\":{\"behavior\":\"deny\",\"interrupt\":true,\"message\":\"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file).\"},\"hookEventName\":\"PermissionRequest\"}}",
           "reply p2 queued"
         ]
       },
@@ -339,6 +331,7 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 2,
           "hook_event_name": "PermissionRequest",
           "session_id": "s1",
           "permission_mode": "plan",

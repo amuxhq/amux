@@ -27,13 +27,11 @@ pub struct AskCard {
     pub body: AskBody,
     /// The likely choice first. Only what this agent offers.
     pub choices: Vec<Choice>,
-    /// A note may go out with each question's answer. Terminal Claude has
-    /// no place to type one, so it takes none.
+    /// A note may go out with each question's answer. Not for the
+    /// provider's own dialogs, answered on its screen.
     pub question_note: bool,
-    /// A question may be left unanswered. Terminal Claude's form takes one
-    /// only when it asks several questions: it then ends in Claude's review
-    /// screen, which submits with some unanswered, while a lone question is
-    /// submitted by answering it.
+    /// A question may be left unanswered. Not for the provider's own
+    /// dialogs either.
     pub question_skip: bool,
     /// The person may reply in their own words instead of answering the
     /// questions. Not for the provider's own dialogs, outside any turn.
@@ -255,8 +253,8 @@ pub fn ask_card(state: &SessionState) -> Option<AskCard> {
         count: asks.len(),
         body,
         choices,
-        question_note: state.kind() != wire::Kind::ClaudePty,
-        question_skip: state.kind() != wire::Kind::ClaudePty || reviewed_form(head),
+        question_note: !provider_dialog(head),
+        question_skip: !provider_dialog(head),
         question_reply: !provider_dialog(head),
         stops_turn: !matches!(
             head,
@@ -267,18 +265,6 @@ pub fn ask_card(state: &SessionState) -> Option<AskCard> {
         ),
         state: card_state,
     })
-}
-
-/// Whether terminal Claude's form for the ask ends in its review screen: a
-/// question ask of more than one question.
-fn reviewed_form(ask: &OpenAsk) -> bool {
-    matches!(
-        ask,
-        OpenAsk::Claude(wire::Ask {
-            body: Some(ask::Body::Question(question)),
-            ..
-        }) if question.questions.len() > 1
-    )
 }
 
 /// Whether the ask is a question the provider asks itself, outside a turn.

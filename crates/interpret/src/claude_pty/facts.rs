@@ -2,30 +2,30 @@
 //! items. The module docs in `mod.rs` state the inference rules.
 
 use claude_protocol::hooks::{
-    self, Notification, Payload, PermissionRequest, PostToolUse, PostToolUseFailure, PreToolUse,
-    SessionStart,
+    self, Elicitation, MessageDisplay, Payload, PermissionRequest, PostToolUse, PostToolUseFailure,
+    PreToolUse, SessionStart,
 };
 use claude_protocol::stream::{
-    CompactTrigger, ContentBlock, MessageContent, PermissionUpdate, ToolResultBody,
+    CompactTrigger, ContentBlock, MessageContent, PermissionMode, PermissionUpdate,
+    PermissionUpdateDestination, ToolResultBody,
 };
 use claude_protocol::transcript::{self, AssistantRow, Attachment, Row, SystemRow, UserRow};
 use serde::Deserialize;
 use serde_json::Value;
 use wire::claude_pty_item::Kind;
-use wire::{
-    Ask, BoundaryKind, DecisionOutcome, PermissionAsk, ScopeChoice, ToolState, Turn, TurnOutcome,
-};
+use wire::{Ask, BoundaryKind, DecisionOutcome, PermissionAsk, ToolState, Turn, TurnOutcome};
 
 use super::{
-    AgentFact, AnnouncedPlan, AskMeta, AskShape, Decision, PendingMessage, PermissionMenus,
-    Running, Slash, State, Subagent, Tool, item_body,
+    AgentFact, Announced, AskMeta, AskShape, Decision, HookRow, PendingMessage, Running, Slash,
+    State, Stream, Subagent, Tool, item_body,
 };
+use crate::claude_answers::AnswerShape;
 use crate::claude_common::{
     AnsweredResult, BackgroundInput, BangInput, JobInput, PLAN_TOOL, QUESTION_TOOL, TASK_TOOLS,
-    Verdict, apply_task_tool, blocks_text, claude_grant, compact_json, job_kind, message_text,
-    old_source, permission_scopes, plan_ask, plan_mode_write, question_ask, question_ask_text,
-    same_json, split_tool_name, timestamp_ms, tool_class, tool_input, tool_result_images,
-    tool_result_text, without_image_bytes, without_terminal_codes,
+    Verdict, apply_task_tool, blocks_text, compact_json, job_kind, message_text, old_source,
+    permission_scopes, plan_ask, plan_mode_write, question_ask, question_ask_text, split_tool_name,
+    timestamp_ms, tool_class, tool_input, tool_result_images, tool_result_text,
+    without_image_bytes, without_terminal_codes,
 };
 use crate::{
     Channel, Emit, Fact, ItemDraft, ask_item, is_attach_tool, is_status_tool, status_working_on,
@@ -37,16 +37,9 @@ const REJECTED_NOTE: &str = "the user said:\n";
 const INTERRUPTED: &str = "[Request interrupted by user";
 /// The tool that starts a subagent.
 const AGENT_TOOL: &str = "Agent";
-/// The Notification hook's types for a tool server's form and link, which
-/// Claude shows in its own terminal (2.1.283).
-const ELICITATION_FORM: &str = "elicitation_dialog";
-const ELICITATION_LINK: &str = "elicitation_url_dialog";
-/// What an unanswerable ask says, for a form and for a link.
-const UNANSWERABLE_FORM: &str = "Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent.";
 const TRUST_QUESTION: &str = "Do you trust the files in this folder?";
 pub(super) const TRUST_YES: &str = "Trust this folder";
 const TRUST_NO: &str = "Exit";
-const UNANSWERABLE_LINK: &str = "Claude is showing a link from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent.";
 
 /// The Agent call's immediate result, as far as telling a subagent
 /// launched in the background goes.
@@ -163,7 +156,7 @@ impl State {
             Channel::Transcript => {
                 if let Ok(row) = transcript::decode(&fact.payload) {
                     self.row(emit, &row);
-                    self.open_announced_plans(emit);
+                    self.open_hook_rows(emit);
                 }
             }
             Channel::Hook => {
@@ -181,13 +174,8 @@ impl State {
     }
 
     fn agent_fact(&mut self, emit: &mut Emit, fact: AgentFact) {
-        let (version, keymap, permission_menus, send_now_refused) = match fact {
-            AgentFact::Launch {
-                version,
-                keymap,
-                permission_menus,
-                send_now_refused,
-            } => (version, keymap, permission_menus, send_now_refused),
+        let version = match fact {
+            AgentFact::Launch { version } => version,
             // Waiting on its trust dialog, Claude takes no prompt; it
             // starts its session once trusted, and that start says so.
             AgentFact::Ready if self.trust_ask().is_some() => return,
@@ -196,9 +184,6 @@ impl State {
         };
         let provider = &mut self.provider;
         provider.version = (!version.is_empty()).then_some(version);
-        provider.keymap = keymap;
-        provider.permission_menus = permission_menus;
-        provider.send_now_refused = send_now_refused;
         provider.relaunched = provider.launches > 0;
         provider.launches += 1;
         self.publish_catalogue(emit);
@@ -280,6 +265,7 @@ impl State {
                     | Payload::PermissionRequest(_)
                     | Payload::PostToolUse(_)
                     | Payload::PostToolUseFailure(_)
+                    | Payload::MessageDisplay(_)
             )
         {
             return self.subagent_hook(emit, agent, payload);
@@ -291,16 +277,16 @@ impl State {
             Payload::PreToolUse(call) => {
                 let (server, name) = split_tool_name(&call.tool_name);
                 if server.is_empty() && name == PLAN_TOOL {
-                    self.announced_plans.push(AnnouncedPlan {
+                    self.hook_rows.push(HookRow {
                         id: call.tool_use_id.clone(),
                         name: call.tool_name.clone(),
                         input: call.tool_input.clone(),
                     });
-                    self.open_announced_plans(emit);
+                    self.open_hook_rows(emit);
                 }
                 self.pre_tool_use(call)
             }
-            Payload::PermissionRequest(request) => self.permission_request(request),
+            Payload::PermissionRequest(request) => self.permission_request(emit, request),
             Payload::PostToolUse(PostToolUse {
                 tool_use_id,
                 duration_ms,
@@ -314,7 +300,26 @@ impl State {
             Payload::PostToolUseFailure(PostToolUseFailure { tool_use_id, .. }) => {
                 self.call_ended(tool_use_id)
             }
-            Payload::Notification(notification) => self.notification(emit, notification),
+            // Auto mode's refusal names its rule; the call's row says it
+            // was refused.
+            Payload::PermissionDenied(denied) => {
+                let id = denied.tool_use_id.clone();
+                match self.tools.get_mut(&id) {
+                    Some(tool) => {
+                        tool.decision = Some(Decision::refused(&denied.reason));
+                        self.emit_tool(emit, &id);
+                    }
+                    None => {
+                        self.refused.insert(id, denied.reason.clone());
+                    }
+                }
+            }
+            Payload::Elicitation(elicitation) => self.elicitation(emit, elicitation),
+            Payload::MessageDisplay(display) => self.display(emit, display),
+            Payload::PostModelSwitch(switch) if !switch.to_model.is_empty() => {
+                self.provider.model = Some(switch.to_model.clone());
+            }
+            Payload::PostModelSwitch(_) | Payload::Notification(_) => {}
             Payload::Stop(stop) => {
                 let background: Vec<String> = stop
                     .background_tasks
@@ -397,6 +402,8 @@ impl State {
         if let Some(model) = start.model.as_deref().filter(|model| !model.is_empty()) {
             self.provider.model = Some(model.to_owned());
         }
+        self.announced.clear();
+        self.finish_streams(emit);
         let path = common.transcript_path.to_string_lossy();
         if !path.is_empty() && self.provider.transcript.as_deref() != Some(&*path) {
             self.provider.transcript = Some(path.clone().into_owned());
@@ -428,12 +435,14 @@ impl State {
     }
 
     /// A call inside a subagent: a step on its Agent row, and an ask it
-    /// raises or answers.
+    /// raises or answers. What a subagent writes is not drawn as it goes:
+    /// its Agent call's result carries its answer.
     fn subagent_hook(&mut self, emit: &mut Emit, agent: &str, payload: &Payload) {
         let row = self.agent_row(agent);
         match payload {
-            Payload::PermissionRequest(request) => self.permission_request(request),
+            Payload::PermissionRequest(request) => self.permission_request(emit, request),
             Payload::PreToolUse(call) => {
+                self.announce(call, Some(agent));
                 if let Some(subagent) = row
                     .as_ref()
                     .and_then(|id| self.tools.get_mut(id))
@@ -443,22 +452,13 @@ impl State {
                     subagent.last_tool = split_tool_name(&call.tool_name).1;
                 }
             }
-            Payload::PostToolUse(PostToolUse {
-                tool_name,
-                tool_input,
-                ..
-            })
-            | Payload::PostToolUseFailure(PostToolUseFailure {
-                tool_name,
-                tool_input,
-                ..
-            }) => {
+            Payload::PostToolUse(PostToolUse { tool_use_id, .. })
+            | Payload::PostToolUseFailure(PostToolUseFailure { tool_use_id, .. }) => {
+                self.call_ended(tool_use_id);
                 let answered = self
                     .asks
                     .iter()
-                    .filter(|(_, meta)| meta.agent.as_deref() == Some(agent))
-                    .filter(|(_, meta)| meta.tool_name == *tool_name)
-                    .min_by_key(|(_, meta)| (!same_json(&meta.input, tool_input), meta.seq))
+                    .find(|(_, meta)| meta.call.as_deref() == Some(tool_use_id.as_str()))
                     .map(|(key, _)| key.clone());
                 if let Some(key) = answered
                     && self.shared.asks().get(&key).is_some()
@@ -515,77 +515,122 @@ impl State {
         true
     }
 
-    fn permission_request(&mut self, request: &PermissionRequest) {
+    /// Claude asks the person whether a call may run, or asks them a
+    /// question or to review a plan: an ask answered through its hook,
+    /// pointing at the call its PreToolUse hook announced.
+    fn permission_request(&mut self, emit: &mut Emit, request: &PermissionRequest) {
         let name = request.tool_name.as_str();
         let input = &request.tool_input;
         let (server, tool) = split_tool_name(name);
+        let mut offered = request.permission_suggestions.clone().unwrap_or_default();
         let (body, shape) = match tool.as_str() {
             QUESTION_TOOL if server.is_empty() => {
-                let (mut question, questions) = question_ask(input);
-                // Claude draws a question with previews side by side, with
-                // no row for a typed answer, so none is offered there.
-                for (question, shape) in question.questions.iter_mut().zip(&questions) {
-                    question.allow_other = !shape.previews;
-                }
-                (
-                    wire::ask::Body::Question(question),
-                    AskShape::Question { questions },
-                )
+                let question = question_ask(input);
+                let shape = AnswerShape::Question(
+                    question
+                        .questions
+                        .iter()
+                        .map(|question| {
+                            (
+                                question.question.clone(),
+                                question
+                                    .options
+                                    .iter()
+                                    .map(|option| option.label.clone())
+                                    .collect(),
+                                question.multi_select,
+                            )
+                        })
+                        .collect(),
+                );
+                (wire::ask::Body::Question(question), shape)
             }
             PLAN_TOOL if server.is_empty() => {
                 let switch = self.plan_switch();
                 (
                     wire::ask::Body::Plan(plan_ask(&switch)),
-                    AskShape::Plan { switch },
+                    AnswerShape::Plan { switch },
                 )
             }
-            _ => permission_ask(
-                &server,
-                &tool,
-                input,
-                old_source(&request.extensions),
-                request
-                    .permission_suggestions
-                    .as_deref()
-                    .unwrap_or_default(),
-                &self.provider.permission_menus,
-                self.menu_offers_auto(),
-            ),
+            _ => {
+                // Claude's own menu offers to switch to auto mode in
+                // manual mode, after the scope choices: so does the card.
+                if self.menu_offers_auto() {
+                    offered.push(PermissionUpdate::SetMode {
+                        mode: PermissionMode::Auto,
+                        destination: PermissionUpdateDestination::Session,
+                    });
+                }
+                (
+                    wire::ask::Body::Permission(PermissionAsk {
+                        tool_name: tool.clone(),
+                        input: Some(tool_input(
+                            &tool,
+                            &server,
+                            input,
+                            old_source(&request.extensions),
+                        )),
+                        scopes: permission_scopes(&offered),
+                        reason: String::new(),
+                        description: String::new(),
+                        deny_stops: false,
+                        deny_can_stop: true,
+                        server: server.clone(),
+                    }),
+                    AnswerShape::Permission,
+                )
+            }
         };
-        let seq = self.next_seq();
-        self.next_ask += 1;
-        let key = format!("ask:{}", self.next_ask);
         let agent = request
             .common
             .agent_id
             .clone()
             .filter(|agent| !agent.is_empty());
-        let (bound, item_key) = match &agent {
+        let call = self.announced_call(name, input, agent.as_deref());
+        let key = self.new_ask(AskMeta {
+            seq: 0,
+            tool_name: name.to_owned(),
+            input: input.to_string(),
+            suggestions: offered
+                .iter()
+                .map(|update| {
+                    serde_json::to_value(update)
+                        .expect("a permission change serializes")
+                        .to_string()
+                })
+                .collect(),
+            shape: AskShape::Answer(shape),
+            call: call.clone(),
+            bound: None,
+            closed: None,
+            agent: agent.clone(),
+            hook: hook_number(&request.extensions),
+        });
+        let item_key = match &agent {
             // Shown on the subagent's Agent row, which takes no decision.
-            Some(agent) => (None, self.agent_row(agent)),
-            None => {
-                let bound = self.tool_for_ask(name, input);
-                (bound.clone(), bound)
-            }
+            Some(agent) => self.agent_row(agent),
+            None => None,
         };
-        self.asks.insert(
-            key.clone(),
-            AskMeta {
-                seq,
-                tool_name: name.to_owned(),
-                input: input.to_string(),
-                shape,
-                bound,
-                closed: None,
-                agent,
-            },
-        );
         self.shared.open_ask(Ask {
             key,
             item_key: item_key.unwrap_or_default(),
             body: Some(body),
             opened_at_ms: self.shared.now_ms(),
         });
+        // Claude writes the gated call's row at the decision, which points
+        // the ask at it; a plan's row is already open from its PreToolUse.
+        if let Some(id) = call.filter(|id| agent.is_none() && self.tools.contains_key(id)) {
+            self.bind_asks_for(emit, &id);
+        }
+    }
+
+    /// Records an ask under a new key.
+    fn new_ask(&mut self, mut meta: AskMeta) -> String {
+        meta.seq = self.next_seq();
+        self.next_ask += 1;
+        let key = format!("ask:{}", self.next_ask);
+        self.asks.insert(key.clone(), meta);
+        key
     }
 
     /// Claude's first screen asks whether its folder is trusted, and
@@ -598,21 +643,18 @@ impl State {
         {
             return;
         }
-        let seq = self.next_seq();
-        self.next_ask += 1;
-        let key = format!("ask:{}", self.next_ask);
-        self.asks.insert(
-            key.clone(),
-            AskMeta {
-                seq,
-                tool_name: String::new(),
-                input: String::new(),
-                shape: AskShape::Trust,
-                bound: None,
-                closed: None,
-                agent: None,
-            },
-        );
+        let key = self.new_ask(AskMeta {
+            seq: 0,
+            tool_name: String::new(),
+            input: String::new(),
+            suggestions: Vec::new(),
+            shape: AskShape::Trust,
+            call: None,
+            bound: None,
+            closed: None,
+            agent: None,
+            hook: None,
+        });
         let option = |label: &str, description: &str| wire::QuestionOption {
             label: label.to_owned(),
             description: description.to_owned(),
@@ -641,13 +683,34 @@ impl State {
         self.emit_ask_item(emit, &ask, None);
     }
 
-    /// A tool server's form or link on Claude's screen. No hook answers it,
-    /// so the ask can only be answered in the terminal or ended by stopping.
-    fn notification(&mut self, emit: &mut Emit, notification: &Notification) {
-        let reason = match notification.notification_type.as_deref() {
-            Some(ELICITATION_FORM) => UNANSWERABLE_FORM,
-            Some(ELICITATION_LINK) => UNANSWERABLE_LINK,
-            _ => return,
+    /// A tool server asks the person to fill in a form or open a link,
+    /// while one of its calls runs. Claude shows nothing while its hook
+    /// waits, so the ask is answered through amux; its own item records
+    /// it, as headless Claude's does.
+    fn elicitation(&mut self, emit: &mut Emit, elicitation: &Elicitation) {
+        let server = elicitation.mcp_server_name.clone();
+        let message = elicitation.message.clone();
+        let (body, shape) = match &elicitation.url {
+            Some(url) if elicitation.mode.as_deref() == Some("url") => (
+                wire::ask::Body::Link(wire::LinkAsk {
+                    server,
+                    message,
+                    url: url.clone(),
+                }),
+                AnswerShape::Link,
+            ),
+            _ => (
+                wire::ask::Body::Form(wire::FormAsk {
+                    server,
+                    message,
+                    schema_json: elicitation
+                        .requested_schema
+                        .as_ref()
+                        .map(|schema| schema.to_string().into_bytes())
+                        .unwrap_or_default(),
+                }),
+                AnswerShape::Form,
+            ),
         };
         // A tool server asks while one of its calls runs; that call's
         // result ends the dialog. A call only a PreToolUse hook announced
@@ -662,21 +725,18 @@ impl State {
         let announced = self.running.last().map(|running| running.id.clone());
         let awaits_row = landed.is_none() && announced.is_some();
         let call = landed.or(announced);
-        let seq = self.next_seq();
-        self.next_ask += 1;
-        let key = format!("ask:{}", self.next_ask);
-        self.asks.insert(
-            key.clone(),
-            AskMeta {
-                seq,
-                tool_name: String::new(),
-                input: String::new(),
-                shape: AskShape::Unanswerable { call },
-                bound: None,
-                closed: None,
-                agent: None,
-            },
-        );
+        let key = self.new_ask(AskMeta {
+            seq: 0,
+            tool_name: String::new(),
+            input: String::new(),
+            suggestions: Vec::new(),
+            shape: AskShape::Answer(shape),
+            call,
+            bound: None,
+            closed: None,
+            agent: None,
+            hook: hook_number(&elicitation.extensions),
+        });
         let ask = Ask {
             item_key: if awaits_row {
                 String::new()
@@ -684,9 +744,7 @@ impl State {
                 ask_item::key(&key)
             },
             key,
-            body: Some(wire::ask::Body::Unanswerable(wire::UnanswerableAsk {
-                reason: reason.to_owned(),
-            })),
+            body: Some(body),
             opened_at_ms: self.shared.now_ms(),
         };
         self.shared.open_ask(ask.clone());
@@ -695,18 +753,105 @@ impl State {
         }
     }
 
-    /// Plans their hooks announced, opened from the hook: Claude's own row
-    /// of the plan may come only once it is decided, and the plan must show
-    /// while it waits. Hooks arrive ahead of the transcript, so a plan
-    /// waits for the row of the prompt that began its turn, to read below
-    /// it.
-    fn open_announced_plans(&mut self, emit: &mut Emit) {
+    /// Calls their hooks opened: Claude's own row of a plan, or of a call
+    /// waiting on the person, may come only once it is decided, and it must
+    /// show while it waits. Hooks arrive ahead of the transcript, so such a
+    /// call waits for the row of the prompt that began its turn, to read
+    /// below it.
+    fn open_hook_rows(&mut self, emit: &mut Emit) {
         if !self.shared.awaiting_reflection().is_empty() {
             return;
         }
-        for plan in std::mem::take(&mut self.announced_plans) {
-            self.tool_seen(emit, &plan.id, &plan.name, &plan.input, None, "");
+        for call in std::mem::take(&mut self.hook_rows) {
+            self.tool_seen(emit, &call.id, &call.name, &call.input, None, "");
         }
+    }
+
+    /// A call its PreToolUse hook announced: an ask Claude raises next is
+    /// raised for it.
+    fn announce(&mut self, call: &PreToolUse, agent: Option<&str>) {
+        self.announced.push(Announced {
+            id: call.tool_use_id.clone(),
+            name: call.tool_name.clone(),
+            input: call.tool_input.to_string(),
+            agent: agent.map(str::to_owned),
+        });
+    }
+
+    /// Lines of the reply Claude is drawing. The first batch of a reply
+    /// opens its item; the transcript row the reply becomes takes it over.
+    /// Claude draws replies in the order it writes their rows, so a reply
+    /// whose row came first is one already drawn.
+    fn display(&mut self, emit: &mut Emit, display: &MessageDisplay) {
+        self.shared.turn_started();
+        if let Some(stream) = self
+            .streams
+            .iter()
+            .find(|stream| stream.message_id == display.message_id)
+        {
+            if !stream.landed && !display.delta.is_empty() {
+                let key = stream.key.clone();
+                self.shared.append(emit, &key, &display.delta);
+            }
+            return;
+        }
+        let landed = self.unstreamed > 0;
+        self.unstreamed = self.unstreamed.saturating_sub(1);
+        let key = format!("stream:{}", display.message_id);
+        self.streams.push(Stream {
+            message_id: display.message_id.clone(),
+            key: key.clone(),
+            landed,
+        });
+        if !landed {
+            self.shared.item(
+                emit,
+                ItemDraft {
+                    key,
+                    text: display.delta.clone(),
+                    body: item_body(Kind::Message(wire::Text { complete: false })),
+                    ..Default::default()
+                },
+            );
+        }
+    }
+
+    /// The key a reply's text row is drawn under: the stream Claude drew
+    /// it in, when there was one.
+    fn streamed_key(&mut self, uuid: &str) -> String {
+        match self.streams.iter_mut().find(|stream| !stream.landed) {
+            Some(stream) => {
+                stream.landed = true;
+                stream.key.clone()
+            }
+            None => {
+                self.unstreamed += 1;
+                uuid.to_owned()
+            }
+        }
+    }
+
+    /// The turn is over: a reply drawn without a row (the turn was cut
+    /// short) ends as it was drawn.
+    fn finish_streams(&mut self, emit: &mut Emit) {
+        for stream in std::mem::take(&mut self.streams) {
+            if stream.landed {
+                continue;
+            }
+            if let Some(open) = self.shared.open_item(&stream.key).cloned() {
+                self.shared.item(
+                    emit,
+                    ItemDraft {
+                        key: stream.key,
+                        text: open.text,
+                        body: item_body(Kind::Message(wire::Text { complete: true })),
+                        complete: true,
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+        self.unstreamed = 0;
     }
 
     /// A call starts. Its row follows within a second or so, and by
@@ -715,6 +860,7 @@ impl State {
     /// of the prompt that began the turn landed yet.
     fn pre_tool_use(&mut self, call: &PreToolUse) {
         self.shared.turn_started();
+        self.announce(call, None);
         let (server, name) = split_tool_name(&call.tool_name);
         // Drawn elsewhere, as its subagent's work, or not at all.
         if is_status_tool(&server, &name)
@@ -733,6 +879,7 @@ impl State {
     /// A call's PostToolUse hook or its result row: it no longer runs.
     fn call_ended(&mut self, id: &str) {
         self.running.retain(|running| running.id != id);
+        self.announced.retain(|call| call.id != id);
     }
 
     /// A call's PostToolUse hook says how long it ran: it began running
@@ -828,8 +975,14 @@ impl State {
             // A call its hook opened: its row names the message.
             tool.message_id = message_id.to_owned();
         }
+        if let Some(reason) = self.refused.remove(id)
+            && let Some(tool) = self.tools.get_mut(id)
+        {
+            tool.decision = Some(Decision::refused(&reason));
+        }
         self.emit_tool(emit, id);
-        self.emit_unanswerable_items_for(emit, id);
+        self.bind_asks_for(emit, id);
+        self.emit_dialog_items_for(emit, id);
     }
 
     /// One tool_result block of a user row; `result` is the row's
@@ -847,7 +1000,7 @@ impl State {
         let output = tool_result_text(content);
         let rejected = is_error && output.starts_with(REJECTED);
         self.call_ended(&id);
-        self.close_unanswerable_for_tool(emit, &id);
+        self.close_dialogs_for_tool(emit, &id);
         // The launch metadata of a background subagent is for the model.
         if self.agent_launched(&id, result) {
             self.close_for_tool(emit, &id, DecisionOutcome::Allowed);
@@ -894,7 +1047,7 @@ impl State {
                 || self
                     .asks
                     .values()
-                    .any(|meta| meta.bound.as_deref() == Some(id.as_str())))
+                    .any(|meta| meta.call.as_deref() == Some(id.as_str())))
         {
             ToolState::Denied as i32
         } else if rejected {
@@ -930,7 +1083,10 @@ impl State {
             tool.ended_at_ms = at_ms.or(Some(self.shared.now_ms()));
         }
         for key in self.open_ask_keys() {
-            if self.asks.get(&key).and_then(|meta| meta.bound.as_deref()) == Some(id.as_str()) {
+            let meta = self.asks.get(&key);
+            if meta.is_some_and(|meta| meta.agent.is_none())
+                && meta.and_then(|meta| meta.call.as_deref()) == Some(id.as_str())
+            {
                 let mut decision = Decision::elsewhere(outcome);
                 decision.note = note.clone();
                 self.close(emit, &key, decision);
@@ -947,7 +1103,7 @@ impl State {
             tool.asked = Some(match result.map(AnsweredResult::deserialize) {
                 Some(Ok(answered)) if !is_error && !answered.answers.is_empty() => {
                     ask_item::recorded_by_claude(
-                        &question_ask_text(&tool.input).0,
+                        &question_ask_text(&tool.input),
                         &answered.answers,
                         &answered.annotations,
                     )
@@ -1124,7 +1280,6 @@ impl State {
                     .or_else(|| between(trimmed, "local-command-stderr"))
                     .unwrap_or_default(),
             );
-            self.model_set(&output);
             if let Some(slash) = &mut self.slash {
                 slash.output = Some(output);
                 self.emit_slash(emit);
@@ -1214,40 +1369,6 @@ impl State {
         };
         tool.ended_at_ms = at_ms.or(Some(now));
         self.emit_tool(emit, &key);
-    }
-
-    /// A local command's output that says the model was set, as `/model`
-    /// in Claude's own view writes it at once ("Set model to `Haiku 5.5`
-    /// and saved …"): the snapshot names the model from then, by the
-    /// catalogue's entry of that name where there is one.
-    fn model_set(&mut self, output: &str) {
-        let Some(name) = output
-            .strip_prefix("Set model to `")
-            .and_then(|rest| rest.split_once('`'))
-            .map(|(name, _)| name.trim())
-            .filter(|name| !name.is_empty())
-        else {
-            return;
-        };
-        let entry = self.provider.offered.as_ref().and_then(|offered| {
-            offered
-                .models
-                .iter()
-                .find(|model| {
-                    model.display_name.eq_ignore_ascii_case(name)
-                        || model.value.eq_ignore_ascii_case(name)
-                })
-                .cloned()
-        });
-        if let Some(entry) = entry {
-            let id = if entry.resolved_model.is_empty() {
-                entry.value
-            } else {
-                entry.resolved_model
-            };
-            self.provider.model = Some(id);
-        }
-        self.provider.model_name = Some(name.to_owned());
     }
 
     fn end_local_turn(&mut self) {
@@ -1466,6 +1587,9 @@ impl State {
     ) {
         self.local_turn = false;
         self.running.clear();
+        self.finish_streams(emit);
+        // A subagent's calls may outlive the turn, in the background.
+        self.announced.retain(|call| call.agent.is_some());
         let Some(turn) = self.shared.turn_ended(emit, outcome) else {
             return;
         };
@@ -1504,7 +1628,6 @@ impl State {
         let message_id = message.id.clone();
         if !message.model.is_empty() && message.model != "<synthetic>" {
             self.provider.model = Some(message.model.clone());
-            self.provider.model_name = None;
         }
         if let Some(effort) = row.effort.as_ref().filter(|effort| !effort.is_empty()) {
             self.provider.effort = Some(effort.clone());
@@ -1521,8 +1644,8 @@ impl State {
             let later = self
                 .asks
                 .get(&key)
-                .and_then(|meta| meta.bound.as_ref())
-                .and_then(|bound| self.tools.get(bound))
+                .and_then(|meta| meta.call.as_ref().filter(|_| meta.agent.is_none()))
+                .and_then(|call| self.tools.get(call))
                 .is_some_and(|tool| {
                     !message_id.is_empty()
                         && !tool.message_id.is_empty()
@@ -1532,8 +1655,8 @@ impl State {
                 self.close(emit, &key, Decision::unknown());
             }
         }
-        // The model writes again only once the dialog's call returned.
-        for (key, call) in self.unanswerable_asks() {
+        // The model writes again only once the form's call returned.
+        for (key, call) in self.dialog_asks() {
             let later = match call.map(|call| self.tools.get(&call)) {
                 Some(Some(tool)) => !message_id.is_empty() && tool.message_id != message_id,
                 // The call's own row has not landed yet: this may be it.
@@ -1571,6 +1694,7 @@ impl State {
             };
             match block {
                 ContentBlock::Text { text, .. } => {
+                    let key = self.streamed_key(&key);
                     let (text, attachments) = crate::shared::parse_reply(text.clone());
                     self.shared.item(
                         emit,
@@ -1606,10 +1730,6 @@ impl State {
                     id, name, input, ..
                 } => {
                     self.tool_seen(emit, id, name, input, at_ms, &message_id);
-                    let drawn = self.tools.get(id).is_some_and(|tool| !tool.hidden);
-                    if drawn && let Some(ask) = self.ask_for_tool(name, input) {
-                        self.bind(emit, &ask, id);
-                    }
                 }
                 other => self.shared.item(
                     emit,
@@ -1670,89 +1790,12 @@ impl State {
     }
 }
 
-/// A permission ask offering the scoped entries the terminal's menu holds
-/// and the agent's keymap can type: one per suggestion, or all of them as
-/// one where Claude folds them.
-fn permission_ask(
-    server: &str,
-    tool: &str,
-    input: &Value,
-    old_source: &str,
-    suggestions: &[PermissionUpdate],
-    menus: &PermissionMenus,
-    menu_offers_auto: bool,
-) -> (wire::ask::Body, AskShape) {
-    let count = suggestions.len() as u32;
-    // A menu the keymap does not know offers no scope: its Yes and its
-    // deny are still typed.
-    let known = menus.per_suggestion.contains(&count) || menus.folded.contains(&count);
-    let mut scopes = if menus.per_suggestion.contains(&count) {
-        permission_scopes(suggestions)
-    } else if menus.folded.contains(&count) {
-        vec![folded(permission_scopes(suggestions))]
-    } else {
-        Vec::new()
-    };
-    // "Yes, and switch to auto mode" sits after the scope entries, so only
-    // a menu whose entries the keymap knows can reach it.
-    let auto = menu_offers_auto && known;
-    if auto {
-        scopes.push(ScopeChoice {
-            index: scopes.len() as u32,
-            grant: Some(wire::ClaudeGrant {
-                mode: Some("auto".to_owned()),
-                destination: wire::ScopeDestination::Session as i32,
-                destination_word: "session".to_owned(),
-                ..Default::default()
-            }),
-        });
-    }
-    let shape = AskShape::Permission {
-        grants: scopes.iter().map(claude_grant).collect(),
-        suggestions: count,
-        auto,
-    };
-    (
-        wire::ask::Body::Permission(PermissionAsk {
-            tool_name: tool.to_owned(),
-            input: Some(tool_input(tool, server, input, old_source)),
-            scopes,
-            reason: String::new(),
-            description: String::new(),
-            deny_stops: true,
-            deny_can_stop: false,
-            server: server.to_owned(),
-        }),
-        shape,
-    )
-}
-
-/// The one entry a folded menu offers. Claude 2.1.283 words it by its
-/// directory ("always allow access to <dir>") and, chosen, adds the
-/// directory but leaves the mode as it was: a mode suggestion counts only
-/// when nothing else is folded with it.
-fn folded(choices: Vec<ScopeChoice>) -> ScopeChoice {
-    let mut all = wire::ClaudeGrant::default();
-    let mut mode = None;
-    for (at, choice) in choices.into_iter().enumerate() {
-        let grant = claude_grant(&choice);
-        if at == 0 {
-            all.destination = grant.destination;
-            all.destination_word = grant.destination_word;
-        }
-        all.rules.extend(grant.rules);
-        all.directories.extend(grant.directories);
-        if mode.is_none() {
-            mode = grant.mode;
-        }
-    }
-    if all.rules.is_empty() && all.directories.is_empty() {
-        all.mode = mode;
-    }
-    ScopeChoice {
-        index: 0,
-        grant: Some(all),
-    }
+/// The hook Claude waits on for this payload's answer, by the number the
+/// agent process wrote into it.
+fn hook_number(extensions: &serde_json::Map<String, Value>) -> Option<u64> {
+    extensions
+        .get(crate::HOOK_ANSWER_FIELD)
+        .and_then(Value::as_u64)
 }
 
 #[cfg(test)]

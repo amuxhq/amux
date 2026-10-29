@@ -9,27 +9,23 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 5 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"warm","label":"Red"},{"description":"cool","label":"Blue"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"}],"question":"Pick tools"}]},"tool_name":"A…
   composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
-## 6 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","tool_input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"warm","label":"Red"},{"description":"cool","label":"Blue"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"}],"question":"Pick tools"}]},"tool_n…
+## 6 fact {"channel":"hook","json":{"amux_reply":1,"hook_event_name":"PermissionRequest","tool_input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"warm","label":"Red"},{"description":"cool","label":"Blue"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"}],"question":"Pick to…
   ask ask:1 -> "" 1/1 Open
     choices 
     body Question([QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false }, OptionView { label: "Blue", description: "cool", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Tools", question: "Pick tools", multi_select: true, options: [OptionView …
   composer Send activity=None queue=[] underway=[] refused=[]
-## 7 input {"answer":{"answer":{"notes":["warm is better",null],"selected":[0,[1]]},"ask":"ask:1"},"id":"a2"}
-  ask ask:1 -> "" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
-    choices 
-    body Question([QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false }, OptionView { label: "Blue", description: "cool", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Tools", question: "Pick tools", multi_select: true, options: [OptionView …
-## 8 input {"answer":{"answer":{"reply":{"selected":[],"text":"Use the old palette."}},"ask":"ask:1"},"id":"a3"}
+## 7 input {"answer":{"answer":{"reply":{"selected":[],"text":"Use the old palette."}},"ask":"ask:1"},"id":"a3"}
   ask none
-  composer Send activity=Some(Running { key: "t1" }) queue=[QueuedRow { input_id: [97, 51], text: [Text("Use the old palette.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
-## 9 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t1","input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"warm","label":"Red"},{"description":"cool","label":"Blue"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"}],"question":"Pick tools"}]},"name":"Ask…
+  composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
+## 8 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t1","input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"warm","label":"Red"},{"description":"cool","label":"Blue"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"}],"question":"Pick tools"}]},"name":"Ask…
   row    3 t1 [Replied: Color = (skipped); Tools = (skipped) skipped=2 reply="Use the old palette."] Ask(Questions { questions: [QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false }, OptionView { label: "Blue", description: "cool", preview: "", recommended: false }], allow_other: true, s…
-## 10 fact {"channel":"transcript","json":{"message":{"content":[{"content":"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.","is_error":true,"tool_use_id":"t1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":…
-  composer Send activity=Some(Working) queue=[QueuedRow { input_id: [97, 51], text: [Text("Use the old palette.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
-## 11 fact {"channel":"transcript","json":{"message":{"content":[{"text":"[Request interrupted by user for tool use]","type":"text"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.026Z","type":"user","uuid":"i1"}}
+## 9 fact {"channel":"transcript","json":{"message":{"content":[{"content":"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.","is_error":true,"tool_use_id":"t1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":…
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 10 fact {"channel":"transcript","json":{"message":{"content":[{"text":"[Request interrupted by user for tool use]","type":"text"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.026Z","type":"user","uuid":"i1"}}
   row    4 i1 Hidden collapsed
   row    5 turn:1 TurnEnd { duration_ms: None, failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
-## 13 fact {"channel":"transcript","json":{"message":{"content":"Use the old palette.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.040Z","type":"user","uuid":"u2"}}
+## 12 fact {"channel":"transcript","json":{"message":{"content":"Use the old palette.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.040Z","type":"user","uuid":"u2"}}
   row    6 u2 Prompt { text: [Text("Use the old palette.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 == chat

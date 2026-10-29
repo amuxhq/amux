@@ -21,9 +21,8 @@ use wire::{
     ToolServerHealth, ToolServerStatus, ToolState, Turn, TurnOutcome, UsageMeter, UsageState,
 };
 
-use super::{
-    AskMeta, AskShape, Decided, Request, State, TaskState, Tool, ToolDecisionState, item_body,
-};
+use super::{AskMeta, Request, State, TaskState, Tool, item_body};
+use crate::claude_answers::{AnswerShape, Decided, ToolDecisionState};
 use crate::claude_common::{
     AnsweredResult, BackgroundInput, JobInput, PLAN_TOOL, QUESTION_TOOL, TASK_TOOLS, Verdict,
     apply_task_tool, auto_models, blocks_text, claude_limit, compact_json, job_kind, message_text,
@@ -983,7 +982,7 @@ impl State {
         } as i32;
         // A denial's result is the rejection amux wrote; the person's note
         // is on the decision.
-        tool.outcome_text = if denied && output.starts_with(super::REJECTED) {
+        tool.outcome_text = if denied && output.starts_with(crate::claude_answers::REJECTED) {
             String::new()
         } else {
             output
@@ -1017,7 +1016,7 @@ impl State {
         if tool.question && tool.asked.is_none() {
             tool.asked = Some(match result.map(AnsweredResult::deserialize) {
                 Some(Ok(answered)) if !is_error => ask_item::recorded_by_claude(
-                    &question_ask_text(&tool.input).0,
+                    &question_ask_text(&tool.input),
                     &answered.answers,
                     &answered.annotations,
                 ),
@@ -1172,7 +1171,7 @@ impl State {
                             message,
                             url: elicitation.url.unwrap_or_default(),
                         }),
-                        AskShape::Link,
+                        AnswerShape::Link,
                     )
                 } else {
                     (
@@ -1183,7 +1182,7 @@ impl State {
                             schema_json: json_as_written(payload, &["request", "requested_schema"])
                                 .unwrap_or_default(),
                         }),
-                        AskShape::Form,
+                        AnswerShape::Form,
                     )
                 };
                 self.asks.insert(
@@ -1224,7 +1223,7 @@ impl State {
         let suggestions = asked.permission_suggestions.clone().unwrap_or_default();
         let (body, shape) = match tool.as_str() {
             QUESTION_TOOL if server.is_empty() => {
-                let (question, _) = question_ask(input);
+                let question = question_ask(input);
                 let questions = question
                     .questions
                     .iter()
@@ -1242,14 +1241,14 @@ impl State {
                     .collect();
                 (
                     wire::ask::Body::Question(question),
-                    AskShape::Question(questions),
+                    AnswerShape::Question(questions),
                 )
             }
             PLAN_TOOL if server.is_empty() => {
                 let switch = crate::claude_common::plan_switch(self.offers_auto()).to_owned();
                 (
                     wire::ask::Body::Plan(plan_ask(&switch)),
-                    AskShape::Plan { switch },
+                    AnswerShape::Plan { switch },
                 )
             }
             _ => {
@@ -1282,7 +1281,7 @@ impl State {
                         deny_can_stop: true,
                         server: server.clone(),
                     }),
-                    AskShape::Permission,
+                    AnswerShape::Permission,
                 )
             }
         };

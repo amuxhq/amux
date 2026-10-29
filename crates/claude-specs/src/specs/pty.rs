@@ -8,7 +8,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use claude::launch::Launch;
-use claude::pty::keymap::KeymapSources;
 use claude_protocol::hooks;
 use claude_protocol::stream::PermissionMode;
 use replay_support::{IoDirection, IoEvent, Manifest, ReplayReport, SpecEntry, StrictReplay};
@@ -19,6 +18,7 @@ use crate::driver::pty::{
     AskAnswer, AskFacts, AskKind, Intent, PermissionAnswer, PlanAnswer, PtyEvent, QuestionAnswer,
     QuestionResponse, RelinkReason,
 };
+use crate::terminal::keymap::KeymapSources;
 
 const DEFAULT_WAIT: Duration = Duration::from_secs(600);
 const WAIT_ENV: &str = "CLAUDE_PTY_SPEC_TIMEOUT_SECS";

@@ -9,9 +9,9 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 5 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"command":"cargo test"},"tool_name":"Bash","tool_use_id":"t1"}}
   composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
-## 6 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","permission_suggestions":[{"behavior":"allow","destination":"localSettings","rules":[{"ruleContent":"cargo test:*","toolName":"Bash"}],"type":"addRules"}],"tool_input":{"command":"cargo test"},"tool_name":"Bash"}}
+## 6 fact {"channel":"hook","json":{"amux_reply":1,"hook_event_name":"PermissionRequest","permission_suggestions":[{"behavior":"allow","destination":"localSettings","rules":[{"ruleContent":"cargo test:*","toolName":"Bash"}],"type":"addRules"}],"tool_input":{"command":"cargo test"},"tool_name":"Bash"}}
   ask ask:1 -> "" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: ["cargo test"], directories: [], mode: "", mode_name: "", scope: Project }, Deny { stops: true }+note
+    choices AllowOnce*, AllowAlways { subjects: ["cargo test"], directories: [], mode: "", mode_name: "", scope: Project }, Deny { stops: false }+note, DenyAndStop+note
     body Command { command: "cargo test", cwd: "", reason: "", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 7 input {"answer":{"answer":{"allow":{"scope":0}},"ask":"ask:1"},"id":"a1"}
@@ -24,18 +24,14 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 11 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"command":"rm -rf build"},"tool_name":"Bash","tool_use_id":"t2"}}
   composer Send activity=Some(Running { key: "t2" }) queue=[] underway=[] refused=[]
-## 12 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"command":"rm -rf build"},"tool_name":"Bash"}}
+## 12 fact {"channel":"hook","json":{"amux_reply":2,"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"command":"rm -rf build"},"tool_name":"Bash"}}
   ask ask:2 -> "" 1/1 Open
-    choices AllowOnce*, Deny { stops: true }+note
+    choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
     body Command { command: "rm -rf build", cwd: "", reason: "", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 13 input {"answer":{"answer":{"allow":{"scope":3}},"ask":"ask:2"},"id":"a2"}
-  ask ask:2 -> "" 1/1 Rejected(Refusal { reason: Unsupported, detail: Some("Claude's terminal menu has no entry amux can type for this answer") })
-    choices AllowOnce*, Deny { stops: true }+note
-    body Command { command: "rm -rf build", cwd: "", reason: "", description: "" }
-## 14 input {"answer":{"answer":{"form":{"action":"accept"}},"ask":"ask:2"},"id":"a3"}
   ask ask:2 -> "" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
-    choices AllowOnce*, Deny { stops: true }+note
+    choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
     body Command { command: "rm -rf build", cwd: "", reason: "", description: "" }
 ## 15 input {"answer":{"answer":{"deny":{"note":"use cargo clean","stop":false}},"ask":"ask:2"},"id":"a4"}
   ask none
@@ -51,7 +47,7 @@
   row    4 t2 Command { command: "rm -rf build", state: Denied, exit_code: None, output_head: ["The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed."], more_lines: 0, output_trimmed: false, output_tail: ["The user doesn't want to pro…
   row    5 t3 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: Open, mode: "", mode_name: "", note: None, writing: false })
   composer Send activity=Some(Running { key: "t3" }) queue=[] underway=[] refused=[]
-## 19 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode"}}
+## 19 fact {"channel":"hook","json":{"amux_reply":3,"hook_event_name":"PermissionRequest","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode"}}
   ask ask:3 -> "t3" 1/1 Open
     choices ApprovePlan { mode: "", mode_name: "" }*, ApprovePlan { mode: "acceptEdits", mode_name: "Accept edits" }, SendBack+note
     body Plan { title: None, body: "\n- Edit README.md" }
@@ -63,7 +59,7 @@
 ## 22 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode","tool_use_id":"t4"}}
   row    6 t4 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: Open, mode: "", mode_name: "", note: None, writing: false })
   composer Send activity=Some(Running { key: "t4" }) queue=[] underway=[] refused=[]
-## 23 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode"}}
+## 23 fact {"channel":"hook","json":{"amux_reply":4,"hook_event_name":"PermissionRequest","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode"}}
   ask ask:4 -> "t4" 1/1 Open
     choices ApprovePlan { mode: "", mode_name: "" }*, ApprovePlan { mode: "acceptEdits", mode_name: "Accept edits" }, SendBack+note
     body Plan { title: None, body: "\n- Edit README.md" }
@@ -74,23 +70,23 @@
   composer Send activity=Some(Running { key: "t4" }) queue=[] underway=[] refused=[]
 ## 26 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"warm","label":"Red"},{"description":"cool","label":"Blue","preview":"#00f"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"},{"description":"","label"…
   composer Send activity=Some(Running { key: "t5" }) queue=[] underway=[] refused=[]
-## 27 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","tool_input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"warm","label":"Red"},{"description":"cool","label":"Blue","preview":"#00f"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"},{"description":"",…
+## 27 fact {"channel":"hook","json":{"amux_reply":5,"hook_event_name":"PermissionRequest","tool_input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"warm","label":"Red"},{"description":"cool","label":"Blue","preview":"#00f"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"},{"d…
   ask ask:5 -> "" 1/1 Open
     choices 
-    body Question([QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false }, OptionView { label: "Blue", description: "cool", preview: "#00f", recommended: false }], allow_other: false, secret: false }, QuestionView { header: "Tools", question: "Pick tools", multi_select: true, options: [Option…
+    body Question([QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false }, OptionView { label: "Blue", description: "cool", preview: "#00f", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Tools", question: "Pick tools", multi_select: true, options: [OptionV…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 28 input {"answer":{"answer":{"selected":[[0,1]]},"ask":"ask:5"},"id":"a7"}
   ask ask:5 -> "" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
     choices 
-    body Question([QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false }, OptionView { label: "Blue", description: "cool", preview: "#00f", recommended: false }], allow_other: false, secret: false }, QuestionView { header: "Tools", question: "Pick tools", multi_select: true, options: [Option…
-## 32 input {"answer":{"answer":{"selected":[1,[0,2]]},"ask":"ask:5"},"id":"a10"}
+    body Question([QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false }, OptionView { label: "Blue", description: "cool", preview: "#00f", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Tools", question: "Pick tools", multi_select: true, options: [OptionV…
+## 31 input {"answer":{"answer":{"note":"keep the old strings","selected":[1,[0,2]]},"ask":"ask:5"},"id":"a9n"}
   ask none
   composer Send activity=Some(Running { key: "t5" }) queue=[] underway=[] refused=[]
-## 33 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t5","input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"warm","label":"Red"},{"description":"cool","label":"Blue","preview":"#00f"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"},{"description":"","lab…
-  row    7 t5 [Answered: Color = Blue; Tools = Hammer, Drill skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false }, OptionView { label: "Blue", description: "cool", preview: "#00f", recommended: false }], allow_other: false, secret: false }, Question…
-## 34 fact {"channel":"hook","json":{"duration_ms":5,"hook_event_name":"PostToolUse","tool_input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"warm","label":"Red"},{"description":"cool","label":"Blue","preview":"#00f"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"},{"descri…
+## 32 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t5","input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"warm","label":"Red"},{"description":"cool","label":"Blue","preview":"#00f"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"},{"description":"","lab…
+  row    7 t5 [Answered: Color = Blue; Tools = Hammer, Drill note="keep the old strings" skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false }, OptionView { label: "Blue", description: "cool", preview: "#00f", recommended: false }], allow_other: true…
+## 33 fact {"channel":"hook","json":{"duration_ms":5,"hook_event_name":"PostToolUse","tool_input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"warm","label":"Red"},{"description":"cool","label":"Blue","preview":"#00f"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"},{"descri…
   composer Send activity=Some(Running { key: "t4" }) queue=[] underway=[] refused=[]
-## 36 fact {"channel":"transcript","json":{"durationMs":50,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.060Z","type":"system","uuid":"d1"}}
+## 35 fact {"channel":"transcript","json":{"durationMs":50,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.060Z","type":"system","uuid":"d1"}}
   row    3 t1 Command { command: "cargo test", state: Succeeded, exit_code: None, output_head: ["ok"], more_lines: 0, output_trimmed: false, output_tail: ["ok"], duration_ms: Some(2) } run[t1..t2 x2 recent=1] decision=Decision { outcome: Allowed, granted: Some(Claude { subjects: ["cargo test"], directories: [], mode: "", mode_name: "", destination: Project }), note: None, elsewhere: false } collapsed
   row    4 t2 Command { command: "rm -rf build", state: Denied, exit_code: None, output_head: ["The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed."], more_lines: 0, output_trimmed: false, output_tail: ["The user doesn't want to pro…
   row    8 turn:1 TurnEnd { duration_ms: Some(50), failed: false }
@@ -102,7 +98,7 @@
      4 t2 Command { command: "rm -rf build", state: Denied, exit_code: None, output_head: ["The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed."], more_lines: 0, output_trimmed: false, output_tail: ["The user doesn't want to pro…
      5 t3 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: ApprovedSwitching, mode: "acceptEdits", mode_name: "Accept edits", note: None, writing: false })
      6 t4 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: SentBack, mode: "", mode_name: "", note: Some("explain why"), writing: false })
-     7 t5 [Answered: Color = Blue; Tools = Hammer, Drill skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false }, OptionView { label: "Blue", description: "cool", preview: "#00f", recommended: false }], allow_other: false, secret: false }, Question…
+     7 t5 [Answered: Color = Blue; Tools = Hammer, Drill note="keep the old strings" skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false }, OptionView { label: "Blue", description: "cool", preview: "#00f", recommended: false }], allow_other: true…
      8 turn:1 TurnEnd { duration_ms: Some(50), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None

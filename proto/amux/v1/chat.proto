@@ -258,8 +258,10 @@ message Boundary {
   // For EXITED: why, and the cause's own words.
   ExitCause cause = 4;
   optional string cause_detail = 5;
-  // The keymap the agent process resolved for the observed provider version.
-  string keymap = 6;
+  // Was the keymap terminal Claude's answers were typed with; they now go
+  // through its hooks.
+  reserved 6;
+  reserved "keymap";
 }
 
 enum BoundaryKind {

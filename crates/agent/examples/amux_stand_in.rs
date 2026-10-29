@@ -2,7 +2,7 @@
 //! launches from it, `hooks claude` and `mcp <dir>`, as the amux binary
 //! answers them.
 
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -19,7 +19,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .ok_or("CLAUDE_HOOK_SOCKET is not set")?;
             let mut payload = Vec::new();
             std::io::stdin().read_to_end(&mut payload)?;
-            claude::hooks::forward_from_env(&payload, &socket)?;
+            let answer = claude::hooks::forward_from_env(&payload, &socket)?;
+            std::io::stdout().write_all(&answer)?;
             Ok(())
         }
         ["internal", "mcp", dir] => {

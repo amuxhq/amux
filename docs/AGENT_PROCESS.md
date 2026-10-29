@@ -301,7 +301,7 @@ jobs is emptied at the exit ([background jobs](INTERPRETERS.md#background-jobs))
 
 | Kind | Child | Facts | Input |
 |---|---|---|---|
-| `claude_pty` | `claude` in a pseudo-terminal | Hook payloads on `private/hooks.sock`, transcript rows, and the agent's own launch, trust-dialog and ready facts | Keystrokes, typed through the keymap resolved for the running Claude |
+| `claude_pty` | `claude` in a pseudo-terminal | Hook payloads on `private/hooks.sock`, transcript rows, and the agent's own launch, trust-dialog and ready facts | Decisions written back on the hooks Claude waits on, and keystrokes for what has no hook |
 | `claude_sdk` | `claude --print` over stream-JSON on stdin and stdout | Each stdout line | Stream-JSON lines on stdin |
 | `codex` | `codex app-server` listening on `private/codex.sock` (stdio on Windows), the agent one of its clients | Each JSON-RPC message the server sends the agent | JSON-RPC messages from the agent's client |
 
@@ -314,12 +314,9 @@ the reasons.
 
 ### Terminal Claude
 
-Before Claude starts, the agent runs `claude --version` and resolves the
-keymap for that version (see
-[keys as programs](INTERPRETERS.md#keys-as-programs)). It reports both as its
-launch fact, the first fact the interpreter sees, and the boundary item
-records them. No keymap covering the version means the agent runs but cannot
-type into Claude.
+Before Claude starts, the agent runs `claude --version` and reports the
+version as its launch fact, the first fact the interpreter sees; the
+boundary item records it.
 
 Claude is started through `pty_host::spawn` with the spec's arguments plus:
 
@@ -329,10 +326,13 @@ Claude is started through `pty_host::spawn` with the spec's arguments plus:
   folder-trust dialog, say) has no transcript and cannot be resumed, so it is
   started again under the same id.
 - `--settings <json>`: the user's own settings with the agent's merged over
-  them. The agent's part registers `<install path> hooks claude` as the hook
-  command for `SessionStart`, `SessionEnd`, `UserPromptSubmit`,
-  `PermissionRequest`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`,
-  `Stop`, `SubagentStop` and `Notification`, accepts messages from other sessions at once, and allows amux's own tools
+  them. The agent's part registers `<install path> internal hook claude`, as a
+  program and its arguments with no shell between, as the hook command for
+  `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PermissionRequest`,
+  `PermissionDenied`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`,
+  `Stop`, `SubagentStop`, `Elicitation`, `MessageDisplay` and
+  `PostModelSwitch`, the two that wait for a decision with a timeout of
+  seven days, accepts messages from other sessions at once, and allows amux's own tools
   and reading the agent's `blobs/` folder (where the files a person attaches
   are) without asking. Headless Claude gets the same settings.
 - `--mcp-config` naming amux's tool server (see [the tool server](#the-tool-server)).
@@ -355,9 +355,9 @@ one amux cycled it to with Shift+Tab, confirmed by the permission Claude
 records next; the permission approving a plan switches to follows from the
 launch arguments and the catalogue (see [the interpreters](INTERPRETERS.md)).
 
-Keystrokes are typed by one task, in order, with the pauses the keymap's
-programs ask for; what an attached terminal types goes through the same task,
-so it never interleaves with a program half-way.
+Keystrokes are typed by one task, in order, with the pauses a paste needs
+(see [keys](INTERPRETERS.md#keys)); what an attached terminal types goes
+through the same task, so it never interleaves with a prompt half-way.
 
 ### Headless Claude
 
@@ -489,10 +489,12 @@ about it comes from its hooks, its transcript file and its terminal.
 
 A hook reaches the agent like this:
 
-1. Claude runs the hook command, `<install path> hooks claude`, for each
-   registered hook event, with the payload on stdin.
+1. Claude runs the hook command, `<install path> internal hook claude`, for
+   each registered hook event, with the payload on stdin.
 2. The command reads `CLAUDE_HOOK_SOCKET`, connects to `private/hooks.sock`,
-   writes the payload and closes the connection. When Claude put its
+   writes the payload and closes its side for writing, then prints whatever
+   the agent writes back before closing, which Claude reads as the hook's
+   decision. When Claude put its
    messaging socket's path and token in the hook's environment
    (`CLAUDE_CODE_MESSAGING_SOCKET`, `CLAUDE_CODE_MESSAGING_TOKEN`), the
    command wraps the payload in an envelope that carries them
@@ -502,7 +504,16 @@ A hook reaches the agent like this:
 4. The agent reads one connection at a time, in the order Claude ran its
    hooks. Messaging credentials go to the provider, which uses them to hand
    agent messages to Claude; the payload Claude wrote becomes a hook fact,
-   unchanged, which the interpreter decodes with `claude_protocol::hooks`.
+   which the interpreter decodes with `claude_protocol::hooks`.
+5. A `PermissionRequest` or `Elicitation` connection is held open: Claude
+   waits on it for amux's decision. The agent numbers it and adds the
+   number to the payload as `amux_reply`; the interpreter's answer
+   (`Effect::HookAnswer`) is written on the connection with that number,
+   which then closes. An empty answer closes it with no decision, so Claude
+   carries on with its own dialog. Every other connection is closed as soon
+   as it is read, so Claude waits on it no longer than the delivery takes.
+   If the agent goes away, the connection closes, and Claude falls back to
+   its own dialog as it does for an empty answer.
 
 The transcript is found through the hooks. `SessionStart` names the
 transcript file; when the path changes (a start, a resume, `/clear`, a

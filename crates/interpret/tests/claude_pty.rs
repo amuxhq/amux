@@ -70,16 +70,16 @@ goldens! {
     a_prompt_row_behind_its_hooks_still_comes_first => "prompt_row_precedes_its_calls",
     the_trust_dialog_is_a_question_a_prompt_waits_behind => "trust_dialog",
     the_trust_question_exits_or_closes_when_trusted_elsewhere => "trust_dialog_exit_and_elsewhere",
-    answers_through_amux_become_terminal_inputs => "answers",
+    answers_through_amux_become_hook_decisions => "answers",
     semantic_inputs_become_effects => "inputs",
     send_now_steers_a_queued_prompt_into_the_running_turn => "steering",
-    send_now_is_refused_below_its_keymap_rows_version => "send_now_refused",
     background_subagent_answers_on_its_agent_row => "subagent_notification",
     boundaries_carry_the_provider_session_and_version => "boundaries",
     rows_no_recording_shows => "rows",
     recorded_steer_send_now => "recorded_steer_send_now",
-    a_dialog_no_hook_can_answer_opens_an_unanswerable_ask => "unanswerable",
-    asks_offer_and_type_only_the_menus_the_keymap_knows => "permission_menus",
+    a_tool_servers_form_or_link_is_answered_through_its_hook => "elicitation",
+    replies_stream_as_claude_draws_them => "streaming",
+    a_refusal_claude_made_on_its_own_lands_on_the_call => "permission_denied",
     a_pasted_prompt_reads_as_what_was_sent => "pasted_prompt",
     recorded_question_skip_reply => "recorded_question_skip_reply",
     recorded_live_plan => "recorded_live_plan",
@@ -690,41 +690,44 @@ fn a_prompt_typed_with_attachments_holds_them_not_their_elements() {
     );
 }
 
-/// A model chosen with `/model` in terminal Claude's own view: Claude writes
-/// the command and "Set model to `Haiku 5.5` …" to its transcript at once,
-/// as QA recorded on 2.1.296. The snapshot names the new model then, not
-/// only once the next turn's rows carry it.
+/// A model switch reaches amux on Claude's PostModelSwitch hook, as when
+/// plan mode moves Haiku 5.5 to Sonnet 5.5 (recorded on 2.1.312, source
+/// auto). The snapshot names the new model then, not only once the next
+/// turn's rows carry it.
 #[test]
-fn a_model_set_in_claudes_own_view_shows_before_the_next_turn() {
+fn a_model_switch_shows_before_the_next_turn() {
     use prost::Message as _;
     let spec = wire::AgentSpec {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
     let (mut state, _) = ClaudePty::initial(&spec, "test");
-    let rows = [
-        serde_json::json!({
-            "type": "user", "uuid": "u0", "timestamp": "2026-10-12T07:43:20.000Z",
-            "sessionId": "s1", "isSidechain": false, "userType": "external",
-            "message": {"role": "user", "content": "<command-name>/model</command-name>\n            <command-message>model</command-message>\n            <command-args></command-args>"},
-        }),
-        serde_json::json!({
-            "type": "user", "uuid": "u1", "parentUuid": "u0", "timestamp": "2026-10-12T07:43:23.238Z",
-            "sessionId": "s1", "isSidechain": false, "userType": "external",
-            "message": {"role": "user", "content": "<local-command-stdout>Set model to `Haiku 5.5` and saved as your default for new sessions</local-command-stdout>"},
-        }),
-    ];
-    let text: String = rows.iter().map(|row| format!("{row}\n")).collect();
+    let hook = |json: serde_json::Value| {
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Hook,
+            payload: json.to_string().into_bytes(),
+        })
+    };
     let mut named = None;
-    for event in ClaudePty::recording("transcript_rows", text.as_bytes()).unwrap() {
+    for event in [
+        hook(serde_json::json!({
+            "hook_event_name": "SessionStart", "source": "startup", "session_id": "s1",
+            "transcript_path": "/t/s1.jsonl", "model": "claude-haiku-5-5",
+        })),
+        hook(serde_json::json!({
+            "hook_event_name": "PostModelSwitch", "session_id": "s1",
+            "transcript_path": "/t/s1.jsonl", "from_model": "claude-haiku-5-5",
+            "to_model": "claude-sonnet-5-5", "requested_model": null, "source": "auto",
+        })),
+    ] {
         if let Some(snapshot) = ClaudePty::step(&mut state, event).step.snapshot {
             let body = wire::ClaudePtySnapshot::decode(snapshot.body.as_slice()).unwrap();
             named = body.model_name.or(body.model).or(named);
         }
     }
     assert!(
-        named.as_deref().is_some_and(|name| name.contains("Haiku")),
-        "the snapshot keeps the old model after Claude said it set Haiku 5.5: {named:?}"
+        named.as_deref().is_some_and(|name| name.contains("Sonnet")),
+        "the snapshot keeps the old model after Claude switched to Sonnet 5.5: {named:?}"
     );
 }
 
@@ -862,10 +865,7 @@ fn started_claude() -> (
             wire::ClaudePtySnapshot::decode(snapshot.body.as_slice()).unwrap(),
         )
     });
-    let launch = serde_json::json!({
-        "type": "launch", "version": "2.1.296", "keymap": "claude-2.1",
-        "permission_menus": {"per_suggestion": [1], "folded": [2]},
-    });
+    let launch = serde_json::json!({"type": "launch", "version": "2.1.296"});
     for event in [
         Event::Fact(interpret::Fact {
             channel: interpret::Channel::Agent,
@@ -1171,10 +1171,7 @@ fn claude_offering_auto() -> interpret::claude_pty::State {
         ..Default::default()
     };
     let (mut state, _) = ClaudePty::initial(&spec, "test");
-    let launch = serde_json::json!({
-        "type": "launch", "version": "2.1.296", "keymap": "claude-2.1",
-        "permission_menus": {"per_suggestion": [1], "folded": [2]},
-    });
+    let launch = serde_json::json!({"type": "launch", "version": "2.1.296"});
     for event in [
         Event::Fact(interpret::Fact {
             channel: interpret::Channel::Agent,
@@ -1195,10 +1192,24 @@ fn claude_offering_auto() -> interpret::claude_pty::State {
     state
 }
 
+/// The decision the hook Claude waits on is handed, as JSON.
+fn hook_answer(stepped: &interpret::Stepped, id: u64) -> serde_json::Value {
+    stepped
+        .effects
+        .iter()
+        .find_map(|effect| match effect {
+            Effect::HookAnswer { id: hook, answer } if *hook == id => {
+                Some(serde_json::from_slice(answer).expect("hook output is JSON"))
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no answer for hook {id}: {:?}", stepped.effects))
+}
+
 /// Claude's permission menu in manual mode, where its model takes auto
 /// mode, reads Yes / Yes, and always allow … / Yes, and switch to auto mode
 /// / No. The ask offers the switch as a scope moving to auto; choosing it
-/// types that entry, and the permission is auto at once.
+/// hands Claude's hook that switch, and the permission is auto at once.
 #[test]
 fn a_permission_ask_offers_claudes_switch_to_auto_mode() {
     let mut state = claude_offering_auto();
@@ -1208,7 +1219,7 @@ fn a_permission_ask_offers_claudes_switch_to_auto_mode() {
             "hook_event_name": "PermissionRequest", "session_id": "s1",
             "transcript_path": "/claude/projects/w/s1.jsonl", "cwd": "/w",
             "permission_mode": "default", "tool_name": "Bash",
-            "tool_input": {"command": "touch decided.txt"},
+            "tool_input": {"command": "touch decided.txt"}, "amux_reply": 7,
             "permission_suggestions": [{"type": "addRules", "rules": [{"toolName": "Bash",
                 "ruleContent": "touch decided.txt"}], "behavior": "allow",
                 "destination": "localSettings"}],
@@ -1238,24 +1249,21 @@ fn a_permission_ask_offers_claudes_switch_to_auto_mode() {
     )
     .expect("an answer");
     let answered = ClaudePty::step(&mut state, Event::Input(answer));
-    assert!(
-        answered.effects.iter().any(|effect| matches!(
-            effect,
-            Effect::Terminal(interpret::claude_pty::TerminalInput::Permission {
-                choice: interpret::claude_pty::PermissionChoice::AllowSwitchingToAuto,
-                ..
-            })
-        )),
-        "the switch to auto mode is not what is typed: {:?}",
-        answered.effects
+    assert_eq!(
+        hook_answer(&answered, 7)["hookSpecificOutput"]["decision"],
+        serde_json::json!({
+            "behavior": "allow",
+            "updatedInput": {"command": "touch decided.txt"},
+            "updatedPermissions": [{"type": "setMode", "mode": "auto", "destination": "session"}],
+        })
     );
     let (_, after) = decoded(&answered).expect("a snapshot");
     assert_eq!(after.permission.as_deref(), Some("auto"));
 }
 
-/// A plan approved with its switch, where Claude offers auto mode, types
-/// the menu's first entry (which Claude takes to auto mode) and shows the
-/// permission as auto at once: a QA
+/// A plan approved with its switch, where Claude offers auto mode, hands
+/// Claude's hook the plan as asked and the switch to auto mode, and shows
+/// the permission as auto at once: a QA
 /// run saw the chat say "switched to Accept edits" while Claude ran in auto
 /// mode.
 #[test]
@@ -1267,7 +1275,7 @@ fn a_plan_approved_with_its_switch_lands_in_the_switch_it_names() {
             "hook_event_name": "PermissionRequest", "session_id": "s1",
             "transcript_path": "/claude/projects/w/s1.jsonl", "cwd": "/w",
             "permission_mode": "plan", "tool_name": "ExitPlanMode",
-            "tool_input": {"plan": "# Plan"}, "permission_suggestions": [],
+            "tool_input": {"plan": "# Plan"}, "permission_suggestions": [], "amux_reply": 3,
         })),
     );
     let (_, snapshot) = decoded(&opened).expect("a snapshot");
@@ -1285,15 +1293,14 @@ fn a_plan_approved_with_its_switch_lands_in_the_switch_it_names() {
     )
     .expect("an answer");
     let answered = ClaudePty::step(&mut state, Event::Input(answer));
-    assert!(
-        answered.effects.iter().any(|effect| matches!(
-            effect,
-            Effect::Terminal(interpret::claude_pty::TerminalInput::Plan(
-                interpret::claude_pty::PlanChoice::ApproveSwitching
-            ))
-        )),
-        "the plan's switch is not what is typed: {:?}",
-        answered.effects
+    // Claude leaves a plan approved only with the plan handed back.
+    assert_eq!(
+        hook_answer(&answered, 3)["hookSpecificOutput"]["decision"],
+        serde_json::json!({
+            "behavior": "allow",
+            "updatedInput": {"plan": "# Plan"},
+            "updatedPermissions": [{"type": "setMode", "mode": "auto", "destination": "session"}],
+        })
     );
     let (_, after) = decoded(&answered).expect("a snapshot");
     assert_eq!(
@@ -1366,10 +1373,7 @@ fn before_claude_names_its_model_the_launched_one_decides_auto_mode() {
         ..Default::default()
     };
     let (mut state, _) = ClaudePty::initial(&spec, "test");
-    let launch = serde_json::json!({
-        "type": "launch", "version": "2.1.296", "keymap": "claude-2.1",
-        "permission_menus": {"per_suggestion": [1], "folded": [2]},
-    });
+    let launch = serde_json::json!({"type": "launch", "version": "2.1.296"});
     ClaudePty::step(
         &mut state,
         Event::Fact(interpret::Fact {

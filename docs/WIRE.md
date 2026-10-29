@@ -556,9 +556,7 @@ The `Refusal` says why:
 | `REFUSAL_TOO_LONG` | interpreter | The prompt is longer than the agent takes: Codex takes at most 1,048,576 characters (2^20), and would refuse a longer one only after amux had taken it; the detail names the limit and the prompt's length |
 
 `detail` carries a sentence for a person when the refusal depends on the
-provider rather than the protocol: terminal Claude refuses send-now as
-`REFUSAL_UNSUPPORTED` on a Claude older than the one its keymap's send-now row
-is verified from, and the detail names both versions. A client shows the
+provider rather than the protocol. A client shows the
 detail when there is one and its own words for the refusal otherwise; a
 refusal it has no words for reads as a plain refusal.
 

@@ -1,5 +1,5 @@
 {
-  "about": "Every session change is a boundary carrying the provider session and version and the keymap the agent resolved: startup, resume, compact, clear, the provider exiting, and a relaunch after it, which is a restart whatever the session start says.",
+  "about": "Every session change is a boundary carrying the provider session and version: startup, resume, compact, clear, the provider exiting, and a relaunch after it, which is a restart whatever the session start says.",
   "spec": {
     "created_at_ms": 1800000000000
   },
@@ -9,16 +9,7 @@
         "channel": "agent",
         "json": {
           "type": "launch",
-          "version": "2.1.282",
-          "keymap": "claude-2.1",
-          "permission_menus": {
-            "per_suggestion": [
-              1
-            ],
-            "folded": [
-              2
-            ]
-          }
+          "version": "2.1.282"
         }
       },
       "expect": {
@@ -127,16 +118,7 @@
         "channel": "agent",
         "json": {
           "type": "launch",
-          "version": "2.1.283",
-          "keymap": "claude-2.1",
-          "permission_menus": {
-            "per_suggestion": [
-              1
-            ],
-            "folded": [
-              2
-            ]
-          }
+          "version": "2.1.283"
         }
       },
       "expect": {

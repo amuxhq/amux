@@ -26,7 +26,8 @@ codex = { mark = "full", carriers = ["item:prompt"], golden = [" prompt final "]
 [[row]]
 id = "C2"
 item = "Agent reply"
-claude_pty = { mark = "partial", carriers = ["item:message"], golden = [" message final "] }
+# Terminal Claude streams a reply a line at a time, not a word at a time.
+claude_pty = { mark = "partial", carriers = ["item:message"], golden = [" message open "] }
 claude_sdk = { mark = "full", carriers = ["item:message"], golden = [" message open "] }
 codex = { mark = "full", carriers = ["item:message", "item:working_note"], golden = [" working_note "] }
 
@@ -135,8 +136,7 @@ codex = { mark = "full", carriers = ["item:plan", "ask:plan"], golden = [" plan 
 [[row]]
 id = "C17"
 item = "Form from a tool server"
-# Terminal Claude shows the form in its own terminal; amux can only say so.
-claude_pty = { mark = "partial", carriers = ["ask:unanswerable", "item:ask.unanswerable"], golden = [" ask final ", " unanswerable ", " ASK_OUTCOME_DISMISSED"] }
+claude_pty = { mark = "full", carriers = ["ask:form", "ask:link", "item:ask.form", "item:ask.link", "item:ask.closed.fields"], golden = [" ask final ", " form ", " ASK_OUTCOME_ANSWERED fields=["] }
 claude_sdk = { mark = "full", carriers = ["ask:form", "ask:link", "item:ask.form", "item:ask.link", "item:ask.closed.fields"], golden = [" ask final ", " form ", " ASK_OUTCOME_ANSWERED fields=["] }
 codex = { mark = "full", carriers = ["ask:mcp_form", "ask:mcp_link", "item:ask.form", "item:ask.link", "item:ask.closed.fields"], golden = [" ask final ", " form ", " ASK_OUTCOME_ANSWERED fields=["] }
 

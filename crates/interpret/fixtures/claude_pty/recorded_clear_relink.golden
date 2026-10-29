@@ -1,12 +1,12 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
-## 1 fact {"channel":"agent","json":{"keymap":"claude-2.1","permission_menus":{"folded":[2],"per_suggestion":[1]},"type":"launch","version":"2.1.251"}}
+## 1 fact {"channel":"agent","json":{"type":"launch","version":"2.1.251"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
-item boundary:1 boundary final at=1788072024209 text="" BOUNDARY_KIND_STARTED session=05406442-d223-4b45-bb62-4d95d5243722 version=2.1.251 keymap=claude-2.1
+item boundary:1 boundary final at=1788072024209 text="" BOUNDARY_KIND_STARTED session=05406442-d223-4b45-bb62-4d95d5243722 version=2.1.251
 snapshot IDLE queue=[] working_on=- at=1788072024209 asks=[] session=05406442-d223-4b45-bb62-4d95d5243722 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=? tasks=? background=?
 ## 6 recorded 4: fact Transcript type=permission-mode
 snapshot IDLE queue=[] working_on=- at=1788072024275 asks=[] session=05406442-d223-4b45-bb62-4d95d5243722 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?
@@ -26,5 +26,5 @@ snapshot IDLE queue=[] working_on=- at=1788072026336 asks=[] session=05406442-d2
 turn_end 1 last=67516796-dd9c-482d-8786-2a1948429361
 ## 32 recorded 30: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_2>"
-item boundary:2 boundary final at=1788072026388 text="" BOUNDARY_KIND_CLEARED session=c6a3fc4c-4db5-43b9-926e-32aacea58821 version=2.1.251 keymap=claude-2.1
+item boundary:2 boundary final at=1788072026388 text="" BOUNDARY_KIND_CLEARED session=c6a3fc4c-4db5-43b9-926e-32aacea58821 version=2.1.251
 snapshot IDLE queue=[] working_on=- at=1788072026388 asks=[] session=c6a3fc4c-4db5-43b9-926e-32aacea58821 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=[]

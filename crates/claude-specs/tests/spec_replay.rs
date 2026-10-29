@@ -254,7 +254,7 @@ async fn replay_pty_recording(
             claude_specs::specs::pty::Source::Recorded {
                 replay,
                 manifest: Box::new(recording.manifest),
-                keymaps: claude::pty::keymap::KeymapSources::default(),
+                keymaps: claude_specs::terminal::keymap::KeymapSources::default(),
             },
         ),
     )

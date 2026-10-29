@@ -191,6 +191,7 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 1,
           "hook_event_name": "PermissionRequest",
           "agent_id": "ag1",
           "agent_type": "general-purpose",

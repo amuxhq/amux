@@ -1,5 +1,5 @@
-use claude::pty::keymap::{BAKED_KEYMAPS, KeymapSource, load_str};
 use claude_specs::specs::{pty, pty_registry};
+use claude_specs::terminal::keymap::{BAKED_KEYMAPS, KeymapSource, load_str};
 
 #[test]
 fn baked_verified_entries_have_matching_recording_evidence() {

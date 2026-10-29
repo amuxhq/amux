@@ -4013,10 +4013,10 @@ fn box_screen(card: &ui_view::AskCard) -> String {
 }
 
 #[test]
-fn terminal_claude_offers_skip_only_on_a_form_of_several_questions() {
-    // Claude's form asking several questions ends in its review screen,
-    // which submits with one unanswered; a lone question is submitted by
-    // answering it. Neither has a place for a note.
+fn terminal_claude_takes_a_skip_and_a_note_on_any_question() {
+    // Answers go back on Claude's hook, as headless Claude's do, so a
+    // question may be skipped or carry a note whether Claude asked one or
+    // several.
     let open = |count: usize| {
         move |state: &SessionState| {
             ask_card(state).is_some_and(|card| {
@@ -4027,7 +4027,7 @@ fn terminal_claude_offers_skip_only_on_a_form_of_several_questions() {
     };
     let (state, _) = fixtures::frame_where(Kind::ClaudePty, "question_skip", open(3));
     let card = ask_card(&state).expect("three questions");
-    assert!(card.question_skip && !card.question_note);
+    assert!(card.question_skip && card.question_note);
     let screen = box_screen(&card);
     assert!(screen.contains("Skip"), "{screen}");
     assert!(screen.contains("Reply instead"), "{screen}");
@@ -4057,9 +4057,9 @@ fn terminal_claude_offers_skip_only_on_a_form_of_several_questions() {
 
     let (state, _) = fixtures::frame_where(Kind::ClaudePty, "question_skip", open(1));
     let card = ask_card(&state).expect("a lone question");
-    assert!(!card.question_skip && !card.question_note);
+    assert!(card.question_skip && card.question_note);
     let screen = box_screen(&card);
-    assert!(!screen.contains("Skip"), "{screen}");
+    assert!(screen.contains("Skip"), "{screen}");
     assert!(screen.contains("Reply instead"), "{screen}");
 }
 

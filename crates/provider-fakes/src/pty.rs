@@ -45,19 +45,27 @@ pub fn main() -> i32 {
 
 /// Run each hook command for the payload's event with the payload on
 /// stdin, one after another, waiting for each so the host sees payloads in
-/// the order they were raised.
-pub fn run_hooks(args: &Args, payload: &[u8], env: &[(String, String)]) -> std::io::Result<()> {
+/// the order they were raised. What the last command that printed
+/// anything printed is the hook's decision, as Claude reads it.
+pub fn run_hooks(
+    args: &Args,
+    payload: &[u8],
+    env: &[(String, String)],
+) -> std::io::Result<Option<Value>> {
     let event = serde_json::from_slice::<Value>(payload)
         .ok()
         .and_then(|payload| payload.get("hook_event_name")?.as_str().map(str::to_owned))
         .unwrap_or_default();
+    let mut decision = None;
     for command in args.hook_commands(&event) {
-        let mut child = std::process::Command::new("/bin/sh")
-            .arg("-c")
-            .arg(&command)
+        let Some((program, rest)) = command.split_first() else {
+            continue;
+        };
+        let mut child = std::process::Command::new(program)
+            .args(rest)
             .envs(env.iter().map(|(key, value)| (key, value)))
             .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .spawn()?;
         child
@@ -65,9 +73,71 @@ pub fn run_hooks(args: &Args, payload: &[u8], env: &[(String, String)]) -> std::
             .take()
             .expect("piped stdin")
             .write_all(payload)?;
-        child.wait()?;
+        let output = child.wait_with_output()?;
+        if let Ok(printed) = serde_json::from_slice::<Value>(&output.stdout) {
+            decision = Some(printed);
+        }
     }
-    Ok(())
+    Ok(decision)
+}
+
+/// Starts each hook command for a payload Claude waits on for a decision,
+/// handing every one the payload before returning, so the host has it in
+/// the order Claude raised it. The thread returned waits for them and gives
+/// back what the last that printed anything printed.
+pub fn start_decision_hooks(
+    args: &Args,
+    payload: &[u8],
+    env: &[(String, String)],
+) -> std::io::Result<std::thread::JoinHandle<Option<Value>>> {
+    let event = serde_json::from_slice::<Value>(payload)
+        .ok()
+        .and_then(|payload| payload.get("hook_event_name")?.as_str().map(str::to_owned))
+        .unwrap_or_default();
+    let mut children = Vec::new();
+    for command in args.hook_commands(&event) {
+        let Some((program, rest)) = command.split_first() else {
+            continue;
+        };
+        let mut child = std::process::Command::new(program)
+            .args(rest)
+            .envs(env.iter().map(|(key, value)| (key, value)))
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()?;
+        child
+            .stdin
+            .take()
+            .expect("piped stdin")
+            .write_all(payload)?;
+        children.push(child);
+    }
+    Ok(std::thread::spawn(move || {
+        let mut decision = None;
+        for child in children {
+            if let Ok(output) = child.wait_with_output()
+                && let Ok(printed) = serde_json::from_slice::<Value>(&output.stdout)
+            {
+                decision = Some(printed);
+            }
+        }
+        decision
+    }))
+}
+
+/// How long playback lets a hook Claude waits on for a decision finish
+/// before drawing on.
+const DECISION_SETTLE: std::time::Duration = std::time::Duration::from_millis(200);
+
+/// Whether Claude reads the payload's hook output as a decision on an ask.
+fn waits_for_decision(payload: &[u8]) -> bool {
+    serde_json::from_slice::<Value>(payload).is_ok_and(|payload| {
+        matches!(
+            payload["hook_event_name"].as_str(),
+            Some("PermissionRequest" | "Elicitation")
+        )
+    })
 }
 
 /// Append one row to a session transcript, creating it and its directory.
@@ -156,6 +226,7 @@ fn play(process: &Process, args: &Args) -> Result<Option<i32>, String> {
     let mut session = String::from("unnamed");
     let mut stdin = std::io::stdin().lock();
     let mut stdout = std::io::stdout().lock();
+    let mut deciding = Vec::new();
     for (index, event) in process.events.iter().enumerate() {
         match event.channel {
             Channel::Output => {
@@ -196,10 +267,31 @@ fn play(process: &Process, args: &Args) -> Result<Option<i32>, String> {
                     &event.bytes,
                     &playback::transcript_path(&config, &cwd, &session),
                 );
+                // Claude goes on drawing while a hook it waits on for a
+                // decision is pending, and a recording answered in its
+                // terminal never reads that decision.
+                if waits_for_decision(&payload) {
+                    let waiting = start_decision_hooks(args, &payload, &[])
+                        .map_err(|error| format!("event {index}: hook: {error}"))?;
+                    // A hook that answers at once is done before Claude goes
+                    // on, as the recording shows; one held for a decision is
+                    // left running.
+                    let until = std::time::Instant::now() + DECISION_SETTLE;
+                    while !waiting.is_finished() && std::time::Instant::now() < until {
+                        std::thread::sleep(std::time::Duration::from_millis(2));
+                    }
+                    deciding.push(waiting);
+                    continue;
+                }
                 run_hooks(args, &payload, &[])
                     .map_err(|error| format!("event {index}: hook: {error}"))?;
             }
         }
+    }
+    // A session that ran to its end leaves no hook running behind it; one
+    // cut short by a recorded exit above leaves them, as Claude dying does.
+    for waiting in deciding {
+        let _ = waiting.join();
     }
     Ok(None)
 }

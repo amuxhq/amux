@@ -1,5 +1,5 @@
 {
-  "about": "Answers sent through amux are typed into the terminal's menus as semantic inputs and close their ask with the outcome they carry; the decision lands on the call's row, which Claude writes at the decision; an answer that does not fit the ask is refused and leaves it open.",
+  "about": "Answers sent through amux go back on the PermissionRequest hook Claude waits on, as the decision headless Claude would get: a scope applies exactly the suggestion it names, a deny with a note keeps Claude going with the note as its reason, and the answer closes the ask with the outcome it carries; the decision lands on the call's row, which Claude writes at the decision; an answer that does not fit the ask is refused and leaves it open.",
   "spec": {
     "created_at_ms": 1800000000000
   },
@@ -9,16 +9,7 @@
         "channel": "agent",
         "json": {
           "type": "launch",
-          "version": "2.1.282",
-          "keymap": "claude-2.1",
-          "permission_menus": {
-            "per_suggestion": [
-              1
-            ],
-            "folded": [
-              2
-            ]
-          }
+          "version": "2.1.282"
         }
       }
     },
@@ -90,6 +81,7 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 1,
           "hook_event_name": "PermissionRequest",
           "tool_name": "Bash",
           "tool_input": {
@@ -128,7 +120,7 @@
         "asks": [],
         "items": [],
         "effects": [
-          "terminal permission of 1 AllowScoped { suggestion: 0 }",
+          "hook 1 answered {\"hookSpecificOutput\":{\"decision\":{\"behavior\":\"allow\",\"updatedInput\":{\"command\":\"cargo test\"},\"updatedPermissions\":[{\"behavior\":\"allow\",\"destination\":\"localSettings\",\"rules\":[{\"ruleContent\":\"cargo test:*\",\"toolName\":\"Bash\"}],\"type\":\"addRules\"}]},\"hookEventName\":\"PermissionRequest\"}}",
           "reply a1 accepted"
         ]
       },
@@ -236,6 +228,7 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 2,
           "hook_event_name": "PermissionRequest",
           "tool_name": "Bash",
           "tool_input": {
@@ -258,7 +251,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:UNSUPPORTED Claude's terminal menu has no entry amux can type for this answer",
+        "reply": "rejected:UNSUPPORTED",
         "asks": [
           "ask:2"
         ],
@@ -304,7 +297,7 @@
         "reply": "accepted",
         "asks": [],
         "effects": [
-          "terminal permission of 0 Deny { note: \"use cargo clean\" }",
+          "hook 2 answered {\"hookSpecificOutput\":{\"decision\":{\"behavior\":\"deny\",\"interrupt\":false,\"message\":\"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\\nuse cargo clean\"},\"hookEventName\":\"PermissionRequest\"}}",
           "reply a4 accepted"
         ]
       }
@@ -390,6 +383,7 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 3,
           "hook_event_name": "PermissionRequest",
           "tool_name": "ExitPlanMode",
           "tool_input": {
@@ -418,7 +412,7 @@
       "expect": {
         "reply": "accepted",
         "effects": [
-          "terminal plan ApproveSwitching",
+          "hook 3 answered {\"hookSpecificOutput\":{\"decision\":{\"behavior\":\"allow\",\"updatedInput\":{\"plan\":\"# Plan\\n\\n- Edit README.md\"},\"updatedPermissions\":[{\"destination\":\"session\",\"mode\":\"acceptEdits\",\"type\":\"setMode\"}]},\"hookEventName\":\"PermissionRequest\"}}",
           "reply a5 accepted"
         ]
       }
@@ -471,6 +465,7 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 4,
           "hook_event_name": "PermissionRequest",
           "tool_name": "ExitPlanMode",
           "tool_input": {
@@ -494,7 +489,7 @@
       "expect": {
         "reply": "accepted",
         "effects": [
-          "terminal plan SendBack { note: \"explain why\" }",
+          "hook 4 answered {\"hookSpecificOutput\":{\"decision\":{\"behavior\":\"deny\",\"interrupt\":false,\"message\":\"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\\nexplain why\"},\"hookEventName\":\"PermissionRequest\"}}",
           "reply a6 accepted"
         ]
       }
@@ -578,6 +573,7 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 5,
           "hook_event_name": "PermissionRequest",
           "tool_name": "AskUserQuestion",
           "tool_input": {
@@ -675,7 +671,7 @@
           "ask": "ask:5",
           "answer": {
             "selected": [
-              "Green",
+              7,
               [
                 0,
                 2
@@ -708,35 +704,10 @@
         }
       },
       "expect": {
-        "reply": "rejected:UNSUPPORTED",
-        "silent": true
+        "reply": "accepted",
+        "asks": []
       },
       "note": "a note for the answers: Claude's form has nowhere to type one"
-    },
-    {
-      "input": {
-        "id": "a10",
-        "answer": {
-          "ask": "ask:5",
-          "answer": {
-            "selected": [
-              1,
-              [
-                0,
-                2
-              ]
-            ]
-          }
-        }
-      },
-      "expect": {
-        "reply": "accepted",
-        "asks": [],
-        "effects": [
-          "terminal question [1 of 2 previews] [0,2 of 3 multi]",
-          "reply a10 accepted"
-        ]
-      }
     },
     {
       "fact": {

@@ -170,8 +170,8 @@ carry no numbers and no line.
 | `AllowAlways { subjects, scope: Session }` | Codex's "don't ask again" on a patch, which covers the patch's files: `subjects` are those files |
 | `AllowSimilar { prefix }` | Codex: the exact command prefix it would allow |
 | `AllowNetwork { hosts }` | Codex: a network rule naming the hosts |
-| `Deny { stops }` | every kind. Terminal Claude's denial always ends the turn (`stops: true`), so there it is the only deny |
-| `DenyAndStop` | headless Claude and Codex, beside a denial that lets the agent carry on |
+| `Deny { stops }` | every kind |
+| `DenyAndStop` | every kind, beside a denial that lets the agent carry on |
 
 ![A command permission from Claude in the composer's box: the command and why, yes, always allow the command in this project, don't ask again this session, and no, which takes a note; the first of three open asks.](figures/vocabulary/ask_command.light.png)
 
@@ -195,9 +195,6 @@ sends its ticks and the typed words together; a single choice is one or the othe
 - A note may go out with each question's answer (`question_note`).
 - Instead of answering, the person may reply in their own words (`question_reply`); the answer carries the words
   and whatever was answered so far, and the row reads replied instead.
-- Terminal Claude, as a limit of Claude's own form: it takes no note, since the form has nowhere to type one, and
-  it takes a skip only when it asks several questions, whose form ends in a review screen that submits with some
-  unanswered. A lone single-select question is submitted by answering it, so it cannot be skipped.
 
 ![One pick-one question with the recommended option tagged and Something else last.](figures/vocabulary/ask_question_single.light.png)
 
@@ -209,7 +206,7 @@ sends its ticks and the typed words together; a single choice is one or the othe
 | `Form { server, message, fields }` | `Submit` and `Decline`. The view reads the tool server's schema once into fields in the order it writes them, each text, a number, a toggle, one choice or several picks, with its title, whether it is required, the limits the schema sets and what it starts holding: the schema's default, else nothing entered or chosen and a toggle off. The client draws native controls and holds what is entered as a `FormValue` per field; `form_problems` says what keeps each field back and `form_answer` builds the Submit. An untouched toggle is sent off, and a required one is answered by it; text is sent without its surrounding spaces, and a whole number as a whole number. |
 | `Link { server, message, url }` | `OpenLink` and `Decline`. |
 | `Access { reason, read, write, network, hosts }` | `GrantForTurn`, `GrantForSession` and `Deny` (Codex). A grant covers everything the agent asked for; the row records what was granted and for how long. |
-| `Unanswerable { reason }` | None: the provider showed something this build cannot read. The only ways out are Stop and, where the agent's own terminal is on this machine, attaching to it. |
+| `Unanswerable { reason }` | None: the provider showed something this build cannot read. The only ways out are Stop and, where the agent's own terminal is on this machine, attaching to it. No interpreter in this build raises one; clients keep drawing it for agents that do. |
 
 A plan's title is its first line when that line is a `#` heading, past any blank lines, unless the heading only
 says "plan"; the body is the rest. While the first line is still arriving there is no title yet, so a heading
@@ -308,10 +305,9 @@ per-host network rules; decline and stop as a separate choice (headless Claude h
 files and network; secret answers to questions; image generation; automatic reviewer verdicts and model
 reroutes; working notes marked apart from the final answer.
 
-**Terminal Claude's limits** follow from reading a terminal: replies arrive whole, thinking has no live phase, a
-denial always stops the turn, a question takes no note and is skipped only in a form of several, a tool server's form is unanswerable from a client
-(its escape card sends you to Claude's own terminal), and usage, tool-server health and model switches are not
-reported.
+**Terminal Claude's limits** follow from reading a terminal: replies stream a line at a time rather than a word at
+a time, thinking has no live phase, a scope answered in Claude's own terminal is not recovered, and usage and
+tool-server health are not reported.
 
 ## What interpreters and views must cover
 

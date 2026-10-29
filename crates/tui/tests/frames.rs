@@ -389,9 +389,9 @@ async fn served_frames_match_their_goldens() {
     state.update(Msg::Catalogue { hash, catalogue });
     frame("chat", &draw_chat(&state, 110, 24));
 
-    // A terminal Claude on the desk shows a tool server's dialog in its own
-    // terminal: the laptop's chat docks the escape where the composer was,
-    // with the conversation still above it.
+    // A terminal Claude on the desk passes on a tool server's form: the
+    // laptop's chat docks the form where the composer was, with the
+    // conversation still above it.
     let gatekeeper = net
         .spawn(
             AgentDecl::new("gatekeeper", "desk")
@@ -435,11 +435,11 @@ async fn served_frames_match_their_goldens() {
     assert!(
         matches!(
             ui_view::ask_card(&state).map(|card| card.body),
-            Some(ui_view::AskBody::Unanswerable { .. })
+            Some(ui_view::AskBody::Form { .. })
         ),
-        "the dialog is an ask the chat cannot answer"
+        "the dialog is a form the chat answers"
     );
-    frame("ask_escape", &draw_chat(&state, 110, 24));
+    frame("tool_form", &draw_chat(&state, 110, 24));
 
     // A terminal Claude's call opens on its transcript row, as it starts,
     // so the chat draws it running, below the text that introduced it,

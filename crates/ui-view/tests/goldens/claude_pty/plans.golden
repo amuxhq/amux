@@ -10,7 +10,7 @@
 ## 10 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","permission_mode":"plan","session_id":"s1","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode","tool_use_id":"t1"}}
   row    3 t1 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: Open, mode: "", mode_name: "", note: None, writing: false })
   composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
-## 11 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","permission_mode":"plan","session_id":"s1","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode"}}
+## 11 fact {"channel":"hook","json":{"amux_reply":1,"hook_event_name":"PermissionRequest","permission_mode":"plan","session_id":"s1","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode"}}
   ask ask:1 -> "t1" 1/1 Open
     choices ApprovePlan { mode: "", mode_name: "" }*, ApprovePlan { mode: "acceptEdits", mode_name: "Accept edits" }, SendBack+note
     body Plan { title: None, body: "\n- Edit README.md" }
@@ -30,7 +30,7 @@
 ## 17 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","permission_mode":"plan","session_id":"s1","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode","tool_use_id":"t2"}}
   row    6 t2 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: Open, mode: "", mode_name: "", note: None, writing: false })
   composer Send activity=Some(Running { key: "t2" }) queue=[] underway=[] refused=[]
-## 18 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","permission_mode":"plan","session_id":"s1","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode"}}
+## 18 fact {"channel":"hook","json":{"amux_reply":2,"hook_event_name":"PermissionRequest","permission_mode":"plan","session_id":"s1","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode"}}
   ask ask:2 -> "t2" 1/1 Open
     choices ApprovePlan { mode: "", mode_name: "" }*, ApprovePlan { mode: "acceptEdits", mode_name: "Accept edits" }, SendBack+note
     body Plan { title: None, body: "\n- Edit README.md" }

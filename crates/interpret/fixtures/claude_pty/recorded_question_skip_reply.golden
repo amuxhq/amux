@@ -1,12 +1,12 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
-## 1 fact {"channel":"agent","json":{"keymap":"claude-2.1","permission_menus":{"folded":[2],"per_suggestion":[1]},"type":"launch","version":"2.1.292"}}
+## 1 fact {"channel":"agent","json":{"type":"launch","version":"2.1.292"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
-item boundary:1 boundary final at=1791347385414 text="" BOUNDARY_KIND_STARTED session=3474e08e-b957-4a5a-9619-9a6376ce04e8 version=2.1.292 keymap=claude-2.1
+item boundary:1 boundary final at=1791347385414 text="" BOUNDARY_KIND_STARTED session=3474e08e-b957-4a5a-9619-9a6376ce04e8 version=2.1.292
 snapshot IDLE queue=[] working_on=- at=1791347385414 asks=[] session=3474e08e-b957-4a5a-9619-9a6376ce04e8 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=? tasks=? background=?
 ## 8 recorded 6: fact Transcript type=permission-mode
 snapshot IDLE queue=[] working_on=- at=1791347385618 asks=[] session=3474e08e-b957-4a5a-9619-9a6376ce04e8 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?

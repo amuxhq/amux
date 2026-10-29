@@ -1,5 +1,5 @@
 {
-  "about": "Terminal Claude shows a tool server's form or link in its own terminal and announces it only through the Notification hook (notification_type elicitation_dialog or elicitation_url_dialog on 2.1.283). It opens an unanswerable ask with its own item, which waits below the running call's row when only the call's PreToolUse hook has arrived: no answer fits it, an interrupt through amux types the interrupt key and closes it cancelled, and the running call's result row, a row from a later message, Stop, SessionEnd and the provider's exit close it dismissed. Other notification types draw nothing.",
+  "about": "A tool server's form or link reaches amux on the Elicitation hook, which Claude waits on before it draws its own dialog. It opens an ask with its own item, below the running call's row. A form answer goes back on the hook as the action and its content; an answer that does not fit is refused. An interrupt through amux types the interrupt key and closes it cancelled, and the running call's result row, a row from a later message, Stop, SessionEnd and the provider's exit close it dismissed, releasing the hook without a decision. Notifications draw nothing.",
   "spec": {
     "created_at_ms": 1800000000000
   },
@@ -9,16 +9,7 @@
         "channel": "agent",
         "json": {
           "type": "launch",
-          "version": "2.1.283",
-          "keymap": "claude-2.1",
-          "permission_menus": {
-            "per_suggestion": [
-              1
-            ],
-            "folded": [
-              2
-            ]
-          }
+          "version": "2.1.283"
         }
       }
     },
@@ -129,13 +120,26 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 101,
           "session_id": "s1",
           "transcript_path": "/t/s1.jsonl",
           "cwd": "/w",
           "permission_mode": "default",
-          "hook_event_name": "Notification",
-          "message": "Claude Code needs your input",
-          "notification_type": "elicitation_dialog"
+          "hook_event_name": "Elicitation",
+          "mcp_server_name": "github",
+          "message": "github needs your input",
+          "mode": "form",
+          "requested_schema": {
+            "type": "object",
+            "properties": {
+              "repo": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "repo"
+            ]
+          }
         }
       },
       "expect": {
@@ -146,6 +150,17 @@
         "items": [
           "ask:ask:1"
         ]
+      }
+    },
+    {
+      "input": {
+        "id": "x2",
+        "answer": {
+          "ask": "ask:1",
+          "answer": {
+            "allow": {}
+          }
+        }
       }
     },
     {
@@ -162,29 +177,6 @@
             }
           }
         }
-      },
-      "expect": {
-        "reply": "rejected:UNSUPPORTED",
-        "asks": [
-          "ask:1"
-        ]
-      }
-    },
-    {
-      "input": {
-        "id": "x2",
-        "answer": {
-          "ask": "ask:1",
-          "answer": {
-            "allow": {}
-          }
-        }
-      },
-      "expect": {
-        "reply": "rejected:UNSUPPORTED",
-        "asks": [
-          "ask:1"
-        ]
       }
     },
     {
@@ -212,9 +204,7 @@
         }
       },
       "expect": {
-        "asks": [
-          "ask:1"
-        ]
+        "asks": []
       }
     },
     {
@@ -241,9 +231,7 @@
         }
       },
       "expect": {
-        "asks": [
-          "ask:1"
-        ],
+        "asks": [],
         "items": []
       },
       "note": "a hook makes no row: the dialog waits for the call's result"
@@ -276,7 +264,6 @@
         "phase": "WORKING",
         "asks": [],
         "items": [
-          "ask:ask:1",
           "t1"
         ]
       }
@@ -305,13 +292,17 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 102,
           "session_id": "s1",
           "transcript_path": "/t/s1.jsonl",
           "cwd": "/w",
           "permission_mode": "default",
-          "hook_event_name": "Notification",
-          "message": "Claude Code needs your input",
-          "notification_type": "elicitation_url_dialog"
+          "hook_event_name": "Elicitation",
+          "mcp_server_name": "docs",
+          "message": "docs needs your input",
+          "mode": "url",
+          "url": "https://docs.example/sign-in",
+          "elicitation_id": "e2"
         }
       },
       "expect": {
@@ -363,6 +354,7 @@
         "asks": [],
         "effects": [
           "terminal interrupt",
+          "hook 102 answered {\"hookSpecificOutput\":{\"action\":\"cancel\",\"hookEventName\":\"Elicitation\"}}",
           "reply i1 accepted"
         ]
       }
@@ -396,13 +388,26 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 103,
           "session_id": "s1",
           "transcript_path": "/t/s1.jsonl",
           "cwd": "/w",
           "permission_mode": "default",
-          "hook_event_name": "Notification",
-          "message": "Claude Code needs your input",
-          "notification_type": "elicitation_dialog"
+          "hook_event_name": "Elicitation",
+          "mcp_server_name": "docs",
+          "message": "docs needs your input",
+          "mode": "form",
+          "requested_schema": {
+            "type": "object",
+            "properties": {
+              "repo": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "repo"
+            ]
+          }
         }
       },
       "expect": {
@@ -447,13 +452,26 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 104,
           "session_id": "s1",
           "transcript_path": "/t/s1.jsonl",
           "cwd": "/w",
           "permission_mode": "default",
-          "hook_event_name": "Notification",
-          "message": "Claude Code needs your input",
-          "notification_type": "elicitation_dialog"
+          "hook_event_name": "Elicitation",
+          "mcp_server_name": "docs",
+          "message": "docs needs your input",
+          "mode": "form",
+          "requested_schema": {
+            "type": "object",
+            "properties": {
+              "repo": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "repo"
+            ]
+          }
         }
       },
       "expect": {
@@ -536,13 +554,26 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 105,
           "session_id": "s1",
           "transcript_path": "/t/s1.jsonl",
           "cwd": "/w",
           "permission_mode": "default",
-          "hook_event_name": "Notification",
-          "message": "Claude Code needs your input",
-          "notification_type": "elicitation_dialog"
+          "hook_event_name": "Elicitation",
+          "mcp_server_name": "github",
+          "message": "github needs your input",
+          "mode": "form",
+          "requested_schema": {
+            "type": "object",
+            "properties": {
+              "repo": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "repo"
+            ]
+          }
         }
       },
       "expect": {
@@ -610,13 +641,17 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 106,
           "session_id": "s1",
           "transcript_path": "/t/s1.jsonl",
           "cwd": "/w",
           "permission_mode": "default",
-          "hook_event_name": "Notification",
-          "message": "Claude Code needs your input",
-          "notification_type": "elicitation_url_dialog"
+          "hook_event_name": "Elicitation",
+          "mcp_server_name": "github",
+          "message": "github needs your input",
+          "mode": "url",
+          "url": "https://github.example/sign-in",
+          "elicitation_id": "e6"
         }
       },
       "expect": {

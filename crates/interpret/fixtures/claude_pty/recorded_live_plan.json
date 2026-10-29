@@ -8,15 +8,6 @@
       "fact": {
         "channel": "agent",
         "json": {
-          "keymap": "claude-2.1",
-          "permission_menus": {
-            "folded": [
-              2
-            ],
-            "per_suggestion": [
-              1
-            ]
-          },
           "type": "launch",
           "version": "2.1.292"
         }

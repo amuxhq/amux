@@ -32,6 +32,7 @@ use wire::{AgentSpec, CtlFrame, ctl_frame};
 
 use crate::clock::Clock;
 use crate::dir::{self, PtyLog};
+use crate::hook_answers::HookAnswers;
 use crate::local_socket::{LocalListener, LocalStream};
 use crate::provider::{Provider, ProviderEvent};
 use crate::{AgentError, ExitCause, VERSION, attach, ctl};
@@ -80,6 +81,8 @@ pub(crate) struct Driver<I: Interpreter> {
     dumps: DumpLimit,
     /// Dumps asked of the daemon while none was connected.
     asks: Asks,
+    /// Terminal Claude's hooks waiting on the interpreter's decision.
+    hook_answers: HookAnswers,
 }
 
 /// The agent's own record already has a dump's shape on disk (the facts
@@ -174,8 +177,13 @@ pub(crate) async fn run<I: Interpreter>(
     let (control_tx, control_rx) = mpsc::unbounded_channel();
     let (jobs_tx, jobs_rx) = mpsc::unbounded_channel();
     let mut tasks = vec![tokio::spawn(accept(ctl, connections_tx))];
+    let hook_answers = HookAnswers::default();
     if let Some(hooks) = hooks {
-        tasks.push(tokio::spawn(hook_payloads(hooks, provider_tx.clone())));
+        tasks.push(tokio::spawn(hook_payloads(
+            hooks,
+            provider_tx.clone(),
+            hook_answers.clone(),
+        )));
     }
 
     let segment_bytes = match config.journal_segment_bytes {
@@ -244,6 +252,7 @@ pub(crate) async fn run<I: Interpreter>(
         exit: None,
         dumps: DumpLimit::default(),
         asks: Asks::default(),
+        hook_answers,
     };
     // An incarnation that cannot write its first steps does not start.
     driver
@@ -518,6 +527,10 @@ impl<I: Interpreter> Driver<I> {
                 }
                 Output::WriteBlob { hash, bytes } => dir::write_blob(&self.dir, &hash, &bytes),
                 Output::AppendJournal(step) => self.journal.append(&step).map(|_| ()),
+                Output::WriteProvider(interpret::Effect::HookAnswer { id, answer }) => {
+                    self.hook_answers.answer(id, answer);
+                    Ok(())
+                }
                 Output::WriteProvider(effect) => {
                     if let Some(provider) = &mut self.provider
                         && let Err(error) = provider.perform(effect).await
@@ -652,18 +665,24 @@ async fn accept(mut listener: LocalListener, connections: mpsc::Sender<LocalStre
     }
 }
 
-/// Each connection on hooks.sock carries one hook payload, then closes.
-/// The hook binary wraps the payload with the messaging socket's
-/// credentials when Claude gave it them; they go to the provider, and only
-/// the payload Claude wrote becomes a fact. Payloads are read one
-/// connection at a time, in the order Claude ran its hooks.
-async fn hook_payloads(mut listener: LocalListener, events: mpsc::Sender<ProviderEvent>) {
+/// Each connection on hooks.sock carries one hook payload. The hook binary
+/// wraps the payload with the messaging socket's credentials when Claude
+/// gave it them; they go to the provider, and only the payload Claude wrote
+/// becomes a fact. Payloads are read one connection at a time, in the order
+/// Claude ran its hooks; a connection Claude waits on for a decision is
+/// held for the interpreter's answer, and any other is closed at once.
+async fn hook_payloads(
+    mut listener: LocalListener,
+    events: mpsc::Sender<ProviderEvent>,
+    answers: HookAnswers,
+) {
     while let Ok(mut stream) = listener.accept().await {
         let mut bytes = Vec::new();
         if stream.read_to_end(&mut bytes).await.is_err() || bytes.is_empty() {
             continue;
         }
         let (payload, messaging) = claude::hooks::unwrap_forwarded(&bytes).unwrap_or((bytes, None));
+        let payload = answers.hold(payload, stream);
         if let Some(messaging) = messaging
             && events
                 .send(ProviderEvent::Messaging(messaging))

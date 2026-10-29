@@ -1,12 +1,12 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
-## 1 fact {"channel":"agent","json":{"keymap":"claude-2.1","permission_menus":{"folded":[2],"per_suggestion":[1]},"type":"launch","version":"2.1.282"}}
+## 1 fact {"channel":"agent","json":{"type":"launch","version":"2.1.282"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
 snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
 ## 2 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
 effect follow "/t/s1.jsonl"
-item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED session=s1 version=2.1.282 keymap=claude-2.1
+item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED session=s1 version=2.1.282
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 3 tick 1800000000010
 ## 4 fact {"channel":"transcript","json":{"message":{"content":"clean up","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.010Z","type":"user","uuid":"u1"}}
@@ -15,46 +15,52 @@ snapshot WORKING queue=[] working_on=- at=1800000000010 asks=[] session=s1 model
 ## 5 tick 1800000000100
 ## 6 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"command":"rm -rf build"},"tool_name":"Bash","tool_use_id":"t1"}}
 snapshot WORKING queue=[] working_on=- at=1800000000100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t1 Bash since=1800000000100
-## 7 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","permission_suggestions":[{"behavior":"allow","destination":"localSettings","rules":[{"ruleContent":"rm -rf build","toolName":"Bash"}],"type":"addRules"}],"tool_input":{"command":"rm -rf build"},"tool_name":"Bash"}}
-snapshot NEEDS_YOU queue=[] working_on=- at=1800000000100 asks=[ask:1->- permission:Bash/localSettings Bash(rm -rf build) deny-stops] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t1 Bash since=1800000000100
+## 7 fact {"channel":"hook","json":{"amux_reply":1,"hook_event_name":"PermissionRequest","permission_suggestions":[{"behavior":"allow","destination":"localSettings","rules":[{"ruleContent":"rm -rf build","toolName":"Bash"}],"type":"addRules"}],"tool_input":{"command":"rm -rf build"},"tool_name":"Bash"}}
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000000100 asks=[ask:1->- permission:Bash/localSettings Bash(rm -rf build) deny-can-stop] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t1 Bash since=1800000000100
 ## 8 tick 1800000600100
 ## 9 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t1","input":{"command":"rm -rf build"},"name":"Bash","type":"tool_use"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.100Z","type":"assistant","uuid":"a1"}}
 item t1 tool final at=1800000600100 text="" Bash TOOL_STATE_RUNNING input=shell:"rm -rf build"
-snapshot NEEDS_YOU queue=[] working_on=- at=1800000600100 asks=[ask:1->t1 permission:Bash/localSettings Bash(rm -rf build) deny-stops] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t1 Bash since=1800000000100
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000600100 asks=[ask:1->t1 permission:Bash/localSettings Bash(rm -rf build) deny-can-stop] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t1 Bash since=1800000000100
 ## 10 fact {"channel":"transcript","json":{"message":{"content":[{"content":"","is_error":false,"tool_use_id":"t1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.140Z","toolUseResult":{"interrupted":false,"stderr":"","stdout":""},"type":"user","uuid":"r1"}}
+effect hook 1 released
 item t1 tool final at=1800000600100 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED elsewhere ended=1800000600140 input=shell:"rm -rf build"
 snapshot WORKING queue=[] working_on=- at=1800000600100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 11 fact {"channel":"hook","json":{"duration_ms":40,"hook_event_name":"PostToolUse","tool_input":{"command":"rm -rf build"},"tool_name":"Bash","tool_response":{"stdout":""},"tool_use_id":"t1"}}
 item t1 tool final at=1800000600100 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED elsewhere started=1800000600100 ended=1800000600140 input=shell:"rm -rf build"
-## 12 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"content":"x","file_path":"notes.md"},"tool_name":"Write"}}
-snapshot NEEDS_YOU queue=[] working_on=- at=1800000600100 asks=[ask:2->- permission:Write deny-stops] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
-## 13 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t2","input":{"content":"x","file_path":"notes.md"},"name":"Write","type":"tool_use"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.200Z","type":"assistant","uuid":"a2"}}
+## 12 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"content":"x","file_path":"notes.md"},"tool_name":"Write","tool_use_id":"t2"}}
+snapshot WORKING queue=[] working_on=- at=1800000600100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t2 Write since=1800000600100
+## 13 fact {"channel":"hook","json":{"amux_reply":2,"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"content":"x","file_path":"notes.md"},"tool_name":"Write"}}
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000600100 asks=[ask:2->- permission:Write deny-can-stop] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t2 Write since=1800000600100
+## 14 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t2","input":{"content":"x","file_path":"notes.md"},"name":"Write","type":"tool_use"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.200Z","type":"assistant","uuid":"a2"}}
 item t2 tool final at=1800000600200 text="" Write TOOL_STATE_RUNNING input=write:"notes.md"
-snapshot NEEDS_YOU queue=[] working_on=- at=1800000600100 asks=[ask:2->t2 permission:Write deny-stops] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
-## 14 fact {"channel":"transcript","json":{"message":{"content":[{"content":"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.","is_error":true,"tool_use_id":"t2","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.300Z","toolUseResult":"User rejected tool use","type":"user","uuid":"r2"}}
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000600100 asks=[ask:2->t2 permission:Write deny-can-stop] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t2 Write since=1800000600100
+## 15 fact {"channel":"transcript","json":{"message":{"content":[{"content":"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.","is_error":true,"tool_use_id":"t2","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.300Z","toolUseResult":"User rejected tool use","type":"user","uuid":"r2"}}
+effect hook 2 released
 item t2 tool final at=1800000600200 text="" Write TOOL_STATE_DENIED decision=DECISION_OUTCOME_DENIED elsewhere ended=1800000600300 input=write:"notes.md" out="The user doesn't want to proceed with this tool use. The too…"
 snapshot WORKING queue=[] working_on=- at=1800000600100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
-## 15 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"file_path":"a.rs","new_string":"b","old_string":"a"},"tool_name":"Edit","tool_use_id":"t3"}}
+## 16 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"file_path":"a.rs","new_string":"b","old_string":"a"},"tool_name":"Edit","tool_use_id":"t3"}}
 snapshot WORKING queue=[] working_on=- at=1800000600100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t3 Edit since=1800000600100
-## 16 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"file_path":"a.rs","new_string":"b","old_string":"a"},"tool_name":"Edit"}}
-snapshot NEEDS_YOU queue=[] working_on=- at=1800000600100 asks=[ask:3->- permission:Edit deny-stops] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t3 Edit since=1800000600100
-## 17 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t3","input":{"file_path":"a.rs","new_string":"b","old_string":"a"},"name":"Edit","type":"tool_use"}],"id":"m3","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.400Z","type":"assistant","uuid":"a3"}}
+## 17 fact {"channel":"hook","json":{"amux_reply":3,"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"file_path":"a.rs","new_string":"b","old_string":"a"},"tool_name":"Edit"}}
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000600100 asks=[ask:3->- permission:Edit deny-can-stop] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t3 Edit since=1800000600100
+## 18 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t3","input":{"file_path":"a.rs","new_string":"b","old_string":"a"},"name":"Edit","type":"tool_use"}],"id":"m3","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.400Z","type":"assistant","uuid":"a3"}}
 item t3 tool final at=1800000600400 text="" Edit TOOL_STATE_RUNNING input=edit:"a.rs"x1
-snapshot NEEDS_YOU queue=[] working_on=- at=1800000600100 asks=[ask:3->t3 permission:Edit deny-stops] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t3 Edit since=1800000600100
-## 18 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Moving on.","type":"text"}],"id":"m4","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.500Z","type":"assistant","uuid":"a4"}}
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000600100 asks=[ask:3->t3 permission:Edit deny-can-stop] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t3 Edit since=1800000600100
+## 19 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Moving on.","type":"text"}],"id":"m4","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.500Z","type":"assistant","uuid":"a4"}}
+effect hook 3 released
 item t3 tool final at=1800000600400 text="" Edit TOOL_STATE_RUNNING decision=DECISION_OUTCOME_UNKNOWN input=edit:"a.rs"x1
 item a4 message final at=1800000600500 text="Moving on."
 snapshot WORKING queue=[] working_on=- at=1800000600100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t3 Edit since=1800000600100
-## 19 input {"answer":{"answer":{"allow":{}},"ask":"ask:3"},"id":"late"}
+## 20 input {"answer":{"answer":{"allow":{}},"ask":"ask:3"},"id":"late"}
 effect reply late rejected:CLOSED_ASK
-## 20 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"command":"cargo test"},"tool_name":"Bash","tool_use_id":"t4"}}
+## 21 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"command":"cargo test"},"tool_name":"Bash","tool_use_id":"t4"}}
 snapshot WORKING queue=[] working_on=- at=1800000600100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t3 Edit since=1800000600100 running=t4 Bash since=1800000600100
-## 21 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"command":"cargo test"},"tool_name":"Bash"}}
-snapshot NEEDS_YOU queue=[] working_on=- at=1800000600100 asks=[ask:4->- permission:Bash deny-stops] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t3 Edit since=1800000600100 running=t4 Bash since=1800000600100
-## 22 fact {"channel":"transcript","json":{"message":{"content":"never mind","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:10:00.600Z","type":"user","uuid":"u2"}}
+## 22 fact {"channel":"hook","json":{"amux_reply":4,"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"command":"cargo test"},"tool_name":"Bash"}}
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000600100 asks=[ask:4->- permission:Bash deny-can-stop] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t3 Edit since=1800000600100 running=t4 Bash since=1800000600100
+## 23 fact {"channel":"transcript","json":{"message":{"content":"never mind","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:10:00.600Z","type":"user","uuid":"u2"}}
+effect hook 4 released
 item u2 prompt final at=1800000600600 text="never mind"
 snapshot WORKING queue=[] working_on=- at=1800000600100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t3 Edit since=1800000600100 running=t4 Bash since=1800000600100
-## 23 fact {"channel":"transcript","json":{"durationMs":600690,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:10:00.700Z","type":"system","uuid":"d1"}}
+## 24 fact {"channel":"transcript","json":{"durationMs":600690,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:10:00.700Z","type":"system","uuid":"d1"}}
 item turn:1 turn final at=1800000600700 text="" #1 TURN_OUTCOME_COMPLETED started=1800000000010
 snapshot IDLE queue=[] working_on=- at=1800000600100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 turn_end 1 last=a4

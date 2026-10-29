@@ -1,5 +1,9 @@
 //! Carrying terminal Claude's hook payloads to the agent process: the hook
-//! command forwards its stdin over a per-session socket.
+//! command forwards its stdin over a per-session socket and prints what the
+//! agent answers, which is how amux decides a permission request or a tool
+//! server's form. The agent closes the connection at once for a hook it
+//! does not answer, so Claude waits on no hook longer than it takes to
+//! deliver it.
 //!
 //! The payloads themselves are [`claude_protocol::hooks::Payload`].
 
@@ -14,6 +18,10 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 const FORWARD_ENVELOPE_FIELD: &str = "amux_hook_forward_v1";
+
+/// The hook events whose payload the agent answers: Claude waits on the
+/// hook command for its decision.
+pub const ANSWERED_EVENTS: &[&str] = &["PermissionRequest", "Elicitation"];
 
 /// The variable Claude's hook command reads to find the socket its hook
 /// payloads go to.
@@ -160,13 +168,17 @@ impl Drop for HookReceiver {
     }
 }
 
-/// Forward hook stdin to a session socket without waiting for a response.
+/// Forward hook stdin to a session socket and wait for what the agent
+/// answers, which is empty unless it decides the hook.
 #[cfg(unix)]
-pub fn forward(stdin: &[u8], socket: &Path) -> Result<(), std::io::Error> {
-    use std::io::Write;
+pub fn forward(stdin: &[u8], socket: &Path) -> Result<Vec<u8>, std::io::Error> {
+    use std::io::{Read, Write};
     let mut stream = std::os::unix::net::UnixStream::connect(socket)?;
     stream.write_all(stdin)?;
-    stream.shutdown(std::net::Shutdown::Write)
+    stream.shutdown(std::net::Shutdown::Write)?;
+    let mut answer = Vec::new();
+    stream.read_to_end(&mut answer)?;
+    Ok(answer)
 }
 
 /// Forward hook stdin and the provider's per-session messaging credentials.
@@ -178,7 +190,7 @@ pub fn forward_with_messaging(
     stdin: &[u8],
     socket: &Path,
     messaging: &MessagingCredentials,
-) -> Result<(), std::io::Error> {
+) -> Result<Vec<u8>, std::io::Error> {
     let payload: Value = serde_json::from_slice(stdin)
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
     let envelope = serde_json::json!({
@@ -198,7 +210,7 @@ pub fn forward_with_messaging(
     _stdin: &[u8],
     _socket: &Path,
     _messaging: &MessagingCredentials,
-) -> Result<(), std::io::Error> {
+) -> Result<Vec<u8>, std::io::Error> {
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
         "Claude hook sockets require Unix",
@@ -206,8 +218,9 @@ pub fn forward_with_messaging(
 }
 
 /// What a hook command does: forward its stdin to `socket`, with the
-/// messaging credentials Claude put in its environment when there are any.
-pub fn forward_from_env(stdin: &[u8], socket: &Path) -> Result<(), std::io::Error> {
+/// messaging credentials Claude put in its environment when there are any,
+/// and return the agent's answer for the command to print.
+pub fn forward_from_env(stdin: &[u8], socket: &Path) -> Result<Vec<u8>, std::io::Error> {
     let socket_path = std::env::var_os(MESSAGING_SOCKET_ENV);
     let token = std::env::var(MESSAGING_TOKEN_ENV).ok();
     match (socket_path, token) {
@@ -224,7 +237,7 @@ pub fn forward_from_env(stdin: &[u8], socket: &Path) -> Result<(), std::io::Erro
 }
 
 #[cfg(not(unix))]
-pub fn forward(_stdin: &[u8], _socket: &Path) -> Result<(), std::io::Error> {
+pub fn forward(_stdin: &[u8], _socket: &Path) -> Result<Vec<u8>, std::io::Error> {
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
         "Claude hook sockets require Unix",
@@ -259,7 +272,12 @@ mod tests {
             token: "secret".to_string(),
         };
 
-        forward_with_messaging(&session_start(), &receiver.path, &messaging).unwrap();
+        // The forward waits for the receiver to close the connection, which
+        // runs on this test's one thread.
+        let path = receiver.path.clone();
+        let forwarded = tokio::task::spawn_blocking(move || {
+            forward_with_messaging(&session_start(), &path, &messaging)
+        });
         let received = tokio::time::timeout(std::time::Duration::from_secs(1), payloads.recv())
             .await
             .unwrap()
@@ -270,5 +288,6 @@ mod tests {
         assert!(!encoded.contains(FORWARD_ENVELOPE_FIELD));
         assert!(!encoded.contains("secret"));
         assert!(!format!("{received:?}").contains("secret"));
+        assert_eq!(forwarded.await.unwrap().unwrap(), Vec::<u8>::new());
     }
 }

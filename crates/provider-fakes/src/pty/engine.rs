@@ -1,19 +1,24 @@
 //! The scripted terminal session.
 //!
-//! Keys arrive on the terminal as the claude-2.1 keymap types them: a
-//! prompt is a bracketed paste then Enter; Escape interrupts; Shift+Tab
-//! cycles the permission mode; an open permission or plan menu takes the
-//! entry's digit; a question form takes digits, arrows, Space, Tab, typed
-//! text and Enter. What Claude would show, the fake reports the way Claude
+//! Keys arrive on the terminal as amux and a person at Claude's terminal
+//! type them: a prompt is a bracketed paste then Enter; Escape interrupts;
+//! Shift+Tab cycles the permission mode; an open permission or plan menu
+//! takes the entry's digit; a question form takes digits, arrows, Space,
+//! Tab, typed text and Enter. An ask also runs the PermissionRequest or
+//! Elicitation hook beside its menu, and a decision the hook prints answers
+//! it as Claude takes one, whichever comes first. What Claude would show, the fake reports the way Claude
 //! does to a host that reads no screen: rows appended to the session
 //! transcript and payloads handed to the hook commands `--settings` names
 //! (only the hook events the corpus records). A prompt submitted while a
 //! turn runs is queued and folded into that turn at its next tool
 //! boundary; Ctrl+X Ctrl+S sends it now: the running call moves to the
 //! background and the message joins the turn at once. A turn the user cuts
-//! short runs no Stop hook. A tool server's dialog is reported only through
-//! the Notification hook; Escape cancels it and the turn goes on. A message written to the messaging socket runs
-//! like a prompt from a peer.
+//! short runs no Stop hook. An ask runs its PermissionRequest hook while
+//! its menu shows, and takes whichever answer comes first: the hook's
+//! decision or the menu's keys. A tool server's form runs its Elicitation
+//! hook and shows nothing until the hook returns; Escape cancels it and the
+//! turn goes on. A message written to the messaging socket runs like a
+//! prompt from a peer.
 
 use std::collections::VecDeque;
 use std::io::{Read, Write};
@@ -22,7 +27,7 @@ use std::path::PathBuf;
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
-use super::{Args, append_row, raw_mode, run_hooks};
+use super::{Args, append_row, raw_mode, run_hooks, start_decision_hooks};
 use crate::claude::{Ids, timestamp, uuid};
 use crate::playback::{claude_config_dir, transcript_path};
 use crate::script::{Ask, Question, Script, Step, Tool};
@@ -46,9 +51,6 @@ const TERMINAL_QUERIES: &[u8] = b"\x1b[>0q\x1b[?u\x1b[c";
 /// How long the fake takes between its first output and its input reset;
 /// Claude 2.1.283 takes about 300 ms.
 const INPUT_RESET: std::time::Duration = std::time::Duration::from_millis(100);
-/// The Notification hook's message for a tool server's dialog, which is the
-/// same for every dialog (2.1.283).
-const DIALOG_NOTICE: &str = "Claude Code needs your input";
 
 /// Set, the fake behaves as a Claude without a messaging socket.
 pub const NO_MESSAGING_ENV: &str = "AMUX_FAKE_NO_MESSAGING";
@@ -73,6 +75,8 @@ enum Key {
 
 enum In {
     Key(Key),
+    /// What a hook Claude waits on decided.
+    Decision(Value),
     /// A message from the messaging socket, which only Unix serves.
     #[cfg_attr(not(unix), allow(dead_code))]
     Peer(String),
@@ -89,6 +93,7 @@ pub async fn run(script: Script, args: Args) -> i32 {
     spawn_keys(tx.clone());
     spawn_signals(tx.clone());
     spawn_resizes();
+    let decisions = tx.clone();
     let mut messaging = None;
     // A Claude from before the messaging socket ignores the flag.
     let socketless = std::env::var_os(NO_MESSAGING_ENV).is_some();
@@ -104,7 +109,9 @@ pub async fn run(script: Script, args: Args) -> i32 {
             }
         }
     }
-    Engine::new(script, args, rx, messaging).run().await
+    Engine::new(script, args, rx, decisions, messaging)
+        .run()
+        .await
 }
 
 /// A terminal hang-up or termination ends the session the way closing it
@@ -309,6 +316,8 @@ enum Held {
 
 struct Engine {
     input: mpsc::UnboundedReceiver<In>,
+    /// Where a hook's decision arrives, beside the keys.
+    decisions: mpsc::UnboundedSender<In>,
     closed: bool,
     steps: VecDeque<Step>,
     args: Args,
@@ -327,6 +336,9 @@ struct Engine {
     cut: Option<Cut>,
     /// Ctrl+X Ctrl+S asked for the first queued prompt to run now.
     send_now: bool,
+    /// The decision of the hook an open ask waits on, which came before
+    /// any key answered its menu.
+    decided: Option<Value>,
     /// The last row written, for `parentUuid`.
     parent: Option<String>,
     prompt_id: String,
@@ -347,6 +359,7 @@ impl Engine {
         script: Script,
         args: Args,
         input: mpsc::UnboundedReceiver<In>,
+        decisions: mpsc::UnboundedSender<In>,
         messaging: Option<Messaging>,
     ) -> Self {
         let session = args
@@ -358,6 +371,7 @@ impl Engine {
         let transcript = transcript_path(&claude_config_dir(), &cwd, &session);
         Self {
             input,
+            decisions,
             closed: false,
             steps: script.steps.into(),
             offers_auto_mode: script.offers_auto_mode,
@@ -384,6 +398,7 @@ impl Engine {
             busy: false,
             cut: None,
             send_now: false,
+            decided: None,
             parent: None,
             prompt_id: uuid(),
             prompts: 0,
@@ -537,6 +552,8 @@ impl Engine {
     fn handle(&mut self, input: In) {
         match input {
             In::Closed => self.closed = true,
+            // A decision for an ask already answered on the menu.
+            In::Decision(_) => {}
             In::Peer(text) => self.submit(Queued {
                 text: peer_element(&text),
                 peer: true,
@@ -649,7 +666,30 @@ impl Engine {
         row
     }
 
-    fn hook(&self, mut payload: Value) {
+    fn hook(&self, payload: Value) {
+        let (bytes, env) = self.hook_payload(payload);
+        if let Err(error) = run_hooks(&self.args, &bytes, &env) {
+            eprintln!("fake-claude-pty: hook: {error}");
+        }
+    }
+
+    /// Runs a hook Claude waits on for a decision without holding the
+    /// session: its decision arrives as input, beside the menu's keys.
+    fn decision_hook(&self, payload: Value) {
+        let (bytes, env) = self.hook_payload(payload);
+        let waiting = match start_decision_hooks(&self.args, &bytes, &env) {
+            Ok(waiting) => waiting,
+            Err(error) => return eprintln!("fake-claude-pty: hook: {error}"),
+        };
+        let decisions = self.decisions.clone();
+        std::thread::spawn(move || {
+            if let Ok(Some(decision)) = waiting.join() {
+                let _ = decisions.send(In::Decision(decision));
+            }
+        });
+    }
+
+    fn hook_payload(&self, mut payload: Value) -> (Vec<u8>, Vec<(String, String)>) {
         payload["cwd"] = json!(self.cwd);
         payload["session_id"] = json!(self.session);
         payload["transcript_path"] = json!(self.transcript.display().to_string());
@@ -683,9 +723,7 @@ impl Engine {
             ));
         }
         let bytes = serde_json::to_vec(&payload).expect("payloads serialise");
-        if let Err(error) = run_hooks(&self.args, &bytes, &env) {
-            eprintln!("fake-claude-pty: hook: {error}");
-        }
+        (bytes, env)
     }
 
     fn user_row(&mut self, queued: &Queued, source: &str) {
@@ -1127,14 +1165,22 @@ impl Engine {
         }
     }
 
-    /// Wait for a menu's keys, Escape among them.
+    /// Wait for a menu's keys, Escape among them. None when the session
+    /// closed, or when the hook the menu waits on decided first, which
+    /// `decided` then holds.
     async fn menu_key(&mut self) -> Option<Key> {
         loop {
-            if self.closed {
+            if self.closed || self.decided.is_some() {
                 return None;
             }
             match self.input.recv().await {
                 Some(In::Key(key)) => return Some(key),
+                Some(In::Decision(decision)) => {
+                    let decided = &decision["hookSpecificOutput"];
+                    if decided.is_object() {
+                        self.decided = Some(decided.clone());
+                    }
+                }
                 Some(other) => self.handle(other),
                 None => {
                     self.closed = true;
@@ -1159,10 +1205,11 @@ impl Engine {
     }
 
     async fn ask(&mut self, request: &str, message: &str, ask: Ask) {
+        self.decided = None;
         match ask {
             Ask::Permission(tool) => {
                 let (id, name, input) = self.pre_tool_use(&tool);
-                self.hook(json!({
+                self.decision_hook(json!({
                     "hook_event_name": "PermissionRequest",
                     "permission_suggestions": [{
                         "type": "addDirectories",
@@ -1185,45 +1232,47 @@ impl Engine {
                 };
                 self.screen(menu);
                 // Escape cancels the menu, which Claude takes as No.
-                let choice = loop {
+                let decision = loop {
                     match self.menu_key().await {
-                        None => {
-                            self.call_row(request, message, &id, &name, &input);
-                            return self.abandon(&id, &name, &input, &tool);
-                        }
-                        Some(Key::Escape) => break no,
-                        Some(Key::Char(c)) if ('1'..=no).contains(&c) => break c,
+                        None => match self.decided.take() {
+                            Some(decided) => break Decision::of(&decided["decision"]),
+                            None => {
+                                self.call_row(request, message, &id, &name, &input);
+                                return self.abandon(&id, &name, &input, &tool);
+                            }
+                        },
+                        Some(Key::Escape) => break Decision::no(),
+                        Some(Key::Char(c)) if c == no => break Decision::no(),
+                        Some(Key::Char('3')) => break Decision::allow(Some("auto")),
+                        Some(Key::Char('1' | '2')) => break Decision::allow(None),
                         Some(_) => {}
                     }
                 };
                 self.call_row(request, message, &id, &name, &input);
-                if choice == '3' && no == '4' {
-                    self.mode = "auto".to_owned();
-                    let row = json!({
-                        "type": "permission-mode",
-                        "permissionMode": self.mode,
-                        "sessionId": self.session,
-                    });
-                    self.row(row);
+                match decision {
+                    Decision::Allow { mode } => {
+                        if let Some(mode) = mode {
+                            self.set_mode(&mode);
+                        }
+                        let until = tool.outcome.until();
+                        while tokio::time::Instant::now() < until && !self.closed {
+                            self.pump().await;
+                        }
+                        self.finish_tool(&id, &name, &input, &tool, Ok(tool.outcome.text()));
+                    }
+                    Decision::Deny { message, stop } => {
+                        self.finish_tool(&id, &name, &input, &tool, Err(message));
+                        if stop {
+                            self.cut = Some(Cut::Denied);
+                            self.interruption_row("[Request interrupted by user for tool use]");
+                        }
+                    }
                 }
-                if choice == no {
-                    let refusal = "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.".to_owned();
-                    self.finish_tool(&id, &name, &input, &tool, Err(refusal));
-                    // Terminal Claude ends the turn on a deny.
-                    self.cut = Some(Cut::Denied);
-                    self.interruption_row("[Request interrupted by user for tool use]");
-                    return;
-                }
-                let until = tool.outcome.until();
-                while tokio::time::Instant::now() < until && !self.closed {
-                    self.pump().await;
-                }
-                self.finish_tool(&id, &name, &input, &tool, Ok(tool.outcome.text()));
             }
             Ask::Plan { markdown } => {
                 let tool = named("ExitPlanMode", json!({ "plan": markdown }));
                 let (id, name, input) = self.pre_tool_use(&tool);
-                self.hook(json!({
+                self.decision_hook(json!({
                     "hook_event_name": "PermissionRequest",
                     "permission_suggestions": [],
                     "tool_input": input,
@@ -1237,79 +1286,101 @@ impl Engine {
                 } else {
                     "Yes, auto-accept edits"
                 };
-                let back = if self.offers_auto_mode {
-                    "Tell Claude what to change"
-                } else {
-                    "No, keep planning"
-                };
                 self.screen(&format!(
-                    "{markdown}\n1. {first}\n2. Yes, manually approve edits\n3. {back}"
+                    "{markdown}\n1. {first}\n2. Yes, manually approve edits\n3. Tell Claude what to change"
                 ));
-                let choice = loop {
+                let decision = loop {
                     match self.key().await {
-                        None => {
-                            self.call_row(request, message, &id, &name, &input);
-                            return self.abandon(&id, &name, &input, &tool);
+                        None => match self.decided.take() {
+                            Some(decided) => break Decision::of(&decided["decision"]),
+                            None => {
+                                self.call_row(request, message, &id, &name, &input);
+                                return self.abandon(&id, &name, &input, &tool);
+                            }
+                        },
+                        Some(Key::Char('1')) if self.offers_auto_mode => {
+                            break Decision::allow(Some("auto"));
                         }
-                        Some(Key::Char(c @ '1'..='3')) => break c,
+                        Some(Key::Char('1')) => break Decision::allow(Some("acceptEdits")),
+                        Some(Key::Char('2')) => break Decision::allow(Some("default")),
+                        Some(Key::Char('3')) => {
+                            let Some(feedback) = self.line().await else {
+                                self.call_row(request, message, &id, &name, &input);
+                                return self.abandon(&id, &name, &input, &tool);
+                            };
+                            // Enter on the empty field sends the plan back
+                            // without a note, which Claude takes as a plain
+                            // No: the turn ends and Claude waits.
+                            if feedback.trim().is_empty() {
+                                break Decision::no();
+                            }
+                            break Decision::Deny {
+                                message: format!(
+                                    "{REFUSED} To tell you how to proceed, the user said:\n{feedback}"
+                                ),
+                                stop: false,
+                            };
+                        }
                         Some(_) => {}
                     }
                 };
-                if choice == '3' {
-                    let Some(feedback) = self.line().await else {
-                        self.call_row(request, message, &id, &name, &input);
-                        return self.abandon(&id, &name, &input, &tool);
-                    };
-                    self.call_row(request, message, &id, &name, &input);
-                    // Enter on the empty field sends the plan back without
-                    // a note, which Claude takes as a plain No: the turn
-                    // ends and Claude waits for the person.
-                    if feedback.trim().is_empty() {
-                        let refusal = "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.".to_owned();
-                        self.finish_tool(&id, &name, &input, &tool, Err(refusal));
-                        self.cut = Some(Cut::Denied);
-                        self.interruption_row("[Request interrupted by user for tool use]");
-                        return;
-                    }
-                    let refusal = format!(
-                        "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\n{feedback}"
-                    );
-                    self.finish_tool(&id, &name, &input, &tool, Err(refusal));
-                    return;
-                }
                 self.call_row(request, message, &id, &name, &input);
-                self.mode = if choice == '1' && self.offers_auto_mode {
-                    "auto"
-                } else if choice == '1' {
-                    "acceptEdits"
-                } else {
-                    "default"
+                match decision {
+                    Decision::Allow { mode } => {
+                        self.set_mode(mode.as_deref().unwrap_or("default"));
+                        let content = format!(
+                            "User has approved your plan. You can now start coding.\n\n## Approved Plan:\n{markdown}"
+                        );
+                        self.result_row(
+                            &id,
+                            json!(content),
+                            false,
+                            json!({ "plan": markdown, "isAgent": false }),
+                        );
+                    }
+                    Decision::Deny { message, stop } => {
+                        self.finish_tool(&id, &name, &input, &tool, Err(message));
+                        if stop {
+                            self.cut = Some(Cut::Denied);
+                            self.interruption_row("[Request interrupted by user for tool use]");
+                        }
+                    }
                 }
-                .to_owned();
-                let content = format!(
-                    "User has approved your plan. You can now start coding.\n\n## Approved Plan:\n{markdown}"
-                );
-                self.result_row(
-                    &id,
-                    json!(content),
-                    false,
-                    json!({ "plan": markdown, "isAgent": false }),
-                );
             }
             Ask::Question { questions } => {
                 let input =
                     json!({ "questions": questions.iter().map(question).collect::<Vec<_>>() });
                 let tool = named("AskUserQuestion", input);
                 let (id, name, input) = self.pre_tool_use(&tool);
-                self.hook(json!({
+                self.decision_hook(json!({
                     "hook_event_name": "PermissionRequest",
                     "permission_suggestions": [],
                     "tool_input": input,
                     "tool_name": name,
                 }));
-                let Some(answers) = self.form(&questions).await else {
-                    self.call_row(request, message, &id, &name, &input);
-                    return self.abandon(&id, &name, &input, &tool);
+                let answers = match self.form(&questions).await {
+                    Some(answers) => answers,
+                    None => match self.decided.take() {
+                        Some(decided) if decided["decision"]["behavior"] == "allow" => {
+                            let given = &decided["decision"]["updatedInput"]["answers"];
+                            questions
+                                .iter()
+                                .map(|q| given[&q.question].as_str().map(str::to_owned))
+                                .collect()
+                        }
+                        Some(decided) => {
+                            self.call_row(request, message, &id, &name, &input);
+                            let refusal = decided["decision"]["message"]
+                                .as_str()
+                                .unwrap_or(REFUSED)
+                                .to_owned();
+                            return self.finish_tool(&id, &name, &input, &tool, Err(refusal));
+                        }
+                        None => {
+                            self.call_row(request, message, &id, &name, &input);
+                            return self.abandon(&id, &name, &input, &tool);
+                        }
+                    },
                 };
                 self.call_row(request, message, &id, &name, &input);
                 // A skipped question is left out, as Claude's form does.
@@ -1342,12 +1413,24 @@ impl Engine {
             } => {
                 let call = named(&format!("mcp__{server}__{tool}"), json!({}));
                 let (id, name, input) = self.tool_use(request, message, &call);
-                self.hook(json!({
-                    "hook_event_name": "Notification",
-                    "message": DIALOG_NOTICE,
-                    "notification_type": if link { "elicitation_url_dialog" } else { "elicitation_dialog" },
-                }));
-                self.screen(&format!("{server} needs your input\nEsc to cancel"));
+                let mut asked = json!({
+                    "hook_event_name": "Elicitation",
+                    "mcp_server_name": server,
+                    "message": format!("{server} needs your input"),
+                });
+                if link {
+                    asked["mode"] = json!("url");
+                    asked["url"] = json!(format!("https://{server}.example/sign-in"));
+                } else {
+                    asked["mode"] = json!("form");
+                    asked["requested_schema"] = json!({
+                        "type": "object",
+                        "properties": { "name": { "type": "string" } },
+                    });
+                }
+                // Claude shows its own dialog only once the hook returned
+                // without answering.
+                self.decision_hook(asked);
                 loop {
                     if wait_for.as_ref().is_some_and(|path| path.exists()) {
                         return self.finish_tool(&id, &name, &input, &call, Ok(output));
@@ -1356,12 +1439,17 @@ impl Engine {
                         return self.abandon(&id, &name, &input, &call);
                     }
                     tokio::select! {
-                        input = self.input.recv() => match input {
+                        received = self.input.recv() => match received {
                             // Escape cancels the dialog; the server answers
                             // its call and the turn goes on.
                             Some(In::Key(Key::Escape)) => break,
-                            // Other keys fill in the dialog.
                             Some(In::Key(_)) => {}
+                            Some(In::Decision(decision)) => {
+                                if decision["hookSpecificOutput"]["action"] == "accept" {
+                                    return self.finish_tool(&id, &name, &input, &call, Ok(output));
+                                }
+                                break;
+                            }
                             Some(other) => self.handle(other),
                             None => self.closed = true,
                         },
@@ -1377,13 +1465,26 @@ impl Engine {
         }
     }
 
-    /// The call a cut-short ask leaves: rejected, the turn over.
-    fn abandon(&mut self, id: &str, name: &str, input: &Value, tool: &Tool) {
-        let refusal = "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.".to_owned();
-        self.finish_tool(id, name, input, tool, Err(refusal));
+    /// Claude's permission is now `mode`, which it records.
+    fn set_mode(&mut self, mode: &str) {
+        if self.mode == mode {
+            return;
+        }
+        self.mode = mode.to_owned();
+        let row = json!({
+            "type": "permission-mode",
+            "permissionMode": self.mode,
+            "sessionId": self.session,
+        });
+        self.row(row);
     }
 
-    /// Fill in a question form from the keys the claude-2.1 keymap types,
+    /// The call a cut-short ask leaves: rejected, the turn over.
+    fn abandon(&mut self, id: &str, name: &str, input: &Value, tool: &Tool) {
+        self.finish_tool(id, name, input, tool, Err(STOPPED.to_owned()));
+    }
+
+    /// Fill in a question form from the keys typed into Claude's own form,
     /// returning one answer per question (labels joined by ", "), None for
     /// a question moved past with Tab and nothing picked.
     async fn form(&mut self, questions: &[Question]) -> Option<Vec<Option<String>>> {
@@ -1453,6 +1554,54 @@ impl Engine {
     }
 }
 
+/// How Claude words a call the person refused.
+const REFUSED: &str = "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file).";
+/// The same, when the refusal also ends the turn.
+const STOPPED: &str = "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.";
+
+/// How an ask was answered, on its menu or by the hook it waits on.
+enum Decision {
+    Allow { mode: Option<String> },
+    Deny { message: String, stop: bool },
+}
+
+impl Decision {
+    fn allow(mode: Option<&str>) -> Self {
+        Self::Allow {
+            mode: mode.map(str::to_owned),
+        }
+    }
+
+    /// The menu's No: refused, and the turn ends.
+    fn no() -> Self {
+        Self::Deny {
+            message: STOPPED.to_owned(),
+            stop: true,
+        }
+    }
+
+    /// A PermissionRequest hook's decision.
+    fn of(decision: &Value) -> Self {
+        if decision["behavior"] == "allow" {
+            let mode = decision["updatedPermissions"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|update| update["type"] == "setMode")
+                .and_then(|update| update["mode"].as_str());
+            return Self::allow(mode);
+        }
+        let stop = decision["interrupt"] == true;
+        Self::Deny {
+            message: decision["message"]
+                .as_str()
+                .map(str::to_owned)
+                .unwrap_or_else(|| if stop { STOPPED } else { REFUSED }.to_owned()),
+            stop,
+        }
+    }
+}
+
 fn named(name: &str, input: Value) -> Tool {
     Tool {
         name: Some(name.to_owned()),
@@ -1494,7 +1643,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn keys_decode_as_the_keymap_types_them() {
+    fn keys_decode_as_claudes_own_menus_take_them() {
         let mut bytes = b"\x1b[200~hi there\x1b[201~\r1\x1b\x1b[B \t\x1b[Z\x18\x13x".to_vec();
         assert_eq!(
             decode(&mut bytes),

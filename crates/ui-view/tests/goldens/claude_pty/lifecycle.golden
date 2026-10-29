@@ -9,9 +9,9 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 6 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"command":"cargo test"},"tool_name":"Bash","tool_use_id":"t1"}}
   composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
-## 7 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"command":"cargo test"},"tool_name":"Bash"}}
+## 7 fact {"channel":"hook","json":{"amux_reply":1,"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"command":"cargo test"},"tool_name":"Bash"}}
   ask ask:1 -> "" 1/1 Open
-    choices AllowOnce*, Deny { stops: true }+note
+    choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
     body Command { command: "cargo test", cwd: "", reason: "", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 9 daemon_lost {}

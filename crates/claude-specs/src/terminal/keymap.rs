@@ -5,12 +5,12 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use claude::version::ClaudeVersion;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::{AskAnswer, AskKind, InputError, Intent, PermissionAnswer, PlanAnswer, QuestionAnswer};
-use crate::version::ClaudeVersion;
 
 pub const BAKED_KEYMAPS: &[(&str, &str)] = &[(
     "keymaps/claude-2.1.toml",
@@ -1604,7 +1604,7 @@ mod format {
 #[cfg(test)]
 mod interpret {
     use super::*;
-    use crate::pty::{AskId, QuestionFact, QuestionResponse};
+    use crate::terminal::{AskId, QuestionFact, QuestionResponse};
 
     const BAKED: &str = include_str!("../../keymaps/claude-2.1.toml");
 
@@ -2302,7 +2302,7 @@ mod interpret {
 #[cfg(test)]
 mod resolve {
     use super::*;
-    use crate::pty::AskId;
+    use crate::terminal::AskId;
 
     const BAKED: &str = include_str!("../../keymaps/claude-2.1.toml");
 

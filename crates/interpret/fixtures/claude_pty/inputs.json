@@ -1,5 +1,5 @@
 {
-  "about": "Every semantic input becomes an effect for the agent process to type through its keymap: prompts (queued while the provider starts or works, withdrawable), the permission-mode cycle, interrupt and clear. A prompt that turns out to be a local command ends without a turn. Agent messages go to the messaging socket.",
+  "about": "Every semantic input becomes an effect for the agent process to type: prompts (queued while the provider starts or works, withdrawable), the permission-mode cycle, interrupt and clear. A prompt that turns out to be a local command ends without a turn. Agent messages go to the messaging socket.",
   "spec": {
     "created_at_ms": 1800000000000
   },

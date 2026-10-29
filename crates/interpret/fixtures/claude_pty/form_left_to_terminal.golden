@@ -1,0 +1,76 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+## 1 fact {"channel":"agent","json":{"type":"launch","version":"2.1.283"}}
+effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue cd96cd29
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+## 2 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"SessionStart","model":"claude-opus-5-5","permission_mode":"default","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
+effect follow "/t/s1.jsonl"
+item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED session=s1 version=2.1.283
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+## 3 tick 1800000000010
+## 4 fact {"channel":"transcript","json":{"message":{"content":"file the crash","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.010Z","type":"user","uuid":"u1"}}
+item u1 prompt final at=1800000000010 text="file the crash"
+snapshot WORKING queue=[] working_on=- at=1800000000010 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+## 5 tick 1800000000100
+## 6 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"PreToolUse","permission_mode":"default","session_id":"s1","tool_input":{"title":"Crash on launch"},"tool_name":"mcp__github__create_issue","tool_use_id":"t1","transcript_path":"/t/s1.jsonl"}}
+snapshot WORKING queue=[] working_on=- at=1800000000100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t1 create_issue since=1800000000100
+## 7 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t1","input":{"title":"Crash on launch"},"name":"mcp__github__create_issue","type":"tool_use"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.100Z","type":"assistant","uuid":"a1"}}
+item t1 tool final at=1800000000100 text="" github·create_issue TOOL_STATE_RUNNING input="{\"title\":\"Crash on launch\"}"
+## 8 tick 1800000000200
+## 9 fact {"channel":"hook","json":{"amux_reply":101,"cwd":"/w","hook_event_name":"Elicitation","mcp_server_name":"github","message":"github needs your input","mode":"form","permission_mode":"default","requested_schema":{"properties":{"repo":{"type":"string"}},"required":["repo"],"type":"object"},"session_id":"s1","transcript_path":"/t/s1.jsonl"}}
+item ask:ask:1 ask final at=1800000000200 text="" form github open
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000000200 asks=[ask:1->ask:ask:1 form:github "github needs your input"] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t1 create_issue since=1800000000100
+## 10 fact {"channel":"agent","json":{"type":"watched","watched":true}}
+effect hook 101 released
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000000200 asks=[ask:1->ask:ask:1 unanswerable:github is showing a form in Claude's terminal; answer it there, or stop the agent.] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t1 create_issue since=1800000000100
+## 11 input {"answer":{"answer":{"form":{"action":"accept","content":{"repo":"ada/amux"}}},"ask":"ask:1"},"id":"x1"}
+effect reply x1 rejected:UNSUPPORTED Claude's terminal is asking this; answer it there
+## 12 resume
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000000200 asks=[ask:1->ask:ask:1 unanswerable:github is showing a form in Claude's terminal; answer it there, or stop the agent.] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t1 create_issue since=1800000000100
+## 13 tick 1800000030000
+## 14 fact {"channel":"transcript","json":{"message":{"content":[{"content":"{\"number\": 42}","is_error":false,"tool_use_id":"t1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:30.000Z","toolUseResult":{"number":42},"type":"user","uuid":"r1"}}
+item ask:ask:1 ask final at=1800000000200 text="" form github ASK_OUTCOME_DISMISSED
+item t1 tool final at=1800000000100 text="" github·create_issue TOOL_STATE_SUCCEEDED ended=1800000030000 input="{\"title\":\"Crash on launch\"}" out="{\"number\": 42}"
+snapshot WORKING queue=[] working_on=- at=1800000030000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+## 15 tick 1800000030100
+## 16 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"PreToolUse","permission_mode":"default","session_id":"s1","tool_input":{"account":"work"},"tool_name":"mcp__docs__sign_in","tool_use_id":"t2","transcript_path":"/t/s1.jsonl"}}
+snapshot WORKING queue=[] working_on=- at=1800000030100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t2 sign_in since=1800000030100
+## 17 fact {"channel":"hook","json":{"amux_reply":102,"cwd":"/w","elicitation_id":"e2","hook_event_name":"Elicitation","mcp_server_name":"docs","message":"docs needs your input","mode":"url","permission_mode":"default","session_id":"s1","transcript_path":"/t/s1.jsonl","url":"https://docs.example/sign-in"}}
+effect hook 102 released
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000030100 asks=[ask:2->- unanswerable:docs is showing a link in Claude's terminal; open it there, or stop the agent.] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t2 sign_in since=1800000030100
+## 18 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t2","input":{"account":"work"},"name":"mcp__docs__sign_in","type":"tool_use"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:30.100Z","type":"assistant","uuid":"a2"}}
+item t2 tool final at=1800000030100 text="" docs·sign_in TOOL_STATE_RUNNING input="{\"account\":\"work\"}"
+item ask:ask:2 ask final at=1800000030100 text="" link docs open
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000030100 asks=[ask:2->ask:ask:2 unanswerable:docs is showing a link in Claude's terminal; open it there, or stop the agent.] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t2 sign_in since=1800000030100
+## 19 fact {"channel":"agent","json":{"type":"watched","watched":false}}
+## 20 tick 1800000030200
+## 21 fact {"channel":"transcript","json":{"message":{"content":[{"content":"Signed in.","is_error":false,"tool_use_id":"t2","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:30.200Z","type":"user","uuid":"r2"}}
+item ask:ask:2 ask final at=1800000030100 text="" link docs ASK_OUTCOME_DISMISSED
+item t2 tool final at=1800000030100 text="" docs·sign_in TOOL_STATE_SUCCEEDED ended=1800000030200 input="{\"account\":\"work\"}" out="Signed in."
+snapshot WORKING queue=[] working_on=- at=1800000030200 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+## 22 tick 1800000030300
+## 23 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"PreToolUse","permission_mode":"default","session_id":"s1","tool_input":{"title":"Crash on launch"},"tool_name":"mcp__github__create_issue","tool_use_id":"t3","transcript_path":"/t/s1.jsonl"}}
+snapshot WORKING queue=[] working_on=- at=1800000030300 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t3 create_issue since=1800000030300
+## 24 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t3","input":{"title":"Crash on launch"},"name":"mcp__github__create_issue","type":"tool_use"}],"id":"m3","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:30.300Z","type":"assistant","uuid":"a3"}}
+item t3 tool final at=1800000030300 text="" github·create_issue TOOL_STATE_RUNNING input="{\"title\":\"Crash on launch\"}"
+## 25 fact {"channel":"hook","json":{"amux_reply":103,"cwd":"/w","hook_event_name":"Elicitation","mcp_server_name":"github","message":"github needs your input","mode":"form","permission_mode":"default","requested_schema":{"properties":{"repo":{"type":"string"}},"required":["repo"],"type":"object"},"session_id":"s1","transcript_path":"/t/s1.jsonl"}}
+item ask:ask:3 ask final at=1800000030300 text="" form github open
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000030300 asks=[ask:3->ask:ask:3 form:github "github needs your input"] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t3 create_issue since=1800000030300
+## 26 input {"answer":{"answer":{"form":{"action":"accept","content":{"repo":"ada/amux"}}},"ask":"ask:3"},"id":"x2"}
+effect hook 103 answered {"hookSpecificOutput":{"action":"accept","content":{"repo":"ada/amux"},"hookEventName":"Elicitation"}}
+effect reply x2 accepted
+item ask:ask:3 ask final at=1800000030300 text="" form github ASK_OUTCOME_ANSWERED fields=["repo"]
+snapshot WORKING queue=[] working_on=- at=1800000030300 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t3 create_issue since=1800000030300
+## 27 tick 1800000040000
+## 28 fact {"channel":"transcript","json":{"message":{"content":[{"content":"{\"number\": 42}","is_error":false,"tool_use_id":"t3","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:40.000Z","toolUseResult":{"number":42},"type":"user","uuid":"r3"}}
+item t3 tool final at=1800000030300 text="" github·create_issue TOOL_STATE_SUCCEEDED ended=1800000040000 input="{\"title\":\"Crash on launch\"}" out="{\"number\": 42}"
+snapshot WORKING queue=[] working_on=- at=1800000040000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+## 29 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Filed #42.","type":"text"}],"id":"m4","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:40.100Z","type":"assistant","uuid":"a4"}}
+item a4 message final at=1800000040100 text="Filed #42."
+## 30 fact {"channel":"hook","json":{"background_tasks":[],"cwd":"/w","hook_event_name":"Stop","last_assistant_message":"Filed #42.","permission_mode":"default","session_id":"s1","stop_hook_active":false,"transcript_path":"/t/s1.jsonl"}}
+snapshot WORKING queue=[] working_on=- at=1800000040000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=[]
+## 31 fact {"channel":"transcript","json":{"durationMs":50,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:40.200Z","type":"system","uuid":"d1"}}
+item turn:1 turn final at=1800000040200 text="" #1 TURN_OUTCOME_COMPLETED started=1800000040150
+snapshot IDLE queue=[] working_on=- at=1800000040000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=[]
+turn_end 1 last=a4

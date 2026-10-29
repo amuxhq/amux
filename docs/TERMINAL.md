@@ -237,7 +237,8 @@ about stays in the feed above. A typed answer or note shows its own line breaks,
   form back.
 - **A tool server's link** (`● grafana sent a link`): the server's own message and the address, `1. Open the
   link` (the box stays), `2. Done`, and `Decline`. The provider says nothing of what a link is for, so the
-  record after it (`Opened grafana's link`) carries the message's first line.
+  record after it (`Opened grafana's link`) carries the message's first line. A link to `localhost` adds that
+  the page is on the agent's machine, to open in a browser there.
 - **Wider access** (Codex): what it wants and why, `Allow for this turn`, `Allow for this session`, `No`.
 - **What this client cannot answer** (an ask from an agent this build cannot read): the reason, and `Open Claude's
   terminal` where that terminal can be attached here.

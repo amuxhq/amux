@@ -35,14 +35,14 @@
 ## 20 fact {"channel":"hook","json":{"amux_reply":102,"cwd":"/w","elicitation_id":"e2","hook_event_name":"Elicitation","mcp_server_name":"docs","message":"docs needs your input","mode":"url","permission_mode":"default","session_id":"s1","transcript_path":"/t/s1.jsonl","url":"https://docs.example/sign-in"}}
   ask ask:2 -> "" 1/1 Open
     choices OpenLink*, Decline
-    body Link { server: "docs", message: "docs needs your input", url: "https://docs.example/sign-in" }
+    body Link { server: "docs", message: "docs needs your input", url: "https://docs.example/sign-in", local_page: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 21 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t2","input":{"account":"work"},"name":"mcp__docs__sign_in","type":"tool_use"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:30.100Z","type":"assistant","uuid":"a2"}}
   row    6 t2 ToolCall { server: "docs", tool: "sign_in", fact: "work", state: Running, result: "" } run[t2..t2 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
   row    7 ask:ask:2 Ask(Link { server: "docs", message: "docs needs your input", url: "https://docs.example/sign-in", resolution: Open }) attention
   ask ask:2 -> "ask:ask:2" 1/1 Open
     choices OpenLink*, Decline
-    body Link { server: "docs", message: "docs needs your input", url: "https://docs.example/sign-in" }
+    body Link { server: "docs", message: "docs needs your input", url: "https://docs.example/sign-in", local_page: false }
 ## 22 input {"id":"i1","interrupt":{}}
   row    7 ask:ask:2 Ask(Link { server: "docs", message: "docs needs your input", url: "https://docs.example/sign-in", resolution: Cancelled })
   ask none
@@ -97,7 +97,7 @@
 ## 39 fact {"channel":"hook","json":{"amux_reply":106,"cwd":"/w","elicitation_id":"e6","hook_event_name":"Elicitation","mcp_server_name":"github","message":"github needs your input","mode":"url","permission_mode":"default","session_id":"s1","transcript_path":"/t/s1.jsonl","url":"https://github.example/sign-in"}}
   ask ask:6 -> "" 1/1 Open
     choices OpenLink*, Decline
-    body Link { server: "github", message: "github needs your input", url: "https://github.example/sign-in" }
+    body Link { server: "github", message: "github needs your input", url: "https://github.example/sign-in", local_page: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 40 provider_exit {"code":1}
   row   15 ask:ask:6 Ask(Link { server: "github", message: "github needs your input", url: "https://github.example/sign-in", resolution: Dismissed })

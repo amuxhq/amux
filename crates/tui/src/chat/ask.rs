@@ -297,6 +297,9 @@ struct Typed<'a> {
 
 /// How many of a typed field's last lines the box shows.
 const FIELD_LINES: usize = 4;
+/// Under a link whose page is on the agent's own machine: a browser
+/// anywhere else reads `localhost` as itself.
+const LOCAL_PAGE: &str = "This page is on the agent's machine; open the link in a browser there.";
 
 impl BoxLines {
     /// Pushes `row`, which ends where a typed field starts, with the
@@ -755,8 +758,9 @@ impl AskUi {
                 server,
                 message,
                 url,
+                local_page,
             } => {
-                return self.link_lines(server, message, url, width, theme);
+                return self.link_lines(server, message, url, *local_page, width, theme);
             }
             AskBody::Unanswerable { reason } => {
                 return self.unanswerable_lines(reason, width, theme);
@@ -2998,6 +3002,7 @@ impl AskUi {
         server: &str,
         message: &str,
         url: &str,
+        local_page: bool,
         width: usize,
         theme: Theme,
     ) -> BoxLines {
@@ -3029,6 +3034,13 @@ impl AskUi {
             BoxSpot::FullDiff,
         ));
         out.lines.push(link);
+        if local_page {
+            for part in text::wrap(LOCAL_PAGE, width.max(1)) {
+                let mut line = Line::default();
+                push(&mut line, part, theme.faint(), width);
+                out.lines.push(line);
+            }
+        }
         out.lines.push(Line::default());
         for (at, words) in ["Open the link", "Done"].iter().enumerate() {
             let lit = self.selected == at;

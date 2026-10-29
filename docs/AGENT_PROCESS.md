@@ -301,7 +301,7 @@ jobs is emptied at the exit ([background jobs](INTERPRETERS.md#background-jobs))
 
 | Kind | Child | Facts | Input |
 |---|---|---|---|
-| `claude_pty` | `claude` in a pseudo-terminal | Hook payloads on `private/hooks.sock`, transcript rows, and the agent's own launch, trust-dialog and ready facts | Decisions written back on the hooks Claude waits on, and keystrokes for what has no hook |
+| `claude_pty` | `claude` in a pseudo-terminal | Hook payloads on `private/hooks.sock`, transcript rows, and the agent's own launch, trust-dialog, ready and watched facts | Decisions written back on the hooks Claude waits on, and keystrokes for what has no hook |
 | `claude_sdk` | `claude --print` over stream-JSON on stdin and stdout | Each stdout line | Stream-JSON lines on stdin |
 | `codex` | `codex app-server` listening on `private/codex.sock` (stdio on Windows), the agent one of its clients | Each JSON-RPC message the server sends the agent | JSON-RPC messages from the agent's client |
 
@@ -316,7 +316,14 @@ the reasons.
 
 Before Claude starts, the agent runs `claude --version` and reports the
 version as its launch fact, the first fact the interpreter sees; the
-boundary item records it.
+boundary item records it. Claude older than 2.1.251, the first with every
+hook the agent registers, is refused: the agent ends before spawning it,
+with the cause "could not start: the provider: terminal Claude needs
+Claude Code 2.1.251 or later; this machine has …", and attaching to it
+answers with that cause. An older Claude would start
+and never report the events the interpreter follows. A version the agent
+cannot read starts anyway, since a wrapper script or an unfamiliar banner
+is likelier than an old Claude.
 
 Claude is started through `pty_host::spawn` with the spec's arguments plus:
 
@@ -349,6 +356,12 @@ screen; the agent sends a ready fact once the first text drawn with bracketed
 paste on has been followed by 100 ms of quiet, or 500 ms at most. The
 `SessionStart` hook is no signal on its own, because some Claude versions run
 it only after the first prompt.
+
+The agent also sends a watched fact when the first terminal client attaches
+on `pty.sock` and again when the last one leaves. Claude draws a tool
+server's form or link only once its `Elicitation` hook returns, so while
+someone watches Claude's own terminal the interpreter lets that hook go and
+leaves the dialog to Claude.
 
 Nothing else is read off the screen. The permission Claude runs in is the
 one amux cycled it to with Shift+Tab, confirmed by the permission Claude

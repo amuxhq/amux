@@ -183,6 +183,15 @@ impl State {
             AgentFact::Ready if self.trust_ask().is_some() => return,
             AgentFact::Ready => return self.shared.provider_started(),
             AgentFact::TrustDialog => return self.trust_dialog(emit),
+            AgentFact::Watched { watched } => {
+                self.watched = watched;
+                if watched {
+                    for (key, _) in self.dialog_asks() {
+                        self.leave_to_terminal(emit, &key);
+                    }
+                }
+                return;
+            }
         };
         let provider = &mut self.provider;
         provider.version = (!version.is_empty()).then_some(version);
@@ -625,6 +634,7 @@ impl State {
             closed: None,
             agent: agent.clone(),
             hook: hook_number(&request.extensions),
+            asked: None,
         });
         let item_key = match &agent {
             // Shown on the subagent's Agent row, which takes no decision.
@@ -674,6 +684,7 @@ impl State {
             closed: None,
             agent: None,
             hook: None,
+            asked: None,
         });
         let option = |label: &str, description: &str| wire::QuestionOption {
             label: label.to_owned(),
@@ -706,7 +717,8 @@ impl State {
     /// A tool server asks the person to fill in a form or open a link,
     /// while one of its calls runs. Claude shows nothing while its hook
     /// waits, so the ask is answered through amux; its own item records
-    /// it, as headless Claude's does.
+    /// it, as headless Claude's does. With a terminal client attached, it
+    /// is left to Claude's dialog at once.
     fn elicitation(&mut self, emit: &mut Emit, elicitation: &Elicitation) {
         let server = elicitation.mcp_server_name.clone();
         let message = elicitation.message.clone();
@@ -756,6 +768,7 @@ impl State {
             closed: None,
             agent: None,
             hook: hook_number(&elicitation.extensions),
+            asked: None,
         });
         let ask = Ask {
             item_key: if awaits_row {
@@ -770,6 +783,9 @@ impl State {
         self.shared.open_ask(ask.clone());
         if !awaits_row {
             self.emit_ask_item(emit, &ask, None);
+        }
+        if self.watched {
+            self.leave_to_terminal(emit, &ask.key);
         }
     }
 

@@ -112,6 +112,9 @@ pub enum AskBody {
         server: String,
         message: String,
         url: String,
+        /// The page is on the agent's own machine (`localhost`), so the
+        /// link opens only in a browser there.
+        local_page: bool,
     },
     Access {
         reason: String,
@@ -526,7 +529,29 @@ fn link_body(link: &wire::LinkAsk) -> AskBody {
         server: link.server.clone(),
         message: link.message.clone(),
         url: link.url.clone(),
+        local_page: loopback(&link.url),
     }
+}
+
+/// Whether a URL names the machine it is opened on: a sign-in that runs
+/// on the agent's machine sends its browser to `localhost`, which any
+/// other device reads as itself.
+fn loopback(url: &str) -> bool {
+    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    let host = match host.strip_prefix('[') {
+        Some(bracketed) => bracketed.split(']').next().unwrap_or_default(),
+        None => host.split(':').next().unwrap_or_default(),
+    };
+    let host = host.to_ascii_lowercase();
+    host == "localhost"
+        || host.ends_with(".localhost")
+        || host == "::1"
+        || host == "0.0.0.0"
+        || host.starts_with("127.")
 }
 
 /// "Bash(cargo test:*)" reads "cargo test"; a bare tool name stays.
@@ -1111,5 +1136,30 @@ mod tests {
             super::elsewhere("/Users/ada/tally", "/Users/ada/other"),
             "/Users/ada/other"
         );
+    }
+
+    /// A sign-in that sends its browser back to the agent's own machine
+    /// opens only there; anything else opens anywhere.
+    #[test]
+    fn a_link_to_localhost_is_a_page_on_the_agents_machine() {
+        for url in [
+            "http://localhost:8765/callback?code=1",
+            "http://LOCALHOST/",
+            "http://auth.localhost:3000",
+            "http://127.0.0.1:53682/",
+            "http://user@127.0.0.1",
+            "http://[::1]:8080/cb",
+            "http://0.0.0.0:9000",
+        ] {
+            assert!(loopback(url), "{url} is on the agent's machine");
+        }
+        for url in [
+            "https://linear.app/oauth/authorize",
+            "https://localhost.example.com/",
+            "https://example.com/?next=http://localhost:8765",
+            "https://10.0.0.5/sign-in",
+        ] {
+            assert!(!loopback(url), "{url} opens anywhere");
+        }
     }
 }

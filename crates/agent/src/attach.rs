@@ -40,8 +40,23 @@ const TRAILING_OUTPUT: Duration = Duration::from_millis(300);
 /// What an attached client does to the one terminal in files mode.
 #[derive(Debug)]
 pub enum Control {
+    /// A client is served; each is followed by [`Control::Left`].
+    Joined,
     Keys(Vec<u8>),
-    Resize { rows: u16, cols: u16 },
+    Resize {
+        rows: u16,
+        cols: u16,
+    },
+    Left,
+}
+
+/// Sends [`Control::Left`] however a client's connection ends.
+struct Served(mpsc::UnboundedSender<Control>);
+
+impl Drop for Served {
+    fn drop(&mut self) {
+        let _ = self.0.send(Control::Left);
+    }
 }
 
 /// How pty.sock serves its clients.
@@ -119,6 +134,8 @@ async fn files(
         }),
     )
     .await?;
+    let _ = control.send(Control::Joined);
+    let _served = Served(control.clone());
     let typing = async {
         while let Some(of) = next(&mut reader).await {
             let typed = match of {

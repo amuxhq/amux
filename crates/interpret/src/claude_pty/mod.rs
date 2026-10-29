@@ -58,7 +58,11 @@
 //!   item waits for it, so it sits below the call and the rows before it.
 //!   An interrupt through amux closes it cancelled, cancelling it on the
 //!   hook too; that call's result, a row from a later assistant message,
-//!   and the facts that close every ask close it dismissed.
+//!   and the facts that close every ask close it dismissed. Someone
+//!   watching Claude's own terminal must see the dialog, so while a
+//!   terminal client is attached the hook is let go at once, and one that
+//!   attaches lets go of the hook that waits: Claude draws its dialog, and
+//!   the ask says it is answered there. Its item keeps what was asked.
 //! - A reply's batches open a message item keyed by the hook's message id,
 //!   which is not the row's. Claude writes rows in the order it draws
 //!   replies, so the next text row takes over the oldest reply not yet
@@ -204,6 +208,9 @@ pub(crate) enum AgentFact {
     /// Claude's first screen is its folder-trust dialog; sent before
     /// [`AgentFact::Ready`].
     TrustDialog,
+    /// Whether a terminal client is attached to Claude's own terminal:
+    /// sent when the first attaches and when the last leaves.
+    Watched { watched: bool },
 }
 
 impl AgentFact {
@@ -228,6 +235,12 @@ pub fn ready_fact() -> Vec<u8> {
 /// The fact that Claude's first screen is its folder-trust dialog.
 pub fn trust_dialog_fact() -> Vec<u8> {
     AgentFact::TrustDialog.encode()
+}
+
+/// The fact that a terminal client is, or no longer is, attached to
+/// Claude's own terminal.
+pub fn watched_fact(watched: bool) -> Vec<u8> {
+    AgentFact::Watched { watched }.encode()
 }
 
 /// What the interpreter knows about the Claude process and its session.
@@ -447,6 +460,11 @@ struct AskMeta {
     /// process gave it; None once answered or released, and for a payload
     /// that came without one.
     hook: Option<u64>,
+    /// A form or link left to Claude's own dialog, as the tool server
+    /// asked it: the open ask only says it is answered in the terminal,
+    /// and its item keeps what was asked.
+    #[serde(default, with = "serde_pb::opt_msg")]
+    asked: Option<Ask>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -458,11 +476,10 @@ enum AskShape {
     Trust,
 }
 
-/// An ask whose hook cannot be answered: its payload named no hook.
+/// An ask whose hook cannot be answered: it was left to Claude's own
+/// dialog, or its payload named no hook.
 fn no_hook_for_answer() -> wire::Rejected {
-    crate::reply::unsupported_saying(
-        "Claude asked this without a hook amux can answer; answer it in Claude's terminal",
-    )
+    crate::reply::unsupported_saying("Claude's terminal is asking this; answer it there")
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -560,6 +577,10 @@ pub struct State {
     /// output row.
     #[serde(default)]
     bang: Option<String>,
+    /// A terminal client is attached to Claude's own terminal, so a tool
+    /// server's form is left to Claude's dialog.
+    #[serde(default)]
+    watched: bool,
 }
 
 /// A call a hook opens before its row: its id, tool name and input.
@@ -639,6 +660,7 @@ impl State {
             ended_prompts: VecDeque::new(),
             refused: BTreeMap::new(),
             bang: None,
+            watched: false,
         }
     }
 
@@ -1097,9 +1119,58 @@ impl State {
 
     fn close_ask_item(&mut self, emit: &mut Emit, ask_key: &str, closed: AskClosed) {
         self.release(emit, ask_key);
-        self.asks.remove(ask_key);
         if let Some(ask) = self.shared.close_ask(ask_key) {
+            let ask = self.as_asked(ask);
             self.emit_closed_ask_item(emit, ask_key, ask, closed);
+        }
+        self.asks.remove(ask_key);
+    }
+
+    /// An open ask as its item records it: what the tool server asked,
+    /// for one left to Claude's dialog.
+    fn as_asked(&self, ask: Ask) -> Ask {
+        match self.asks.get(&ask.key).and_then(|meta| meta.asked.as_ref()) {
+            Some(asked) => Ask {
+                body: asked.body.clone(),
+                ..ask
+            },
+            None => ask,
+        }
+    }
+
+    /// Leaves a tool server's form or link to Claude's own dialog for
+    /// someone at its terminal: the hook is let go, so Claude draws it,
+    /// and the open ask says where it is answered.
+    pub(super) fn leave_to_terminal(&mut self, emit: &mut Emit, ask_key: &str) {
+        let Some(meta) = self.asks.get(ask_key) else {
+            return;
+        };
+        if meta.hook.is_none() || meta.asked.is_some() {
+            return;
+        }
+        let Some(open) = self.shared.asks().get(ask_key).cloned() else {
+            return;
+        };
+        self.release(emit, ask_key);
+        let reason = match &open.body {
+            Some(wire::ask::Body::Link(link)) => format!(
+                "{} is showing a link in Claude's terminal; open it there, or stop the agent.",
+                link.server
+            ),
+            Some(wire::ask::Body::Form(form)) => format!(
+                "{} is showing a form in Claude's terminal; answer it there, or stop the agent.",
+                form.server
+            ),
+            _ => return,
+        };
+        self.shared.open_ask(Ask {
+            body: Some(wire::ask::Body::Unanswerable(wire::UnanswerableAsk {
+                reason,
+            })),
+            ..open.clone()
+        });
+        if let Some(meta) = self.asks.get_mut(ask_key) {
+            meta.asked = Some(open);
         }
     }
 
@@ -1170,6 +1241,7 @@ impl State {
                 ..open.clone()
             };
             self.shared.open_ask(ask.clone());
+            let ask = self.as_asked(ask);
             self.emit_ask_item(emit, &ask, None);
         }
     }

@@ -2097,6 +2097,25 @@ fn cards() -> Vec<CardSet> {
                     server: "linear".into(),
                     message: "Sign in to Linear".into(),
                     url: "https://linear.app/oauth/authorize".into(),
+                    local_page: false,
+                },
+                vec![
+                    choice(ChoiceOutcome::OpenLink),
+                    choice(ChoiceOutcome::Decline),
+                ],
+            ),
+            false,
+            vec![],
+        ),
+        (
+            "ask_link_local",
+            "A tool server's link to a page on the agent's own machine.",
+            card(
+                AskBody::Link {
+                    server: "docs".into(),
+                    message: "Sign in to finish connecting docs".into(),
+                    url: "http://localhost:8765/oauth/start".into(),
+                    local_page: true,
                 },
                 vec![
                     choice(ChoiceOutcome::OpenLink),

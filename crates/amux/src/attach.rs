@@ -73,6 +73,17 @@ impl Attacher {
                 "{name} runs on another host, and its own interface opens only on its own \
                  machine; `amux attach {name} --in amux` opens its chat"
             ))
+        } else if agent.lifecycle() == Lifecycle::Exited
+            && agent.exit_cause() == wire::ExitCause::CouldNotStart
+        {
+            // Resuming fails the same way until its cause is fixed, so the
+            // refusal is that cause, not the way back.
+            Some(
+                match agent.exit_detail.as_deref().filter(|why| !why.is_empty()) {
+                    Some(why) => format!("{name} could not start {why}"),
+                    None => format!("{name} could not start"),
+                },
+            )
         } else if agent.lifecycle() == Lifecycle::Exited {
             Some(format!(
                 "{name} is stopped, so it has no terminal to attach to; start it again with \
@@ -600,5 +611,30 @@ mod tests {
                 "attaching to the stopped {kind:?} agent pt is not refused as stopped: {refusal:?}"
             );
         }
+    }
+
+    /// An agent that could not start says why, since resuming it fails the
+    /// same way: an old Claude, for one, until Claude is updated.
+    #[test]
+    fn an_agent_that_could_not_start_is_refused_with_its_cause() {
+        let attacher = Attacher::new(&profile(), LeaderKey::default()).unwrap();
+        let unstarted = Agent {
+            agent_id: vec![1; 16],
+            host_id: vec![7; 16],
+            kind: Kind::ClaudePty as i32,
+            name: "pt".into(),
+            lifecycle: wire::Lifecycle::Exited as i32,
+            exit_cause: wire::ExitCause::CouldNotStart as i32,
+            exit_detail: Some(
+                "the provider: terminal Claude needs Claude Code 2.1.251 or later".into(),
+            ),
+            ..Agent::default()
+        };
+        assert_eq!(
+            attacher.refusal(&unstarted).as_deref(),
+            Some(
+                "pt could not start the provider: terminal Claude needs Claude Code 2.1.251 or later"
+            )
+        );
     }
 }

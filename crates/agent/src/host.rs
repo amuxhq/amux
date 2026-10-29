@@ -83,6 +83,8 @@ pub(crate) struct Driver<I: Interpreter> {
     asks: Asks,
     /// Terminal Claude's hooks waiting on the interpreter's decision.
     hook_answers: HookAnswers,
+    /// Terminal clients attached to Claude's own terminal.
+    watchers: usize,
 }
 
 /// The agent's own record already has a dump's shape on disk (the facts
@@ -253,6 +255,7 @@ pub(crate) async fn run<I: Interpreter>(
         dumps: DumpLimit::default(),
         asks: Asks::default(),
         hook_answers,
+        watchers: 0,
     };
     // An incarnation that cannot write its first steps does not start.
     driver
@@ -350,14 +353,7 @@ impl<I: Interpreter> Driver<I> {
                         }
                     }
                 }
-                Some(control) = channels.control.recv() => {
-                    if let Some(provider) = &self.provider {
-                        match control {
-                            attach::Control::Keys(keys) => provider.type_raw(keys),
-                            attach::Control::Resize { rows, cols } => provider.resize(rows, cols),
-                        }
-                    }
-                }
+                Some(control) = channels.control.recv() => self.on_control(control).await,
                 Some((job, result)) = channels.jobs.recv() => {
                     self.feed(Input::JobDone { job, result }).await;
                 }
@@ -446,6 +442,44 @@ impl<I: Interpreter> Driver<I> {
             }
             ProviderEvent::Exited(code) => self.feed(Input::ProviderExited { code }).await,
         }
+    }
+
+    /// What an attached terminal client does. The interpreter hears when
+    /// the first joins and when the last leaves: a tool server's form is
+    /// then left to Claude's own dialog, for the person at the terminal.
+    async fn on_control(&mut self, control: attach::Control) {
+        match control {
+            attach::Control::Joined => {
+                self.watchers += 1;
+                if self.watchers == 1 {
+                    self.feed_watched(true).await;
+                }
+            }
+            attach::Control::Left => {
+                self.watchers = self.watchers.saturating_sub(1);
+                if self.watchers == 0 {
+                    self.feed_watched(false).await;
+                }
+            }
+            attach::Control::Keys(keys) => {
+                if let Some(provider) = &self.provider {
+                    provider.type_raw(keys);
+                }
+            }
+            attach::Control::Resize { rows, cols } => {
+                if let Some(provider) = &self.provider {
+                    provider.resize(rows, cols);
+                }
+            }
+        }
+    }
+
+    async fn feed_watched(&mut self, watched: bool) {
+        self.feed(Input::Provider(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: interpret::claude_pty::watched_fact(watched),
+        }))
+        .await;
     }
 
     /// Before a provider's exit is recorded, everything it said first:

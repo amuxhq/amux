@@ -1175,6 +1175,30 @@ async fn windows_refuses_terminal_claude_and_names_the_platform() {
     );
 }
 
+/// A Claude older than the hooks amux registers is refused before it
+/// starts, in words that say what to do: it would run without reporting
+/// any event amux follows.
+#[cfg(unix)]
+#[test]
+fn terminal_claude_older_than_its_hooks_is_refused_with_the_version_needed() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let bin = tempfile::tempdir().unwrap();
+    let claude = bin.path().join("claude");
+    std::fs::write(&claude, "#!/bin/sh\necho '2.1.250 (Claude Code)'\n").unwrap();
+    std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
+    terminal_test(async {
+        let agent = Agent::start(Setup {
+            kind: Kind::ClaudePty,
+            command: Some(claude.to_str().unwrap().to_owned()),
+            ..Setup::sdk()
+        })
+        .await;
+        let why = "terminal Claude needs Claude Code 2.1.251 or later; this machine has 2.1.250. \
+                   Update Claude, or chat in amux";
+        assert_eq!(agent.exit().await, ExitCause::Unstarted(why.to_owned()));
+    });
+}
+
 /// A permission cycle amux types into terminal Claude while it is idle
 /// changes Claude's permission at once, but Claude records the change in
 /// its transcript and hooks only with the next prompt. Cut from the

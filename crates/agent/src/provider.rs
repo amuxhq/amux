@@ -108,6 +108,11 @@ pub enum ProviderError {
         "terminal Claude is not hosted on Windows in this build; headless Claude and Codex are"
     )]
     TerminalOnWindows,
+    #[error(
+        "terminal Claude needs Claude Code {} or later; this machine has {found}. Update Claude, or chat in amux",
+        claude::version::MIN_TERMINAL
+    )]
+    ClaudeTooOld { found: String },
     #[error("{0}")]
     Io(#[from] io::Error),
 }
@@ -504,8 +509,9 @@ impl Provider {
         })
     }
 
-    /// Claude in a terminal. The agent reads its version first and reports
-    /// it as the launch fact before anything Claude says. Its hooks report to private/hooks.sock; its
+    /// Claude in a terminal. The agent reads its version first, refuses a
+    /// Claude older than [`claude::version::MIN_TERMINAL`], and reports it
+    /// as the launch fact before anything Claude says. Its hooks report to private/hooks.sock; its
     /// messaging socket is private/messaging.sock.
     async fn spawn_terminal(
         spec: &AgentSpec,
@@ -516,8 +522,15 @@ impl Provider {
             return Err(ProviderError::TerminalOnWindows);
         }
         let (session, resume) = claude_session(spec, dir)?;
+        // A version that cannot be read starts anyway: a wrapper or an odd
+        // banner is likelier than an old Claude.
         let version = match claude::version::probe_version(Path::new(&spec.provider_command)).await
         {
+            Ok(version) if version.0 < claude::version::MIN_TERMINAL => {
+                return Err(ProviderError::ClaudeTooOld {
+                    found: version.to_string(),
+                });
+            }
             Ok(version) => version.to_string(),
             Err(error) => {
                 eprintln!("amux agent: reading the Claude version: {error}");

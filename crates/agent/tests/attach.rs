@@ -115,12 +115,12 @@ fn two_clients_read_terminal_claude_from_its_files_and_type_into_it() {
     });
 }
 
-/// The interpreter hears when the first client attaches to Claude's
-/// terminal and when the last leaves: Claude draws a tool server's form
+/// The interpreter hears when the first client shows Claude's terminal
+/// and when the last stops, by leaving or by going to its fleet: Claude draws a tool server's form
 /// only once its hook returns, so amux lets go of that hook for whoever
 /// is watching.
 #[test]
-fn the_interpreter_hears_when_the_first_client_attaches_and_the_last_leaves() {
+fn the_interpreter_hears_when_the_first_client_shows_claudes_terminal_and_the_last_stops() {
     terminal_test(async {
         let agent = Agent::start(Setup {
             kind: Kind::ClaudePty,
@@ -157,12 +157,18 @@ fn the_interpreter_hears_when_the_first_client_attaches_and_the_last_leaves() {
             }
         };
 
-        let first = Screen::attach(&agent).await;
+        let mut first = Screen::attach(&agent).await;
         let second = Screen::attach(&agent).await;
         until(&[true]).await;
-        drop(first);
         drop(second);
+        // A client that goes to its fleet keeps its connection but no
+        // longer shows Claude's screen.
+        first.attached.shown(false).await.unwrap();
         until(&[true, false]).await;
+        first.attached.shown(true).await.unwrap();
+        until(&[true, false, true]).await;
+        drop(first);
+        until(&[true, false, true, false]).await;
     });
 }
 

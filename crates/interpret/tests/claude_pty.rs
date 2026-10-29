@@ -330,6 +330,65 @@ fn the_job_list_empties_when_terminal_claude_exits() {
     );
 }
 
+/// A client that showed Claude's terminal when its process ended never
+/// says it left, and the next process counts its own clients: a form that
+/// reaches the new incarnation is held for amux's clients, not left to a
+/// terminal nobody may be looking at.
+#[test]
+fn a_new_incarnation_holds_forms_whoever_watched_the_last() {
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        ..Default::default()
+    };
+    let fact = |channel, json: serde_json::Value| {
+        Event::Fact(interpret::Fact {
+            channel,
+            payload: json.to_string().into_bytes(),
+        })
+    };
+    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    ClaudePty::step(
+        &mut state,
+        fact(
+            interpret::Channel::Agent,
+            serde_json::json!({"type": "watched", "watched": true}),
+        ),
+    );
+    ClaudePty::step(&mut state, Event::ProviderExit { code: Some(0) });
+    let next = wire::AgentSpec {
+        incarnation: spec.incarnation + 1,
+        ..spec
+    };
+    let (mut state, _) = ClaudePty::reincarnate(state, &next, "test");
+    let mut effects = Vec::new();
+    for event in [
+        fact(
+            interpret::Channel::Hook,
+            serde_json::json!({
+                "hook_event_name": "SessionStart", "source": "resume", "session_id": "s1",
+                "transcript_path": "/t/s1.jsonl", "model": "claude-opus-5-5",
+            }),
+        ),
+        fact(
+            interpret::Channel::Hook,
+            serde_json::json!({
+                "amux_reply": 7, "hook_event_name": "Elicitation", "session_id": "s1",
+                "transcript_path": "/t/s1.jsonl", "mcp_server_name": "github",
+                "message": "github needs your input", "mode": "form",
+                "requested_schema": {"type": "object", "properties": {}},
+            }),
+        ),
+    ] {
+        effects.extend(ClaudePty::step(&mut state, event).effects);
+    }
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::HookAnswer { id: 7, .. })),
+        "the form's hook was let go in a new incarnation nobody watches: {effects:?}"
+    );
+}
+
 /// A child's failed report as its daemon hands it over: no text, the cause
 /// as data.
 fn failed_report(id: &[u8]) -> Event {

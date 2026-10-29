@@ -77,13 +77,14 @@ impl Attacher {
             && agent.exit_cause() == wire::ExitCause::CouldNotStart
         {
             // Resuming fails the same way until its cause is fixed, so the
-            // refusal is that cause, not the way back.
-            Some(
-                match agent.exit_detail.as_deref().filter(|why| !why.is_empty()) {
-                    Some(why) => format!("{name} could not start {why}"),
-                    None => format!("{name} could not start"),
-                },
-            )
+            // refusal leads with that cause.
+            let why = match agent.exit_detail.as_deref().filter(|why| !why.is_empty()) {
+                Some(why) => format!("{name} could not start {why}"),
+                None => format!("{name} could not start"),
+            };
+            Some(format!(
+                "{why}; once that is fixed, `amux resume {name}` starts it again"
+            ))
         } else if agent.lifecycle() == Lifecycle::Exited {
             Some(format!(
                 "{name} is stopped, so it has no terminal to attach to; start it again with \
@@ -186,6 +187,7 @@ impl Screen {
 enum Typed {
     Keys(Vec<u8>),
     Resize(u16, u16),
+    Shown(bool),
 }
 
 /// One held connection: a task reads what the agent draws into the screen
@@ -246,6 +248,7 @@ async fn pump(
             let sent = match typed {
                 Typed::Keys(keys) => input.keys(&keys).await,
                 Typed::Resize(rows, cols) => input.resize(rows, cols).await,
+                Typed::Shown(shown) => input.shown(shown).await,
             };
             if sent.is_err() {
                 return;
@@ -290,6 +293,9 @@ async fn passthrough(held: &Held, leader: &LeaderKey, returning: bool) -> Result
         screen.live = true;
     }
     let _ = held.typed.send(Typed::Resize(rows, cols));
+    if returning {
+        let _ = held.typed.send(Typed::Shown(true));
+    }
     let mut keys = read_keys(Chords::new(leader));
     let mut ended = held.ended.clone();
     let outcome = loop {
@@ -315,6 +321,12 @@ async fn passthrough(held: &Held, leader: &LeaderKey, returning: bool) -> Result
         }
     };
     held.screen.lock().unwrap().live = false;
+    // The agent leaves a tool server's form to Claude's own dialog only
+    // while someone looks at Claude's screen; the fleet drawn over a kept
+    // connection is not that.
+    if matches!(outcome, Outcome::Fleet) {
+        let _ = held.typed.send(Typed::Shown(false));
+    }
     drop(raw);
     // The agent's bytes went to the terminal verbatim, so it may have left
     // mouse reporting, bracketed paste, a hidden cursor or the alternate
@@ -633,7 +645,8 @@ mod tests {
         assert_eq!(
             attacher.refusal(&unstarted).as_deref(),
             Some(
-                "pt could not start the provider: terminal Claude needs Claude Code 2.1.251 or later"
+                "pt could not start the provider: terminal Claude needs Claude Code 2.1.251 or \
+                 later; once that is fixed, `amux resume pt` starts it again"
             )
         );
     }

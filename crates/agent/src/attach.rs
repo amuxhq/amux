@@ -40,22 +40,41 @@ const TRAILING_OUTPUT: Duration = Duration::from_millis(300);
 /// What an attached client does to the one terminal in files mode.
 #[derive(Debug)]
 pub enum Control {
-    /// A client is served; each is followed by [`Control::Left`].
+    /// A client shows the terminal: once served, and again when it comes
+    /// back to it. Each is followed by [`Control::Left`].
     Joined,
     Keys(Vec<u8>),
     Resize {
         rows: u16,
         cols: u16,
     },
+    /// The client no longer shows the terminal, or its connection ended.
     Left,
 }
 
-/// Sends [`Control::Left`] however a client's connection ends.
-struct Served(mpsc::UnboundedSender<Control>);
+/// Whether a client shows the terminal, saying so as it changes and
+/// [`Control::Left`] however its connection ends while it does.
+struct Shown {
+    control: mpsc::UnboundedSender<Control>,
+    shown: bool,
+}
 
-impl Drop for Served {
+impl Shown {
+    fn set(&mut self, shown: bool) {
+        if shown != self.shown {
+            self.shown = shown;
+            let _ = self.control.send(if shown {
+                Control::Joined
+            } else {
+                Control::Left
+            });
+        }
+    }
+}
+
+impl Drop for Shown {
     fn drop(&mut self) {
-        let _ = self.0.send(Control::Left);
+        self.set(false);
     }
 }
 
@@ -134,11 +153,18 @@ async fn files(
         }),
     )
     .await?;
-    let _ = control.send(Control::Joined);
-    let _served = Served(control.clone());
+    let mut shown = Shown {
+        control: control.clone(),
+        shown: false,
+    };
+    shown.set(true);
     let typing = async {
         while let Some(of) = next(&mut reader).await {
             let typed = match of {
+                pty_frame::Of::Shown(now) => {
+                    shown.set(now);
+                    continue;
+                }
                 pty_frame::Of::Keys(keys) => Control::Keys(keys),
                 pty_frame::Of::Resize(resize) => {
                     let (rows, cols) = size(&resize);
@@ -352,6 +378,10 @@ impl Attached {
     pub async fn resize(&mut self, rows: u16, cols: u16) -> io::Result<()> {
         self.input.resize(rows, cols).await
     }
+
+    pub async fn shown(&mut self, shown: bool) -> io::Result<()> {
+        self.input.shown(shown).await
+    }
 }
 
 impl AttachedOutput {
@@ -411,6 +441,11 @@ impl AttachedInput {
             }),
         )
         .await
+    }
+
+    /// Says whether this client's terminal shows the agent's screen now.
+    pub async fn shown(&mut self, shown: bool) -> io::Result<()> {
+        send(&mut self.writer, pty_frame::Of::Shown(shown)).await
     }
 }
 

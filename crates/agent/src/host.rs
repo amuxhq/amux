@@ -83,7 +83,7 @@ pub(crate) struct Driver<I: Interpreter> {
     asks: Asks,
     /// Terminal Claude's hooks waiting on the interpreter's decision.
     hook_answers: HookAnswers,
-    /// Terminal clients attached to Claude's own terminal.
+    /// Terminal clients showing Claude's own terminal.
     watchers: usize,
 }
 
@@ -445,8 +445,9 @@ impl<I: Interpreter> Driver<I> {
     }
 
     /// What an attached terminal client does. The interpreter hears when
-    /// the first joins and when the last leaves: a tool server's form is
-    /// then left to Claude's own dialog, for the person at the terminal.
+    /// the first comes to Claude's screen and when the last leaves it: a
+    /// tool server's form is then left to Claude's own dialog, for the
+    /// person looking at it.
     async fn on_control(&mut self, control: attach::Control) {
         match control {
             attach::Control::Joined => {

@@ -60,8 +60,8 @@
 //!   hook too; that call's result, a row from a later assistant message,
 //!   and the facts that close every ask close it dismissed. Someone
 //!   watching Claude's own terminal must see the dialog, so while a
-//!   terminal client is attached the hook is let go at once, and one that
-//!   attaches lets go of the hook that waits: Claude draws its dialog, and
+//!   terminal client shows its screen the hook is let go at once, and one
+//!   that comes to it lets go of the hook that waits: Claude draws its dialog, and
 //!   the ask says it is answered there. Its item keeps what was asked.
 //! - A reply's batches open a message item keyed by the hook's message id,
 //!   which is not the row's. Claude writes rows in the order it draws
@@ -208,8 +208,8 @@ pub(crate) enum AgentFact {
     /// Claude's first screen is its folder-trust dialog; sent before
     /// [`AgentFact::Ready`].
     TrustDialog,
-    /// Whether a terminal client is attached to Claude's own terminal:
-    /// sent when the first attaches and when the last leaves.
+    /// Whether a terminal client shows Claude's own terminal: sent when
+    /// the first comes to it and when the last leaves it.
     Watched { watched: bool },
 }
 
@@ -237,8 +237,8 @@ pub fn trust_dialog_fact() -> Vec<u8> {
     AgentFact::TrustDialog.encode()
 }
 
-/// The fact that a terminal client is, or no longer is, attached to
-/// Claude's own terminal.
+/// The fact that some terminal client shows Claude's own terminal, or
+/// that none any longer does.
 pub fn watched_fact(watched: bool) -> Vec<u8> {
     AgentFact::Watched { watched }.encode()
 }
@@ -577,8 +577,8 @@ pub struct State {
     /// output row.
     #[serde(default)]
     bang: Option<String>,
-    /// A terminal client is attached to Claude's own terminal, so a tool
-    /// server's form is left to Claude's dialog.
+    /// A terminal client shows Claude's own terminal, so a tool server's
+    /// form is left to Claude's dialog.
     #[serde(default)]
     watched: bool,
 }
@@ -1151,7 +1151,6 @@ impl State {
         let Some(open) = self.shared.asks().get(ask_key).cloned() else {
             return;
         };
-        self.release(emit, ask_key);
         let reason = match &open.body {
             Some(wire::ask::Body::Link(link)) => format!(
                 "{} is showing a link in Claude's terminal; open it there, or stop the agent.",
@@ -1163,6 +1162,7 @@ impl State {
             ),
             _ => return,
         };
+        self.release(emit, ask_key);
         self.shared.open_ask(Ask {
             body: Some(wire::ask::Body::Unanswerable(wire::UnanswerableAsk {
                 reason,
@@ -1678,6 +1678,10 @@ impl Interpreter for ClaudePty {
         // agent process last read it.
         state.provider.transcript = None;
         state.provider.offered = spec.offered.clone();
+        // The new process counts its own terminal clients, each of which
+        // says so again: one attached when the last process ended never
+        // said it left.
+        state.watched = false;
         state.resume()
     }
 

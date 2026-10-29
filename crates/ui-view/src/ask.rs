@@ -537,7 +537,13 @@ fn link_body(link: &wire::LinkAsk) -> AskBody {
 /// on the agent's machine sends its browser to `localhost`, which any
 /// other device reads as itself.
 fn loopback(url: &str) -> bool {
-    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return false;
+    };
+    let scheme_like = |c: char| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.');
+    if scheme.is_empty() || !scheme.chars().all(scheme_like) {
+        return false;
+    }
     let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
     let host = authority
         .rsplit_once('@')
@@ -546,12 +552,16 @@ fn loopback(url: &str) -> bool {
         Some(bracketed) => bracketed.split(']').next().unwrap_or_default(),
         None => host.split(':').next().unwrap_or_default(),
     };
-    let host = host.to_ascii_lowercase();
-    host == "localhost"
-        || host.ends_with(".localhost")
-        || host == "::1"
-        || host == "0.0.0.0"
-        || host.starts_with("127.")
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    match host.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(ip)) => ip.is_loopback() || ip.is_unspecified(),
+        Ok(std::net::IpAddr::V6(ip)) => {
+            ip.is_loopback()
+                || ip.is_unspecified()
+                || ip.to_ipv4_mapped().is_some_and(|ip| ip.is_loopback())
+        }
+        Err(_) => host == "localhost" || host.ends_with(".localhost"),
+    }
 }
 
 /// "Bash(cargo test:*)" reads "cargo test"; a bare tool name stays.
@@ -1150,6 +1160,9 @@ mod tests {
             "http://user@127.0.0.1",
             "http://[::1]:8080/cb",
             "http://0.0.0.0:9000",
+            "http://[0:0:0:0:0:0:0:1]/",
+            "http://[::ffff:127.0.0.1]:80/",
+            "http://localhost./cb",
         ] {
             assert!(loopback(url), "{url} is on the agent's machine");
         }
@@ -1158,6 +1171,8 @@ mod tests {
             "https://localhost.example.com/",
             "https://example.com/?next=http://localhost:8765",
             "https://10.0.0.5/sign-in",
+            "https://127.example.com/",
+            "example.com/?next=http://localhost:8765",
         ] {
             assert!(!loopback(url), "{url} opens anywhere");
         }

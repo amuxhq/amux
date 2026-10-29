@@ -315,12 +315,12 @@ the reasons.
 ### Terminal Claude
 
 Before Claude starts, the agent runs `claude --version` and reports the
-version as its launch fact, the first fact the interpreter sees; the
-boundary item records it. Claude older than 2.1.251, the first with every
+version as its launch fact, ahead of anything Claude reports; the boundary
+item records it. Claude older than 2.1.251, the first with every
 hook the agent registers, is refused: the agent ends before spawning it,
 with the cause "could not start: the provider: terminal Claude needs
-Claude Code 2.1.251 or later; this machine has …", and attaching to it
-answers with that cause. An older Claude would start
+Claude Code 2.1.251 or later; this machine has …", and `amux attach --in
+native` to it answers with that cause. An older Claude would start
 and never report the events the interpreter follows. A version the agent
 cannot read starts anyway, since a wrapper script or an unfamiliar banner
 is likelier than an old Claude.
@@ -357,11 +357,14 @@ paste on has been followed by 100 ms of quiet, or 500 ms at most. The
 `SessionStart` hook is no signal on its own, because some Claude versions run
 it only after the first prompt.
 
-The agent also sends a watched fact when the first terminal client attaches
-on `pty.sock` and again when the last one leaves. Claude draws a tool
-server's form or link only once its `Elicitation` hook returns, so while
-someone watches Claude's own terminal the interpreter lets that hook go and
-leaves the dialog to Claude.
+The agent also sends a watched fact when the first terminal client shows
+Claude's screen and again when the last one stops: a client shows it from
+its hello on `pty.sock` until it leaves, or until it says it no longer
+does, as the terminal client does when it goes to its fleet with the
+connection kept (`PtyFrame.shown`). Claude draws a tool server's form or
+link only once its `Elicitation` hook returns, so while someone looks at
+Claude's own terminal the interpreter lets that hook go and leaves the
+dialog to Claude. A new agent process counts its clients afresh.
 
 Nothing else is read off the screen. The permission Claude runs in is the
 one amux cycled it to with Shift+Tab, confirmed by the permission Claude

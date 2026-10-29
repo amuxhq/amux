@@ -1,3 +1,5 @@
+2026-10-28 — **A withheld tool server lasts one incarnation.** Both Claude interpreters forget at reincarnation that policy withheld amux's tools; the agent says so again at each launch it holds.
+
 2026-10-28 — **Test that a withheld tool server is not carried into the next incarnation.** Both Claude interpreters keep reading amux's tool server as withheld by policy after a relaunch that no longer says so.
 
 2026-10-28 — **The TUI's vocabulary goldens show a stopping job.** The shared vocabulary's second job is now stopping, so the overview's change goldens read "Stopping…" in place of its age.

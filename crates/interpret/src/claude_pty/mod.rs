@@ -1748,6 +1748,9 @@ impl Interpreter for ClaudePty {
         // The new process's transcript is followed anew, from wherever the
         // agent process last read it.
         state.provider.transcript = None;
+        // The agent says again at each launch whether policy withholds
+        // amux's tools.
+        state.provider.tools_withheld = false;
         state.provider.offered = spec.offered.clone();
         state.resume()
     }

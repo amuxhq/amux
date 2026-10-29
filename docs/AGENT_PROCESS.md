@@ -615,7 +615,9 @@ the managed-settings folder: `/Library/Application Support/ClaudeCode`,
 its command line and does not start. The agent then launches Claude, either
 kind, without amux's tool server and tells its interpreter so on the agent
 channel; the agent's tool-server health lists `amux` as failed, saying the
-organization's policy turned amux's tools off. The host's catalogue ask
+organization's policy turned amux's tools off. The agent says so at each
+launch, so an incarnation launched once the policy is gone reads amux's
+server as Claude reports it. The host's catalogue ask
 leaves out `--strict-mcp-config` there for the same reason.
 
 The fleet tools (agents, hosts, send, spawn, stop) dial the daemon at

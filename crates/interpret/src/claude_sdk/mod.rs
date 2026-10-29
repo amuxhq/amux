@@ -1436,6 +1436,9 @@ impl Interpreter for ClaudeSdk {
         state.inits = 0;
         state.exited = false;
         state.early_boundary = None;
+        // The agent says again at each launch whether policy withholds
+        // amux's tools.
+        state.tools_withheld = false;
         state.effort = launch_arg(&spec.provider_args, "--effort");
         state.resume()
     }

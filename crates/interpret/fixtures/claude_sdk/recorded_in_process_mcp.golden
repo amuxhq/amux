@@ -1,49 +1,49 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 2 recorded 1: fact Stream type=control_request
-effect write "{\"response\":{\"error\":\"amux does not handle mcp_message\",\"request_id\":\"0db82653-0da4-4aaa-b6d7-b9b44638010b\",\"subtype\":\"error\"},\"type\":\"control_response\"}"
+effect write "{\"response\":{\"error\":\"amux does not handle mcp_message\",\"request_id\":\"98fd3e02-a338-4376-b4d7-6b8c02743db9\",\"subtype\":\"error\"},\"type\":\"control_response\"}"
 ## 4 recorded 3: fact Stream type=control_response
 effect write "{\"request\":{\"subtype\":\"get_settings\"},\"request_id\":\"amux-1\",\"type\":\"control_request\"}"
-effect catalogue cfb4734d models=[default{low/medium/high/xhigh/max},opus[1m]{low/medium/high/xhigh/max},claude-fable-5[1m]{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku] commands=64 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue cfb4734d
-snapshot IDLE queue=[] working_on=- at=1787961013419 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 6 recorded 5: fact Stream type=control_request
-effect write "{\"response\":{\"error\":\"amux does not handle mcp_message\",\"request_id\":\"6a3f87ca-ed61-4d9e-8a70-2db8e32d1b69\",\"subtype\":\"error\"},\"type\":\"control_response\"}"
-## 8 recorded 7: input stdin-3
+effect catalogue 8572d50d models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=55 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 8572d50d
+snapshot IDLE queue=[] working_on=- at=1793268016395 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 6 recorded 5: input stdin-3
 effect reply stdin-3 accepted
 effect user 73746469-6e2d-4300-8000-000000000000 "Call the echo tool with text set to HELLO, then reply with exactly what it returned."
-item boundary:1 boundary final at=1787961013421 text="" BOUNDARY_KIND_STARTED session=- version=-
-item 73746469-6e2d-4300-8000-000000000000 prompt final input=stdin-3 at=1787961013421 text="Call the echo tool with text set to HELLO, then reply with exactly what it returned."
-snapshot WORKING queue=[] working_on="Call the echo tool with text set to HELLO, then reply with exactly what it returned." at=1787961013421 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 10 recorded 9: fact Stream type=control_request
-effect write "{\"response\":{\"error\":\"amux does not handle mcp_message\",\"request_id\":\"37dea1c8-2b1e-421d-92b7-d5716ce6b5c0\",\"subtype\":\"error\"},\"type\":\"control_response\"}"
-## 12 recorded 11: fact Stream type=system subtype=init uuid=d5759f3a-ec0e-42f7-95d2-60aca92d3178
-item boundary:1 boundary final at=1787961014141 text="" BOUNDARY_KIND_STARTED session=b9f5fb6d-edc3-4ed0-b2bb-8f151daf5efd version=2.1.247
-snapshot WORKING queue=[] working_on="Call the echo tool with text set to HELLO, then reply with exactly what it returned." at=1787961014141 asks=[] session=b9f5fb6d-edc3-4ed0-b2bb-8f151daf5efd model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY,spec:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 14 recorded 13: fact Stream type=rate_limit_event uuid=4e70bc23-6b26-4f7a-a5e8-6a842bf3c09f
-snapshot WORKING queue=[] working_on="Call the echo tool with text set to HELLO, then reply with exactly what it returned." at=1787961014506 asks=[] session=b9f5fb6d-edc3-4ed0-b2bb-8f151daf5efd model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY,spec:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 26 recorded 25: fact Stream type=assistant uuid=efbf8c2e-f06d-4560-a1c2-f481615f30e8
-item msg_011CeW3SkAkFqePXcSq5teHE:0 thinking final at=1787961015932 text="The user is asking me to call the echo tool with text set to \"HELLO\", then reply with exactly what it returned.\n\nLooking at the available tools, I can see there's a tool called `mcp__spec__echo` which takes a `text` parameter. Let me call it with \"HELLO\"."
-snapshot WORKING queue=[] working_on="Call the echo tool with text set to HELLO, then reply with exactly what it returned." at=1787961015932 asks=[] session=b9f5fb6d-edc3-4ed0-b2bb-8f151daf5efd model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=29004/? tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY,spec:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 28 recorded 27: fact Stream type=assistant uuid=daf137f0-ee84-437c-a827-12f273679712
-item toolu_01QeYyDcvHpPyK5jT2NRMNgY tool final at=1787961016180 text="" spec·echo TOOL_STATE_RUNNING input="{\"text\":\"HELLO\"}"
-## 30 recorded 29: fact Stream type=control_request
-snapshot NEEDS_YOU queue=[] working_on="Call the echo tool with text set to HELLO, then reply with exactly what it returned." at=1787961016185 asks=[fded203c-fecb-4862-862d-f62bfc21577f->toolu_01QeYyDcvHpPyK5jT2NRMNgY permission:echo@spec/localSettings mcp__spec__echo deny-can-stop] session=b9f5fb6d-edc3-4ed0-b2bb-8f151daf5efd model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=29004/? tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY,spec:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 32 recorded 31: input stdin-6
-effect write "{\"response\":{\"request_id\":\"fded203c-fecb-4862-862d-f62bfc21577f\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"text\":\"HELLO\"}},\"subtype\":\"success\"},\"type\":\"control_response\"}"
+item boundary:1 boundary final at=1793268016397 text="" BOUNDARY_KIND_STARTED session=- version=-
+item 73746469-6e2d-4300-8000-000000000000 prompt final input=stdin-3 at=1793268016397 text="Call the echo tool with text set to HELLO, then reply with exactly what it returned."
+snapshot WORKING queue=[] working_on="Call the echo tool with text set to HELLO, then reply with exactly what it returned." at=1793268016397 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 7 recorded 6: fact Stream type=control_request
+effect write "{\"response\":{\"error\":\"amux does not handle mcp_message\",\"request_id\":\"df59853f-9760-44b9-b7b0-8d2cad439855\",\"subtype\":\"error\"},\"type\":\"control_response\"}"
+## 9 recorded 8: fact Stream type=control_request
+effect write "{\"response\":{\"error\":\"amux does not handle mcp_message\",\"request_id\":\"d11f0aaa-b1b1-459c-be62-9c7af59cf1ce\",\"subtype\":\"error\"},\"type\":\"control_response\"}"
+## 11 recorded 10: fact Stream type=system subtype=init uuid=321d05a6-ed68-4fa6-8b44-09621a3912fc
+item boundary:1 boundary final at=1793268016475 text="" BOUNDARY_KIND_STARTED session=c93aa4f7-e105-4c7e-ade6-17c16b98f951 version=2.1.312
+snapshot WORKING queue=[] working_on="Call the echo tool with text set to HELLO, then reply with exactly what it returned." at=1793268016475 asks=[] session=c93aa4f7-e105-4c7e-ade6-17c16b98f951 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[spec:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 17 recorded 16: fact Stream type=assistant uuid=3fa636f6-6e9f-4079-a907-7c3b7797ea0c
+item msg_011CgWLJj9BKoxKJDjkAyDgp:0 thinking final at=1793268019042 text=""
+snapshot WORKING queue=[] working_on="Call the echo tool with text set to HELLO, then reply with exactly what it returned." at=1793268019042 asks=[] session=c93aa4f7-e105-4c7e-ade6-17c16b98f951 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23794/? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[spec:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 19 recorded 18: fact Stream type=assistant uuid=17ba92f7-d931-478c-927d-3b486e993909
+item toolu_01WpJDjKbcLfSdcqkJ9YLvbf tool final at=1793268019187 text="" spec·echo TOOL_STATE_RUNNING input="{\"text\":\"HELLO\"}"
+## 21 recorded 20: fact Stream type=control_request
+snapshot NEEDS_YOU queue=[] working_on="Call the echo tool with text set to HELLO, then reply with exactly what it returned." at=1793268019199 asks=[13a6e595-d148-47c2-851a-61abf7718b6b->toolu_01WpJDjKbcLfSdcqkJ9YLvbf permission:echo@spec/localSettings mcp__spec__echo deny-can-stop] session=c93aa4f7-e105-4c7e-ade6-17c16b98f951 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23794/? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[spec:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 23 recorded 22: input stdin-6
+effect write "{\"response\":{\"request_id\":\"13a6e595-d148-47c2-851a-61abf7718b6b\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"text\":\"HELLO\"}},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply stdin-6 accepted
-item toolu_01QeYyDcvHpPyK5jT2NRMNgY tool final at=1787961016180 text="" spec·echo TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED started=1787961016186 input="{\"text\":\"HELLO\"}"
-snapshot WORKING queue=[] working_on="Call the echo tool with text set to HELLO, then reply with exactly what it returned." at=1787961016186 asks=[] session=b9f5fb6d-edc3-4ed0-b2bb-8f151daf5efd model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=29004/? tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY,spec:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 34 recorded 33: fact Stream type=control_request
-effect write "{\"response\":{\"error\":\"amux does not handle mcp_message\",\"request_id\":\"0fde0e22-4597-47e6-ad64-0b3d8cb18abf\",\"subtype\":\"error\"},\"type\":\"control_response\"}"
-## 36 recorded 35: fact Stream type=user uuid=e2f8ece7-9d16-4307-a3e2-9c1132d5eb16
-item toolu_01QeYyDcvHpPyK5jT2NRMNgY tool final at=1787961016180 text="" spec·echo TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED started=1787961016186 ended=1787961016193 input="{\"text\":\"HELLO\"}" out="echoed:HELLO"
-## 49 recorded 48: fact Stream type=assistant uuid=5632b4ed-d145-4fe9-9fc2-e0b65967cc88
-item msg_011CeW3Su9F4CySfD9aBbkFP:0 thinking final at=1787961017449 text="The echo tool returned \"echoed:HELLO\". The user asked me to reply with exactly what it returned, so I should output that exact string."
-snapshot WORKING queue=[] working_on="Call the echo tool with text set to HELLO, then reply with exactly what it returned." at=1787961017449 asks=[] session=b9f5fb6d-edc3-4ed0-b2bb-8f151daf5efd model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=29192/? tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY,spec:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 51 recorded 50: fact Stream type=assistant uuid=1ea2fc0c-d142-40cd-a8e3-fccc8fef3d91
-item msg_011CeW3Su9F4CySfD9aBbkFP:1 message final at=1787961017467 text="echoed:HELLO"
-## 53 recorded 52: fact Stream type=result subtype=success uuid=08827116-9c2d-41cc-be3d-1f75f3ad695b
-item turn:1 turn final at=1787961017475 text="" #1 TURN_OUTCOME_COMPLETED started=1787961014128
-snapshot IDLE queue=[] working_on="Call the echo tool with text set to HELLO, then reply with exactly what it returned." at=1787961017475 asks=[] session=b9f5fb6d-edc3-4ed0-b2bb-8f151daf5efd model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=29192/200000 tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY,spec:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-turn_end 1 last=msg_011CeW3Su9F4CySfD9aBbkFP:1
+item toolu_01WpJDjKbcLfSdcqkJ9YLvbf tool final at=1793268019187 text="" spec·echo TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED started=1793268019200 input="{\"text\":\"HELLO\"}"
+snapshot WORKING queue=[] working_on="Call the echo tool with text set to HELLO, then reply with exactly what it returned." at=1793268019200 asks=[] session=c93aa4f7-e105-4c7e-ade6-17c16b98f951 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23794/? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[spec:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 25 recorded 24: fact Stream type=control_request
+effect write "{\"response\":{\"error\":\"amux does not handle mcp_message\",\"request_id\":\"f6c03cd8-60b9-4402-8372-afcede5dcbc9\",\"subtype\":\"error\"},\"type\":\"control_response\"}"
+## 27 recorded 26: fact Stream type=user uuid=f08cca7c-9f4b-4bc7-89fc-73e1b5e6629f
+item toolu_01WpJDjKbcLfSdcqkJ9YLvbf tool final at=1793268019187 text="" spec·echo TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED started=1793268019200 ended=1793268019215 input="{\"text\":\"HELLO\"}" out="echoed:HELLO"
+## 29 recorded 28: fact Stream type=rate_limit_event uuid=65db160f-5351-4aa8-838f-f5d6209d3a7e
+snapshot WORKING queue=[] working_on="Call the echo tool with text set to HELLO, then reply with exactly what it returned." at=1793268019276 asks=[] session=c93aa4f7-e105-4c7e-ade6-17c16b98f951 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23794/? tasks=? active=[] usage=ok 5h:2%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[spec:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 31 recorded 30: fact Stream type=assistant uuid=b790e582-1016-4dad-9b95-77b8af61eebf
+item msg_011CgWLJuy3fXdkMXrPmUTEe:0 thinking final at=1793268020651 text=""
+snapshot WORKING queue=[] working_on="Call the echo tool with text set to HELLO, then reply with exactly what it returned." at=1793268020651 asks=[] session=c93aa4f7-e105-4c7e-ade6-17c16b98f951 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23970/? tasks=? active=[] usage=ok 5h:2%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[spec:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 33 recorded 32: fact Stream type=assistant uuid=0cec54f4-94de-43fd-b3a7-0d151acfcc3f
+item msg_011CgWLJuy3fXdkMXrPmUTEe:1 message final at=1793268020695 text="echoed:HELLO"
+## 35 recorded 34: fact Stream type=result subtype=success uuid=045d8720-1882-4681-942e-4352ea4521ea
+item turn:1 turn final at=1793268020718 text="" #1 TURN_OUTCOME_COMPLETED started=1793268016459
+snapshot IDLE queue=[] working_on="Call the echo tool with text set to HELLO, then reply with exactly what it returned." at=1793268020718 asks=[] session=c93aa4f7-e105-4c7e-ade6-17c16b98f951 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23970/200000 tasks=? active=[] usage=ok 5h:2%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[spec:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+turn_end 1 last=msg_011CgWLJuy3fXdkMXrPmUTEe:1

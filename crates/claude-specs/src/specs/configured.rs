@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use super::{HAIKU, SessionSetup, SpecDef, SpecSession};
 use crate::driver::sdk::{
     Effort, HookEvent, HookSubscription, PermissionMode, SdkBeta, SettingSource, SkillsConfig,
-    SystemPrompt, ThinkingConfig, ToolsConfig, ToolsPreset,
+    SystemPrompt, ThinkingConfig, ThinkingDisplay, ToolsConfig, ToolsPreset,
 };
 use crate::expect;
 
@@ -46,11 +46,12 @@ fn configured_setup() -> SessionSetup {
     // different one. It is never reached: nothing here makes Haiku unavailable.
     setup.options.fallback_model = Some("claude-sonnet-5".to_string());
     setup.options.betas = vec![SdkBeta::Context1M];
+    // Claude 2.1.312 leaves thinking text out unless asked to show it.
     setup.options.thinking = Some(ThinkingConfig::Enabled {
         budget_tokens: Some(1024),
-        display: None,
+        display: Some(ThinkingDisplay::Summarized),
     });
-    setup.options.setting_sources = vec![SettingSource::User];
+    setup.options.setting_sources = vec![SettingSource::Project];
     setup.options.strict_mcp_config = true;
     setup.options.persist_session = Some(false);
     setup.options.include_hook_events = true;

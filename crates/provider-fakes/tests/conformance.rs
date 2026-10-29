@@ -72,7 +72,7 @@ mod claude_sdk {
         elicitation_accepted => "elicitation_accepted",
         elicitation_cancelled => "elicitation_cancelled",
         elicitation_declined => "elicitation_declined",
-        elicitation_link_refused => "elicitation_link_refused",
+        elicitation_link_accepted => "elicitation_link_accepted",
         every_hook_event => "every_hook_event",
         failed_tool_server => "failed_tool_server",
         failing_command => "failing_command",

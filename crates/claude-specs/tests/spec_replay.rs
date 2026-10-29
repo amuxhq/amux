@@ -47,7 +47,7 @@ mod sdk_replays {
         tools_elicitation_accepted => "tools/elicitation_accepted",
         tools_elicitation_declined => "tools/elicitation_declined",
         tools_elicitation_cancelled => "tools/elicitation_cancelled",
-        tools_elicitation_link_refused => "tools/elicitation_link_refused",
+        tools_elicitation_link_accepted => "tools/elicitation_link_accepted",
         tools_hook_lifecycle => "tools/hook_lifecycle",
         options_configured_turn => "options/configured_turn",
         options_every_hook_event => "options/every_hook_event",
@@ -370,14 +370,7 @@ fn sdk_corpus_is_inventoried_current_and_unorphaned() {
             }
             SourceKind::LiveCapture => {
                 assert!(
-                    [
-                        Version::new(2, 1, 251),
-                        Version::new(2, 1, 260),
-                        Version::new(2, 1, 261),
-                        Version::new(2, 1, 283),
-                        Version::new(2, 1, 289),
-                    ]
-                    .contains(&recording.manifest.recorded.version),
+                    [Version::new(2, 1, 312)].contains(&recording.manifest.recorded.version),
                     "{} was captured against an unreviewed Claude version {}",
                     entry.name,
                     recording.manifest.recorded.version

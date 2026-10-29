@@ -63,14 +63,15 @@ fn max_budget_setup() -> SessionSetup {
         "Write a detailed 500 word essay about the history of rope.",
     );
     setup.options.permission_mode = Some(PermissionMode::Default);
-    // Small enough that the first request cannot fit inside it, which is what
-    // makes the stop attributable to the budget rather than to the answer
-    // happening to be short.
+    // Small enough that the first request cannot fit inside it, so the
+    // stop is the budget's rather than the answer happening to be short.
     setup.options.max_budget_usd = Some(0.000_01);
     setup
 }
 
-/// A spend limit is enforced before the work, not reported after it.
+/// A spend limit is checked once a request has been paid for: on Claude
+/// 2.1.312 the first answer arrives and the result still names the limit.
+/// (2.1.247 stopped before the first request.)
 async fn max_budget(session: &mut SpecSession) {
     let turn = session.turn().await;
     expect!(
@@ -79,9 +80,8 @@ async fn max_budget(session: &mut SpecSession) {
         turn.result().map(crate::driver::sdk::ResultMessage::kind)
     );
     expect!(
-        turn.text().is_empty(),
-        "the limit stopped the work before an answer was produced, rather than \
-         after: {:?}",
+        !turn.text().is_empty(),
+        "the limit is checked after the request it would have stopped: {:?}",
         turn.text()
     );
     expect!(!turn.errors().is_empty(), "the result explains itself");

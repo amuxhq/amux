@@ -530,32 +530,36 @@ async fn elicitation_cancelled(session: &mut SpecSession) {
 }
 
 pub(super) static ELICITATION_LINK: SpecDef = SpecDef {
-    name: "tools/elicitation_link_refused",
-    fixture: "elicitation_link_refused",
+    name: "tools/elicitation_link_accepted",
+    fixture: "elicitation_link_accepted",
     setup: || {
         let mut setup = elicitation_setup("LINK");
         setup.accept_elicitation(serde_json::Value::Null);
         setup
     },
-    run: |session| Box::pin(elicitation_link_refused(session)),
+    run: |session| Box::pin(elicitation_link_accepted(session)),
 };
 
 /// A server may ask to send the person to a page instead of a form. Claude
-/// Code does not offer that kind of elicitation to its servers: it refuses
-/// the request itself, the SDK caller never sees it, and the server's tool
-/// reports the refusal.
-async fn elicitation_link_refused(session: &mut SpecSession) {
+/// Code 2.1.312 hands that request to the SDK caller with the page and the
+/// server's id for it (2.1.283 refused it itself), and the caller's
+/// acceptance, which carries no content, reaches the server.
+async fn elicitation_link_accepted(session: &mut SpecSession) {
     let turn = session.turn().await;
     expect!(
-        session.elicitation_requests.is_empty(),
-        "no link request reaches the caller: {:?}",
+        session.elicitation_requests.iter().any(|request| {
+            matches!(request.mode, Some(crate::driver::sdk::ElicitationMode::Url))
+                && request.url.as_deref() == Some("https://example.com/confirm")
+                && request.elicitation_id.as_deref() == Some("spec-link")
+        }),
+        "the link request reaches the caller with its page: {:?}",
         session.elicitation_requests
     );
     expect!(
-        turn.tool_results().iter().any(|result| {
-            result.contains("-32602") && result.contains("does not support URL-mode elicitation")
-        }),
-        "the server hears Claude refuse the link form: {:?}",
+        turn.tool_results()
+            .iter()
+            .any(|result| result.contains("LINK")),
+        "the server hears the caller accept: {:?}",
         turn.tool_results()
     );
 }

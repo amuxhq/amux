@@ -1,0 +1,47 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+## 2 recorded 1: fact Stream type=control_response
+effect write "{\"request\":{\"subtype\":\"get_settings\"},\"request_id\":\"amux-1\",\"type\":\"control_request\"}"
+effect catalogue 8572d50d models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=55 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 8572d50d
+snapshot IDLE queue=[] working_on=- at=1793268601162 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 4 recorded 3: input stdin-2
+effect reply stdin-2 accepted
+effect user 73746469-6e2d-4200-8000-000000000000 "Call the mcp__external__ask_the_operator tool with word set to LINK, then reply with exactly what it returned."
+item boundary:1 boundary final at=1793268601167 text="" BOUNDARY_KIND_STARTED session=- version=-
+item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793268601167 text="Call the mcp__external__ask_the_operator tool with word set to LINK, then reply with exactly what it returned."
+snapshot WORKING queue=[] working_on="Call the mcp__external__ask_the_operator tool with word set to LINK, then reply with exactly what it returned." at=1793268601167 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 6 recorded 5: fact Stream type=system subtype=init uuid=79b68c0a-ebf1-4727-afe5-948e18a36134
+item boundary:1 boundary final at=1793268601199 text="" BOUNDARY_KIND_STARTED session=fdc45e5e-1828-4c0f-8d1b-bd8d359d3169 version=2.1.312
+snapshot WORKING queue=[] working_on="Call the mcp__external__ask_the_operator tool with word set to LINK, then reply with exactly what it returned." at=1793268601199 asks=[] session=fdc45e5e-1828-4c0f-8d1b-bd8d359d3169 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[external:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 8 recorded 7: fact Stream type=assistant uuid=b8a3c4c2-92d4-472e-a468-7a1b92055766
+item msg_011CgWM3pNAFuzvKs2LPV5Qa:0 thinking final at=1793268602661 text=""
+snapshot WORKING queue=[] working_on="Call the mcp__external__ask_the_operator tool with word set to LINK, then reply with exactly what it returned." at=1793268602661 asks=[] session=fdc45e5e-1828-4c0f-8d1b-bd8d359d3169 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23804/? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[external:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 10 recorded 9: fact Stream type=assistant uuid=e8091313-faaa-4988-9b72-1e0b0c7d13d6
+item toolu_016GeyC8ZiAdxUhKBfrtahpP tool final at=1793268602731 text="" external·ask_the_operator TOOL_STATE_RUNNING input="{\"word\":\"LINK\"}"
+## 12 recorded 11: fact Stream type=control_request
+snapshot NEEDS_YOU queue=[] working_on="Call the mcp__external__ask_the_operator tool with word set to LINK, then reply with exactly what it returned." at=1793268602740 asks=[21dbcfd3-24ee-4eff-a026-1de8cca9f549->toolu_016GeyC8ZiAdxUhKBfrtahpP permission:ask_the_operator@external/localSettings mcp__external__ask_the_operator deny-can-stop] session=fdc45e5e-1828-4c0f-8d1b-bd8d359d3169 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23804/? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[external:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 14 recorded 13: input stdin-3
+effect write "{\"response\":{\"request_id\":\"21dbcfd3-24ee-4eff-a026-1de8cca9f549\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"word\":\"LINK\"}},\"subtype\":\"success\"},\"type\":\"control_response\"}"
+effect reply stdin-3 accepted
+item toolu_016GeyC8ZiAdxUhKBfrtahpP tool final at=1793268602731 text="" external·ask_the_operator TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED started=1793268602742 input="{\"word\":\"LINK\"}"
+snapshot WORKING queue=[] working_on="Call the mcp__external__ask_the_operator tool with word set to LINK, then reply with exactly what it returned." at=1793268602742 asks=[] session=fdc45e5e-1828-4c0f-8d1b-bd8d359d3169 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23804/? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[external:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 16 recorded 15: fact Stream type=rate_limit_event uuid=39318a2f-4764-445e-aa17-70e1962b1de2
+snapshot WORKING queue=[] working_on="Call the mcp__external__ask_the_operator tool with word set to LINK, then reply with exactly what it returned." at=1793268602750 asks=[] session=fdc45e5e-1828-4c0f-8d1b-bd8d359d3169 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23804/? tasks=? active=[] usage=ok 5h:2%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[external:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 18 recorded 17: fact Stream type=control_request
+item ask:a1146865-4b3b-4a66-b233-cc35b94ca1af ask final at=1793268602757 text="" link external open
+snapshot NEEDS_YOU queue=[] working_on="Call the mcp__external__ask_the_operator tool with word set to LINK, then reply with exactly what it returned." at=1793268602757 asks=[a1146865-4b3b-4a66-b233-cc35b94ca1af->ask:a1146865-4b3b-4a66-b233-cc35b94ca1af link:external "Open the page to confirm." https://example.com/confirm] session=fdc45e5e-1828-4c0f-8d1b-bd8d359d3169 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23804/? tasks=? active=[] usage=ok 5h:2%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[external:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 19 recorded 18: input stdin-4
+effect reply stdin-4 rejected:UNSUPPORTED
+## 21 recorded 20: fact Stream type=user uuid=8dd80a85-eb9b-4174-bf8e-13025c951012
+item toolu_016GeyC8ZiAdxUhKBfrtahpP tool final at=1793268602731 text="" external·ask_the_operator TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED started=1793268602742 ended=1793268602763 input="{\"word\":\"LINK\"}" out="LINK"
+## 23 recorded 22: fact Stream type=assistant uuid=51eae968-97f8-4552-b70a-937d973f4259
+item msg_011CgWM3vfRRM7q3Vm2Hwq6D:0 thinking final at=1793268603733 text=""
+snapshot NEEDS_YOU queue=[] working_on="Call the mcp__external__ask_the_operator tool with word set to LINK, then reply with exactly what it returned." at=1793268603733 asks=[a1146865-4b3b-4a66-b233-cc35b94ca1af->ask:a1146865-4b3b-4a66-b233-cc35b94ca1af link:external "Open the page to confirm." https://example.com/confirm] session=fdc45e5e-1828-4c0f-8d1b-bd8d359d3169 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23964/? tasks=? active=[] usage=ok 5h:2%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[external:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 25 recorded 24: fact Stream type=assistant uuid=c10466af-badc-445c-85e1-63946dee4565
+item msg_011CgWM3vfRRM7q3Vm2Hwq6D:1 message final at=1793268603740 text="LINK"
+## 27 recorded 26: fact Stream type=result subtype=success uuid=316d0a91-e706-450c-a08a-809fd4f964a6
+item ask:a1146865-4b3b-4a66-b233-cc35b94ca1af ask final at=1793268602757 text="" link external ASK_OUTCOME_DISMISSED
+item turn:1 turn final at=1793268603755 text="" #1 TURN_OUTCOME_COMPLETED started=1793268601185
+snapshot IDLE queue=[] working_on="Call the mcp__external__ask_the_operator tool with word set to LINK, then reply with exactly what it returned." at=1793268603755 asks=[] session=fdc45e5e-1828-4c0f-8d1b-bd8d359d3169 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23964/200000 tasks=? active=[] usage=ok 5h:2%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[external:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+turn_end 1 last=msg_011CgWM3vfRRM7q3Vm2Hwq6D:1

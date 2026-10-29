@@ -27,6 +27,7 @@ fn opaque(kind: Kind) -> &'static [&'static str] {
             "tool_use_result",
             "toolUseResult",
             "modelUsage",
+            "model_usage_since_last_result",
             "wire_tool_inputs",
             "wireToolInputs",
             "request.input",

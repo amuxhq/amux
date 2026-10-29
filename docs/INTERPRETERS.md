@@ -916,7 +916,14 @@ cargo run -p codex-specs --bin codex-probe -- probe [--out <dir>]
 
 `claude-probe` runs the `claude` on your `PATH`, or the one named by
 `CLAUDE_REAL_PATH`; `codex-probe` runs `codex` and records with the model its
-specs pin (`CAPTURE_MODEL` in `crates/codex-specs/src/specs.rs`).
+specs pin (`CAPTURE_MODEL` in `crates/codex-specs/src/specs.rs`). A headless
+Claude capture reads only project and local settings and only the tool servers
+its spec names (`--setting-sources project,local --strict-mcp-config`, unless
+the spec names its own sources), so your own plugins, skills, agents,
+permission rules and connected accounts stay out of the recording. A terminal
+capture's transcript drops the rows that copy each API request and scrubs the
+attachments that carry your instructions, environment, attribution and what
+you have installed.
 
 `probe` runs every registered spec live and updates only the evidence its
 outcome permits. A spec that passes gets a verification (version, time, run

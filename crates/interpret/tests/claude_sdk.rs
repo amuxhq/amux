@@ -71,7 +71,7 @@ goldens! {
     recorded_background_shell => "recorded_background_shell",
     recorded_client_id => "recorded_client_id",
     recorded_elicitation_declined => "recorded_elicitation_declined",
-    recorded_elicitation_link_refused => "recorded_elicitation_link_refused",
+    recorded_elicitation_link_accepted => "recorded_elicitation_link_accepted",
     recorded_failed_tool_server => "recorded_failed_tool_server",
     recorded_failing_command => "recorded_failing_command",
     recorded_image => "recorded_image",
@@ -410,26 +410,40 @@ fn the_initialize_answer_lists_models_with_efforts_and_commands_with_sources() {
     let first = &snapshot.models[0];
     assert_eq!(first.value, "default");
     assert_eq!(first.display_name, "Default (recommended)");
-    assert!(first.description.starts_with("Opus 5 with 1M context"));
+    assert!(first.description.starts_with("Opus 5.5"));
     assert_eq!(first.efforts, ["low", "medium", "high", "xhigh", "max"]);
     let haiku = snapshot
         .models
         .iter()
-        .find(|model| model.value == "haiku")
+        .find(|model| model.value == "claude-haiku-4-5-20251001")
         .unwrap();
-    assert!(haiku.efforts.is_empty(), "Haiku takes no effort");
-    let plugin = snapshot
-        .commands
-        .iter()
-        .find(|command| command.name == "stripe:test-cards")
-        .unwrap();
-    assert_eq!(plugin.source, "stripe");
+    assert!(haiku.efforts.is_empty(), "Haiku 4.5 takes no effort");
     let own = snapshot
         .commands
         .iter()
         .find(|command| command.name == "compact")
         .unwrap();
     assert_eq!(own.source, "");
+}
+
+/// A plugin's command is named after its plugin, which is its source. The
+/// recordings run with no plugins of the machine's own, so the answer is
+/// written here.
+#[test]
+fn a_plugin_command_names_its_plugin_as_its_source() {
+    let mut state = started();
+    let stepped = ClaudeSdk::step(
+        &mut state,
+        stream(initialized(&["compact", "stripe:test-cards"])),
+    );
+    let (_, catalogue) =
+        written_catalogue(&stepped).expect("the initialize answer writes a catalogue");
+    let sources: Vec<_> = catalogue
+        .commands
+        .iter()
+        .map(|command| (command.name.as_str(), command.source.as_str()))
+        .collect();
+    assert_eq!(sources, [("compact", ""), ("stripe:test-cards", "stripe")]);
 }
 
 /// The attach tool's element in a finished reply becomes an attachment at
@@ -850,17 +864,17 @@ fn compacting_status_is_an_item() {
         kinds,
         [
             (
-                "00d461b3-c569-43f4-80ff-33ac9a87bfaf".to_owned(),
+                "335a34cf-0794-4ca4-8a83-3fa3e1d49ae7".to_owned(),
                 Kind::Status(wire::Status {
                     status: wire::SdkStatus::Compacting as i32,
                     word: "compacting".into(),
                 }),
             ),
             (
-                "115f463b-1a4e-4a07-bf00-88e995d814ac".to_owned(),
+                "be835eab-7b1e-4c04-927b-1f6e8dcdb955".to_owned(),
                 Kind::Compaction(wire::Compaction {
-                    tokens_before: Some(29_543),
-                    tokens_after: Some(2_963),
+                    tokens_before: Some(25_097),
+                    tokens_after: Some(4_034),
                     automatic: false,
                 }),
             ),

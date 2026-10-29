@@ -140,6 +140,8 @@ struct Engine {
     answers: BTreeMap<String, Value>,
     turns: u32,
     last_text: String,
+    /// The response being streamed, which each of its events names.
+    streaming: Value,
     /// Content blocks the current model response has sent: Claude numbers
     /// a response's streamed blocks from zero, in the order its assistant
     /// frames carry them.
@@ -167,6 +169,8 @@ struct Engine {
 /// when its gate file exists, or at once without one.
 struct Job {
     task: String,
+    /// The run Claude 2.1.312 names on each of the job's frames.
+    run: String,
     call: String,
     description: String,
     gate: Option<std::path::PathBuf>,
@@ -233,6 +237,7 @@ impl Engine {
             answers: BTreeMap::new(),
             turns: 0,
             last_text: String::new(),
+            streaming: Value::Null,
             blocks: 0,
             server_states: script.servers,
             context_tokens: script.context_tokens,
@@ -424,6 +429,7 @@ impl Engine {
                 self.send(json!({
                     "type": "system",
                     "subtype": "task_notification",
+                    "run_id": job.run,
                     "task_id": job.task,
                     "tool_use_id": job.call,
                     "status": "stopped",
@@ -749,7 +755,6 @@ impl Engine {
                     Step::Exit { code } => break Some(code),
                     Step::Usage(usage) => self.rate_limit(&usage).await,
                     Step::AuthFailed { message } => {
-                        self.auth_retries().await;
                         let frame = self.auth_error(&request, &message);
                         self.send(frame).await;
                         self.auth_failed = Some(message);
@@ -870,6 +875,7 @@ impl Engine {
     async fn launch(&mut self, call: &str, tool: &Tool, input: &Value) {
         let job = Job {
             task: self.ids.next("bfake"),
+            run: self.ids.next("run_fake"),
             call: call.to_owned(),
             description: input["description"]
                 .as_str()
@@ -881,6 +887,7 @@ impl Engine {
         let started = json!({
             "type": "system",
             "subtype": "task_started",
+            "run_id": job.run,
             "task_id": job.task,
             "tool_use_id": job.call,
             "description": job.description,
@@ -904,7 +911,8 @@ impl Engine {
         self.jobs.push(job);
         self.jobs_changed().await;
         self.send(started).await;
-        self.user_result(call, json!(content), false, sidecar).await;
+        self.user_result(call, json!(content), Ran::Done, sidecar)
+            .await;
     }
 
     /// End every background command whose gate is open: the job list
@@ -922,6 +930,7 @@ impl Engine {
             let updated = json!({
                 "type": "system",
                 "subtype": "task_updated",
+                "run_id": job.run,
                 "task_id": job.task,
                 "patch": { "status": "completed", "end_time": now_s() * 1000 },
                 "session_id": self.session,
@@ -931,6 +940,7 @@ impl Engine {
             let notified = json!({
                 "type": "system",
                 "subtype": "task_notification",
+                "run_id": job.run,
                 "task_id": job.task,
                 "tool_use_id": job.call,
                 "status": "completed",
@@ -1002,9 +1012,12 @@ impl Engine {
             self.stream(json!({
                 "type": "message_start",
                 "message": {
+                    "container": null,
                     "content": [],
+                    "context_management": null,
                     "diagnostics": null,
                     "id": message,
+                    "input_transformations": [],
                     "model": self.model,
                     "role": "assistant",
                     "stop_details": null,
@@ -1059,20 +1072,23 @@ impl Engine {
         for (name, resets_in_s) in [("five_hour", 5 * 3600), ("seven_day", 7 * 86400)] {
             windows.insert(
                 name.to_owned(),
-                json!({ "resetsAt": now + resets_in_s, "utilization": 0.01 }),
+                json!({ "resetsAt": now + resets_in_s, "status": "allowed", "utilization": 0.01 }),
             );
         }
-        for window in &usage.windows {
+        // Claude 2.1.312 states each window's status; the report's own is
+        // its first window's.
+        for (at, window) in usage.windows.iter().enumerate() {
             windows.insert(
                 window.name.clone(),
                 json!({
                     "resetsAt": now + window.resets_in_s,
+                    "status": if at == 0 { usage.status.as_str() } else { "allowed" },
                     "utilization": window.used_percent / 100.0,
                 }),
             );
         }
         let first = usage.windows.first();
-        let mut info = json!({
+        let info = json!({
             "isUsingOverage": false,
             "overageDisabledReason": "org_level_disabled",
             "overageStatus": "rejected",
@@ -1081,12 +1097,6 @@ impl Engine {
             "status": usage.status,
             "unifiedWindows": windows,
         });
-        // Past a threshold Claude also says how much is used.
-        if usage.status != "allowed" {
-            let used = first.map_or(0.0, |window| window.used_percent / 100.0);
-            info["utilization"] = json!(used);
-            info["surpassedThreshold"] = json!(0.75);
-        }
         let frame = json!({
             "type": "rate_limit_event",
             "rate_limit_info": info,
@@ -1094,24 +1104,6 @@ impl Engine {
             "uuid": uuid(),
         });
         self.send(frame).await;
-    }
-
-    /// Claude retries a refused credential twice before giving up.
-    async fn auth_retries(&mut self) {
-        for (attempt, delay) in [(1, 612), (2, 1233)] {
-            let frame = json!({
-                "type": "system",
-                "subtype": "api_retry",
-                "attempt": attempt,
-                "error": "authentication_failed",
-                "error_status": 401,
-                "max_retries": 2,
-                "retry_delay_ms": delay,
-                "session_id": self.session,
-                "uuid": uuid(),
-            });
-            self.send(frame).await;
-        }
     }
 
     /// The error message Claude writes as the turn's reply when its
@@ -1145,7 +1137,9 @@ impl Engine {
             "ttft_stream_ms": 1,
             "is_error": true,
             "modelUsage": {},
+            "model_usage_since_last_result": {},
             "result_index": 0,
+            "safety_stops": 0,
             "subagent_stats": subagent_stats(),
             "num_turns": calls + 1,
             "permission_denials": [],
@@ -1169,9 +1163,14 @@ impl Engine {
             "session_id": self.session,
             "uuid": uuid(),
         });
+        // Claude 2.1.312 names the API's message on each event of its
+        // stream, and on its start how thinking shows.
         if frame["event"]["type"] == "message_start" {
             frame["ttft_ms"] = json!(1);
+            frame["thinking_display"] = json!("updates");
+            self.streaming = frame["event"]["message"]["id"].clone();
         }
+        frame["api_message_id"] = self.streaming.clone();
         self.send(frame).await;
     }
 
@@ -1212,10 +1211,12 @@ impl Engine {
         outcome: Result<String, String>,
     ) {
         let (name, _) = claude_tool(tool, &self.cwd);
-        let (content, is_error, sidecar) = match outcome {
-            Ok(output) if tool.outcome.error => {
-                (output.clone(), true, json!(format!("Error: {output}")))
-            }
+        let (content, ran, sidecar) = match outcome {
+            Ok(output) if tool.outcome.error => (
+                output.clone(),
+                Ran::Failed,
+                json!(format!("Error: {output}")),
+            ),
             Ok(output) => {
                 if self.edit_files
                     && let Err(error) = crate::claude::apply_file_tool(&name, input)
@@ -1223,30 +1224,45 @@ impl Engine {
                     eprintln!("fake-claude-sdk: {name}: {error}");
                 }
                 match self.task_tool(&name, input) {
-                    Some((said, sidecar)) => (said, false, sidecar),
+                    Some((said, sidecar)) => (said, Ran::Done, sidecar),
                     None => {
                         let sidecar = sidecar(&name, input, &output);
-                        (output, false, sidecar)
+                        (output, Ran::Done, sidecar)
                     }
                 }
             }
-            Err(refusal) => (refusal.clone(), true, json!(format!("Error: {refusal}"))),
+            Err(refusal) => (
+                refusal.clone(),
+                Ran::Refused,
+                json!(format!("Error: {refusal}")),
+            ),
         };
-        self.user_result(id, json!(content), is_error, sidecar)
-            .await;
+        self.user_result(id, json!(content), ran, sidecar).await;
     }
 
-    async fn user_result(&mut self, id: &str, content: Value, is_error: bool, sidecar: Value) {
+    async fn user_result(&mut self, id: &str, content: Value, ran: Ran, sidecar: Value) {
         let mut block = json!({ "type": "tool_result", "tool_use_id": id, "content": content });
-        if is_error {
+        if ran != Ran::Done {
             block["is_error"] = json!(true);
         }
+        // Claude 2.1.312 says how each call was decided: allowed by its
+        // configuration, or refused by the person.
+        let meta = if ran == Ran::Refused {
+            json!({
+                "id": id,
+                "non_execution_kind": "permission-rule",
+                "permission_decision": { "decision": "reject", "source": "user_reject" },
+            })
+        } else {
+            json!({ "id": id, "permission_decision": { "decision": "accept", "source": "config" } })
+        };
         let frame = json!({
             "type": "user",
             "message": { "role": "user", "content": [block] },
             "parent_tool_use_id": null,
             "session_id": self.session,
             "timestamp": timestamp(),
+            "tool_result_meta": [meta],
             "tool_use_result": sidecar,
             "uuid": uuid(),
         });
@@ -1332,8 +1348,13 @@ impl Engine {
             {
                 self.send(json!({ "type": "control_cancel_request", "request_id": id }))
                     .await;
-                self.user_result(call, json!(REFUSED), true, json!("User rejected tool use"))
-                    .await;
+                self.user_result(
+                    call,
+                    json!(REFUSED),
+                    Ran::Refused,
+                    json!("User rejected tool use"),
+                )
+                .await;
                 self.refused_call = true;
                 return None;
             }
@@ -1415,13 +1436,14 @@ impl Engine {
                         );
                         let sidecar =
                             json!({ "questions": input["questions"], "answers": answers });
-                        self.user_result(&id, json!(content), false, sidecar).await;
+                        self.user_result(&id, json!(content), Ran::Done, sidecar)
+                            .await;
                     }
                     Err(refusal) => {
                         self.user_result(
                             &id,
                             json!(refusal),
-                            true,
+                            Ran::Refused,
                             json!(format!("Error: {refusal}")),
                         )
                         .await;
@@ -1450,13 +1472,14 @@ impl Engine {
                             "User has approved your plan. You can now start coding.\n\n## Approved Plan:\n{markdown}"
                         );
                         let sidecar = json!({ "plan": markdown, "isAgent": false });
-                        self.user_result(&id, json!(content), false, sidecar).await;
+                        self.user_result(&id, json!(content), Ran::Done, sidecar)
+                            .await;
                     }
                     Err(refusal) => {
                         self.user_result(
                             &id,
                             json!(refusal),
-                            true,
+                            Ran::Refused,
                             json!(format!("Error: {refusal}")),
                         )
                         .await;
@@ -1493,7 +1516,8 @@ impl Engine {
                     said.push_str(&content.to_string());
                 }
                 let blocks = json!([{ "type": "text", "text": said }]);
-                self.user_result(&id, blocks.clone(), false, blocks).await;
+                self.user_result(&id, blocks.clone(), Ran::Done, blocks)
+                    .await;
             }
             Ask::Link { .. } | Ask::Grant { .. } | Ask::ToolServerDialog { .. } => {
                 unreachable!("refused when the script loaded")
@@ -1534,7 +1558,9 @@ impl Engine {
             "ttft_stream_ms": 1,
             "is_error": false,
             "modelUsage": self.model_usage(),
+            "model_usage_since_last_result": self.model_usage(),
             "result_index": 0,
+            "safety_stops": 0,
             "subagent_stats": subagent_stats(),
             "num_turns": calls + 1,
             "permission_denials": [],
@@ -1599,7 +1625,9 @@ impl Engine {
             "ttft_stream_ms": 1,
             "is_error": false,
             "modelUsage": {},
+            "model_usage_since_last_result": {},
             "result_index": 0,
+            "safety_stops": 0,
             "subagent_stats": subagent_stats(),
             "num_turns": calls + 1,
             "permission_denials": [],
@@ -1643,7 +1671,9 @@ impl Engine {
             "fast_mode_state": "off",
             "is_error": true,
             "modelUsage": {},
+            "model_usage_since_last_result": {},
             "result_index": 0,
+            "safety_stops": 0,
             "subagent_stats": subagent_stats(),
             "num_turns": calls + 1,
             "permission_denials": [],
@@ -1652,7 +1682,7 @@ impl Engine {
             "stop_reason": null,
             "terminal_reason": if calls > 0 { "aborted_tools" } else { "aborted_streaming" },
             "total_cost_usd": 0.0,
-            "usage": turn_usage(),
+            "usage": result_usage(),
             "uuid": uuid(),
         });
         self.send(frame).await;
@@ -1670,6 +1700,7 @@ fn usage(context: Option<u64>) -> Value {
         "input_tokens": context.unwrap_or(1),
         "output_tokens": 1,
         "service_tier": "standard",
+        "speed": "standard",
     })
 }
 
@@ -1679,7 +1710,6 @@ pub(crate) fn turn_usage() -> Value {
     usage["iterations"] = json!([]);
     usage["output_tokens_details"] = json!({ "thinking_tokens": 0 });
     usage["server_tool_use"] = json!({ "web_fetch_requests": 0, "web_search_requests": 0 });
-    usage["speed"] = json!("standard");
     usage
 }
 
@@ -1704,6 +1734,14 @@ fn subagent_stats() -> Value {
         "spawned_by_subagents": 0,
         "started_in_background": 0,
     })
+}
+
+/// How a call ended: it ran, it ran and failed, or the person refused it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Ran {
+    Done,
+    Failed,
+    Refused,
 }
 
 /// What Claude answers a call the person refused.

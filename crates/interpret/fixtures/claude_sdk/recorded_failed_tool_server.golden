@@ -1,29 +1,29 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
-## 6 recorded 5: fact Stream type=control_response
+## 2 recorded 1: fact Stream type=control_response
 effect write "{\"request\":{\"subtype\":\"get_settings\"},\"request_id\":\"amux-1\",\"type\":\"control_request\"}"
-effect catalogue 63f47fa7 models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},claude-fable-5-1{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku,claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=81 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue 63f47fa7
-snapshot IDLE queue=[] working_on=- at=1790388272520 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 8 recorded 7: input stdin-2
+effect catalogue 8572d50d models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=55 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 8572d50d
+snapshot IDLE queue=[] working_on=- at=1793268174050 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 4 recorded 3: input stdin-2
 effect reply stdin-2 accepted
 effect user 73746469-6e2d-4200-8000-000000000000 "Reply with exactly PONG and nothing else."
-item boundary:1 boundary final at=1790388272522 text="" BOUNDARY_KIND_STARTED session=- version=-
-item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1790388272522 text="Reply with exactly PONG and nothing else."
-snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1790388272522 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 10 recorded 9: fact Stream type=control_response
-snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1790388272525 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=HEALTH_STATE_DEGRADED[plugin:stripe:stripe:TOOL_SERVER_STATUS_NEEDS_AUTH,linear-server:TOOL_SERVER_STATUS_READY,broken:TOOL_SERVER_STATUS_FAILED,claude.ai Claude Docs:TOOL_SERVER_STATUS_STARTING,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 12 recorded 11: fact Stream type=system subtype=init uuid=d451a0f6-bcf0-4314-93fd-f233aa3228f9
-item boundary:1 boundary final at=1790388272629 text="" BOUNDARY_KIND_STARTED session=8d61ff01-783a-4ddc-8c65-5f06a5b57402 version=2.1.283
-snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1790388272629 asks=[] session=8d61ff01-783a-4ddc-8c65-5f06a5b57402 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_DEGRADED[plugin:stripe:stripe:TOOL_SERVER_STATUS_NEEDS_AUTH,linear-server:TOOL_SERVER_STATUS_READY,broken:TOOL_SERVER_STATUS_FAILED,claude.ai Claude Docs:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 14 recorded 13: fact Stream type=assistant uuid=bf60f68e-28fb-41e1-8b64-37d34ce6e1e3
-item msg_011CfRELQQg25gtKNu7H9GFP:0 thinking final at=1790388273742 text=""
-snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1790388273742 asks=[] session=8d61ff01-783a-4ddc-8c65-5f06a5b57402 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=25953/? tasks=? active=[] usage=? servers=HEALTH_STATE_DEGRADED[plugin:stripe:stripe:TOOL_SERVER_STATUS_NEEDS_AUTH,linear-server:TOOL_SERVER_STATUS_READY,broken:TOOL_SERVER_STATUS_FAILED,claude.ai Claude Docs:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 16 recorded 15: fact Stream type=assistant uuid=94213e63-e373-46ea-bf23-63bb5e6beada
-item msg_011CfRELQQg25gtKNu7H9GFP:1 message final at=1790388273782 text="PONG"
-## 18 recorded 17: fact Stream type=rate_limit_event uuid=56d1c998-9f1a-4af2-83a0-e17966fc7052
-snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1790388273787 asks=[] session=8d61ff01-783a-4ddc-8c65-5f06a5b57402 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=25953/? tasks=? active=[] usage=ok 5h:2%(ok) 7d:35%(?) servers=HEALTH_STATE_DEGRADED[plugin:stripe:stripe:TOOL_SERVER_STATUS_NEEDS_AUTH,linear-server:TOOL_SERVER_STATUS_READY,broken:TOOL_SERVER_STATUS_FAILED,claude.ai Claude Docs:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 20 recorded 19: fact Stream type=result subtype=success uuid=eb6b9600-812e-4349-a88f-4adc6c79c199
-item turn:1 turn final at=1790388273793 text="" #1 TURN_OUTCOME_COMPLETED started=1790388272576
-snapshot IDLE queue=[] working_on="Reply with exactly PONG and nothing else." at=1790388273793 asks=[] session=8d61ff01-783a-4ddc-8c65-5f06a5b57402 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=25953/200000 tasks=? active=[] usage=ok 5h:2%(ok) 7d:35%(?) servers=HEALTH_STATE_DEGRADED[plugin:stripe:stripe:TOOL_SERVER_STATUS_NEEDS_AUTH,linear-server:TOOL_SERVER_STATUS_READY,broken:TOOL_SERVER_STATUS_FAILED,claude.ai Claude Docs:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-turn_end 1 last=msg_011CfRELQQg25gtKNu7H9GFP:1
+item boundary:1 boundary final at=1793268174052 text="" BOUNDARY_KIND_STARTED session=- version=-
+item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793268174052 text="Reply with exactly PONG and nothing else."
+snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1793268174052 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 6 recorded 5: fact Stream type=control_response
+snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1793268174093 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=HEALTH_STATE_DEGRADED[broken:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 8 recorded 7: fact Stream type=system subtype=init uuid=948bec53-da3d-4788-81ce-1db4128ab628
+item boundary:1 boundary final at=1793268174118 text="" BOUNDARY_KIND_STARTED session=1124cd39-4239-40c2-b064-526ac8ff5ea5 version=2.1.312
+snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1793268174118 asks=[] session=1124cd39-4239-40c2-b064-526ac8ff5ea5 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_DEGRADED[broken:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 10 recorded 9: fact Stream type=assistant uuid=3c504533-e005-4ca7-9ad9-4e1ab94b7db4
+item msg_011CgWLWLF7Fx1kuf9o6g464:0 thinking final at=1793268175389 text=""
+snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1793268175389 asks=[] session=1124cd39-4239-40c2-b064-526ac8ff5ea5 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23861/? tasks=? active=[] usage=? servers=HEALTH_STATE_DEGRADED[broken:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 12 recorded 11: fact Stream type=assistant uuid=561b2d7e-76c3-4620-b153-ee301c55a594
+item msg_011CgWLWLF7Fx1kuf9o6g464:1 message final at=1793268175401 text="PONG"
+## 14 recorded 13: fact Stream type=rate_limit_event uuid=0b6e48ec-4586-436f-98af-c049deb13b29
+snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1793268175423 asks=[] session=1124cd39-4239-40c2-b064-526ac8ff5ea5 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23861/? tasks=? active=[] usage=ok 5h:2%(ok) 7d:42%(?) servers=HEALTH_STATE_DEGRADED[broken:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 16 recorded 15: fact Stream type=result subtype=success uuid=08c52791-5730-4bf2-8b8c-3e9446ce8d35
+item turn:1 turn final at=1793268175442 text="" #1 TURN_OUTCOME_COMPLETED started=1793268174099
+snapshot IDLE queue=[] working_on="Reply with exactly PONG and nothing else." at=1793268175442 asks=[] session=1124cd39-4239-40c2-b064-526ac8ff5ea5 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23861/200000 tasks=? active=[] usage=ok 5h:2%(ok) 7d:42%(?) servers=HEALTH_STATE_DEGRADED[broken:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+turn_end 1 last=msg_011CgWLWLF7Fx1kuf9o6g464:1

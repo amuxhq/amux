@@ -176,13 +176,15 @@ fn resumed_at_setup() -> SessionSetup {
 /// resume.
 const LATER_SECRET: &str = "CORMORANT";
 
-/// A session can be resumed at a chosen point, keeping only what came before.
+/// A resume given a point keeps the whole conversation on Claude 2.1.312:
+/// the point is accepted and not honoured. (2.1.251 kept only what came
+/// before it; amux never resumes at a point.)
 ///
 /// A plain resume carries the whole conversation, so nothing about it would
 /// show whether the point was honoured. This one asks for a point in the
 /// middle and then asks a question only an untruncated session could answer:
-/// the second word is in the transcript on disk, and a resume that ignored the
-/// fork point would happily recite it.
+/// the second word is in the transcript on disk, and a resume that ignores the
+/// fork point recites it.
 ///
 /// The point itself is an assistant message's own id, taken off the stream
 /// rather than read back from disk. That is what makes the specification
@@ -236,7 +238,7 @@ async fn resumed_at(session: &mut SpecSession) {
     let answer = resumed.turn().await;
     expect!(
         answer.succeeded(),
-        "the truncated session takes its turn like any other"
+        "the session resumed at a point takes its turn like any other"
     );
     expect!(
         answer.text().contains(SECRET),
@@ -244,9 +246,8 @@ async fn resumed_at(session: &mut SpecSession) {
         answer.text()
     );
     expect!(
-        !answer.text().contains(LATER_SECRET),
-        "and not what came after it, which is the whole of the difference \
-         between resuming at a point and resuming: {:?}",
+        answer.text().contains(LATER_SECRET),
+        "and what came after it too, so the point made no difference: {:?}",
         answer.text()
     );
     resumed.close().await;

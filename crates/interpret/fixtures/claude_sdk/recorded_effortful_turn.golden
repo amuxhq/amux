@@ -1,27 +1,27 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
-## 1 recorded 0: tick 1788013994571
-snapshot STARTING queue=[] working_on=- at=1788013994571 asks=[] session=? model=? model_name=? effort=low mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+## 1 recorded 0: tick 1793268056997
+snapshot STARTING queue=[] working_on=- at=1793268056997 asks=[] session=? model=? model_name=? effort=low mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 2 recorded 1: fact Stream type=control_response
 effect write "{\"request\":{\"subtype\":\"get_settings\"},\"request_id\":\"amux-1\",\"type\":\"control_request\"}"
-effect catalogue bf1dcc9e models=[default{low/medium/high/xhigh/max},opus[1m]{low/medium/high/xhigh/max},claude-fable-5[1m]{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku] commands=64 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue bf1dcc9e
-snapshot IDLE queue=[] working_on=- at=1788013994571 asks=[] session=? model=? model_name=? effort=low mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+effect catalogue 0b109d2e models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=55 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 0b109d2e
+snapshot IDLE queue=[] working_on=- at=1793268056997 asks=[] session=? model=? model_name=? effort=low mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 4 recorded 3: input stdin-2
 effect reply stdin-2 accepted
 effect user 73746469-6e2d-4200-8000-000000000000 "Reply with exactly EFFORT_OK and nothing else."
-item boundary:1 boundary final at=1788013994574 text="" BOUNDARY_KIND_STARTED session=- version=-
-item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1788013994574 text="Reply with exactly EFFORT_OK and nothing else."
-snapshot WORKING queue=[] working_on="Reply with exactly EFFORT_OK and nothing else." at=1788013994574 asks=[] session=? model=? model_name=? effort=low mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 6 recorded 5: fact Stream type=rate_limit_event uuid=8d29d718-0563-4170-bb44-e66e15bc8f38
-snapshot WORKING queue=[] working_on="Reply with exactly EFFORT_OK and nothing else." at=1788013995434 asks=[] session=? model=? model_name=? effort=low mode=? context=? tasks=? active=[] usage=ok 5h:12%(ok) 7d:2%(?) servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 8 recorded 7: fact Stream type=system subtype=init uuid=9d95273a-3065-417d-9ef7-c64afc0ec519
-item boundary:1 boundary final at=1788013996615 text="" BOUNDARY_KIND_STARTED session=5fea92c5-380d-4097-8966-eb88a1184f1c version=2.1.247
-snapshot WORKING queue=[] working_on="Reply with exactly EFFORT_OK and nothing else." at=1788013996615 asks=[] session=5fea92c5-380d-4097-8966-eb88a1184f1c model=claude-sonnet-5 model_name="Sonnet 5" effort=low mode=default context=? tasks=? active=[] usage=ok 5h:12%(ok) 7d:2%(?) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_STARTING,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 10 recorded 9: fact Stream type=assistant uuid=87cd17cd-093c-4371-956a-b2278da316a1
-item msg_011CeXCnKivzYbLkYWw6aeNr:0 message final at=1788013998190 text="EFFORT_OK"
-snapshot WORKING queue=[] working_on="Reply with exactly EFFORT_OK and nothing else." at=1788013998190 asks=[] session=5fea92c5-380d-4097-8966-eb88a1184f1c model=claude-sonnet-5 model_name="Sonnet 5" effort=low mode=default context=37948/? tasks=? active=[] usage=ok 5h:12%(ok) 7d:2%(?) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_STARTING,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 12 recorded 11: fact Stream type=result subtype=success uuid=09ba8a92-8b62-45bb-808b-f81cca997093
-item turn:1 turn final at=1788013998203 text="" #1 TURN_OUTCOME_COMPLETED started=1788013996597
-snapshot IDLE queue=[] working_on="Reply with exactly EFFORT_OK and nothing else." at=1788013998203 asks=[] session=5fea92c5-380d-4097-8966-eb88a1184f1c model=claude-sonnet-5 model_name="Sonnet 5" effort=low mode=default context=37948/1000000 tasks=? active=[] usage=ok 5h:12%(ok) 7d:2%(?) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_STARTING,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-turn_end 1 last=msg_011CeXCnKivzYbLkYWw6aeNr:0
+item boundary:1 boundary final at=1793268056999 text="" BOUNDARY_KIND_STARTED session=- version=-
+item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793268056999 text="Reply with exactly EFFORT_OK and nothing else."
+snapshot WORKING queue=[] working_on="Reply with exactly EFFORT_OK and nothing else." at=1793268056999 asks=[] session=? model=? model_name=? effort=low mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 6 recorded 5: fact Stream type=system subtype=init uuid=20d8c9fc-2966-40f5-a1df-6664a4129d62
+item boundary:1 boundary final at=1793268057050 text="" BOUNDARY_KIND_STARTED session=3c7203b6-e6c6-4de7-814c-9fb64787c878 version=2.1.312
+snapshot WORKING queue=[] working_on="Reply with exactly EFFORT_OK and nothing else." at=1793268057050 asks=[] session=3c7203b6-e6c6-4de7-814c-9fb64787c878 model=claude-sonnet-5 model_name="Sonnet 5" effort=low mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 8 recorded 7: fact Stream type=assistant uuid=0ec74858-be83-408b-82ce-811c5dde02d7
+item msg_011CgWLMiRMaaw3q4GS7svHH:0 message final at=1793268059175 text="EFFORT_OK"
+snapshot WORKING queue=[] working_on="Reply with exactly EFFORT_OK and nothing else." at=1793268059175 asks=[] session=3c7203b6-e6c6-4de7-814c-9fb64787c878 model=claude-sonnet-5 model_name="Sonnet 5" effort=low mode=default context=31592/? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 10 recorded 9: fact Stream type=rate_limit_event uuid=dfa425d7-fe08-412f-be30-1176a4a0f0b9
+snapshot WORKING queue=[] working_on="Reply with exactly EFFORT_OK and nothing else." at=1793268059214 asks=[] session=3c7203b6-e6c6-4de7-814c-9fb64787c878 model=claude-sonnet-5 model_name="Sonnet 5" effort=low mode=default context=31592/? tasks=? active=[] usage=ok 5h:2%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 12 recorded 11: fact Stream type=result subtype=success uuid=f6596617-460e-4b22-adb9-b62c96ac15d0
+item turn:1 turn final at=1793268059223 text="" #1 TURN_OUTCOME_COMPLETED started=1793268057029
+snapshot IDLE queue=[] working_on="Reply with exactly EFFORT_OK and nothing else." at=1793268059223 asks=[] session=3c7203b6-e6c6-4de7-814c-9fb64787c878 model=claude-sonnet-5 model_name="Sonnet 5" effort=low mode=default context=31592/1000000 tasks=? active=[] usage=ok 5h:2%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+turn_end 1 last=msg_011CgWLMiRMaaw3q4GS7svHH:0

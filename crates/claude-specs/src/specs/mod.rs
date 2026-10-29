@@ -1115,7 +1115,10 @@ static SDK_REGISTRY: &[SpecEntry] = &[
     entry("tools/elicitation_accepted", "elicitation_accepted"),
     entry("tools/elicitation_declined", "elicitation_declined"),
     entry("tools/elicitation_cancelled", "elicitation_cancelled"),
-    entry("tools/elicitation_link_refused", "elicitation_link_refused"),
+    entry(
+        "tools/elicitation_link_accepted",
+        "elicitation_link_accepted",
+    ),
     entry("tools/hook_lifecycle", "hook_lifecycle"),
     entry("options/configured_turn", "configured_turn"),
     entry("options/every_hook_event", "every_hook_event"),
@@ -1230,6 +1233,17 @@ pub async fn execute(spec: &SpecEntry, source: SpecSource) -> Result<RunReport, 
                         serde_json::json!({"sandbox": sandbox}),
                     ));
                 }
+                // A capture records Claude, not the machine it ran on: the
+                // owner's user settings (plugins, skills, agents, permission
+                // rules, default mode) and the tool servers their account
+                // connects stay out, unless a specification names a source.
+                if options.setting_sources.is_empty() {
+                    options.setting_sources = vec![
+                        crate::driver::sdk::SettingSource::Project,
+                        crate::driver::sdk::SettingSource::Local,
+                    ];
+                }
+                options.strict_mcp_config = true;
             }),
             None,
         ),

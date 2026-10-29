@@ -1,3 +1,5 @@
+2026-10-29 — **The phone's sign-in journey frame is re-recorded.** Claude 2.1.312 doesn't retry a refused credential, so the expired chat shows the sign-in failure once, as the terminal frame already does. The stop-a-job preview's names are reviewed as non-copy.
+
 2026-10-29 — **CI fixed after the provider audit landed.** The managed-MCP terminal test now runs only on Unix, like every other terminal Claude test (Windows refuses terminal Claude). The composer-limits sign-in frame is re-recorded: it now shows the agent's scripted reply and one sign-in failure, where the old frame had dropped the reply and repeated the failure. The overview-stop story has its Xcode preview.
 
 2026-10-29 — **Main merged into the provider audit.** Both sides' phone copy and non-copy reviews are kept, and the wire code is regenerated from the merged schemas.
